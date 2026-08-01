@@ -1,0 +1,293 @@
+# Argus ROM Toolkit
+# Commit reproducible source and generated bindings; ignore build output,
+# machine-local state, secrets, runtime data, and transient tool metadata.
+
+# -----------------------------------------------------------------------------
+# Operating systems
+# -----------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# -----------------------------------------------------------------------------
+# Editors and IDEs
+# -----------------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+*.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+*~
+
+# VS Code: keep shared project configuration, ignore personal/local state.
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+
+# Visual Studio / Rider
+.vs/
+_ReSharper*/
+*.DotSettings.user
+
+# -----------------------------------------------------------------------------
+# Local agent and assistant metadata
+# -----------------------------------------------------------------------------
+.chatgpt/
+.codex/
+
+# -----------------------------------------------------------------------------
+# Environment variables, secrets, certificates, and signing material
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.keystore
+*.jks
+key.properties
+android/key.properties
+ios/Runner/GoogleService-Info.plist
+android/app/google-services.json
+
+# -----------------------------------------------------------------------------
+# Rust / Cargo
+# -----------------------------------------------------------------------------
+**/target/
+*.rlib
+*.rmeta
+*.dSYM/
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.so
+*.dylib
+
+# Cargo.lock is intentionally committed for this application workspace.
+# Do not add Cargo.lock here.
+
+# Rust tooling
+.cargo/.package-cache
+cargo-timing*.html
+cargo-timing*.json
+
+# -----------------------------------------------------------------------------
+# Flutter / Dart
+# -----------------------------------------------------------------------------
+.dart_tool/
+.packages
+.pub/
+.pub-cache/
+build/
+coverage/
+.flutter-plugins
+.flutter-plugins-dependencies
+.flutter_tool_state
+.flutter-plugins-version
+
+# Flutter generated environment files
+**/Generated.xcconfig
+**/flutter_export_environment.sh
+
+# Keep committed generated Dart source used by Riverpod, Freezed, JSON, and FRB.
+# Do not ignore *.g.dart or *.freezed.dart.
+
+# -----------------------------------------------------------------------------
+# Android / Gradle
+# -----------------------------------------------------------------------------
+.gradle/
+**/.gradle/
+android/.gradle/
+android/local.properties
+android/captures/
+android/.cxx/
+android/app/.cxx/
+android/app/intermediates/
+android/app/outputs/
+android/app/generated/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Native Android build output
+.externalNativeBuild/
+.cxx/
+
+# -----------------------------------------------------------------------------
+# Apple platforms / Xcode / CocoaPods / SwiftPM
+# -----------------------------------------------------------------------------
+**/DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+**/xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# CocoaPods and Flutter ephemeral outputs
+Pods/
+**/Pods/
+.symlinks/
+**/.symlinks/
+Flutter/ephemeral/
+**/Flutter/ephemeral/
+
+# Swift Package Manager build output
+.build/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+.swiftpm/configuration/registries.json
+
+# Keep Package.resolved committed when SwiftPM is introduced.
+# Keep project/workspace files committed.
+# Do not ignore *.xcodeproj or *.xcworkspace globally.
+
+# -----------------------------------------------------------------------------
+# Windows / MSVC
+# -----------------------------------------------------------------------------
+*.user
+*.userosscache
+*.suo
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.opendb
+ipch/
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+
+# -----------------------------------------------------------------------------
+# Linux / CMake / Ninja / native tooling
+# -----------------------------------------------------------------------------
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+.ninja_deps
+.ninja_log
+Makefile.user
+meson-private/
+meson-logs/
+meson-info/
+
+# -----------------------------------------------------------------------------
+# Testing, profiling, and coverage
+# -----------------------------------------------------------------------------
+coverage/
+*.lcov
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+*.gcov
+junit.xml
+pytest.xml
+test-results/
+reports/
+benchmarks/results/
+
+# -----------------------------------------------------------------------------
+# Logs, traces, crashes, and temporary files
+# -----------------------------------------------------------------------------
+*.log
+*.trace
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.stackdump
+*.crash
+crashlytics-build.properties
+logs/
+tmp/
+temp/
+
+# -----------------------------------------------------------------------------
+# Runtime databases and application-local state
+# -----------------------------------------------------------------------------
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+runtime/
+data/
+app-data/
+
+# Keep checked-in fixtures and migration test databases when explicitly placed
+# under testdata or fixtures.
+!**/testdata/**/*.db
+!**/testdata/**/*.sqlite
+!**/testdata/**/*.sqlite3
+!**/fixtures/**/*.db
+!**/fixtures/**/*.sqlite
+!**/fixtures/**/*.sqlite3
+
+# -----------------------------------------------------------------------------
+# Packaging and release output
+# -----------------------------------------------------------------------------
+dist/
+release/
+artifacts/
+packages/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.msi
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.AppImage
+
+# -----------------------------------------------------------------------------
+# Miscellaneous generated caches
+# -----------------------------------------------------------------------------
+.cache/
+.cache-loader/
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/

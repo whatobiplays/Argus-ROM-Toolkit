@@ -301,7 +301,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | Planned ID | Specification | Required before |
 |---|---|---|
 | [SPEC-BE-001](../specifications/backend/spec-be-001-rust-workspace-and-module-boundaries.md) | Rust Workspace and Module Boundaries | First workspace slice |
-| SPEC-BE-002 | SQLite, Migrations, Repositories, and Unit of Work | Persistence slice |
+| [SPEC-BE-002](../specifications/backend/spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md) | SQLite, Migrations, Repositories, and Unit of Work | Persistence slice |
 | SPEC-BE-003 | Application Errors, Logging, and Diagnostics | Startup/backend slice |
 | SPEC-BE-004 | Settings Service and Appearance Settings | Settings backend slice |
 | SPEC-BE-005 | Minimal Domain Event Bus | Event propagation slice |

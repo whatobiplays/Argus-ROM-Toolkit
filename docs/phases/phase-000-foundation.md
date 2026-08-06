@@ -3,7 +3,7 @@
 **Document ID:** PHASE-000  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-01  
+**Last Updated:** 2026-08-06  
 **Depends On:** ARCH-001, ARCH-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -147,7 +147,7 @@ None. This is the first implementation phase.
 
 - Core crate/module boundaries required for Phase 000.
 - Shared typed identifiers and stable application error model.
-- Structured logging and correlation identifiers sufficient for startup and settings operations.
+- Structured logging and `trace_id` propagation sufficient for startup and settings operations.
 - Configuration and application data-directory resolution.
 - SQLite connection management.
 - Migration framework and initial schema.
@@ -263,6 +263,7 @@ Destructive database-reset or restore workflows are not required in Phase 000 un
 - Exportable ZIP diagnostic bundle.
 - Contributor-based diagnostic assembly so later subsystems can add sanitized content.
 - Application version, backend version, OS/runtime details, migration state, sanitized configuration, and startup logs.
+- Argus-owned identifiers as the canonical observability identity once assigned.
 - No credentials, secrets, ROM paths beyond sanitized/necessary metadata, user content, or unrelated personal data.
 
 ## 7. Out of Scope
@@ -302,11 +303,12 @@ The following specifications must be written and reach **Ready for Implementatio
 |---|---|---|
 | [SPEC-BE-001](../specifications/backend/spec-be-001-rust-workspace-and-module-boundaries.md) | Rust Workspace and Module Boundaries | First workspace slice |
 | [SPEC-BE-002](../specifications/backend/spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md) | SQLite, Migrations, Repositories, and Unit of Work | Persistence slice |
-| SPEC-BE-003 | Application Errors, Logging, and Diagnostics | Startup/backend slice |
-| SPEC-BE-004 | Settings Service and Appearance Settings | Settings backend slice |
-| SPEC-BE-005 | Minimal Domain Event Bus | Event propagation slice |
-| SPEC-BE-006 | Startup Coordination and Recovery Contract | Startup integration slice |
-| SPEC-BE-007 | Rust-to-Flutter Bridge DTO Contract | Bridge slice |
+| [SPEC-BE-003](../specifications/backend/spec-be-003-application-errors-logging-and-diagnostics.md) | Application Errors, Logging, Diagnostics, and Observability | Startup/backend slice |
+| SPEC-BE-004 | Application Runtime, Command Pipeline, and Background Operations | Runtime/startup slice |
+| SPEC-BE-005 | Settings Service and Appearance Settings | Settings backend slice |
+| SPEC-BE-006 | Minimal Domain Event Bus | Event propagation slice |
+| SPEC-BE-007 | Startup Coordination and Recovery Contract | Startup integration slice |
+| SPEC-BE-008 | Rust-to-Flutter Bridge DTO Contract | Bridge slice |
 
 ### Frontend
 
@@ -390,7 +392,7 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 ### 10.2 Settings Read
 
 - A missing appearance record resolves to the `System` default.
-- A corrupt or invalid persisted value produces a structured backend error or a documented safe fallback decided by SPEC-BE-004; it must not be silently interpreted differently by Flutter.
+- A corrupt or invalid persisted value produces a structured backend error or a documented safe fallback decided by SPEC-BE-005; it must not be silently interpreted differently by Flutter.
 
 ### 10.3 Settings Update
 

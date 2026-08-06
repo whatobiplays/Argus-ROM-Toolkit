@@ -10,5 +10,6 @@ Identifiers use `SPEC-BE-NNN`.
 
 | ID | Specification | Status |
 |---|---|---|
-| SPEC-BE-001 | [Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.mdd) | Ready for Implementation |
+| SPEC-BE-001 | [Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md) | Ready for Implementation |
 | SPEC-BE-002 | [SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md) | Ready for Implementation |
+| SPEC-BE-003 | [Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md) | Ready for Implementation |

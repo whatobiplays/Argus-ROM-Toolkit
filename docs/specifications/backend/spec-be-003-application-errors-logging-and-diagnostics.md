@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-06  
+**Last Updated:** 2026-08-07  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -292,6 +292,7 @@ Phase 000 must publish at least the following contracts:
 |---|---|---|---|---|---|
 | `ARGUS.V1.VALIDATION.INVALID_ARGUMENT` | Validation | Warning | UserAction | Never | `errors.validation.invalid_argument` |
 | `ARGUS.V1.CONFIGURATION.INVALID` | Configuration | Error | UserAction | Never | `errors.configuration.invalid` |
+| `ARGUS.V1.CONFIGURATION.PERSISTED_SETTINGS_INVALID` | Configuration | Error | UserAction | UserInitiated | `errors.configuration.persisted_settings_invalid` |
 | `ARGUS.V1.PERSISTENCE.DATABASE_OPEN_FAILED` | Persistence | Error | Retry | Backoff | `errors.persistence.database_open_failed` |
 | `ARGUS.V1.PERSISTENCE.DATABASE_LOCKED` | Persistence | Warning | Retry | Backoff | `errors.persistence.database_locked` |
 | `ARGUS.V1.PERSISTENCE.MIGRATION_FAILED` | Persistence | Error | ManualIntervention | UserInitiated | `errors.persistence.migration_failed` |

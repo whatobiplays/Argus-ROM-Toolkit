@@ -31,7 +31,7 @@ At the end of Phase 000, a user can:
 6. See the new theme apply immediately without restarting Argus.
 7. Close and relaunch Argus.
 8. See the previously selected theme restored before the main shell is presented.
-9. Receive a targeted recovery screen if backend startup, database opening, or migration fails.
+9. Receive a targeted recovery screen if backend startup, database opening, migration, or required appearance-settings integrity validation fails.
 10. Copy startup error details or export a sanitized diagnostic bundle from the recovery screen.
 
 No library source or ROM-management workflow is available in this phase.
@@ -49,7 +49,7 @@ Phase 000 is demonstrated by the following sequence:
 7. The control enters a local pending state while the update is submitted.
 8. Rust validates and persists the new value in a Unit of Work.
 9. The transaction commits.
-10. Rust publishes `SettingsChanged` after the commit.
+10. Rust publishes `AppearanceSettingsChanged` after the commit.
 11. Flutter receives the event, refreshes authoritative appearance settings, and applies Dark theme.
 12. Close Argus normally.
 13. Relaunch Argus.
@@ -75,7 +75,7 @@ ArgusClient
     ↓
 flutter_rust_bridge generated bindings
     ↓
-Rust SettingsService façade
+Rust AppearanceSettingsService façade
     ↓
 Use-case handler
     ↓
@@ -83,7 +83,7 @@ Unit of Work
     ↓
 SQLite
     ↓ commit
-SettingsChanged domain event
+AppearanceSettingsChanged application event
     ↓
 Flutter event coordinator
     ↓
@@ -153,7 +153,7 @@ None. This is the first implementation phase.
 - Migration framework and initial schema.
 - Unit of Work abstraction with transaction-bound repositories.
 - Appearance settings repository.
-- `SettingsService` façade and focused use-case handlers.
+- `AppearanceSettingsService` façade and focused query/command handlers.
 - Minimal in-process domain event bus.
 - Startup coordinator and readiness result.
 - Startup failure classification.
@@ -161,14 +161,14 @@ None. This is the first implementation phase.
 
 ### 6.3 Appearance Settings Domain
 
-The minimum persisted settings domain is:
+The application-level settings domain is:
 
 ```text
 AppearanceSettings
 - theme_mode
-- schema_version
-- updated_at
 ```
+
+Persistence-local metadata such as schema revision, timestamps, and the internal singleton key does not cross the repository boundary.
 
 Allowed theme modes:
 
@@ -180,12 +180,13 @@ Dark
 
 Requirements:
 
-- Default is `System` when no record exists.
+- A fresh or migrated database materializes the canonical `System` default before runtime readiness.
+- The required singleton record must exist and be valid after successful initialization; missing or invalid persistence is a startup integrity failure.
 - Rust validates all incoming values.
 - Settings are read through a focused query.
 - Updates persist immediately.
 - The update operation is transactional.
-- `SettingsChanged` is published only after commit.
+- `AppearanceSettingsChanged` is published only after a semantic change commits successfully and carries no authoritative aggregate payload.
 - A failed update leaves persisted state unchanged.
 - A failed Flutter submission restores the last confirmed UI value and presents an inline error.
 - Theme changes do not require application restart.
@@ -242,6 +243,7 @@ DatabaseLocked
 MigrationFailed
 IncompatibleSchema
 ConfigurationInvalid
+AppearanceSettingsInvalid
 Permissions
 CoreServiceInitialization
 Unknown
@@ -252,6 +254,7 @@ The recovery screen exposes only applicable actions, which may include:
 - Retry
 - Copy technical details
 - Export diagnostics
+- Reset Appearance Settings when the startup failure is proven to be isolated to the appearance-settings aggregate
 - Open data directory where supported
 - Exit
 
@@ -305,7 +308,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-BE-002](../specifications/backend/spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md) | SQLite, Migrations, Repositories, and Unit of Work | Persistence slice |
 | [SPEC-BE-003](../specifications/backend/spec-be-003-application-errors-logging-and-diagnostics.md) | Application Errors, Logging, Diagnostics, and Observability | Startup/backend slice |
 | [SPEC-BE-004](../specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md) | Application Runtime, Command Pipeline, and Background Operations | Runtime/startup slice |
-| SPEC-BE-005 | Settings Service and Appearance Settings | Settings backend slice |
+| [SPEC-BE-005](../specifications/backend/spec-be-005-settings-service-and-appearance-settings.md) | Settings Service and Appearance Settings | Settings backend slice |
 | SPEC-BE-006 | Minimal Domain Event Bus | Event propagation slice |
 | SPEC-BE-007 | Startup Coordination and Recovery Contract | Startup integration slice |
 | SPEC-BE-008 | Rust-to-Flutter Bridge DTO Contract | Bridge slice |
@@ -353,7 +356,7 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 
 ### SLICE-P00-003 — Appearance Settings Backend
 
-**Outcome:** Backend tests can read the default appearance setting, update theme mode transactionally, reject invalid input, persist across process/repository recreation, and publish `SettingsChanged` only after commit.
+**Outcome:** Backend tests can read the materialized default appearance setting, update theme mode transactionally, reject invalid input, persist across process/repository recreation, and publish `AppearanceSettingsChanged` only after a semantic change commits.
 
 ### SLICE-P00-004 — Flutter Bootstrap and Static Shell
 
@@ -373,7 +376,7 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 
 ### SLICE-P00-008 — Event-Driven Theme Reconciliation
 
-**Outcome:** A committed backend `SettingsChanged` event reaches Flutter through the application event stream, triggers the smallest appropriate authoritative refresh, and updates the root theme without duplicate state ownership.
+**Outcome:** A committed backend `AppearanceSettingsChanged` event reaches Flutter through the application event stream, triggers the smallest appropriate authoritative refresh, and updates the root theme without duplicate state ownership.
 
 ### SLICE-P00-009 — Restart Restoration and Phase Hardening
 
@@ -391,8 +394,9 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 
 ### 10.2 Settings Read
 
-- A missing appearance record resolves to the `System` default.
-- A corrupt or invalid persisted value produces a structured backend error or a documented safe fallback decided by SPEC-BE-005; it must not be silently interpreted differently by Flutter.
+- A missing or invalid required appearance-settings record prevents runtime readiness and produces a structured persisted-settings integrity error.
+- If the failure is provably isolated to `AppearanceSettings`, the recovery flow may offer an explicit **Reset Appearance Settings** action that atomically restores the canonical `System` default without modifying unrelated data.
+- No missing or corrupt settings value is silently interpreted differently by Flutter.
 
 ### 10.3 Settings Update
 
@@ -402,7 +406,7 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 - Persistence failure leaves authoritative storage unchanged.
 - Flutter reverts to the last confirmed value after failure.
 - The originating control shows an inline error.
-- No `SettingsChanged` event is published on rollback.
+- No `AppearanceSettingsChanged` event is published on rollback or semantic no-op.
 
 ### 10.4 Event Delivery
 
@@ -510,6 +514,7 @@ Required coverage includes:
 
 - Canonical demonstration scenario.
 - Startup failure to recovery flow using an injected failure mode.
+- Isolated invalid appearance-settings recovery through explicit Reset Appearance Settings.
 - Diagnostic bundle inspection for sanitization.
 - Generated-file freshness check.
 - Clean checkout build and test instructions.
@@ -530,11 +535,11 @@ Phase 000 is Complete only when all of the following are true:
 - SQLite initializes and migrations run on a new database.
 - Existing Phase 000 databases reopen without data loss.
 - Unit of Work owns settings transactions.
-- `AppearanceSettings.themeMode` defaults to System.
+- A fresh database materializes `AppearanceSettings.themeMode = System` before runtime readiness.
 - System, Light, and Dark values persist and reload correctly.
 - Invalid values are rejected by Rust.
 - Failed writes roll back.
-- `SettingsChanged` is emitted only after commit.
+- `AppearanceSettingsChanged` is emitted only after a semantic change commits and contains no authoritative aggregate payload.
 
 ### Bridge
 

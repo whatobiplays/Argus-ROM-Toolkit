@@ -14,3 +14,4 @@ Identifiers use `SPEC-BE-NNN`.
 | SPEC-BE-002 | [SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md) | Ready for Implementation |
 | SPEC-BE-003 | [Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md) | Ready for Implementation |
 | SPEC-BE-004 | [Application Runtime, Command Pipeline, and Background Operations](spec-be-004-application-runtime-command-pipeline-and-background-operations.md) | Ready for Implementation |
+| SPEC-BE-005 | [Settings Service and Appearance Settings](spec-be-005-settings-service-and-appearance-settings.md) | Ready for Implementation |

@@ -3,7 +3,7 @@
 **Document ID:** PHASE-000  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-06  
+**Last Updated:** 2026-08-07  
 **Depends On:** ARCH-001, ARCH-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -304,7 +304,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-BE-001](../specifications/backend/spec-be-001-rust-workspace-and-module-boundaries.md) | Rust Workspace and Module Boundaries | First workspace slice |
 | [SPEC-BE-002](../specifications/backend/spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md) | SQLite, Migrations, Repositories, and Unit of Work | Persistence slice |
 | [SPEC-BE-003](../specifications/backend/spec-be-003-application-errors-logging-and-diagnostics.md) | Application Errors, Logging, Diagnostics, and Observability | Startup/backend slice |
-| SPEC-BE-004 | Application Runtime, Command Pipeline, and Background Operations | Runtime/startup slice |
+| [SPEC-BE-004](../specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md) | Application Runtime, Command Pipeline, and Background Operations | Runtime/startup slice |
 | SPEC-BE-005 | Settings Service and Appearance Settings | Settings backend slice |
 | SPEC-BE-006 | Minimal Domain Event Bus | Event propagation slice |
 | SPEC-BE-007 | Startup Coordination and Recovery Contract | Startup integration slice |

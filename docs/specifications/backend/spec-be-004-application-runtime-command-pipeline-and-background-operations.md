@@ -1167,7 +1167,7 @@ JobStateChanged
 JobProgressChanged
 RuntimeStateChanged
 HealthChanged
-SettingsChanged
+AppearanceSettingsChanged
 ```
 
 Events allow Flutter to update promptly without polling continuously.
@@ -1546,7 +1546,7 @@ Implement:
 - runtime shutdown coordination
 - new runtime construction after startup failure
 - one application-level event stream with runtime-instance sequence metadata
-- bounded/coalescible event delivery sufficient for `SettingsChanged`
+- bounded/coalescible event delivery sufficient for `AppearanceSettingsChanged`
 - cancellation primitives sufficient for bridge request disposal
 - technology-neutral interfaces
 

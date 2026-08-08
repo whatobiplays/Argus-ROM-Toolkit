@@ -313,6 +313,8 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-BE-007](../specifications/backend/spec-be-007-startup-coordination-and-recovery-contract.md) | Startup Coordination and Recovery Contract | Startup integration slice |
 | [SPEC-BE-008](../specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md) | Rust-to-Flutter Bridge DTO Contract | Bridge slice |
 | [SPEC-BE-009](../specifications/backend/spec-be-009-application-service-contracts.md) | Application Service Contracts | First application-service slice |
+| [SPEC-BE-010](../specifications/backend/spec-be-010-provider-gateway-architecture.md) | Provider Gateway Architecture | First metadata-provider-dependent slice |
+| [SPEC-BE-011](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md) | Source Provider and Indexing Contract | First source-provider/indexing-dependent slice |
 
 ### Frontend
 

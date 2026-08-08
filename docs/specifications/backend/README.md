@@ -19,3 +19,4 @@ Identifiers use `SPEC-BE-NNN`.
 | SPEC-BE-007 | [Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md) | Ready for Implementation |
 | SPEC-BE-008 | [Rust-to-Flutter Bridge DTO Contract](spec-be-008-rust-to-flutter-bridge-dto-contract.md) | Ready for Implementation |
 | SPEC-BE-009 | [Application Service Contracts](spec-be-009-application-service-contracts.md) | Ready for Implementation |
+| SPEC-BE-010 | [Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md) | Ready for Implementation |

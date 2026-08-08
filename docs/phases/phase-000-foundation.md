@@ -3,7 +3,7 @@
 **Document ID:** PHASE-000  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-07  
+**Last Updated:** 2026-08-08  
 **Depends On:** ARCH-001, ARCH-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -281,7 +281,7 @@ Phase 000 explicitly excludes:
 - `GameContent`.
 - Parsing and transformation graphs.
 - Hash schemes or hash persistence.
-- Metadata matching, Playmatch, provider sessions, or metadata refresh.
+- Metadata matching, Playmatch, provider sessions, or metadata refresh. Their architecture is defined for later phases by [SPEC-BE-010 — Provider Gateway Architecture](../specifications/backend/spec-be-010-provider-gateway-architecture.md); SPEC-BE-010 does not add provider work to Phase 000.
 - Artwork discovery, resolution, download, or storage.
 - RetroAchievements integration.
 - Search, library grid/list, filters, pagination, selection, or inspector UI.
@@ -596,5 +596,6 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../architecture/documentation-architecture.md)
+- [SPEC-BE-010 — Provider Gateway Architecture](../specifications/backend/spec-be-010-provider-gateway-architecture.md)
 - [Phase Documentation Rules](README.md)
 - [Phase Template](../templates/phase.md)

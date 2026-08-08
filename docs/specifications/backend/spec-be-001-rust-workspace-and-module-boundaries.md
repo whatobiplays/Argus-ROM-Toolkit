@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-001
 **Status:** Ready for Implementation
 **Owner:** Daniel
-**Last Updated:** 2026-08-01
+**Last Updated:** 2026-08-08
 **Depends On:** ARCH-001, ARCH-002, PHASE-000
 **Supersedes:** None
 **Superseded By:** None
@@ -242,12 +242,15 @@ Examples:
 ```text
 FilesystemGateway
 ArchiveGateway
-PlaymatchGateway
-RetroAchievementsGateway
+MetadataMatchingCapability
+MetadataRefreshCapability
+ArtworkDiscoveryCapability
 CredentialStoreGateway
 ClockGateway
 IdGeneratorGateway
 ```
+
+Metadata-provider contracts use the provider-independent capability/session architecture defined by SPEC-BE-010. Concrete provider names such as Playmatch belong to infrastructure adapter implementations, not application gateway port names. RetroAchievements remains a separately specified external-service subsystem unless a later specification explicitly adopts shared provider capability contracts.
 
 Gateways generally do not participate in the SQLite transaction. Application handlers coordinate external calls and persistence explicitly.
 

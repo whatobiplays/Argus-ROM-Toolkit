@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-07  
+**Last Updated:** 2026-08-08  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -399,11 +399,13 @@ Definitions:
 Rules:
 
 1. Retry loops are always bounded.
-2. Retry timing, jitter, maximum attempts, and capability-specific budgets are runtime policy and may evolve without changing the application contract.
-3. Automatic retries remain part of the same top-level operation and retain the same `trace_id`.
-4. A user-initiated retry is a new top-level operation and receives a new `trace_id`.
-5. A durable commit must never be reported as cancelled or failed because cancellation arrived after the commit boundary.
-6. Provider-owned request retries and runtime-owned operation retries must not nest into unbounded multiplicative retry behavior.
+2. Published `ApplicationError.RetryPolicy` governs repetition of the failed application operation; it does not govern transparent retries internal to one provider interaction.
+3. For runtime-owned application-operation retries, timing, jitter, maximum attempts, and capability-specific budgets are runtime policy and may evolve without changing the application contract.
+4. Provider-internal same-provider transport retries are a separate provider-infrastructure policy defined by SPEC-BE-004 and SPEC-BE-010 and are exhausted before a terminal `ProviderError` reaches application workflow logic.
+5. Automatic application-operation retries remain part of the same top-level operation and retain the same `trace_id`.
+6. A user-initiated retry is a new top-level operation and receives a new `trace_id`.
+7. A durable commit must never be reported as cancelled or failed because cancellation arrived after the commit boundary.
+8. Provider-owned request retries and runtime-owned application-operation retries must not nest into unbounded multiplicative retry behavior.
 
 ## 13. Trace Identity and Operation Context
 
@@ -665,7 +667,7 @@ Requirements:
 5. `trace_id` and Argus IDs may be attached as exemplars or structured observation context when supported.
 6. Queue wait and execution duration are measured separately.
 7. Persistence timing excludes queue wait when both are recorded.
-8. Provider timing distinguishes runtime retry delay from request execution when practical.
+8. Provider timing distinguishes provider-managed transport retry delay from request execution when practical; application-operation retry delay is measured separately when applicable.
 9. Instrumentation failure must not fail the business operation.
 10. Metric sinks are optional; local structured observations remain available through logs or trace events.
 
@@ -673,28 +675,28 @@ Requirements:
 
 Startup is one top-level operation with one `trace_id`.
 
-Startup logging must include:
+Startup logging must always include:
 
 - application version
 - backend version
 - platform
 - CPU architecture
 - migration summary
-- enabled providers
 
-Required stable events include:
+When metadata-provider infrastructure is part of the current runtime generation, startup logging also includes enabled provider identities/configuration state and emits `runtime.startup.providers_configured`.
+
+Required stable core events include:
 
 ```text
 runtime.startup.started
 runtime.startup.environment
-runtime.startup.providers_configured
 database.migration.completed
 runtime.started
 ```
 
 Rules:
 
-- Provider configuration is represented by provider type and `ProviderId` when available, never credentials.
+- Provider configuration, when present, is represented by provider type and `ProviderId` when available, never credentials.
 - Migration summary includes applied count, current schema version, and outcome, not SQL contents.
 - Database paths are sanitized.
 - A startup failure emits one terminal `TraceEvent` and one primary error log.
@@ -752,6 +754,8 @@ Unavailable
 Disabled
 ```
 
+These values define the operational-health vocabulary for providers when provider health is implemented. Per ARCH-001, provider health, circuit breaking, and cross-job health indicators are post-MVP concerns and are not Phase 000 implementation requirements. Capability-specific `ProviderReadiness` is defined separately by SPEC-BE-010 and must not be collapsed into this health type.
+
 ### 21.2 Provider-state semantics
 
 - **Healthy:** Required configured capabilities are currently usable.
@@ -782,7 +786,7 @@ Rules:
 - State transitions may emit stable `Info` or `Warn` events.
 - Health output uses Argus IDs and sanitized context.
 - Provider health aggregation must preserve individual provider states.
-- Exact thresholds and polling cadence remain runtime/provider policy.
+- Exact provider-health thresholds and polling cadence remain deferred provider-operational-health policy.
 
 ## 22. Diagnostic Bundles
 
@@ -1078,11 +1082,16 @@ Test:
 
 Test:
 
-- runtime, persistence, filesystem, and provider state mapping
-- `Disabled` is valid only for providers
-- provider aggregation preserves individual states
+- runtime, persistence, and filesystem state mapping
 - unchanged unhealthy state does not produce repeated primary errors
 - transition events use the operation trace and safe context
+
+When provider operational health is implemented, also test:
+
+- provider state mapping uses Healthy, Degraded, Unavailable, and Disabled
+- `Disabled` is valid only for providers
+- provider aggregation preserves individual states
+- provider health remains distinct from capability-specific `ProviderReadiness`
 
 ### 27.8 Performance instrumentation tests
 
@@ -1107,13 +1116,13 @@ Phase 000 implements only the observability required for startup and appearance 
 - primary-error deduplication
 - startup and shutdown event conventions
 - persistence and operation duration observations
-- runtime, persistence, filesystem, and provider health snapshots sufficient for recovery diagnostics
+- runtime, persistence, and filesystem health snapshots sufficient for recovery diagnostics
 - user-initiated version-1 diagnostic ZIP bundles
 - allowlist-based configuration summaries
 - path sanitization and secret exclusion tests
 - identity-first observability for Phase 000 Argus entities
 
-Remote collectors, spans, persisted trace history, full provider health algorithms, and production retention tuning remain deferred.
+Remote collectors, spans, persisted trace history, provider operational-health implementation (including thresholds, polling, history, circuit breaking, and cross-job state), and production retention tuning remain deferred.
 
 ## 29. Acceptance Criteria
 
@@ -1139,8 +1148,8 @@ SPEC-BE-003 is satisfied when:
 18. Shutdown logs include request, outstanding operations, executor drain, database close, and completion.
 19. Operation, queue, persistence, provider, and filesystem durations are measurable.
 20. Metrics avoid unbounded label cardinality.
-21. Runtime, persistence, filesystem, and provider health are reportable.
-22. Provider health supports Healthy, Degraded, Unavailable, and Disabled.
+21. Runtime, persistence, and filesystem health are reportable; provider health follows this contract when its post-MVP implementation is introduced.
+22. When provider operational health is implemented, it uses Healthy, Degraded, Unavailable, and Disabled and remains distinct from `ProviderReadiness`.
 23. Diagnostic export is user initiated and produces a versioned ZIP bundle.
 24. Bundles contain logs, runtime, persistence, health, and sanitized configuration information.
 25. Bundles exclude secrets and user data by default.
@@ -1177,4 +1186,5 @@ This specification does not implement or finalize:
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
+- [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
 - [Backend Specifications Index](README.md)

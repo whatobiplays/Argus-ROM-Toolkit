@@ -3,7 +3,7 @@
 **Document ID:** ARCH-001  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-01  
+**Last Updated:** 2026-08-08  
 **Depends On:** None  
 **Supersedes:** None  
 **Superseded By:** None  
@@ -624,7 +624,7 @@ ProviderReadiness
 ProviderSessionFactory
     -> one session per job
 ProviderSession
-    -> shared HTTP client, credentials, retry state, rate limiting, request cache
+    -> shared authenticated client, transient credential access/state, retry state, rate limiting, request cache
 ```
 
 Readiness states include:
@@ -1657,7 +1657,7 @@ Raw Rust errors and stack traces are not default user-facing copy.
 Diagnostics requirements:
 
 - structured Rust logging
-- correlation IDs for commands, jobs, scans, and provider requests
+- trace IDs (`trace_id`) for commands, jobs, scans, and provider requests
 - sanitized diagnostic export contributors
 - job and scan failure details
 - startup-specific log capture

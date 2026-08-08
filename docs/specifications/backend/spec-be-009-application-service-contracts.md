@@ -392,13 +392,15 @@ A Unit of Work exposes transaction-bound repositories according to SPEC-BE-002. 
 
 Application services depend only on gateway abstractions.
 
-Preferred:
+Preferred for a workflow that selects among metadata providers:
 
 ```text
-MetadataService
-├── MetadataRepository
-└── MetadataGateway
+MetadataWorkflowCoordinator
+├── ProviderSelectionPolicy
+└── MetadataProviderRegistry
 ```
+
+The registry is the bounded metadata-provider catalog defined by SPEC-BE-010, not a generic gateway locator.
 
 Avoid application-service dependencies on concrete providers such as:
 
@@ -408,16 +410,22 @@ ScreenScraperClient
 SteamGridDbClient
 ```
 
-Gateway architecture owns:
+Provider gateway architecture owns:
 
-- provider selection
-- provider routing
-- retry behavior
-- health policy
-- failover policy
+- provider catalog/discovery
+- provider session construction and lifecycle
 - provider-specific request/response translation
+- provider-specific readiness evaluation
+- transparent same-provider transport retry and rate-limit coordination
 
-Application services invoke capabilities, not provider implementations.
+Application-level provider policy/workflows own:
+
+- deterministic provider selection according to explicit policy
+- semantic retry decisions
+- cross-provider fallback/failover
+- reconciliation of provider results
+
+Application services and workflow coordinators invoke stable provider capabilities, not concrete provider implementations. SPEC-BE-010 is authoritative for this ownership split.
 
 ## 19. No Gateway Locator
 
@@ -432,7 +440,7 @@ ServiceLocator.get<Gateway>()
 
 as a way to hide their dependencies.
 
-Provider/gateway routing required by a feature belongs inside the relevant gateway abstraction defined by later provider specifications.
+Provider discovery and session access required by a feature belong behind the bounded metadata-provider gateway architecture defined by SPEC-BE-010. Provider selection and cross-provider fallback remain explicit application policy/workflow responsibilities; a generic service-layer locator remains prohibited.
 
 ## 20. Runtime Port
 
@@ -841,7 +849,8 @@ Preferred concepts include:
 ```text
 SettingsService
 UpdateAppearanceSettingsCommand
-MetadataGateway
+MetadataProviderRegistry
+ProviderSelectionPolicy
 RuntimePort
 ```
 
@@ -1084,4 +1093,5 @@ This specification does not finalize:
 - [SPEC-BE-006 — Minimal Domain Event Bus](spec-be-006-minimal-domain-event-bus.md)
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](spec-be-008-rust-to-flutter-bridge-dto-contract.md)
+- [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
 - [Backend Specifications Index](README.md)

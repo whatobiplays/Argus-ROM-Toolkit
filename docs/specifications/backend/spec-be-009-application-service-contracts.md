@@ -50,7 +50,7 @@ This specification does not define:
 - domain entity internals
 - repository implementations
 - SQL or migration details
-- provider gateway implementation details
+- metadata-provider or source-provider implementation details
 - runtime scheduler/executor implementation
 - event-bus transport mechanics
 - startup/recovery sequencing
@@ -147,10 +147,10 @@ Future examples:
 
 ```text
 LibraryService
-├── GetLibrary
-├── ListLibraries
+├── ListLibrarySources
 ├── AddLibrarySource
-└── RemoveLibrarySource
+├── RemoveLibrarySource
+└── ListLibraryRoots
 ```
 
 Public service APIs must not degrade into generic CRUD or generic dispatch contracts.
@@ -203,7 +203,7 @@ LibraryService
     ↓
 MetadataService
     ↓
-ProviderService
+MetadataProviderService
 ```
 
 This rule exists to prevent:
@@ -225,7 +225,7 @@ Conceptually:
 ImportCoordinator
 ├── Library capability/ports
 ├── Metadata capability/ports
-└── Provider capability/ports
+└── Metadata-provider capability/ports
 ```
 
 A coordinator:
@@ -276,7 +276,7 @@ Services must not retain:
 - mutable settings snapshots
 - operation history
 - runtime lifecycle state
-- provider health state
+- metadata-provider readiness or operational health state
 - bridge/client state
 
 If mutable long-lived state is required, it belongs in an explicitly owned component such as:
@@ -630,7 +630,7 @@ Checkpoint B
     └── associated events become publishable
 ```
 
-A background coordinator must not hold one database transaction open across arbitrary long-running provider/filesystem/CPU work unless explicitly justified by a later specification.
+A background coordinator must not hold one database transaction open across arbitrary long-running metadata-provider/source-provider/filesystem/CPU work unless explicitly justified by a later specification.
 
 ## 29. Event Semantic Ownership
 
@@ -747,7 +747,7 @@ Future feature services may include:
 
 ```text
 LibraryService
-ProviderService
+MetadataProviderService
 MetadataService
 ```
 
@@ -1073,7 +1073,8 @@ This specification does not finalize:
 - exact Rust trait vs struct representation for every service
 - exact module/file layout
 - dependency-injection framework choice
-- provider gateway architecture details
+- metadata-provider gateway architecture details
+- source-provider and indexing architecture details
 - library/metadata/import service catalogs
 - authentication/authorization services
 - distributed transactions
@@ -1094,4 +1095,5 @@ This specification does not finalize:
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](spec-be-008-rust-to-flutter-bridge-dto-contract.md)
 - [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
+- [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
 - [Backend Specifications Index](README.md)

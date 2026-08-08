@@ -157,6 +157,7 @@ LibrarySource
 - source_type
 - display_name
 - provider_config
+- config_revision
 - created_at
 - updated_at
 ```
@@ -178,6 +179,7 @@ LibraryRoot
 - last_scan_started_at
 - last_scan_completed_at
 - discovery_policy
+- config_revision
 - created_at
 - updated_at
 ```
@@ -205,7 +207,7 @@ Root availability and scan completeness govern whether absence is authoritative.
 
 ### 6.3 SourceEntry
 
-Every discovered object becomes a `SourceEntry` node in a hierarchical graph.
+Every discovered object retained by discovery policy becomes a `SourceEntry` node in a hierarchical graph.
 
 ```text
 SourceEntry
@@ -214,6 +216,7 @@ SourceEntry
 - parent_source_entry_id
 - entry_kind
 - relative_locator
+- locator_key
 - display_name
 - provider_native_identity
 - source_fingerprint
@@ -228,6 +231,7 @@ Representative entry kinds:
 ```text
 Directory
 File
+LinkLike
 Archive
 ArchiveEntry
 DiscImage
@@ -235,6 +239,8 @@ Playlist
 VirtualContainer
 Unknown
 ```
+
+Source providers report structural observation kinds such as directory, file, link-like, or other. Richer persisted kinds such as archive, playlist, or disc image are Argus-owned interpretations and may be refined without changing `SourceEntryId`.
 
 Classification values:
 
@@ -289,9 +295,12 @@ The following concepts must not be conflated:
 
 | Type | Meaning |
 |---|---|
-| `LibrarySourceId` | Access mechanism identity |
-| `LibraryRootId` | Configured scan boundary identity |
-| `SourceEntryId` | Stable discovered-object identity |
+| `LibrarySourceId` | Configured source-instance identity |
+| `LibraryRootId` | Configured scan-boundary identity |
+| `SourceEntryId` | Stable Argus discovered-object identity |
+| `SourceLocatorKey` | Provider-defined equality for one entry's current location within a root |
+| `ProviderNativeIdentity` | Optional provider-scoped continuity of the same underlying storage object |
+| `SourceFingerprint` | Cheap provider-defined change evidence, not content identity |
 | `GameContentId` | Logical managed-content identity |
 | `ContentIdentity` | Strong immutable identity of content bytes/canonical content |
 | `HashRecordId` | One computed hash using a specific versioned hashing scheme |
@@ -302,17 +311,22 @@ The following concepts must not be conflated:
 
 Source providers expose storage primitives only. They do not reconcile, classify, create games, or schedule work.
 
+Provider family and configured source-instance identity are separate. A runtime-composed `SourceProviderRegistry` resolves a `SourceProviderFactory`, which binds one operation-scoped `LibrarySourceAccess` for a configured `LibrarySource`.
+
 Conceptual interface:
 
 ```text
-LibraryProvider
+LibrarySourceAccess
+- capabilities()
+- compare_root_locators()
 - resolve_root()
 - enumerate_children()
 - stat_entry()
 - open_stream()
-- get_native_identity()
-- get_capabilities()
+- native_identity()
 ```
+
+`RootLocator` and `RelativeSourceLocator` are opaque provider-owned coordinates. `SourceLocatorKey` is the separate provider-defined persistence key used for location equality. Successful root resolution returns a transient `ResolvedRoot`; it does not silently rewrite persisted root configuration.
 
 ### 7.2 Provider capabilities
 
@@ -331,7 +345,7 @@ supports_change_notifications
 supports_symlinks
 ```
 
-The shared indexing layer adapts behavior based on capabilities. It must not contain local-filesystem-specific assumptions.
+The shared indexing layer adapts behavior based on capabilities. It must not contain local-filesystem-specific assumptions. Effective guarantees may narrow for a particular resolved root; capabilities are promises, not guesses.
 
 ### 7.3 MVP provider implementation
 
@@ -343,6 +357,10 @@ The MVP initially implements a local filesystem provider. Link-like entries are 
 - filesystem links or link-like provider objects
 
 They may be observed or ignored according to discovery policy, but must not be traversed.
+
+### 7.4 Source-read consistency
+
+Opening source content returns a transient provider-owned read with explicit consistency semantics. Providers that cannot guarantee an atomic stable-version read must support completion validation. Trusted immutable derived facts such as content identities, hashes, or authoritative derived-container structure may be committed only after the read is known to represent one stable source version.
 
 ## 8. Indexing architecture
 
@@ -358,7 +376,7 @@ It does not resolve metadata, download artwork, verify RetroAchievements, or eag
 
 Filtering is split into two stages.
 
-**Discovery policy** determines whether Argus visits a node:
+**Discovery policy** determines whether Argus retains and/or traverses a node:
 
 - include patterns
 - exclude patterns
@@ -367,6 +385,8 @@ Filtering is split into two stages.
 - maximum depth
 - link traversal disabled for MVP
 - provider-specific options
+
+Generic policy matching operates on a provider-neutral root-relative `DiscoveryPath`, not by parsing opaque provider locators.
 
 **Classification policy** determines the meaning of an observed node:
 
@@ -380,19 +400,20 @@ Structural exclusions prevent irrelevant nodes from entering the graph. Semantic
 
 ### 8.3 Streaming execution
 
-Discovery is single-threaded for MVP and emits ordered observations incrementally.
+Discovery is single-threaded for MVP and emits observations incrementally. Provider enumeration order is not semantically significant.
 
 ```text
 Scan planner
     -> single-threaded discovery executor
-    -> ordered SourceEntry observations
+    -> streamed SourceObservation values
+    -> discovery policy
     -> incremental reconciler
     -> classifier
-    -> GameContent updates
+    -> known GameContentSource relationship updates when independently justified
     -> authoritative scope finalization
 ```
 
-Concurrency may be added post-MVP, but downstream contracts must not assume observations always have a single producer.
+Concurrency may be added post-MVP, but downstream contracts must not assume observations always have a single producer or rely on observation arrival order.
 
 ### 8.4 Reconciliation outcomes
 
@@ -415,10 +436,11 @@ Absence-based deletion is permitted only when a scope was fully and successfully
 Rules:
 
 1. If a `LibraryRoot` is unavailable, preserve all known entries beneath it.
-2. If a root or nested scope completes authoritatively, attempt move reconciliation and remove unmatched prior entries not observed in that scope.
-3. If a scan is partial, failed, cancelled, abandoned, or unavailable, preserve unobserved entries.
-4. The same rules apply recursively to archives and other containers.
-5. Observed additions and modifications may be committed during an incomplete scan when individually valid.
+2. If a root or nested scope completes authoritatively, attempt move reconciliation and remove unmatched prior entries not observed in that exact scope.
+3. If a specific scope does not complete authoritatively because it is partial, failed, cancelled, unavailable, or its owning scan is abandoned, preserve unobserved entries within that scope. An overall `ScanRun` may still be `Partial` while other exact scopes finalize authoritatively.
+4. Current deterministic discovery-policy exclusions may prune previously indexed state because that state is intentionally outside the managed graph; this is distinct from provider-reported absence.
+5. The same exact-scope rules apply recursively to archives and other containers.
+6. Observed additions and modifications may be committed during an incomplete scan when individually valid.
 
 ### 8.6 Scan records
 
@@ -427,6 +449,7 @@ Persist user-relevant scan lifecycle:
 ```text
 ScanRun
 - id
+- job_run_id
 - library_root_id
 - status
 - started_at
@@ -446,6 +469,8 @@ Abandoned
 ```
 
 On startup, any scan still marked `Running` becomes `Abandoned`.
+
+`ScanRun` is distinct from the generic `JobRun`: one job execution attempt may own multiple root scan records, and each retry creates new run identities. Only one active `ScanRun` may own a given `LibraryRoot` at a time.
 
 ### 8.7 Transaction strategy
 
@@ -471,6 +496,8 @@ Move detection is conservative and tiered:
 3. Otherwise treat the result as removal plus creation.
 
 Filename similarity, timestamp-only, and size-only heuristics are excluded from the MVP.
+
+`last_observed_scan_id` is positive-presence evidence only; it never authorizes root-wide deletion by itself. Location equality uses the provider-defined `SourceLocatorKey`, while provider-native identity remains the stronger continuity signal for moves.
 
 ## 9. Parsing and transformation engine
 

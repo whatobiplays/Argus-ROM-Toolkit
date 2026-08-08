@@ -99,12 +99,15 @@ Port errors use the vocabulary of the capability exposed by the port. Representa
 
 ```text
 PersistenceError
+SourceAccessError
 FilesystemError
 ProviderError
 ConfigurationError
 RuntimeError
 OperationError
 ```
+
+`SourceAccessError` is the stable port-error family for configured library-source access. `FilesystemError` remains appropriate for non-library filesystem capabilities such as application-data or diagnostic-artifact I/O. Metadata/external-service provider failures use `ProviderError`; source/storage provider failures do not.
 
 Port errors are stable enough for application orchestration but are not published directly to Flutter.
 
@@ -754,7 +757,7 @@ Unavailable
 Disabled
 ```
 
-These values define the operational-health vocabulary for providers when provider health is implemented. Per ARCH-001, provider health, circuit breaking, and cross-job health indicators are post-MVP concerns and are not Phase 000 implementation requirements. Capability-specific `ProviderReadiness` is defined separately by SPEC-BE-010 and must not be collapsed into this health type.
+These values define the operational-health vocabulary for providers when provider health is implemented. Per ARCH-001, provider health, circuit breaking, and cross-`JobRun`-attempt health indicators are post-MVP concerns and are not Phase 000 implementation requirements. Capability-specific `ProviderReadiness` is defined separately by SPEC-BE-010 and must not be collapsed into this health type.
 
 ### 21.2 Provider-state semantics
 
@@ -1122,7 +1125,7 @@ Phase 000 implements only the observability required for startup and appearance 
 - path sanitization and secret exclusion tests
 - identity-first observability for Phase 000 Argus entities
 
-Remote collectors, spans, persisted trace history, provider operational-health implementation (including thresholds, polling, history, circuit breaking, and cross-job state), and production retention tuning remain deferred.
+Remote collectors, spans, persisted trace history, provider operational-health implementation (including thresholds, polling, history, circuit breaking, and cross-`JobRun`-attempt state), and production retention tuning remain deferred.
 
 ## 29. Acceptance Criteria
 

@@ -277,7 +277,7 @@ Phase 000 explicitly excludes:
 - Filesystem provider implementation beyond any minimal path utility needed for the application data directory.
 - Library scanning or filesystem watching.
 - Persisted user-visible jobs or the full generic execution-graph scheduler.
-- Indexing, reconciliation, move detection, or source classification.
+- Indexing, reconciliation, move detection, or source classification. Their architecture is defined for later phases by [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md); SPEC-BE-011 does not add source/indexing work to Phase 000.
 - `GameContent`.
 - Parsing and transformation graphs.
 - Hash schemes or hash persistence.
@@ -597,5 +597,6 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [ARCH-001 — Argus ROM Toolkit Architecture](../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../architecture/documentation-architecture.md)
 - [SPEC-BE-010 — Provider Gateway Architecture](../specifications/backend/spec-be-010-provider-gateway-architecture.md)
+- [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md)
 - [Phase Documentation Rules](README.md)
 - [Phase Template](../templates/phase.md)

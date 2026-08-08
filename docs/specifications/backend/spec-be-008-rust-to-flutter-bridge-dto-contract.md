@@ -131,7 +131,7 @@ Future phases may add:
 
 ```text
 LibraryBridge
-ProviderBridge
+MetadataProviderBridge
 MetadataBridge
 ```
 
@@ -332,12 +332,12 @@ Bridge relationships use stable application identifiers once those identifiers e
 Example future projection:
 
 ```text
-LibraryDto
-- libraryId
-- providerId
+LibraryRootDto
+- libraryRootId
+- librarySourceId
 ```
 
-rather than embedding a complete mutable `ProviderDto` graph inside every library snapshot.
+rather than embedding a complete mutable `LibrarySourceDto` graph inside every root snapshot. Metadata-provider relationships, when exposed by later features, use the separate metadata-provider `ProviderId` identity defined by SPEC-BE-010 and must not be conflated with `LibrarySourceId` or `SourceProviderType`.
 
 Rules:
 
@@ -716,7 +716,7 @@ There are no separate:
 settingsEvents
 operationEvents
 startupEvents
-providerEvents
+metadataProviderEvents
 ```
 
 streams.
@@ -931,9 +931,11 @@ AppearanceSettingsChangedDto
 Future examples may include:
 
 ```text
-LibraryAddedDto
-LibraryRemovedDto
-ProviderHealthChangedDto
+LibrarySourceAddedDto
+LibrarySourceRemovedDto
+LibraryScanCompletedDto
+SourceEntriesChangedDto
+MetadataProviderHealthChangedDto
 ```
 
 Every bridge domain event maps to one owned application event semantic. The bridge does not invent business events independently.

@@ -29,7 +29,7 @@ This specification covers:
 - runtime-composed `MetadataProviderRegistry`
 - provider selection policy boundaries
 - `ProviderSessionFactory`
-- job-scoped `ProviderSession`
+- `JobRun`-attempt-scoped `ProviderSession`
 - capability-oriented provider contracts
 - metadata matching capability
 - metadata refresh capability
@@ -40,7 +40,7 @@ This specification covers:
 - transport retry ownership
 - application-owned provider fallback
 - rate-limit coordination
-- request deduplication and job-scoped request caching
+- request deduplication and `JobRun`-attempt-scoped request caching
 - observability and health integration
 - cancellation
 - provider configuration boundaries
@@ -51,7 +51,7 @@ This specification covers:
 
 This specification does not define:
 
-- filesystem or source-provider architecture
+- source/storage provider architecture, which is defined separately by SPEC-BE-011
 - `LibrarySource`, `LibraryRoot`, or `SourceEntry`
 - ROM scanning, hashing, or classification
 - canonical metadata domain entities
@@ -83,7 +83,7 @@ RetroAchievements catalog retrieval and hash verification remain the separate su
 
 This specification intentionally does not unify those providers with source/storage providers.
 
-Source providers expose storage and discovery primitives. Metadata providers expose external information capabilities. They have different lifecycle, failure, health, authentication, retry, and orchestration semantics and therefore must not be forced behind one generic provider abstraction.
+Source providers expose storage access and enumeration primitives; indexing owns discovery traversal and reconciliation semantics as defined by SPEC-BE-011. Metadata providers expose external information capabilities. They have different lifecycle, failure, health, authentication, retry, and orchestration semantics and therefore must not be forced behind one generic provider abstraction.
 
 Normative rule:
 
@@ -97,7 +97,7 @@ Normative rule:
 4. Static capability declaration is separate from dynamic readiness.
 5. Provider discovery is separate from provider selection.
 6. Provider selection is separate from provider execution.
-7. Provider execution occurs through job-scoped sessions.
+7. Provider execution occurs through sessions scoped to one `JobRun` execution attempt.
 8. Provider sessions own provider-specific transient execution state only.
 9. Capability interfaces are small, behavior-oriented, and independently extensible.
 10. Unsupported capabilities are represented by absence wherever practical.
@@ -321,7 +321,7 @@ A runtime-registered provider object owns:
 - stable provider identity
 - immutable descriptor
 - readiness state access
-- creation of job-scoped sessions
+- creation of `JobRun`-attempt-scoped sessions
 - provider-specific adapter dependencies required to create sessions
 
 It does not own:
@@ -386,14 +386,14 @@ This registry is not a generic service locator. It represents one specific appli
 
 ## 12. Provider Session Factory
 
-Each registered provider exposes a `ProviderSessionFactory` responsible for constructing a provider session for one application job.
+Each registered provider exposes a `ProviderSessionFactory` responsible for constructing a provider session for one `JobRun` execution attempt.
 
 Conceptually:
 
 ```text
 ProviderSessionFactory
     ↓
-create(job_context, session_requirements)
+create(job_run_context, session_requirements)
     ↓
 ProviderSession
 ```
@@ -413,39 +413,37 @@ The factory must not start unrelated provider work during construction.
 
 Session creation must verify that every capability declared in the initial session requirements is statically supported and currently `Ready`, performing any permitted lightweight readiness refresh first. If those requirements are not satisfied, session creation returns a canonical `ProviderError` rather than leaking native failures.
 
-If the same job later needs another capability from that provider, it reuses the existing provider session and performs the applicable support/readiness check before exposing that capability. A second provider session must not be created merely because the capability set expanded.
+If the same `JobRun` execution attempt later needs another capability from that provider, it reuses the existing provider session and performs the applicable support/readiness check before exposing that capability. A second provider session must not be created merely because the capability set expanded.
 
 
 ## 13. Provider Session
 
-`ProviderSession` is the ephemeral execution context for one provider within one application job.
+`ProviderSession` is the ephemeral execution context for one provider within one `JobRun` execution attempt.
 
 Conceptually:
 
 ```text
-Application Job
+JobRun Execution Attempt
 ├── Provider A Session
 ├── Provider B Session
 └── Provider C Session
 ```
 
-A job may use zero, one, or many providers. For any given provider, the job must create at most one session and reuse that session for all interactions with that provider during the job.
+A `JobRun` attempt may use zero, one, or many providers. For any given provider, that execution attempt creates at most one session and reuses it for all interactions with that provider during the attempt.
 
 ### 13.1 Session Lifetime
 
 A `ProviderSession`:
 
-1. is created for exactly one application job,
+1. is created for exactly one `JobRun` execution attempt,
 2. belongs to exactly one `ProviderId`,
-3. is not reused by unrelated jobs,
-4. is disposed when the owning job completes, fails, or is cancelled,
+3. is not reused by unrelated execution attempts,
+4. is disposed when the owning `JobRun` completes, fails, or is cancelled,
 5. must not outlive the runtime generation that created it.
 
-A job is the application-level unit of work that may require multiple provider interactions to satisfy one user-visible or background operation. It is not synonymous with one HTTP request, one command handler invocation, or one database transaction.
+`JobRunId` is the canonical execution-attempt identity from SPEC-BE-004. Retry or resume creates a new `JobRunId` and therefore new provider sessions; sessions are never carried across execution attempts. This specification introduces no second durable logical-job identity.
 
-For background provider workflows, this job scope maps to exactly one `JobRun` execution attempt from SPEC-BE-004. Retry or resume creates a new `JobRunId` and therefore new provider sessions; sessions are never carried across execution attempts. This specification introduces no second durable logical-job identity.
-
-The owning application workflow decides when the job begins and ends. The provider layer must not extend session lifetime for speculative caching or connection reuse beyond that job boundary.
+The owning application workflow decides the provider-session use within that execution attempt. The provider layer must not extend session lifetime for speculative caching or connection reuse beyond the `JobRun` boundary.
 
 ### 13.2 Session-Owned Transient State
 
@@ -453,16 +451,16 @@ A session may own or coordinate transient provider-specific state such as:
 
 - an authenticated provider client,
 - access tokens or ephemeral authentication material obtained from approved credential infrastructure,
-- one job-scoped request cache,
+- one `JobRun`-attempt-scoped request cache,
 - request deduplication state,
 - provider-specific retry coordination,
 - provider-specific rate-limit coordination,
-- pagination cursors used during the job,
+- pagination cursors used during the execution attempt,
 - provider-specific transport state,
 - transient protocol/session state required by an SDK,
-- diagnostic counters or timing data scoped to the job.
+- diagnostic counters or timing data scoped to the execution attempt.
 
-The session is the preferred owner for state that is meaningful only while one job is interacting with one provider.
+The session is the preferred owner for state that is meaningful only while one `JobRun` execution attempt is interacting with one provider.
 
 ### 13.3 State a Session Must Not Own
 
@@ -1042,12 +1040,12 @@ A session may:
 - honor provider-declared retry-after information,
 - apply provider-specific request pacing,
 - track remaining request budget when exposed,
-- avoid redundant calls using its job-scoped cache,
+- avoid redundant calls using its `JobRun`-attempt-scoped cache,
 - translate exhausted limits to `ProviderError::RateLimited`.
 
-### 24.2 Cross-Job Coordination
+### 24.2 Cross-`JobRun`-Attempt Coordination
 
-Some providers enforce limits across all concurrent jobs or across an account rather than per session.
+Some providers enforce limits across all concurrent `JobRun` execution attempts or across an account rather than per session.
 
 A provider implementation may therefore depend on a runtime-scoped rate-limit coordinator shared by that provider's sessions.
 
@@ -1090,22 +1088,22 @@ Only interactions that are semantically safe to reuse may be deduplicated.
 
 A capability operation with externally visible mutation, one-time tokens, cursor advancement, or other non-idempotent provider behavior must not be deduplicated merely because request bytes are equal.
 
-## 26. Job-Scoped Request Cache
+## 26. `JobRun`-Attempt-Scoped Request Cache
 
-Each `ProviderSession` may maintain a request/result cache for its owning job.
+Each `ProviderSession` may maintain a request/result cache for its owning `JobRun` execution attempt.
 
 The primary purpose is to:
 
 - reduce duplicate provider calls,
 - reduce rate-limit consumption,
 - share repeated lookup results across steps of one workflow,
-- make multi-step provider interactions consistent within a job.
+- make multi-step provider interactions consistent within one execution attempt.
 
 ### 26.1 Cache Lifetime
 
 The default provider request cache lifetime is exactly the provider session lifetime.
 
-The cache is discarded at job completion.
+The cache is discarded when the owning `JobRun` execution attempt terminates.
 
 ### 26.2 No Authoritative Application Cache
 
@@ -1119,7 +1117,7 @@ It must not replace:
 - provider readiness state,
 - provenance records.
 
-Longer-lived provider caching requires a separate explicit architecture decision because freshness, invalidation, privacy, and persistence semantics differ from job-scoped reuse.
+Longer-lived provider caching requires a separate explicit architecture decision because freshness, invalidation, privacy, and persistence semantics differ from `JobRun`-attempt-scoped reuse.
 
 ### 26.3 Cache Failure Semantics
 
@@ -1586,8 +1584,8 @@ Required coverage includes, as applicable:
 - cancellation propagation,
 - rate-limit handling,
 - request deduplication,
-- job-scoped cache reuse,
-- cache isolation across jobs.
+- `JobRun`-attempt-scoped cache reuse,
+- cache isolation across execution attempts.
 
 ## 45. Provider Contract Tests
 
@@ -1670,8 +1668,8 @@ SPEC-BE-010 is satisfied when:
 8. The registry catalogs providers but does not select, route workflow semantics, retry, merge, or fall back.
 9. `ProviderSelectionPolicy` owns deterministic eligibility/ordering decisions without depending on concrete adapters.
 10. Each provider exposes a `ProviderSessionFactory`.
-11. Each application job creates at most one session per provider.
-12. Sessions are never reused across unrelated jobs.
+11. Each `JobRun` execution attempt creates at most one session per provider.
+12. Sessions are never reused across unrelated execution attempts.
 13. Sessions own only provider-specific transient execution state.
 14. Sessions expose only supported/ready capability interfaces wherever practical.
 15. Capability interfaces are small, typed, provider-independent, and behavior-oriented.
@@ -1685,7 +1683,7 @@ SPEC-BE-010 is satisfied when:
 23. Neither runtime nor provider adapters silently switch providers.
 24. Cancellation propagates from the owning runtime operation through provider work and stops new requests/retries.
 25. Provider-specific rate limiting remains inside provider infrastructure and may coordinate across sessions when necessary.
-26. Request deduplication and request caching are job-scoped by default.
+26. Request deduplication and request caching are `JobRun`-attempt-scoped by default.
 27. Provider request caches never become authoritative application state.
 28. Provider observability follows SPEC-BE-003, including `TraceId`, stable provider identity, and secret sanitization.
 29. Readiness and operational provider health remain distinct concepts.
@@ -1715,7 +1713,7 @@ The following patterns are prohibited unless a future specification explicitly s
 - registry-owned business selection policy,
 - provider-owned cross-provider fallback,
 - runtime-owned automatic provider retry,
-- long-lived provider sessions reused by unrelated jobs,
+- long-lived provider sessions reused by unrelated `JobRun` execution attempts,
 - provider sessions owning authoritative application state,
 - provider sessions owning repositories or Unit of Work,
 - provider adapters publishing application events,
@@ -1728,16 +1726,17 @@ The following patterns are prohibited unless a future specification explicitly s
 
 ## 52. Deferred Decisions
 
+Source/storage provider architecture is defined by SPEC-BE-011 and is outside this specification rather than an unresolved decision here.
+
 This specification intentionally defers:
 
-- source/storage provider gateway architecture,
 - exact metadata canonical entities and reconciliation rules,
 - exact provider preference UI and persistence schema,
 - exact credential-store technology,
 - exact HTTP client/SDK choices,
 - exact transport retry timing constants,
-- exact cross-job circuit-breaker implementation,
-- cross-job durable provider response caching,
+- exact cross-`JobRun`-attempt circuit-breaker implementation,
+- cross-`JobRun`-attempt durable provider response caching,
 - provider plugin/discovery system,
 - third-party provider loading,
 - final persisted provider health history,
@@ -1745,7 +1744,7 @@ This specification intentionally defers:
 - exact artwork download/storage pipeline,
 - exact live integration-test credentials/environment conventions.
 
-Provider health, circuit breaking, and cross-job runtime health indicators remain post-MVP implementation concerns as stated by ARCH-001. The readiness contract in this specification is required independently of those deferred operational features.
+Provider health, circuit breaking, and cross-`JobRun`-attempt runtime health indicators remain post-MVP implementation concerns as stated by ARCH-001. The readiness contract in this specification is required independently of those deferred operational features.
 
 ## 53. References
 
@@ -1761,4 +1760,5 @@ Provider health, circuit breaking, and cross-job runtime health indicators remai
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](spec-be-008-rust-to-flutter-bridge-dto-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](spec-be-009-application-service-contracts.md)
+- [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
 - [Backend Specifications Index](README.md)

@@ -114,7 +114,7 @@ It contains no concrete adapters.
 Owns concrete technical adapters:
 
 - SQLite connections, migrations, repositories, and Unit of Work
-- filesystem and archive gateways
+- source-provider adapters and filesystem/archive technical adapters
 - HTTP/provider adapters
 - credential-store adapters
 - diagnostic bundle writers
@@ -209,7 +209,7 @@ A type may enter `common/` only when:
 4. Sharing removes real coupling rather than anticipated duplication.
 5. Its semantics are stable.
 
-Feature-owned concepts remain with their feature even when referenced elsewhere. Examples include `GameId`, `LibraryRootId`, `ArtworkReference`, and `RetroAchievementsGameId`.
+Feature-owned concepts remain with their feature even when referenced elsewhere. Examples include `GameContentId`, `LibraryRootId`, `ArtworkReference`, and `RetroAchievementsGameId`.
 
 Exceptions require an ADR or an explicit update to this specification.
 
@@ -240,8 +240,7 @@ Gateways communicate with external systems or operating-system capabilities. Con
 Examples:
 
 ```text
-FilesystemGateway
-ArchiveGateway
+LibrarySourceAccess
 MetadataMatchingCapability
 MetadataRefreshCapability
 ArtworkDiscoveryCapability
@@ -250,7 +249,7 @@ ClockGateway
 IdGeneratorGateway
 ```
 
-Metadata-provider contracts use the provider-independent capability/session architecture defined by SPEC-BE-010. Concrete provider names such as Playmatch belong to infrastructure adapter implementations, not application gateway port names. RetroAchievements remains a separately specified external-service subsystem unless a later specification explicitly adopts shared provider capability contracts.
+Metadata-provider contracts use the provider-independent capability/session architecture defined by SPEC-BE-010. Concrete provider names such as Playmatch belong to infrastructure adapter implementations, not application gateway port names. Source/storage access uses the separate registry/factory/access provider family defined by SPEC-BE-011; source providers are not metadata-provider sessions, and archive/container parsing remains transformation infrastructure rather than a source-provider gateway. RetroAchievements remains a separately specified external-service subsystem unless a later specification explicitly adopts shared provider capability contracts.
 
 Gateways generally do not participate in the SQLite transaction. Application handlers coordinate external calls and persistence explicitly.
 

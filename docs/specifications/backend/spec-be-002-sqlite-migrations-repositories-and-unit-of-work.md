@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-002
 **Status:** Ready for Implementation
 **Owner:** Daniel
-**Last Updated:** 2026-08-02
+**Last Updated:** 2026-08-08
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001
 **Supersedes:** None
 **Superseded By:** None
@@ -295,6 +295,7 @@ Examples:
 
 ```text
 AppearanceSettingsRepository
+LibrarySourceRepository
 LibraryRootRepository
 SourceEntryRepository
 GameContentRepository

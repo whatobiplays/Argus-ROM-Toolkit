@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-07  
+**Last Updated:** 2026-08-08  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003  
 **Supersedes:** None  
 **Superseded By:** None
@@ -95,7 +95,7 @@ PersistenceRead
 PersistenceWrite
 FilesystemRead
 FilesystemWrite
-ProviderNetwork
+MetadataProviderNetwork
 CpuIntensive
 BackgroundOperationManager
 OperationContext
@@ -136,8 +136,9 @@ ApplicationRuntime
 ├── observability coordination
 └── subsystem handles
     ├── persistence
-    ├── filesystem
-    └── providers
+    ├── filesystem/artifact I/O
+    ├── source providers
+    └── metadata providers
 ```
 
 The runtime owns:
@@ -157,8 +158,9 @@ The runtime owns:
 The runtime does not own:
 
 - SQLite transaction scheduling
-- provider request concurrency
-- filesystem work scheduling
+- metadata-provider request concurrency
+- source-provider internal access scheduling
+- filesystem/artifact work scheduling
 - operation business rules
 - domain validation
 - provider-specific retry behavior
@@ -171,8 +173,9 @@ Each subsystem owns its execution policy.
 Examples:
 
 - Persistence owns database serialization and connection/thread affinity.
-- Filesystem infrastructure owns filesystem work concurrency.
-- Provider infrastructure owns provider request concurrency, rate limiting, and request retry policy.
+- Filesystem/artifact infrastructure owns host-local filesystem work concurrency.
+- Source-provider infrastructure owns provider-specific source-access concurrency and pacing where applicable.
+- Metadata-provider infrastructure owns external-provider request concurrency, rate limiting, and request retry policy.
 - `BackgroundOperationManager` owns top-level background-operation admission and scheduling.
 
 The runtime coordinates these subsystems but does not centrally schedule their internal work items.
@@ -828,7 +831,7 @@ PersistenceRead
 PersistenceWrite
 FilesystemRead
 FilesystemWrite
-ProviderNetwork
+MetadataProviderNetwork
 CpuIntensive
 ```
 
@@ -847,7 +850,7 @@ LibraryScan
 - CpuIntensive
 
 MetadataRefresh
-- ProviderNetwork
+- MetadataProviderNetwork
 - PersistenceWrite
 
 DiagnosticExport
@@ -856,6 +859,8 @@ DiagnosticExport
 ```
 
 Exact declarations are operation-specific and may differ from these examples.
+
+`LibraryScan` shows the MVP local-filesystem resource case only. The source-provider contract defined by SPEC-BE-011 does not expose `FilesystemRead`; future non-filesystem source providers may require different runtime resource declarations without changing indexing or source-access contracts.
 
 ## 26. Resource Admission Semantics
 

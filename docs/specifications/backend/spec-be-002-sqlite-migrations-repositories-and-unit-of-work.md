@@ -176,7 +176,7 @@ Runtime constructs and supplies the Unit of Work factory.
 
 ### 7.2 Lifecycle
 
-One application command owns one Unit of Work:
+One focused mutating application operation handler owns one Unit of Work:
 
 ```text
 begin
@@ -185,14 +185,16 @@ perform transactional reads
   ↓
 perform writes
   ↓
-collect domain/application events
+record pending events in the operation-scoped EventCollector
   ↓
 commit explicitly
   ↓
-return committed events
+return committed operation outcome
   ↓
-publish events
+ApplicationRuntime releases recorded events
 ```
+
+The operation-scoped `EventCollector` and post-commit publication lifecycle are defined by SPEC-BE-006. The Unit of Work does not own or contain the event collector.
 
 ### 7.3 Invariants
 
@@ -230,16 +232,20 @@ A future savepoint API must be explicit and narrowly scoped. Releasing a savepoi
 
 ## 8. Side Effects and Events
 
-The Unit of Work may collect domain or application events but does not publish them.
+Domain/application events are recorded in the operation-scoped `EventCollector`, not inside the Unit of Work. The Unit of Work owns transaction consistency only and does not publish events.
 
 Required ordering:
 
 ```text
+application handler records pending event
+      ↓
 database mutation
       ↓
 transaction commit
       ↓
-committed event return
+runtime observes committed operation outcome
+      ↓
+ApplicationRuntime releases EventCollector contents
       ↓
 runtime event publication
       ↓
@@ -258,7 +264,7 @@ Observable side effects include:
 - analytics or telemetry
 - future server or websocket events
 
-If commit fails, collected events are discarded.
+If commit fails, the runtime discards the operation-scoped pending events according to SPEC-BE-006.
 
 ## 9. CQRS-Lite Persistence Interfaces
 

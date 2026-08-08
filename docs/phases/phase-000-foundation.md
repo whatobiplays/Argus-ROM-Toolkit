@@ -312,6 +312,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-BE-006](../specifications/backend/spec-be-006-minimal-domain-event-bus.md) | Minimal Domain Event Bus | Event propagation slice |
 | [SPEC-BE-007](../specifications/backend/spec-be-007-startup-coordination-and-recovery-contract.md) | Startup Coordination and Recovery Contract | Startup integration slice |
 | [SPEC-BE-008](../specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md) | Rust-to-Flutter Bridge DTO Contract | Bridge slice |
+| [SPEC-BE-009](../specifications/backend/spec-be-009-application-service-contracts.md) | Application Service Contracts | First application-service slice |
 
 ### Frontend
 

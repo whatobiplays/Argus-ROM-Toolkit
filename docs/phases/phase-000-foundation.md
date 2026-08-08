@@ -310,7 +310,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-BE-004](../specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md) | Application Runtime, Command Pipeline, and Background Operations | Runtime/startup slice |
 | [SPEC-BE-005](../specifications/backend/spec-be-005-settings-service-and-appearance-settings.md) | Settings Service and Appearance Settings | Settings backend slice |
 | [SPEC-BE-006](../specifications/backend/spec-be-006-minimal-domain-event-bus.md) | Minimal Domain Event Bus | Event propagation slice |
-| SPEC-BE-007 | Startup Coordination and Recovery Contract | Startup integration slice |
+| [SPEC-BE-007](../specifications/backend/spec-be-007-startup-coordination-and-recovery-contract.md) | Startup Coordination and Recovery Contract | Startup integration slice |
 | SPEC-BE-008 | Rust-to-Flutter Bridge DTO Contract | Bridge slice |
 
 ### Frontend

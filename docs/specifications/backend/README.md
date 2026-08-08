@@ -16,3 +16,4 @@ Identifiers use `SPEC-BE-NNN`.
 | SPEC-BE-004 | [Application Runtime, Command Pipeline, and Background Operations](spec-be-004-application-runtime-command-pipeline-and-background-operations.md) | Ready for Implementation |
 | SPEC-BE-005 | [Settings Service and Appearance Settings](spec-be-005-settings-service-and-appearance-settings.md) | Ready for Implementation |
 | SPEC-BE-006 | [Minimal Domain Event Bus](spec-be-006-minimal-domain-event-bus.md) | Ready for Implementation |
+| SPEC-BE-007 | [Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md) | Ready for Implementation |

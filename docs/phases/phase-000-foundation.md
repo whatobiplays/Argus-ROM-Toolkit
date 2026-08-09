@@ -333,7 +333,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | Planned ID | Document | Required before |
 |---|---|---|
 | SPEC-X-001 | Versioning and Compatibility Contract | Bridge and migration slices |
-| CONV-REPO-001 | Repository and Generated-File Conventions | Workspace slice |
+| [CONV-REPO-001](../conventions/conv-repo-001-repository-and-generated-file-conventions.md) | Repository and Generated-File Conventions | Workspace slice |
 | CONV-RUST-001 | Rust Coding and Test Conventions | First Rust implementation slice |
 | CONV-FLUTTER-001 | Flutter/Dart Coding and Test Conventions | First Flutter implementation slice |
 | CONV-TEST-001 | Test Pyramid, Fixtures, and Verification Commands | First test-bearing slice |
@@ -601,5 +601,6 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [SPEC-BE-010 — Provider Gateway Architecture](../specifications/backend/spec-be-010-provider-gateway-architecture.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md)
 - [SPEC-BE-012 — Transformation and Hash-Scheme Contract](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md)
+- [CONV-REPO-001 — Repository and Generated-File Conventions](../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [Phase Documentation Rules](README.md)
 - [Phase Template](../templates/phase.md)

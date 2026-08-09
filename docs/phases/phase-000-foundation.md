@@ -3,7 +3,7 @@
 **Document ID:** PHASE-000  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-09  
 **Depends On:** ARCH-001, ARCH-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -279,8 +279,7 @@ Phase 000 explicitly excludes:
 - Persisted user-visible jobs or the full generic execution-graph scheduler.
 - Indexing, reconciliation, move detection, or source classification. Their architecture is defined for later phases by [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md); SPEC-BE-011 does not add source/indexing work to Phase 000.
 - `GameContent`.
-- Parsing and transformation graphs.
-- Hash schemes or hash persistence.
+- Parsing and transformation graphs, canonical content identity, identity migration, hash schemes, or hash persistence. Their architecture is defined for later phases by [SPEC-BE-012 — Transformation and Hash-Scheme Contract](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md); SPEC-BE-012 does not add transformation/identity/hash work to Phase 000.
 - Metadata matching, Playmatch, provider sessions, or metadata refresh. Their architecture is defined for later phases by [SPEC-BE-010 — Provider Gateway Architecture](../specifications/backend/spec-be-010-provider-gateway-architecture.md); SPEC-BE-010 does not add provider work to Phase 000.
 - Artwork discovery, resolution, download, or storage.
 - RetroAchievements integration.
@@ -315,6 +314,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-BE-009](../specifications/backend/spec-be-009-application-service-contracts.md) | Application Service Contracts | First application-service slice |
 | [SPEC-BE-010](../specifications/backend/spec-be-010-provider-gateway-architecture.md) | Provider Gateway Architecture | First metadata-provider-dependent slice |
 | [SPEC-BE-011](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md) | Source Provider and Indexing Contract | First source-provider/indexing-dependent slice |
+| [SPEC-BE-012](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md) | Transformation and Hash-Scheme Contract | First transformation/identity/hash-dependent slice |
 
 ### Frontend
 
@@ -600,5 +600,6 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [ARCH-002 — Argus Documentation Architecture](../architecture/documentation-architecture.md)
 - [SPEC-BE-010 — Provider Gateway Architecture](../specifications/backend/spec-be-010-provider-gateway-architecture.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md)
+- [SPEC-BE-012 — Transformation and Hash-Scheme Contract](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md)
 - [Phase Documentation Rules](README.md)
 - [Phase Template](../templates/phase.md)

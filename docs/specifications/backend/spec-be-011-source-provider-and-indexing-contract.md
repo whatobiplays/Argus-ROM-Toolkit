@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-011  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-09  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010  
 **Supersedes:** None  
 **Superseded By:** None
@@ -69,13 +69,10 @@ This specification does not define:
 - metadata matching, provider fallback, or metadata refresh
 - artwork storage or download behavior
 - RetroAchievements catalog or verification behavior
-- canonical parsing/transformation implementations
-- archive parser internals
-- hash-scheme algorithms
-- canonical `ContentIdentity` computation
-- duplicate `GameContent` convergence
+- transformation planning, derived-entry contracts, hash-scheme contracts, canonical `ContentIdentity`, and content-derived platform recognition, which are defined by SPEC-BE-012
+- concrete parser-library implementation internals
+- automatic reconciliation/merge of pre-existing duplicate `GameContent` records
 - final `GameContent` orphan-retention or deletion policy
-- platform detection from ROM content
 - eager hashing during discovery
 - filesystem watching
 - concurrent source discovery
@@ -923,7 +920,7 @@ The component that enumerates a scope is the component that can report whether t
 - archive/parser component for archive scopes
 - transformation owner for other virtual scopes
 
-Detailed archive observation shapes and parsing rules are deferred to the transformation specification.
+Detailed derived-entry observation shapes, transformation version evidence, and parsing rules are defined by SPEC-BE-012 — Transformation and Hash-Scheme Contract.
 
 ### 24.2 Link-Like Entries
 
@@ -1250,9 +1247,11 @@ The same Unit of Work removes:
 - the affected `SourceEntry` subtree;
 - `GameContentSource` relationships referencing those entries.
 
+When SPEC-BE-012 identity provenance exists, the owning application coordinator also invalidates/removes provenance references to the removed entries and transitions any affected currently identified `GameContent` to the BE-012 re-identification state unless an explicit identification workflow has already established replacement proof.
+
 No provider I/O occurs inside that write transaction.
 
-The indexing reconciler does not directly delete `GameContent` merely because source provenance disappears.
+The indexing reconciler does not compute replacement content identity or directly delete `GameContent` merely because source provenance disappears.
 
 It also does not directly delete content-owned:
 
@@ -1262,7 +1261,7 @@ It also does not directly delete content-owned:
 - external identities
 - RetroAchievements verification state
 
-The later game-content-resolution contract owns orphan lifecycle, duplicate convergence, and content-level cleanup policy.
+Later game-content lifecycle work owns final orphan cleanup and automatic reconciliation/merge of pre-existing duplicate `GameContent` records. SPEC-BE-012 owns strong identity convergence for newly identified content but deliberately does not auto-merge pre-existing duplicates.
 
 Database foreign keys may support referential integrity, but semantic correctness must not depend on accidental cascade behavior alone.
 
@@ -1276,7 +1275,7 @@ Otherwise a content candidate remains an unmaterialized candidate until later co
 
 A move that preserves `SourceEntryId` naturally preserves its source relationship unless independent evidence shows the content changed.
 
-A content-affecting fingerprint change marks downstream derived assumptions stale according to later specifications; indexing must not invent a new logical game identity from the fingerprint alone.
+A content-affecting fingerprint change marks downstream identity/hash assumptions stale according to SPEC-BE-012; indexing must not invent a new logical game identity from the fingerprint alone.
 
 Normative invariant:
 
@@ -1821,7 +1820,7 @@ SPEC-BE-011 is satisfied when:
 34. Move detection prefers stable native identity, then unique strong content identity when already available, otherwise removal plus creation.
 35. Filename/timestamp/size-only move heuristics are prohibited.
 36. Current deterministic discovery-policy exclusion may prune previously indexed state without claiming physical storage absence.
-37. Authoritative source removal atomically removes source entries and referencing `GameContentSource` edges.
+37. Authoritative source removal atomically removes source entries and referencing `GameContentSource` edges; when SPEC-BE-012 identity provenance exists, the same coherent application mutation invalidates affected identity proof without deleting `GameContent` directly.
 38. Indexing does not directly determine `GameContent` orphan lifecycle.
 39. `ContentCandidate` does not automatically create `GameContent`.
 40. Source adapters translate native failures into stable `SourceAccessError` values.
@@ -1890,12 +1889,7 @@ This specification intentionally defers:
 - link traversal;
 - any future automatic source retry framework beyond MVP;
 - provider-specific network retry policy for future remote source providers;
-- archive parser implementation and derived-entry schema details;
-- transformation graph implementation;
-- content-identification workflow;
-- `ContentIdentity` calculation;
-- hash-scheme behavior;
-- duplicate `GameContent` convergence;
+- automatic reconciliation/merge of pre-existing duplicate `GameContent` records;
 - final orphan `GameContent` lifecycle;
 - final UI source/root configuration workflow;
 - long-term scan-history retention policy;
@@ -1916,4 +1910,5 @@ This specification intentionally defers:
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](spec-be-009-application-service-contracts.md)
 - [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
+- [SPEC-BE-012 — Transformation and Hash-Scheme Contract](spec-be-012-transformation-and-hash-scheme-contract.md)
 - [Backend Specifications Index](README.md)

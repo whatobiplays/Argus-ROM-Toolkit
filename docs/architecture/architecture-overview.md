@@ -3,7 +3,7 @@
 **Document ID:** ARCH-001  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-09  
 **Depends On:** None  
 **Supersedes:** None  
 **Superseded By:** None  
@@ -215,16 +215,23 @@ SourceEntry
 - library_root_id
 - parent_source_entry_id
 - entry_kind
-- relative_locator
-- locator_key
+- relative_locator                # provider-native entries only
+- locator_key                     # provider-native entries only
+- derived_locator                 # transformation-derived entries only
+- derived_entry_key               # transformation-derived entries only
 - display_name
-- provider_native_identity
-- source_fingerprint
+- provider_native_identity        # provider-native entries only
+- source_fingerprint              # provider-native entries only
+- derived_fingerprint             # transformation-derived entries only
+- derivation_transformation_id    # transformation-derived entries only
+- derivation_revision             # transformation-derived entries only
 - classification
 - last_observed_scan_id
 - created_at
 - updated_at
 ```
+
+Provider-native and transformation-derived coordinates/evidence remain distinct. Application validity logic may view either through `SourceVersionEvidence = Provider(SourceFingerprint) | Derived(DerivedFingerprint)`, but persistence must not pretend derived entries have provider locator or fingerprint semantics.
 
 Representative entry kinds:
 
@@ -256,17 +263,20 @@ A content-bearing node is not required to be a leaf. A playlist or CUE sheet may
 
 ### 6.4 GameContent
 
-`GameContent` represents the logical game content managed by Argus, independent of where it was discovered.
+`GameContent` represents one canonical logical-content unit managed by Argus, independent of where it was discovered.
 
 ```text
 GameContent
 - id
 - platform_id
-- content_identity
 - content_type
+- content_identity       # current only while identified
+- identity_state
 - created_at
 - updated_at
 ```
+
+Each `GameContent` has at most one current `ContentIdentity`. A newly created `GameContent` is created only after strong identity is established. Existing content may temporarily have no current identity while in `NeedsReidentification` or `IdentityConflict` during targeted identity maintenance.
 
 Source relationships are represented separately:
 
@@ -277,17 +287,26 @@ GameContentSource
 - relationship
 ```
 
-Representative relationship values:
+Representative relationship values include:
 
 ```text
 Primary
+Descriptor
 Supporting
-Disc
-PlaylistMember
 AlternativeSource
 ```
 
-Multiple source entries may resolve to the same `GameContent` while retaining distinct provenance.
+`GameContentSource` is an unversioned association, not current identity proof. The exact source/version basis that established the current identity is stored separately:
+
+```text
+ContentIdentityProvenance
+- game_content_id
+- source_entry_id
+- role
+- source_version_evidence
+```
+
+A canonical content unit may depend on several source entries, such as CUE/BIN. Independently usable discs remain separate `GameContent` entities; release/title-level multi-disc grouping belongs above this layer.
 
 ### 6.5 Identity distinctions
 
@@ -298,12 +317,15 @@ The following concepts must not be conflated:
 | `LibrarySourceId` | Configured source-instance identity |
 | `LibraryRootId` | Configured scan-boundary identity |
 | `SourceEntryId` | Stable Argus discovered-object identity |
-| `SourceLocatorKey` | Provider-defined equality for one entry's current location within a root |
+| `SourceLocatorKey` | Provider-defined equality for one provider-native entry's current location within a root |
 | `ProviderNativeIdentity` | Optional provider-scoped continuity of the same underlying storage object |
-| `SourceFingerprint` | Cheap provider-defined change evidence, not content identity |
+| `SourceFingerprint` | Cheap provider-defined change evidence for provider-native entries, not content identity |
+| `DerivedFingerprint` | Cheap transformation-defined change evidence for derived entries, not content identity |
+| `SourceVersionEvidence` | Application abstraction over provider or derived cheap version evidence |
 | `GameContentId` | Logical managed-content identity |
-| `ContentIdentity` | Strong immutable identity of content bytes/canonical content |
-| `HashRecordId` | One computed hash using a specific versioned hashing scheme |
+| `ContentIdentity` | Strong versioned canonical identity of one logical content unit |
+| `SourceHashRecordId` | One source-scoped hash result |
+| `ContentHashRecordId` | One content-scoped hash result |
 
 ## 7. Source providers
 
@@ -514,7 +536,9 @@ SourceFile
     -> ExecutableMetadata or other requested representation
 ```
 
-Each transformation declares typed inputs and outputs. Consumers request a representation; they do not request a named parser.
+Each transformation declares typed inputs/outputs, bounded applicability, byte-access requirements, relative cost, stable priority, and implementation revision. Consumers request a representation; they never request a named parser chain.
+
+An application-owned deterministic planner prefers already materialized representations, minimizes declared cost, uses explicit priority for permitted ties, and reports an invalid transformation graph when ambiguity remains. Registration order is never policy.
 
 ### 9.2 Typed representations
 
@@ -522,6 +546,7 @@ Examples include:
 
 ```text
 SourceFile
+SeekableBytes
 ArchiveEntries
 DiscImage
 ISO9660Filesystem
@@ -532,41 +557,103 @@ NESRom
 SNESRom
 ExecutableMetadata
 PartitionTable
+RecognizedContent
+CanonicalContentUnit
 ```
 
 ### 9.3 ParsingSession and ParsedContent
 
-Each operation owns a session-scoped `ParsingSession` and `ParsedContent` container.
+Each operation owns one session-scoped `ParsingSession` containing `ParsedContent`, immutable transformation resource budget, transient staging ownership, cumulative resource accounting, and cancellation context.
 
-`ParsedContent` stores typed representations already produced during that session so multiple hash schemes or consumers can reuse them.
+`ParsedContent` stores typed representations already produced during that session so identity/hash consumers can reuse them.
 
 For MVP:
 
-- Parsed content is not persisted.
-- Intermediate representations are disposed when the operation completes.
-- Only requested persistent outputs, such as `HashRecord`, survive.
+- parsed content is not persisted;
+- intermediate representations are disposed when the operation completes;
+- parser-library handles do not cross the session boundary;
+- only independently meaningful persistent outputs survive.
+
+### 9.4 Access requirements and staging
+
+Transformations declare `Sequential`, `Seekable`, or `RandomAccess` requirements. When input cannot satisfy the required semantics directly, the planner may insert operation-scoped disk-backed staging.
+
+For mutable reads requiring validation, a staged copy becomes trusted immutable downstream input only after the source read validates as `Consistent`. `Changed` or `Indeterminate` input cannot produce trusted immutable identity/hash facts or authoritative derived absence.
+
+Every session runs under finite Argus-owned resource limits for staging, expansion, nesting, derived-entry count, representation size, and other potentially unbounded parser work. Resource-limit exhaustion fails safely and cannot authorize truncated derived structure.
+
+### 9.5 Transformation outcomes
+
+Transformation execution distinguishes:
+
+```text
+Produced<T>
+NotApplicable
+Failed(TransformationError)
+```
+
+Only `NotApplicable` permits deterministic fallback to another preordered candidate. Once a format is recognized, malformed, unsupported, I/O, resource, cancellation, or internal failure does not silently fall through to an unrelated parser.
+
+### 9.6 Derived containers
+
+Transformations describe archive/disc/virtual-container contents through application-owned `DerivedEntryObservation` values. The indexer alone reconciles those observations into persistent `SourceEntry` children.
+
+Derived entries use transformation-owned `DerivedLocator`, `DerivedEntryKey`, and `DerivedFingerprint`. Only a `Complete` derived scope over validated stable input authorizes absence-based deletion in that exact scope.
+
+### 9.7 Content recognition and identity
+
+Authoritative `(PlatformId, ContentType)` recognition comes from validated transformations. Filename, extension, directory placement, and provider metadata are planning hints only.
+
+Application policy maps each recognized content class to zero or one current canonical identity scheme. A `ContentIdentity` contains semantic `scheme_id`, strong `identity_value`, and trusted `identity_revision`.
+
+A canonical content unit may span multiple source entries. Identity is established first from validated source data; only then does a short Unit of Work create/reuse `GameContent` and persist its exact version-bound `ContentIdentityProvenance` basis.
+
+Each `GameContent` has at most one current identity. Scheme/revision upgrades invalidate old identity immediately and trigger targeted eager re-identification while keeping the rest of the library open. A source that produces a different identity under the same current scheme is rebound to different/new logical content rather than mutating the old `GameContent`.
 
 ## 10. Hashing subsystem
 
-### 10.1 HashRecord
+### 10.1 Explicit hash subjects
 
-Hashes are derived facts about `GameContent`, not source paths.
+A hash scheme declares whether it describes one source representation or canonical logical content:
 
 ```text
-HashRecord
+HashSubjectScope
+- SourceEntry
+- GameContent
+```
+
+Source-scoped and content-scoped hashes use separate persistence concepts rather than nullable polymorphic ownership.
+
+```text
+SourceHashRecord
+- id
+- source_entry_id
+- hash_scheme_id
+- hash_value
+- hashing_revision
+- source_version_evidence
+- computed_at
+```
+
+```text
+ContentHashRecord
 - id
 - game_content_id
-- hash_scheme
+- hash_scheme_id
 - hash_value
 - hashing_revision
 - computed_at
-- source_fingerprint
-- status
 ```
 
-`hash_scheme` identifies the complete hashing procedure, including canonicalization and parsing, not merely the final digest algorithm.
+Whole-file/raw hashes normally belong to `SourceEntry`. Canonical logical hashes may belong to `GameContent` only when all equivalent supported source representations are required to produce the same value.
 
-Examples:
+### 10.2 Scheme semantics and revisioning
+
+`hash_scheme_id` identifies the complete immutable hashing procedure, including subject scope, canonicalization/input representation, byte-selection rules, digest algorithm, and any external protocol version.
+
+`hashing_revision` identifies the current trusted Argus implementation of that unchanged semantic contract. Semantic changes require a new scheme ID; implementation corrections that invalidate prior results bump the revision.
+
+Representative schemes may include:
 
 ```text
 MD5WholeFile
@@ -576,40 +663,27 @@ RetroAchievementsNESV1
 RetroAchievementsPlayStationV1
 ```
 
-### 10.2 SourceFingerprint and ContentIdentity
+### 10.3 Validity
 
-These are separate concepts:
+A source hash is current only when its stored `SourceVersionEvidence` and `hashing_revision` remain current.
 
-- `SourceFingerprint` is a cheap change detector used to determine whether cached derived data remains trustworthy.
-- `ContentIdentity` is a strong immutable identity for logical content.
+A content hash follows its own scheme/revision validity contract. Content-identity migration does not automatically invalidate unrelated content hashes. If a canonical representation change affects both identity and a hash, each contract advances its own effective revision.
 
-A `HashRecord` remains current only when both its relevant source fingerprint and hashing revision remain current.
-
-### 10.3 Demand-driven hashing
+### 10.4 Demand-driven hashing
 
 Hashing is never performed universally during indexing.
 
-Consumers request schemes. The hash planner:
+For each requested subject/scheme, the hash planner:
 
-1. Determines required schemes.
-2. Checks scheme applicability.
-3. Reuses valid records.
-4. Builds work only for missing or stale records.
+1. checks scope and applicability;
+2. reuses a current persisted record when available;
+3. builds only missing/stale representation work;
+4. executes inside one `ParsingSession`;
+5. reuses compatible typed representations across requested schemes;
+6. validates consumed source data;
+7. persists the result in a short Unit of Work.
 
-### 10.4 Self-describing schemes
-
-Each hash scheme declares:
-
-```text
-id
-supported_platforms
-supported_source_types
-estimated_cost
-required_representations
-hashing_revision
-```
-
-The planner is generic. Scheme executors consume typed parsed representations and produce `HashRecord` results.
+Computing a missing/stale content-scoped hash requires usable current identity provenance. Normal hash execution does not probe untrusted alternative `GameContentSource` associations to repair identity implicitly; the dedicated re-identification workflow owns that repair.
 
 ## 11. Metadata subsystem
 

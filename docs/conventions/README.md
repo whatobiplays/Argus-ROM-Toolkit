@@ -11,10 +11,10 @@ A convention must be enforceable through tooling, tests, CI, architecture checks
 | ID | Convention | Status |
 |---|---|---|
 | [CONV-REPO-001](conv-repo-001-repository-and-generated-file-conventions.md) | Repository and Generated-File Conventions | Ready for Implementation |
+| [CONV-RUST-001](conv-rust-001-rust-coding-and-test-conventions.md) | Rust Coding and Test Conventions | Ready for Implementation |
 
 ## Planned Phase 000 Conventions
 
-- `CONV-RUST-001` — Rust Coding and Test Conventions
 - `CONV-FLUTTER-001` — Flutter/Dart Coding and Test Conventions
 - `CONV-TEST-001` — Test Pyramid, Fixtures, and Verification Commands
 - `CONV-DOC-001` — Documentation and Codex Result Conventions

@@ -337,7 +337,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [CONV-RUST-001](../conventions/conv-rust-001-rust-coding-and-test-conventions.md) | Rust Coding and Test Conventions | First Rust implementation slice |
 | [CONV-FLUTTER-001](../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md) | Flutter/Dart Coding and Test Conventions | First Flutter implementation slice |
 | [CONV-TEST-001](../conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md) | Test Pyramid, Fixtures, and Verification Commands | First test-bearing slice |
-| CONV-DOC-001 | Documentation and Codex Result Conventions | First Codex task |
+| [CONV-DOC-001](../conventions/conv-doc-001-documentation-and-codex-result-conventions.md) | Documentation and Codex Result Conventions | First Codex task |
 
 IDs are reserved by this phase. A specification may be split only if the split preserves these responsibilities and updates this phase before dependent implementation begins.
 
@@ -605,5 +605,6 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [CONV-RUST-001 — Rust Coding and Test Conventions](../conventions/conv-rust-001-rust-coding-and-test-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)
 - [CONV-TEST-001 — Test Pyramid, Fixtures, and Verification Commands](../conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md)
+- [CONV-DOC-001 — Documentation and Codex Result Conventions](../conventions/conv-doc-001-documentation-and-codex-result-conventions.md)
 - [Phase Documentation Rules](README.md)
 - [Phase Template](../templates/phase.md)

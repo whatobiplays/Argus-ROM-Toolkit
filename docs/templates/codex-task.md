@@ -54,10 +54,17 @@ Codex must report:
 
 - files changed
 - behavior implemented
-- commands run and results
+- commands run and `PASS` / `FAIL` / `NOT RUN` / `BLOCKED` results
+- acceptance-criteria evidence
 - unresolved issues
 - deviations from the task
+- documentation impact
+- Git state (modified/staged/committed/pushed)
+- commit SHA when committed
+- remote/branch outcome when explicitly pushed
 
-## 11. Commit Boundary
+On completion, append a concise durable `Completion Result` section per CONV-DOC-001. Do not copy a raw agent transcript into the task document.
 
-[One local commit message and exact intended paths.]
+## 11. Git Boundary and Authorization
+
+[Suggested local commit message and exact intended paths. This is planning guidance only. Codex must not stage, commit, or push unless the user explicitly requests the corresponding Git write. A commit request does not imply push authorization.]

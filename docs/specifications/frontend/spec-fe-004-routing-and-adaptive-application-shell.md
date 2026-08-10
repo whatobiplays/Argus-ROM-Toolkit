@@ -34,7 +34,7 @@ This specification owns frontend rules for:
 - route-to-destination association;
 - route path, path-parameter, and query-parameter ownership;
 - route canonicalization;
-- startup/readiness gating;
+- presentation-readiness gating;
 - preservation and revalidation of intended routes;
 - redirect purity and convergence;
 - branch switching and reselection behavior;
@@ -97,11 +97,14 @@ The routing layer belongs to application composition:
 ```text
 app/bootstrap
     ↓ constructs root client/providers
-features/startup
-    ↓ AppReadiness projection
+features/startup ── AppReadiness ──┐
+features/settings ─ Appearance ────┤
+                                  ↓
+                    app presentation readiness
+                                  ↓
 app/routing
     ↓
-ready-state shell / startup-recovery surface
+ready-state shell / pre-shell surfaces
     ↓
 feature route
     ↓
@@ -200,7 +203,7 @@ The composition layer owns:
 - route-tree topology;
 - shell branch placement;
 - root-versus-shell navigator placement;
-- startup/readiness gating;
+- presentation-readiness gating;
 - cross-feature destination metadata;
 - application-level not-found behavior.
 
@@ -452,7 +455,7 @@ Scattered string-prefix checks in navigation widgets are prohibited.
 
 ## 28. One Ready Application Shell
 
-Once startup permits normal application use, Argus renders one persistent ready-state application shell around normal destinations.
+Once app presentation readiness permits normal application use, Argus renders one persistent ready-state application shell around normal destinations.
 
 Conceptually:
 
@@ -599,19 +602,23 @@ A failed mandatory startup must not reveal a partially usable normal shell under
 
 ## 39. Readiness Authority
 
-The router reacts to a narrow frontend readiness projection.
+The router reacts to one narrow app-owned presentation-readiness projection.
 
-It does not derive backend readiness from the URI and does not call FRB/native infrastructure.
+It does not derive backend readiness, appearance authority, or shell eligibility from the URI and does not call focused APIs or FRB/native infrastructure.
 
 Conceptually:
 
 ```text
-RuntimeApi / startup coordination
+startup AppReadiness
++
+appearance initialization/authority
     ↓
-Riverpod readiness projection
+app presentation-readiness projection
     ↓
 routing policy
 ```
+
+SPEC-FE-005 owns backend readiness. SPEC-FE-006 owns the initial authoritative appearance prerequisite and the pure combined presentation-readiness derivation used for first-shell admission.
 
 ## 40. Redirect Purity
 
@@ -711,7 +718,7 @@ The implementation must not create a fake Library feature merely to preserve a f
 
 The normal ready shell cannot be entered merely because a route exists.
 
-A direct request to `/settings`, `/diagnostics`, or another ready-state route remains gated until mandatory startup reaches the state required by SPEC-FE-005.
+A direct request to `/settings`, `/diagnostics`, or another ready-state route remains gated until the app presentation-readiness requirements are satisfied: authoritative backend readiness from SPEC-FE-005 plus any required initial root-presentation authority such as appearance settings from SPEC-FE-006.
 
 ## 49. Navigation After Ready-State Degradation
 
@@ -1353,7 +1360,7 @@ Phase 000 implements the smallest routing surface that proves the architecture:
 
 - typed route definitions and generation;
 - one app-owned router;
-- startup/readiness gating;
+- presentation-readiness gating;
 - one persistent ready shell;
 - at least one genuine implemented feature route;
 - adaptive navigation across all four size classes;
@@ -1367,7 +1374,7 @@ Phase 000 implements the smallest routing surface that proves the architecture:
 Phase 000 shell behavior demonstrates:
 
 ```text
-startup/recovery boundary
+startup/recovery + initial presentation-authority boundary
     ↓
 ready shell
     ↓
@@ -1650,7 +1657,7 @@ Phase 000 requires at least:
 app/routing
 ├── typed route definitions
 ├── router composition
-├── startup/readiness gating
+├── presentation-readiness gating
 ├── route error/not-found handling
 └── destination mapping
 
@@ -1695,6 +1702,7 @@ It does not define a second navigation state framework, custom URL dispatcher, o
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
+- [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

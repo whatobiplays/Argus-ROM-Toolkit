@@ -1320,17 +1320,23 @@ ready(Light confirmed, Light presented, idle)
 ready(Light confirmed, Dark presented, saving)
 ```
 
-Success:
+Successful command plus authoritative reconciliation:
 
 ```text
+ready(Light confirmed, Dark presented, saving)
+    ↓ command success
+ready(Light confirmed, Dark presented, reconciling)
+    ↓ authoritative read returns Dark
 ready(Dark confirmed, Dark presented, idle)
 ```
 
-Failure:
+Definite application failure:
 
 ```text
 ready(Light confirmed, Light presented, failed(error))
 ```
+
+Ambiguous transport outcomes do not automatically replay the mutation; SPEC-FE-006 owns the required authoritative reconciliation and synchronization-uncertainty states.
 
 SPEC-FE-006 owns the exact data shape and presentation behavior.
 
@@ -1426,7 +1432,7 @@ At minimum, Phase 000 includes deterministic frontend-state evidence for:
 - optimistic presentation where required by SPEC-FE-006;
 - save running state;
 - success confirmation;
-- failure rollback to last confirmed value;
+- definite application-failure rollback to last confirmed value;
 - retry;
 - duplicate-save policy;
 - stale-result protection for overlapping selections if the feature allows them.
@@ -1662,7 +1668,7 @@ For the Phase 000 frontend foundation, implementation must demonstrate:
 4. feature state is owned by feature controllers/providers rather than widgets or transport infrastructure;
 5. asynchronous initial readiness uses the approved `AsyncValue<State>` pattern where required;
 6. settings remains usable while a save is in progress;
-7. a failed settings update restores the last confirmed value;
+7. a definite failed settings update restores the last confirmed value, while ambiguous transport outcomes reconcile authoritative state before any retry;
 8. backend settings events cause authoritative reconciliation rather than duplicate state ownership;
 9. stale/disposed async completions cannot overwrite current state;
 10. feature/controller tests execute against focused API fakes without the real Rust backend;
@@ -1729,6 +1735,7 @@ It also does not define a general frontend cache layer, offline mode, or a persi
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
+- [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)
 - [CONV-TEST-001 — Test Pyramid, Fixtures, and Verification Commands](../../conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md)

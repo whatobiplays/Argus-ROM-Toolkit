@@ -373,9 +373,9 @@ Once intentional shutdown reaches terminal `stopped`, the same startup controlle
 
 A new startup requires a new application/client lifecycle.
 
-## 21. Routing-Safe Readiness Projection
+## 21. Backend Readiness Projection
 
-The startup feature exposes a narrow projection consumed by SPEC-FE-004.
+The startup feature exposes a narrow backend-readiness projection to app composition.
 
 Conceptually:
 
@@ -386,9 +386,9 @@ AppReadiness
 └── ready
 ```
 
-The exact enum/union may include enough distinction for routing policy without exposing recovery-operation details.
+The exact enum/union may include enough distinction for composition without exposing recovery-operation details.
 
-The router must not receive the complete `StartupState` merely to decide shell gating.
+SPEC-FE-006 combines this backend-readiness projection with initial appearance authority into the final app presentation-readiness projection consumed by SPEC-FE-004. The router must not receive the complete `StartupState` merely to decide shell gating.
 
 ## 22. Router Does Not Execute Startup
 
@@ -404,25 +404,23 @@ It must not call:
 
 Routing remains side-effect-free policy under SPEC-FE-004.
 
-## 23. Ready-Shell Entry
+## 23. Backend Ready Is a Shell Prerequisite
 
-The normal application shell becomes routable only when the startup feature observes authoritative backend:
+The startup feature marks backend readiness only when it observes authoritative:
 
 ```text
 RuntimeState.ready
 ```
 
-The transition is:
+The transition owned here is:
 
 ```text
 startup/recovery surface
     ↓ authoritative Ready
 AppReadiness.ready
-    ↓
-SPEC-FE-004 revalidates pending intended route
-    ↓
-ready ApplicationShell
 ```
+
+`AppReadiness.ready` is necessary for normal-shell entry but is not by itself the complete first-shell presentation gate. SPEC-FE-006 requires the initial authoritative appearance read, after which app composition exposes presentation readiness and SPEC-FE-004 revalidates/activates the pending intended route.
 
 ## 24. No Derived Readiness
 
@@ -557,7 +555,7 @@ Conceptually:
 
 ```text
 Argus could not initialize
-[user-safe transport explanation]
+Localized user-safe message derived from the typed TransportFailure
 
 Retry Initialization
 Exit
@@ -630,11 +628,11 @@ Conceptually:
 
 ```text
 Argus could not start
-[user-safe explanation]
+Localized user-safe message derived from the typed ApplicationFailure
 
-[primary recovery action]
+Primary currently advertised recovery action
 
-[secondary recovery actions]
+Applicable secondary currently advertised recovery actions
 
 Technical details
 Exit
@@ -857,9 +855,9 @@ Runtime B = Ready
 then:
 
 - startup state becomes `ready` for B;
-- the readiness projection becomes ready;
-- SPEC-FE-004 revalidates the pending intended route;
-- the normal shell becomes active.
+- the backend-readiness projection becomes ready;
+- SPEC-FE-006 invalidates/re-establishes appearance authority for B as required;
+- once app presentation readiness is satisfied, SPEC-FE-004 revalidates the pending intended route and activates the normal shell.
 
 ## 54. New Runtime Startup Failure
 
@@ -1080,12 +1078,12 @@ Conceptually:
 
 ```text
 Argus cannot determine backend state
-[user-safe transport explanation]
+Localized user-safe message derived from the typed transport failure
 
 Reconnect / Check Again
 Exit
 
-Last known startup information (optional)
+Optional explicitly last-known startup information
 ```
 
 Exact copy is localized frontend content.
@@ -1665,9 +1663,9 @@ verify:
 - late A completion cannot overwrite B state;
 - a second retry request while B is in flight does not create attempt C.
 
-## 129. Readiness Gating Tests
+## 129. Backend Readiness Projection Tests
 
-Verify the normal shell/readiness projection does not become `ready` for:
+Verify `AppReadiness` does not become `ready` for:
 
 - initial bootstrap loading;
 - `Uninitialized`;
@@ -1675,7 +1673,7 @@ Verify the normal shell/readiness projection does not become `ready` for:
 - `StartupFailed`;
 - `runtimeUnavailable`.
 
-Only authoritative backend `Ready` enables ready routing.
+Only authoritative backend `Ready` produces `AppReadiness.ready`. SPEC-FE-006 separately verifies that first-shell presentation still waits for authoritative appearance initialization.
 
 ## 130. Recovery-Action Availability Tests
 
@@ -2019,8 +2017,8 @@ SPEC-FE-005 is satisfied when:
 4. Initial transport/bootstrap failure remains distinct from backend `StartupFailed`.
 5. Backend `StartupFailed` is represented as loaded inspectable state.
 6. The startup-state model explicitly represents `uninitialized`, `starting`, `ready`, `startupFailed`, `runtimeUnavailable`, and terminal shutdown states where observable.
-7. The router consumes only a narrow readiness projection.
-8. Normal shell entry requires authoritative backend `Ready`.
+7. App composition consumes only a narrow backend-readiness projection from the startup feature.
+8. Authoritative backend `Ready` is mandatory for normal-shell entry, while SPEC-FE-006 owns the additional initial appearance-authority prerequisite for first-shell presentation.
 9. Mandatory startup does not wait for deferred library/provider/indexing/metadata work.
 10. Startup UI uses indeterminate progress unless a future authoritative progress contract exists.
 11. Flutter does not fabricate current startup phases or completion percentages.
@@ -2123,6 +2121,7 @@ It does not define a generic recovery DSL, generic effect bus, or second runtime
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)
+- [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

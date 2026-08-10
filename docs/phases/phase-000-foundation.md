@@ -22,7 +22,7 @@ At the end of Phase 000, a user can:
 
 1. Launch Argus on a supported development platform.
 2. See a blocking startup screen while required backend initialization completes.
-3. Enter the application shell after the database opens and migrations succeed.
+3. Enter the application shell after the backend reaches `Ready` and Flutter obtains the authoritative appearance settings required for first-shell presentation.
 4. Navigate to Settings.
 5. Choose one of these theme modes:
    - System
@@ -42,19 +42,19 @@ Phase 000 is demonstrated by the following sequence:
 
 1. Start Argus with a new or valid application database.
 2. The startup screen appears.
-3. Rust initializes successfully, opens SQLite, runs migrations, loads appearance settings, and reports readiness.
-4. The Flutter application shell appears using the current system theme because `themeMode` defaults to `system`.
+3. Rust initializes successfully, opens SQLite, runs migrations, validates/loads required appearance settings, and reports readiness.
+4. Flutter performs the focused authoritative appearance read; on a fresh database it returns `System`, and the first normal application shell appears using System theme without an earlier normal-shell flash.
 5. Open Settings.
 6. Change Theme Mode from System to Dark.
 7. The control enters a local pending state while the update is submitted.
 8. Rust validates and persists the new value in a Unit of Work.
 9. The transaction commits.
 10. Rust publishes `AppearanceSettingsChanged` after the commit.
-11. Flutter receives the event, refreshes authoritative appearance settings, and applies Dark theme.
+11. Flutter performs the required post-mutation authoritative appearance read (coalescing the notification when appropriate); the read confirms Dark and the root theme applies Dark without restart.
 12. Close Argus normally.
 13. Relaunch Argus.
-14. Startup loads the persisted Dark setting before constructing the ready application shell.
-15. The shell appears in Dark theme.
+14. Rust validates the persisted Dark setting during startup; after backend `Ready`, Flutter's authoritative appearance read returns Dark before normal-shell admission.
+15. The first normal shell appears in Dark theme.
 16. No restart-required indicator is shown.
 17. No unexpected warnings or errors appear in diagnostics.
 
@@ -67,27 +67,23 @@ Phase 000 must exercise and validate the following approved boundaries:
 ```text
 Flutter settings control
     ↓
-Riverpod controller
+Riverpod appearance controller
     ↓
-Focused SettingsApi
+Focused SettingsApi update
     ↓
-ArgusClient
-    ↓
-flutter_rust_bridge generated bindings
+ArgusClient / flutter_rust_bridge
     ↓
 Rust AppearanceSettingsService façade
     ↓
-Use-case handler
+Use-case handler / Unit of Work
     ↓
-Unit of Work
+SQLite commit
     ↓
-SQLite
-    ↓ commit
-AppearanceSettingsChanged application event
+command success + AppearanceSettingsChanged notification
     ↓
-Flutter event coordinator
+required/coalesced focused SettingsApi authoritative read
     ↓
-Riverpod authoritative refresh
+Riverpod confirmed appearance state
     ↓
 MaterialApp theme update
 ```
@@ -188,7 +184,7 @@ Requirements:
 - The update operation is transactional.
 - `AppearanceSettingsChanged` is published only after a semantic change commits successfully and carries no authoritative aggregate payload.
 - A failed update leaves persisted state unchanged.
-- A failed Flutter submission restores the last confirmed UI value and presents an inline error.
+- A definite application-level update failure restores the last confirmed UI value and presents an inline error; a transport-ambiguous outcome is never automatically replayed and instead triggers authoritative read reconciliation.
 - Theme changes do not require application restart.
 
 ### 6.4 Bridge Foundation
@@ -326,7 +322,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-FE-003](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md) | ArgusClient and Focused Domain APIs | Bridge integration slice |
 | [SPEC-FE-004](../specifications/frontend/spec-fe-004-routing-and-adaptive-application-shell.md) | Routing and Adaptive Application Shell | Shell slice |
 | [SPEC-FE-005](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md) | Startup and Recovery UI | Startup integration slice |
-| SPEC-FE-006 | Appearance Settings and Theme Application | Theme workflow slice |
+| [SPEC-FE-006](../specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md) | Appearance Settings and Theme Application | Theme workflow slice |
 | SPEC-FE-007 | Design-System Foundation and Accessibility Baseline | First user-facing Flutter slice |
 
 ### Cross-Cutting and Conventions
@@ -372,15 +368,15 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 
 ### SLICE-P00-006 — Startup and Recovery Experience
 
-**Outcome:** The blocking startup screen transitions to the ready shell on success and to a targeted recovery screen on injected startup failures. Copy-details and sanitized diagnostic export work end to end.
+**Outcome:** The blocking startup screen reaches authoritative backend `Ready` on success and a targeted recovery screen on injected startup failures; normal-shell admission then remains subject to the initial appearance-authority gate owned by the theme workflow. Copy-details and sanitized diagnostic export work end to end.
 
 ### SLICE-P00-007 — Immediate Theme Persistence Workflow
 
-**Outcome:** The real Settings screen reads authoritative theme mode, submits immediate updates, shows pending/error behavior, applies confirmed theme changes, and reverts to the last confirmed value on failure.
+**Outcome:** The real Settings screen reads authoritative theme mode, submits immediate single-flight updates, keeps pending selection separate from root-theme authority, reconciles every successful or ambiguous mutation through a focused read, applies confirmed theme changes, and reverts definite failures to the last confirmed value.
 
 ### SLICE-P00-008 — Event-Driven Theme Reconciliation
 
-**Outcome:** A committed backend `AppearanceSettingsChanged` event reaches Flutter through the application event stream, triggers the smallest appropriate authoritative refresh, and updates the root theme without duplicate state ownership.
+**Outcome:** A committed backend `AppearanceSettingsChanged` event reaches Flutter through the application event stream, requests/coalesces the smallest appropriate authoritative refresh, and updates the root theme from the query result without duplicate state ownership or event-payload authority.
 
 ### SLICE-P00-009 — Restart Restoration and Phase Hardening
 
@@ -408,8 +404,9 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 - The changed control shows pending state without blocking unrelated controls.
 - Rust validates before commit.
 - Persistence failure leaves authoritative storage unchanged.
-- Flutter reverts to the last confirmed value after failure.
-- The originating control shows an inline error.
+- Flutter reverts to the last confirmed value after a definite application-level failure.
+- A transport-ambiguous mutation outcome is not automatically replayed; Flutter reconciles through the focused authoritative read, and blocks further aggregate mutation if current authority still cannot be confirmed.
+- The originating control shows the applicable inline save/synchronization error.
 - No `AppearanceSettingsChanged` event is published on rollback or semantic no-op.
 
 ### 10.4 Event Delivery
@@ -607,6 +604,7 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](../specifications/frontend/spec-fe-004-routing-and-adaptive-application-shell.md)
 - [SPEC-FE-005 — Startup and Recovery UI](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md)
+- [SPEC-FE-006 — Appearance Settings and Theme Application](../specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-RUST-001 — Rust Coding and Test Conventions](../conventions/conv-rust-001-rust-coding-and-test-conventions.md)

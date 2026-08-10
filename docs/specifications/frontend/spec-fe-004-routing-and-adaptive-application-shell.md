@@ -96,9 +96,9 @@ The routing layer belongs to application composition:
 
 ```text
 app/bootstrap
-    ↓
-application readiness projection
-    ↓
+    ↓ constructs root client/providers
+features/startup
+    ↓ AppReadiness projection
 app/routing
     ↓
 ready-state shell / startup-recovery surface
@@ -1694,6 +1694,7 @@ It does not define a second navigation state framework, custom URL dispatcher, o
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
+- [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

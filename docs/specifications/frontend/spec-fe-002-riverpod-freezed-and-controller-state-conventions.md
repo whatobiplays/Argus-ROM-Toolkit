@@ -173,6 +173,8 @@ Representative dependencies include:
 
 ```text
 ArgusClient
+ClientBootstrap (initialization-only lifecycle seam)
+RuntimeApi
 SettingsApi
 EventsApi
 DiagnosticsApi
@@ -182,7 +184,7 @@ controlled clocks or other approved seams when needed
 
 Dependency providers do not own arbitrary feature presentation state merely because they are long-lived.
 
-Features should consume the narrowest focused dependency appropriate to their responsibility rather than injecting the concrete root client everywhere.
+Features should consume the narrowest Argus-owned dependency appropriate to their responsibility—normally a focused API, with the startup lifecycle seam as the explicit exception defined by SPEC-FE-003—rather than injecting the concrete root client everywhere.
 
 ## 9. Derived Providers
 
@@ -1726,6 +1728,7 @@ It also does not define a general frontend cache layer, offline mode, or a persi
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)
+- [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)
 - [CONV-TEST-001 — Test Pyramid, Fixtures, and Verification Commands](../../conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md)

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-10  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007  
 **Supersedes:** None  
 **Superseded By:** None
@@ -150,8 +150,8 @@ GetAppearanceSettings()
 UpdateAppearanceSettings(request)
 GetRuntimeState()
 ExportDiagnostics(request)
-RetryStartup()
-ResetAppearanceSettings()
+RetryStartup(expectedRuntimeInstanceId)
+ResetAppearanceSettings(expectedRuntimeInstanceId)
 ```
 
 Prohibited generic bridge entry points include:
@@ -572,6 +572,8 @@ Recovery actions must not be executable accidentally against a replacement runti
 The bridge request for a runtime-bound recovery action must include or otherwise be bound to the expected `runtimeInstanceId`.
 
 If the active runtime generation differs, the action is rejected with a stable application error rather than applied to the new runtime.
+
+This binding applies to every operation invoked because a `RecoveryActionDto` advertised it for a failed runtime, including non-mutating diagnostics and `Exit`. Generic diagnostics or shutdown capabilities used outside that failed-runtime recovery context may have their own lifecycle scope, but they must not be used to bypass stale recovery-action validation.
 
 The exact request DTO shape is implementation-planned, but stale-action prevention is mandatory.
 
@@ -1046,6 +1048,8 @@ ExecuteRecoveryAction(request)
 Shutdown()
     -> BridgeResult<Unit>
 ```
+
+When `Exit` is selected from a failed runtime's `RecoveryActionDto`, it executes through a generation-bound recovery request/action path. The unscoped `Shutdown()` entry point is not treated as that recovery request and must not bypass stale-action validation.
 
 Exact recovery operation factoring may use dedicated bridge methods for strongly typed actions instead of one generic executor. A stringly typed generic recovery invocation is prohibited.
 

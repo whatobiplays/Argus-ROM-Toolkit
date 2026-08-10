@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-10  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-008, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -164,9 +164,11 @@ Allowed responsibilities include:
 - application-shell composition;
 - application lifecycle wiring;
 - cross-feature frontend actions;
-- root startup/readiness presentation coordination;
+- root startup/readiness composition and transition coordination;
 - route-to-feature registration;
 - application-wide chrome composition.
+
+Startup/recovery state, orchestration, and feature presentation remain owned by `features/startup` under SPEC-FE-005. `app/` composes the root surface and reacts to the feature's narrow readiness projection; it does not become a second startup-state owner.
 
 `app/` does not own backend business rules or a second application-service layer parallel to Rust.
 
@@ -240,13 +242,7 @@ open game
 → navigate to game detail
 ```
 
-or:
-
-```text
-startup recovery succeeded
-→ refresh root readiness
-→ transition to normal shell presentation
-```
+Startup/readiness transitions are not modeled as imperative `app/actions`. SPEC-FE-005 publishes the readiness projection, and SPEC-FE-004 reacts to it through routing composition.
 
 An app action may coordinate:
 
@@ -312,6 +308,7 @@ The boundary is intentionally pure enough that it could be extracted into a sepa
 It may contain:
 
 - the root `ArgusClient` contract;
+- the initialization-only client lifecycle seam used by startup orchestration;
 - focused domain API contracts;
 - client-facing immutable read models;
 - typed client errors;
@@ -678,7 +675,7 @@ Conceptually:
 
 ```text
 core/client/
-→ ArgusClient and focused API providers
+→ ArgusClient, initialization-only client seam, and focused API providers
 
 features/settings/application/
 → settings controller providers
@@ -1500,6 +1497,7 @@ It also does not define post-MVP multi-package extraction or plugin architecture
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)
+- [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)
 - [CONV-TEST-001 — Test Pyramid, Fixtures, and Verification Commands](../../conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md)

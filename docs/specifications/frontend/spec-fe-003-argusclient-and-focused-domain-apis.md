@@ -21,7 +21,7 @@ It translates the bridge, runtime, error, application-service, frontend-structur
 - typed application and transport failures;
 - one mapped runtime-event stream;
 - centralized runtime-generation, transport, mapping, and connectivity policy;
-- focused API test seams independent of generated bridge bindings.
+- focused API and initialization-lifecycle test seams independent of generated bridge bindings.
 
 The client boundary exists so Flutter application and feature code can reason entirely in Argus-owned frontend concepts without depending on `flutter_rust_bridge`, bridge DTOs, generated transport result types, Rust implementation structure, or native communication mechanics.
 
@@ -38,6 +38,7 @@ This specification owns frontend rules for:
 - Phase 000 focused API scope;
 - client and focused-API lifetimes;
 - client initialization semantics;
+- the initialization-only client lifecycle seam consumed by startup;
 - root versus feature dependency responsibilities;
 - bridge DTO to frontend model mapping;
 - typed identifier conversion;
@@ -56,7 +57,7 @@ This specification owns frontend rules for:
 - timeout and cancellation ownership;
 - automatic retry restrictions;
 - Riverpod-independent client contracts;
-- focused API provider projection;
+- initialization-lifecycle and focused API provider projection;
 - test fakes and adapter verification;
 - generated bridge leakage prevention.
 
@@ -194,11 +195,13 @@ ArgusClient
 
 The future `library`, `games`, `jobs`, and `sources` APIs are architectural reservations, not Phase 000 empty scaffolding requirements.
 
+Root client initialization is exposed separately to the startup feature through the initialization-only lifecycle seam described below; it is not another focused domain API and does not expand the focused API catalog.
+
 ## 10. Why `RuntimeApi` Is Explicit
 
 Runtime/startup/recovery is a real application capability in SPEC-BE-004, SPEC-BE-007, and SPEC-BE-008.
 
-Therefore the Flutter client gives it an explicit `RuntimeApi` owner even though ARCH-001's shorthand focused-API list originally emphasized user-domain capabilities.
+Therefore the Flutter client gives it an explicit `RuntimeApi` owner, consistent with the current ARCH-001 root-client capability catalog.
 
 This does not create a new runtime abstraction. It is the frontend contract for existing runtime operations.
 
@@ -230,16 +233,18 @@ Otherwise a new focused API or different owner is considered.
 
 ## 13. Feature Dependency Rule
 
-Ordinary feature/application controllers depend on focused APIs:
+Feature/application controllers depend on the narrowest Argus-owned client contracts, normally focused APIs:
 
 ```text
 AppearanceSettingsController → SettingsApi
-StartupController            → RuntimeApi
+StartupController            → initialization-only client seam + RuntimeApi
 Recovery diagnostics         → DiagnosticsApi
 Event coordinator            → EventsApi
 ```
 
 They do not receive `ArgusClient` merely so they can retrieve a nested API.
+
+Startup is the lifecycle-specific exception that must initiate root client initialization, but it still does not receive the full root facade. An initialization-only Argus-owned client seam (conceptually `ClientBootstrap`) exposes only the initialization contract needed by SPEC-FE-005. The seam belongs with the client contracts; `app/bootstrap` supplies the root-client-backed implementation through composition.
 
 ## 14. Root Client Is Not a Service Locator
 
@@ -269,6 +274,7 @@ The following are ordinary Dart contracts:
 
 ```text
 ArgusClient
+ClientBootstrap
 RuntimeApi
 SettingsApi
 DiagnosticsApi
@@ -294,15 +300,16 @@ SPEC-FE-002 provider composition conceptually exposes:
 
 ```text
 argusClientProvider
+    ├── clientBootstrapProvider
     ├── runtimeApiProvider
     ├── settingsApiProvider
     ├── diagnosticsApiProvider
     └── eventsApiProvider
 ```
 
-Focused API providers are narrow projections from the root client.
+`clientBootstrapProvider` is an initialization-only lifecycle projection used by SPEC-FE-005. Focused API providers are narrow capability projections from the same root client.
 
-They do not add hidden caching, retries, business behavior, or feature state.
+These projections do not add hidden caching, retries, business behavior, or feature state.
 
 ## 17. Client Lifetime
 
@@ -340,6 +347,15 @@ ArgusClient.initialize()
 ```
 
 Exact Dart naming may differ if the implementation has a dedicated factory/bootstrap method, but semantics are fixed.
+
+Feature-level startup code receives these semantics through `ClientBootstrap`, conceptually:
+
+```text
+ClientBootstrap.initialize()
+    → Future<RuntimeState>
+```
+
+`ClientBootstrap` exposes no focused API catalog, event connection, or arbitrary root-client access. Its production implementation delegates to the one application-lifetime root `ArgusClient` initialization path.
 
 Initialization performs the minimum root work required to:
 
@@ -696,11 +712,16 @@ retryStartup(expectedRuntimeInstanceId)
 resetAppearanceSettings(expectedRuntimeInstanceId)
     → completion / authoritative runtime follow-up as required
 
-shutdown()
+exitFailedRuntime(expectedRuntimeInstanceId)
+    → completion
+
+generalShutdown()
     → completion
 ```
 
 Exact method factoring may reflect strongly typed bridge operations while preserving these semantics.
+
+`exitFailedRuntime` represents the generation-bound `Exit` recovery action advertised by a `StartupFailed` runtime. `generalShutdown` represents lifecycle termination initiated outside that failed-runtime recovery action. The latter must not be used to bypass stale recovery-action validation.
 
 ## 47. Retry Returns an Authoritative Snapshot
 
@@ -748,6 +769,10 @@ openDataDirectory()
 ```
 
 Availability remains governed by the current runtime capability/recovery snapshot.
+
+When a diagnostic operation is invoked because a failed runtime advertised it as a recovery action, the call must preserve that action's expected `RuntimeInstanceId` or an equivalent generation-bound recovery token. A stale recovery diagnostic must not silently execute against a replacement runtime merely because the same `DiagnosticsApi` method also exists in another lifecycle state.
+
+Likewise, `Exit` advertised by a failed runtime remains a generation-bound recovery intent. The implementation may ultimately share host-shutdown machinery, but it must preserve the stale-action validation required by SPEC-BE-007 rather than treating a stale recovery Exit as an unscoped command against a replacement runtime.
 
 ## 51. Existence of Method Does Not Mean Current Availability
 
@@ -1827,10 +1852,12 @@ The client does not fabricate a returned authoritative settings snapshot.
 
 ```text
 app/bootstrap
+    ↓ constructs root ArgusClient and provides initialization-only client seam
+features/startup/StartupController
     ↓
-ArgusClient.initialize()
+client-seam initialize()
     ↓
-native/bridge setup
+ArgusClient-backed native/bridge setup
     ↓
 backend host initialization
     ↓
@@ -1968,8 +1995,8 @@ An implementation conforming to SPEC-FE-003 satisfies all of the following:
 39. Feature code does not invent arbitrary transport timeout policy.
 40. Controller disposal is not misrepresented as backend cancellation.
 41. Mutations are not automatically retried after ambiguous transport failure without explicit safe backend semantics.
-42. Focused API fakes are the ordinary feature/controller test seam.
-43. Feature tests do not require generated DTOs or the real Rust backend when a focused API seam exists.
+42. Focused API fakes are the ordinary feature/controller test seam, with `ClientBootstrap` as the narrow startup-lifecycle test seam.
+43. Feature tests do not require generated DTOs or the real Rust backend when an Argus-owned client seam exists.
 44. Mapper tests cover DTO, identifier, error, runtime, event, and handle conversion.
 45. Root/client integration tests cover initialization, event connectivity, runtime replacement, and transport failure translation.
 46. A controlled test proves ambiguous settings mutation transport failure does not trigger duplicate automatic dispatch.
@@ -1982,7 +2009,7 @@ Phase 000 requires the smallest client implementation that proves the architectu
 
 ```text
 ArgusClient
-├── initialize
+├── initialize (projected to startup through ClientBootstrap)
 ├── runtime: RuntimeApi
 ├── settings: SettingsApi
 ├── diagnostics: DiagnosticsApi
@@ -1998,7 +2025,7 @@ with:
 - one diagnostics mapping path;
 - one typed runtime-event mapping path;
 - one native event subscription per runtime generation;
-- focused API provider/fake seams.
+- `ClientBootstrap` and focused API provider/fake seams.
 
 No library, games, jobs, sources, provider, metadata, or ROM-management API implementation is required by this specification during Phase 000.
 
@@ -2031,6 +2058,7 @@ It does not define a generic RPC framework, plugin API, frontend repository laye
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)
+- [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

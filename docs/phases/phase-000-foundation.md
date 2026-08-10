@@ -3,7 +3,7 @@
 **Document ID:** PHASE-000  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-10  
 **Depends On:** ARCH-001, ARCH-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -195,9 +195,9 @@ Requirements:
 
 - `flutter_rust_bridge` project integration.
 - Generated bindings treated as internal infrastructure.
-- Dedicated startup, appearance-settings, event, command-result, and UI-error DTOs.
-- One root backend initialization call.
-- Focused settings read/update calls.
+- Dedicated runtime/startup/recovery, appearance-settings, diagnostics, event, operation-handle, and application-error DTOs.
+- One root backend initialization entry point.
+- Focused runtime/recovery, settings read/update, and diagnostics calls.
 - One application-level event stream.
 - Stable structured error translation.
 - Bridge smoke tests.
@@ -208,7 +208,8 @@ Requirements:
 - `ProviderScope` composition root.
 - Riverpod-generated application and feature providers.
 - Freezed immutable models.
-- Root `ArgusClient` with focused `settings` and `events` APIs.
+- Root `ArgusClient` with focused `runtime`, `settings`, `diagnostics`, and `events` APIs.
+- Initialization-only client lifecycle seam for the startup feature, backed by the root `ArgusClient`.
 - App-level event coordinator.
 - `go_router` route configuration.
 - Adaptive application shell skeleton.
@@ -216,7 +217,7 @@ Requirements:
 - Settings destination.
 - Placeholder destinations may be used only when clearly labeled unavailable and required to validate shell routing; unnecessary future-feature stubs are excluded.
 - Theme application through `MaterialApp.themeMode` or the equivalent root theme mechanism.
-- Initial loading, loaded, error, and recovery states.
+- Explicit client-bootstrap loading/error, backend lifecycle projections (`Uninitialized`, `Starting`, `Ready`, `StartupFailed`), and frontend runtime-unavailable/recovery-operation states.
 - Immediate settings persistence behavior.
 - Transient non-blocking feedback where appropriate.
 
@@ -234,7 +235,7 @@ Mandatory startup work may block on:
 
 Startup must not wait for future library, provider, indexing, metadata, artwork, or verification work.
 
-Startup failures must be classified at least into:
+Phase 000 failure reporting across client bootstrap and backend startup must preserve at least the following stable classifications where applicable:
 
 ```text
 BridgeInitialization
@@ -324,7 +325,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-FE-002](../specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md) | Riverpod, Freezed, and Controller State Conventions | First provider/controller slice |
 | [SPEC-FE-003](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md) | ArgusClient and Focused Domain APIs | Bridge integration slice |
 | [SPEC-FE-004](../specifications/frontend/spec-fe-004-routing-and-adaptive-application-shell.md) | Routing and Adaptive Application Shell | Shell slice |
-| SPEC-FE-005 | Startup and Recovery UI | Startup integration slice |
+| [SPEC-FE-005](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md) | Startup and Recovery UI | Startup integration slice |
 | SPEC-FE-006 | Appearance Settings and Theme Application | Theme workflow slice |
 | SPEC-FE-007 | Design-System Foundation and Accessibility Baseline | First user-facing Flutter slice |
 
@@ -367,7 +368,7 @@ Includes the minimum error, logging, and diagnostic foundations required for sta
 
 ### SLICE-P00-005 — Native Bridge and ArgusClient Integration
 
-**Outcome:** Flutter initializes Rust through `flutter_rust_bridge`, receives structured readiness and appearance-settings DTOs, and accesses them through a root `ArgusClient` with focused settings and event APIs.
+**Outcome:** Flutter initializes Rust through `flutter_rust_bridge`, receives structured runtime/readiness, recovery, diagnostics, appearance-settings, and event DTOs, and accesses them through a root `ArgusClient` with focused runtime, settings, diagnostics, and event APIs.
 
 ### SLICE-P00-006 — Startup and Recovery Experience
 
@@ -605,6 +606,7 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](../specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](../specifications/frontend/spec-fe-004-routing-and-adaptive-application-shell.md)
+- [SPEC-FE-005 — Startup and Recovery UI](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-RUST-001 — Rust Coding and Test Conventions](../conventions/conv-rust-001-rust-coding-and-test-conventions.md)

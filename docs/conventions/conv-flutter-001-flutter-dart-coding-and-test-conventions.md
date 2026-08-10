@@ -3,7 +3,7 @@
 **Document ID:** CONV-FLUTTER-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-10  
 **Depends On:** ARCH-001, PHASE-000, SPEC-BE-003, SPEC-BE-004, SPEC-BE-008, CONV-REPO-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -289,7 +289,7 @@ UI model/widget
 Rules:
 
 1. Widgets never call generated bridge bindings directly.
-2. Features depend on narrow focused APIs rather than the concrete root bridge/client implementation.
+2. Features depend on the narrowest Argus-owned client contract rather than the concrete root bridge/client implementation. This is normally a focused API; the startup feature may additionally consume the initialization-only `ClientBootstrap` lifecycle seam defined by SPEC-FE-003.
 3. Bridge DTOs never enter feature code.
 4. Client APIs do not return widget-specific presentation models.
 5. Bridge mappings perform translation/validation only; they do not implement business rules that belong to Rust.
@@ -302,6 +302,7 @@ ARCH-001 defines one root backend gateway with focused APIs such as:
 
 ```text
 ArgusClient
+- runtime
 - library
 - games
 - jobs
@@ -313,7 +314,7 @@ ArgusClient
 
 The root client owns bridge-facing infrastructure such as generated bindings, lifecycle/readiness, shared mapping, common error translation, event connection, tracing, and cross-cutting transport policy.
 
-Feature code depends on the focused API it needs.
+Feature code depends on the narrow Argus-owned client contract it needs. Ordinary features use focused APIs; startup may use `ClientBootstrap` for initialization plus `RuntimeApi`/`DiagnosticsApi` for runtime and recovery behavior.
 
 Do not:
 
@@ -835,6 +836,7 @@ CONV-FLUTTER-001 is satisfied by an applicable implementation slice when:
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](../specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](../specifications/frontend/spec-fe-004-routing-and-adaptive-application-shell.md)
+- [SPEC-FE-005 — Startup and Recovery UI](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-RUST-001 — Rust Coding and Test Conventions](conv-rust-001-rust-coding-and-test-conventions.md)
 - [Effective Dart](https://dart.dev/effective-dart)

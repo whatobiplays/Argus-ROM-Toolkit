@@ -3,7 +3,7 @@
 **Document ID:** ARCH-001  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-10  
 **Depends On:** None  
 **Supersedes:** None  
 **Superseded By:** None  
@@ -1389,16 +1389,17 @@ Use `flutter_rust_bridge`.
 
 Only dedicated bridge DTOs cross the native boundary. Rust repositories, entities, domain aggregates, planners, graph nodes, and provider-native models remain private.
 
-Long-running commands return quickly with `CommandResultDto` and are tracked through jobs and events.
+Long-running commands return quickly with a bridge `OperationHandleDto` representing admitted operation identity and are tracked through jobs and events. Backend application-layer command-result semantics remain internal to Rust.
 
 Rust domain events are exposed as one application-level Dart stream.
 
 ### 19.5 ArgusClient
 
-Flutter has one root backend gateway with focused domain APIs:
+Flutter has one root backend gateway with focused application APIs:
 
 ```text
 ArgusClient
+- runtime
 - library
 - games
 - jobs
@@ -1419,6 +1420,8 @@ The root owns:
 - shared mapping infrastructure
 
 Features depend on narrow API interfaces rather than the concrete root client.
+
+The startup feature is not given the full root client. Root composition exposes the initialization contract through a narrow lifecycle seam, while runtime/recovery and ordinary feature work use the applicable focused APIs.
 
 ### 19.6 Model mapping
 
@@ -1681,7 +1684,7 @@ MVP uses a blocking startup screen while Rust bridge initialization, database op
 
 Do not wait for library queries, scans, metadata, or secondary data.
 
-Startup failure presents a targeted recovery screen with actions appropriate to the failure category.
+Client/bootstrap failure before Flutter can obtain a trustworthy runtime contract presents a bootstrap failure surface with only client-available actions. A successfully reported backend `StartupFailed` runtime presents the targeted recovery screen with only the recovery capabilities advertised for that failed runtime generation.
 
 Provide both:
 

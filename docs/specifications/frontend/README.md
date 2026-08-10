@@ -11,10 +11,10 @@ They define application structure, state architecture, client boundaries, routin
 | ID | Specification | Status |
 |---|---|---|
 | [SPEC-FE-001](spec-fe-001-flutter-project-structure-and-feature-boundaries.md) | Flutter Project Structure and Feature Boundaries | Ready for Implementation |
+| [SPEC-FE-002](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md) | Riverpod, Freezed, and Controller State Conventions | Ready for Implementation |
 
 ## Planned Phase 000 Specifications
 
-- `SPEC-FE-002` — Riverpod, Freezed, and Controller State Conventions
 - `SPEC-FE-003` — ArgusClient and Focused Domain APIs
 - `SPEC-FE-004` — Routing and Adaptive Application Shell
 - `SPEC-FE-005` — Startup and Recovery UI

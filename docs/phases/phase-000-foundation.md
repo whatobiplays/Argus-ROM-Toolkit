@@ -322,7 +322,7 @@ The following specifications must be written and reach **Ready for Implementatio
 |---|---|---|
 | [SPEC-FE-001](../specifications/frontend/spec-fe-001-flutter-project-structure-and-feature-boundaries.md) | Flutter Project Structure and Feature Boundaries | Flutter workspace slice |
 | [SPEC-FE-002](../specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md) | Riverpod, Freezed, and Controller State Conventions | First provider/controller slice |
-| SPEC-FE-003 | ArgusClient and Focused Domain APIs | Bridge integration slice |
+| [SPEC-FE-003](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md) | ArgusClient and Focused Domain APIs | Bridge integration slice |
 | SPEC-FE-004 | Routing and Adaptive Application Shell | Shell slice |
 | SPEC-FE-005 | Startup and Recovery UI | Startup integration slice |
 | SPEC-FE-006 | Appearance Settings and Theme Application | Theme workflow slice |
@@ -603,6 +603,7 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [SPEC-BE-012 — Transformation and Hash-Scheme Contract](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md)
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](../specifications/frontend/spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](../specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
+- [SPEC-FE-003 — ArgusClient and Focused Domain APIs](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-RUST-001 — Rust Coding and Test Conventions](../conventions/conv-rust-001-rust-coding-and-test-conventions.md)

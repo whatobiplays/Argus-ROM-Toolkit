@@ -3,7 +3,7 @@
 **Document ID:** SPEC-X-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000  
 **Supersedes:** None  
 **Superseded By:** None
@@ -529,16 +529,16 @@ generated/compile-time consistency
         ↓
 contract fixture/static verification
         ↓
-runtime bridge-major assertion where useful
+client/bootstrap matched-contract validation
         ↓
-startup failure on mismatch
+backend assertion only where still useful and reportable
 ```
 
-Where both runtime sides expose the bridge major, they must agree before the application becomes Ready.
+A failure before Flutter can invoke a trustworthy `ApplicationHost` is a transport/bootstrap contract failure. It does not fabricate `RuntimeState`, `StartupFailure`, or `ApplicationError`.
 
-A mismatch is treated as a packaging/build/integration defect, not as a request to negotiate another bridge implementation.
+If the call reaches a reportable backend host and a backend-side bridge-adapter/composition assertion fails, startup may return the typed backend failure and must not enter `Ready`.
 
-Failure maps through the existing bridge/startup error contracts in SPEC-BE-003, SPEC-BE-007, and SPEC-BE-008.
+The same defect is classified at exactly one boundary. A mismatch is a packaging/build/integration defect, not a request to negotiate another bridge implementation.
 
 ## 28. Bridge Major Transition
 
@@ -779,7 +779,7 @@ Relevant startup ordering remains owned by SPEC-BE-007.
 Examples:
 
 - database compatibility is verified in `PersistenceInitialization` before normal database work;
-- required bridge compatibility is verified before the bridge/application runtime reports Ready;
+- client/bootstrap matched-contract validation completes before feature code consumes the bridge, and any reportable backend-side assertion completes before runtime `Ready`;
 - mandatory persisted configuration compatibility is verified before the dependent service becomes ready.
 
 Argus must not enter Ready state and only later discover that mandatory authoritative state is incompatible.
@@ -1215,7 +1215,7 @@ SPEC-X-001 is satisfied by the applicable Phase 000 implementation when:
 20. Flutter and Rust are treated as one matched desktop distribution.
 21. No arbitrary independently deployed Flutter/Rust compatibility matrix is promised.
 22. No runtime bridge-version negotiation/fallback implementation exists in Phase 000.
-23. Bridge-major mismatch prevents readiness where runtime assertion is used.
+23. A pre-host bridge mismatch fails as a typed transport/bootstrap failure, while a reportable backend-side mismatch prevents readiness; one defect is never represented by both classifications.
 24. Product SemVer does not act as a proxy for bridge, database, diagnostic, error, or provider schema versions.
 25. Published error-code compatibility remains independently versioned according to SPEC-BE-003.
 26. Diagnostic bundle compatibility remains independently versioned according to SPEC-BE-003.

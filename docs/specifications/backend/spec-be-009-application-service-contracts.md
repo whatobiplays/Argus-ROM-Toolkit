@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-009  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-008  
 **Supersedes:** None  
 **Superseded By:** None
@@ -12,7 +12,7 @@
 
 This specification defines the authoritative contract for the Argus application service layer.
 
-Application services sit between transport adapters such as the Rust-to-Flutter bridge and the lower-level runtime, domain, persistence, and gateway abstractions. They own named application capabilities, use-case orchestration, transaction boundaries for authoritative mutations, typed application request contracts, application result contracts, and event-recording semantics.
+Application services form the application-use-case boundary inside an operation already admitted and dispatched by `ApplicationRuntime`; they sit between runtime dispatch and domain, persistence, and gateway ports rather than between transport and runtime. They own named application capabilities, use-case orchestration, transaction boundaries for authoritative mutations, typed application request contracts, application result contracts, and event-recording semantics.
 
 The service layer is intentionally behavioral rather than stateful. It coordinates application work but does not become a cache, persistence layer, runtime scheduler, transport layer, or service-locator graph.
 
@@ -91,18 +91,20 @@ Conceptually:
 ```text
 Flutter / CLI / future adapters
             ↓
-Transport adapters
+transport adapter and request mapping
             ↓
-Application Services
+ApplicationHost / ApplicationRuntime
             ↓
-Runtime ports / Repositories / Gateways
+centralized admission, OperationContext, lifecycle, and dispatch
             ↓
-Domain and Infrastructure implementations
+application service / focused handler / workflow coordinator
+            ↓
+repositories, queries, gateways, and domain rules
+            ↓
+infrastructure adapters
 ```
 
-Application services are the authoritative application-use-case boundary.
-
-A caller invokes an application capability. The service coordinates the dependencies required to satisfy that capability while preserving runtime, persistence, event, and error contracts.
+Application services are the authoritative application-use-case boundary inside the admitted runtime operation. A bridge maps transport requests and invokes the runtime; it never bypasses runtime admission to call services directly.
 
 ## 6. Application Service Responsibilities
 
@@ -444,45 +446,19 @@ Provider discovery and session access required by a feature belong behind the bo
 
 ## 20. Runtime Port
 
-Application services interact with runtime functionality only through explicit stable runtime ports.
+Runtime capabilities consumed by application code are narrow inward-owned ports implemented or supplied by runtime. They may expose operation-scoped capabilities such as child background admission, cancellation requests, event collection, clock/trace context, or another capability explicitly required by the current use case.
 
-A runtime port may expose narrowly scoped capabilities such as:
-
-- background operation admission
-- cancellation requests
-- runtime operation context access
-- readiness/admission capabilities where required internally
-- operation-scoped event collector access
-
-It must not expose:
-
-- concrete schedulers
-- thread pools
-- raw executor handles
-- runtime lifecycle internals
-- mutable global runtime state
+A service does not re-admit the top-level operation currently executing and cannot inspect or mutate runtime lifecycle internals. Runtime ports expose no concrete scheduler, thread pool, executor, bridge type, or mutable global state.
 
 ## 21. Runtime Ownership Rule
 
 The ownership split is:
 
-> The runtime owns execution; application services own application intent and orchestration.
+> Runtime owns top-level admission and execution lifecycle; application services own application intent, transaction/workflow orchestration, and operation-specific semantics inside that lifecycle.
 
-Application services decide:
+Runtime owns admission, `OperationContext`, cancellation plumbing, top-level dispatch, background `JobRun` lifecycle, resource admission, post-commit event publication, shutdown, and runtime generation replacement.
 
-- what application operation is being performed
-- what business steps are required
-- what repositories/gateways are needed
-- what authoritative mutation should occur
-
-Runtime decides:
-
-- admission
-- operation context
-- cancellation plumbing
-- execution resources
-- background scheduling
-- post-commit event publication
+Application services and focused handlers own use-case validation, repository/gateway coordination, Unit of Work boundaries, domain-rule invocation, event semantics/recording, and operation-specific success results.
 
 ## 22. Application Request Contracts
 
@@ -506,23 +482,17 @@ Rules:
 
 ## 23. Bridge Mapping Boundary
 
-Bridge request DTOs are mapped explicitly into application request contracts.
-
-Required direction:
+Bridge request DTOs are mapped explicitly into application request contracts, then submitted through `ApplicationRuntime`:
 
 ```text
 UpdateAppearanceSettingsRequestDto
     ↓ bridge mapping
 UpdateAppearanceSettingsCommand
-    ↓
-SettingsService
+    ↓ runtime admission and dispatch
+SettingsService / focused handler
 ```
 
-Application services never accept bridge DTOs directly.
-
-Application service outputs are mapped by the bridge into canonical DTOs defined by SPEC-BE-008.
-
-This preserves independent transport and application contract evolution.
+Application services never accept bridge DTOs directly, and bridge adapters never invoke services while bypassing runtime admission. Application outputs return through runtime and are mapped into canonical SPEC-BE-008 DTOs at the bridge boundary.
 
 ## 24. Application Result Contract
 

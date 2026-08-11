@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-006  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005  
 **Supersedes:** None  
 **Superseded By:** None
@@ -521,6 +521,14 @@ Required semantics:
 6. The event consumer cannot reuse the originating operation's Unit of Work.
 7. The event consumer cannot extend the originating transaction.
 
+### 21.1 Publication-stack and resource-release boundary
+
+`OperationStarter` performs only a bounded request/admission handoff while an event is being published. An event consumer must not synchronously execute or await completion of the downstream handler on the originating publication stack.
+
+Before downstream business execution begins, the originating Unit of Work, event collector, operation locks, and other operation-scoped resources must be released. The new operation receives independent admission, context, cancellation, and trace identity and cannot re-enter the originating operation.
+
+This boundary prevents event delivery from turning post-commit publication into hidden recursive command execution or a lock/resource deadlock.
+
 ## 22. Causality and Trace Identity
 
 Event-triggered work is causally related to the event but is not the same top-level operation.
@@ -550,7 +558,7 @@ Permitted examples:
 - route the event to a bounded bridge notification sink
 - emit structured observability about delivery
 - update ephemeral subscriber-local bookkeeping
-- request a new operation through `OperationStarter`
+- request a new operation through `OperationStarter` as a bounded handoff without awaiting downstream handler completion on the publication stack
 - perform bounded mapping from an application event to a transport notification
 
 Prohibited inline work includes:

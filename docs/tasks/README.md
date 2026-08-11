@@ -21,4 +21,8 @@ A task may suggest an intended commit boundary, but that is planning guidance on
 
 Tasks must not contain unresolved design choices.
 
+A task's executable scope is the intersection of its active phase, parent implementation slice or approved plan, explicit allowed/forbidden paths and deliverable, and governing architecture/specifications/conventions. Referencing a Ready future specification does not authorize speculative modules, routes, DTOs, migrations, dependencies, fixtures, tests, placeholders, or generated output.
+
+If a task appears broader than its parent phase or slice, correct or surface the authority conflict rather than silently expanding implementation.
+
 Use [the Codex task template](../templates/codex-task.md).

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-005  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-07  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004  
 **Supersedes:** None  
 **Superseded By:** None
@@ -27,7 +27,7 @@ This specification covers:
 - materialized default records
 - `AppearanceSettingsRepository`
 - `AppearanceSettingsQueries`
-- thin `AppearanceSettingsService` façade over the focused handlers
+- thin `AppearanceSettingsService` over the focused handlers
 - `GetAppearanceSettingsQuery`
 - `UpdateAppearanceSettingsCommand`
 - validation and Unit of Work behavior
@@ -677,7 +677,7 @@ Owns:
 ```text
 AppearanceSettingsRepository
 AppearanceSettingsQueries
-AppearanceSettingsService (thin application façade)
+AppearanceSettingsService (thin application service over focused handlers)
 GetAppearanceSettingsQuery / handler
 UpdateAppearanceSettingsCommand / handler
 AppearanceSettingsChanged

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-010  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009  
 **Supersedes:** None  
 **Superseded By:** None
@@ -15,6 +15,12 @@ This specification defines the canonical backend architecture for Argus metadata
 The gateway layer isolates application workflows from provider-specific APIs, authentication schemes, HTTP clients, SDKs, payloads, rate limits, retry conventions, error vocabularies, and branding. Application code consumes stable capability-oriented contracts owned by Argus; provider implementations translate those contracts into provider-specific interactions.
 
 This specification formalizes the provider architecture established by ARCH-001 and makes its lifecycle, capability, readiness, selection, error, retry, and dependency rules normative for later metadata, artwork, and related feature specifications.
+
+### 1.1 Activation scope
+
+This is a forward MVP contract. Its Ready status does not activate metadata-provider implementation, dependencies, DTOs, migrations, fixtures, or placeholder modules during Phase 000. Only an active later phase, slice, and task may do so.
+
+`ProviderSession` exists for actual provider interaction within one admitted background execution attempt. Static descriptor/catalog inspection and readiness/configuration queries may remain immediate and must not fabricate a `JobRun` or provider session merely to inspect provider availability.
 
 ## 2. Scope
 

@@ -12,6 +12,10 @@
 
 [One bounded implementation objective.]
 
+### 1.1 Scope Authority
+
+[Identify the active phase, parent implementation slice or approved plan, and explicit task authority. The executable scope is their intersection with the governing architecture, specifications, references, and conventions. Ready future specifications constrain compatibility but do not authorize speculative scaffolding.]
+
 ## 2. Inspect First
 
 - `[repo-relative path]`

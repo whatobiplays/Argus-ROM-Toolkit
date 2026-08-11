@@ -3,7 +3,7 @@
 **Document ID:** PHASE-000  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -15,6 +15,12 @@ Phase 000 establishes the smallest complete Argus application foundation that pr
 The phase does not attempt to implement the complete settings system, source providers, library indexing, jobs, metadata, artwork, or RetroAchievements. It creates only the cross-cutting infrastructure required by later phases and validates it with one user-visible capability: selecting an application theme, applying it immediately, and restoring it after restart.
 
 This is a product milestone rather than a collection of disconnected infrastructure tasks. At completion, Argus is a launchable cross-platform application with a functioning Rust backend, SQLite persistence, native bridge, adaptive Flutter shell, settings screen, event propagation, startup recovery, and diagnostic foundation.
+
+### 1.1 Active implementation authority
+
+Phase 000 authorizes only the behavior and infrastructure required by its ordered slices and canonical theme workflow. Ready specifications for later MVP capabilities constrain compatibility, but they do not authorize placeholder modules, migrations, DTOs, dependencies, fixtures, tests, routes, or background-operation infrastructure in this phase.
+
+An implementation agent must use the intersection of this phase, the active slice or approved plan, the explicit task, and governing specifications/conventions. When a later-ready specification describes more than Phase 000 needs, its Phase 000 minimum and this phase's exclusions are authoritative.
 
 ## 2. User-Visible Outcome
 
@@ -73,7 +79,7 @@ Focused SettingsApi update
     ↓
 ArgusClient / flutter_rust_bridge
     ↓
-Rust AppearanceSettingsService façade
+Rust AppearanceSettingsService
     ↓
 Use-case handler / Unit of Work
     ↓
@@ -149,7 +155,7 @@ None. This is the first implementation phase.
 - Migration framework and initial schema.
 - Unit of Work abstraction with transaction-bound repositories.
 - Appearance settings repository.
-- `AppearanceSettingsService` façade and focused query/command handlers.
+- `AppearanceSettingsService` and focused query/command handlers.
 - Minimal in-process domain event bus.
 - Startup coordinator and readiness result.
 - Startup failure classification.
@@ -191,7 +197,7 @@ Requirements:
 
 - `flutter_rust_bridge` project integration.
 - Generated bindings treated as internal infrastructure.
-- Dedicated runtime/startup/recovery, appearance-settings, diagnostics, event, operation-handle, and application-error DTOs.
+- Dedicated runtime/startup/recovery, appearance-settings, diagnostics, event, and application-error DTOs required by this phase.
 - One root backend initialization entry point.
 - Focused runtime/recovery, settings read/update, and diagnostics calls.
 - One application-level event stream.
@@ -211,7 +217,7 @@ Requirements:
 - Adaptive application shell skeleton.
 - Compact bottom navigation, medium navigation rail, and expanded/large sidebar structure sufficient for available Phase 000 destinations.
 - Settings destination.
-- Placeholder destinations may be used only when clearly labeled unavailable and required to validate shell routing; unnecessary future-feature stubs are excluded.
+- Shell validation uses only Phase 000 destinations; placeholder future-feature destinations and routes are excluded.
 - Theme application through `MaterialApp.themeMode` or the equivalent root theme mechanism.
 - Explicit client-bootstrap loading/error, backend lifecycle projections (`Uninitialized`, `Starting`, `Ready`, `StartupFailed`), and frontend runtime-unavailable/recovery-operation states.
 - Immediate settings persistence behavior.
@@ -219,22 +225,22 @@ Requirements:
 
 ### 6.6 Startup and Recovery
 
-Mandatory startup work may block on:
+Client bootstrap first loads the native library, generated bindings, and transport contract. This occurs before backend runtime state exists. Failure at that boundary is a frontend `TransportFailure`; Flutter must not fabricate `RuntimeState` or `StartupFailureDto` for a backend host it could not reach.
 
-- native bridge initialization
+After `ApplicationHost` is reachable, mandatory backend startup work may block on:
+
 - database path resolution
 - database opening
 - migrations
 - core service construction
 - appearance-settings loading
-- event-stream initialization required for a safe ready state
+- validation of the injected runtime-to-bridge notification sink required for a safe ready state
 
-Startup must not wait for future library, provider, indexing, metadata, artwork, or verification work.
+Backend startup must not wait for future library, provider, indexing, metadata, artwork, verification, persisted-job, or other secondary work.
 
-Phase 000 failure reporting across client bootstrap and backend startup must preserve at least the following stable classifications where applicable:
+Reportable backend startup failure must preserve at least these stable classifications where applicable:
 
 ```text
-BridgeInitialization
 DatabaseOpen
 DatabaseLocked
 MigrationFailed
@@ -243,10 +249,13 @@ ConfigurationInvalid
 AppearanceSettingsInvalid
 Permissions
 CoreServiceInitialization
+BridgeInitialization
 Unknown
 ```
 
-The recovery screen exposes only applicable actions, which may include:
+`BridgeInitialization` applies only to a backend-side adapter/composition failure after the host is reachable. It does not represent native-library loading, generated-binding loading, contract negotiation, marshalling, or transport failure.
+
+The recovery screen exposes only actions supplied by the authoritative backend failure contract, which may include:
 
 - Retry
 - Copy technical details
@@ -255,7 +264,7 @@ The recovery screen exposes only applicable actions, which may include:
 - Open data directory where supported
 - Exit
 
-Destructive database-reset or restore workflows are not required in Phase 000 unless necessary to test the recovery architecture; they remain deferred.
+Recovery actions are generation-bound. A stale runtime generation triggers authoritative state refresh rather than automatic replay. Destructive database-reset or restore workflows are deferred.
 
 ### 6.7 Diagnostics Foundation
 
@@ -273,7 +282,7 @@ Phase 000 explicitly excludes:
 - `LibrarySource`, `LibraryRoot`, and `SourceEntry` functionality.
 - Filesystem provider implementation beyond any minimal path utility needed for the application data directory.
 - Library scanning or filesystem watching.
-- Persisted user-visible jobs or the full generic execution-graph scheduler.
+- Persisted user-visible jobs, `BackgroundOperationManager`, resource-class scheduling, retry/resume job lifecycles, operation-handle DTOs, or any generic execution-graph scheduler.
 - Indexing, reconciliation, move detection, or source classification. Their architecture is defined for later phases by [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md); SPEC-BE-011 does not add source/indexing work to Phase 000.
 - `GameContent`.
 - Parsing and transformation graphs, canonical content identity, identity migration, hash schemes, or hash persistence. Their architecture is defined for later phases by [SPEC-BE-012 — Transformation and Hash-Scheme Contract](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md); SPEC-BE-012 does not add transformation/identity/hash work to Phase 000.

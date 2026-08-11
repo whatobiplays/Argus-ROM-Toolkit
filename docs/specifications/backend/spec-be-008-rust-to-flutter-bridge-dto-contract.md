@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007  
 **Supersedes:** None  
 **Superseded By:** None
@@ -396,6 +396,8 @@ Versioning and compatibility mechanics beyond the Phase 000 single-application d
 
 ## 18. DTO Naming Convention
 
+The examples in this naming catalog include both active Phase 000 types and reserved later-MVP types. Naming examples do not override the activation guards and Phase 000 exclusions in this specification.
+
 All concrete transport objects use the `Dto` suffix.
 
 ### Request DTOs
@@ -460,38 +462,28 @@ Conceptually:
 
 ```text
 RuntimeStateDto
-- state: RuntimeState
 - runtimeInstanceId
-- startupFailure: StartupFailureDto?
-- availableRecoveryActions: [RecoveryActionDto]
-- capabilities: RuntimeCapabilitiesDto
+- lifecycleState
+- startupPhase nullable
+- startupFailure nullable
 ```
 
 Rules:
 
 1. `runtimeInstanceId` is always present for a constructed runtime generation.
-2. `state` is authoritative for lifecycle state.
-3. `startupFailure` is present only when state is `StartupFailed`.
-4. `availableRecoveryActions` represents actions currently valid for the failed runtime generation and is empty when no recovery actions apply.
-5. Capability fields are current-snapshot data, not permanent feature entitlements.
+2. `lifecycleState` is authoritative for runtime lifecycle.
+3. `startupPhase` is present only when startup progress or terminal failure attribution requires it.
+4. `startupFailure` is present only when `lifecycleState` is `StartupFailed`.
+5. Failure-state actions are available only through `startupFailure.recoveryActions`; `RuntimeStateDto` does not store a second recovery-action list or capability bag.
 6. Flutter uses `runtimeInstanceId` to detect runtime replacement.
 
-## 21. `RuntimeCapabilitiesDto`
+## 21. No Generic Runtime Capability Bag
 
-Runtime capabilities are explicitly typed rather than represented as a string/bool map.
+Phase 000 publishes no sibling runtime capability bag. Runtime lifecycle authority comes from `RuntimeStateDto.lifecycleState`; failed-runtime action availability comes exclusively from `StartupFailureDto.recoveryActions`; named bridge APIs define the supported operation surface.
 
-Phase 000 conceptually requires capability information sufficient to describe whether currently safe runtime/recovery operations are available, such as:
+A boolean map or typed DTO that repeats recovery-action availability would create a second writable truth and is prohibited.
 
-```text
-RuntimeCapabilitiesDto
-- diagnosticsExportAvailable
-- technicalDetailsAvailable
-- openDataDirectoryAvailable
-```
-
-Exact additive fields are finalized during implementation planning as long as they correspond to actual application capabilities.
-
-A capability means the current runtime generation can safely expose the operation now. It is not a license, feature flag, permission system, or frontend presentation hint.
+If a later active capability genuinely requires dynamic optional availability outside startup recovery, it must add one narrowly typed projection through an explicit additive contract update, identify its single authority, and avoid duplicating lifecycle or recovery-action semantics.
 
 ## 22. `StartupFailureDto`
 
@@ -577,6 +569,10 @@ This binding applies to every operation invoked because a `RecoveryActionDto` ad
 
 The exact request DTO shape is implementation-planned, but stale-action prevention is mandatory.
 
+Failure-state recovery actions have exactly one authoritative source: `StartupFailureDto.recoveryActions`. `RuntimeStateDto` does not store or serialize a second recovery-action list.
+
+Retry startup, reset appearance settings, exit the failed runtime, failure-screen diagnostics export, technical-detail copy, and open-data-directory requests are generation-bound. A mismatched expected runtime generation maps to `ARGUS.V1.RUNTIME.STALE_INSTANCE`; Flutter refreshes authoritative runtime state and does not replay the stale request automatically.
+
 ## 26. `AppearanceSettingsDto`
 
 The canonical bridge projection of SPEC-BE-005 is:
@@ -654,6 +650,8 @@ Immediate mutation operations return terminal application success/failure:
 ```text
 BridgeResult<Unit>
 ```
+
+The following long-running-operation contracts are forward MVP semantics only. Phase 000 MUST NOT generate or implement `OperationHandleDto`, operation query DTOs, operation event variants, mappers, bindings, fakes, or tests unless a later active phase, slice, and task introduce persisted background operations.
 
 ### Long-running operations
 
@@ -803,7 +801,7 @@ Conceptually:
 
 ```text
 RuntimeStateChangedDto
-- state
+- lifecycleState
 ```
 
 It announces that the runtime lifecycle state changed.
@@ -825,6 +823,8 @@ The minimal Phase 000 projection should contain only context required to identif
 This preserves the notification-first event rule.
 
 ## 39. Operation Event Family
+
+This family is a forward MVP contract and is absent from the Phase 000 generated event union. Sections 40–44 reserve the required semantics for the later active phase that introduces persisted background operations.
 
 Long-running operation lifecycle transitions use distinct typed variants:
 
@@ -1040,41 +1040,42 @@ SubscribeEvents()
     -> RuntimeEvent stream
 
 RetryStartup(expectedRuntimeInstanceId)
-    -> BridgeResult<RuntimeStateDto or acknowledgement>
+    -> BridgeResult<RuntimeStateDto>
 
-ExecuteRecoveryAction(request)
-    -> BridgeResult<...>
+ResetAppearanceSettings(expectedRuntimeInstanceId)
+    -> BridgeResult<RuntimeStateDto>
+
+ExitFailedRuntime(expectedRuntimeInstanceId)
+    -> BridgeResult<RuntimeStateDto>
 
 Shutdown()
     -> BridgeResult<Unit>
 ```
 
-When `Exit` is selected from a failed runtime's `RecoveryActionDto`, it executes through a generation-bound recovery request/action path. The unscoped `Shutdown()` entry point is not treated as that recovery request and must not bypass stale-action validation.
+Recovery operations are typed rather than routed through a generic executor. Each validates the expected runtime generation and returns the authoritative resulting `RuntimeStateDto`. `RetryStartup` and successful reset recovery ultimately create or expose the fresh runtime generation through SPEC-BE-007 rather than restarting the failed runtime in place.
 
-Exact recovery operation factoring may use dedicated bridge methods for strongly typed actions instead of one generic executor. A stringly typed generic recovery invocation is prohibited.
+The unscoped `Shutdown()` entry point is a normal lifecycle operation, not the generation-bound `Exit` recovery action, and must not bypass stale-action validation.
 
-`RetryStartup` ultimately causes runtime replacement through SPEC-BE-007 rather than restarting the same runtime.
+Failure-screen diagnostics export, technical-detail retrieval, and open-data-directory operations are likewise bound to the expected failed runtime generation when invoked because that failure advertised them.
 
 ## 51. Diagnostics Bridge Contract
 
-Phase 000 diagnostics capabilities include conceptually:
+Failure-screen diagnostics capabilities are generation-bound because they are offered by one failed runtime snapshot:
 
 ```text
-ExportDiagnostics(DiagnosticsExportRequestDto)
+ExportStartupDiagnostics(expectedRuntimeInstanceId, DiagnosticsExportRequestDto)
     -> BridgeResult<DiagnosticsExportDto>
 
-GetTechnicalDetails()
+GetStartupTechnicalDetails(expectedRuntimeInstanceId)
     -> BridgeResult<TechnicalDetailsDto>
 
-OpenDataDirectory()
+OpenStartupDataDirectory(expectedRuntimeInstanceId)
     -> BridgeResult<Unit>
 ```
 
-Only capabilities currently declared available by `RuntimeCapabilitiesDto` / recovery actions should be presented by Flutter in failure states.
+A stale expected generation maps to `ARGUS.V1.RUNTIME.STALE_INSTANCE`; the bridge does not silently retarget the request. General ready-state diagnostics may be added as separately named capabilities when an active phase requires them.
 
-Diagnostic DTOs contain sanitized application-level information only.
-
-The exact user-selected output-path interaction may be frontend/platform mediated; the bridge must not weaken SPEC-BE-003 path and privacy rules.
+Only actions currently advertised by `StartupFailureDto.recoveryActions` are presented in a failed-runtime UI. Diagnostic DTOs contain sanitized application-level information only. Platform save-dialog ownership must not weaken SPEC-BE-003 path and privacy rules.
 
 ## 52. `DiagnosticsExportDto`
 
@@ -1378,16 +1379,7 @@ StartupFailedDto
 AppearanceSettingsChangedDto
 ```
 
-Operation lifecycle DTOs may be implemented in the shared bridge contract even though Phase 000 does not expose user-visible persisted background jobs, because SPEC-BE-004 defines their long-term semantics and the contract must not conflict with later implementation:
-
-```text
-OperationHandleDto
-OperationStartedDto
-OperationProgressDto
-OperationCompletedDto
-OperationFailedDto
-OperationCancelledDto
-```
+Operation lifecycle DTO semantics are reserved by this specification but MUST NOT be implemented during Phase 000. They become implementation scope only when an active later phase, slice, and task introduce persisted background operations.
 
 Diagnostics DTOs required by the Phase 000 recovery experience include the minimum safe forms of:
 
@@ -1445,17 +1437,17 @@ SPEC-BE-008 is satisfied when:
 16. `RuntimeStateDto` owns `runtimeInstanceId`.
 17. `StartupFailureDto` composes rather than duplicates `ApplicationErrorDto`.
 18. `StartupFailureDto` does not duplicate runtime identity.
-19. `RecoveryActionDto` is typed, declarative, non-presentational, and generation-bound.
+19. `RecoveryActionDto` is typed, declarative, non-presentational, generation-bound, and the sole failed-runtime action-availability authority; `RuntimeStateDto` has no sibling capability bag.
 20. `AppearanceSettingsDto` contains only application-visible appearance state.
 21. Update appearance requests contain the complete desired aggregate without persistence metadata.
 22. Immediate settings update does not return an authoritative state echo.
-23. `OperationHandleDto` contains identity only.
+23. When an active later phase introduces persisted background operations, `OperationHandleDto` contains identity only; Phase 000 does not implement it.
 24. There is exactly one runtime push stream per runtime generation.
 25. All other bridge communication is request/response.
 26. Runtime events use common runtime instance/sequence metadata.
 27. Runtime event payloads are strongly typed rather than arbitrary maps/JSON.
 28. Runtime event families remain organizational only and do not create multiple streams.
-29. Operation lifecycle events use separate typed variants.
+29. When active, operation lifecycle events use separate typed variants; they are absent from the Phase 000 generated event union.
 30. Operation progress contains no backend percentage field.
 31. Domain/runtime events are notification-first.
 32. `AppearanceSettingsChangedDto` carries no authoritative settings snapshot.
@@ -1464,7 +1456,7 @@ SPEC-BE-008 is satisfied when:
 35. Bridge mappings do not perform business logic or persistence reads.
 36. DTOs and mappings follow SPEC-BE-003 privacy/redaction requirements.
 37. Bridge/application contracts expose no FRB, SQLite, async-runtime, or infrastructure implementation types.
-38. DTO, error, runtime, settings, event, compatibility, and architecture tests cover the required contracts.
+38. DTO, error, runtime, settings, event, compatibility, and architecture tests cover the contracts implemented by the active phase, slice, and task; reserved future DTOs/events do not require Phase 000 scaffolding or tests.
 
 ## 64. Prohibited Patterns
 

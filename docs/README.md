@@ -50,3 +50,5 @@ docs/
 Do not rely on chat history as the durable specification. Material decisions made in chat must be written into the appropriate repository document before implementation depends on them.
 
 Lower-level documents may refine higher-level documents but must not contradict them. When a conflict exists, the higher-level document controls until it is formally revised.
+
+`Ready for Implementation` describes design maturity, not blanket implementation authorization. An agent implements only the intersection of the active phase, active slice or approved plan, explicit task authority, and governing documents; later-ready specifications constrain compatibility without expanding current scope.

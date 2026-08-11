@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -499,6 +499,8 @@ startImport(...)
 
 The returned handle means the operation was admitted, not that work completed.
 
+These operation-handle and operation-event semantics are reserved forward contracts. They do not authorize Phase 000 classes, mappers, fakes, providers, generated unions, or tests until an active later phase, slice, and task introduce persisted background operations.
+
 ## 30. No Client-Side Await-Until-Finished Wrapper
 
 A focused API must not turn a background admission contract into a single `Future` that waits for backend job completion merely for screen convenience.
@@ -622,12 +624,11 @@ Conceptually:
 RuntimeState
 - lifecycle
 - runtimeInstanceId
+- startupPhase
 - startupFailure
-- availableRecoveryActions
-- capabilities
 ```
 
-The exact Freezed structure may use unions to encode valid lifecycle combinations more safely.
+The exact Freezed structure may use unions to encode valid lifecycle combinations more safely. Failure-state recovery actions have one source only: `startupFailure.recoveryActions`. The frontend runtime snapshot does not store a second sibling recovery-action list or generic capability bag.
 
 ## 40. Runtime Lifecycle Values
 
@@ -710,10 +711,10 @@ retryStartup(expectedRuntimeInstanceId)
     → RuntimeState
 
 resetAppearanceSettings(expectedRuntimeInstanceId)
-    → completion / authoritative runtime follow-up as required
+    → RuntimeState
 
 exitFailedRuntime(expectedRuntimeInstanceId)
-    → completion
+    → RuntimeState
 
 generalShutdown()
     → completion
@@ -723,18 +724,22 @@ Exact method factoring may reflect strongly typed bridge operations while preser
 
 `exitFailedRuntime` represents the generation-bound `Exit` recovery action advertised by a `StartupFailed` runtime. `generalShutdown` represents lifecycle termination initiated outside that failed-runtime recovery action. The latter must not be used to bypass stale recovery-action validation.
 
-## 47. Retry Returns an Authoritative Snapshot
+## 47. Runtime-Changing Recovery Returns Authoritative State
 
-The focused frontend semantic contract for startup retry is:
+The focused frontend semantic contracts are:
 
 ```text
 retryStartup(expectedRuntimeInstanceId)
     → Future<RuntimeState>
+
+resetAppearanceSettings(expectedRuntimeInstanceId)
+    → Future<RuntimeState>
+
+exitFailedRuntime(expectedRuntimeInstanceId)
+    → Future<RuntimeState>
 ```
 
-If the bridge operation itself returns only acknowledgement, the bridge-backed adapter performs the required follow-up runtime read.
-
-This keeps Flutter independent of minor bridge operation factoring.
+The bridge-backed adapter maps the authoritative runtime snapshot returned by the typed bridge operation. It does not fabricate state from acknowledgement, infer a replacement generation, or silently target a newer generation.
 
 ## 48. Runtime Replacement Remains Visible
 
@@ -760,17 +765,15 @@ This preserves generation binding and compile-time discoverability.
 
 Non-mutating diagnostic/recovery capabilities belong to `DiagnosticsApi` when their semantics are diagnostic rather than runtime lifecycle mutation.
 
-Phase 000 includes conceptually:
+Phase 000 failed-runtime capabilities are explicitly generation-bound:
 
 ```text
-exportDiagnostics(...)
-getTechnicalDetails()
-openDataDirectory()
+exportStartupDiagnostics(expectedRuntimeInstanceId, destination)
+getStartupTechnicalDetails(expectedRuntimeInstanceId)
+openStartupDataDirectory(expectedRuntimeInstanceId)
 ```
 
-Availability remains governed by the current runtime capability/recovery snapshot.
-
-When a diagnostic operation is invoked because a failed runtime advertised it as a recovery action, the call must preserve that action's expected `RuntimeInstanceId` or an equivalent generation-bound recovery token. A stale recovery diagnostic must not silently execute against a replacement runtime merely because the same `DiagnosticsApi` method also exists in another lifecycle state.
+Availability remains governed by `RuntimeState.startupFailure.recoveryActions`. A stale-generation failure refreshes authoritative runtime state and is never replayed automatically against the replacement generation. General ready-state diagnostics use separately named methods when an active phase introduces them.
 
 Likewise, `Exit` advertised by a failed runtime remains a generation-bound recovery intent. The implementation may ultimately share host-shutdown machinery, but it must preserve the stale-action validation required by SPEC-BE-007 rather than treating a stale recovery Exit as an unscoped command against a replacement runtime.
 
@@ -778,11 +781,7 @@ Likewise, `Exit` advertised by a failed runtime remains a generation-bound recov
 
 A Dart method may exist because the application supports that capability in some runtime states.
 
-The current authoritative `RuntimeState` determines whether the UI should offer it.
-
-The backend validates the action again when invoked.
-
-The client does not weaken that backend validation.
+For failed-runtime recovery, availability comes only from `RuntimeState.startupFailure.recoveryActions`. For general operations, lifecycle and the owning typed contract determine legal invocation. The client exposes no generic capability bag and does not weaken backend validation.
 
 ## 52. Typed Frontend Failure Hierarchy
 
@@ -1050,22 +1049,26 @@ These fields retain the backend semantics from SPEC-BE-004/SPEC-BE-008.
 
 ## 74. Frontend Event Payload Hierarchy
 
-Conceptually:
+Phase 000 includes only implemented startup/runtime/settings notifications:
 
 ```text
 RuntimeEventPayload
 ├── runtimeStateChanged
 ├── startupFailed
-├── operationStarted
-├── operationProgress
-├── operationCompleted
-├── operationFailed
-├── operationCancelled
-├── appearanceSettingsChanged
-└── future typed variants
+└── appearanceSettingsChanged
 ```
 
-The exact Phase 000 generated/client variants match implemented bridge events.
+A later active phase that introduces persisted background operations may add:
+
+```text
+operationStarted
+operationProgress
+operationCompleted
+operationFailed
+operationCancelled
+```
+
+Those variants, mappers, fakes, and tests are absent from Phase 000. Each generated/client event union contains only variants implemented by its active contract version.
 
 ## 75. No Stringly Typed Event Bus
 
@@ -1261,20 +1264,20 @@ The exact immutable settings model is refined by SPEC-FE-006 without changing th
 
 ## 94. Phase 000 `DiagnosticsApi`
 
-Phase 000 `DiagnosticsApi` conceptually provides:
+Phase 000 failed-runtime diagnostics are generation-bound:
 
 ```text
-exportDiagnostics(...)
+exportStartupDiagnostics(expectedRuntimeInstanceId, destination)
     → Future<DiagnosticsExport>
 
-getTechnicalDetails()
+getStartupTechnicalDetails(expectedRuntimeInstanceId)
     → Future<TechnicalDetails>
 
-openDataDirectory()
+openStartupDataDirectory(expectedRuntimeInstanceId)
     → Future<void>
 ```
 
-Exact request/result fields mirror the backend bridge/application capability while remaining DTO-free in feature code.
+Exact request/result fields mirror the backend bridge/application capability while remaining DTO-free in feature code. General ready-state diagnostics use separately named methods only when an active phase introduces them.
 
 ## 95. Phase 000 `EventsApi`
 
@@ -1302,6 +1305,8 @@ This prevents `RuntimeApi` from becoming a catch-all failed-startup service.
 
 ## 98. Public Method Naming
 
+The examples below span Phase 000 and later activated capabilities; a naming example does not authorize a deferred API in the current phase.
+
 Focused API methods use application intent:
 
 ```text
@@ -1309,7 +1314,7 @@ getAppearanceSettings
 updateAppearanceSettings
 getRuntimeState
 retryStartup
-exportDiagnostics
+exportStartupDiagnostics
 cancelOperation
 ```
 
@@ -1480,7 +1485,7 @@ Mapper unit tests verify:
 - invalid required representation rejection;
 - application-error mapping;
 - event envelope/payload mapping;
-- operation-handle mapping.
+- operation-handle mapping only when the active scope includes persisted background operations.
 
 ## 113. Application Failure Mapping Tests
 
@@ -1516,7 +1521,7 @@ Tests verify:
 - runtime identity preservation;
 - startup failure composition;
 - recovery action mapping;
-- capabilities mapping;
+- absence of any duplicate capability/action-availability bag;
 - structurally impossible snapshots are rejected rather than defaulted.
 
 ## 116. Runtime Replacement Tests
@@ -1703,19 +1708,19 @@ The client may perform obvious local generation/precondition checks that preserv
 
 `SPEC-FE-005` consumes mapped runtime snapshot data to decide what recovery UI is available.
 
-The client does not infer available recovery actions from error strings or hard-coded UI tables independent of the runtime snapshot.
+The client does not infer available recovery actions from error strings or hard-coded UI tables independent of `RuntimeState.startupFailure.recoveryActions`.
 
 ## 132. Transport Failure During Failed-Startup Inspection
 
 If a runtime was previously known as `StartupFailed` but transport becomes unavailable, the client surfaces transport uncertainty.
 
-Flutter must not assume the previously cached recovery capabilities remain executable until authoritative communication is restored.
+Flutter must not assume the previously cached recovery actions remain executable until authoritative communication is restored.
 
 Presentation policy belongs to SPEC-FE-005.
 
 ## 133. Technical Details and Clipboard
 
-`DiagnosticsApi.getTechnicalDetails()` returns sanitized frontend-readable data.
+`DiagnosticsApi.getStartupTechnicalDetails(expectedRuntimeInstanceId)` returns sanitized frontend-readable data for the failed runtime generation that advertised the action.
 
 The client does not copy to the clipboard itself.
 
@@ -1723,13 +1728,13 @@ Clipboard interaction remains a presentation/platform side effect according to C
 
 ## 134. Open Data Directory
 
-`DiagnosticsApi.openDataDirectory()` invokes the backend/native capability when available.
+`DiagnosticsApi.openStartupDataDirectory(expectedRuntimeInstanceId)` invokes the backend/native capability only for the failed runtime generation that advertised it.
 
 The client does not expose raw filesystem commands or paths as a replacement for the typed capability.
 
 ## 135. Diagnostic Export
 
-Diagnostic export returns an immutable result concept such as an exported-path/success descriptor defined by the backend bridge/application contract.
+`DiagnosticsApi.exportStartupDiagnostics(expectedRuntimeInstanceId, destination)` returns an immutable result concept such as an exported-path/success descriptor defined by the backend bridge/application contract.
 
 The client does not assemble the diagnostic bundle itself.
 
@@ -1980,7 +1985,7 @@ An implementation conforming to SPEC-FE-003 satisfies all of the following:
 24. Compatible additive bridge information is tolerated according to SPEC-X-001.
 25. Runtime-bound recovery operations preserve expected runtime identity.
 26. Stale runtime actions are never silently retargeted to a replacement runtime.
-27. Startup retry returns an authoritative mapped runtime snapshot to Flutter.
+27. Runtime-changing recovery operations return authoritative mapped runtime snapshots to Flutter.
 28. The new runtime generation remains visible after retry/replacement.
 29. Recovery operations are typed rather than free-form generic dispatch.
 30. Diagnostics and runtime recovery responsibilities remain separated by capability.
@@ -1997,7 +2002,7 @@ An implementation conforming to SPEC-FE-003 satisfies all of the following:
 41. Mutations are not automatically retried after ambiguous transport failure without explicit safe backend semantics.
 42. Focused API fakes are the ordinary feature/controller test seam, with `ClientBootstrap` as the narrow startup-lifecycle test seam.
 43. Feature tests do not require generated DTOs or the real Rust backend when an Argus-owned client seam exists.
-44. Mapper tests cover DTO, identifier, error, runtime, event, and handle conversion.
+44. Mapper tests cover every DTO, identifier, error, runtime, and event contract implemented by the active scope; operation-handle conversion is added only when a later active phase introduces that contract.
 45. Root/client integration tests cover initialization, event connectivity, runtime replacement, and transport failure translation.
 46. A controlled test proves ambiguous settings mutation transport failure does not trigger duplicate automatic dispatch.
 47. Architecture verification prevents generated bridge/client implementation types from leaking upward.

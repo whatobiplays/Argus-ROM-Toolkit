@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-007  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-07  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006  
 **Supersedes:** None  
 **Superseded By:** None
@@ -176,6 +176,12 @@ Individual subsystems expose initialization capabilities but never orchestrate g
 
 It does not use the failed runtime's normal command/query pipeline for authoritative mutation.
 
+### 5.5 Native bootstrap boundary
+
+`StartupCoordinator` begins only after the native library and generated binding path can invoke the bridge-neutral `ApplicationHost`. Failures before that point cannot produce a backend `RuntimeState`, `StartupPhaseFailure`, or `ApplicationError`; Flutter classifies them as transport/bootstrap failures.
+
+Backend startup may classify reportable bridge-adapter composition or injected notification-sink validation after the host is reachable. This distinction is mandatory so one failure is not represented simultaneously as transport failure and runtime startup failure.
+
 ## 6. Startup Lifecycle
 
 The runtime transition remains:
@@ -334,16 +340,11 @@ This phase must not start hidden business workflows.
 
 ## 16. `EventInfrastructureInitialization`
 
-Responsible for:
+Startup constructs the bridge-neutral application `EventBus`, registers required application consumers, and validates event routing required by the active runtime generation.
 
-- constructing the application event bus defined by SPEC-BE-006
-- registering required concrete event consumers
-- registering the bridge-facing event publication adapter
-- completing required event-routing composition
+The outer `argus-bridge` composition supplies a bridge-specific notification adapter through an inward-defined, bridge-neutral output/sink port. Runtime may validate that the required injected sink is usable, but startup/runtime code imports no bridge DTO, generated binding, Dart, or FRB type.
 
-Required registration must complete before readiness.
-
-Event infrastructure initialization must not publish fabricated application events merely to prove wiring.
+Phase 000 readiness requires the `AppearanceSettingsChanged` path to reach the injected notification sink. Bridge sequence numbering, coalescing, bounded queueing, overflow, and transport adaptation remain owned by the runtime/bridge stream boundary rather than the internal event bus.
 
 ## 17. `ReadinessValidation`
 

@@ -2,7 +2,7 @@
 
 Rust backend subsystem contracts belong here.
 
-Examples include persistence, Unit of Work, scheduler, execution graphs, providers, indexing, transformations, hashing, metadata, artwork, RetroAchievements, events, and bridge-facing application façades.
+Examples include persistence, Unit of Work, runtime and background-operation management, subsystem-owned deterministic plans, providers, indexing, transformations, hashing, metadata, artwork, RetroAchievements, events, and bridge-facing application capabilities.
 
 Identifiers use `SPEC-BE-NNN`.
 

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003  
 **Supersedes:** None  
 **Superseded By:** None
@@ -561,6 +561,17 @@ The two operations are linked through Argus-owned identities such as:
 - operation-specific entity IDs
 
 The background execution must not reuse the admission trace indefinitely.
+
+### 16.1 Admission durability boundary
+
+Background admission succeeds only after both of the following are true:
+
+1. the new `JobRun` is durably persisted; and
+2. runtime responsibility for executing, queueing, or startup-reconciling that run is durably or deterministically established.
+
+A failed admission must not leave an orphan nonterminal `JobRun` with no manager responsibility. If persistence succeeds and later registration fails, the implementation must either complete registration and return the accepted handle, terminalize or reconcile the run before returning failure, or return acceptance only when startup recovery has enough durable evidence to assume responsibility.
+
+A crash between persistence and in-memory registration is reconciled at startup. The exact transaction, handoff, or reconciliation mechanism is an implementation detail, but the caller-visible boundary and orphan-prevention invariant are mandatory and tested.
 
 ## 17. `BackgroundOperationManager`
 
@@ -1304,19 +1315,21 @@ No subsystem may require a transient application event to reconstruct durable st
 
 ## 45. Runtime Errors and Admission Failures
 
-Runtime admission and execution failures map through SPEC-BE-003.
+Runtime admission and execution failures map through the published SPEC-BE-003 catalog. Expected caller-visible admission branches use this exact mapping:
 
-Admission failures should have stable runtime or operation error codes sufficient to distinguish conditions such as:
+| Condition | Error code |
+|---|---|
+| Normal operation targets `Uninitialized` or `Starting` | `ARGUS.V1.RUNTIME.NOT_READY` |
+| Normal operation targets `StartupFailed` | `ARGUS.V1.RUNTIME.STARTUP_FAILED` |
+| Operation targets `ShuttingDown` | `ARGUS.V1.RUNTIME.SHUTTING_DOWN` |
+| Operation targets `Stopped` | `ARGUS.V1.RUNTIME.STOPPED` |
+| Expected runtime generation is stale | `ARGUS.V1.RUNTIME.STALE_INSTANCE` |
+| Cancellation is already requested before admission | `ARGUS.V1.OPERATION.CANCELLED` |
+| Later-MVP background policy rejects instead of queues because capacity is unavailable | `ARGUS.V1.OPERATION.CAPACITY_UNAVAILABLE` |
 
-- runtime not ready
-- runtime shutting down
-- runtime stopped
-- operation cancelled before admission
-- background capacity unavailable when policy chooses rejection rather than queueing
+Agents must not substitute a generic fallback or implementation-local code. A stale-generation caller refreshes authoritative runtime state and does not replay the action automatically.
 
-Exact additional error codes are added to the SPEC-BE-003 catalog during implementation planning or an explicit catalog update.
-
-Admission failures do not create partial operation state unless background admission has already durably created a `JobRun`; that boundary must be explicit and tested.
+Admission failures do not create partial operation state. Once background admission crosses the durable boundary in Section 16.1, the runtime either returns the accepted handle or leaves a deterministically reconcilable or terminalized `JobRun`; it does not report simple rejection while orphaning an active record.
 
 ## 46. Observability Integration
 
@@ -1440,6 +1453,8 @@ Test:
 Test:
 
 - `JobRun` creation and registration
+- atomic/deterministic handoff between durable `JobRun` creation and manager responsibility
+- no orphan nonterminal run after failed admission or injected crash
 - resource-class waiting
 - bounded pending work
 - resource release

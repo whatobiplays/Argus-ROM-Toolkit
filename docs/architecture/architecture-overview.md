@@ -3,7 +3,7 @@
 **Document ID:** ARCH-001  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
+**Last Updated:** 2026-08-11  
 **Depends On:** None  
 **Supersedes:** None  
 **Superseded By:** None  
@@ -66,25 +66,34 @@ ArgusClient and focused domain APIs
 Generated flutter_rust_bridge bindings
     |
     v
-Rust application façades
+Bridge adapters and DTO mapping
     |
-    +--> Query handlers --> read repositories / projections
+    v
+ApplicationHost / ApplicationRuntime
     |
-    +--> Use-case handlers --> planners --> execution graphs --> scheduler
-                                    |                         |
-                                    v                         v
-                              repositories               executors
-                                    |                         |
-                                    +-----------+-------------+
-                                                v
-                                      Unit of Work / SQLite
-                                                |
-                                                v
-                                      transient domain events
-                                                |
-                                                v
-                                      Flutter event coordinator
+    +--> centralized admission, lifecycle, and dispatch
+             |
+             +--> queries
+             |      -> application services / handlers
+             |      -> read ports / projections
+             |
+             +--> immediate commands
+             |      -> application services / handlers
+             |      -> Unit of Work / SQLite
+             |
+             +--> background admission
+                    -> persisted JobRun
+                    -> BackgroundOperationManager
+                    -> subsystem-owned plan and execution policy
+                    -> repositories / gateways / subsystem executors
+
+committed state changes
+    -> application events
+    -> runtime-to-bridge event stream
+    -> Flutter event coordinator
 ```
+
+The runtime owns top-level admission and lifecycle. Application services own application intent and use-case orchestration inside the admitted operation. Subsystems may use deterministic internal plans where their workflows require them, but Argus does not impose one universal execution-graph scheduler on every capability.
 
 ## 5. MVP scope
 
@@ -108,8 +117,8 @@ The MVP includes:
 - Artwork discovery, resolution, download, and content-addressed storage
 - RetroAchievements catalog caching and local hash verification
 - Persisted user-visible jobs
-- Generic execution-graph scheduler
-- Application façades, commands, queries, read projections, and events
+- Durable background-operation management with subsystem-owned execution policies
+- Application services, focused commands and queries, read projections, and events
 - Responsive Flutter UI for desktop, tablet, and phone
 - Diagnostics export and startup recovery
 
@@ -1013,33 +1022,26 @@ Argus `PlatformId` to RetroAchievements console ID mapping is compile-time provi
 
 ### 14.1 Persisted jobs
 
-Only user-visible operations are persisted as jobs. Internal work items remain ephemeral.
+User-visible long-running operations are persisted as execution attempts:
 
 ```text
 JobRun
 - id
-- job_type
-- status
+- operation_type
+- state
 - progress
 - created_at
+- queued_at
 - started_at
 - completed_at
-- result
-- error
+- terminal result or error
 - cancellation_requested
+- recovery linkage where applicable
 ```
 
-Representative jobs:
+Representative jobs include library scans, metadata matching and refresh, artwork refresh, and RetroAchievements verification.
 
-- Scan Library
-- Match Metadata
-- Refresh Metadata
-- Refresh Artwork
-- Verify RetroAchievements
-
-### 14.2 Job states
-
-The job lifecycle keeps preparation separate from execution. The agreed conceptual states are:
+Canonical states are:
 
 ```text
 Queued
@@ -1048,159 +1050,82 @@ Running
 Completed
 Failed
 Cancelled
+Interrupted
+Abandoned
 ```
 
-The tool requests transitions; the scheduler has final authority over valid state transitions.
+Terminal historical runs never return to active execution. Retry or resume creates a new `JobRunId`; MVP does not resume significant work automatically.
+
+### 14.2 Lifecycle authority
+
+`BackgroundOperationManager` is authoritative over top-level background admission, persisted job transitions, resource-class admission, progress validation, cancellation coordination, restart reconciliation, and shutdown coordination.
+
+Operation implementations report facts and request valid transitions. They do not write arbitrary job lifecycle state directly.
 
 ### 14.3 Progress reporting
 
-All tool output, including progress, flows through the event channel.
+Operations report structured phase-local progress facts. The manager validates invariants and persists progress where useful. Flutter derives presentation percentages only when completed and total units are both available.
 
-The progress API supports:
+High-frequency progress notifications are transient and may be coalesced. Durable state remains queryable through job records.
 
-- status text during `Preparing`, such as “Finding eligible games”
-- tool-controlled transition request to `Running`
-- numeric progress after work scope is known
-- item definition controlled by the tool
-- bounded advancement that can never exceed total
+### 14.4 Subsystem-owned plans
 
-The scheduler validates progress invariants and is authoritative over persisted job state.
+A subsystem may define an immutable deterministic plan, including a directed acyclic graph, when its workflow requires dependency planning. That plan remains owned by the subsystem specification and is not a mandatory application-wide command representation.
 
-### 14.4 Execution graphs
+Examples include transformation-path planning, indexing work decomposition, metadata refresh plans, and hash work plans.
 
-All planners produce immutable directed acyclic execution graphs.
+### 14.5 Runtime and subsystem policy split
 
-```text
-Planner
-    -> ExecutionGraph
-    -> Scheduler
-    -> Executor registry
-    -> Executors
-```
+The runtime manages top-level background operations and logical resource classes. Each subsystem owns its internal dependency semantics, checkpoints, executor use, retry rules, and domain-specific completion policy.
 
-The graph defines what should happen. Runtime execution state is maintained separately.
+Adding a new operation should normally register a handler and operation policy. It must not require adding tool-specific branches to the runtime.
 
-The scheduler understands only:
+### 14.6 No universal scheduler
 
-- dependencies
-- readiness
-- cancellation
-- completion
-- retry/failure policy
-
-It does not interpret domain payloads.
-
-### 14.5 Graph composition
-
-Planners remain domain-specific and compose work by submitting additional graphs rather than building one giant cross-domain graph.
-
-For example, a composed user workflow may run:
-
-```text
-Index graph
-    -> Hash graph
-    -> Metadata graph
-    -> Artwork graph
-    -> RetroAchievements graph
-```
-
-The scheduler remains unaware of application workflow meaning.
-
-### 14.6 Scheduler generality
-
-The scheduler must contain no tool-specific or provider-specific logic.
-
-Execution-node payloads are opaque to the scheduler and dispatched by executor type.
+The MVP does not contain one generic opaque-node scheduler or executor registry that interprets every application workflow. Shared runtime code must not require every planner to emit a common execution graph merely to participate in background work.
 
 ### 14.7 Cancellation and retries
 
-Detailed retry budgets and cancellation checkpoints are implementation-plan items, but the architecture requires:
+The architecture requires cooperative cancellation, persisted cancellation requests for background jobs, operation-defined safe checkpoints, bounded retries, and no retry path that reports progress beyond committed work.
 
-- cooperative cancellation
-- persisted cancellation request on `JobRun`
-- executors checking cancellation at safe boundaries
-- provider-owned request retries and rate limiting
-- scheduler-owned node and graph state transitions
-- no retry loop capable of advancing progress beyond total
+Provider-internal request retries remain provider infrastructure policy. User retry and resume create new top-level operations and new trace identities.
 
 ## 15. Application layer
 
-### 15.1 Domain façades and use-case handlers
+### 15.1 Runtime admission and application capabilities
 
-Flutter interacts with a compact set of domain-oriented application façades.
-
-Conceptual examples:
+Flutter invokes focused capabilities through the bridge and `ApplicationRuntime`:
 
 ```text
-LibraryService
-GameService
-ArtworkService
-JobService
-SettingsService
-DiagnosticService
+Library API scan(root_id)
+    -> bridge request mapping
+    -> runtime admission and OperationContext
+    -> LibraryService / ScanLibraryHandler
+    -> background admission
+    -> OperationHandle(JobRunId)
 ```
 
-Each façade method delegates to a focused use-case handler.
+The bridge never bypasses runtime admission to call application services directly. Services do not re-admit the operation currently executing; they receive only the narrow operation-scoped capabilities they need.
 
-```text
-LibraryService.scan(root_id)
-    -> ScanLibraryHandler
-    -> IndexPlanner
-    -> Scheduler.submit(graph)
-```
+### 15.2 Operation-specific results
 
-Façades do not expose repositories, planners, graphs, or executors.
+Immediate queries and commands return operation-specific application success values. A background admission returns the canonical background-operation handle containing the new `JobRunId`.
 
-### 15.2 CommandResult
+Argus does not use one nullable universal `CommandResult` envelope. Optional job IDs, warnings, affected scope, and undo tokens are modeled only on operations whose real semantics require them.
 
-Accepted asynchronous commands return one standard envelope:
-
-```text
-CommandResult
-- command_id
-- job_run_id nullable
-- accepted_at
-- warnings
-- affected_scope
-- undo_token nullable
-```
-
-Synchronous validation errors return application errors and do not create jobs.
-
-`Accepted` must never be presented as `Completed` when a background job exists.
+Synchronous validation failures return `ApplicationError` and do not create background job state. Acceptance of a background operation must never be presented as completion.
 
 ### 15.3 Command-level undo
 
-Undo is a command capability, not a global history stack.
+Undo is an explicit capability of a specific command, not a global history stack. An undoable operation may return an operation-specific token. Scans, hashing, provider refreshes, verification, migrations, and startup are not undoable.
 
-Undoable commands may return an `undo_token`. Flutter invokes a backend undo command with that token.
-
-Undo is generally appropriate for user edits such as:
-
-- metadata overrides
-- artwork selection
-- favorite/hidden state
-- tags
-- selected settings changes
-
-It is not appropriate for scans, hashing, provider refreshes, verification, migrations, or startup.
-
-For MVP, undo tokens may expire and do not survive application restart.
+MVP undo tokens may expire and do not survive application restart.
 
 ### 15.4 Unit of Work
 
-Use-case handlers own the `UnitOfWork` lifecycle.
+Focused mutating handlers own the `UnitOfWork` lifecycle. Repositories never start or commit transactions themselves.
 
-The Unit of Work:
-
-- owns the database transaction
-- exposes transaction-bound repositories
-- commits authoritative state and core projections atomically
-- rolls back on failure
-
-Repositories never start or commit transactions themselves.
-
-Long-running jobs use one Unit of Work per coherent execution node or mutation, not one transaction for the entire job.
+Long-running operations use one Unit of Work per coherent durable checkpoint or mutation, not one transaction for the entire job.
 
 ## 16. Query and projection architecture
 
@@ -1261,53 +1186,21 @@ Sorting exposes one user-selected primary field and direction. The backend appen
 
 ### 17.1 Purpose
 
-The backend publishes immutable facts after authoritative state commits.
+The backend publishes immutable facts only after the authoritative state they describe commits. Events never represent commands and never replace authoritative queries.
 
-Examples:
-
-```text
-JobStarted
-JobProgressChanged
-JobCompleted
-JobFailed
-LibraryScanCompleted
-SourceEntriesChanged
-GamesAdded
-GamesRemoved
-MetadataUpdated
-ArtworkUpdated
-VerificationUpdated
-SettingsChanged
-DiagnosticRaised
-```
-
-Events never represent commands.
+Representative events include job lifecycle changes, source-entry changes, metadata or artwork updates, verification updates, settings changes, and diagnostic notifications.
 
 ### 17.2 Durability
 
-Events are transient and in-memory for live coordination.
+Application events are transient, in-process notifications. Durable state lives in purpose-built records such as `JobRun`, `ScanRun`, diagnostics, domain tables, and read projections. There is no general append-only event log in the MVP.
 
-Durable state lives in purpose-built records such as:
+### 17.3 Internal routing and bridge delivery
 
-- `JobRun`
-- `ScanRun`
-- diagnostics
-- current domain and projection tables
+The minimal application `EventBus` owns typed in-process routing and subscriber failure isolation. It does not own bridge sequence numbers, Flutter backpressure, or authoritative state.
 
-There is no general append-only event log in the MVP.
+The runtime-to-bridge event adapter owns the bounded application-level stream. It assigns runtime-instance sequence metadata, may coalesce compatible state notifications, and may drop queued notifications under bounded overflow policy while preserving a detectable sequence gap.
 
-### 17.3 Delivery
-
-Delivery is asynchronous and best effort:
-
-- publishers do not wait for subscribers
-- each subscriber has a bounded queue
-- compatible events, especially progress and entity-update events, are coalesced
-- non-coalescible overflow drops the oldest queued event
-- process-local sequence numbers allow subscribers to detect gaps
-- gap detection triggers re-query of authoritative state
-
-Persistence must commit before publication.
+Flutter re-queries the smallest relevant authoritative state after reconnect, sequence loss, or runtime replacement. Publication failure after commit never rolls back committed state.
 
 ## 18. Privacy and provider data sharing
 
@@ -1385,13 +1278,11 @@ Mutable collections must not leak through model APIs.
 
 ### 19.4 Bridge
 
-Use `flutter_rust_bridge`.
+Argus uses `flutter_rust_bridge`, but only dedicated bridge DTOs cross the native boundary. Rust repositories, entities, aggregates, application services, subsystem plans, and provider-native models remain private.
 
-Only dedicated bridge DTOs cross the native boundary. Rust repositories, entities, domain aggregates, planners, graph nodes, and provider-native models remain private.
+Long-running commands return quickly with an `OperationHandleDto` that identifies the accepted `JobRun`. Immediate operations return operation-specific DTOs.
 
-Long-running commands return quickly with a bridge `OperationHandleDto` representing admitted operation identity and are tracked through jobs and events. Backend application-layer command-result semantics remain internal to Rust.
-
-Rust domain events are exposed as one application-level Dart stream.
+Rust application events are exposed through one application-level Dart stream whose sequence, bounded delivery, and gap recovery semantics are owned by the runtime/bridge boundary rather than the internal domain event bus.
 
 ### 19.5 ArgusClient
 
@@ -1567,6 +1458,8 @@ Navigation modes:
 
 `More` contains lower-frequency destinations on compact layouts, such as diagnostics and settings.
 
+The destination set above describes the complete MVP shell. During Phase 000, production routing and navigation expose only destinations backed by implemented capability. Adaptive-shell and route-branch coverage may use test-only fixtures; the shipped application does not contain unavailable Library, Collections, Jobs, Sources, or other future-feature placeholders.
+
 ### 19.13 Responsive layout
 
 Argus supports desktop, tablet, and phone based on available width, not hardware category.
@@ -1680,18 +1573,11 @@ MVP uses transient notifications only. A lightweight actionable inbox is post-MV
 
 ### 19.20 Startup and recovery
 
-MVP uses a blocking startup screen while Rust bridge initialization, database opening, migrations, and core-service startup complete.
+Client bootstrap first loads the native library, generated bindings, and matched transport contract. A failure before Flutter can invoke a trustworthy `ApplicationHost` is a frontend `TransportFailure`; it cannot be represented as backend runtime state and has no `RuntimeInstanceId` or generation-bound recovery action.
 
-Do not wait for library queries, scans, metadata, or secondary data.
+After the host is reachable, the backend owns blocking startup for data-directory resolution, database opening, migrations, internal service composition, appearance-settings loading, injected runtime-to-bridge notification-sink validation, and readiness publication.
 
-Client/bootstrap failure before Flutter can obtain a trustworthy runtime contract presents a bootstrap failure surface with only client-available actions. A successfully reported backend `StartupFailed` runtime presents the targeted recovery screen with only the recovery capabilities advertised for that failed runtime generation.
-
-Provide both:
-
-- copyable technical details
-- exportable diagnostic ZIP bundle
-
-Diagnostic bundles must exclude ROMs, BIOS files, credentials, tokens, artwork cache, save data, and unnecessary personal information.
+Startup does not wait for library queries, scans, metadata, artwork, providers, or other secondary work. A reportable backend startup failure presents only the typed, generation-bound recovery actions nested in its authoritative startup-failure snapshot, plus sanitized technical details and diagnostic export when available. One defect is classified at exactly one boundary.
 
 ### 19.21 Settings
 
@@ -1742,30 +1628,13 @@ The command palette and user-customizable shortcuts are post-MVP.
 
 ## 20. Error model and diagnostics
 
-Errors crossing into Flutter must be structured and stable.
+Rust publishes one stable `ApplicationError` contract. `argus-bridge` maps it to `ApplicationErrorDto`; the focused Dart client maps that DTO to an `ApplicationFailure` that preserves code, category, severity, recoverability, retry policy, message key, trace identity, and approved safe context.
 
-Conceptual UI-facing model:
+Failures before or outside a trustworthy backend application response become `TransportFailure`. Application and transport failures are not collapsed into one generic `UiError` envelope because they have different authority, retry, and state-certainty semantics.
 
-```text
-UiError
-- code
-- title
-- message
-- recovery_actions
-- diagnostic_id
-- field_errors where applicable
-```
+Startup recovery actions come only from `RuntimeState.startupFailure.recoveryActions`. Features/controllers map typed failures into localized presentation state; raw Rust errors, source chains, SQL, stack traces, unrestricted paths, and arbitrary provider payloads are diagnostics-only and are never control-flow contracts.
 
-Raw Rust errors and stack traces are not default user-facing copy.
-
-Diagnostics requirements:
-
-- structured Rust logging
-- trace IDs (`trace_id`) for commands, jobs, scans, and provider requests
-- sanitized diagnostic export contributors
-- job and scan failure details
-- startup-specific log capture
-- no secrets in logs or bundles
+Diagnostics use structured Rust logging, one `trace_id` per top-level operation, sanitized contributor-based exports, bounded startup capture, and explicit exclusion of secrets and unnecessary personal data from logs, DTOs, events, and bundles.
 
 ## 21. Persistence requirements
 
@@ -1800,21 +1669,22 @@ Database location and backup/recovery policy must be designed before the first p
 
 ### 23.1 Rust backend
 
-Required test layers:
+Required test layers include:
 
-- unit tests for domain policies and value objects
-- planner tests producing deterministic execution graphs
-- scheduler state-machine tests
-- repository contract tests
-- migration tests from every supported schema version
-- provider adapter tests with recorded or fake responses
-- reconciliation tests for complete, partial, failed, cancelled, and unavailable scopes
-- move-detection ambiguity tests
-- parser transformation-path tests
-- hash revision and invalidation tests
-- metadata and artwork resolution tests
-- RetroAchievements catalog generation and verification tests
-- Unit of Work rollback and projection consistency tests
+- unit tests for domain policies and value objects;
+- runtime lifecycle and centralized admission tests;
+- background-operation manager and persisted job state-machine tests when that capability is active;
+- deterministic subsystem-plan tests only for active indexing, transformation, hashing, metadata, artwork, or verification capabilities;
+- repository contract and migration tests;
+- provider adapter tests with recorded or fake responses;
+- reconciliation tests for complete, partial, failed, cancelled, unavailable, interrupted, and abandoned scopes;
+- move-detection ambiguity tests;
+- hash revision and invalidation tests;
+- metadata and artwork resolution tests;
+- RetroAchievements catalog generation and verification tests; and
+- Unit of Work rollback and projection-consistency tests.
+
+A Ready future specification does not require placeholder tests, fixtures, dependencies, modules, or generated contracts before an active phase, slice, and task implement that capability.
 
 ### 23.2 Bridge
 
@@ -1856,166 +1726,27 @@ At minimum:
 
 ## 24. Implementation strategy
 
-Implementation must be sliced into independently testable increments. No Codex task should be “implement Argus.”
+Implementation authority flows from phase to implementation slice or approved plan to bounded task. This architecture defines the complete MVP target and dependency direction; it is not a second implementation backlog.
 
-Recommended dependency order:
+The executable scope for an agent is the intersection of the active phase, active slice or approved plan, explicit task, and governing architecture/specifications/conventions. A Ready future specification constrains compatibility but does not authorize dormant modules, schema, DTOs, routes, event variants, dependencies, fixtures, tests, or generated bindings.
 
-### Slice 1: Repository and workspace foundation
-
-- Rust and Flutter workspace layout
-- formatting, linting, and CI
-- core typed IDs and shared errors
-- SQLite access and migration framework
-- Unit of Work skeleton
-- Flutter application bootstrap
-- code-generation workflow
-
-### Slice 2: Job and event infrastructure
-
-- `JobRun`
-- scheduler state machine
-- immutable execution graph contracts
-- executor registry
-- cancellation
-- transient event bus
-- Flutter event stream and coordinator
-
-### Slice 3: Source provider foundation
-
-- source/provider traits
-- provider capability model
-- local filesystem provider
-- `LibrarySource` and `LibraryRoot`
-- availability checks
-- discovery policy
-
-### Slice 4: Indexing and reconciliation
-
-- `SourceEntry` graph
-- `ScanRun`
-- streaming discovery
-- operation-level transactions
-- classification
-- authoritative deletion
-- conservative move detection
-- initial library projection
-
-### Slice 5: Game-content resolution
-
-- content-candidate selection
-- `GameContent`
-- source relationships
-- content fingerprints and identity
-- duplicate-source handling
-
-### Slice 6: Transformation and hashing
-
-- typed representation registry
-- transformation planner and session
-- initial format parsers
-- hash-scheme descriptors and executors
-- demand-driven hash planning
-- hash persistence and revision invalidation
-
-### Slice 7: Metadata matching and providers
-
-- provider descriptors, readiness, and job-scoped sessions
-- credential abstraction
-- Playmatch integration
-- external identity mappings
-- matching policy and reports
-
-### Slice 8: Metadata refresh and resolution
-
-- provider metadata tables
-- refresh policy and plan
-- resolved metadata projection
-- failure preservation and provenance
-
-### Slice 9: Artwork
-
-- canonical taxonomy
-- artwork references
-- resolution policy
-- screenshot scoring and deduplication
-- resolved artwork projection
-- content-addressed download storage
-
-### Slice 10: RetroAchievements
-
-- compile-time platform mapping
-- catalog download and normalization
-- immutable catalog generations
-- local hash lookup
-- verification policy and persistence
-- verification report
-
-### Slice 11: Application façades and read APIs
-
-- command/result DTOs
-- domain façades and use-case handlers
-- cursor and offset query contracts
-- focused read projections
-- bridge DTOs and `flutter_rust_bridge` surface
-
-### Slice 12: Flutter application shell
-
-- Riverpod composition root
-- `ArgusClient` focused APIs
-- `go_router`
-- adaptive navigation
-- startup and recovery UI
-- job indicator and layered feedback
-- design-system foundations
-
-### Slice 13: Library UI
-
-- grid and adaptive list/table
-- typed filters and scopes
-- cursor pagination
-- selection and keyboard behavior
-- route synchronization
-- inspector shell
-
-### Slice 14: Game detail and settings
-
-- parent detail coordinator
-- section controllers
-- adaptive detail presentation
-- section drafts
-- immediate-persistence settings
-- restart-required state
-
-### Slice 15: Diagnostics and hardening
-
-- diagnostic contributors
-- support bundle export
-- security review
-- performance profiling
-- large-library testing
-- packaging and release readiness
+`PHASE-000` is implemented only through its ordered slices. Later MVP capabilities are activated by later phases and slices in dependency order. Every slice must deliver one observable, independently testable vertical increment and introduce infrastructure only when that increment requires it.
 
 ## 25. Codex implementation rules
 
-Every implementation plan and Codex task must include:
-
-- exact files to inspect
-- exact files permitted to change
-- explicit interfaces consumed and produced
-- one independently testable deliverable
-- tests written before or alongside implementation
-- exact verification commands
-- explicit exclusions
-- a local commit boundary
+Every implementation task must identify its parent phase and slice, exact inspection paths, allowed and forbidden edit paths, interfaces consumed and produced, one bounded deliverable, explicit inclusions and exclusions, acceptance criteria, verification commands, and required result reporting.
 
 Additional rules:
 
-- Do not invent new architectural patterns without updating this document or an approved subordinate design spec.
-- Keep each task small enough for a fresh reviewer to approve or reject independently.
-- Prefer vertical slices that leave the repository compiling and tests passing.
+- The executable scope is the intersection of the active phase, active slice or approved plan, explicit task, and governing documents.
+- A Ready future specification does not authorize speculative modules, migrations, DTOs, dependencies, fixtures, tests, generated output, routes, or placeholder UI.
+- Do not invent architecture or silently resolve a genuine product/architecture decision in code. Correct unambiguous documentation defects before or with implementation; surface only decisions that remain materially ambiguous.
+- Preserve unrelated dirty and untracked work. Do not read or edit an explicitly excluded path.
+- Keep each task independently reviewable and leave the repository compiling/testable whenever the active slice permits it.
 - Do not combine unrelated refactoring with feature work.
-- Generated files are committed when required by the chosen Flutter generation workflow and verified in CI.
-- Architectural dependency rules must be enforced with lints or architecture tests rather than documentation alone.
+- A commit boundary is a logical review boundary, not authorization to stage, commit, amend, reset, restore, or push. Git mutation requires explicit authorization in the current user instruction or task.
+- Generated files are written or committed only when the active task and generation convention require them and their verification gate passes.
+- Prefer automated dependency checks, lints, and contract tests over unenforced prose where practical.
 
 ## 26. Post-MVP roadmap commitments
 
@@ -2042,37 +1773,28 @@ These roadmap items must build on the existing contracts rather than being parti
 
 The following invariants are non-negotiable unless this architecture is formally revised:
 
-1. Rust is the authoritative owner of business rules and persistence.
-2. Flutter never accesses repositories, SQLite, planners, the scheduler, or provider implementations directly.
-3. Widgets never call generated bridge bindings directly.
-4. Significant background work is user-initiated in the MVP.
-5. The scheduler contains no tool-specific or provider-specific logic.
-6. Progress cannot advance beyond its declared total.
-7. An incomplete or unavailable scan cannot delete unobserved source entries.
-8. Provider-native data and resolved projections remain separate.
-9. RetroAchievements verification is content/hash-centric, not metadata-title-centric.
-10. Existing usable UI content remains interactive during background operations.
-11. Bridge DTOs do not leak into feature code.
-12. Feature internals are not imported across feature boundaries.
-13. Core read projections update transactionally with authoritative writes.
-14. Events notify; they are not the sole durable record of state.
-15. Save management remains outside MVP scope.
+1. Rust owns business rules and persistence authority.
+2. `ApplicationRuntime` owns top-level admission, operation context, lifecycle, background `JobRun` management, and runtime-generation replacement.
+3. Application services and focused handlers own application intent, Unit of Work boundaries, and use-case semantics inside an admitted operation.
+4. Flutter never accesses repositories, SQLite, application services, runtime internals, subsystem plans, or provider implementations directly; widgets never call generated bridge bindings directly.
+5. Bridge DTOs and generated types do not leak into inward Rust layers or Flutter feature/application code.
+6. The background-operation manager owns generic lifecycle and resource admission; subsystems own internal plans, checkpoints, retries, and execution policy. Argus has no mandatory universal opaque-node scheduler.
+7. Progress cannot advance beyond committed or otherwise authoritative work.
+8. Persistence commits before events describing that state are published.
+9. Events are transient notifications; authoritative state remains queryable. Bridge sequence/gap/backpressure semantics belong to the runtime-to-bridge stream boundary, not the internal event bus.
+10. An incomplete or unavailable scan cannot delete unobserved source entries.
+11. Provider-native data and resolved projections remain separate.
+12. RetroAchievements verification is content/hash-centric, not metadata-title-centric.
+13. Existing usable UI content remains interactive during background operations.
+14. Core read projections update transactionally with authoritative writes.
+15. One runtime generation owns one coherent service, event, and bridge-notification composition.
+16. Significant user work is explicit and user-initiated in MVP except narrowly specified integrity/version maintenance with documented admission and recovery.
+17. Ready future specifications do not expand the active phase or authorize speculative scaffolding.
+18. Git writes require explicit authorization; a documented commit-sized boundary alone is insufficient.
+19. Save management remains outside MVP scope.
 
 ## 28. Follow-up design documents
 
-This overview is intentionally broad. Before implementation of each major slice, create a subordinate design or implementation plan containing concrete schemas, Rust traits, Dart interfaces, filenames, test cases, and migration details.
+This overview remains the high-level source of truth. Governed phase, backend, frontend, cross-cutting, reference, convention, implementation-slice, and task documents refine concrete behavior without duplicating a second roadmap here.
 
-Priority follow-up documents:
-
-1. Repository/workspace and module layout
-2. SQLite schema and migration strategy
-3. Execution graph and scheduler contract
-4. Source-provider and indexing contract
-5. Transformation and hash-scheme contract
-6. Metadata provider and resolution contract
-7. Artwork object-store contract
-8. RetroAchievements catalog and verification contract
-9. Rust-to-Flutter bridge DTO contract
-10. Flutter design system and responsive breakpoint specification
-
-This document remains the high-level source of truth that subordinate specifications must satisfy.
+A new phase, slice, or task activates implementation work. A new specification, reference, or ADR is created only when an active scope requires a missing stable contract or a durable decision changes. A document's existence or Ready status never independently authorizes implementation.

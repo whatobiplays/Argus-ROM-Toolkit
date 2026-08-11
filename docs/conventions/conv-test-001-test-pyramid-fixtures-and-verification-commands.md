@@ -3,7 +3,7 @@
 **Document ID:** CONV-TEST-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, PHASE-000, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-008, SPEC-BE-010, SPEC-BE-011, SPEC-BE-012, CONV-REPO-001, CONV-RUST-001, CONV-FLUTTER-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -54,6 +54,7 @@ Argus follows these repository-wide principles:
 10. Test data committed to the repository must be safe to publish.
 11. Broader tests are valuable only when they prove behavior that narrower tests cannot.
 12. Performance, fuzz, stress, live-service, and manual verification remain distinct from ordinary correctness tests unless deliberately promoted into the canonical gate.
+13. A Ready future specification does not require speculative tests, fixtures, dependencies, modules, generated contracts, or empty suites before an active phase, slice, and task implement that capability.
 
 ## 4. Test Pyramid
 
@@ -86,8 +87,8 @@ Representative targets include:
 
 - domain value objects and policies;
 - validation and normalization;
-- planners and deterministic graph construction;
-- scheduler/state-machine transitions;
+- subsystem-owned deterministic plans where the active capability requires them;
+- runtime, job-lifecycle, and subsystem state-machine transitions;
 - pure mappers;
 - frontend identifiers/read-model mapping;
 - Riverpod controller transitions using focused API fakes;
@@ -215,7 +216,7 @@ This convention defines the test meaning of those commands.
 
 ### 12.1 `just test`
 
-`just test` runs the complete deterministic, platform-neutral, offline automated test set required by the current repository state and completed implementation slices.
+`just test` runs the complete deterministic, platform-neutral, offline automated test set required by the current repository state and completed implementation slices. It does not require placeholder suites for Ready future specifications whose capabilities are not active in the current phase, slice, and task.
 
 It must include, as applicable:
 
@@ -1026,6 +1027,7 @@ CONV-TEST-001 is satisfied by the repository and an applicable implementation sl
 28. Milestone-critical E2E/demonstration scenarios pass before the applicable milestone is claimed complete.
 29. Applicable native-platform requirements receive targeted native CI/test evidence.
 30. A completed implementation slice has behavior-specific tests/checks, canonical verification, and any additional native/milestone evidence required by its owning specification.
+31. Ready future specifications do not create speculative test, fixture, dependency, module, or generated-contract obligations before an active phase, slice, and task implement the capability.
 
 ## 44. References
 

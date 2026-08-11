@@ -3,7 +3,7 @@
 **Document ID:** CONV-DOC-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, CONV-REPO-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -158,6 +158,8 @@ Codex must not implement from a Draft phase, slice, or task as though unresolved
 ### 7.2 Ready for Implementation
 
 A Ready document has resolved blocking design decisions, identified dependencies, explicit scope, and testable acceptance/readiness criteria appropriate to its type.
+
+Ready status describes design maturity, not blanket implementation authorization. Executable agent scope is the intersection of the active phase, active slice or approved plan, explicit task path/scope authority, and governing architecture, specifications, references, and conventions. A Ready future specification does not authorize speculative scaffolding in an earlier phase.
 
 Ready documents must not contain unresolved template prompts, `TBD`, or `TODO` markers presented as unfinished design.
 
@@ -449,6 +451,12 @@ Do not combine unrelated:
 - speculative infrastructure.
 
 When unrelated work is discovered, report it separately as a follow-up candidate unless it is necessary to complete the approved task correctly.
+
+### 22.1 Active-Scope Intersection
+
+A task may reference broader Ready specifications for compatibility and extension constraints, but it implements only behavior activated by its parent phase or slice and explicit task. Codex must not create future modules, routes, DTOs, migrations, dependencies, fixtures, tests, placeholders, generated contracts, or generated output solely because a referenced specification is Ready.
+
+If an explicit task appears broader than its active phase or slice authority, Codex treats that as a documentation defect or material scope decision rather than silently expanding implementation.
 
 ## 23. Allowed Implementation-Level Deviations
 
@@ -1008,6 +1016,7 @@ CONV-DOC-001 is satisfied when applicable repository documentation/workflows fol
 31. Before a requested commit, the exact intended diff/path set and relevant verification evidence are reviewed.
 32. After a commit/push action, the result reports the actual SHA and/or remote/branch outcome that tooling can verify.
 33. Governed-document quality gates verify placeholders, consistency, links, IDs, scope, dependencies, and testability before Ready/Complete transitions.
+34. Ready status is not treated as blanket implementation authorization; Codex implements only the intersection of active phase, active slice or approved plan, explicit task authority, and governing documents.
 
 ## 48. References
 

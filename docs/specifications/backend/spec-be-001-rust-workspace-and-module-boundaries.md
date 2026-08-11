@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-001
 **Status:** Ready for Implementation
 **Owner:** Daniel
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-08-11
 **Depends On:** ARCH-001, ARCH-002, PHASE-000
 **Supersedes:** None
 **Superseded By:** None
@@ -103,7 +103,7 @@ Owns use cases and required ports:
 - gateway port traits
 - Unit of Work contracts
 - planners and orchestration
-- command results
+- operation-specific application success contracts and background-admission ports
 - application errors
 - event publication contracts
 
@@ -126,29 +126,30 @@ Infrastructure implements ports but does not decide application workflows.
 
 ### 5.4 `argus-runtime`
 
-Owns composition and lifecycle:
+Owns the bridge-neutral application host, internal composition, and lifecycle:
 
-- configuration loading
-- application data-directory resolution
-- database lifecycle and migration orchestration
-- adapter and service construction
-- event-bus wiring
-- startup and shutdown coordination
-- concrete façade container exposed to the bridge
+- configuration loading;
+- application data-directory resolution;
+- database lifecycle and migration orchestration;
+- construction of infrastructure adapters, application services, and handlers behind inward-owned ports;
+- event-bus wiring;
+- startup, admission, shutdown, and runtime-generation coordination;
+- the concrete application capability container exposed to outer adapters.
 
-It does not expose infrastructure implementations directly to Flutter.
+Runtime never imports generated bindings, bridge DTOs, Dart concepts, or bridge-specific notification types. It exposes only bridge-neutral host/capability and output-port contracts.
 
 ### 5.5 `argus-bridge`
 
-The only Flutter-facing Rust crate. It owns:
+The only Flutter-facing Rust crate and the outermost native adapter composition point. It owns:
 
-- dedicated bridge DTOs
-- DTO mapping
-- exported FRB functions
-- event-stream adaptation
-- stable bridge error DTOs
+- dedicated bridge DTOs and mapping;
+- exported FRB functions and generated binding integration;
+- transport/error adaptation;
+- the runtime-to-Flutter event-stream adapter;
+- bridge-specific notification/output adapters;
+- construction or invocation of the runtime host factory with bridge-neutral dependencies injected inward.
 
-It must not contain business rules, SQL, repository implementations, provider behavior, or scheduler logic. Bridge DTOs do not leak inward.
+It must not contain business rules, SQL, repository implementations, provider behavior, or background scheduling policy. Bridge DTOs do not leak inward. Runtime and application crates never import bridge types.
 
 ## 6. Feature-First Internal Organization
 

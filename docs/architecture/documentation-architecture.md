@@ -3,7 +3,7 @@
 **Document ID:** ARCH-002  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-01  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -275,6 +275,21 @@ Before moving to Ready or Complete:
 | ARCH-001 | [Architecture Overview](architecture-overview.md) | Complete |
 | ARCH-002 | Documentation Architecture | Complete |
 
-## 15. Next Documentation Milestone
+## 15. Active Implementation Scope
 
-Create and bring `PHASE-000`—the minimal foundation phase—to Ready for Implementation. Then write only the subsystem specifications required by its first vertical slices.
+A governed document being `Ready for Implementation` means its contract is sufficiently resolved to implement when an active phase, slice, and task require it. It does not make that document's full capability set current implementation scope.
+
+The executable scope for an implementation agent is the intersection of:
+
+1. the active phase;
+2. the active implementation slice or approved plan;
+3. the explicit task's allowed paths, deliverable, and exclusions; and
+4. the architecture, specifications, and conventions governing that work.
+
+Ready specifications for later MVP capabilities constrain compatibility and future extension points. They do not authorize speculative modules, migrations, DTOs, dependencies, fixtures, tests, placeholders, or UI destinations in an earlier phase.
+
+When documents conflict, agents apply the highest-level authoritative contract and the most specific active-scope contract together. A lower-level document may refine a broader one but must not silently expand the active phase or override architecture. Unambiguous documentation defects are corrected before or with implementation; genuinely unresolved product or architecture decisions are surfaced before code is written.
+
+## 16. Current Documentation Milestone
+
+Implement `PHASE-000` through bounded implementation slices and Codex tasks while keeping specifications synchronized with repository evidence. Later-ready MVP specifications remain forward contracts until an active phase and slice invoke them.

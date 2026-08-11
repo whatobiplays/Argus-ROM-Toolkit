@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-005  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -85,7 +85,7 @@ Startup and recovery behavior follows these rules:
 5. The normal routed shell becomes available only after authoritative backend `Ready`.
 6. Startup blocks only on mandatory startup work.
 7. Flutter does not fabricate startup percentages or current startup phases.
-8. Failed-runtime recovery actions come only from authoritative current runtime capabilities/actions; pre-runtime bootstrap actions use only typed client transport semantics.
+8. Failed-runtime recovery actions come only from the authoritative current startup-failure action set; pre-runtime bootstrap actions use only typed client transport semantics.
 9. Missing actions are absent, not rendered disabled as speculative options.
 10. Runtime-changing recovery is generation-bound and single-flight.
 11. Recovery never silently retargets a stale runtime action to a replacement generation.
@@ -322,12 +322,9 @@ Conceptually:
 ```text
 StartupState.ready
 - runtimeInstanceId
-- capabilities
 ```
 
-The exact carried fields should be limited to what app-level readiness composition genuinely needs.
-
-The controller must not duplicate complete feature/backend state merely because a `Ready` runtime snapshot contains capabilities.
+The exact carried fields should be limited to what app-level readiness composition genuinely needs. Phase 000 does not copy a generic backend capability bag into startup state.
 
 ## 18. `startupFailed` Variant
 
@@ -336,9 +333,7 @@ Conceptually:
 ```text
 StartupState.startupFailed
 - runtimeInstanceId
-- failure
-- availableRecoveryActions
-- capabilities
+- failure (including recoveryActions)
 - runtimeRecoveryOperation
 - diagnosticOperations
 - technicalDetailsState
@@ -437,16 +432,19 @@ Flutter must not infer readiness from:
 
 ## 25. Mandatory Startup Boundary
 
-Phase 000 startup may block on:
+Client bootstrap may block on making the native library, generated bindings, matched bridge contract, and initial transport/host invocation usable. Failure there is `TransportFailure` and does not fabricate backend runtime state.
 
-- native bridge initialization;
+After a trustworthy `ApplicationHost` contract exists, backend startup may block on:
+
 - database path resolution;
 - database opening;
 - migrations;
 - core service construction;
 - appearance-settings loading;
-- event-stream initialization required for safe readiness;
+- validation of the injected runtime-to-bridge notification sink required for safe readiness;
 - final readiness validation.
+
+The two boundaries must not classify the same defect simultaneously.
 
 ## 26. Startup Must Not Wait for Deferred Work
 
@@ -649,7 +647,7 @@ Conceptually:
 ```text
 RuntimeState.startupFailed
     ↓
-availableRecoveryActions
+startupFailure.recoveryActions
     ↓
 startup recovery UI
 ```
@@ -868,8 +866,7 @@ It receives B's:
 - runtime ID;
 - startup failure;
 - trace ID through the failure contract;
-- recovery action set;
-- capability information.
+- recovery action set.
 
 No A-specific action/error/diagnostic state is retained.
 
@@ -898,6 +895,10 @@ normal startup validation
 ```
 
 Flutter does not broaden this into database reset, application reset, or unrelated settings repair.
+
+### 56.1 Reset Result
+
+`RuntimeApi.resetAppearanceSettings(expectedRuntimeInstanceId)` returns the authoritative resulting `RuntimeState`. The controller adopts that snapshot directly, including any fresh runtime generation, and does not fabricate success state from the requested reset.
 
 ## 57. Reset Confirmation
 
@@ -1172,7 +1173,7 @@ user selects Export Diagnostics
     ↓
 presentation obtains approved output destination where required
     ↓
-startup controller / DiagnosticsApi
+DiagnosticsApi.exportStartupDiagnostics(expectedRuntimeInstanceId, destination)
     ↓
 backend creates sanitized bundle
     ↓
@@ -1211,7 +1212,7 @@ The original startup failure remains visible throughout.
 
 ## 86. Technical Details Source
 
-Copyable technical details come from the dedicated sanitized diagnostics contract.
+Copyable technical details come from `DiagnosticsApi.getStartupTechnicalDetails(expectedRuntimeInstanceId)` for the failed runtime generation that advertised the action.
 
 They must not be assembled from:
 
@@ -1277,7 +1278,7 @@ It does not replace the original startup failure or hide primary recovery action
 
 The frontend does not reconstruct or guess the data-directory path.
 
-It invokes the dedicated capability.
+It invokes `DiagnosticsApi.openStartupDataDirectory(expectedRuntimeInstanceId)` for the failed runtime generation that advertised the action.
 
 ## 94. Open Data Directory Result
 
@@ -1301,7 +1302,7 @@ Stopped
 frontend process/window termination
 ```
 
-Exact platform termination mechanics are implementation details.
+When transport succeeds, `RuntimeApi.exitFailedRuntime(expectedRuntimeInstanceId)` returns the authoritative resulting `RuntimeState`; the controller adopts its `ShuttingDown` or `Stopped` lifecycle rather than synthesizing it. Exact platform termination mechanics are implementation details.
 
 The recovery intent remains bound to the failed runtime that advertised Exit. If that generation is stale, the action is rejected/reconciled rather than silently applied to a replacement runtime. The general application shutdown capability is distinct and must not be substituted merely to make the stale recovery action succeed; a later explicit window-close/Exit against the now-current lifecycle is a new user intent.
 
@@ -1825,7 +1826,7 @@ Verify success leaves startup readiness unchanged and failure remains local to t
 
 ## 141. Exit Tests
 
-With a valid failed runtime, verify the controller requests normal shutdown and reaches the observable shutdown states as defined by the client contract.
+With a valid failed runtime, verify the controller invokes the generation-bound failed-runtime Exit capability, adopts the returned authoritative runtime state, and reaches the observable shutdown states defined by the client contract.
 
 With initial bootstrap failure and no usable runtime, verify the frontend still has a safe termination path and does not require a fabricated shutdown result.
 

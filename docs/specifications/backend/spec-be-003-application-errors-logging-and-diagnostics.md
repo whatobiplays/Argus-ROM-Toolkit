@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-08  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -303,9 +303,28 @@ Phase 000 must publish at least the following contracts:
 | `ARGUS.V1.FILESYSTEM.PERMISSION_DENIED` | Filesystem | Error | UserAction | UserInitiated | `errors.filesystem.permission_denied` |
 | `ARGUS.V1.RUNTIME.BRIDGE_INITIALIZATION_FAILED` | Runtime | Error | RestartRequired | UserInitiated | `errors.runtime.bridge_initialization_failed` |
 | `ARGUS.V1.RUNTIME.CORE_SERVICE_INITIALIZATION_FAILED` | Runtime | Error | RestartRequired | UserInitiated | `errors.runtime.core_service_initialization_failed` |
+| `ARGUS.V1.RUNTIME.NOT_READY` | Runtime | Warning | Retry | UserInitiated | `errors.runtime.not_ready` |
+| `ARGUS.V1.RUNTIME.STARTUP_FAILED` | Runtime | Error | RestartRequired | UserInitiated | `errors.runtime.startup_failed` |
+| `ARGUS.V1.RUNTIME.SHUTTING_DOWN` | Runtime | Warning | RestartRequired | UserInitiated | `errors.runtime.shutting_down` |
+| `ARGUS.V1.RUNTIME.STOPPED` | Runtime | Warning | RestartRequired | UserInitiated | `errors.runtime.stopped` |
+| `ARGUS.V1.RUNTIME.STALE_INSTANCE` | Runtime | Warning | UserAction | Never | `errors.runtime.stale_instance` |
 | `ARGUS.V1.OPERATION.CANCELLED` | Operation | Info | None | Never | `errors.operation.cancelled` |
 | `ARGUS.V1.INTERNAL.UNEXPECTED` | Internal | Error | ManualIntervention | Never | `errors.internal.unexpected` |
 | `ARGUS.V1.INTERNAL.INVARIANT_VIOLATION` | Internal | Fatal | RestartRequired | Never | `errors.internal.invariant_violation` |
+
+Runtime admission uses the lifecycle-specific codes above rather than a generic internal fallback. `NOT_READY` applies while a constructed runtime has not reached readiness, `STARTUP_FAILED` applies when normal work targets a failed generation, `SHUTTING_DOWN` and `STOPPED` preserve terminal lifecycle meaning, and pre-admission cancellation uses `ARGUS.V1.OPERATION.CANCELLED`.
+
+`ARGUS.V1.RUNTIME.STALE_INSTANCE` is returned when a generation-bound request references a retired or non-current `RuntimeInstanceId`. The caller re-queries authoritative runtime state and does not replay the stale action automatically.
+
+`ARGUS.V1.RUNTIME.BRIDGE_INITIALIZATION_FAILED` is valid only when the call reached a reportable backend host and backend-side bridge adapter/composition failed. Failure to load the native library, generated bindings, marshalling contract, or transport before `ApplicationError` delivery is possible belongs to the frontend `TransportFailure` boundary and is not mapped into this catalog.
+
+### 8.4 Later-MVP background-admission extension
+
+This catalog entry is reserved by the Ready runtime contract but is not Phase 000 implementation scope:
+
+| Error Code | Category | Severity | Recoverability | Retry Policy | Message Key |
+|---|---|---|---|---|---|
+| `ARGUS.V1.OPERATION.CAPACITY_UNAVAILABLE` | Operation | Warning | Retry | UserInitiated | `errors.operation.capacity_unavailable` |
 
 Later specifications add codes through the same catalog rules rather than creating parallel error enums.
 
@@ -1147,7 +1166,7 @@ SPEC-BE-003 is satisfied when:
 14. Event names are stable and dot-separated.
 15. One failure produces exactly one primary error log.
 16. Error propagation does not produce duplicate error logs.
-17. Startup logs include application/backend version, platform, architecture, migration summary, and enabled providers.
+17. Startup logs include application/backend version, platform, architecture, and migration summary; enabled providers are included only when provider infrastructure exists in the active runtime generation.
 18. Shutdown logs include request, outstanding operations, executor drain, database close, and completion.
 19. Operation, queue, persistence, provider, and filesystem durations are measurable.
 20. Metrics avoid unbounded label cardinality.

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-004, SPEC-BE-007, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -1383,7 +1383,7 @@ typed real destination
 adaptive navigation presentation
 ```
 
-Future Library, Collections, Jobs, and Sources behavior is not required merely to make the shell look populated.
+Future Library, Collections, Jobs, and Sources behavior is not required merely to make the shell look populated. Their production routes and destinations are absent until an active later phase implements them. Adaptive-shell, branch, and destination-count tests may use test-only fixtures that are not registered in the shipped route graph.
 
 ## 117. Phase 000 Settings Destination
 
@@ -1647,7 +1647,7 @@ SPEC-FE-004 is satisfied when:
 32. Global notices are ephemeral and never replace durable operation/restart/error state.
 33. Routing/shell tests run deterministically without requiring the real Rust backend for ordinary coverage.
 34. Branch, redirect, restoration, route parsing, unknown-route, and adaptive-shell behavior are explicitly tested.
-35. Phase 000 implements only genuine required destinations plus explicitly approved shell-validation placeholders.
+35. Phase 000 registers only genuine implemented destinations; future-feature shell-validation placeholders are test-only and never enter the production route graph.
 
 ## 138. Phase 000 Minimum Implementation
 

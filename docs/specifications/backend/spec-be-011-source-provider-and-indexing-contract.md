@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-011  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010  
 **Supersedes:** None  
 **Superseded By:** None
@@ -17,6 +17,10 @@ The source-provider layer answers how Argus accesses storage. The indexing layer
 The governing rule is:
 
 > A source provider reports trustworthy storage facts; indexing converts those facts into a persistent Argus source graph, recording presence immediately but accepting absence only when it has explicit authority to do so.
+
+### 1.1 Activation scope
+
+This is a forward MVP contract. Ready status does not activate source providers, indexing schema, scan jobs, fixtures, dependencies, or placeholder modules during Phase 000. Only an active later phase, slice, and task may implement them.
 
 ## 2. Scope
 
@@ -1062,7 +1066,7 @@ It is not released between scope transactions.
 
 A multi-root job may continue processing other roots even if one requested root is already scanning. MVP does not hide a retry queue behind this condition.
 
-After a process crash, runtime-local ownership disappears. Startup recovery marks stale `Running` scans `Abandoned`, after which the root may be scanned again.
+After a process crash, runtime-local ownership disappears. Startup recovery under SPEC-BE-004 marks stale `Running` scans `Abandoned` under this scan-specific policy, after which a fresh scan may be admitted with new `JobRun` and `ScanRun` identities.
 
 No distributed lease is required for MVP.
 
@@ -1368,7 +1372,7 @@ Cancellation is not converted to `Partial` merely because some work was committe
 
 `Abandoned` is recovery-only. Normal scan execution does not explicitly choose it.
 
-Startup converts stale `Running` scans to `Abandoned` according to SPEC-BE-007/runtime recovery behavior.
+Startup converts stale `Running` scans to `Abandoned` under SPEC-BE-004 restart reconciliation and this scan-specific policy.
 
 ## 41. Root Last-Scan Status Mapping
 

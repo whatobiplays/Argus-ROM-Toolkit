@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-012  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011  
 **Supersedes:** None  
 **Superseded By:** None
@@ -17,6 +17,10 @@ SPEC-BE-011 defines how Argus obtains trustworthy storage observations and stabl
 The governing rule is:
 
 > Argus derives logical content through deterministic typed transformations over validated source data; establishes one current versioned canonical identity with explicit provenance; computes independently versioned hashes against explicit source or content subjects; and persists only durable facts whose validity can be proven without retaining parser execution state.
+
+### 1.1 Activation scope
+
+This is a forward MVP contract. Ready status does not activate transformations, parsers, hashing, identity-maintenance jobs, schema, dependencies, fixtures, or placeholder modules during Phase 000. Only an active later phase, slice, and task may implement them.
 
 ## 2. Scope
 
@@ -957,7 +961,7 @@ Identity scheme/revision migration is application-level maintenance because it r
 
 It is not a SQLite schema migration.
 
-### 29.1 Immediate Invalidation
+### 29.1 Identity-maintenance admission and recovery
 
 When application identity-maintenance policy detects that an existing identity's `scheme_id` or `identity_revision` is obsolete:
 
@@ -965,9 +969,11 @@ When application identity-maintenance policy detects that an existing identity's
 - the old identity value is removed from current matching semantics;
 - the affected `GameContent` enters `NeedsReidentification`;
 - the last provenance basis may remain only as a maintenance hint;
-- a durable high-priority background migration operation is scheduled/continued through the normal job architecture.
+- targeted identity maintenance becomes eligible for normal background admission under SPEC-BE-004.
 
-The library remains open.
+This contract does not define a user-visible priority tier. An interrupted maintenance run is terminal for its original `JobRun`. A later maintenance admission creates a new `JobRun` from current authoritative `NeedsReidentification` state; MVP does not automatically continue the old run or serialize transient parser sessions, staging handles, or in-memory execution state.
+
+The library remains open, and each execution attempt obeys normal admission, checkpoint, cancellation, and restart-reconciliation rules.
 
 ### 29.2 Available During Migration
 

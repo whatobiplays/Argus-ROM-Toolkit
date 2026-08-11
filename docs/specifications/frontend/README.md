@@ -16,9 +16,6 @@ They define application structure, state architecture, client boundaries, routin
 | [SPEC-FE-004](spec-fe-004-routing-and-adaptive-application-shell.md) | Routing and Adaptive Application Shell | Ready for Implementation |
 | [SPEC-FE-005](spec-fe-005-startup-and-recovery-ui.md) | Startup and Recovery UI | Ready for Implementation |
 | [SPEC-FE-006](spec-fe-006-appearance-settings-and-theme-application.md) | Appearance Settings and Theme Application | Ready for Implementation |
-
-## Planned Phase 000 Specifications
-
-- `SPEC-FE-007` — Design-System Foundation and Accessibility Baseline
+| [SPEC-FE-007](spec-fe-007-design-system-foundation-and-accessibility-baseline.md) | Design-System Foundation and Accessibility Baseline | Ready for Implementation |
 
 Use [the subsystem specification template](../../templates/subsystem-specification.md).

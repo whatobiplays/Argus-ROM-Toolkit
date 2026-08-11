@@ -323,7 +323,7 @@ The following specifications must be written and reach **Ready for Implementatio
 | [SPEC-FE-004](../specifications/frontend/spec-fe-004-routing-and-adaptive-application-shell.md) | Routing and Adaptive Application Shell | Shell slice |
 | [SPEC-FE-005](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md) | Startup and Recovery UI | Startup integration slice |
 | [SPEC-FE-006](../specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md) | Appearance Settings and Theme Application | Theme workflow slice |
-| SPEC-FE-007 | Design-System Foundation and Accessibility Baseline | First user-facing Flutter slice |
+| [SPEC-FE-007](../specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md) | Design-System Foundation and Accessibility Baseline | First user-facing Flutter slice |
 
 ### Cross-Cutting and Conventions
 
@@ -493,7 +493,8 @@ Using focused API fakes:
 - initial settings load
 - immediate successful persistence
 - pending state
-- rollback after failure
+- rollback after definite application-level failure
+- transport-ambiguous outcome reconciliation without mutation replay
 - event-driven authoritative refresh
 - stream-gap/reconnect refresh
 - no full-screen loading after the settings screen has usable data
@@ -509,7 +510,9 @@ Required coverage includes:
 - theme selector states
 - inline update error
 - Light, Dark, and System theme application
-- accessibility labels and keyboard focus for Phase 000 controls
+- accessibility labels/semantics, keyboard operation, visible focus, practical target sizing, and 200% text-scaling behavior for representative Phase 000 controls
+- exact Compact/Medium/Expanded/Large boundary classification and representative adaptive layouts
+- selected reviewed Light/Dark visual goldens where SPEC-FE-007 requires them
 
 ### 12.6 End-to-End and Manual Verification
 
@@ -518,6 +521,9 @@ Required coverage includes:
 - Isolated invalid appearance-settings recovery through explicit Reset Appearance Settings.
 - Diagnostic bundle inspection for sanitization.
 - Generated-file freshness check.
+- Keyboard-only walkthrough of the canonical Phase 000 surfaces.
+- Screen-reader smoke test on the primary development platform.
+- Large text/display-scaling and reduced/disabled-animation checks where supported.
 - Clean checkout build and test instructions.
 
 ## 13. Exit Criteria
@@ -552,14 +558,18 @@ Phase 000 is Complete only when all of the following are true:
 ### Flutter
 
 - The blocking startup screen appears before backend readiness.
-- Successful startup enters the routed adaptive application shell.
+- Authoritative backend `Ready` plus successful initial authoritative appearance loading admits the routed adaptive application shell without an earlier normal-shell flash.
 - Injected startup failure enters the targeted recovery screen.
 - The Settings destination reads authoritative appearance settings.
 - Theme selection persists immediately.
 - A successful update applies the confirmed theme without restart.
-- A failed update reverts to the last confirmed value and shows an inline error.
+- A definite application-level settings failure reverts to the last confirmed value and shows an inline error; a transport-ambiguous outcome reconciles authoritative state without automatic mutation replay.
 - The selected theme survives a real application restart.
-- Compact, medium, expanded, and large shell presentations pass responsive tests.
+- Compact, Medium, Expanded, and Large shell presentations pass responsive tests using the SPEC-FE-007 width-class contract.
+- Representative Phase 000 interactions are keyboard-operable with visible focus and no keyboard trap.
+- Representative controls expose correct semantics and practical target sizing, and essential surfaces remain usable at 200% text scaling.
+- Argus-authored motion honors reduced/disabled-animation platform requests where supported.
+- Selective governed visual goldens are reviewed rather than auto-accepted.
 
 ### Diagnostics and Safety
 
@@ -605,6 +615,7 @@ Detailed interface, schema, package-version, and file-layout decisions intention
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](../specifications/frontend/spec-fe-004-routing-and-adaptive-application-shell.md)
 - [SPEC-FE-005 — Startup and Recovery UI](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-FE-006 — Appearance Settings and Theme Application](../specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md)
+- [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](../specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-RUST-001 — Rust Coding and Test Conventions](../conventions/conv-rust-001-rust-coding-and-test-conventions.md)

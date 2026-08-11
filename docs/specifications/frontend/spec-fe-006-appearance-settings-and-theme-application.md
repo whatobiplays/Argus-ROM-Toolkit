@@ -1164,7 +1164,7 @@ A future design system may define consistent transient success behavior, but it 
 
 SPEC-FE-007 owns the comprehensive design-system and accessibility baseline.
 
-FE-006 nevertheless requires the appearance workflow to be structurally accessible before styling details are decided.
+FE-006 nevertheless keeps the appearance workflow's semantic accessibility requirements feature-owned while SPEC-FE-007 supplies the shared measurable baseline and styling defaults.
 
 ## 88. Theme Mode Group Semantics
 
@@ -1780,6 +1780,7 @@ This specification does not introduce:
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
+- [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

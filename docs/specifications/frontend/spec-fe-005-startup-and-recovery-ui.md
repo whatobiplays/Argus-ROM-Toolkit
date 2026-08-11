@@ -97,7 +97,7 @@ Startup and recovery behavior follows these rules:
 17. Event delivery may accelerate synchronization but is never the sole source of terminal startup correctness.
 18. Startup/recovery state remains outside normal ready-shell route history.
 19. Controller state remains UI-framework-independent except for Riverpod ownership conventions.
-20. Accessibility and keyboard operation are required even before SPEC-FE-007 adds the full design-system baseline.
+20. Accessibility and keyboard operation are required independently of detailed SPEC-FE-007 visual styling; FE-007 supplies the shared measurable baseline and presentation defaults.
 
 ## 5. Architectural Position
 
@@ -2122,6 +2122,7 @@ It does not define a generic recovery DSL, generic effect bus, or second runtime
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)
 - [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
+- [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

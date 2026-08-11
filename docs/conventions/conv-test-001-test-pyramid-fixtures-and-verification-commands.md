@@ -1038,6 +1038,7 @@ CONV-TEST-001 is satisfied by the repository and an applicable implementation sl
 - [SPEC-BE-010 — Provider Gateway Architecture](../specifications/backend/spec-be-010-provider-gateway-architecture.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md)
 - [SPEC-BE-012 — Transformation and Hash-Scheme Contract](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md)
+- [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](../specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-RUST-001 — Rust Coding and Test Conventions](conv-rust-001-rust-coding-and-test-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

@@ -13,3 +13,7 @@ workspace = true
 argus-application = { path = "../argus-application" }
 argus-domain = { path = "../argus-domain" }
 argus-infrastructure = { path = "../argus-infrastructure" }
+getrandom.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

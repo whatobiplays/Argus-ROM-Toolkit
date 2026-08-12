@@ -15,5 +15,11 @@ rust-version = "1.97.1"
 license = "GPL-3.0-only"
 publish = false
 
+[workspace.dependencies]
+getrandom = { version = "0.4.3", features = ["sys_rng"] }
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
+sha2 = { version = "0.11.0", default-features = false }
+tempfile = "3.27.0"
+
 [workspace.lints.rust]
 unsafe_code = "deny"

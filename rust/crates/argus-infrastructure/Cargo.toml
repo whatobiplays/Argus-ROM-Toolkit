@@ -6,9 +6,17 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+test-support = []
+
 [lints]
 workspace = true
 
 [dependencies]
 argus-application = { path = "../argus-application" }
 argus-domain = { path = "../argus-domain" }
+rusqlite.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

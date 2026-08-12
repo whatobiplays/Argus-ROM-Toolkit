@@ -5,12 +5,14 @@
 //! connection. This keeps transaction lifetimes and SQLite values on the worker
 //! thread while the application-facing API remains callback based.
 
+mod appearance;
 mod connection;
 mod errors;
 mod executor;
 mod migrations;
 mod unit_of_work;
 
+pub use appearance::{SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository};
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub use connection::{SqliteConnection, SqliteValue};

@@ -549,11 +549,13 @@ impl UnitOfWorkFactory for SqliteDatabaseExecutor {
             .map_err(|error| match error {
                 SqliteExecutorError::ApplicationCallback(application_error) => application_error,
                 SqliteExecutorError::DatabaseOpenFailed
-                | SqliteExecutorError::DatabaseLocked
                 | SqliteExecutorError::Shutdown
                 | SqliteExecutorError::Poisoned
                 | SqliteExecutorError::Disconnected => {
                     ApplicationPortError::Persistence(PersistenceError::Unavailable)
+                }
+                SqliteExecutorError::DatabaseLocked => {
+                    ApplicationPortError::Persistence(PersistenceError::DatabaseLocked)
                 }
                 SqliteExecutorError::MigrationFailed { .. } => {
                     ApplicationPortError::Persistence(PersistenceError::MigrationFailed)
@@ -582,6 +584,9 @@ where
                 SqliteOperationError::Locked => SqliteExecutorError::DatabaseLocked,
                 SqliteOperationError::Constraint | SqliteOperationError::Failed => {
                     SqliteExecutorError::Internal
+                }
+                SqliteOperationError::Application(error) => {
+                    SqliteExecutorError::ApplicationCallback(error)
                 }
             })
     })

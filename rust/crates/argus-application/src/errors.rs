@@ -1,12 +1,13 @@
-//! The exact seven-code Slice 002 application error catalog.
+//! The currently implemented Phase 000 error-catalog subset through Slice 003.
 
 use std::fmt;
 
 use crate::{SafeContext, SafeContextField, TraceId};
 
-/// Stable broad classifications used by the Slice 002 catalog.
+/// Stable broad classifications used by the currently implemented Phase 000 catalog subset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ErrorCategory {
+    Validation,
     Configuration,
     Filesystem,
     Persistence,
@@ -47,10 +48,15 @@ impl MessageKey {
     }
 }
 
-/// The only published error codes authorized by Slice 002.
+/// Published error codes currently implemented through Slice 003.
+///
+/// Later Phase 000 runtime, operation, and provider entries are intentionally
+/// not represented until their owning slices are implemented.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ErrorCode {
+    ValidationInvalidArgument,
     ConfigurationInvalid,
+    ConfigurationPersistedSettingsInvalid,
     FilesystemPermissionDenied,
     PersistenceDatabaseOpenFailed,
     PersistenceDatabaseLocked,
@@ -120,11 +126,18 @@ const LOCKED_FAILURE_FIELDS: &[SafeContextField] = &[
     SafeContextField::FailureRole,
 ];
 
+const SETTINGS_INTEGRITY_FIELDS: &[SafeContextField] = &[
+    SafeContextField::SettingsDomain,
+    SafeContextField::PersistedSettingsReason,
+];
+
 impl ErrorCode {
-    /// Returns all seven codes in stable catalog order.
-    pub const fn all() -> &'static [Self; 7] {
+    /// Returns the currently implemented entries in stable catalog order.
+    pub const fn all() -> &'static [Self; 9] {
         &[
+            Self::ValidationInvalidArgument,
             Self::ConfigurationInvalid,
+            Self::ConfigurationPersistedSettingsInvalid,
             Self::FilesystemPermissionDenied,
             Self::PersistenceDatabaseOpenFailed,
             Self::PersistenceDatabaseLocked,
@@ -137,7 +150,11 @@ impl ErrorCode {
     /// Returns the permanent machine-readable code.
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ValidationInvalidArgument => "ARGUS.V1.VALIDATION.INVALID_ARGUMENT",
             Self::ConfigurationInvalid => "ARGUS.V1.CONFIGURATION.INVALID",
+            Self::ConfigurationPersistedSettingsInvalid => {
+                "ARGUS.V1.CONFIGURATION.PERSISTED_SETTINGS_INVALID"
+            }
             Self::FilesystemPermissionDenied => "ARGUS.V1.FILESYSTEM.PERMISSION_DENIED",
             Self::PersistenceDatabaseOpenFailed => "ARGUS.V1.PERSISTENCE.DATABASE_OPEN_FAILED",
             Self::PersistenceDatabaseLocked => "ARGUS.V1.PERSISTENCE.DATABASE_LOCKED",
@@ -150,6 +167,14 @@ impl ErrorCode {
     /// Returns the centralized policy for this code.
     pub const fn policy(self) -> ErrorPolicy {
         match self {
+            Self::ValidationInvalidArgument => policy(
+                ErrorCategory::Validation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.validation.invalid_argument",
+                COMMON_FAILURE_FIELDS,
+            ),
             Self::ConfigurationInvalid => policy(
                 ErrorCategory::Configuration,
                 ApplicationSeverity::Error,
@@ -157,6 +182,14 @@ impl ErrorCode {
                 RetryPolicy::Never,
                 "errors.configuration.invalid",
                 COMMON_FAILURE_FIELDS,
+            ),
+            Self::ConfigurationPersistedSettingsInvalid => policy(
+                ErrorCategory::Configuration,
+                ApplicationSeverity::Error,
+                Recoverability::UserAction,
+                RetryPolicy::UserInitiated,
+                "errors.configuration.persisted_settings_invalid",
+                SETTINGS_INTEGRITY_FIELDS,
             ),
             Self::FilesystemPermissionDenied => policy(
                 ErrorCategory::Filesystem,
@@ -253,10 +286,12 @@ impl ApplicationError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PersistenceError {
     Unavailable,
+    DatabaseLocked,
     ConstraintViolation,
     Conflict,
     CorruptOrIncompatible,
     MigrationFailed,
+    PersistedSettingsInvalid(crate::PersistedSettingsReason),
     Internal,
 }
 
@@ -267,10 +302,17 @@ impl PersistenceError {
     }
 }
 
-/// Technology-neutral failure returned by a Phase 000 persistence port.
+/// Technology-neutral failure returned across an application capability callback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApplicationPortError {
     Persistence(PersistenceError),
+    EventRecording,
+}
+
+impl From<PersistenceError> for ApplicationPortError {
+    fn from(error: PersistenceError) -> Self {
+        Self::Persistence(error)
+    }
 }
 
 const fn policy(

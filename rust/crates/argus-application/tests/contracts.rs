@@ -3,11 +3,12 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use argus_application::{
-    ApplicationError, ApplicationPortError, ApplicationSeverity, ErrorCategory, ErrorCode,
-    EventName, LogEvent, LogLevel, ObservabilitySink, OperationContext, OperationName, PathClass,
-    PersistenceError, Recoverability, RetryPolicy, SafeContext, SafeContextError, SafeContextField,
-    SafeContextValue, StartupCollector, SubsystemName, TraceEvent, TraceEventPhase, TraceId,
-    TraceIdError, UnitOfWork, UnitOfWorkFactory, Version,
+    AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
+    ApplicationSeverity, ErrorCategory, ErrorCode, EventName, LogEvent, LogLevel,
+    ObservabilitySink, OperationContext, OperationName, PathClass, PersistenceError,
+    Recoverability, RetryPolicy, SafeContext, SafeContextError, SafeContextField, SafeContextValue,
+    StartupCollector, SubsystemName, ThemeMode, TraceEvent, TraceEventPhase, TraceId, TraceIdError,
+    UnitOfWork, UnitOfWorkFactory, Version,
 };
 
 fn trace_id() -> TraceId {
@@ -58,8 +59,17 @@ fn safe_context_accepts_closed_typed_fields_and_rejects_hostile_values() {
 }
 
 #[test]
-fn catalog_contains_only_the_exact_seven_codes_and_metadata() {
+fn currently_implemented_phase_000_catalog_subset_contains_codes_and_metadata() {
     let expected = [
+        (
+            ErrorCode::ValidationInvalidArgument,
+            "ARGUS.V1.VALIDATION.INVALID_ARGUMENT",
+            ErrorCategory::Validation,
+            ApplicationSeverity::Warning,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.validation.invalid_argument",
+        ),
         (
             ErrorCode::ConfigurationInvalid,
             "ARGUS.V1.CONFIGURATION.INVALID",
@@ -68,6 +78,15 @@ fn catalog_contains_only_the_exact_seven_codes_and_metadata() {
             Recoverability::UserAction,
             RetryPolicy::Never,
             "errors.configuration.invalid",
+        ),
+        (
+            ErrorCode::ConfigurationPersistedSettingsInvalid,
+            "ARGUS.V1.CONFIGURATION.PERSISTED_SETTINGS_INVALID",
+            ErrorCategory::Configuration,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::UserInitiated,
+            "errors.configuration.persisted_settings_invalid",
         ),
         (
             ErrorCode::FilesystemPermissionDenied,
@@ -191,7 +210,32 @@ struct RecordingUnitOfWork<'scope> {
     marker: PhantomData<&'scope mut ()>,
 }
 
+struct NoopAppearanceRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl AppearanceSettingsRepository for NoopAppearanceRepository<'_> {
+    fn get(&mut self) -> Result<AppearanceSettings, PersistenceError> {
+        Ok(AppearanceSettings::new(ThemeMode::System))
+    }
+
+    fn save(&mut self, _settings: &AppearanceSettings) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+}
+
 impl UnitOfWork for RecordingUnitOfWork<'_> {
+    type AppearanceSettingsRepository<'scope>
+        = NoopAppearanceRepository<'scope>
+    where
+        Self: 'scope;
+
+    fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
+        NoopAppearanceRepository {
+            marker: PhantomData,
+        }
+    }
+
     fn commit(mut self) -> Result<(), ApplicationPortError> {
         self.terminal = true;
         self.terminal_action.set(Some("commit"));

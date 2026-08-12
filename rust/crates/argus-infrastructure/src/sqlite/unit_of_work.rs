@@ -1,9 +1,10 @@
 //! Transaction-scoped SQLite Unit of Work implementation.
 
-use rusqlite::Transaction;
+use rusqlite::{OptionalExtension, Transaction, types::Value};
 
 use argus_application::{ApplicationPortError, OperationContext, PersistenceError, UnitOfWork};
 
+use super::appearance::SqliteAppearanceSettingsRepository;
 use super::connection::SqliteValue;
 use super::errors::{SqliteOperationError, operation_error};
 
@@ -90,6 +91,43 @@ impl<'connection> SqliteUnitOfWork<'connection> {
             .map_err(map_operation_error)
     }
 
+    /// Reads the required appearance singleton value inside this transaction.
+    pub(crate) fn appearance_theme_mode(&mut self) -> Result<Option<Value>, PersistenceError> {
+        self.transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .query_row(
+                "SELECT theme_mode FROM appearance_settings WHERE singleton_key = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)
+    }
+
+    /// Replaces the persisted appearance theme inside this transaction.
+    pub(crate) fn save_appearance_theme_mode(
+        &mut self,
+        theme_mode: &str,
+    ) -> Result<(), PersistenceError> {
+        let changed = self
+            .transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .execute(
+                "UPDATE appearance_settings SET theme_mode = ?1, updated_at = CURRENT_TIMESTAMP WHERE singleton_key = 1",
+                [theme_mode],
+            )
+            .map_err(map_persistence_operation_error)?;
+        match changed {
+            0 => Err(PersistenceError::PersistedSettingsInvalid(
+                argus_application::PersistedSettingsReason::Missing,
+            )),
+            1 => Ok(()),
+            _ => Err(PersistenceError::CorruptOrIncompatible),
+        }
+    }
+
     /// Commits the transaction and consumes this scope.
     pub fn commit(mut self) -> Result<(), ApplicationPortError> {
         let transaction = self
@@ -113,7 +151,16 @@ impl<'connection> SqliteUnitOfWork<'connection> {
     }
 }
 
-impl UnitOfWork for SqliteUnitOfWork<'_> {
+impl<'connection> UnitOfWork for SqliteUnitOfWork<'connection> {
+    type AppearanceSettingsRepository<'scope>
+        = SqliteAppearanceSettingsRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
+        SqliteAppearanceSettingsRepository::new(self)
+    }
+
     fn commit(self) -> Result<(), ApplicationPortError>
     where
         Self: Sized,
@@ -138,11 +185,19 @@ impl Drop for SqliteUnitOfWork<'_> {
 }
 
 fn map_operation_error(error: rusqlite::Error) -> ApplicationPortError {
-    ApplicationPortError::Persistence(match operation_error(&error) {
+    match operation_error(&error) {
+        SqliteOperationError::Application(error) => error,
+        _ => map_persistence_operation_error(error).into(),
+    }
+}
+
+fn map_persistence_operation_error(error: rusqlite::Error) -> PersistenceError {
+    match operation_error(&error) {
         SqliteOperationError::Constraint => PersistenceError::ConstraintViolation,
-        SqliteOperationError::Locked => PersistenceError::Unavailable,
+        SqliteOperationError::Locked => PersistenceError::DatabaseLocked,
         SqliteOperationError::Failed => PersistenceError::Internal,
-    })
+        SqliteOperationError::Application(_) => PersistenceError::Internal,
+    }
 }
 
 #[cfg(test)]

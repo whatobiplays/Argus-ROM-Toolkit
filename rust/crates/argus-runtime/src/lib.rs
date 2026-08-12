@@ -11,21 +11,30 @@
 //! use argus_runtime::{SqliteConnection, SqliteValue};
 //! ```
 
+mod events;
+
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use argus_application::{
-    ApplicationError, ApplicationPortError, ArchitectureClass, DiagnosticStage, ErrorCode,
-    EventName, FailureRole, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
-    OperationContext, OperationName, PathClass, PlatformClass, SafeContext, SafeContextField,
-    SafeContextValue, StartupCollector, SubsystemName, TechnicalClass, TraceEvent, TraceEventPhase,
-    TraceId, UnitOfWorkFactory, Version,
+    AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
+    ArchitectureClass, DiagnosticStage, ErrorCode, EventName, FailureRole,
+    GetAppearanceSettingsQuery, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
+    OperationContext, OperationName, PathClass, PersistenceError, PlatformClass, SafeContext,
+    SafeContextField, SafeContextValue, SettingsService, StartupCollector, SubsystemName,
+    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWorkFactory,
+    UpdateAppearanceSettingsCommand, Version,
 };
 use argus_infrastructure::sqlite::{
-    MigrationOutcome as InfrastructureMigrationOutcome, MigrationSummary, SqliteDatabaseExecutor,
+    MigrationOutcome as InfrastructureMigrationOutcome, MigrationSummary,
+    SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteDatabaseExecutor,
     SqliteExecutorError, SqliteUnitOfWork,
 };
+
+pub use events::EventBus;
+use events::{PendingEventCollector, PublicationDiagnostics, finalize_appearance_update};
 
 /// Platform naming policy used by the private path-resolution seam.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -280,6 +289,9 @@ pub struct KernelBootstrap {
     path_class: PathClass,
     migration_summary: KernelMigrationSummary,
     executor: Option<SqliteDatabaseExecutor>,
+    settings_service: SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>,
+    event_bus: EventBus,
+    publication_diagnostics: Mutex<PublicationDiagnostics>,
     collector: StartupCollector,
 }
 
@@ -298,7 +310,36 @@ impl<'scope> KernelUnitOfWork<'scope> {
     }
 }
 
-impl argus_application::UnitOfWork for KernelUnitOfWork<'_> {
+/// Technology-neutral transaction-bound appearance repository wrapper.
+pub struct KernelAppearanceSettingsRepository<'scope, 'connection> {
+    inner: SqliteAppearanceSettingsRepository<'scope, 'connection>,
+}
+
+impl AppearanceSettingsRepository for KernelAppearanceSettingsRepository<'_, '_> {
+    fn get(&mut self) -> Result<argus_application::AppearanceSettings, PersistenceError> {
+        self.inner.get()
+    }
+
+    fn save(
+        &mut self,
+        settings: &argus_application::AppearanceSettings,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save(settings)
+    }
+}
+
+impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection> {
+    type AppearanceSettingsRepository<'scope>
+        = KernelAppearanceSettingsRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
+        KernelAppearanceSettingsRepository {
+            inner: self.inner.appearance_settings(),
+        }
+    }
+
     fn commit(self) -> Result<(), ApplicationPortError> {
         self.inner.commit()
     }
@@ -332,6 +373,44 @@ impl KernelBootstrap {
     /// Returns independently recorded startup logs for local diagnostics.
     pub fn startup_logs(&self) -> &[LogEvent] {
         self.collector.logs()
+    }
+
+    /// Returns bounded structured diagnostics from post-commit publication.
+    pub fn publication_logs(&self) -> Vec<LogEvent> {
+        self.publication_diagnostics
+            .lock()
+            .map(|collector| collector.logs().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Reads the authoritative appearance aggregate in a fresh operation.
+    pub fn get_appearance_settings(&self) -> Result<AppearanceSettings, ApplicationError> {
+        self.settings_service.get_appearance_settings(
+            GetAppearanceSettingsQuery,
+            settings_operation_context("read", self.trace_id),
+        )
+    }
+
+    /// Updates the complete appearance aggregate and publishes after commit.
+    pub fn update_appearance_settings(
+        &self,
+        settings: AppearanceSettings,
+    ) -> Result<(), ApplicationError> {
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let context = settings_operation_context("update", self.trace_id);
+        let result = self.settings_service.update_appearance_settings(
+            UpdateAppearanceSettingsCommand::new(settings),
+            context.clone(),
+            recorder,
+        );
+        finalize_appearance_update(
+            result,
+            &context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
     }
 
     /// Shuts down the worker and consumes the kernel.
@@ -383,6 +462,14 @@ impl Drop for KernelBootstrap {
 /// Starts the minimum persistence/startup kernel for Phase 000.
 pub fn bootstrap_kernel(
     options: KernelBootstrapOptions,
+) -> Result<KernelBootstrap, KernelBootstrapFailure> {
+    bootstrap_kernel_with_event_bus(options, EventBus::default())
+}
+
+/// Starts the kernel with an explicitly composed Phase 000 event bus.
+pub fn bootstrap_kernel_with_event_bus(
+    options: KernelBootstrapOptions,
+    event_bus: EventBus,
 ) -> Result<KernelBootstrap, KernelBootstrapFailure> {
     let trace_id = new_trace_id();
     let context = startup_context(trace_id);
@@ -484,6 +571,10 @@ pub fn bootstrap_kernel(
         )
     })?;
     let summary = KernelMigrationSummary::from(executor.migration_summary());
+    let settings_service = SettingsService::new(
+        SqliteAppearanceSettingsQueries::new(executor.clone()),
+        executor.clone(),
+    );
     let mut migration_fields = environment_fields(path_class, platform_class, architecture);
     insert(
         &mut migration_fields,
@@ -528,8 +619,28 @@ pub fn bootstrap_kernel(
         path_class,
         migration_summary: summary,
         executor: Some(executor),
+        settings_service,
+        event_bus,
+        publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
         collector,
     })
+}
+
+fn settings_operation_context(
+    operation: &'static str,
+    startup_trace_id: TraceId,
+) -> OperationContext {
+    let trace_id = loop {
+        let candidate = new_trace_id();
+        if candidate != startup_trace_id {
+            break candidate;
+        }
+    };
+    OperationContext::new(
+        trace_id,
+        SubsystemName::try_from("settings").expect("static subsystem is valid"),
+        OperationName::try_from(operation).expect("static operation is valid"),
+    )
 }
 
 static EMERGENCY_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -863,5 +974,16 @@ mod tests {
         assert_ne!(first, second);
         assert_ne!(first.to_string(), "00000000000000000000000000000000");
         assert_ne!(second.to_string(), "00000000000000000000000000000000");
+    }
+
+    #[test]
+    fn settings_operations_receive_fresh_contexts_separate_from_startup() {
+        let startup = super::startup_context(super::new_trace_id());
+        let read = super::settings_operation_context("read", startup.trace_id());
+        let update = super::settings_operation_context("update", startup.trace_id());
+        assert_ne!(read.trace_id(), update.trace_id());
+        assert_ne!(read.trace_id(), startup.trace_id());
+        assert_ne!(read.operation().as_str(), "startup");
+        assert_ne!(update.operation().as_str(), "startup");
     }
 }

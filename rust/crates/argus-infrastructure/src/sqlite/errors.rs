@@ -14,6 +14,8 @@ pub enum SqliteOperationError {
     Locked,
     /// The database could not complete the requested operation.
     Failed,
+    /// A focused infrastructure adapter returned an application-port error.
+    Application(ApplicationPortError),
 }
 
 /// Failure categories for executor lifecycle and startup work.
@@ -91,6 +93,7 @@ impl fmt::Display for SqliteOperationError {
             Self::Constraint => "database constraint violation",
             Self::Locked => "database locked",
             Self::Failed => "database operation failed",
+            Self::Application(_) => "application persistence operation failed",
         })
     }
 }

@@ -205,6 +205,20 @@ pub enum TechnicalClass {
     Internal,
 }
 
+/// Settings bounded context permitted in persisted-settings diagnostics.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SettingsDomain {
+    Appearance,
+}
+
+/// Sanitized reason for a persisted settings integrity failure.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PersistedSettingsReason {
+    Missing,
+    InvalidValue,
+    MappingFailed,
+}
+
 /// Role of an error log in a top-level operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FailureRole {
@@ -282,11 +296,13 @@ pub enum SafeContextField {
     Architecture,
     TechnicalClass,
     FailureRole,
+    SettingsDomain,
+    PersistedSettingsReason,
 }
 
 impl SafeContextField {
-    /// Every field authorized by Slice 002.
-    pub const ALL: [Self; 11] = [
+    /// Every field authorized by the Phase 000 safe-context catalog.
+    pub const ALL: [Self; 13] = [
         Self::Stage,
         Self::PathClass,
         Self::MigrationCount,
@@ -298,6 +314,8 @@ impl SafeContextField {
         Self::Architecture,
         Self::TechnicalClass,
         Self::FailureRole,
+        Self::SettingsDomain,
+        Self::PersistedSettingsReason,
     ];
 }
 
@@ -315,6 +333,8 @@ pub enum SafeContextValue {
     Architecture(ArchitectureClass),
     TechnicalClass(TechnicalClass),
     FailureRole(FailureRole),
+    SettingsDomain(SettingsDomain),
+    PersistedSettingsReason(PersistedSettingsReason),
 }
 
 /// A bounded typed map for safe diagnostics and presentation context.
@@ -566,6 +586,14 @@ fn matches_field_value(field: SafeContextField, value: &SafeContextValue) -> boo
             | (
                 SafeContextField::FailureRole,
                 SafeContextValue::FailureRole(_)
+            )
+            | (
+                SafeContextField::SettingsDomain,
+                SafeContextValue::SettingsDomain(_)
+            )
+            | (
+                SafeContextField::PersistedSettingsReason,
+                SafeContextValue::PersistedSettingsReason(_)
             )
     )
 }

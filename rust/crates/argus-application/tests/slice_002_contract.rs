@@ -3,12 +3,12 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use argus_application::{
-    ApplicationError, ApplicationPortError, ApplicationSeverity, ArchitectureClass, ErrorCategory,
-    ErrorCode, FailureRole, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
-    OperationContext, OperationName, PathClass, PlatformClass, Recoverability, RetryPolicy,
-    SafeContext, SafeContextError, SafeContextField, SafeContextValue, StartupCollector,
-    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, TraceIdError, UnitOfWork,
-    UnitOfWorkFactory, Version,
+    AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
+    ApplicationSeverity, ArchitectureClass, ErrorCategory, ErrorCode, FailureRole, LogEvent,
+    LogLevel, MigrationOutcome, ObservabilitySink, OperationContext, OperationName, PathClass,
+    PersistenceError, PlatformClass, Recoverability, RetryPolicy, SafeContext, SafeContextError,
+    SafeContextField, SafeContextValue, StartupCollector, TechnicalClass, ThemeMode, TraceEvent,
+    TraceEventPhase, TraceId, TraceIdError, UnitOfWork, UnitOfWorkFactory, Version,
 };
 
 fn context() -> OperationContext {
@@ -170,14 +170,16 @@ fn safe_context_rejects_wrong_value_types_for_every_closed_field() {
 }
 
 #[test]
-fn application_catalog_contains_exactly_the_seven_slice_002_codes() {
+fn currently_implemented_phase_000_error_catalog_subset_is_preserved() {
     let codes = ErrorCode::all();
-    assert_eq!(codes.len(), 7);
+    assert_eq!(codes.len(), 9);
     let names: Vec<_> = codes.iter().map(|code| code.as_str()).collect();
     assert_eq!(
         names,
         vec![
+            "ARGUS.V1.VALIDATION.INVALID_ARGUMENT",
             "ARGUS.V1.CONFIGURATION.INVALID",
+            "ARGUS.V1.CONFIGURATION.PERSISTED_SETTINGS_INVALID",
             "ARGUS.V1.FILESYSTEM.PERMISSION_DENIED",
             "ARGUS.V1.PERSISTENCE.DATABASE_OPEN_FAILED",
             "ARGUS.V1.PERSISTENCE.DATABASE_LOCKED",
@@ -190,8 +192,16 @@ fn application_catalog_contains_exactly_the_seven_slice_002_codes() {
 }
 
 #[test]
-fn application_catalog_policies_are_exact() {
+fn currently_implemented_catalog_policies_are_exact() {
     let expected = [
+        (
+            ErrorCode::ValidationInvalidArgument,
+            ErrorCategory::Validation,
+            ApplicationSeverity::Warning,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.validation.invalid_argument",
+        ),
         (
             ErrorCode::ConfigurationInvalid,
             ErrorCategory::Configuration,
@@ -199,6 +209,14 @@ fn application_catalog_policies_are_exact() {
             Recoverability::UserAction,
             RetryPolicy::Never,
             "errors.configuration.invalid",
+        ),
+        (
+            ErrorCode::ConfigurationPersistedSettingsInvalid,
+            ErrorCategory::Configuration,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::UserInitiated,
+            "errors.configuration.persisted_settings_invalid",
         ),
         (
             ErrorCode::FilesystemPermissionDenied,
@@ -322,7 +340,32 @@ struct RecordingUnitOfWork<'scope> {
     marker: PhantomData<&'scope mut ()>,
 }
 
+struct NoopAppearanceRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl AppearanceSettingsRepository for NoopAppearanceRepository<'_> {
+    fn get(&mut self) -> Result<AppearanceSettings, PersistenceError> {
+        Ok(AppearanceSettings::new(ThemeMode::System))
+    }
+
+    fn save(&mut self, _settings: &AppearanceSettings) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+}
+
 impl UnitOfWork for RecordingUnitOfWork<'_> {
+    type AppearanceSettingsRepository<'scope>
+        = NoopAppearanceRepository<'scope>
+    where
+        Self: 'scope;
+
+    fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
+        NoopAppearanceRepository {
+            marker: PhantomData,
+        }
+    }
+
     fn commit(mut self) -> Result<(), ApplicationPortError> {
         self.terminal = true;
         self.terminal_action.set(Some("commit"));

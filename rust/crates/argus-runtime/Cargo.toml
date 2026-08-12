@@ -1,0 +1,15 @@
+[package]
+name = "argus-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+argus-application = { path = "../argus-application" }
+argus-domain = { path = "../argus-domain" }
+argus-infrastructure = { path = "../argus-infrastructure" }

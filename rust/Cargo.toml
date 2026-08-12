@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/argus-domain",
+    "crates/argus-application",
+    "crates/argus-infrastructure",
+    "crates/argus-runtime",
+    "crates/argus-bridge",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"

@@ -3,7 +3,7 @@
 **Document ID:** CONV-REPO-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-09  
+**Last Updated:** 2026-08-11  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-008  
 **Supersedes:** None  
 **Superseded By:** None
@@ -68,6 +68,7 @@ just
 rustup
 FVM
 Bash
+ShellCheck
 platform-native build prerequisites
 ```
 

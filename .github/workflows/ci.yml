@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Platform-neutral quality gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: flutter/.fvmrc
+          cache: true
+          pub-cache: true
+
+      - name: Install CI FVM prerequisite
+        run: |
+          dart pub global activate fvm 4.1.2
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Verify ShellCheck prerequisite
+        run: shellcheck --version
+
+      - name: Bootstrap repository
+        run: just bootstrap
+
+      - name: Run canonical quality gate
+        run: just check
+
+  native-desktop:
+    name: Native desktop compile (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: flutter/.fvmrc
+          cache: true
+          pub-cache: true
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$rust_channel" --profile minimal
+
+      - name: Check Rust workspace
+        shell: bash
+        run: cargo check --manifest-path rust/Cargo.toml --workspace --all-targets --locked
+
+      - name: Resolve Flutter dependencies
+        shell: bash
+        run: cd flutter && flutter pub get --enforce-lockfile
+
+      - name: Build native Flutter desktop shell
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cd flutter
+            flutter build windows --debug
+          else
+            cd flutter
+            flutter build macos --debug
+          fi

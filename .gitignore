@@ -97,6 +97,10 @@ cargo-timing*.json
 # -----------------------------------------------------------------------------
 # Flutter / Dart
 # -----------------------------------------------------------------------------
+# FVM project cache/SDK state. The root Flutter pin lives in flutter/.fvmrc.
+.fvm/
+**/.fvm/
+
 .dart_tool/
 .packages
 .pub/

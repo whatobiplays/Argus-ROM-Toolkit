@@ -1,0 +1,1 @@
+//! Concrete Argus technical adapters.

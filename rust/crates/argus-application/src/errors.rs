@@ -1,4 +1,4 @@
-//! The currently implemented Phase 000 error-catalog subset through Slice 003.
+//! The stable application error catalog used by the Phase 000 runtime.
 
 use std::fmt;
 
@@ -11,21 +11,28 @@ pub enum ErrorCategory {
     Configuration,
     Filesystem,
     Persistence,
+    Provider,
+    Runtime,
+    Operation,
     Internal,
 }
 
 /// Application impact independent of diagnostic log level.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApplicationSeverity {
+    Info,
     Warning,
     Error,
+    Fatal,
 }
 
 /// Recovery precondition communicated by a published failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Recoverability {
+    None,
     Retry,
     UserAction,
+    RestartRequired,
     ManualIntervention,
 }
 
@@ -33,6 +40,7 @@ pub enum Recoverability {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RetryPolicy {
     Never,
+    Immediate,
     Backoff,
     UserInitiated,
 }
@@ -63,6 +71,15 @@ pub enum ErrorCode {
     PersistenceMigrationFailed,
     PersistenceIncompatibleSchema,
     InternalUnexpected,
+    RuntimeNotReady,
+    RuntimeStartupFailed,
+    RuntimeShuttingDown,
+    RuntimeStopped,
+    RuntimeStaleInstance,
+    RuntimeBridgeInitializationFailed,
+    RuntimeCoreServiceInitializationFailed,
+    OperationCancelled,
+    InternalInvariantViolation,
 }
 
 /// Central policy metadata for one published code.
@@ -147,6 +164,33 @@ impl ErrorCode {
         ]
     }
 
+    /// Returns the complete catalog currently required by Phase 000.
+    ///
+    /// `all` intentionally retains its Slice 002/003 nine-entry shape for
+    /// source compatibility. New callers should use this additive catalog.
+    pub const fn phase_000_all() -> &'static [Self; 18] {
+        &[
+            Self::ValidationInvalidArgument,
+            Self::ConfigurationInvalid,
+            Self::ConfigurationPersistedSettingsInvalid,
+            Self::PersistenceDatabaseOpenFailed,
+            Self::PersistenceDatabaseLocked,
+            Self::PersistenceMigrationFailed,
+            Self::PersistenceIncompatibleSchema,
+            Self::FilesystemPermissionDenied,
+            Self::RuntimeBridgeInitializationFailed,
+            Self::RuntimeCoreServiceInitializationFailed,
+            Self::RuntimeNotReady,
+            Self::RuntimeStartupFailed,
+            Self::RuntimeShuttingDown,
+            Self::RuntimeStopped,
+            Self::RuntimeStaleInstance,
+            Self::OperationCancelled,
+            Self::InternalUnexpected,
+            Self::InternalInvariantViolation,
+        ]
+    }
+
     /// Returns the permanent machine-readable code.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -161,6 +205,19 @@ impl ErrorCode {
             Self::PersistenceMigrationFailed => "ARGUS.V1.PERSISTENCE.MIGRATION_FAILED",
             Self::PersistenceIncompatibleSchema => "ARGUS.V1.PERSISTENCE.INCOMPATIBLE_SCHEMA",
             Self::InternalUnexpected => "ARGUS.V1.INTERNAL.UNEXPECTED",
+            Self::RuntimeNotReady => "ARGUS.V1.RUNTIME.NOT_READY",
+            Self::RuntimeStartupFailed => "ARGUS.V1.RUNTIME.STARTUP_FAILED",
+            Self::RuntimeShuttingDown => "ARGUS.V1.RUNTIME.SHUTTING_DOWN",
+            Self::RuntimeStopped => "ARGUS.V1.RUNTIME.STOPPED",
+            Self::RuntimeStaleInstance => "ARGUS.V1.RUNTIME.STALE_INSTANCE",
+            Self::RuntimeBridgeInitializationFailed => {
+                "ARGUS.V1.RUNTIME.BRIDGE_INITIALIZATION_FAILED"
+            }
+            Self::RuntimeCoreServiceInitializationFailed => {
+                "ARGUS.V1.RUNTIME.CORE_SERVICE_INITIALIZATION_FAILED"
+            }
+            Self::OperationCancelled => "ARGUS.V1.OPERATION.CANCELLED",
+            Self::InternalInvariantViolation => "ARGUS.V1.INTERNAL.INVARIANT_VIOLATION",
         }
     }
 
@@ -239,6 +296,78 @@ impl ErrorCode {
                 "errors.internal.unexpected",
                 COMMON_FAILURE_FIELDS,
             ),
+            Self::RuntimeNotReady => policy(
+                ErrorCategory::Runtime,
+                ApplicationSeverity::Warning,
+                Recoverability::Retry,
+                RetryPolicy::UserInitiated,
+                "errors.runtime.not_ready",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::RuntimeStartupFailed => policy(
+                ErrorCategory::Runtime,
+                ApplicationSeverity::Error,
+                Recoverability::RestartRequired,
+                RetryPolicy::UserInitiated,
+                "errors.runtime.startup_failed",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::RuntimeShuttingDown => policy(
+                ErrorCategory::Runtime,
+                ApplicationSeverity::Warning,
+                Recoverability::RestartRequired,
+                RetryPolicy::UserInitiated,
+                "errors.runtime.shutting_down",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::RuntimeStopped => policy(
+                ErrorCategory::Runtime,
+                ApplicationSeverity::Warning,
+                Recoverability::RestartRequired,
+                RetryPolicy::UserInitiated,
+                "errors.runtime.stopped",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::RuntimeStaleInstance => policy(
+                ErrorCategory::Runtime,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.runtime.stale_instance",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::RuntimeBridgeInitializationFailed => policy(
+                ErrorCategory::Runtime,
+                ApplicationSeverity::Error,
+                Recoverability::RestartRequired,
+                RetryPolicy::UserInitiated,
+                "errors.runtime.bridge_initialization_failed",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::RuntimeCoreServiceInitializationFailed => policy(
+                ErrorCategory::Runtime,
+                ApplicationSeverity::Error,
+                Recoverability::RestartRequired,
+                RetryPolicy::UserInitiated,
+                "errors.runtime.core_service_initialization_failed",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::OperationCancelled => policy(
+                ErrorCategory::Operation,
+                ApplicationSeverity::Info,
+                Recoverability::None,
+                RetryPolicy::Never,
+                "errors.operation.cancelled",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::InternalInvariantViolation => policy(
+                ErrorCategory::Internal,
+                ApplicationSeverity::Fatal,
+                Recoverability::RestartRequired,
+                RetryPolicy::Never,
+                "errors.internal.invariant_violation",
+                COMMON_FAILURE_FIELDS,
+            ),
         }
     }
 }
@@ -287,6 +416,7 @@ impl ApplicationError {
 pub enum PersistenceError {
     Unavailable,
     DatabaseLocked,
+    Cancelled,
     ConstraintViolation,
     Conflict,
     CorruptOrIncompatible,

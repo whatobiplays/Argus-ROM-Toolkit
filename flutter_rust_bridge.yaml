@@ -1,0 +1,13 @@
+# Stable FRB 2.12 integration for the desktop bridge. This file is consumed by
+# scripts/generate_frb.sh; generated Rust and Dart files are never edited by hand.
+rust_input: crate
+rust_root: rust/crates/argus-bridge
+rust_output: rust/crates/argus-bridge/src/frb_generated.rs
+rust_preamble: "#[allow(unsafe_code)]"
+dart_output: flutter/lib/core/bridge/generated
+dart_root: flutter
+web: false
+default_rust_opaque_codec: Nom
+deps_check: false
+build_runner: false
+auto_upgrade_dependency: false

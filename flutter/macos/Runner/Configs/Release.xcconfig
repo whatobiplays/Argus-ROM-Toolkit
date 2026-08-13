@@ -1,2 +1,4 @@
 #include "../../Flutter/Flutter-Release.xcconfig"
 #include "Warnings.xcconfig"
+
+OTHER_LDFLAGS = $(inherited) -force_load "$(PROJECT_DIR)/../../rust/target/release/libargus_bridge.a"

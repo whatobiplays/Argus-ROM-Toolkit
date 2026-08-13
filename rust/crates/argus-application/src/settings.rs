@@ -1,6 +1,7 @@
 //! Appearance-settings ports and focused application capabilities.
 
 use argus_domain::AppearanceSettings;
+use std::sync::Arc;
 
 use crate::{
     ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder,
@@ -91,6 +92,7 @@ where
         command: UpdateAppearanceSettingsCommand,
         context: OperationContext,
         recorder: R,
+        pre_commit: Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> Result<(), ApplicationError>
     where
         R: EventRecorder + Clone + Send + Sync + 'static,
@@ -113,6 +115,11 @@ where
                     recorder.record(ApplicationEvent::AppearanceSettingsChanged(
                         crate::AppearanceSettingsChanged,
                     ))?;
+                }
+                if pre_commit() {
+                    return Err(ApplicationPortError::Persistence(
+                        PersistenceError::Cancelled,
+                    ));
                 }
                 scope.commit()?;
                 Ok::<_, ApplicationPortError>(())
@@ -161,11 +168,13 @@ where
         command: UpdateAppearanceSettingsCommand,
         context: OperationContext,
         recorder: R,
+        pre_commit: Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> Result<(), ApplicationError>
     where
         R: EventRecorder + Clone + Send + Sync + 'static,
     {
-        self.update_handler.handle(command, context, recorder)
+        self.update_handler
+            .handle(command, context, recorder, pre_commit)
     }
 }
 
@@ -197,6 +206,7 @@ fn map_persistence_error(trace_id: crate::TraceId, error: PersistenceError) -> A
         PersistenceError::DatabaseLocked => {
             (ErrorCode::PersistenceDatabaseLocked, SafeContext::new())
         }
+        PersistenceError::Cancelled => (ErrorCode::OperationCancelled, SafeContext::new()),
         PersistenceError::MigrationFailed => {
             (ErrorCode::PersistenceMigrationFailed, SafeContext::new())
         }

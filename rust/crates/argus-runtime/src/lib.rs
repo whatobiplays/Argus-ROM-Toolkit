@@ -1,8 +1,4 @@
-//! Bridge-neutral composition for the Phase 000 kernel bootstrap.
-//!
-//! This module intentionally stops before `ApplicationRuntime::Ready`: it
-//! establishes the environment, startup diagnostics, SQLite capability, and
-//! migration state needed by later startup slices.
+//! Bridge-neutral composition for the Phase 000 runtime and persistence kernel.
 //!
 //! The runtime boundary does not export infrastructure SQLite connection or
 //! value types:
@@ -11,12 +7,19 @@
 //! use argus_runtime::{SqliteConnection, SqliteValue};
 //! ```
 
+pub mod diagnostics;
 mod events;
+mod notification_sink;
+pub mod operations;
+pub mod recovery;
+mod recovery_context;
+mod runtime;
+pub mod startup;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use argus_application::{
     AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
@@ -24,7 +27,7 @@ use argus_application::{
     GetAppearanceSettingsQuery, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
     OperationContext, OperationName, PathClass, PersistenceError, PlatformClass, SafeContext,
     SafeContextField, SafeContextValue, SettingsService, StartupCollector, SubsystemName,
-    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWorkFactory,
+    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
     UpdateAppearanceSettingsCommand, Version,
 };
 use argus_infrastructure::sqlite::{
@@ -35,10 +38,22 @@ use argus_infrastructure::sqlite::{
 
 pub use events::EventBus;
 use events::{PendingEventCollector, PublicationDiagnostics, finalize_appearance_update};
+pub use notification_sink::{
+    InProcessNotificationSink, NotificationSinkError, RuntimeEventPublisher,
+    RuntimeNotificationSink,
+};
+pub use recovery::RecoveryCoordinator;
+pub(crate) use recovery_context::{
+    AppearanceResetCapability, FailedRuntimeRecoveryContext, FailedStartupDiagnostics,
+};
+pub(crate) use runtime::RuntimeEventSubscriber;
+pub use runtime::*;
+pub(crate) use startup::StartupPhaseObserver;
+pub use startup::{Clock, StartupCoordinator, StartupResult, SystemClock};
 
 /// Platform naming policy used by the private path-resolution seam.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Platform {
+pub(crate) enum Platform {
     Windows,
     MacOs,
     Unix,
@@ -58,7 +73,7 @@ impl Platform {
 
 /// Path-resolution failures that never expose the candidate path publicly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum DataDirectoryError {
+pub(crate) enum DataDirectoryError {
     MissingHome,
     InvalidOverride,
     InvalidRoot,
@@ -79,7 +94,7 @@ impl fmt::Display for DataDirectoryError {
 impl std::error::Error for DataDirectoryError {}
 
 /// Resolves the name-based application data directory.
-fn resolve_data_directory(
+pub(crate) fn resolve_data_directory(
     platform: Platform,
     home: Option<&Path>,
     local_app_data: Option<&Path>,
@@ -121,7 +136,7 @@ fn resolve_data_directory(
     }
 }
 
-fn validate_absolute_root(
+pub(crate) fn validate_absolute_root(
     directory: &Path,
     error: DataDirectoryError,
 ) -> Result<(), DataDirectoryError> {
@@ -155,7 +170,7 @@ impl KernelBootstrapOptions {
     }
 }
 
-fn env_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
@@ -293,6 +308,8 @@ pub struct KernelBootstrap {
     event_bus: EventBus,
     publication_diagnostics: Mutex<PublicationDiagnostics>,
     collector: StartupCollector,
+    #[cfg(test)]
+    fail_shutdown: bool,
 }
 
 /// Technology-neutral transaction scope exposed by the runtime boundary.
@@ -305,8 +322,15 @@ pub struct KernelUnitOfWork<'scope> {
 }
 
 impl<'scope> KernelUnitOfWork<'scope> {
-    fn new(inner: SqliteUnitOfWork<'scope>) -> Self {
+    pub(crate) fn new(inner: SqliteUnitOfWork<'scope>) -> Self {
         Self { inner }
+    }
+
+    /// Atomically restores the canonical System appearance row.
+    pub(crate) fn reset_appearance_settings(&mut self) -> Result<(), ApplicationPortError> {
+        self.inner
+            .reset_appearance_theme_mode()
+            .map_err(ApplicationPortError::Persistence)
     }
 }
 
@@ -350,6 +374,60 @@ impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection
 }
 
 impl KernelBootstrap {
+    /// Assembles a kernel from coordinator-owned startup resources.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_parts(
+        trace_id: TraceId,
+        path_class: PathClass,
+        migration_summary: KernelMigrationSummary,
+        executor: SqliteDatabaseExecutor,
+        settings_service: SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>,
+        event_bus: EventBus,
+        collector: StartupCollector,
+    ) -> Self {
+        Self {
+            trace_id,
+            path_class,
+            migration_summary,
+            executor: Some(executor),
+            settings_service,
+            event_bus,
+            publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
+            collector,
+            #[cfg(test)]
+            fail_shutdown: false,
+        }
+    }
+
+    /// Test-only failing-shutdown kernel fixture.
+    #[cfg(test)]
+    pub(crate) fn failing_shutdown_kernel_for_tests(directory: &Path) -> KernelBootstrap {
+        let executor = SqliteDatabaseExecutor::open_with_capacity(
+            directory.join("argus.sqlite3"),
+            argus_infrastructure::sqlite::DEFAULT_QUEUE_CAPACITY,
+        )
+        .expect("fixture executor");
+        let settings_service = SettingsService::new(
+            SqliteAppearanceSettingsQueries::new(executor.clone()),
+            executor.clone(),
+        );
+        let mut kernel = KernelBootstrap::from_parts(
+            new_trace_id(),
+            PathClass::ExplicitOverride,
+            KernelMigrationSummary {
+                applied_count: 0,
+                current_version: 1,
+                outcome: KernelMigrationOutcome::AlreadyCurrent,
+            },
+            executor,
+            settings_service,
+            EventBus::new(Vec::new()),
+            StartupCollector::new(),
+        );
+        kernel.fail_next_shutdown_for_tests();
+        kernel
+    }
+
     /// Returns the startup operation trace identity.
     pub fn trace_id(&self) -> TraceId {
         self.trace_id
@@ -385,10 +463,17 @@ impl KernelBootstrap {
 
     /// Reads the authoritative appearance aggregate in a fresh operation.
     pub fn get_appearance_settings(&self) -> Result<AppearanceSettings, ApplicationError> {
-        self.settings_service.get_appearance_settings(
-            GetAppearanceSettingsQuery,
-            settings_operation_context("read", self.trace_id),
-        )
+        let context = settings_operation_context("read", self.trace_id);
+        self.get_appearance_settings_with_context(&context)
+    }
+
+    /// Reads the authoritative appearance aggregate under an admitted context.
+    pub fn get_appearance_settings_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<AppearanceSettings, ApplicationError> {
+        self.settings_service
+            .get_appearance_settings(GetAppearanceSettingsQuery, context.clone())
     }
 
     /// Updates the complete appearance aggregate and publishes after commit.
@@ -396,30 +481,89 @@ impl KernelBootstrap {
         &self,
         settings: AppearanceSettings,
     ) -> Result<(), ApplicationError> {
+        let context = settings_operation_context("update", self.trace_id);
+        self.update_appearance_settings_with_context(
+            &context,
+            settings,
+            Arc::new(|| false),
+            Arc::new(|| false),
+        )
+    }
+
+    /// Updates appearance settings under an admitted operation context.
+    pub fn update_appearance_settings_with_context(
+        &self,
+        context: &OperationContext,
+        settings: AppearanceSettings,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+        pre_commit: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<(), ApplicationError> {
+        if is_cancelled() {
+            return Err(ApplicationError::from_code(
+                ErrorCode::OperationCancelled,
+                context.trace_id(),
+                SafeContext::new(),
+            )
+            .expect("operation cancelled uses an allowlisted empty context"));
+        }
         let collector = PendingEventCollector::new();
         let recorder = collector.recorder();
-        let context = settings_operation_context("update", self.trace_id);
         let result = self.settings_service.update_appearance_settings(
             UpdateAppearanceSettingsCommand::new(settings),
             context.clone(),
             recorder,
+            pre_commit,
         );
         finalize_appearance_update(
             result,
-            &context,
+            context,
             collector,
             &self.event_bus,
             &self.publication_diagnostics,
         )
     }
 
+    /// Replaces only the appearance aggregate with its canonical recovery
+    /// value. This deliberately bypasses the normal read-before-write path so
+    /// a missing or malformed persisted value can be repaired only after an
+    /// explicit generation-bound recovery request.
+    pub fn reset_appearance_settings(&self) -> Result<(), ApplicationError> {
+        let context = settings_operation_context("reset", self.trace_id);
+        self.reset_appearance_settings_with_context(&context)
+    }
+
+    /// Resets appearance settings under an explicit recovery operation context.
+    pub fn reset_appearance_settings_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<(), ApplicationError> {
+        let result = self.execute(context, |mut work| {
+            let mut appearance = work.appearance_settings();
+            appearance.save(&AppearanceSettings::new(
+                argus_application::ThemeMode::System,
+            ))?;
+            work.commit()
+        });
+        result.map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
     /// Shuts down the worker and consumes the kernel.
     pub fn shutdown(mut self) -> Result<(), KernelShutdownError> {
+        #[cfg(test)]
+        if self.fail_shutdown {
+            return Err(KernelShutdownError::Internal);
+        }
         self.executor.take().map_or(Ok(()), |executor| {
             executor
                 .shutdown()
                 .map_err(|_| KernelShutdownError::Internal)
         })
+    }
+
+    /// Test-only seam to force the next shutdown to fail.
+    #[cfg(test)]
+    pub(crate) fn fail_next_shutdown_for_tests(&mut self) {
+        self.fail_shutdown = true;
     }
 }
 
@@ -623,10 +767,12 @@ pub fn bootstrap_kernel_with_event_bus(
         event_bus,
         publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
         collector,
+        #[cfg(test)]
+        fail_shutdown: false,
     })
 }
 
-fn settings_operation_context(
+pub(crate) fn settings_operation_context(
     operation: &'static str,
     startup_trace_id: TraceId,
 ) -> OperationContext {
@@ -643,9 +789,51 @@ fn settings_operation_context(
     )
 }
 
+pub(crate) fn map_application_port_error(
+    trace_id: TraceId,
+    error: ApplicationPortError,
+) -> ApplicationError {
+    let code = match error {
+        ApplicationPortError::Persistence(PersistenceError::DatabaseLocked) => {
+            ErrorCode::PersistenceDatabaseLocked
+        }
+        ApplicationPortError::Persistence(PersistenceError::Cancelled) => {
+            ErrorCode::OperationCancelled
+        }
+        ApplicationPortError::Persistence(PersistenceError::MigrationFailed) => {
+            ErrorCode::PersistenceMigrationFailed
+        }
+        ApplicationPortError::Persistence(PersistenceError::CorruptOrIncompatible) => {
+            ErrorCode::PersistenceIncompatibleSchema
+        }
+        ApplicationPortError::Persistence(PersistenceError::PersistedSettingsInvalid(_)) => {
+            ErrorCode::ConfigurationPersistedSettingsInvalid
+        }
+        ApplicationPortError::Persistence(_) | ApplicationPortError::EventRecording => {
+            ErrorCode::InternalUnexpected
+        }
+    };
+    ApplicationError::from_code(code, trace_id, SafeContext::new())
+        .expect("runtime recovery error uses an allowlisted empty context")
+}
+
+/// Runs the targeted appearance reset through a narrow recovery executor.
+pub(crate) fn reset_appearance_with_executor(
+    executor: &SqliteDatabaseExecutor,
+    context: &OperationContext,
+) -> Result<(), ApplicationError> {
+    executor
+        .execute(context, |scope| {
+            let mut work = KernelUnitOfWork::new(scope);
+            work.reset_appearance_settings()?;
+            work.commit()
+        })
+        .map_err(|error| map_application_port_error(context.trace_id(), error))
+}
+
 static EMERGENCY_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-fn new_trace_id() -> TraceId {
+pub fn new_trace_id() -> TraceId {
     let mut bytes = [0_u8; 16];
     if getrandom::fill(&mut bytes).is_ok()
         && let Ok(trace_id) = TraceId::try_from(bytes)
@@ -673,7 +861,7 @@ fn trace_id_from_entropy(entropy: Option<[u8; 16]>) -> TraceId {
     }
 }
 
-fn startup_context(trace_id: TraceId) -> OperationContext {
+pub(crate) fn startup_context(trace_id: TraceId) -> OperationContext {
     OperationContext::new(
         trace_id,
         SubsystemName::try_from("runtime").expect("static subsystem is valid"),
@@ -681,7 +869,7 @@ fn startup_context(trace_id: TraceId) -> OperationContext {
     )
 }
 
-fn platform_class(platform: Platform) -> PlatformClass {
+pub(crate) fn platform_class(platform: Platform) -> PlatformClass {
     match platform {
         Platform::Windows => PlatformClass::Windows,
         Platform::MacOs => PlatformClass::MacOs,
@@ -689,7 +877,7 @@ fn platform_class(platform: Platform) -> PlatformClass {
     }
 }
 
-fn architecture_class() -> ArchitectureClass {
+pub(crate) fn architecture_class() -> ArchitectureClass {
     match std::env::consts::ARCH {
         "x86_64" => ArchitectureClass::X8664,
         "aarch64" => ArchitectureClass::Aarch64,
@@ -699,11 +887,11 @@ fn architecture_class() -> ArchitectureClass {
     }
 }
 
-fn application_version() -> Version {
+pub(crate) fn application_version() -> Version {
     Version::try_from(env!("CARGO_PKG_VERSION")).expect("package version is safe context")
 }
 
-fn environment_fields(
+pub(crate) fn environment_fields(
     path_class: PathClass,
     platform: PlatformClass,
     architecture: ArchitectureClass,
@@ -831,14 +1019,14 @@ fn error_class(error: &SqliteExecutorError) -> (ErrorCode, TechnicalClass) {
     }
 }
 
-fn insert(context: &mut SafeContext, field: SafeContextField, value: SafeContextValue) {
+pub(crate) fn insert(context: &mut SafeContext, field: SafeContextField, value: SafeContextValue) {
     context
         .try_insert(field, value)
         .expect("static startup diagnostic field is valid and unique");
 }
 
 #[allow(clippy::too_many_arguments)]
-fn emit(
+pub(crate) fn emit(
     collector: &mut StartupCollector,
     context: &OperationContext,
     name: &str,
@@ -873,7 +1061,7 @@ fn emit(
         .expect("startup log collector capacity");
 }
 
-fn now_millis() -> i64 {
+pub(crate) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)

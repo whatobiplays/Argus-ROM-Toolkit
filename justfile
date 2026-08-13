@@ -3,10 +3,12 @@ set shell := ["bash", "-uc"]
 bootstrap:
     bash scripts/bootstrap.sh
 
-registered_generated_files := "flutter/lib/app/routing/app_routes.g.dart flutter/lib/app/routing/app_router.g.dart"
+registered_generated_files := "flutter/lib/app/bootstrap/client_bootstrap.g.dart flutter/lib/app/routing/app_routes.g.dart flutter/lib/app/routing/app_router.g.dart flutter/lib/core/bridge/generated/frb_generated.dart flutter/lib/core/bridge/generated/frb_generated.io.dart flutter/lib/core/bridge/generated/lib.dart flutter/lib/core/bridge/generated/lib.freezed.dart flutter/lib/core/client/src/models.freezed.dart"
 
 generate:
-    cd flutter && fvm dart run build_runner build
+    scripts/generate_frb.sh
+    cd flutter && fvm dart run build_runner build --delete-conflicting-outputs
+    find flutter/lib -type f \( -name '*.g.dart' -o -name '*.freezed.dart' \) -print0 | xargs -0 perl -pi -e 's/[ \t]+$//'
 
 check-generated:
     @set -euo pipefail; \
@@ -51,6 +53,9 @@ check-generated:
           echo "Unexpected generated output: ${path}" >&2; status=1; \
         fi; \
       done < <(cat "${snapshot_dir}/before.paths" "${snapshot_dir}/after.paths" | sort -u); \
+      if rg -q '/Users/|/home/|/private/|C:\\\\' flutter/lib/core/bridge/generated/frb_generated.dart; then \
+        echo "Generated FRB output contains a machine-local absolute path" >&2; status=1; \
+      fi; \
       exit "${status}"
 
 format:

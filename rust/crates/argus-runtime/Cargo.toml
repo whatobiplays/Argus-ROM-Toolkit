@@ -16,4 +16,7 @@ argus-infrastructure = { path = "../argus-infrastructure" }
 getrandom.workspace = true
 
 [dev-dependencies]
+argus-infrastructure = { path = "../argus-infrastructure", features = ["test-support"] }
+rusqlite.workspace = true
 tempfile.workspace = true
+zip.workspace = true

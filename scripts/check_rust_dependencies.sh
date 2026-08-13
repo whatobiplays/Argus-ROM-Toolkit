@@ -39,4 +39,4 @@ check_argus_dependencies argus-domain
 check_argus_dependencies argus-application argus-domain
 check_argus_dependencies argus-infrastructure argus-application argus-domain
 check_argus_dependencies argus-runtime argus-application argus-domain argus-infrastructure
-check_argus_dependencies argus-bridge argus-runtime
+check_argus_dependencies argus-bridge argus-application argus-runtime

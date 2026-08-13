@@ -128,6 +128,24 @@ impl<'connection> SqliteUnitOfWork<'connection> {
         }
     }
 
+    /// Restores the canonical System appearance row with an atomic upsert.
+    pub fn reset_appearance_theme_mode(&mut self) -> Result<(), PersistenceError> {
+        self.transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .execute(
+                "INSERT INTO appearance_settings (singleton_key, theme_mode, schema_revision, updated_at)
+                 VALUES (1, 'system', 1, CURRENT_TIMESTAMP)
+                 ON CONFLICT(singleton_key) DO UPDATE SET
+                   theme_mode = excluded.theme_mode,
+                   schema_revision = excluded.schema_revision,
+                   updated_at = CURRENT_TIMESTAMP",
+                [],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(())
+    }
+
     /// Commits the transaction and consumes this scope.
     pub fn commit(mut self) -> Result<(), ApplicationPortError> {
         let transaction = self

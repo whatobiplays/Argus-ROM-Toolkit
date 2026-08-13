@@ -157,6 +157,177 @@ fn currently_implemented_phase_000_catalog_subset_contains_codes_and_metadata() 
 }
 
 #[test]
+fn phase_000_catalog_snapshot_is_exact() {
+    let expected: [(
+        &str,
+        ErrorCategory,
+        ApplicationSeverity,
+        Recoverability,
+        RetryPolicy,
+        &str,
+    ); 18] = [
+        (
+            "ARGUS.V1.VALIDATION.INVALID_ARGUMENT",
+            ErrorCategory::Validation,
+            ApplicationSeverity::Warning,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.validation.invalid_argument",
+        ),
+        (
+            "ARGUS.V1.CONFIGURATION.INVALID",
+            ErrorCategory::Configuration,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.configuration.invalid",
+        ),
+        (
+            "ARGUS.V1.CONFIGURATION.PERSISTED_SETTINGS_INVALID",
+            ErrorCategory::Configuration,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::UserInitiated,
+            "errors.configuration.persisted_settings_invalid",
+        ),
+        (
+            "ARGUS.V1.PERSISTENCE.DATABASE_OPEN_FAILED",
+            ErrorCategory::Persistence,
+            ApplicationSeverity::Error,
+            Recoverability::Retry,
+            RetryPolicy::Backoff,
+            "errors.persistence.database_open_failed",
+        ),
+        (
+            "ARGUS.V1.PERSISTENCE.DATABASE_LOCKED",
+            ErrorCategory::Persistence,
+            ApplicationSeverity::Warning,
+            Recoverability::Retry,
+            RetryPolicy::Backoff,
+            "errors.persistence.database_locked",
+        ),
+        (
+            "ARGUS.V1.PERSISTENCE.MIGRATION_FAILED",
+            ErrorCategory::Persistence,
+            ApplicationSeverity::Error,
+            Recoverability::ManualIntervention,
+            RetryPolicy::UserInitiated,
+            "errors.persistence.migration_failed",
+        ),
+        (
+            "ARGUS.V1.PERSISTENCE.INCOMPATIBLE_SCHEMA",
+            ErrorCategory::Persistence,
+            ApplicationSeverity::Error,
+            Recoverability::ManualIntervention,
+            RetryPolicy::Never,
+            "errors.persistence.incompatible_schema",
+        ),
+        (
+            "ARGUS.V1.FILESYSTEM.PERMISSION_DENIED",
+            ErrorCategory::Filesystem,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::UserInitiated,
+            "errors.filesystem.permission_denied",
+        ),
+        (
+            "ARGUS.V1.RUNTIME.BRIDGE_INITIALIZATION_FAILED",
+            ErrorCategory::Runtime,
+            ApplicationSeverity::Error,
+            Recoverability::RestartRequired,
+            RetryPolicy::UserInitiated,
+            "errors.runtime.bridge_initialization_failed",
+        ),
+        (
+            "ARGUS.V1.RUNTIME.CORE_SERVICE_INITIALIZATION_FAILED",
+            ErrorCategory::Runtime,
+            ApplicationSeverity::Error,
+            Recoverability::RestartRequired,
+            RetryPolicy::UserInitiated,
+            "errors.runtime.core_service_initialization_failed",
+        ),
+        (
+            "ARGUS.V1.RUNTIME.NOT_READY",
+            ErrorCategory::Runtime,
+            ApplicationSeverity::Warning,
+            Recoverability::Retry,
+            RetryPolicy::UserInitiated,
+            "errors.runtime.not_ready",
+        ),
+        (
+            "ARGUS.V1.RUNTIME.STARTUP_FAILED",
+            ErrorCategory::Runtime,
+            ApplicationSeverity::Error,
+            Recoverability::RestartRequired,
+            RetryPolicy::UserInitiated,
+            "errors.runtime.startup_failed",
+        ),
+        (
+            "ARGUS.V1.RUNTIME.SHUTTING_DOWN",
+            ErrorCategory::Runtime,
+            ApplicationSeverity::Warning,
+            Recoverability::RestartRequired,
+            RetryPolicy::UserInitiated,
+            "errors.runtime.shutting_down",
+        ),
+        (
+            "ARGUS.V1.RUNTIME.STOPPED",
+            ErrorCategory::Runtime,
+            ApplicationSeverity::Warning,
+            Recoverability::RestartRequired,
+            RetryPolicy::UserInitiated,
+            "errors.runtime.stopped",
+        ),
+        (
+            "ARGUS.V1.RUNTIME.STALE_INSTANCE",
+            ErrorCategory::Runtime,
+            ApplicationSeverity::Warning,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.runtime.stale_instance",
+        ),
+        (
+            "ARGUS.V1.OPERATION.CANCELLED",
+            ErrorCategory::Operation,
+            ApplicationSeverity::Info,
+            Recoverability::None,
+            RetryPolicy::Never,
+            "errors.operation.cancelled",
+        ),
+        (
+            "ARGUS.V1.INTERNAL.UNEXPECTED",
+            ErrorCategory::Internal,
+            ApplicationSeverity::Error,
+            Recoverability::ManualIntervention,
+            RetryPolicy::Never,
+            "errors.internal.unexpected",
+        ),
+        (
+            "ARGUS.V1.INTERNAL.INVARIANT_VIOLATION",
+            ErrorCategory::Internal,
+            ApplicationSeverity::Fatal,
+            Recoverability::RestartRequired,
+            RetryPolicy::Never,
+            "errors.internal.invariant_violation",
+        ),
+    ];
+
+    assert_eq!(ErrorCode::phase_000_all().len(), expected.len());
+    for (code, (name, category, severity, recoverability, retry, message)) in
+        ErrorCode::phase_000_all().iter().zip(expected.iter())
+    {
+        assert_eq!(code.as_str(), *name);
+        let policy = code.policy();
+        assert_eq!(policy.category, *category);
+        assert_eq!(policy.severity, *severity);
+        assert_eq!(policy.recoverability, *recoverability);
+        assert_eq!(policy.retry_policy, *retry);
+        assert_eq!(policy.message_key.as_str(), *message);
+        ApplicationError::from_code(*code, trace_id(), SafeContext::new()).expect("catalog entry");
+    }
+}
+
+#[test]
 fn application_error_enforces_catalog_owned_context_policy() {
     let mut fields = SafeContext::new();
     fields

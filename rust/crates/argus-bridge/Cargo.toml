@@ -10,4 +10,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+argus-application = { path = "../argus-application" }
 argus-runtime = { path = "../argus-runtime" }
+flutter_rust_bridge.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]

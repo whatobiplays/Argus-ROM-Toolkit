@@ -4,6 +4,7 @@
 //! application handlers, and infrastructure adapters. It intentionally does not
 //! expose persistence-driver, bridge, filesystem, or asynchronous-runtime types.
 
+mod diagnostics;
 mod errors;
 mod events;
 mod observability;
@@ -11,6 +12,10 @@ mod settings;
 mod unit_of_work;
 
 pub use argus_domain::{AppearanceSettings, ThemeMode, ThemeModeParseError};
+pub use diagnostics::{
+    DiagnosticArtifact, DiagnosticContributor, DiagnosticContributorError, HealthSnapshot,
+    SubsystemHealthState,
+};
 pub use errors::{
     ApplicationError, ApplicationErrorError, ApplicationPortError, ApplicationSeverity,
     ErrorCategory, ErrorCode, ErrorPolicy, MessageKey, PersistenceError, Recoverability,

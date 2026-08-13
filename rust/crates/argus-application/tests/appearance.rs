@@ -190,6 +190,7 @@ fn changed_update_saves_once_and_records_one_payload_free_event() {
             UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::Dark)),
             context(),
             recorder.clone(),
+            Arc::new(|| false),
         )
         .expect("update");
 
@@ -215,6 +216,7 @@ fn semantic_noop_commits_without_save_or_event() {
             UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::System)),
             context(),
             recorder.clone(),
+            Arc::new(|| false),
         )
         .expect("no-op");
 
@@ -242,6 +244,7 @@ fn event_recording_failure_is_an_update_failure() {
             UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::Dark)),
             context(),
             FailingRecorder,
+            Arc::new(|| false),
         )
         .expect_err("recording failure");
     assert_eq!(error.code.as_str(), "ARGUS.V1.INTERNAL.UNEXPECTED");
@@ -249,6 +252,24 @@ fn event_recording_failure_is_an_update_failure() {
         state.lock().expect("state lock").current.theme_mode,
         ThemeMode::System
     );
+}
+
+#[test]
+fn pre_commit_cancellation_rolls_back_and_reports_operation_cancelled() {
+    let (service, state) = service();
+    let recorder = RecordingRecorder::default();
+    let error = service
+        .update_appearance_settings(
+            UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::Dark)),
+            context(),
+            recorder.clone(),
+            Arc::new(|| true),
+        )
+        .expect_err("pre-commit cancellation");
+    assert_eq!(error.code.as_str(), "ARGUS.V1.OPERATION.CANCELLED");
+    let state = state.lock().expect("state lock");
+    assert_eq!(state.current.theme_mode, ThemeMode::System);
+    assert_eq!(state.commits, 0);
 }
 
 #[test]

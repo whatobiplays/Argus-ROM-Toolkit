@@ -4,4 +4,5 @@
 //! exposes bounded, bridge-neutral operations and stable infrastructure
 //! failures; callers never receive a `rusqlite` error or transaction value.
 
+pub mod diagnostics;
 pub mod sqlite;

@@ -76,6 +76,11 @@ impl EventBus {
         }
     }
 
+    /// Returns the number of registered appearance subscribers.
+    pub(crate) fn subscriber_count(&self) -> usize {
+        self.appearance_subscribers.len()
+    }
+
     /// Publishes one committed event, isolating each subscriber failure.
     pub(crate) fn publish(&self, event: ApplicationEvent) -> EventPublicationReport {
         let ApplicationEvent::AppearanceSettingsChanged(_) = event;
@@ -580,6 +585,7 @@ mod tests {
             UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::Dark)),
             context(),
             collector.recorder(),
+            Arc::new(|| false),
         );
 
         assert!(result.is_err(), "commit failure must fail the update");
@@ -619,6 +625,7 @@ mod tests {
             UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::Dark)),
             context(),
             collector.recorder(),
+            Arc::new(|| false),
         );
 
         assert!(result.is_err(), "save failure must fail the update");
@@ -657,6 +664,7 @@ mod tests {
             UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::Dark)),
             context.clone(),
             collector.recorder(),
+            Arc::new(|| false),
         );
         let bus = EventBus::new(vec![Box::new(OrderedSubscriber {
             order: std::sync::Arc::clone(&order),
@@ -692,6 +700,7 @@ mod tests {
             UpdateAppearanceSettingsCommand::new(AppearanceSettings::new(ThemeMode::Dark)),
             context.clone(),
             collector.recorder(),
+            Arc::new(|| false),
         );
         let failing_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let later_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));

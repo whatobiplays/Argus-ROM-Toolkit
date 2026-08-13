@@ -252,6 +252,7 @@ fn semantic_noop_does_not_mutate_persistence_metadata() {
             )),
             context("noop"),
             NoopRecorder,
+            std::sync::Arc::new(|| false),
         )
         .expect("no-op");
     let metadata = executor
@@ -291,6 +292,7 @@ fn database_locked_appearance_update_maps_to_database_locked() {
             )),
             context("locked"),
             NoopRecorder,
+            std::sync::Arc::new(|| false),
         )
         .expect_err("locked update");
     assert_eq!(error.code, ErrorCode::PersistenceDatabaseLocked);

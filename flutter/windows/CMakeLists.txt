@@ -2,6 +2,24 @@
 cmake_minimum_required(VERSION 3.14)
 project(argus LANGUAGES CXX)
 
+# FRB 2.12 uses a conventional DLL on Windows. The bridge is built by Cargo
+# and installed beside the runner executable; no Native Assets backend is used.
+set(ARGUS_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+set(ARGUS_BRIDGE_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/argus-rust")
+set(ARGUS_BRIDGE_LIBRARY "${ARGUS_BRIDGE_TARGET_DIR}/release/argus_bridge.dll")
+add_custom_command(
+  OUTPUT "${ARGUS_BRIDGE_LIBRARY}"
+  COMMAND bash "${ARGUS_REPO_ROOT}/scripts/run_rust.sh" cargo build
+    --manifest-path "${ARGUS_REPO_ROOT}/rust/Cargo.toml"
+    --package argus-bridge --release --locked
+    --target-dir "${ARGUS_BRIDGE_TARGET_DIR}"
+  DEPENDS
+    "${ARGUS_REPO_ROOT}/rust/crates/argus-bridge/src/lib.rs"
+    "${ARGUS_REPO_ROOT}/rust/crates/argus-bridge/src/frb_generated.rs"
+  VERBATIM
+)
+add_custom_target(argus_bridge_native ALL DEPENDS "${ARGUS_BRIDGE_LIBRARY}")
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "argus")
@@ -51,6 +69,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
+add_dependencies(${BINARY_NAME} argus_bridge_native)
 
 
 # Generated plugin build rules, which manage building the plugins and adding
@@ -76,6 +95,9 @@ install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+  COMPONENT Runtime)
+
+install(FILES "${ARGUS_BRIDGE_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"

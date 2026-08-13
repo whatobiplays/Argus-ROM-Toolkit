@@ -1,1 +1,724 @@
-//! Flutter-facing Argus bridge boundary.
+//! Sole Rust composition and translation boundary for the Flutter bridge.
+//!
+//! The DTOs in this module are immutable transport projections. They do not
+//! read persistence or contain application policy; all authority remains in
+//! `argus-runtime` and `argus-application`.
+
+#![allow(unexpected_cfgs)]
+
+use std::fmt;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use argus_application::{
+    ApplicationError, ApplicationSeverity, ArchitectureClass, DiagnosticStage, ErrorCategory,
+    FailureRole, MigrationOutcome, PathClass, PersistedSettingsReason, PlatformClass,
+    Recoverability, RetryPolicy, SafeContext, SafeContextField, SafeContextValue, SettingsDomain,
+    TechnicalClass, ThemeMode,
+};
+use argus_runtime::{
+    ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
+    RuntimeEvent, RuntimeEventPayload, RuntimeEventPublisher, RuntimeInstanceId, RuntimeLifecycle,
+    RuntimeNotificationSink, RuntimeState, StartupFailure, StartupPhase,
+};
+
+#[allow(unsafe_code, clippy::result_large_err)]
+mod frb_generated;
+use crate::frb_generated::StreamSink;
+
+/// First major version of the application bridge contract.
+pub const BRIDGE_CONTRACT_MAJOR: u32 = 1;
+
+/// Application-result envelope retained for request/response operations.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BridgeResult<T> {
+    /// The application operation completed successfully.
+    Success(T),
+    /// Rust returned a structured application failure.
+    ApplicationFailure(ApplicationErrorDto),
+}
+
+/// Stable application error projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApplicationErrorDto {
+    pub code: String,
+    pub category: String,
+    pub severity: String,
+    pub recoverability: String,
+    pub retry_policy: String,
+    pub message_key: String,
+    pub trace_id: String,
+    pub safe_context: Vec<SafeContextEntryDto>,
+}
+
+/// One allowlisted structured diagnostic field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SafeContextEntryDto {
+    pub field: String,
+    pub value: String,
+}
+
+/// Wire lifecycle projection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeLifecycleDto {
+    Uninitialized,
+    Starting,
+    Ready,
+    StartupFailed,
+    ShuttingDown,
+    Stopped,
+}
+
+/// Wire startup phase projection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StartupPhaseDto {
+    EnvironmentInitialization,
+    ObservabilityInitialization,
+    ConfigurationInitialization,
+    PersistenceInitialization,
+    SettingsInitialization,
+    CoreServicesInitialization,
+    EventInfrastructureInitialization,
+    ReadinessValidation,
+}
+
+/// Wire recovery action discriminator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecoveryActionKindDto {
+    RetryStartup,
+    ResetAppearanceSettings,
+    ExportDiagnostics,
+    CopyTechnicalDetails,
+    OpenDataDirectory,
+    Exit,
+}
+
+/// One declarative failed-startup action.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecoveryActionDto {
+    pub kind: RecoveryActionKindDto,
+}
+
+/// Canonical startup failure projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StartupFailureDto {
+    pub phase: StartupPhaseDto,
+    pub error: ApplicationErrorDto,
+    pub recovery_actions: Vec<RecoveryActionDto>,
+}
+
+/// Canonical runtime snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeStateDto {
+    pub runtime_instance_id: String,
+    pub lifecycle_state: RuntimeLifecycleDto,
+    pub startup_phase: Option<StartupPhaseDto>,
+    pub startup_failure: Option<StartupFailureDto>,
+}
+
+/// Canonical theme mode projection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThemeModeDto {
+    System,
+    Light,
+    Dark,
+}
+
+/// Complete appearance aggregate projection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AppearanceSettingsDto {
+    pub theme_mode: ThemeModeDto,
+}
+
+/// Complete appearance update request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UpdateAppearanceSettingsRequestDto {
+    pub theme_mode: ThemeModeDto,
+}
+
+/// User-selected diagnostic export destination.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiagnosticsExportRequestDto {
+    pub destination: String,
+}
+
+/// Safe terminal export summary; archive bytes never cross the bridge.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiagnosticsExportDto {
+    pub outcome: DiagnosticsExportOutcomeDto,
+    pub destination_classification: String,
+}
+
+/// Diagnostic export outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiagnosticsExportOutcomeDto {
+    Created,
+    Partial,
+}
+
+/// Copy-safe startup technical details.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TechnicalDetailsDto {
+    pub text: String,
+}
+
+/// Typed outward event payloads. Stream items are never wrapped in
+/// `BridgeResult`; stream transport failure is represented by the stream's
+/// error channel and translated to Flutter `TransportFailure`.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeEventPayloadDto {
+    RuntimeStateChanged { lifecycle: RuntimeLifecycleDto },
+    StartupFailed { phase: StartupPhaseDto },
+    AppearanceSettingsChanged,
+}
+
+/// Unified runtime event envelope.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeEventDto {
+    pub runtime_instance_id: String,
+    pub sequence: u64,
+    pub occurred_at_ms: u64,
+    pub payload: RuntimeEventPayloadDto,
+}
+
+/// Transport failure for a native event stream.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BridgeTransportError {
+    EventStreamClosed,
+}
+
+impl fmt::Display for BridgeTransportError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::EventStreamClosed => "runtime event stream closed",
+        })
+    }
+}
+
+impl std::error::Error for BridgeTransportError {}
+
+/// Maps a backend application error without changing any stable field.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn application_error_dto(error: &ApplicationError) -> ApplicationErrorDto {
+    ApplicationErrorDto {
+        code: error.code.as_str().to_owned(),
+        category: category_name(error.category).to_owned(),
+        severity: severity_name(error.severity).to_owned(),
+        recoverability: recoverability_name(error.recoverability).to_owned(),
+        retry_policy: retry_policy_name(error.retry_policy).to_owned(),
+        message_key: error.message_key.as_str().to_owned(),
+        trace_id: error.trace_id.to_string(),
+        safe_context: safe_context_entries(&error.safe_context),
+    }
+}
+
+/// Maps one runtime snapshot into its canonical DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn runtime_state_dto(state: &RuntimeState) -> RuntimeStateDto {
+    RuntimeStateDto {
+        runtime_instance_id: state.runtime_instance_id().to_string(),
+        lifecycle_state: lifecycle_dto(state.lifecycle()),
+        startup_phase: state.startup_phase().map(startup_phase_dto),
+        startup_failure: state.startup_failure().map(startup_failure_dto),
+    }
+}
+
+/// Maps one outward runtime event into its canonical DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn runtime_event_dto(event: &RuntimeEvent) -> RuntimeEventDto {
+    RuntimeEventDto {
+        runtime_instance_id: event.runtime_instance_id.to_string(),
+        sequence: event.sequence,
+        occurred_at_ms: event.occurred_at_ms,
+        payload: match &event.payload {
+            RuntimeEventPayload::RuntimeStateChanged { lifecycle } => {
+                RuntimeEventPayloadDto::RuntimeStateChanged {
+                    lifecycle: lifecycle_dto(*lifecycle),
+                }
+            }
+            RuntimeEventPayload::StartupFailed { phase } => RuntimeEventPayloadDto::StartupFailed {
+                phase: startup_phase_dto(*phase),
+            },
+            RuntimeEventPayload::AppearanceSettingsChanged => {
+                RuntimeEventPayloadDto::AppearanceSettingsChanged
+            }
+        },
+    }
+}
+
+/// Maps one authoritative runtime state through the current host.
+#[allow(clippy::result_large_err)]
+pub fn get_runtime_state() -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "get_runtime_state")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .try_current_state_with_context(&context)
+        .map(|state| runtime_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Initializes the one application-lifetime host.
+#[allow(clippy::result_large_err)]
+pub fn initialize() -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    initialize_with_options(argus_runtime::KernelBootstrapOptions::default())
+}
+
+/// Initializes the host with an explicit embedding data directory.
+#[allow(clippy::result_large_err)]
+pub fn initialize_with_data_directory(
+    data_directory: String,
+) -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    initialize_with_options(argus_runtime::KernelBootstrapOptions::with_data_directory(
+        data_directory,
+    ))
+}
+
+#[allow(clippy::result_large_err)]
+fn initialize_with_options(
+    options: argus_runtime::KernelBootstrapOptions,
+) -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    host_with_options(options)
+        .initialize()
+        .map(|state| runtime_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Retries startup against the caller's expected runtime generation.
+#[allow(clippy::result_large_err)]
+pub fn retry_startup(
+    expected_runtime_instance_id: String,
+) -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "retry_startup")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_runtime_id(&expected_runtime_instance_id, context.trace_id())?;
+    host()
+        .retry_startup_with_context(id, &context)
+        .map(|state| runtime_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Performs generation-bound targeted appearance recovery.
+#[allow(clippy::result_large_err)]
+pub fn reset_appearance_settings(
+    expected_runtime_instance_id: String,
+) -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "reset_appearance_settings")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_runtime_id(&expected_runtime_instance_id, context.trace_id())?;
+    host()
+        .reset_appearance_settings_with_context(id, &context)
+        .map(|state| runtime_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Exits a generation-bound failed runtime.
+#[allow(clippy::result_large_err)]
+pub fn exit_failed_runtime(
+    expected_runtime_instance_id: String,
+) -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "exit_failed_runtime")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_runtime_id(&expected_runtime_instance_id, context.trace_id())?;
+    host()
+        .exit_failed_runtime_with_context(id, &context)
+        .map(|state| runtime_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Shuts down the current runtime generation.
+#[allow(clippy::result_large_err)]
+pub fn general_shutdown() -> Result<(), ApplicationErrorDto> {
+    let (context, guard) = host()
+        .begin_operation("runtime", "general_shutdown")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .general_shutdown_with_context(&context, &guard)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads the authoritative appearance aggregate.
+#[allow(clippy::result_large_err)]
+pub fn get_appearance_settings() -> Result<AppearanceSettingsDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("settings", "get_appearance_settings")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .get_appearance_settings_with_context(&context)
+        .map(appearance_settings_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Updates the complete appearance aggregate and returns terminal success only.
+#[allow(clippy::result_large_err)]
+pub fn update_appearance_settings(
+    request: UpdateAppearanceSettingsRequestDto,
+) -> Result<(), ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("settings", "update_appearance_settings")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .update_appearance_settings_with_context(
+            &context,
+            appearance_settings_from_dto(request.theme_mode),
+        )
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Writes sanitized startup diagnostics to the embedding-selected path.
+#[allow(clippy::result_large_err)]
+pub fn export_startup_diagnostics(
+    expected_runtime_instance_id: String,
+    request: DiagnosticsExportRequestDto,
+) -> Result<DiagnosticsExportDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "export_startup_diagnostics")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_runtime_id(&expected_runtime_instance_id, context.trace_id())?;
+    host()
+        .export_startup_diagnostics_with_context(
+            id,
+            std::path::Path::new(&request.destination),
+            &context,
+        )
+        .map(|export| DiagnosticsExportDto {
+            outcome: match export.outcome {
+                DiagnosticsExportOutcome::Created => DiagnosticsExportOutcomeDto::Created,
+                DiagnosticsExportOutcome::Partial => DiagnosticsExportOutcomeDto::Partial,
+            },
+            destination_classification: export.destination_classification.to_owned(),
+        })
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Returns copy-safe technical details for a failed startup generation.
+#[allow(clippy::result_large_err)]
+pub fn startup_technical_details(
+    expected_runtime_instance_id: String,
+) -> Result<TechnicalDetailsDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "startup_technical_details")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_runtime_id(&expected_runtime_instance_id, context.trace_id())?;
+    host()
+        .startup_technical_details_with_context(id, &context)
+        .map(|details| TechnicalDetailsDto { text: details.text })
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Opens a failed generation's data directory through the host shell.
+#[allow(clippy::result_large_err)]
+pub fn open_startup_data_directory(
+    expected_runtime_instance_id: String,
+) -> Result<(), ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "open_startup_data_directory")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_runtime_id(&expected_runtime_instance_id, context.trace_id())?;
+    host()
+        .open_startup_data_directory_with_context(id, &context)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Starts the single unified runtime event stream. Each item is a
+/// `RuntimeEventDto`, never a `BridgeResult<RuntimeEventDto>`.
+pub fn subscribe_events(sink: StreamSink<RuntimeEventDto>) -> Result<(), BridgeTransportError> {
+    let subscription = host()
+        .subscribe_events()
+        .map_err(|_| BridgeTransportError::EventStreamClosed)?;
+    loop {
+        match subscription.recv() {
+            Ok(event) => sink
+                .add(runtime_event_dto(&event))
+                .map_err(|_| BridgeTransportError::EventStreamClosed)?,
+            // A closed runtime connection is an expected lifecycle outcome
+            // (shutdown or generation replacement), not a transport failure.
+            Err(_) => return Ok(()),
+        }
+    }
+}
+
+fn host() -> &'static ApplicationHost {
+    host_with_options(argus_runtime::KernelBootstrapOptions::default())
+}
+
+fn host_with_options(options: argus_runtime::KernelBootstrapOptions) -> &'static ApplicationHost {
+    static HOST: OnceLock<ApplicationHost> = OnceLock::new();
+    HOST.get_or_init(|| {
+        ApplicationHost::with_notification_sink(
+            options,
+            Arc::new(BridgeNotificationSink::default()),
+        )
+    })
+}
+
+/// Bridge-owned adapter for the inward notification sink port. The unified
+/// outward transport remains the runtime event boundary consumed by
+/// `SubscribeEvents`; this adapter only proves registration/readiness.
+#[flutter_rust_bridge::frb(ignore)]
+struct BridgeNotificationSink {
+    publisher: Mutex<Option<Arc<RuntimeEventPublisher>>>,
+}
+
+impl Default for BridgeNotificationSink {
+    fn default() -> Self {
+        Self {
+            publisher: Mutex::new(None),
+        }
+    }
+}
+
+impl RuntimeNotificationSink for BridgeNotificationSink {
+    fn bind(&self, publisher: Arc<RuntimeEventPublisher>) -> Result<(), NotificationSinkError> {
+        *self
+            .publisher
+            .lock()
+            .map_err(|_| NotificationSinkError::Unavailable)? = Some(publisher);
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<(), NotificationSinkError> {
+        match self
+            .publisher
+            .lock()
+            .map_err(|_| NotificationSinkError::Unavailable)?
+            .as_ref()
+        {
+            Some(publisher) if publisher.is_open() => Ok(()),
+            _ => Err(NotificationSinkError::Unavailable),
+        }
+    }
+
+    fn publish(&self, event: RuntimeEventPayload) -> Result<(), NotificationSinkError> {
+        let publisher = self
+            .publisher
+            .lock()
+            .map_err(|_| NotificationSinkError::Unavailable)?;
+        publisher
+            .as_ref()
+            .ok_or(NotificationSinkError::Unavailable)?
+            .emit(event)
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_runtime_id(
+    value: &str,
+    trace_id: argus_application::TraceId,
+) -> Result<RuntimeInstanceId, ApplicationErrorDto> {
+    RuntimeInstanceId::from_hex(value).map_err(|_| {
+        application_error_dto(
+            &ApplicationError::from_code(
+                argus_application::ErrorCode::ValidationInvalidArgument,
+                trace_id,
+                SafeContext::new(),
+            )
+            .expect("validation error"),
+        )
+    })
+}
+
+fn appearance_settings_dto(
+    settings: argus_application::AppearanceSettings,
+) -> AppearanceSettingsDto {
+    AppearanceSettingsDto {
+        theme_mode: match settings.theme_mode {
+            ThemeMode::System => ThemeModeDto::System,
+            ThemeMode::Light => ThemeModeDto::Light,
+            ThemeMode::Dark => ThemeModeDto::Dark,
+        },
+    }
+}
+
+fn appearance_settings_from_dto(mode: ThemeModeDto) -> argus_application::AppearanceSettings {
+    argus_application::AppearanceSettings::new(match mode {
+        ThemeModeDto::System => ThemeMode::System,
+        ThemeModeDto::Light => ThemeMode::Light,
+        ThemeModeDto::Dark => ThemeMode::Dark,
+    })
+}
+
+fn startup_failure_dto(failure: &StartupFailure) -> StartupFailureDto {
+    StartupFailureDto {
+        phase: startup_phase_dto(failure.phase),
+        error: application_error_dto(&failure.error),
+        recovery_actions: failure
+            .recovery_actions
+            .iter()
+            .map(|action| RecoveryActionDto {
+                kind: recovery_action_kind_dto(action.kind),
+            })
+            .collect(),
+    }
+}
+
+fn lifecycle_dto(lifecycle: RuntimeLifecycle) -> RuntimeLifecycleDto {
+    match lifecycle {
+        RuntimeLifecycle::Uninitialized => RuntimeLifecycleDto::Uninitialized,
+        RuntimeLifecycle::Starting => RuntimeLifecycleDto::Starting,
+        RuntimeLifecycle::Ready => RuntimeLifecycleDto::Ready,
+        RuntimeLifecycle::StartupFailed => RuntimeLifecycleDto::StartupFailed,
+        RuntimeLifecycle::ShuttingDown => RuntimeLifecycleDto::ShuttingDown,
+        RuntimeLifecycle::Stopped => RuntimeLifecycleDto::Stopped,
+    }
+}
+
+fn startup_phase_dto(phase: StartupPhase) -> StartupPhaseDto {
+    match phase {
+        StartupPhase::EnvironmentInitialization => StartupPhaseDto::EnvironmentInitialization,
+        StartupPhase::ObservabilityInitialization => StartupPhaseDto::ObservabilityInitialization,
+        StartupPhase::ConfigurationInitialization => StartupPhaseDto::ConfigurationInitialization,
+        StartupPhase::PersistenceInitialization => StartupPhaseDto::PersistenceInitialization,
+        StartupPhase::SettingsInitialization => StartupPhaseDto::SettingsInitialization,
+        StartupPhase::CoreServicesInitialization => StartupPhaseDto::CoreServicesInitialization,
+        StartupPhase::EventInfrastructureInitialization => {
+            StartupPhaseDto::EventInfrastructureInitialization
+        }
+        StartupPhase::ReadinessValidation => StartupPhaseDto::ReadinessValidation,
+    }
+}
+
+fn recovery_action_kind_dto(kind: RecoveryActionKind) -> RecoveryActionKindDto {
+    match kind {
+        RecoveryActionKind::RetryStartup => RecoveryActionKindDto::RetryStartup,
+        RecoveryActionKind::ResetAppearanceSettings => {
+            RecoveryActionKindDto::ResetAppearanceSettings
+        }
+        RecoveryActionKind::ExportDiagnostics => RecoveryActionKindDto::ExportDiagnostics,
+        RecoveryActionKind::CopyTechnicalDetails => RecoveryActionKindDto::CopyTechnicalDetails,
+        RecoveryActionKind::OpenDataDirectory => RecoveryActionKindDto::OpenDataDirectory,
+        RecoveryActionKind::Exit => RecoveryActionKindDto::Exit,
+    }
+}
+
+fn category_name(value: ErrorCategory) -> &'static str {
+    match value {
+        ErrorCategory::Validation => "validation",
+        ErrorCategory::Configuration => "configuration",
+        ErrorCategory::Filesystem => "filesystem",
+        ErrorCategory::Persistence => "persistence",
+        ErrorCategory::Provider => "provider",
+        ErrorCategory::Runtime => "runtime",
+        ErrorCategory::Operation => "operation",
+        ErrorCategory::Internal => "internal",
+    }
+}
+
+fn severity_name(value: ApplicationSeverity) -> &'static str {
+    match value {
+        ApplicationSeverity::Info => "Info",
+        ApplicationSeverity::Warning => "Warning",
+        ApplicationSeverity::Error => "Error",
+        ApplicationSeverity::Fatal => "Fatal",
+    }
+}
+
+fn recoverability_name(value: Recoverability) -> &'static str {
+    match value {
+        Recoverability::None => "None",
+        Recoverability::Retry => "Retry",
+        Recoverability::UserAction => "UserAction",
+        Recoverability::RestartRequired => "RestartRequired",
+        Recoverability::ManualIntervention => "ManualIntervention",
+    }
+}
+
+fn retry_policy_name(value: RetryPolicy) -> &'static str {
+    match value {
+        RetryPolicy::Never => "Never",
+        RetryPolicy::Immediate => "Immediate",
+        RetryPolicy::Backoff => "Backoff",
+        RetryPolicy::UserInitiated => "UserInitiated",
+    }
+}
+
+fn safe_context_entries(context: &SafeContext) -> Vec<SafeContextEntryDto> {
+    context
+        .iter()
+        .map(|(field, value)| SafeContextEntryDto {
+            field: safe_context_field_name(*field).to_owned(),
+            value: safe_context_value_name(value),
+        })
+        .collect()
+}
+
+fn safe_context_field_name(field: SafeContextField) -> &'static str {
+    match field {
+        SafeContextField::Stage => "stage",
+        SafeContextField::PathClass => "path_class",
+        SafeContextField::MigrationCount => "migration_count",
+        SafeContextField::SchemaVersion => "schema_version",
+        SafeContextField::MigrationOutcome => "migration_outcome",
+        SafeContextField::ApplicationVersion => "application_version",
+        SafeContextField::BackendVersion => "backend_version",
+        SafeContextField::Platform => "platform",
+        SafeContextField::Architecture => "architecture",
+        SafeContextField::TechnicalClass => "technical_class",
+        SafeContextField::FailureRole => "failure_role",
+        SafeContextField::SettingsDomain => "settings_domain",
+        SafeContextField::PersistedSettingsReason => "persisted_settings_reason",
+    }
+}
+
+fn safe_context_value_name(value: &SafeContextValue) -> String {
+    match value {
+        SafeContextValue::Stage(stage) => match stage {
+            DiagnosticStage::Environment => "environment".to_owned(),
+            DiagnosticStage::Observability => "observability".to_owned(),
+            DiagnosticStage::Persistence => "persistence".to_owned(),
+        },
+        SafeContextValue::PathClass(path_class) => match path_class {
+            PathClass::StandardApplicationData => "standard_application_data".to_owned(),
+            PathClass::ExplicitOverride => "explicit_override".to_owned(),
+        },
+        SafeContextValue::MigrationCount(count) => count.to_string(),
+        SafeContextValue::SchemaVersion(version) => version.to_string(),
+        SafeContextValue::MigrationOutcome(outcome) => match outcome {
+            MigrationOutcome::Applied => "applied".to_owned(),
+            MigrationOutcome::AlreadyCurrent => "already_current".to_owned(),
+        },
+        SafeContextValue::ApplicationVersion(version) => version.as_str().to_owned(),
+        SafeContextValue::BackendVersion(version) => version.as_str().to_owned(),
+        SafeContextValue::Platform(platform) => match platform {
+            PlatformClass::Windows => "windows".to_owned(),
+            PlatformClass::MacOs => "macos".to_owned(),
+            PlatformClass::Unix => "unix".to_owned(),
+        },
+        SafeContextValue::Architecture(architecture) => match architecture {
+            ArchitectureClass::X8664 => "x86_64".to_owned(),
+            ArchitectureClass::Aarch64 => "aarch64".to_owned(),
+            ArchitectureClass::X86 => "x86".to_owned(),
+            ArchitectureClass::Arm => "arm".to_owned(),
+            ArchitectureClass::Unknown => "unknown".to_owned(),
+        },
+        SafeContextValue::TechnicalClass(technical) => match technical {
+            TechnicalClass::ConfigurationInvalid => "configuration_invalid".to_owned(),
+            TechnicalClass::FilesystemPermissionDenied => "filesystem_permission_denied".to_owned(),
+            TechnicalClass::DatabaseOpenFailed => "database_open_failed".to_owned(),
+            TechnicalClass::DatabaseLocked => "database_locked".to_owned(),
+            TechnicalClass::MigrationFailed => "migration_failed".to_owned(),
+            TechnicalClass::IncompatibleSchema => "incompatible_schema".to_owned(),
+            TechnicalClass::Internal => "internal".to_owned(),
+        },
+        SafeContextValue::FailureRole(role) => match role {
+            FailureRole::Primary => "primary".to_owned(),
+            FailureRole::Secondary => "secondary".to_owned(),
+        },
+        SafeContextValue::SettingsDomain(domain) => match domain {
+            SettingsDomain::Appearance => "appearance".to_owned(),
+        },
+        SafeContextValue::PersistedSettingsReason(reason) => match reason {
+            PersistedSettingsReason::Missing => "missing".to_owned(),
+            PersistedSettingsReason::InvalidValue => "invalid_value".to_owned(),
+            PersistedSettingsReason::MappingFailed => "mapping_failed".to_owned(),
+        },
+    }
+}

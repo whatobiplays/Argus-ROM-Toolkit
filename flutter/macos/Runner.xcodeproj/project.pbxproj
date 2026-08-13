@@ -212,6 +212,7 @@
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
+				33CC11252044A8840003C045 /* Build Argus native bridge */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 			);
 			buildRules = (
@@ -301,6 +302,27 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		33CC11252044A8840003C045 /* Build Argus native bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/../../rust/crates/argus-bridge/src/lib.rs",
+				"$(PROJECT_DIR)/../../rust/crates/argus-bridge/src/frb_generated.rs",
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(PROJECT_DIR)/../../rust/target/$(CONFIGURATION)/libargus_bridge.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "mode=debug\nprofile=\ncase \"$CONFIGURATION\" in\n  Debug) ;;\n  *) mode=release; profile=--release ;;\nesac\n\"$PROJECT_DIR/../../scripts/run_rust.sh\" cargo build --manifest-path \"$PROJECT_DIR/../../rust/Cargo.toml\" --package argus-bridge $profile --locked\n";
+		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

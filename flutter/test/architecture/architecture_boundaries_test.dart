@@ -34,7 +34,10 @@ void main() {
         .map((entry) => entry.key)
         .toList(growable: false);
 
-    expect(generatedProviderFiles, <String>['app/routing/app_router.dart']);
+    expect(generatedProviderFiles, <String>[
+      'app/bootstrap/client_bootstrap.dart',
+      'app/routing/app_router.dart',
+    ]);
     for (final relativePath in generatedProviderFiles) {
       final source = sources[relativePath]!;
       final basename = relativePath.split('/').last.replaceFirst('.dart', '');
@@ -105,9 +108,6 @@ void main() {
     () {
       const forbiddenConcepts = <String>[
         'StatefulShellRoute',
-        'flutter_rust_bridge',
-        'frb_generated',
-        'ArgusClient',
         'SQLite',
         'sqlite',
         'isDesktop',
@@ -125,6 +125,24 @@ void main() {
         for (final forbidden in forbiddenConcepts) {
           expect(entry.value, isNot(contains(forbidden)), reason: entry.key);
         }
+      }
+      for (final entry in sources.entries.where(
+        (entry) =>
+            !entry.key.startsWith('core/bridge/') &&
+            !entry.key.startsWith('core/client/') &&
+            entry.key != 'app/bootstrap/client_bootstrap.dart',
+      )) {
+        expect(
+          entry.value,
+          isNot(contains('flutter_rust_bridge')),
+          reason: entry.key,
+        );
+        expect(
+          entry.value,
+          isNot(contains('frb_generated')),
+          reason: entry.key,
+        );
+        expect(entry.value, isNot(contains('ArgusClient')), reason: entry.key);
       }
       expect(
         sources.keys.where((path) => path.startsWith('features/')).toList(),
@@ -173,6 +191,126 @@ void main() {
       }
     }
   });
+
+  test('features never import bridge or client implementation layers', () {
+    _expectNoForbiddenImports(
+      sources,
+      prefix: 'features/',
+      forbidden: <String>[
+        'core/bridge/',
+        'frb_generated',
+        'core/client/src/',
+        'flutter_rust_bridge',
+      ],
+    );
+  });
+
+  test('core client remains pure Dart and bridge-independent', () {
+    _expectNoForbiddenImports(
+      sources,
+      prefix: 'core/client/',
+      forbidden: <String>[
+        "package:flutter/",
+        'flutter_riverpod',
+        'flutter_rust_bridge',
+        'core/bridge/',
+        'features/',
+        'go_router',
+      ],
+    );
+    final barrel = sources['core/client/client.dart']!;
+    expect(barrel, isNot(contains('bridge')));
+    expect(barrel, isNot(contains('frb_generated')));
+  });
+
+  test('focused API signatures use Argus-owned types only', () {
+    final ports = sources['core/client/src/ports.dart']!;
+    for (final line in ports.split('\n')) {
+      if (line.contains('Future<') || line.contains('Stream<')) {
+        expect(line, isNot(contains('dto.')), reason: line);
+        expect(line, isNot(contains('frb.')), reason: line);
+        expect(line, isNot(contains('RustStreamSink')), reason: line);
+      }
+    }
+  });
+
+  test('generated FRB source is contained under core/bridge/generated', () {
+    final libDirectory = Directory('${Directory.current.path}/lib');
+    for (final file
+        in libDirectory
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.dart'))) {
+      final content = file.readAsStringSync();
+      if (content.contains('kDefaultExternalLibraryLoaderConfig') ||
+          content.contains('class RustLib')) {
+        expect(
+          file.path.replaceAll('\\', '/'),
+          contains('/core/bridge/generated/'),
+          reason: file.path,
+        );
+      }
+    }
+  });
+
+  test('no capability bag or speculative future API family exists', () {
+    const forbiddenConcepts = <String>[
+      'RuntimeCapabilitiesDto',
+      'JobsApi',
+      'LibraryApi',
+      'CollectionsApi',
+      'SourcesApi',
+      'GameApi',
+      'ProviderApi',
+      'Invoke(',
+      'ExecuteCommand(',
+      'ExecuteQuery(',
+    ];
+    for (final entry in sources.entries) {
+      for (final concept in forbiddenConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
+      }
+    }
+  });
+
+  test('Rust public contracts stay technology-neutral', () {
+    for (final path in <String>[
+      '../rust/crates/argus-application/src/lib.rs',
+      '../rust/crates/argus-runtime/src/lib.rs',
+    ]) {
+      final content = File(
+        '${Directory.current.path}/$path',
+      ).readAsStringSync();
+      for (final line in content.split('\n')) {
+        if (line.contains('pub use') ||
+            line.contains('pub struct') ||
+            line.contains('pub enum')) {
+          expect(
+            line,
+            isNot(contains('flutter_rust_bridge')),
+            reason: '$path:$line',
+          );
+          expect(line, isNot(contains('Sqlite')), reason: '$path:$line');
+          expect(line, isNot(contains('rusqlite')), reason: '$path:$line');
+          expect(line, isNot(contains('ZipWriter')), reason: '$path:$line');
+        }
+      }
+    }
+  });
+
+  test('runtime event notifications never carry full runtime snapshots', () {
+    final models = sources['core/client/src/models.dart']!;
+    final eventSection = models.substring(
+      models.indexOf('sealed class RuntimeEventPayload'),
+    );
+    expect(eventSection, isNot(contains('RuntimeState state')));
+    expect(eventSection, isNot(contains('required RuntimeState')));
+
+    final generated = File(
+      '${Directory.current.path}/lib/core/bridge/generated/lib.dart',
+    ).readAsStringSync();
+    expect(generated, isNot(contains('state: RuntimeStateDto')));
+  });
 }
 
 Map<String, String> _authoredProductionSources() {
@@ -183,6 +321,8 @@ Map<String, String> _authoredProductionSources() {
           .whereType<File>()
           .where((file) => file.path.endsWith('.dart'))
           .where((file) => !file.path.endsWith('.g.dart'))
+          .where((file) => !file.path.endsWith('.freezed.dart'))
+          .where((file) => !file.path.contains('/core/bridge/generated/'))
           .toList()
         ..sort((left, right) => left.path.compareTo(right.path));
 

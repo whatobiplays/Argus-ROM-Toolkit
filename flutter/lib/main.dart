@@ -1,3 +1,3 @@
-import 'package:flutter/widgets.dart';
+import 'package:argus/app/bootstrap/app_bootstrap.dart';
 
-void main() => runApp(const SizedBox.shrink());
+void main() => bootstrapArgus();

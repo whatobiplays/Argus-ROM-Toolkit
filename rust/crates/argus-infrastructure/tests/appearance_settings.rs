@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 use std::path::Path;
 
 use argus_application::{

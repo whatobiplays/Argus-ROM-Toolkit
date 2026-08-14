@@ -11,14 +11,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
     ApplicationError, ApplicationSeverity, ArchitectureClass, DiagnosticStage, ErrorCategory,
-    FailureRole, MigrationOutcome, PathClass, PersistedSettingsReason, PlatformClass,
+    ErrorCode, FailureRole, MigrationOutcome, PathClass, PersistedSettingsReason, PlatformClass,
     Recoverability, RetryPolicy, SafeContext, SafeContextField, SafeContextValue, SettingsDomain,
     TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
-    RuntimeEvent, RuntimeEventPayload, RuntimeEventPublisher, RuntimeInstanceId, RuntimeLifecycle,
-    RuntimeNotificationSink, RuntimeState, StartupFailure, StartupPhase,
+    RuntimeEvent, RuntimeEventPayload, RuntimeEventPublisher, RuntimeEventStreamError,
+    RuntimeInstanceId, RuntimeLifecycle, RuntimeNotificationSink, RuntimeState, StartupFailure,
+    StartupPhase,
 };
 
 #[allow(unsafe_code, clippy::result_large_err)]
@@ -345,6 +346,26 @@ pub fn general_shutdown() -> Result<(), ApplicationErrorDto> {
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Closes the active native event connection without changing lifecycle
+/// state. Client teardown uses this so a parked subscription can return
+/// deterministically before local disposal.
+#[allow(clippy::result_large_err)]
+pub fn close_event_connection() -> Result<(), ApplicationErrorDto> {
+    host()
+        .close_active_event_connection()
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Returns the current event-connection admission epoch for the active
+/// generation. Clients read this before subscribing so a fresh subscription
+/// after teardown uses the current admission epoch.
+#[allow(clippy::result_large_err)]
+pub fn get_event_attach_epoch() -> Result<u64, ApplicationErrorDto> {
+    host()
+        .event_attach_epoch()
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Reads the authoritative appearance aggregate.
 #[allow(clippy::result_large_err)]
 pub fn get_appearance_settings() -> Result<AppearanceSettingsDto, ApplicationErrorDto> {
@@ -430,19 +451,76 @@ pub fn open_startup_data_directory(
 
 /// Starts the single unified runtime event stream. Each item is a
 /// `RuntimeEventDto`, never a `BridgeResult<RuntimeEventDto>`.
-pub fn subscribe_events(sink: StreamSink<RuntimeEventDto>) -> Result<(), BridgeTransportError> {
-    let subscription = host()
-        .subscribe_events()
-        .map_err(|_| BridgeTransportError::EventStreamClosed)?;
+pub fn subscribe_events(
+    attach_epoch: u64,
+    sink: StreamSink<RuntimeEventDto>,
+) -> Result<(), BridgeTransportError> {
+    let subscription = match host().subscribe_events_with_epoch(attach_epoch) {
+        Ok(subscription) => subscription,
+        Err(error) => {
+            if let Some(transport_error) = classify_subscribe_error(&error) {
+                return Err(transport_error);
+            }
+            // A subscription carrying a stale admission epoch or attaching to
+            // an already-closed boundary is an expected lifecycle outcome
+            // (generation replacement, shutdown, or client teardown racing the
+            // attach). Complete the stream normally instead of surfacing a
+            // transport error after client teardown.
+            return Ok(());
+        }
+    };
     loop {
         match subscription.recv() {
             Ok(event) => sink
                 .add(runtime_event_dto(&event))
                 .map_err(|_| BridgeTransportError::EventStreamClosed)?,
-            // A closed runtime connection is an expected lifecycle outcome
-            // (shutdown or generation replacement), not a transport failure.
-            Err(_) => return Ok(()),
+            Err(RuntimeEventStreamError::Closed) => {
+                // A closed runtime connection is an expected lifecycle outcome
+                // (shutdown or generation replacement), not a transport
+                // failure.
+                return Ok(());
+            }
+            Err(RuntimeEventStreamError::Internal) => {
+                // Poisoned internal synchronization state is a genuine
+                // transport failure, never a normal completion.
+                return Err(BridgeTransportError::EventStreamClosed);
+            }
         }
+    }
+}
+
+/// Maps a subscription-establishment failure to its transport projection.
+/// Only the stale-generation/closed-boundary attach race is treated as a
+/// normal stream completion; every genuine failure stays observable.
+fn classify_subscribe_error(error: &ApplicationError) -> Option<BridgeTransportError> {
+    match error.code {
+        ErrorCode::RuntimeStaleInstance => None,
+        _ => Some(BridgeTransportError::EventStreamClosed),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_subscribe_error;
+    use argus_application::{ApplicationError, ErrorCode, SafeContext};
+
+    fn subscribe_error(code: ErrorCode) -> ApplicationError {
+        ApplicationError::from_code(code, argus_runtime::new_trace_id(), SafeContext::new())
+            .expect("error code has a published policy")
+    }
+
+    #[test]
+    fn stale_generation_attach_race_completes_normally() {
+        let error = subscribe_error(ErrorCode::RuntimeStaleInstance);
+
+        assert!(classify_subscribe_error(&error).is_none());
+    }
+
+    #[test]
+    fn genuine_subscribe_failures_remain_transport_errors() {
+        let error = subscribe_error(ErrorCode::InternalUnexpected);
+
+        assert!(classify_subscribe_error(&error).is_some());
     }
 }
 

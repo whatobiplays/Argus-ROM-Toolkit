@@ -121,6 +121,10 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
       _callVoid(() => _rustApi.crateGeneralShutdown());
 
   @override
+  Future<void> closeEventConnection() =>
+      _callVoid(() => _rustApi.crateCloseEventConnection());
+
+  @override
   Future<AppearanceSettings> getAppearanceSettings() => _call(
     () async =>
         appearanceSettingsFromDto(await _rustApi.crateGetAppearanceSettings()),
@@ -172,8 +176,15 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   Stream<RuntimeEvent> subscribeEvents(RuntimeInstanceId generation) async* {
     try {
       await _ensureInitialized();
-      await for (final event
-          in (_eventStreamFactory?.call() ?? _rustApi.crateSubscribeEvents())) {
+      // Re-read the current admission epoch so a fresh subscription after
+      // client teardown is admitted while a stale delayed attach is rejected.
+      final factory = _eventStreamFactory;
+      final events = factory != null
+          ? factory()
+          : _rustApi.crateSubscribeEvents(
+              attachEpoch: await _rustApi.crateGetEventAttachEpoch(),
+            );
+      await for (final event in events) {
         final mapped = runtimeEventFromDto(event);
         if (mapped.runtimeInstanceId == generation) yield mapped;
       }

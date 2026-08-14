@@ -40,6 +40,7 @@ final class ArgusClient implements ClientBootstrap {
   RuntimeInstanceId? _boundGeneration;
   int _subscriptionToken = 0;
   bool _suppressStreamErrors = false;
+  bool _shuttingDown = false;
   bool _closed = false;
 
   /// The currently bound runtime generation, if initialization has completed.
@@ -55,6 +56,7 @@ final class ArgusClient implements ClientBootstrap {
   /// Explicitly reconnects the current generation after a transport error.
   /// Concurrent calls are serialized so only one native connection is active.
   Future<void> reconnectEvents() async {
+    if (_shuttingDown || _closed) return;
     final generation = _boundGeneration;
     if (generation == null) return;
     await _bindEvents(generation, force: true);
@@ -100,12 +102,51 @@ final class ArgusClient implements ClientBootstrap {
   }
 
   Future<void> _generalShutdown() async {
+    _shuttingDown = true;
     _suppressStreamErrors = true;
+    Object? shutdownError;
     try {
       await _requestVoid(_gateway.generalShutdown);
+    } catch (error, stackTrace) {
+      shutdownError = error is ClientFailure
+          ? error
+          : TransportFailure(
+              'Native general shutdown failed',
+              cause: error,
+              stackTrace: stackTrace,
+            );
     } finally {
-      await _unbindEvents();
+      Object? closeError;
+      try {
+        // Close/invalidate the native event connection before awaiting local
+        // cancellation so a failed or racing shutdown cannot leave the FRB
+        // subscription parked.
+        await _gateway.closeEventConnection();
+      } catch (error, stackTrace) {
+        closeError = error is ClientFailure
+            ? error
+            : TransportFailure(
+                'Native event connection could not be closed',
+                cause: error,
+                stackTrace: stackTrace,
+              );
+      }
+      Object? cancelError;
+      try {
+        await _unbindEvents();
+      } catch (error, stackTrace) {
+        cancelError = error is ClientFailure
+            ? error
+            : TransportFailure(
+                'Native event subscription could not be cancelled',
+                cause: error,
+                stackTrace: stackTrace,
+              );
+      }
       _suppressStreamErrors = false;
+      if (shutdownError case final Object error) throw error;
+      if (closeError case final Object error) throw error;
+      if (cancelError case final Object error) throw error;
     }
   }
 
@@ -150,6 +191,9 @@ final class ArgusClient implements ClientBootstrap {
   /// previous bind to finish, so replacing a stream can never overlap it.
   Future<void> _bindEvents(RuntimeInstanceId generation, {bool force = false}) {
     _ensureOpen();
+    if (_shuttingDown) {
+      throw const TransportFailure('ArgusClient is shutting down');
+    }
     final previous = _bindingTask ?? Future<void>.value();
     late final Future<void> tracked;
     final task = previous.then((_) => _performBind(generation, force: force));
@@ -197,7 +241,8 @@ final class ArgusClient implements ClientBootstrap {
           _eventStream.add(event);
         },
         onError: (Object error, StackTrace stackTrace) {
-          if (_suppressStreamErrors ||
+          if (_shuttingDown ||
+              _suppressStreamErrors ||
               token != _subscriptionToken ||
               terminalReported) {
             return;
@@ -211,7 +256,8 @@ final class ArgusClient implements ClientBootstrap {
           _scheduleReconnect(generation);
         },
         onDone: () {
-          if (_suppressStreamErrors ||
+          if (_shuttingDown ||
+              _suppressStreamErrors ||
               token != _subscriptionToken ||
               terminalReported) {
             return;
@@ -236,16 +282,21 @@ final class ArgusClient implements ClientBootstrap {
   }
 
   void _scheduleReconnect(RuntimeInstanceId generation) {
-    if (_suppressStreamErrors || _closed || _reconnectTask != null) return;
+    if (_shuttingDown ||
+        _suppressStreamErrors ||
+        _closed ||
+        _reconnectTask != null) {
+      return;
+    }
     final completer = Completer<void>();
     _reconnectTask = completer.future;
     scheduleMicrotask(() async {
       try {
-        if (!_closed && _boundGeneration == generation) {
+        if (!_shuttingDown && !_closed && _boundGeneration == generation) {
           await _bindEvents(generation, force: true);
         }
       } catch (error, stackTrace) {
-        if (!_closed && _boundGeneration == generation) {
+        if (!_shuttingDown && !_closed && _boundGeneration == generation) {
           _eventStream.addError(_asTransportFailure(error, stackTrace));
         }
       } finally {
@@ -301,8 +352,39 @@ final class ArgusClient implements ClientBootstrap {
   Future<void> dispose() async {
     if (_closed) return;
     _closed = true;
-    await _unbindEvents();
+    _shuttingDown = true;
+    Object? teardownError;
+    final hadEventConnection = _eventSubscription != null;
+    if (hadEventConnection) {
+      try {
+        // Close the native event connection first so a parked FRB subscription
+        // can return before the Dart-side stream is cancelled.
+        await _gateway.closeEventConnection();
+      } catch (error, stackTrace) {
+        teardownError = error is ClientFailure
+            ? error
+            : TransportFailure(
+                'Native event connection could not be closed',
+                cause: error,
+                stackTrace: stackTrace,
+              );
+      }
+    }
+    try {
+      await _unbindEvents();
+    } catch (error, stackTrace) {
+      teardownError ??= error is ClientFailure
+          ? error
+          : TransportFailure(
+              'Native event subscription could not be cancelled',
+              cause: error,
+              stackTrace: stackTrace,
+            );
+    }
     await _eventStream.close();
+    if (teardownError case final Object error) {
+      throw error;
+    }
   }
 }
 

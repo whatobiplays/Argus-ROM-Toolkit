@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1180130219;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -143282903;
 
 // Section: executor
 
@@ -48,6 +48,38 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__close_event_connection_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "close_event_connection",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::close_event_connection()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__exit_failed_runtime_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -176,6 +208,38 @@ fn wire__crate__get_appearance_settings_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::get_appearance_settings()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__get_event_attach_epoch_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_event_attach_epoch",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_event_attach_epoch()?;
                     Ok(output_ok)
                 })())
             }
@@ -436,6 +500,7 @@ fn wire__crate__subscribe_events_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_attach_epoch = <u64>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
                 crate::RuntimeEventDto,
                 flutter_rust_bridge::for_generated::SseCodec,
@@ -443,7 +508,7 @@ fn wire__crate__subscribe_events_impl(
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::BridgeTransportError>((move || {
-                    let output_ok = crate::subscribe_events(api_sink)?;
+                    let output_ok = crate::subscribe_events(api_attach_epoch, api_sink)?;
                     Ok(output_ok)
                 })())
             }
@@ -864,19 +929,21 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__exit_failed_runtime_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__export_startup_diagnostics_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        1 => wire__crate__close_event_connection_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__exit_failed_runtime_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__export_startup_diagnostics_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

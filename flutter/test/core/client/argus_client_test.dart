@@ -219,6 +219,7 @@ final class FakeGateway implements ArgusClientGateway {
   int initializeCalls = 0;
   int updateCalls = 0;
   int retryCalls = 0;
+  int closeEventConnectionCalls = 0;
   int subscribeCount = 0;
   int activeSubscriptions = 0;
   int maxActiveSubscriptions = 0;
@@ -268,6 +269,12 @@ final class FakeGateway implements ArgusClientGateway {
 
   @override
   Future<void> generalShutdown() => _result(null);
+
+  @override
+  Future<void> closeEventConnection() {
+    closeEventConnectionCalls++;
+    return Future<void>.value();
+  }
 
   @override
   Future<AppearanceSettings> getAppearanceSettings() =>

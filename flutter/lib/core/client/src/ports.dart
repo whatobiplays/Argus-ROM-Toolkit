@@ -19,6 +19,11 @@ abstract interface class RuntimeGateway {
   );
 
   Future<void> generalShutdown();
+
+  /// Closes the current native event connection without changing runtime
+  /// lifecycle state. Used by client teardown so a parked native subscription
+  /// can return deterministically before local disposal.
+  Future<void> closeEventConnection();
 }
 
 /// Focused runtime capability exposed to startup and recovery consumers.

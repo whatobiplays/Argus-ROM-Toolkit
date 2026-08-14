@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1180130219;
+  int get rustContentHash => -143282903;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -76,6 +76,8 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<void> crateCloseEventConnection();
+
   Future<RuntimeStateDto> crateExitFailedRuntime({
     required String expectedRuntimeInstanceId,
   });
@@ -88,6 +90,8 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateGeneralShutdown();
 
   Future<AppearanceSettingsDto> crateGetAppearanceSettings();
+
+  Future<BigInt> crateGetEventAttachEpoch();
 
   Future<RuntimeStateDto> crateGetRuntimeState();
 
@@ -113,7 +117,7 @@ abstract class RustLibApi extends BaseApi {
     required String expectedRuntimeInstanceId,
   });
 
-  Stream<RuntimeEventDto> crateSubscribeEvents();
+  Stream<RuntimeEventDto> crateSubscribeEvents({required BigInt attachEpoch});
 
   Future<void> crateUpdateAppearanceSettings({
     required UpdateAppearanceSettingsRequestDto request,
@@ -129,6 +133,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<void> crateCloseEventConnection() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateCloseEventConnectionConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateCloseEventConnectionConstMeta =>
+      const TaskConstMeta(debugName: "close_event_connection", argNames: []);
+
+  @override
   Future<RuntimeStateDto> crateExitFailedRuntime({
     required String expectedRuntimeInstanceId,
   }) {
@@ -140,7 +171,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 2,
             port: port_,
           );
         },
@@ -177,7 +208,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -207,7 +238,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -234,7 +265,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -253,6 +284,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_appearance_settings", argNames: []);
 
   @override
+  Future<BigInt> crateGetEventAttachEpoch() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 6,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_64,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateGetEventAttachEpochConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateGetEventAttachEpochConstMeta =>
+      const TaskConstMeta(debugName: "get_event_attach_epoch", argNames: []);
+
+  @override
   Future<RuntimeStateDto> crateGetRuntimeState() {
     return handler.executeNormal(
       NormalTask(
@@ -261,7 +319,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 7,
             port: port_,
           );
         },
@@ -288,7 +346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 8,
             port: port_,
           );
         },
@@ -318,7 +376,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 9,
             port: port_,
           );
         },
@@ -351,7 +409,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 10,
             port: port_,
           );
         },
@@ -384,7 +442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 11,
             port: port_,
           );
         },
@@ -417,7 +475,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 12,
             port: port_,
           );
         },
@@ -449,7 +507,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 13,
             port: port_,
           );
         },
@@ -471,18 +529,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Stream<RuntimeEventDto> crateSubscribeEvents() {
+  Stream<RuntimeEventDto> crateSubscribeEvents({required BigInt attachEpoch}) {
     final sink = RustStreamSink<RuntimeEventDto>();
     unawaited(
       handler.executeNormal(
         NormalTask(
           callFfi: (port_) {
             final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_u_64(attachEpoch, serializer);
             sse_encode_StreamSink_runtime_event_dto_Sse(sink, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 12,
+              funcId: 14,
               port: port_,
             );
           },
@@ -491,7 +550,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_bridge_transport_error,
           ),
           constMeta: kCrateSubscribeEventsConstMeta,
-          argValues: [sink],
+          argValues: [attachEpoch, sink],
           apiImpl: this,
         ),
       ),
@@ -499,8 +558,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return sink.stream;
   }
 
-  TaskConstMeta get kCrateSubscribeEventsConstMeta =>
-      const TaskConstMeta(debugName: "subscribe_events", argNames: ["sink"]);
+  TaskConstMeta get kCrateSubscribeEventsConstMeta => const TaskConstMeta(
+    debugName: "subscribe_events",
+    argNames: ["attachEpoch", "sink"],
+  );
 
   @override
   Future<void> crateUpdateAppearanceSettings({
@@ -517,7 +578,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 15,
             port: port_,
           );
         },

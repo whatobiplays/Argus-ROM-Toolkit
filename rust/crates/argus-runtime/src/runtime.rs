@@ -359,7 +359,7 @@ impl RuntimeEventSubscription {
             .state
             .queue
             .lock()
-            .map_err(|_| RuntimeEventStreamError::Closed)?;
+            .map_err(|_| RuntimeEventStreamError::Internal)?;
         loop {
             if let Some(event) = queue.pop_front() {
                 return Ok(event);
@@ -368,7 +368,7 @@ impl RuntimeEventSubscription {
                 .state
                 .closed
                 .lock()
-                .map_err(|_| RuntimeEventStreamError::Closed)?;
+                .map_err(|_| RuntimeEventStreamError::Internal)?;
             if closed {
                 return Err(RuntimeEventStreamError::Closed);
             }
@@ -376,7 +376,7 @@ impl RuntimeEventSubscription {
                 .state
                 .wake
                 .wait(queue)
-                .map_err(|_| RuntimeEventStreamError::Closed)?;
+                .map_err(|_| RuntimeEventStreamError::Internal)?;
         }
     }
 
@@ -386,7 +386,7 @@ impl RuntimeEventSubscription {
             .state
             .queue
             .lock()
-            .map_err(|_| RuntimeEventStreamError::Closed)?;
+            .map_err(|_| RuntimeEventStreamError::Internal)?;
         if let Some(event) = queue.pop_front() {
             return Ok(Some(event));
         }
@@ -394,7 +394,7 @@ impl RuntimeEventSubscription {
             .state
             .closed
             .lock()
-            .map_err(|_| RuntimeEventStreamError::Closed)?
+            .map_err(|_| RuntimeEventStreamError::Internal)?
         {
             return Err(RuntimeEventStreamError::Closed);
         }
@@ -419,13 +419,19 @@ impl Drop for RuntimeEventSubscription {
 /// Failure returned after a native event connection is no longer usable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeEventStreamError {
+    /// Expected lifecycle closure (shutdown, generation replacement, or
+    /// client-teardown admission invalidation).
     Closed,
+    /// Internal synchronization failure (poisoned mutex/condvar) that must
+    /// remain observable as a transport failure.
+    Internal,
 }
 
 pub struct EventBoundary {
     next_sequence: AtomicU64,
     active: Mutex<Option<Arc<EventStreamState>>>,
     closed: AtomicBool,
+    attach_epoch: AtomicU64,
 }
 
 impl EventBoundary {
@@ -434,17 +440,40 @@ impl EventBoundary {
             next_sequence: AtomicU64::new(0),
             active: Mutex::new(None),
             closed: AtomicBool::new(false),
+            attach_epoch: AtomicU64::new(0),
         })
     }
 
-    fn attach(&self) -> Arc<EventStreamState> {
-        let state = EventStreamState::new();
-        if let Ok(mut active) = self.active.lock()
-            && let Some(previous) = active.replace(Arc::clone(&state))
+    fn attach(
+        &self,
+        expected_attach_epoch: u64,
+    ) -> Result<Arc<EventStreamState>, RuntimeEventStreamError> {
+        let mut active = match self.active.lock() {
+            Ok(guard) => guard,
+            Err(poison) => {
+                let mut guard = poison.into_inner();
+                if let Some(state) = guard.take() {
+                    state.close();
+                }
+                self.active.clear_poison();
+                return Err(RuntimeEventStreamError::Internal);
+            }
+        };
+        // The active lock serializes attach against close: either attach sees
+        // the boundary closed and fails, or close later takes and closes the
+        // freshly attached state. Teardown invalidates the admission epoch so
+        // a delayed attach from the retiring client is rejected while a fresh
+        // client with the current epoch is still admitted.
+        if self.closed.load(Ordering::SeqCst)
+            || expected_attach_epoch != self.attach_epoch.load(Ordering::SeqCst)
         {
+            return Err(RuntimeEventStreamError::Closed);
+        }
+        let state = EventStreamState::new();
+        if let Some(previous) = active.replace(Arc::clone(&state)) {
             previous.close();
         }
-        state
+        Ok(state)
     }
 
     pub(crate) fn emit(
@@ -481,6 +510,36 @@ impl EventBoundary {
         {
             state.close();
         }
+    }
+
+    /// Returns the current admission epoch for fresh subscriptions.
+    pub(crate) fn attach_epoch(&self) -> u64 {
+        self.attach_epoch.load(Ordering::SeqCst)
+    }
+
+    /// Invalidates outstanding subscription admission without closing the
+    /// boundary: the admission epoch advances and the active connection is
+    /// closed/released. A delayed attach carrying the old epoch is rejected,
+    /// while a fresh attach reading the new epoch is admitted. A poisoned
+    /// active lock is recovered so the physical connection is still released,
+    /// but the teardown failure remains observable.
+    pub(crate) fn invalidate(&self) -> Result<(), RuntimeEventStreamError> {
+        self.attach_epoch.fetch_add(1, Ordering::SeqCst);
+        let mut active = match self.active.lock() {
+            Ok(guard) => guard,
+            Err(poison) => {
+                let mut guard = poison.into_inner();
+                if let Some(state) = guard.take() {
+                    state.close();
+                }
+                self.active.clear_poison();
+                return Err(RuntimeEventStreamError::Internal);
+            }
+        };
+        if let Some(state) = active.take() {
+            state.close();
+        }
+        Ok(())
     }
 
     /// Returns whether this boundary can still deliver notifications.
@@ -1432,10 +1491,41 @@ impl ApplicationHost {
         self.subscribe_events_for_generation(id)
     }
 
+    /// Opens the event connection for the current generation with an explicit
+    /// admission epoch supplied by the embedding client.
+    pub fn subscribe_events_with_epoch(
+        &self,
+        expected_attach_epoch: u64,
+    ) -> Result<RuntimeEventSubscription, ApplicationError> {
+        let id = self.current_state().runtime_instance_id();
+        self.subscribe_events_for_generation_with_epoch(id, expected_attach_epoch)
+    }
+
+    /// Returns the current event-connection admission epoch for the active
+    /// generation. Fresh clients must re-read this after any teardown.
+    pub fn event_attach_epoch(&self) -> Result<u64, ApplicationError> {
+        let generation = self.lock_generation()?;
+        Ok(generation.events.attach_epoch())
+    }
+
     /// Reconnects the active event connection for the expected generation.
     pub fn subscribe_events_for_generation(
         &self,
         expected_runtime_instance_id: RuntimeInstanceId,
+    ) -> Result<RuntimeEventSubscription, ApplicationError> {
+        let epoch = {
+            let generation = self.lock_generation()?;
+            generation.events.attach_epoch()
+        };
+        self.subscribe_events_for_generation_with_epoch(expected_runtime_instance_id, epoch)
+    }
+
+    /// Reconnects the active event connection for the expected generation and
+    /// admission epoch.
+    pub fn subscribe_events_for_generation_with_epoch(
+        &self,
+        expected_runtime_instance_id: RuntimeInstanceId,
+        expected_attach_epoch: u64,
     ) -> Result<RuntimeEventSubscription, ApplicationError> {
         let boundary = {
             let generation = self.lock_generation()?;
@@ -1444,7 +1534,15 @@ impl ApplicationHost {
             }
             Arc::clone(&generation.events)
         };
-        let state = boundary.attach();
+        let state = match boundary.attach(expected_attach_epoch) {
+            Ok(state) => state,
+            Err(RuntimeEventStreamError::Closed) => {
+                return Err(runtime_error(ErrorCode::RuntimeStaleInstance));
+            }
+            Err(RuntimeEventStreamError::Internal) => {
+                return Err(runtime_error(ErrorCode::InternalUnexpected));
+            }
+        };
         let connection_id = self
             .inner
             .next_connection_id
@@ -1559,6 +1657,48 @@ impl ApplicationHost {
         }
     }
 
+    /// Invalidates the current generation's event-connection admission and
+    /// releases its active connection without changing lifecycle state.
+    /// Embedding teardown uses this so a parked or late-attaching FRB
+    /// subscription carrying the old admission epoch is rejected, while a
+    /// fresh client that re-reads the current epoch can still subscribe to the
+    /// same authoritative generation. Poisoned internal locks are recovered so
+    /// the physical connection is still released, but the teardown failure is
+    /// reported as a typed error.
+    pub fn close_active_event_connection(&self) -> Result<(), ApplicationError> {
+        let generation_guard = self.inner.current.lock();
+        let (generation, generation_poisoned) = match generation_guard {
+            Ok(guard) => (guard, false),
+            Err(poison) => {
+                let guard = poison.into_inner();
+                self.inner.current.clear_poison();
+                (guard, true)
+            }
+        };
+        let boundary_result = generation.events.invalidate();
+        let host_poisoned = match self.inner.active_event.lock() {
+            Ok(mut active) => {
+                if let Some(connection) = active.take() {
+                    connection.state.close();
+                }
+                false
+            }
+            Err(poison) => {
+                let mut active = poison.into_inner();
+                if let Some(connection) = active.take() {
+                    connection.state.close();
+                }
+                self.inner.active_event.clear_poison();
+                true
+            }
+        };
+        if generation_poisoned || boundary_result.is_err() || host_poisoned {
+            Err(runtime_error(ErrorCode::InternalUnexpected))
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn lock_generation(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, ApplicationRuntime>, ApplicationError> {
@@ -1640,14 +1780,214 @@ mod tests {
 
     use crate::startup::SettingsReadPort;
     use crate::{
-        ApplicationHost, InProcessNotificationSink, KernelBootstrapOptions, RuntimeEventPayload,
-        RuntimeInstanceId, RuntimeLifecycle, RuntimeState, StartupFailure, StartupPhase,
-        StartupPhaseObserver,
+        ApplicationHost, EventBoundary, InProcessNotificationSink, KernelBootstrapOptions,
+        RuntimeEventPayload, RuntimeEventStreamError, RuntimeEventSubscription, RuntimeInstanceId,
+        RuntimeLifecycle, RuntimeState, StartupFailure, StartupPhase, StartupPhaseObserver,
     };
     use argus_application::{
         ApplicationError, ErrorCode, OperationContext, OperationName, SafeContext, SubsystemName,
         TraceId,
     };
+    use std::sync::Weak;
+
+    #[test]
+    fn attach_after_close_is_rejected() {
+        let boundary = EventBoundary::new();
+        boundary.close();
+
+        assert!(matches!(
+            boundary.attach(0),
+            Err(RuntimeEventStreamError::Closed)
+        ));
+    }
+
+    #[test]
+    fn close_unblocks_an_already_attached_subscription() {
+        let boundary = EventBoundary::new();
+        let state = boundary.attach(0).expect("open boundary attaches");
+        let handle = std::thread::spawn(move || {
+            let subscription = RuntimeEventSubscription {
+                state,
+                host: Weak::new(),
+                connection_id: 1,
+            };
+            subscription.recv()
+        });
+
+        boundary.close();
+
+        assert!(matches!(
+            handle.join().expect("subscription thread"),
+            Err(RuntimeEventStreamError::Closed)
+        ));
+    }
+
+    #[test]
+    fn invalidate_rejects_stale_epoch_and_admits_new_epoch() {
+        let boundary = EventBoundary::new();
+
+        let state = boundary.attach(0).expect("epoch 0 attaches");
+        boundary.invalidate().expect("teardown invalidates epoch");
+        state.close();
+
+        assert!(matches!(
+            boundary.attach(0),
+            Err(RuntimeEventStreamError::Closed)
+        ));
+        assert!(boundary.attach(1).is_ok());
+    }
+
+    #[test]
+    fn invalidate_releases_connection_even_when_lock_is_poisoned() {
+        let boundary = EventBoundary::new();
+        let state = boundary.attach(0).expect("open boundary attaches");
+        let handle = std::thread::spawn(move || {
+            let subscription = RuntimeEventSubscription {
+                state,
+                host: Weak::new(),
+                connection_id: 1,
+            };
+            subscription.recv()
+        });
+
+        let poisoned_boundary = boundary.clone();
+        let poisoned = std::thread::spawn(move || {
+            let _guard = poisoned_boundary.active.lock().expect("boundary lock");
+            panic!("intentional boundary lock poison");
+        })
+        .join();
+        assert!(poisoned.is_err());
+
+        assert!(matches!(
+            boundary.invalidate(),
+            Err(RuntimeEventStreamError::Internal)
+        ));
+        assert!(matches!(
+            handle.join().expect("subscription thread"),
+            Err(RuntimeEventStreamError::Closed)
+        ));
+        assert!(boundary.attach(1).is_ok());
+    }
+
+    #[test]
+    fn try_recv_reports_internal_poison_as_internal() {
+        let boundary = EventBoundary::new();
+        let state = boundary.attach(0).expect("open boundary attaches");
+        let poisoned_state = state.clone();
+        let poisoned = std::thread::spawn(move || {
+            let _guard = poisoned_state.closed.lock().expect("closed lock");
+            panic!("intentional closed-state lock poison");
+        })
+        .join();
+        assert!(poisoned.is_err());
+
+        let subscription = RuntimeEventSubscription {
+            state,
+            host: Weak::new(),
+            connection_id: 1,
+        };
+        assert!(matches!(
+            subscription.try_recv(),
+            Err(RuntimeEventStreamError::Internal)
+        ));
+    }
+
+    #[test]
+    fn poisoned_attach_is_internal_not_stale() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+            directory.path(),
+        ));
+        host.initialize().expect("startup");
+        let generation_id = host.current_state().runtime_instance_id();
+        let epoch = host.event_attach_epoch().expect("attach epoch");
+        let poisoned_host = host.clone();
+        let poisoned = std::thread::spawn(move || {
+            let generation = poisoned_host.lock_generation().expect("generation");
+            let _guard = generation.events.active.lock().expect("boundary lock");
+            panic!("intentional boundary lock poison");
+        })
+        .join();
+        assert!(poisoned.is_err());
+
+        let result = host.subscribe_events_for_generation_with_epoch(generation_id, epoch);
+        assert_eq!(
+            result.err().expect("expected poisoned attach error").code,
+            ErrorCode::InternalUnexpected
+        );
+    }
+
+    #[test]
+    fn same_generation_teardown_reopens_event_admission() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+            directory.path(),
+        ));
+        let generation = host.initialize().expect("startup");
+        let generation_id = host.current_state().runtime_instance_id();
+        let old_epoch = host.event_attach_epoch().expect("attach epoch");
+
+        let subscription = host.subscribe_events().expect("A subscribes");
+        let recv_handle = std::thread::spawn(move || subscription.recv());
+
+        host.close_active_event_connection()
+            .expect("teardown invalidates");
+        assert!(matches!(
+            recv_handle.join().expect("old subscription thread"),
+            Err(RuntimeEventStreamError::Closed)
+        ));
+
+        // A stale epoch from the retiring client can never attach again.
+        assert!(
+            host.subscribe_events_for_generation_with_epoch(generation_id, old_epoch)
+                .is_err()
+        );
+
+        // A fresh root client reads the current admission epoch and attaches.
+        let fresh = host.subscribe_events().expect("B subscribes");
+        assert_eq!(host.active_event_subscription_count(), 1);
+        drop(fresh);
+
+        // initialize returns the same still-authoritative generation.
+        let again = host.initialize().expect("initialize again");
+        assert_eq!(
+            again.runtime_instance_id(),
+            generation.runtime_instance_id()
+        );
+        assert_eq!(generation.runtime_instance_id(), generation_id);
+    }
+
+    #[test]
+    fn generation_mutex_poison_during_teardown_reports_error_and_releases() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let host = Arc::new(ApplicationHost::new(
+            KernelBootstrapOptions::with_data_directory(directory.path()),
+        ));
+        host.initialize().expect("startup");
+        let subscription = host.subscribe_events().expect("subscription");
+        let recv_handle = std::thread::spawn(move || subscription.recv());
+
+        let poisoned_host = Arc::clone(&host);
+        let poisoned = std::thread::spawn(move || {
+            let _guard = poisoned_host.inner.current.lock().expect("generation lock");
+            panic!("intentional generation lock poison");
+        })
+        .join();
+        assert!(poisoned.is_err());
+
+        let result = host.close_active_event_connection();
+        assert_eq!(result.unwrap_err().code, ErrorCode::InternalUnexpected);
+        assert!(matches!(
+            recv_handle.join().expect("subscription thread"),
+            Err(RuntimeEventStreamError::Closed)
+        ));
+
+        // The recovered generation guard admits a fresh subscription.
+        let fresh = host
+            .subscribe_events()
+            .expect("fresh attach after recovery");
+        drop(fresh);
+    }
 
     #[test]
     fn shutdown_deadline_is_global_and_does_not_block_on_held_kernel() {

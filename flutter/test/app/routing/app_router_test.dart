@@ -97,6 +97,7 @@ void main() {
 
     for (final path in <String>[
       '/more',
+      '/startup',
       '/library',
       '/collections',
       '/jobs',

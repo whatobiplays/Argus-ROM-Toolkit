@@ -1,9 +1,11 @@
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
+import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Composes the application-owned router and centralized Material 3 themes.
+/// Composes the application-owned router, Material 3 themes, and the
+/// pre-ready startup/recovery admission gate.
 class ArgusApp extends ConsumerWidget {
   /// Creates the application root.
   const ArgusApp({super.key});
@@ -17,6 +19,7 @@ class ArgusApp extends ConsumerWidget {
       theme: ArgusTheme.light,
       darkTheme: ArgusTheme.dark,
       themeMode: ThemeMode.system,
+      builder: (context, child) => StartupGate(child: child!),
       routerConfig: router,
     );
   }

@@ -37,6 +37,9 @@ void main() {
     expect(generatedProviderFiles, <String>[
       'app/bootstrap/client_bootstrap.dart',
       'app/routing/app_router.dart',
+      'features/startup/application/app_readiness.dart',
+      'features/startup/application/startup_controller.dart',
+      'features/startup/presentation/presentation_seams.dart',
     ]);
     for (final relativePath in generatedProviderFiles) {
       final source = sources[relativePath]!;
@@ -100,6 +103,8 @@ void main() {
       }
       expect(entry.value, isNot(contains("'/more'")), reason: entry.key);
       expect(entry.value, isNot(contains('"/more"')), reason: entry.key);
+      expect(entry.value, isNot(contains("'/startup'")), reason: entry.key);
+      expect(entry.value, isNot(contains('"/startup"')), reason: entry.key);
     }
   });
 
@@ -149,6 +154,18 @@ void main() {
         <String>[
           'features/settings/settings.dart',
           'features/settings/src/settings_page.dart',
+          'features/startup/application/app_readiness.dart',
+          'features/startup/application/startup_controller.dart',
+          'features/startup/application/startup_state.dart',
+          'features/startup/presentation/bootstrap_failure_view.dart',
+          'features/startup/presentation/presentation_seams.dart',
+          'features/startup/presentation/runtime_unavailable_view.dart',
+          'features/startup/presentation/shutdown_views.dart',
+          'features/startup/presentation/startup_failure_view.dart',
+          'features/startup/presentation/startup_gate.dart',
+          'features/startup/presentation/startup_loading_view.dart',
+          'features/startup/presentation/startup_messages.dart',
+          'features/startup/startup.dart',
         ],
       );
     },
@@ -203,6 +220,67 @@ void main() {
         'flutter_rust_bridge',
       ],
     );
+  });
+
+  test('startup application stays framework-, bridge-, and routing-free', () {
+    _expectNoForbiddenImports(
+      sources,
+      prefix: 'features/startup/application/',
+      forbidden: <String>[
+        'package:flutter/',
+        'go_router',
+        'core/bridge/',
+        'frb_generated',
+        'core/client/src/',
+        'dart:io',
+        'file_selector',
+        'BuildContext',
+        'app/routing',
+      ],
+    );
+  });
+
+  test('router policy never executes startup or recovery APIs', () {
+    const recoveryConcepts = <String>[
+      'retryStartup',
+      'resetAppearanceSettings',
+      'exitFailedRuntime',
+      'reconcileRuntime',
+      'loadTechnicalDetails',
+      'openStartupDataDirectory',
+      'exportStartupDiagnostics',
+      'clientBootstrap',
+      'StartupController',
+      'StartupGate',
+      'features/startup',
+    ];
+    for (final entry in sources.entries) {
+      if (!entry.key.startsWith('app/routing/')) continue;
+      for (final concept in recoveryConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
+      }
+    }
+  });
+
+  test('startup keeps one public barrel and no native subscriptions', () {
+    final barrel = sources['features/startup/startup.dart'];
+    expect(barrel, isNotNull);
+    expect(barrel, isNot(contains("import '")));
+    expect(barrel, contains("export 'application/"));
+    expect(barrel, contains("export 'presentation/"));
+    for (final entry in sources.entries) {
+      if (!entry.key.startsWith('features/startup/')) continue;
+      expect(
+        entry.value,
+        isNot(contains('subscribeEvents')),
+        reason: entry.key,
+      );
+      expect(
+        entry.value,
+        isNot(contains('error.toString()')),
+        reason: entry.key,
+      );
+    }
   });
 
   test('core client remains pure Dart and bridge-independent', () {

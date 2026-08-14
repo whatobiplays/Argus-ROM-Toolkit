@@ -20,19 +20,41 @@ part 'appearance_settings_controller.g.dart';
 class AppearanceSettingsController extends _$AppearanceSettingsController {
   RuntimeInstanceId? _activeRuntimeInstanceId;
   AppearanceSettingsState? _lastLoaded;
+  AppearanceRuntimeContext? _lastRuntimeContext;
+  AsyncValue<AppearanceSettingsState>? _lastBuildValue;
   int _readToken = 0;
   bool _readInFlight = false;
   int _mutationToken = 0;
   bool _mutationInFlight = false;
+  bool _pendingReconciliationDemand = false;
+  int _demandToken = 0;
+  StreamSubscription<AppearanceReconciliationDemand>? _demandSubscription;
 
   @override
   AsyncValue<AppearanceSettingsState> build() {
+    ref.onDispose(() {
+      _demandToken++;
+      _demandSubscription?.cancel();
+    });
+    // Watching the demand channel keeps the app-level event coordinator's
+    // provider chain active. Source replacement retires only the demand
+    // subscription; the runtime-generation invalidation below runs only when
+    // the AppearanceRuntimeContext itself changes.
+    final demandSource = ref.watch(appearanceReconciliationDemandProvider);
+    _subscribeToDemandSource(demandSource);
     final context = ref.watch(appearanceRuntimeContextProvider);
+    if (context == _lastRuntimeContext) {
+      // Only the demand source changed: preserve every read/mutation flag,
+      // token, and published value for the current runtime generation.
+      return _lastBuildValue ?? const AsyncLoading();
+    }
+    _lastRuntimeContext = context;
     // Any context change invalidates older completions and operation flags.
     _readToken++;
     _mutationToken++;
     _readInFlight = false;
     _mutationInFlight = false;
+    _pendingReconciliationDemand = false;
     _activeRuntimeInstanceId = switch (context) {
       AppearanceRuntimeContextPreReady() => null,
       AppearanceRuntimeContextReady(:final runtimeInstanceId) =>
@@ -53,8 +75,12 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
 
     // Defer adoption until build completes so the notifier's own state is
     // initialized before it is read or written.
+    final AsyncValue<AppearanceSettingsState> result = retained == null
+        ? const AsyncLoading()
+        : AsyncData(retained);
+    _lastBuildValue = result;
     scheduleMicrotask(() => unawaited(_adoptRuntimeContext(context)));
-    return retained == null ? const AsyncLoading() : AsyncData(retained);
+    return result;
   }
 
   /// Issues a focused authoritative read after a failure or uncertainty.
@@ -63,9 +89,12 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
   Future<void> retryAuthoritativeRead() async {
     final runtimeId = _activeRuntimeInstanceId;
     if (runtimeId == null || _readInFlight || _mutationInFlight) return;
+    await _startFocusedRead(runtimeId);
+  }
 
+  Future<void> _startFocusedRead(RuntimeInstanceId runtimeId) async {
     if (state.hasError) {
-      state = const AsyncLoading();
+      _setState(const AsyncLoading());
       await _readAuthoritative(runtimeId, token: _readToken);
       return;
     }
@@ -77,7 +106,7 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
       const AppearanceSynchronization.refreshing(),
     );
     _lastLoaded = refreshing;
-    state = AsyncData(refreshing);
+    _setState(AsyncData(refreshing));
     await _readAuthoritative(runtimeId, token: _readToken);
   }
 
@@ -138,6 +167,9 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
           synchronization: const AppearanceSynchronization.synchronized(),
         ),
       );
+      if (_pendingReconciliationDemand) {
+        unawaited(_reconcileFromDemand());
+      }
     } on TransportFailure catch (failure) {
       if (mutationToken != _mutationToken ||
           runtimeId != _activeRuntimeInstanceId) {
@@ -189,6 +221,11 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
     );
     if (mutationToken == _mutationToken) {
       _mutationInFlight = false;
+      if (_pendingReconciliationDemand) {
+        // A demand that arrived after the post-command read began must still
+        // cause one follow-up once the save is no longer in flight.
+        unawaited(_reconcileFromDemand());
+      }
     }
   }
 
@@ -215,16 +252,24 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
   }) async {
     if (_readInFlight) return;
     _readInFlight = true;
+    // A demand known before this read started is covered by this read.
+    _pendingReconciliationDemand = false;
     final api = ref.read(appearanceSettingsApiProvider);
     try {
       final result = await api.getAppearanceSettings();
       if (token != _readToken || runtimeId != _activeRuntimeInstanceId) return;
+      final followUpPending = _pendingReconciliationDemand;
       _publish(
         AppearanceSettingsState.ready(
           confirmed: result,
           presented: result,
           saveOperation: const AppearanceSaveOperation.idle(),
-          synchronization: const AppearanceSynchronization.synchronized(),
+          // A demand that arrived after this read began keeps synchronization
+          // refreshing: the required follow-up read is still outstanding and
+          // only its successful completion may publish synchronized.
+          synchronization: followUpPending
+              ? const AppearanceSynchronization.refreshing()
+              : const AppearanceSynchronization.synchronized(),
         ),
       );
     } catch (error, stackTrace) {
@@ -232,7 +277,7 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
       final failure = _asClientFailure(error);
       final current = _lastLoaded;
       if (current == null) {
-        state = AsyncError(failure, stackTrace);
+        _setState(AsyncError(failure, stackTrace));
       } else {
         final updated = onFailure != null
             ? onFailure(failure, current)
@@ -249,8 +294,42 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
     } finally {
       if (token == _readToken) {
         _readInFlight = false;
+        if (_pendingReconciliationDemand &&
+            _activeRuntimeInstanceId == runtimeId) {
+          // Route the follow-up through the focused-read helper so the
+          // transition is coherent (refreshing/loading) instead of reading
+          // while the previous completion left state synchronized/uncertain.
+          unawaited(_reconcileFromDemand());
+        }
       }
     }
+  }
+
+  Future<void> _reconcileFromDemand() async {
+    final runtimeId = _activeRuntimeInstanceId;
+    if (runtimeId == null) return;
+    if (_readInFlight || _mutationInFlight) {
+      // The demand is retained and causes one follow-up after the current
+      // operation settles; it is never dropped as a presumed self-notification.
+      _pendingReconciliationDemand = true;
+      return;
+    }
+    await _startFocusedRead(runtimeId);
+  }
+
+  void _subscribeToDemandSource(AppearanceReconciliationDemandSource source) {
+    _demandToken++;
+    final token = _demandToken;
+    final subscription = source.stream.listen((demand) {
+      if (token != _demandToken) return;
+      switch (demand) {
+        case AppearanceReconciliationDemandRefresh():
+          unawaited(_reconcileFromDemand());
+      }
+    });
+    final previous = _demandSubscription;
+    _demandSubscription = subscription;
+    previous?.cancel();
   }
 
   AppearanceSettingsState _withSynchronization(
@@ -268,7 +347,12 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
 
   void _publish(AppearanceSettingsState loaded) {
     _lastLoaded = loaded;
-    state = AsyncData(loaded);
+    _setState(AsyncData(loaded));
+  }
+
+  void _setState(AsyncValue<AppearanceSettingsState> next) {
+    _lastBuildValue = next;
+    state = next;
   }
 
   ClientFailure _asClientFailure(Object error) {

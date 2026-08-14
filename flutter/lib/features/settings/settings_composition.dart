@@ -7,9 +7,15 @@ library;
 export 'application/appearance_settings_controller.dart'
     show AppearanceSettingsController, appearanceSettingsControllerProvider;
 export 'application/appearance_settings_dependencies.dart'
-    show appearanceRuntimeContextProvider, appearanceSettingsApiProvider;
+    show
+        appearanceReconciliationDemandProvider,
+        appearanceRuntimeContextProvider,
+        appearanceSettingsApiProvider;
 export 'application/appearance_settings_state.dart'
     show
+        AppearanceReconciliationDemand,
+        AppearanceReconciliationDemandRefresh,
+        AppearanceReconciliationDemandSource,
         AppearanceRuntimeContext,
         AppearanceRuntimeContextPreReady,
         AppearanceRuntimeContextReady,

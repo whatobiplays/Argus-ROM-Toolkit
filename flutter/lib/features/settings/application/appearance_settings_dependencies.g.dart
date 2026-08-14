@@ -125,3 +125,70 @@ final class AppearanceRuntimeContextProvider
 
 String _$appearanceRuntimeContextHash() =>
     r'130309e9551244b206d5e12496abbc4c01290310';
+
+/// Appearance reconciliation demand channel injected by app composition.
+///
+/// This is a dependency-injection seam only: the Settings feature never
+/// interprets transport or event-envelope mechanics. The default is an empty
+/// source so the feature remains inert without app composition.
+
+@ProviderFor(appearanceReconciliationDemand)
+final appearanceReconciliationDemandProvider =
+    AppearanceReconciliationDemandProvider._();
+
+/// Appearance reconciliation demand channel injected by app composition.
+///
+/// This is a dependency-injection seam only: the Settings feature never
+/// interprets transport or event-envelope mechanics. The default is an empty
+/// source so the feature remains inert without app composition.
+
+final class AppearanceReconciliationDemandProvider
+    extends
+        $FunctionalProvider<
+          AppearanceReconciliationDemandSource,
+          AppearanceReconciliationDemandSource,
+          AppearanceReconciliationDemandSource
+        >
+    with $Provider<AppearanceReconciliationDemandSource> {
+  /// Appearance reconciliation demand channel injected by app composition.
+  ///
+  /// This is a dependency-injection seam only: the Settings feature never
+  /// interprets transport or event-envelope mechanics. The default is an empty
+  /// source so the feature remains inert without app composition.
+  AppearanceReconciliationDemandProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'appearanceReconciliationDemandProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$appearanceReconciliationDemandHash();
+
+  @$internal
+  @override
+  $ProviderElement<AppearanceReconciliationDemandSource> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  AppearanceReconciliationDemandSource create(Ref ref) {
+    return appearanceReconciliationDemand(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(AppearanceReconciliationDemandSource value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride:
+          $SyncValueProvider<AppearanceReconciliationDemandSource>(value),
+    );
+  }
+}
+
+String _$appearanceReconciliationDemandHash() =>
+    r'2b9a23374b793584cf19dd2baed54d1bb3ce49cb';

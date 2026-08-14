@@ -5,6 +5,8 @@ import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'appearance_event_coordinator.dart';
+
 /// Owns the single application-level Riverpod scope.
 class ArgusBootstrap extends StatelessWidget {
   /// Creates the application bootstrap root.
@@ -25,6 +27,9 @@ class ArgusBootstrap extends StatelessWidget {
                   runtimeInstanceId: runtimeInstanceId,
                 );
         }),
+        appearanceReconciliationDemandProvider.overrideWith(
+          (ref) => ref.watch(appearanceEventCoordinatorProvider),
+        ),
       ],
       child: const ArgusApp(),
     );

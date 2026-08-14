@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -23,3 +25,14 @@ SettingsApi appearanceSettingsApi(Ref ref) {
 @Riverpod(keepAlive: true)
 AppearanceRuntimeContext appearanceRuntimeContext(Ref ref) =>
     const AppearanceRuntimeContext.preReady();
+
+/// Appearance reconciliation demand channel injected by app composition.
+///
+/// This is a dependency-injection seam only: the Settings feature never
+/// interprets transport or event-envelope mechanics. The default is an empty
+/// source so the feature remains inert without app composition.
+@Riverpod(keepAlive: true)
+AppearanceReconciliationDemandSource appearanceReconciliationDemand(Ref ref) =>
+    const AppearanceReconciliationDemandSource(
+      Stream<AppearanceReconciliationDemand>.empty(),
+    );

@@ -35,6 +35,7 @@ void main() {
         .toList(growable: false);
 
     expect(generatedProviderFiles, <String>[
+      'app/bootstrap/appearance_event_coordinator.dart',
       'app/bootstrap/application_presentation.dart',
       'app/bootstrap/client_bootstrap.dart',
       'app/routing/app_router.dart',
@@ -272,6 +273,23 @@ void main() {
     }
   });
 
+  test('settings presentation never subscribes to APIs or event channels', () {
+    const forbiddenConcepts = <String>[
+      '.listen(',
+      'StreamSubscription',
+      'EventsApi',
+      'runtimeEvents',
+      'appearanceReconciliationDemand',
+      'appearanceEventCoordinator',
+    ];
+    for (final entry in sources.entries) {
+      if (!entry.key.startsWith('features/settings/presentation/')) continue;
+      for (final concept in forbiddenConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
+      }
+    }
+  });
+
   test('router policy never executes settings workflows', () {
     const settingsConcepts = <String>[
       'SettingsApi',
@@ -279,6 +297,10 @@ void main() {
       'updateAppearanceSettings',
       'AppearanceSettingsController',
       'appearanceSettingsControllerProvider',
+      'AppearanceReconciliationDemand',
+      'appearanceReconciliationDemandProvider',
+      'AppearanceEventCoordinator',
+      'appearanceEventCoordinatorProvider',
       'ApplicationPresentationGate',
       'selectThemeMode',
       'retryAuthoritativeRead',
@@ -315,33 +337,45 @@ void main() {
     }
   });
 
-  test(
-    'settings and appearance code never consumes event or reconnect concepts',
-    () {
-      const forbiddenConcepts = <String>[
-        'RuntimeEventPayloadAppearanceSettingsChanged',
-        'AppearanceSettingsChanged',
-        'EventsApi',
-        'sequence',
-        'gap',
-        'reconnect',
-      ];
-      for (final entry in sources.entries) {
-        final isSlice007AppSource =
-            entry.key == 'app/bootstrap/application_presentation.dart' ||
-            entry.key == 'app/bootstrap/application_presentation_gate.dart' ||
-            entry.key == 'app/bootstrap/app_bootstrap.dart' ||
-            entry.key == 'app/bootstrap/argus_app.dart';
-        if (!entry.key.startsWith('features/settings/') &&
-            !isSlice007AppSource) {
-          continue;
-        }
-        for (final concept in forbiddenConcepts) {
-          expect(entry.value, isNot(contains(concept)), reason: entry.key);
-        }
+  test('only app-level event coordination interprets envelope continuity for '
+      'appearance', () {
+    const coordinator = 'app/bootstrap/appearance_event_coordinator.dart';
+    const appAppearanceSources = <String>[
+      'app/bootstrap/app_bootstrap.dart',
+      'app/bootstrap/application_presentation.dart',
+      'app/bootstrap/application_presentation_gate.dart',
+      'app/bootstrap/argus_app.dart',
+    ];
+    const forbiddenConcepts = <String>[
+      'EventsApi',
+      'RuntimeEvent',
+      'RuntimeEventPayload',
+      'sequence',
+      'gap',
+      'reconnect',
+      'runtimeEventsProvider',
+      'subscribeEvents',
+    ];
+    for (final entry in sources.entries) {
+      final isCoordinator = entry.key == coordinator;
+      final isBounded =
+          entry.key.startsWith('features/settings/') ||
+          appAppearanceSources.contains(entry.key);
+      if (!isBounded || isCoordinator) continue;
+      for (final concept in forbiddenConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
       }
-    },
-  );
+    }
+
+    final coordinatorSource = sources[coordinator]!;
+    expect(coordinatorSource, contains('runtimeEventsProvider'));
+    expect(coordinatorSource, contains('readyRuntimeInstanceIdProvider'));
+    expect(coordinatorSource, contains('AppearanceReconciliationDemandSource'));
+    expect(
+      coordinatorSource,
+      contains('AppearanceReconciliationDemandRefresh'),
+    );
+  });
 
   test('appearance sources contain no process-restart persistence proof', () {
     for (final entry in sources.entries) {

@@ -57,6 +57,14 @@ void main() {
         const AppearanceRuntimeContext.preReady(),
       );
       expect(
+        container.read(appearanceReconciliationDemandProvider),
+        isA<AppearanceReconciliationDemandSource>(),
+      );
+      expect(
+        container.read(appearanceReconciliationDemandProvider).stream.isEmpty,
+        completion(isTrue),
+      );
+      expect(
         () => container.read(appearanceSettingsApiProvider),
         throwsA(
           predicate<Object>(
@@ -68,4 +76,22 @@ void main() {
       );
     },
   );
+
+  test(
+    'appearance reconciliation demand is a narrow context-free typed signal',
+    () {
+      const refresh = AppearanceReconciliationDemandRefresh();
+
+      expect(refresh, isA<AppearanceReconciliationDemand>());
+      expect(refresh, isA<AppearanceReconciliationDemandRefresh>());
+    },
+  );
+
+  test('demand source synchronously wraps the demand stream', () {
+    const source = AppearanceReconciliationDemandSource(
+      Stream<AppearanceReconciliationDemand>.empty(),
+    );
+
+    expect(source.stream, isA<Stream<AppearanceReconciliationDemand>>());
+  });
 }

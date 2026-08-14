@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
@@ -18,6 +20,35 @@ sealed class AppearanceRuntimeContext with _$AppearanceRuntimeContext {
   const factory AppearanceRuntimeContext.ready({
     required RuntimeInstanceId runtimeInstanceId,
   }) = AppearanceRuntimeContextReady;
+}
+
+/// Narrow typed signal that appearance authority may have changed.
+///
+/// The signal carries no payload or transport information: app composition
+/// owns event interpretation and the Settings feature treats every demand as
+/// "re-query authoritative appearance settings".
+sealed class AppearanceReconciliationDemand {
+  const AppearanceReconciliationDemand();
+}
+
+/// One authoritative appearance re-query is required.
+///
+/// A fresh instance is emitted for every observed delivery condition; demand
+/// coalescing is the controller's responsibility, not the channel's.
+final class AppearanceReconciliationDemandRefresh
+    extends AppearanceReconciliationDemand {
+  const AppearanceReconciliationDemandRefresh();
+}
+
+/// Synchronous carrier for the appearance reconciliation demand stream.
+///
+/// This wrapper exists so the demand channel is an ordinary synchronous
+/// Riverpod value instead of a generated Stream surface; the stream itself
+/// remains privately owned by app composition.
+final class AppearanceReconciliationDemandSource {
+  const AppearanceReconciliationDemandSource(this.stream);
+
+  final Stream<AppearanceReconciliationDemand> stream;
 }
 
 /// One application-lifetime appearance mutation operation.

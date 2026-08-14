@@ -1,4 +1,5 @@
 import 'package:argus/app/bootstrap/application_presentation_gate.dart';
+import 'package:argus/app/bootstrap/appearance_event_coordinator.dart';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/routing/app_router.dart';
@@ -37,6 +38,9 @@ void main() {
                   runtimeInstanceId: runtimeInstanceId,
                 );
         }),
+        appearanceReconciliationDemandProvider.overrideWith(
+          (ref) => ref.watch(appearanceEventCoordinatorProvider),
+        ),
         if (terminator != null)
           appTerminatorProvider.overrideWithValue(terminator),
       ],
@@ -48,6 +52,7 @@ void main() {
     required FakeClientBootstrap bootstrap,
     required FakeSettingsApi settingsApi,
     required GoRouter router,
+    FakeEventsApi? eventsApi,
   }) {
     return ProviderScope(
       overrides: [
@@ -55,7 +60,7 @@ void main() {
         clientBootstrapProvider.overrideWithValue(bootstrap),
         runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
         diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
-        runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
+        runtimeEventsProvider.overrideWithValue(eventsApi ?? FakeEventsApi()),
         appearanceSettingsApiProvider.overrideWithValue(settingsApi),
         appearanceRuntimeContextProvider.overrideWith((ref) {
           final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
@@ -65,6 +70,9 @@ void main() {
                   runtimeInstanceId: runtimeInstanceId,
                 );
         }),
+        appearanceReconciliationDemandProvider.overrideWith(
+          (ref) => ref.watch(appearanceEventCoordinatorProvider),
+        ),
       ],
       child: const ArgusApp(),
     );
@@ -441,4 +449,73 @@ void main() {
     expect(settingsApi.readRequests.length, readsBefore);
     expect(settingsApi.updateRequests.length, updatesBefore);
   });
+
+  testWidgets(
+    'event-driven root theme changes only after the authoritative query '
+    'returns the new value',
+    (tester) async {
+      final bootstrap = FakeClientBootstrap();
+      final settingsApi = FakeSettingsApi();
+      final eventsApi = FakeEventsApi();
+      final testRouter = GoRouter(
+        initialLocation: '/fixture',
+        routes: <RouteBase>[
+          GoRoute(path: '/fixture', builder: (context, state) => shell()),
+        ],
+      );
+      addTearDown(testRouter.dispose);
+
+      await tester.pumpWidget(
+        buildApp(
+          bootstrap: bootstrap,
+          settingsApi: settingsApi,
+          router: testRouter,
+          eventsApi: eventsApi,
+        ),
+      );
+      await tester.pump();
+      await makeBackendReady(tester, bootstrap);
+      settingsApi.readRequests.single.complete(
+        const AppearanceSettings(themeMode: ThemeMode.light),
+      );
+      await tester.pump();
+      expect(find.text('Settings shell'), findsOneWidget);
+      expect(
+        Theme.of(tester.element(find.text('Settings shell'))).brightness,
+        Brightness.light,
+      );
+
+      // A committed backend change arrives as a payload-free notification.
+      eventsApi.emit(
+        RuntimeEvent(
+          runtimeInstanceId: testId('a'),
+          sequence: BigInt.one,
+          occurredAtMs: BigInt.zero,
+          payload: const RuntimeEventPayload.appearanceSettingsChanged(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // The event alone must not change the root theme.
+      expect(settingsApi.readRequests, hasLength(2));
+      expect(settingsApi.updateRequests, isEmpty);
+      expect(
+        Theme.of(tester.element(find.text('Settings shell'))).brightness,
+        Brightness.light,
+      );
+
+      settingsApi.readRequests[1].complete(
+        const AppearanceSettings(themeMode: ThemeMode.dark),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        Theme.of(tester.element(find.text('Settings shell'))).brightness,
+        Brightness.dark,
+      );
+      expect(settingsApi.updateRequests, isEmpty);
+    },
+  );
 }

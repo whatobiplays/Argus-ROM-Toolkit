@@ -53,3 +53,47 @@ final appearanceRuntimeContextHostProvider =
     NotifierProvider<AppearanceRuntimeContextHost, AppearanceRuntimeContext>(
       AppearanceRuntimeContextHost.new,
     );
+
+/// Test-owned holder for the injected appearance reconciliation demand source.
+///
+/// Tests emit demands synchronously and control stream lifetime explicitly.
+final class AppearanceReconciliationDemandHost
+    extends Notifier<AppearanceReconciliationDemandSource> {
+  StreamController<AppearanceReconciliationDemand> _controller =
+      StreamController<AppearanceReconciliationDemand>.broadcast();
+  StreamController<AppearanceReconciliationDemand>? _retiredController;
+
+  @override
+  AppearanceReconciliationDemandSource build() =>
+      AppearanceReconciliationDemandSource(_controller.stream);
+
+  /// Publishes one refresh demand without any timing dependency.
+  void requestRefresh() =>
+      _controller.add(const AppearanceReconciliationDemandRefresh());
+
+  /// Replaces the exposed source, retiring the previous controller so stale
+  /// signals can be proven inert.
+  void replaceSource() {
+    _retiredController = _controller;
+    _controller = StreamController<AppearanceReconciliationDemand>.broadcast();
+    state = AppearanceReconciliationDemandSource(_controller.stream);
+  }
+
+  /// Emits a demand on the retired source for stale-signal suppression tests.
+  void emitOnRetiredSource() {
+    _retiredController?.add(const AppearanceReconciliationDemandRefresh());
+  }
+
+  /// Closes the demand stream for deterministic teardown.
+  Future<void> close() async {
+    await _controller.close();
+    await _retiredController?.close();
+  }
+}
+
+/// Provider exposing [AppearanceReconciliationDemandHost] to overrides.
+final appearanceReconciliationDemandHostProvider =
+    NotifierProvider<
+      AppearanceReconciliationDemandHost,
+      AppearanceReconciliationDemandSource
+    >(AppearanceReconciliationDemandHost.new);

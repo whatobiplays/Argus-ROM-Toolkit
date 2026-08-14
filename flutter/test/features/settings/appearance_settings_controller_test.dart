@@ -4,10 +4,24 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/features/settings/application/appearance_settings_controller.dart';
 import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
 import 'package:argus/features/settings/application/appearance_settings_state.dart';
+import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'appearance_settings_test_fakes.dart';
+
+/// Widget harness that keeps the appearance controller actively watched,
+/// mirroring production presentation and enabling ref.listen demand-channel
+/// replacement delivery in deterministic widget tests.
+class _ActiveControllerHarness extends ConsumerWidget {
+  const _ActiveControllerHarness();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appearanceSettingsControllerProvider);
+    return const SizedBox.shrink();
+  }
+}
 
 void main() {
   late FakeSettingsApi api;
@@ -21,13 +35,24 @@ void main() {
         appearanceRuntimeContextProvider.overrideWith(
           (ref) => ref.watch(appearanceRuntimeContextHostProvider),
         ),
+        appearanceReconciliationDemandProvider.overrideWith(
+          (ref) => ref.watch(appearanceReconciliationDemandHostProvider),
+        ),
       ],
     );
     addTearDown(container.dispose);
+    addTearDown(
+      () => container
+          .read(appearanceReconciliationDemandHostProvider.notifier)
+          .close(),
+    );
   });
 
   AppearanceRuntimeContextHost runtimeHost() =>
       container.read(appearanceRuntimeContextHostProvider.notifier);
+
+  AppearanceReconciliationDemandHost demandHost() =>
+      container.read(appearanceReconciliationDemandHostProvider.notifier);
 
   /// Drains microtasks without elapsed-time sleeps.
   Future<void> settle() async {
@@ -50,6 +75,15 @@ void main() {
     );
     addTearDown(subscription.close);
     return completer.future;
+  }
+
+  Future<void> pumpControllerHarness(WidgetTester tester) async {
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: _ActiveControllerHarness()),
+      ),
+    );
   }
 
   AppearanceSettingsState stateOf(AsyncValue<AppearanceSettingsState> value) =>
@@ -851,6 +885,546 @@ void main() {
               value.value!.confirmed.themeMode == ThemeMode.dark,
         );
         expect(stateOf(adopted).presented.themeMode, ThemeMode.dark);
+      },
+    );
+  });
+
+  group('event reconciliation demand', () {
+    Future<void> loadConfirmed(ThemeMode mode) async {
+      runtimeHost().setContext(
+        AppearanceRuntimeContext.ready(
+          runtimeInstanceId: appearanceTestId('a'),
+        ),
+      );
+      container.read(appearanceSettingsControllerProvider);
+      await settle();
+      api.readRequests[0].complete(AppearanceSettings(themeMode: mode));
+      await waitFor((value) => value.hasValue);
+    }
+
+    test('pre-ready demand creates no settings traffic', () async {
+      container.read(appearanceSettingsControllerProvider);
+
+      demandHost().requestRefresh();
+      await settle();
+
+      expect(api.readRequests, isEmpty);
+      expect(api.updateRequests, isEmpty);
+    });
+
+    test(
+      'demand triggers one focused read and confirmed changes only on success',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+
+        demandHost().requestRefresh();
+        await settle();
+
+        expect(api.readRequests, hasLength(2));
+        expect(
+          stateOf(
+            container.read(appearanceSettingsControllerProvider),
+          ).confirmed.themeMode,
+          ThemeMode.light,
+        );
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.confirmed.themeMode == ThemeMode.dark,
+        );
+        expect(stateOf(loaded).presented.themeMode, ThemeMode.dark);
+        expect(
+          stateOf(loaded).synchronization,
+          const AppearanceSynchronization.synchronized(),
+        );
+        expect(api.updateRequests, isEmpty);
+      },
+    );
+
+    test(
+      'demand burst during a read coalesces into one follow-up read',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+
+        demandHost().requestRefresh();
+        await settle();
+        expect(api.readRequests, hasLength(2));
+
+        demandHost().requestRefresh();
+        demandHost().requestRefresh();
+        await settle();
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await settle();
+        expect(api.readRequests, hasLength(3));
+
+        // While the follow-up is active, synchronization is not synchronized
+        // and a new mutation is not admissible.
+        final duringFollowUp = container.read(
+          appearanceSettingsControllerProvider,
+        );
+        expect(
+          stateOf(duringFollowUp).synchronization,
+          isA<AppearanceSynchronizationRefreshing>(),
+        );
+        await notifier.selectThemeMode(ThemeMode.system);
+        expect(api.updateRequests, isEmpty);
+
+        api.readRequests[2].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.synchronization
+                  is AppearanceSynchronizationSynchronized,
+        );
+        expect(api.readRequests, hasLength(3));
+      },
+    );
+
+    test(
+      'a demand arriving after a read began survives as one follow-up',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+
+        demandHost().requestRefresh();
+        await settle();
+        expect(api.readRequests, hasLength(2));
+
+        demandHost().requestRefresh();
+        await settle();
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.light),
+        );
+        await settle();
+        expect(api.readRequests, hasLength(3));
+
+        final duringFollowUp = container.read(
+          appearanceSettingsControllerProvider,
+        );
+        expect(
+          stateOf(duringFollowUp).synchronization,
+          isA<AppearanceSynchronizationRefreshing>(),
+        );
+        await notifier.selectThemeMode(ThemeMode.system);
+        expect(api.updateRequests, isEmpty);
+
+        api.readRequests[2].complete(
+          const AppearanceSettings(themeMode: ThemeMode.light),
+        );
+        await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.synchronization
+                  is AppearanceSynchronizationSynchronized,
+        );
+        expect(api.readRequests, hasLength(3));
+      },
+    );
+
+    test(
+      'demand during a successful save is covered by the post-command read',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+
+        final selection = notifier.selectThemeMode(ThemeMode.dark);
+        demandHost().requestRefresh();
+        await settle();
+
+        api.updateRequests.single.completer.complete();
+        await settle();
+        expect(api.readRequests, hasLength(2));
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await selection;
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.saveOperation is AppearanceSaveOperationIdle,
+        );
+        expect(stateOf(loaded).confirmed.themeMode, ThemeMode.dark);
+        expect(api.readRequests, hasLength(2));
+      },
+    );
+
+    test(
+      'demand after the post-command read began causes one follow-up',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+
+        final selection = notifier.selectThemeMode(ThemeMode.dark);
+        api.updateRequests.single.completer.complete();
+        await settle();
+        expect(api.readRequests, hasLength(2));
+
+        demandHost().requestRefresh();
+        await settle();
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await settle();
+        expect(api.readRequests, hasLength(3));
+
+        api.readRequests[2].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await selection;
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.saveOperation is AppearanceSaveOperationIdle &&
+              value.value!.synchronization
+                  is AppearanceSynchronizationSynchronized,
+        );
+        expect(stateOf(loaded).confirmed.themeMode, ThemeMode.dark);
+        expect(api.readRequests, hasLength(3));
+      },
+    );
+
+    test(
+      'demand during a definite ApplicationFailure still reconciles by read',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+        final failure = ApplicationFailure(
+          ClientApplicationError(
+            code: const ErrorCode('ARGUS.V1.APPEARANCE.UPDATE_FAILED'),
+            category: ErrorCategory.persistence,
+            severity: ApplicationSeverity.error,
+            recoverability: Recoverability.userAction,
+            retryPolicy: RetryPolicy.userInitiated,
+            messageKey: const MessageKey('appearance.update_failed'),
+            traceId: TraceId('c' * 32),
+            safeContext: const <SafeContextEntry>[],
+          ),
+        );
+
+        final selection = notifier.selectThemeMode(ThemeMode.dark);
+        demandHost().requestRefresh();
+        await settle();
+
+        api.updateRequests.single.completer.completeError(failure);
+        await selection;
+        await settle();
+
+        // Rollback must not suppress the retained event reconciliation read.
+        expect(api.readRequests, hasLength(2));
+        expect(api.updateRequests, hasLength(1));
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.light),
+        );
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.synchronization
+                  is AppearanceSynchronizationSynchronized,
+        );
+        expect(stateOf(loaded).confirmed.themeMode, ThemeMode.light);
+        expect(stateOf(loaded).presented.themeMode, ThemeMode.light);
+        expect(
+          stateOf(loaded).saveOperation,
+          const AppearanceSaveOperation.idle(),
+        );
+      },
+    );
+
+    test(
+      'demand during ambiguous TransportFailure is covered by its read',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+        const failure = TransportFailure(
+          'update outcome unknown',
+          kind: TransportFailureKind.communicationFailed,
+        );
+
+        final selection = notifier.selectThemeMode(ThemeMode.dark);
+        demandHost().requestRefresh();
+        await settle();
+
+        api.updateRequests.single.completer.completeError(failure);
+        await settle();
+        expect(api.readRequests, hasLength(2));
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await selection;
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.synchronization
+                  is AppearanceSynchronizationSynchronized,
+        );
+        expect(stateOf(loaded).confirmed.themeMode, ThemeMode.dark);
+        expect(api.readRequests, hasLength(2));
+      },
+    );
+
+    test('failed event reconciliation keeps last-known, marks uncertain, and '
+        'stays read-only', () async {
+      await loadConfirmed(ThemeMode.light);
+      final notifier = container.read(
+        appearanceSettingsControllerProvider.notifier,
+      );
+      const failure = TransportFailure(
+        'event reconciliation read failed',
+        kind: TransportFailureKind.communicationFailed,
+      );
+
+      demandHost().requestRefresh();
+      await settle();
+      api.readRequests[1].completeError(failure);
+
+      final uncertain = await waitFor(
+        (value) =>
+            value.hasValue &&
+            value.value!.synchronization is AppearanceSynchronizationUncertain,
+      );
+      final state = stateOf(uncertain);
+      expect(state.confirmed.themeMode, ThemeMode.light);
+      expect(state.presented.themeMode, ThemeMode.light);
+
+      await notifier.selectThemeMode(ThemeMode.dark);
+      expect(api.updateRequests, isEmpty);
+
+      final retryFuture = notifier.retryAuthoritativeRead();
+      expect(api.readRequests, hasLength(3));
+      api.readRequests[2].complete(
+        const AppearanceSettings(themeMode: ThemeMode.light),
+      );
+      await retryFuture;
+      final refreshed = await waitFor(
+        (value) =>
+            value.hasValue &&
+            value.value!.synchronization
+                is AppearanceSynchronizationSynchronized,
+      );
+      expect(stateOf(refreshed).confirmed.themeMode, ThemeMode.light);
+      expect(api.updateRequests, isEmpty);
+    });
+
+    test(
+      'Runtime A demand and completions cannot publish into Runtime B',
+      () async {
+        await loadConfirmed(ThemeMode.light);
+
+        demandHost().requestRefresh();
+        await settle();
+        expect(api.readRequests, hasLength(2));
+
+        runtimeHost().setContext(
+          AppearanceRuntimeContext.ready(
+            runtimeInstanceId: appearanceTestId('b'),
+          ),
+        );
+        container.read(appearanceSettingsControllerProvider);
+        await settle();
+        expect(api.readRequests, hasLength(3));
+
+        // Runtime A's demand read must not publish into B.
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await settle();
+
+        api.readRequests[2].complete(
+          const AppearanceSettings(themeMode: ThemeMode.light),
+        );
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.synchronization
+                  is AppearanceSynchronizationSynchronized,
+        );
+        expect(stateOf(loaded).confirmed.themeMode, ThemeMode.light);
+        expect(api.readRequests, hasLength(3));
+      },
+    );
+
+    test(
+      'initial-read race: demand after the first read began forces exactly '
+      'one follow-up and never marks synchronization current early',
+      () async {
+        runtimeHost().setContext(
+          AppearanceRuntimeContext.ready(
+            runtimeInstanceId: appearanceTestId('a'),
+          ),
+        );
+        container.read(appearanceSettingsControllerProvider);
+        await settle();
+
+        // Pre-ready produced no traffic; Ready started exactly the initial
+        // authoritative read.
+        expect(api.readRequests, hasLength(1));
+
+        demandHost().requestRefresh();
+        await settle();
+
+        api.readRequests[0].complete(
+          const AppearanceSettings(themeMode: ThemeMode.light),
+        );
+        await settle();
+
+        // Exactly one required follow-up; the first completion stays
+        // refreshing while it is active.
+        expect(api.readRequests, hasLength(2));
+        final duringFollowUp = container.read(
+          appearanceSettingsControllerProvider,
+        );
+        expect(duringFollowUp.hasValue, isTrue);
+        expect(stateOf(duringFollowUp).confirmed.themeMode, ThemeMode.light);
+        expect(
+          stateOf(duringFollowUp).synchronization,
+          isA<AppearanceSynchronizationRefreshing>(),
+        );
+
+        // No mutation is replayed and none is admissible during the follow-up.
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+        await notifier.selectThemeMode(ThemeMode.dark);
+        expect(api.updateRequests, isEmpty);
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.synchronization
+                  is AppearanceSynchronizationSynchronized,
+        );
+        expect(stateOf(loaded).confirmed.themeMode, ThemeMode.dark);
+        expect(stateOf(loaded).presented.themeMode, ThemeMode.dark);
+        expect(api.readRequests, hasLength(2));
+        expect(api.updateRequests, isEmpty);
+      },
+    );
+
+    testWidgets('same-runtime demand-source replacement does not invalidate an '
+        'in-flight read and suppresses stale old-source signals', (
+      tester,
+    ) async {
+      await pumpControllerHarness(tester);
+      await loadConfirmed(ThemeMode.light);
+
+      demandHost().requestRefresh();
+      await settle();
+      expect(api.readRequests, hasLength(2));
+
+      demandHost().replaceSource();
+      await settle();
+      // Frame pumps dispatch the ref.listen source-replacement callback,
+      // retiring the old subscription before stale-signal assertions.
+      await tester.pump();
+      await tester.pump();
+
+      // No adoption/duplicate read is created by the source replacement.
+      expect(api.readRequests, hasLength(2));
+
+      // A stale demand from the retired source must be inert.
+      demandHost().emitOnRetiredSource();
+      await settle();
+      expect(api.readRequests, hasLength(2));
+
+      api.readRequests[1].complete(
+        const AppearanceSettings(themeMode: ThemeMode.dark),
+      );
+      await tester.pump();
+      await tester.pump();
+      final loaded = await waitFor(
+        (value) =>
+            value.hasValue &&
+            value.value!.confirmed.themeMode == ThemeMode.dark &&
+            value.value!.synchronization
+                is AppearanceSynchronizationSynchronized,
+      );
+      expect(
+        stateOf(loaded).synchronization,
+        const AppearanceSynchronization.synchronized(),
+      );
+      expect(api.readRequests, hasLength(2));
+
+      // The replacement source is consumed for later demands.
+      demandHost().requestRefresh();
+      await settle();
+      expect(api.readRequests, hasLength(3));
+      api.readRequests[2].complete(
+        const AppearanceSettings(themeMode: ThemeMode.light),
+      );
+      await waitFor(
+        (value) =>
+            value.hasValue &&
+            value.value!.confirmed.themeMode == ThemeMode.light,
+      );
+    });
+
+    testWidgets(
+      'same-runtime demand-source replacement does not reset an admitted save',
+      (tester) async {
+        await pumpControllerHarness(tester);
+        await loadConfirmed(ThemeMode.light);
+        final notifier = container.read(
+          appearanceSettingsControllerProvider.notifier,
+        );
+
+        final selection = notifier.selectThemeMode(ThemeMode.dark);
+        expect(api.updateRequests, hasLength(1));
+
+        demandHost().replaceSource();
+        await settle();
+        await tester.pump();
+        await tester.pump();
+
+        api.updateRequests.single.completer.complete();
+        await settle();
+        expect(api.readRequests, hasLength(2));
+
+        api.readRequests[1].complete(
+          const AppearanceSettings(themeMode: ThemeMode.dark),
+        );
+        await selection;
+        final loaded = await waitFor(
+          (value) =>
+              value.hasValue &&
+              value.value!.confirmed.themeMode == ThemeMode.dark &&
+              value.value!.saveOperation is AppearanceSaveOperationIdle,
+        );
+        expect(
+          stateOf(loaded).synchronization,
+          const AppearanceSynchronization.synchronized(),
+        );
+        expect(api.updateRequests, hasLength(1));
+        expect(api.readRequests, hasLength(2));
       },
     );
   });

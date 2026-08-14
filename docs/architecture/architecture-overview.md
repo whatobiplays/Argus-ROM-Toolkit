@@ -3,7 +3,7 @@
 **Document ID:** ARCH-001  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** None  
 **Supersedes:** None  
 **Superseded By:** None  
@@ -1048,13 +1048,14 @@ Queued
 Preparing
 Running
 Completed
+CompletedWithIssues
 Failed
 Cancelled
 Interrupted
 Abandoned
 ```
 
-Terminal historical runs never return to active execution. Retry or resume creates a new `JobRunId`; MVP does not resume significant work automatically.
+`CompletedWithIssues` is a safe, durably finalized terminal execution that produced meaningful successful work but did not fully satisfy the requested operation scope; operation-specific detail explains the unsatisfied scope. Terminal historical runs never return to active execution. Retry or resume creates a new `JobRunId`; MVP does not resume significant work automatically.
 
 ### 14.2 Lifecycle authority
 

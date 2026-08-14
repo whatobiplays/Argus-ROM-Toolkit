@@ -3,10 +3,11 @@
 **Document ID:** SPEC-BE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007  
 **Supersedes:** None  
 **Superseded By:** None
+**Related:** SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-FE-008, SPEC-FE-009
 
 ## 1. Purpose
 
@@ -419,7 +420,7 @@ StartupFailureDto
 
 ```text
 RuntimeStateChangedDto
-OperationProgressDto
+JobProgressDto
 AppearanceSettingsChangedDto
 ```
 
@@ -651,7 +652,7 @@ Immediate mutation operations return terminal application success/failure:
 BridgeResult<Unit>
 ```
 
-The following long-running-operation contracts are forward MVP semantics only. Phase 000 MUST NOT generate or implement `OperationHandleDto`, operation query DTOs, operation event variants, mappers, bindings, fakes, or tests unless a later active phase, slice, and task introduce persisted background operations.
+The following long-running-operation contract is inactive during Phase 000. Phase 000 MUST NOT generate or implement `OperationHandleDto`, job query DTOs, job event variants, mappers, bindings, fakes, or tests. Phase 001 activates the bounded Sources/Jobs subset defined by Section 66.
 
 ### Long-running operations
 
@@ -671,7 +672,7 @@ Conceptually:
 
 ```text
 OperationHandleDto
-- operationId
+- jobRunId
 - operationType
 ```
 
@@ -691,11 +692,9 @@ Those observations belong to events or authoritative operation-state queries whe
 
 ## 31. Operation Identity Mapping
 
-Where SPEC-BE-004 uses `JobRunId` as the canonical identity of a background execution attempt, the bridge's `operationId` must map unambiguously to that canonical application identity.
+Where SPEC-BE-004 uses `JobRunId` as the canonical identity of a background execution attempt, `OperationHandleDto.jobRunId` is the bridge projection of that same identity.
 
-The bridge must not invent a second independent identifier for the same execution merely for transport convenience.
-
-Exact public naming (`operationId` vs a more domain-specific future identifier) may be refined before implementation, but one canonical identity per execution is mandatory.
+The bridge must not invent a second independent operation identifier for the same execution merely for transport convenience. Phase 001 activates persisted background operations and therefore resolves the earlier naming reservation in favor of canonical `jobRunId` terminology.
 
 ## 32. One Unified Runtime Event Stream
 
@@ -822,48 +821,41 @@ The minimal Phase 000 projection should contain only context required to identif
 
 This preserves the notification-first event rule.
 
-## 39. Operation Event Family
+## 39. Job Event Family
 
-This family is a forward MVP contract and is absent from the Phase 000 generated event union. Sections 40–44 reserve the required semantics for the later active phase that introduces persisted background operations.
-
-Long-running operation lifecycle transitions use distinct typed variants:
+Phase 001 is the first active phase with persisted background jobs. The previously reserved per-transition `OperationStartedDto` / `OperationCompletedDto` / `OperationFailedDto` / `OperationCancelledDto` family was never part of the Phase 000 generated contract and is replaced before first activation by two generic job notification variants:
 
 ```text
-OperationStartedDto
-OperationProgressDto
-OperationCompletedDto
-OperationFailedDto
-OperationCancelledDto
+JobStateChangedDto
+JobProgressDto
 ```
 
-Each event represents exactly one lifecycle fact.
+This avoids duplicating the complete generic job lifecycle vocabulary in the event schema while preserving focused progress responsiveness.
 
-A generic `OperationEventDto` with many unrelated nullable fields is prohibited.
-
-## 40. `OperationStartedDto`
+## 40. `JobStateChangedDto`
 
 Conceptually:
 
 ```text
-OperationStartedDto
-- operationId
+JobStateChangedDto
+- jobRunId
 ```
 
-Optional additive context may include stable operation type if required to interpret the event without local handle state.
+`JobStateChangedDto` announces that authoritative lifecycle, terminal, cancellation-request, or control-availability facts for the identified `JobRun` may have changed.
 
-It announces that the identified operation entered active execution.
+It does not state the new lifecycle value and does not carry a `JobRunDto` snapshot. Consumers reconcile through `GetJob(jobRunId)` or the relevant bounded `ListJobs` projection.
 
-It is not a complete operation snapshot.
+The same event covers changes involving any generic state owned by SPEC-BE-004, including `Queued`, `Preparing`, `Running`, `Completed`, `CompletedWithIssues`, `Failed`, `Cancelled`, `Interrupted`, and `Abandoned`.
 
-## 41. `OperationProgressDto`
+## 41. `JobProgressDto`
 
 Progress follows SPEC-BE-004 structured, phase-local semantics.
 
 Conceptually:
 
 ```text
-OperationProgressDto
-- operationId
+JobProgressDto
+- jobRunId
 - phase
 - completedUnits?
 - totalUnits?
@@ -873,52 +865,46 @@ OperationProgressDto
 Rules:
 
 1. The backend publishes no percentage field.
-2. Flutter may derive a phase-local percentage when determinate counts permit.
-3. No weighted overall percentage exists.
-4. Progress event payload is ephemeral observation data.
-5. Event loss is recoverable through authoritative operation-state queries when provided by the owning feature/runtime contract.
+2. Unknown totals remain absent rather than guessed.
+3. Flutter may derive a phase-local percentage only when determinate counts make that interpretation truthful.
+4. No weighted overall percentage exists.
+5. Progress event payload is ephemeral observation data and may be coalesced or dropped.
+6. Flutter does not accumulate progress deltas as authoritative state.
+7. Operation-specific facts beyond this generic bounded progress shape are obtained through authoritative typed job detail.
 
-Progress is an explicit exception to the smallest-ID-only notification style because responsiveness requires structured progress facts without re-querying every increment, as established by SPEC-BE-004.
+Progress remains the explicit responsiveness exception to the smallest-ID-only notification style established by SPEC-BE-004.
 
-## 42. `OperationCompletedDto`
+## 42. Authoritative Job Reconciliation
 
-Conceptually:
+Job notifications answer that something relevant changed; they do not answer what is true now.
 
-```text
-OperationCompletedDto
-- operationId
-```
-
-It announces terminal success.
-
-It does not automatically carry a feature result snapshot unless the owning operation's specification explicitly requires immutable terminal result context that cannot be obtained through the normal authoritative read path.
-
-## 43. `OperationFailedDto`
-
-Conceptually:
+Representative flow:
 
 ```text
-OperationFailedDto
-- operationId
-- error: ApplicationErrorDto
+JobStateChangedDto(jobRunId)
+    ↓
+GetJob(jobRunId)
+    ↓
+JobDetailDto
 ```
 
-The error is part of the semantic fact of failure and therefore may be carried directly.
+List and shell consumers may instead refresh the relevant `ListJobs` scope when list membership or aggregate active count is what they need.
 
-It does not turn the event into an authoritative domain-state snapshot.
+## 43. Job Failure Information
 
-## 44. `OperationCancelledDto`
+`JobStateChangedDto` does not embed `ApplicationErrorDto` when a job becomes `Failed`.
 
-Conceptually:
+The generic job detail projection owns bounded terminal failure information. This keeps failed-job notification semantics consistent with all other lifecycle invalidations and avoids creating an event-only failure snapshot channel.
 
-```text
-OperationCancelledDto
-- operationId
-```
+Transport or subscription failures remain separate from backend application/job failure as required by Sections 9–10.
 
-It announces that the operation reached its terminal cancelled state.
+## 44. Job and Feature Notification Separation
 
-Cancellation intent/request and acknowledged terminal cancellation remain distinct concepts according to SPEC-BE-004.
+A background operation may produce both generic job notifications and feature/domain invalidations because those notifications identify different authoritative projections.
+
+For Phase 001 LibraryScan, generic lifecycle/progress changes use `JobStateChangedDto` / `JobProgressDto`; root/source graph changes use the Phase 001 domain-event DTOs defined later in this specification.
+
+Flutter must not infer feature state from generic job events or reconstruct generic job lifecycle from feature invalidation events.
 
 ## 45. Domain Event Family
 
@@ -930,15 +916,15 @@ Phase 000 includes:
 AppearanceSettingsChangedDto
 ```
 
-Future examples may include:
+Phase 001 additionally activates notification-first Sources invalidations:
 
 ```text
-LibrarySourceAddedDto
-LibrarySourceRemovedDto
-LibraryScanCompletedDto
+LibraryRootsChangedDto
+LibraryRootChangedDto
 SourceEntriesChangedDto
-MetadataProviderHealthChangedDto
 ```
+
+Future phases may add further typed domain notifications such as metadata-provider health changes when their owning capabilities become active.
 
 Every bridge domain event maps to one owned application event semantic. The bridge does not invent business events independently.
 
@@ -1331,15 +1317,16 @@ Verify:
 - domain events carry only minimum interpretation context
 - Flutter recovery path can re-query authoritative state after a sequence gap
 
-### 60.9 Operation event tests
+### 60.9 Phase 001 job event tests
 
-Verify:
+When persisted jobs are active, verify:
 
-- separate started/progress/completed/failed/cancelled variants
-- operation identity is present
-- failed event carries `ApplicationErrorDto`
-- progress has no percentage field
+- `JobStateChangedDto` and `JobProgressDto` are the active generic job variants
+- canonical `jobRunId` is present
+- `JobStateChangedDto` carries no full job or terminal-error snapshot
+- `JobProgressDto` has no percentage field
 - progress supports determinate and indeterminate phase facts
+- authoritative job detail remains recoverable after event loss
 
 ### 60.10 Generated-binding boundary tests
 
@@ -1379,7 +1366,7 @@ StartupFailedDto
 AppearanceSettingsChangedDto
 ```
 
-Operation lifecycle DTO semantics are reserved by this specification but MUST NOT be implemented during Phase 000. They become implementation scope only when an active later phase, slice, and task introduce persisted background operations.
+Persisted-job DTO semantics are intentionally absent from the Phase 000 minimum catalog. Phase 001 activates only the bounded Sources/Jobs DTO and event surface defined by Section 66.
 
 Diagnostics DTOs required by the Phase 000 recovery experience include the minimum safe forms of:
 
@@ -1441,13 +1428,13 @@ SPEC-BE-008 is satisfied when:
 20. `AppearanceSettingsDto` contains only application-visible appearance state.
 21. Update appearance requests contain the complete desired aggregate without persistence metadata.
 22. Immediate settings update does not return an authoritative state echo.
-23. When an active later phase introduces persisted background operations, `OperationHandleDto` contains identity only; Phase 000 does not implement it.
+23. When persisted background operations are active, `OperationHandleDto` contains identity only; Phase 000 does not implement it, and Phase 001 uses canonical `jobRunId`.
 24. There is exactly one runtime push stream per runtime generation.
 25. All other bridge communication is request/response.
 26. Runtime events use common runtime instance/sequence metadata.
 27. Runtime event payloads are strongly typed rather than arbitrary maps/JSON.
 28. Runtime event families remain organizational only and do not create multiple streams.
-29. When active, operation lifecycle events use separate typed variants; they are absent from the Phase 000 generated event union.
+29. Phase 001 job notifications use typed `JobStateChangedDto` and `JobProgressDto`; the earlier per-transition operation-event reservation never enters the generated contract.
 30. Operation progress contains no backend percentage field.
 31. Domain/runtime events are notification-first.
 32. `AppearanceSettingsChangedDto` carries no authoritative settings snapshot.
@@ -1456,7 +1443,7 @@ SPEC-BE-008 is satisfied when:
 35. Bridge mappings do not perform business logic or persistence reads.
 36. DTOs and mappings follow SPEC-BE-003 privacy/redaction requirements.
 37. Bridge/application contracts expose no FRB, SQLite, async-runtime, or infrastructure implementation types.
-38. DTO, error, runtime, settings, event, compatibility, and architecture tests cover the contracts implemented by the active phase, slice, and task; reserved future DTOs/events do not require Phase 000 scaffolding or tests.
+38. DTO, error, runtime, settings, event, compatibility, and architecture tests cover the contracts implemented by the active phase, slice, and task; Phase 001 coverage additionally satisfies Section 66, while still-reserved future capabilities require no scaffolding.
 
 ## 64. Prohibited Patterns
 
@@ -1493,18 +1480,1039 @@ This specification does not finalize:
 - exact `flutter_rust_bridge` annotations
 - exact serialization casing
 - exact save-dialog implementation
-- complete background-job query DTOs
-- provider/library/metadata feature DTOs
+- background-job query/filter DTOs beyond the bounded Phase 001 Jobs contract in Section 66
+- logical game-library, provider-metadata, and metadata feature DTOs beyond the Phase 001 Sources contract
 - remote API version negotiation
 - backward compatibility across independently deployed frontend/backend versions
 - frontend model mapping conventions
 - Riverpod event coordination implementation
 
-## 66. References
+## 66. Phase 001 Activation Amendment — Sources and Jobs
+
+### 66.1 Activation scope
+
+Phase 001 activates the bridge surface required by PHASE-001, SPEC-BE-013, SPEC-FE-008, and SPEC-FE-009 without reopening the bridge architecture established by the preceding sections. The amendment maps application capabilities from SPEC-BE-009 (application service contracts), SPEC-BE-011 (source provider and indexing), and SPEC-BE-013 (library source management, scan operations, and source projections).
+
+The active bridge service set becomes:
+
+```text
+RuntimeBridge
+SettingsBridge
+DiagnosticsBridge
+SourcesBridge
+JobsBridge
+```
+
+`SourcesBridge` is the product/application-facing bridge capability for Phase 001 local-source configuration, hierarchy inspection, and scan admission. It may adapt SPEC-BE-013 `LibraryService` internally; bridge service names are not required to mirror Rust application-service type names.
+
+`JobsBridge` is the capability-neutral bridge for durable job observation and lifecycle controls.
+
+The future logical game-library capability remains distinct. Phase 001 does not activate `LibraryBridge` merely because SPEC-BE-013's application service is named `LibraryService`.
+
+### 66.2 Canonical background execution identity
+
+Phase 001 activates persisted background operations and resolves the previously reserved handle naming:
+
+```text
+OperationHandleDto
+- jobRunId
+- operationType
+```
+
+Rules:
+
+1. `jobRunId` is the bridge projection of SPEC-BE-004 `JobRunId`.
+2. The bridge does not publish a second `operationId` for the same execution attempt.
+3. Scan-admission results, job queries, job controls, job events, Flutter models, and stable Jobs routes use the same opaque execution identity.
+4. `operationType` is the stable logical operation type, not a Rust class/type name.
+5. The handle means durable admission succeeded; it does not mean the background work completed.
+
+### 66.3 Phase 001 Sources projection DTOs
+
+SPEC-BE-013 authoritative projections cross the bridge as focused immutable snapshots rather than screen-specific aggregate graphs.
+
+Conceptually:
+
+```text
+LibraryRootDto
+- libraryRootId
+- displayName
+- safeLocationPresentation
+- availability
+- lastScan nullable
+- activeScan nullable
+```
+
+The root dimensions remain independent. The bridge must not collapse `availability`, `lastScan`, and `activeScan` into one synthetic status enum.
+
+`lastScan`, when present, carries only the bounded terminal summary owned by SPEC-BE-013, including the relevant scan/job identities, status, and timestamps required by the consumer contract.
+
+`activeScan`, when present, carries only the bounded current ownership/job summary required by the root projection. It does not replace `GetJob` as generic job authority.
+
+Source hierarchy browsing uses a row/detail split:
+
+```text
+SourceEntryDto
+- sourceEntryId
+- parentSourceEntryId nullable
+- displayName
+- displayLocation
+- kind
+- classification
+- boundedStatusSummary
+```
+
+```text
+SourceEntryDetailDto
+- sourceEntryId
+- parentSourceEntryId nullable
+- displayName
+- displayLocation
+- kind
+- classification
+- boundedObservationStatusDetail
+```
+
+`SourceEntryDetailDto` may contain additional bounded safe observation/status facts required by the FE-008 inspector. It does not expose provider or persistence internals.
+
+Neither source-entry DTO exposes:
+
+- `RootLocator`;
+- `RelativeSourceLocator`;
+- `SourceLocatorKey`;
+- provider-native filesystem identities;
+- source fingerprints used as backend identity/equality machinery;
+- persistence row IDs or singleton keys;
+- raw provider metadata or native handles.
+
+### 66.4 Native local-folder selection request
+
+Folder selection crosses the bridge only as request input:
+
+```text
+LocalFilesystemRootSelectionDto
+- selectedFolderPath
+```
+
+Rules:
+
+1. The value originates from the focused native folder-picker seam governed by SPEC-FE-008.
+2. It is untrusted provider input, not Argus source identity.
+3. Flutter does not normalize, canonicalize, split, compare, or derive overlap/identity semantics from the path.
+4. `SourcesBridge` transports the request into the LocalFilesystem application/provider boundary, which owns validation and provider-owned locator construction.
+5. The selected path is not echoed into root projections, source-entry projections, runtime events, application errors, or durable job history merely because it was bridge input.
+6. User-facing persisted/history location text comes from backend-produced safe presentation projections/snapshots.
+
+### 66.5 Explicit pagination DTOs
+
+The bridge preserves each governed application paging model rather than weakening them into one nullable-field page abstraction.
+
+Root administration uses bounded offset pagination:
+
+```text
+LibraryRootPageDto
+- items: LibraryRootDto[]
+- offset
+- pageSize
+- totalCount
+```
+
+Source hierarchy children use opaque cursor pagination:
+
+```text
+SourceEntryChildrenPageDto
+- items: SourceEntryDto[]
+- nextCursor nullable
+```
+
+Recent terminal Jobs history uses bounded offset pagination through:
+
+```text
+JobSummaryPageDto
+- items: JobSummaryDto[]
+- totalCount
+- nextOffset nullable
+```
+
+Rules:
+
+1. Cursor tokens are opaque to Flutter and are never parsed or synthesized there.
+2. The bridge does not translate cursor semantics into offset semantics or vice versa.
+3. `nextOffset` is meaningful for the `RecentTerminal` Jobs scope; the bounded `Active` scope may return the complete active set under backend policy with no continuation.
+4. Backend ordering remains authoritative and deterministic as required by the owning application query.
+5. Flutter does not reorder a partial source-entry page and claim it represents the complete sibling set.
+
+### 66.6 No screen-shaped bridge snapshots
+
+The bridge must not introduce DTOs such as:
+
+```text
+SourcesPageDto
+JobsScreenDto
+SelectedRootWithHierarchyDto
+RootAndAllChildrenDto
+```
+
+Flutter composes presentation state from focused authoritative snapshots. Bridge contracts remain application-oriented and reusable across responsive layouts.
+
+### 66.7 `SourcesBridge` operations
+
+Phase 001 `SourcesBridge` conceptually exposes:
+
+```text
+ListLibraryRoots(request)
+GetLibraryRoot(libraryRootId)
+
+AddLocalLibraryRoot(selection)
+AddLocalLibraryRootAndScan(selection)
+RemoveLibraryRoot(libraryRootId)
+
+ListSourceEntryChildren(request)
+GetSourceEntry(sourceEntryId)
+
+StartLibraryScan(libraryRootId)
+StartLibraryScanAll()
+```
+
+Every application operation returns `BridgeResult<T>` according to Sections 9–10. Expected workflow/domain outcomes remain typed `Success(T)` values; unexpected application failures remain `Failure(ApplicationErrorDto)`.
+
+### 66.8 Root queries
+
+Conceptually:
+
+```text
+ListLibraryRoots(ListLibraryRootsRequestDto)
+    -> BridgeResult<LibraryRootPageDto>
+
+GetLibraryRoot(libraryRootId)
+    -> BridgeResult<LibraryRootDto>
+```
+
+`ListLibraryRootsRequestDto` contains only governed bounded offset/page-size input. Phase 001 does not publish arbitrary sort/filter expressions.
+
+### 66.9 Add local library root
+
+Conceptually:
+
+```text
+AddLocalLibraryRoot(LocalFilesystemRootSelectionDto)
+    -> BridgeResult<AddLocalLibraryRootResultDto>
+```
+
+Typed successful outcomes are equivalent to:
+
+```text
+Added(root: LibraryRootDto)
+AlreadyConfigured(existingLibraryRootId)
+OverlapsExisting(existingLibraryRootId, relationship)
+```
+
+`relationship` projects the provider/application-owned overlap vocabulary from SPEC-BE-011/SPEC-BE-013. Flutter never derives this relation by comparing selected path strings.
+
+`AlreadyConfigured` and `OverlapsExisting` are expected non-mutating outcomes, not infrastructure/application failures.
+
+### 66.10 Add local library root and scan
+
+Conceptually:
+
+```text
+AddLocalLibraryRootAndScan(LocalFilesystemRootSelectionDto)
+    -> BridgeResult<AddLocalLibraryRootAndScanResultDto>
+```
+
+Typed successful outcomes are equivalent to:
+
+```text
+AddedAndScanAdmitted(
+    root: LibraryRootDto,
+    operationHandle: OperationHandleDto
+)
+
+AddedButScanNotAdmitted(
+    root: LibraryRootDto,
+    boundedAdmissionReason
+)
+
+AlreadyConfigured(existingLibraryRootId)
+
+OverlapsExisting(
+    existingLibraryRootId,
+    relationship
+)
+```
+
+The DTO union preserves SPEC-BE-013's two durable boundaries:
+
+```text
+root commit
+    ↓
+child scan admission attempt
+```
+
+`AddedButScanNotAdmitted` therefore includes the committed root and must not be translated into a failure shape suggesting root creation rolled back.
+
+The bounded admission reason is typed/sanitized application context. It is not a raw runtime/native error string.
+
+### 66.11 Single-root scan admission
+
+Conceptually:
+
+```text
+StartLibraryScan(libraryRootId)
+    -> BridgeResult<StartLibraryScanResultDto>
+```
+
+Typed successful outcomes:
+
+```text
+Admitted(operationHandle: OperationHandleDto)
+
+AlreadyScanning(
+    libraryRootId,
+    activeJobRunId,
+    activeScanRunId
+)
+```
+
+`AlreadyScanning` creates no second `JobRun` or `ScanRun`.
+
+### 66.12 Scan All admission
+
+Conceptually:
+
+```text
+StartLibraryScanAll()
+    -> BridgeResult<StartLibraryScanAllResultDto>
+```
+
+Typed successful outcomes:
+
+```text
+Admitted(
+    operationHandle: OperationHandleDto,
+    admittedRoots,
+    exclusions
+)
+
+NothingEligible(exclusions)
+```
+
+Rules:
+
+1. Admitted-root and exclusion entries are strongly typed and bounded.
+2. Partial admission is still successful admission.
+3. Exclusions that affect the accepted job are durable operation facts and therefore also appear in authoritative `LibraryScanJobDetailDto`; the command response is not their sole record.
+4. `NothingEligible` creates no empty job.
+5. Existing scans are not silently queued behind or absorbed into a new Scan All job.
+
+### 66.13 Root removal result
+
+Conceptually:
+
+```text
+RemoveLibraryRoot(libraryRootId)
+    -> BridgeResult<RemoveLibraryRootResultDto>
+```
+
+Typed successful outcomes:
+
+```text
+Removed
+
+RootHasActiveScan(
+    libraryRootId,
+    jobRunId,
+    scanRunId
+)
+```
+
+`Removed` means Argus configuration/current indexed state was removed. It never means user filesystem content was deleted or modified.
+
+`RootHasActiveScan` is an expected non-mutating coordination outcome used by the FE-008 Cancel Scan & Remove workflow.
+
+The mutation response does not include an updated root-list snapshot; Flutter reconciles through authoritative Sources queries.
+
+### 66.14 Source hierarchy queries
+
+Conceptually:
+
+```text
+ListSourceEntryChildren(ListSourceEntryChildrenRequestDto)
+    -> BridgeResult<SourceEntryChildrenPageDto>
+```
+
+The request contains:
+
+```text
+libraryRootId
+parentSourceEntryId nullable
+cursor nullable
+pageSize
+```
+
+`parentSourceEntryId = null` addresses direct root children as governed by SPEC-BE-013.
+
+One entry detail query is exposed:
+
+```text
+GetSourceEntry(sourceEntryId)
+    -> BridgeResult<SourceEntryDetailDto>
+```
+
+Phase 001 exposes no whole-tree materialization query, source-entry search, or arbitrary hierarchy filter API.
+
+### 66.15 Sources expected-outcome boundary
+
+The following expected states are represented through typed successful result unions rather than automatically becoming `ApplicationErrorDto`:
+
+- already configured root;
+- provider-verifiable overlap;
+- already scanning;
+- Scan All with no eligible roots;
+- scan admission not accepted after an Add & Scan root commit;
+- root removal blocked by current scan ownership.
+
+Actual validation, runtime, persistence, stale-identity, provider, or internal failures continue through canonical application-error semantics where the owning backend contract defines them as failures.
+
+### 66.16 `JobsBridge` operations
+
+Phase 001 `JobsBridge` conceptually exposes:
+
+```text
+ListJobs(request)
+GetJob(jobRunId)
+CancelJob(jobRunId)
+RetryJob(jobRunId)
+```
+
+`ResumeJob` remains available to the generic backend `JobsService` when supported by an operation, but Phase 001 does not expose it through the bridge because no bridged Phase 001 operation is resumable.
+
+A future phase may activate `ResumeJob` additively when a real resumable product workflow exists.
+
+### 66.17 Jobs list query
+
+Conceptually:
+
+```text
+ListJobs(ListJobsRequestDto)
+    -> BridgeResult<JobSummaryPageDto>
+```
+
+The request contains one closed Phase 001 scope union:
+
+```text
+ListJobsScopeDto
+- Active
+- RecentTerminal(offset, pageSize)
+```
+
+The bridge does not publish arbitrary operation filters, lifecycle filters, text search, caller-selected sorting, or generic expression objects.
+
+### 66.18 `JobSummaryDto`
+
+A bounded list-row projection is separate from full detail:
+
+```text
+JobSummaryDto
+- jobRunId
+- operationType
+- state
+- phase nullable
+- createdAt
+- startedAt nullable
+- terminalAt nullable
+- cancellationRequested
+- safeContextSummary nullable
+```
+
+This projection is sufficient for:
+
+- Jobs Active rows;
+- Recent terminal history rows;
+- the shell active-job indicator.
+
+`ListJobs` does not eagerly return full operation-specific job detail for every row.
+
+For shell behavior, `totalCount` plus the bounded Active items are sufficient to distinguish zero, exactly one, and multiple active jobs without defining a second backend authority solely for shell presentation.
+
+### 66.19 Authoritative job detail
+
+Conceptually:
+
+```text
+GetJob(jobRunId)
+    -> BridgeResult<JobDetailDto>
+```
+
+Composition:
+
+```text
+JobDetailDto
+- job: JobRunDto
+- operationDetail: OperationDetailDto
+```
+
+Generic execution projection:
+
+```text
+JobRunDto
+- jobRunId
+- operationType
+- state
+- phase nullable
+- completedUnits nullable
+- totalUnits nullable
+- statusKey nullable
+- createdAt
+- queuedAt nullable
+- startedAt nullable
+- terminalAt nullable
+- cancellationRequested
+- controls: JobControlAvailabilityDto
+- boundedTerminalFailure nullable
+```
+
+Exact timestamp field grouping is an implementation representation choice; the semantic facts above are fixed.
+
+`boundedTerminalFailure`, when present, is constructed from sanitized application-level failure information. Raw Rust/native/provider error chains do not cross.
+
+### 66.20 Job control availability
+
+Phase 001 projects explicit backend-authoritative control availability:
+
+```text
+JobControlAvailabilityDto
+- canCancel
+- canRetry
+```
+
+Rules:
+
+1. Flutter does not infer control availability from `state` or `operationType`.
+2. `canCancel` becomes false when cancellation has already been durably requested or cancellation is otherwise no longer available.
+3. `canRetry` reflects the operation capability plus current authoritative retry constraints.
+4. For LibraryScan, a historical run that already has its one direct retry successor has `canRetry = false`.
+5. Phase 001 publishes no `canResume` because no bridged operation is resumable.
+6. A future resumable capability may add `canResume` append-only together with an activated `ResumeJob` bridge operation.
+
+### 66.21 Typed operation-specific job detail
+
+Generic job detail composes one closed typed operation-detail union:
+
+```text
+OperationDetailDto
+- LibraryScan(LibraryScanJobDetailDto)
+- future typed variants
+```
+
+The Phase 001 LibraryScan variant includes typed projections for:
+
+```text
+requested root summaries
+admitted root summaries
+typed admission exclusions
+per-root ScanRun projections
+scan-specific structured progress
+historical root display snapshots
+retrySourceJobRunId nullable
+retrySuccessorJobRunId nullable
+```
+
+No arbitrary JSON/map extension bag is permitted as the primary extensibility mechanism.
+
+Historical LibraryScan detail must remain intelligible after current root removal and therefore consumes the durable historical display snapshots owned by SPEC-BE-013 instead of requiring live Sources entities.
+
+### 66.22 Linear retry relationship
+
+SPEC-BE-013 owns the Phase 001 LibraryScan rule that one execution attempt may have at most one direct retry successor.
+
+The bridge projects that authoritative relationship through:
+
+```text
+LibraryScanJobDetailDto.retrySourceJobRunId?
+LibraryScanJobDetailDto.retrySuccessorJobRunId?
+```
+
+Rules:
+
+1. Retry never reopens or mutates the historical source `JobRun`.
+2. A source run has zero or one direct retry successor, never multiple branches.
+3. A later Retry is initiated from the latest attempt, producing a linear attempt chain.
+4. The source/successor relationship uses ordinary `JobRunId` identities; no logical `JobId` is introduced.
+5. The successor link is durable authoritative history and is queryable after a lost mutation response.
+
+### 66.23 Cancel control result
+
+Conceptually:
+
+```text
+CancelJob(jobRunId)
+    -> BridgeResult<CancelJobResultDto>
+```
+
+Typed successful outcomes:
+
+```text
+CancellationRequested
+NoLongerCancellable
+```
+
+`CancellationRequested` means durable cancellation intent was accepted. It does not mean the execution has reached terminal `Cancelled`.
+
+`NoLongerCancellable` is the expected race where current authoritative state changed after the UI rendered the control.
+
+Neither outcome returns a replacement `JobDetailDto`; Flutter reconciles current lifecycle truth through `GetJob` / `ListJobs`.
+
+### 66.24 Retry control result
+
+Conceptually:
+
+```text
+RetryJob(jobRunId)
+    -> BridgeResult<RetryJobResultDto>
+```
+
+Typed successful outcomes:
+
+```text
+Admitted(operationHandle: OperationHandleDto)
+AlreadyRetried(existingJobRunId)
+NotAdmitted(reason: RetryNotAdmittedReasonDto)
+```
+
+Rules:
+
+1. `Admitted` returns the new canonical execution identity.
+2. `AlreadyRetried` reports the existing direct successor and creates no second branch.
+3. `NotAdmitted` means no new `JobRun` was created.
+4. Retry reasons/exclusions are strongly typed and bounded; they are not arbitrary strings/maps.
+5. Partial target admission is `Admitted`; durable exclusions belong to the new `LibraryScanJobDetailDto`.
+6. Unexpected application failures still use `BridgeResult.Failure(ApplicationErrorDto)`.
+
+### 66.25 Ambiguous Retry recovery
+
+Retry has identity consequences, so the bridge/frontend contract must support recovery without blind mutation replay.
+
+If the mutation transport outcome is unknown:
+
+```text
+RetryJob(oldJobRunId)
+    ↓ response lost/uncertain
+GetJob(oldJobRunId)
+    ↓
+retrySuccessorJobRunId present
+    -> new execution identity established
+
+retrySuccessorJobRunId absent
+    -> no admission is yet established by that query
+```
+
+If a deliberate subsequent `RetryJob(oldJobRunId)` races with an already-created successor, the typed `AlreadyRetried(existingJobRunId)` outcome returns the same authoritative identity rather than creating another execution branch.
+
+This design uses existing Argus execution identities and does not add client-generated idempotency tokens solely for Phase 001 retry transport.
+
+### 66.26 Mutation/query authority
+
+Sources and Jobs mutation responses establish only the explicit result facts defined by their result unions.
+
+They do not become competing mutable snapshot channels.
+
+Representative authoritative reconciliation remains:
+
+```text
+mutation accepted / expected outcome
+    ↓
+focused query
+    ↓
+authoritative current snapshot
+```
+
+Examples:
+
+- Add/remove root -> `ListLibraryRoots` / `GetLibraryRoot` as needed;
+- Cancel -> `GetJob` / `ListJobs`;
+- Retry -> new identity from the result, followed by `GetJob(newJobRunId)`;
+- ambiguous Retry -> old `GetJob` relationship reconciliation first.
+
+### 66.27 Phase 001 runtime event payloads
+
+All Phase 001 notifications continue through the one unified runtime event stream from Section 32.
+
+The active new payload variants are:
+
+```text
+JobStateChangedDto
+JobProgressDto
+LibraryRootsChangedDto
+LibraryRootChangedDto
+SourceEntriesChangedDto
+```
+
+No Sources-specific or Jobs-specific native stream is created.
+
+### 66.28 `LibraryRootsChangedDto`
+
+Conceptually:
+
+```text
+LibraryRootsChangedDto
+```
+
+No feature snapshot payload is carried.
+
+It announces that configured root-list membership or authoritative ordering may have changed. Consumers reconcile through `ListLibraryRoots`.
+
+### 66.29 `LibraryRootChangedDto`
+
+Conceptually:
+
+```text
+LibraryRootChangedDto
+- libraryRootId
+```
+
+It announces that one root projection may have changed, including availability, last-scan, active-scan ownership, or another exposed root-projection fact.
+
+It does not include `LibraryRootDto`.
+
+### 66.30 `SourceEntriesChangedDto`
+
+Conceptually:
+
+```text
+SourceEntriesChangedDto
+- libraryRootId
+- parentSourceEntryId nullable
+```
+
+Rules:
+
+1. The event invalidates source hierarchy information for the identified root.
+2. When `parentSourceEntryId` is present, the backend asserts that refreshing that child scope is a reliable response to this notification.
+3. When the backend cannot state that narrow scope reliably, the parent identity is omitted and the consumer performs the broader safe hierarchy reconciliation required by SPEC-FE-008.
+4. The event carries no `SourceEntryDto` collection or complete tree snapshot.
+
+### 66.31 Job and Sources event authority separation
+
+A LibraryScan can emit/record notifications for distinct authoritative projections:
+
+```text
+job lifecycle/control state changed
+    -> JobStateChangedDto
+
+job generic progress changed
+    -> JobProgressDto
+
+root projection changed
+    -> LibraryRootChangedDto
+
+source graph changed
+    -> SourceEntriesChangedDto
+```
+
+These are not competing state channels.
+
+Sources must not infer generic job lifecycle from `LibraryRootChangedDto`. Jobs must not reconstruct root/source state from `JobStateChangedDto`.
+
+### 66.32 Sequence gaps and runtime replacement
+
+The sequencing contract from Sections 48–49 remains unchanged.
+
+On a detected gap, consumers perform the smallest safe authoritative refresh rather than attempting to replay or reconstruct missing state transitions.
+
+Representative Phase 001 refreshes are:
+
+```text
+open job detail
+    -> GetJob(jobRunId)
+
+Jobs landing / shell active summary
+    -> relevant ListJobs scope
+
+root list
+    -> ListLibraryRoots
+
+root detail
+    -> GetLibraryRoot(libraryRootId)
+
+hierarchy
+    -> relevant child query, or broader loaded hierarchy refresh when narrow scope is not reliable
+```
+
+A changed `runtimeInstanceId` invalidates event-continuity assumptions entirely. Sequence numbers are never compared across runtime generations.
+
+### 66.33 Backpressure and progress semantics
+
+Phase 001 remains compatible with bounded best-effort event delivery.
+
+Consequences:
+
+- compatible progress events may be coalesced;
+- repeated invalidations may be coalesced;
+- consumers do not assume one event per source entry, persistence commit, or lifecycle transition;
+- `JobProgressDto` publishes no backend percentage;
+- unknown totals remain unknown;
+- no weighted cross-phase or cross-root percentage exists;
+- terminal correctness depends on authoritative queries, never final-event delivery.
+
+LibraryScan-specific root/entry counters and per-root progress facts belong to typed authoritative `LibraryScanJobDetailDto`, not to a growing generic event union.
+
+### 66.34 Explicit mapping rules
+
+Phase 001 mappings remain deterministic boundary translations:
+
+```text
+LibraryRootProjection
+    -> LibraryRootDto
+
+SourceEntryProjection
+    -> SourceEntryDto / SourceEntryDetailDto
+
+JobRun / JobDetail
+    -> JobRunDto / JobDetailDto
+
+OperationDetail::LibraryScan
+    -> OperationDetailDto::LibraryScan(...)
+
+application typed workflow result
+    -> corresponding typed bridge result union
+```
+
+Bridge mapping must not:
+
+- perform overlap detection;
+- canonicalize filesystem paths into source identity;
+- calculate root availability;
+- derive job control availability;
+- derive job terminal aggregation;
+- derive retry eligibility or retry-chain semantics;
+- rebuild source hierarchy;
+- query SQLite directly;
+- reinterpret provider/native failures.
+
+Those facts come from their owning application/runtime/provider contracts.
+
+### 66.35 Privacy and security activation rules
+
+In addition to Section 56, Phase 001 bridge DTO/event tests must prove that no response/event leaks:
+
+- provider-owned root locators;
+- source locator keys;
+- native filesystem identity;
+- canonicalization internals;
+- source fingerprints used for backend identity;
+- SQL/database identifiers;
+- raw native/provider errors;
+- arbitrary persisted absolute paths;
+- ROM/file contents.
+
+The native picker-selected path is permitted only as request input in `LocalFilesystemRootSelectionDto` because the backend requires the selected native location to validate/access the user-authorized root.
+
+Historical presentation uses bounded backend-produced safe display snapshots.
+
+### 66.36 Active Phase 001 DTO catalog
+
+Phase 001 requires at least the concrete transport concepts below, plus focused supporting enums/value DTOs required by their fields and typed result variants:
+
+```text
+OperationHandleDto
+
+LocalFilesystemRootSelectionDto
+
+LibraryRootDto
+LibraryRootPageDto
+SourceEntryDto
+SourceEntryDetailDto
+SourceEntryChildrenPageDto
+
+AddLocalLibraryRootResultDto
+AddLocalLibraryRootAndScanResultDto
+StartLibraryScanResultDto
+StartLibraryScanAllResultDto
+RemoveLibraryRootResultDto
+
+JobSummaryDto
+JobSummaryPageDto
+JobRunDto
+JobDetailDto
+JobControlAvailabilityDto
+OperationDetailDto
+LibraryScanJobDetailDto
+
+CancelJobResultDto
+RetryJobResultDto
+
+JobStateChangedDto
+JobProgressDto
+LibraryRootsChangedDto
+LibraryRootChangedDto
+SourceEntriesChangedDto
+```
+
+Phase 001 does not generate empty DTO/API families for future games, metadata, hashing, artwork, verification, or resumable-operation functionality.
+
+### 66.37 DTO contract tests
+
+Required bridge contract coverage includes:
+
+- stable `JobRunId`, `LibraryRootId`, `SourceEntryId`, and `ScanRunId` projection;
+- `OperationHandleDto.jobRunId` maps exactly to canonical `JobRunId`;
+- no second background-operation identity exists;
+- root availability/last-scan/active-scan dimensions retain their independent semantics/nullability;
+- source row/detail DTO separation;
+- source cursors remain opaque;
+- all typed workflow-result variants map exhaustively;
+- every generic job lifecycle state maps correctly, including `CompletedWithIssues`, `Interrupted`, and `Abandoned`;
+- control availability is mapped from backend authority rather than recomputed in the bridge;
+- typed `OperationDetailDto` mapping has no arbitrary extension bag;
+- terminal failure projection remains sanitized and bounded.
+
+### 66.38 Sources workflow-result tests
+
+Bridge-level tests cover at least:
+
+```text
+AddLocalLibraryRoot
+- Added
+- AlreadyConfigured
+- OverlapsExisting
+
+AddLocalLibraryRootAndScan
+- AddedAndScanAdmitted
+- AddedButScanNotAdmitted
+- AlreadyConfigured
+- OverlapsExisting
+
+StartLibraryScan
+- Admitted
+- AlreadyScanning
+
+StartLibraryScanAll
+- admitted all
+- partial admission
+- NothingEligible
+
+RemoveLibraryRoot
+- Removed
+- RootHasActiveScan
+```
+
+Tests must prove these expected typed outcomes remain distinct from `ApplicationErrorDto` failure.
+
+### 66.39 Job-control and retry tests
+
+Bridge-level tests cover at least:
+
+```text
+CancelJob
+- CancellationRequested
+- NoLongerCancellable
+
+RetryJob
+- Admitted
+- AlreadyRetried
+- NotAdmitted
+```
+
+Retry-specific contract evidence must prove:
+
+1. an admitted Retry creates a new `JobRunId`;
+2. source and successor identities are linked authoritatively;
+3. one source run cannot acquire two direct retry successors;
+4. repeated Retry against the same source reports the existing successor;
+5. querying the source detail after a lost response exposes the same successor;
+6. further Retry is initiated from the latest attempt and creates the next link in the linear chain;
+7. removed/ineligible original targets continue to obey SPEC-BE-013 revalidation/exclusion rules.
+
+### 66.40 Runtime event tests
+
+The unified runtime event contract must prove:
+
+- every Phase 001 variant retains common `runtimeInstanceId`, `sequence`, and `occurredAt` envelope metadata;
+- `JobStateChangedDto` carries no full job snapshot or terminal error snapshot;
+- `JobProgressDto` carries no percentage;
+- `LibraryRootsChangedDto` carries no root list snapshot;
+- `LibraryRootChangedDto` carries no root snapshot;
+- `SourceEntriesChangedDto` carries no source-entry collection;
+- sequence gaps remain observable;
+- runtime replacement resets sequence interpretation;
+- dropped/coalesced notifications do not affect authoritative query correctness.
+
+### 66.41 Architecture tests
+
+Phase 001 must continue to enforce the dependency direction from Sections 58–59.
+
+In particular:
+
+```text
+argus-domain          !-> argus-bridge
+argus-application     !-> argus-bridge
+argus-infrastructure  !-> public bridge DTO contracts
+
+argus-bridge
+    -> application/runtime contracts
+    -> explicit DTO mapping
+```
+
+Flutter feature code remains isolated from generated FRB bindings behind the project-owned client/adapter boundary governed by SPEC-FE-003.
+
+### 66.42 Phase 001 acceptance criteria
+
+The Phase 001 amendment is satisfied when:
+
+1. `SourcesBridge` and `JobsBridge` are the only new capability-oriented bridge façades required by Phase 001.
+2. `LibraryBridge` remains unactivated until logical game-library capability exists.
+3. `OperationHandleDto` uses canonical `jobRunId` and no second operation identity is published.
+4. Native local-folder selection is request-only and Flutter never constructs provider-owned locator identity.
+5. Root/source DTOs preserve SPEC-BE-013 authoritative projection boundaries without screen-shaped aggregate DTOs.
+6. Root, source-child, and Jobs paging preserve their distinct governed semantics.
+7. Expected Sources workflow states map to typed successful unions rather than generic application failure.
+8. `AddLocalLibraryRootAndScan` preserves the committed-root/scan-admission split across the bridge.
+9. root removal exposes `RootHasActiveScan` as an expected non-mutating outcome and never implies filesystem deletion.
+10. `ListJobs` uses only the closed `Active` and `RecentTerminal` scopes required by Phase 001.
+11. `GetJob` returns generic `JobRunDto` plus typed `OperationDetailDto`.
+12. LibraryScan is the only active operation-detail variant and no arbitrary JSON extension bag is introduced.
+13. control availability is backend-authoritative and Phase 001 exposes `canCancel` / `canRetry` but no `canResume`.
+14. Phase 001 `JobsBridge` does not expose unused `ResumeJob`.
+15. Cancel distinguishes durable cancellation request from terminal cancellation.
+16. Retry creates new execution identity and returns typed `Admitted`, `AlreadyRetried`, or `NotAdmitted` outcomes.
+17. one LibraryScan execution has at most one direct retry successor and retry chains remain linear.
+18. ambiguous Retry recovery can establish the successor through authoritative job detail without blind duplicate replay.
+19. the inactive Phase 000 per-transition operation-event reservation is replaced before first activation by `JobStateChangedDto` plus `JobProgressDto`.
+20. Sources adds only the minimal typed invalidations `LibraryRootsChangedDto`, `LibraryRootChangedDto`, and `SourceEntriesChangedDto`.
+21. all Phase 001 notifications remain on the one unified runtime event stream.
+22. events remain notification-first; queries repair dropped/coalesced event uncertainty.
+23. no backend progress percentage or weighted overall LibraryScan percentage is published.
+24. request/response DTOs and events obey SPEC-BE-003 privacy/redaction rules.
+25. generated binding details remain confined to the bridge/client adapter boundary.
+26. no speculative games, metadata, hashing, artwork, verification, Resume, search/filter, or whole-tree bridge surface is added.
+
+### 66.43 Explicit Phase 001 exclusions
+
+This amendment does not activate:
+
+- logical `LibraryBridge`;
+- game/library-content DTOs;
+- metadata-provider or metadata-resolution DTOs;
+- hashing/transformation DTOs beyond any already governed cross-cutting bridge need;
+- artwork DTOs;
+- RetroAchievements/verification DTOs;
+- source-entry search/filter;
+- arbitrary Jobs filtering/sorting/search;
+- `ResumeJob` or `canResume`;
+- generic arbitrary-JSON operation detail;
+- separate Sources/Jobs native streams;
+- backend-generated progress percentages;
+- whole source-tree snapshots;
+- job-history deletion/retention UI contracts;
+- client-generated retry idempotency identities.
+
+## 67. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
@@ -1512,5 +2520,10 @@ This specification does not finalize:
 - [SPEC-BE-005 — Settings Service and Appearance Settings](spec-be-005-settings-service-and-appearance-settings.md)
 - [SPEC-BE-006 — Minimal Domain Event Bus](spec-be-006-minimal-domain-event-bus.md)
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md)
+- [SPEC-BE-009 — Application Service Contracts](spec-be-009-application-service-contracts.md)
+- [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
+- [SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections](spec-be-013-library-source-management-scan-operations-and-source-projections.md)
+- [SPEC-FE-008 — Sources and Library Folder Management](../frontend/spec-fe-008-sources-and-library-folder-management.md)
+- [SPEC-FE-009 — Jobs and Background Operation Presentation](../frontend/spec-fe-009-jobs-and-background-operation-presentation.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [Backend Specifications Index](README.md)

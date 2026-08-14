@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-004, SPEC-BE-007, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -213,18 +213,25 @@ Feature-specific screen construction remains feature-owned.
 
 A route identifies durable location or scope.
 
-Representative durable identities include:
+Representative durable identities include the Phase 001 canonical routes:
+
+```text
+/sources
+/sources/roots/:rootId
+/jobs
+/jobs/:jobRunId
+/settings
+/diagnostics
+```
+
+Future phases may add representative identities such as:
 
 ```text
 /library
 /library/collections/:collectionId
 /library/platforms/:platformId
-/library/sources/:sourceId
 /library/library-roots/:libraryRootId
 /games/:gameId
-/jobs
-/settings
-/diagnostics
 ```
 
 Later feature specifications may add routes, but they must preserve the same ownership principles.
@@ -412,15 +419,16 @@ Routes identify scope; focused APIs and controllers retrieve current authoritati
 
 The shell uses one semantic destination catalog for cross-feature navigation.
 
-Representative conceptual values include:
+Representative conceptual values include the Phase 001 destinations:
 
 ```text
-AppDestination.library
-AppDestination.collections
+AppDestination.sources
 AppDestination.jobs
 AppDestination.settings
 AppDestination.diagnostics
 ```
+
+Future destination values such as `AppDestination.library` and `AppDestination.collections` remain reserved for later active phases.
 
 Only destinations implemented by the active product slice are required to exist.
 
@@ -443,11 +451,15 @@ Every shell-contained route resolves to its owning semantic destination.
 Examples:
 
 ```text
-/library/platforms/:platformId → Library
-/games/:gameId               → Library
-/settings                    → Settings
-/diagnostics                 → Diagnostics
+/sources                   → Sources
+/sources/roots/:rootId     → Sources
+/jobs                      → Jobs
+/jobs/:jobRunId            → Jobs
+/settings                  → Settings
+/diagnostics               → Diagnostics
 ```
+
+Future examples such as `/library/platforms/:platformId → Library` and `/games/:gameId → Library` apply when those destinations become active.
 
 This mapping is centralized.
 
@@ -476,11 +488,12 @@ Conceptually:
 
 ```text
 Stateful ready shell
-├── Library branch
-├── Collections branch
+├── Sources branch
 ├── Jobs branch
 ├── Settings branch
-└── Diagnostics branch
+├── Diagnostics branch
+├── future Library branch
+└── future Collections branch
 ```
 
 The actual Phase 000 branch set contains only implemented destinations.

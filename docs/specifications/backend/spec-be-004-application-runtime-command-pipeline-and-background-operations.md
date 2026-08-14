@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003  
 **Supersedes:** None  
 **Superseded By:** None
@@ -83,6 +83,7 @@ Those concerns belong to infrastructure, provider, bridge, frontend, operation-s
 16. Events are best-effort notifications; authoritative state remains queryable.
 17. Runtime replacement is an explicit lifecycle boundary.
 18. Adding a new operation should normally require declaring operation behavior and policy, not modifying core runtime lifecycle logic.
+19. Generic terminal job state distinguishes clean completion from safely finalized meaningful work whose requested scope was not fully satisfied; operation-specific contracts provide the detailed meaning.
 
 ## 5. Technology-Neutral Runtime Contracts
 
@@ -671,6 +672,7 @@ Queued
 Preparing
 Running
 Completed
+CompletedWithIssues
 Failed
 Cancelled
 Interrupted
@@ -693,23 +695,31 @@ Primary operation execution is active.
 
 ### 20.4 `Completed`
 
-All authoritative state and external artifacts required for successful completion are durably finalized.
+All authoritative state and external artifacts required for the requested successful operation scope are durably finalized without operation-specific unresolved issues.
 
 Terminal.
 
-### 20.5 `Failed`
+### 20.5 `CompletedWithIssues`
 
-The operation terminated because of a non-cancellation failure and cannot continue as the current execution attempt.
+The execution reached a safe and durably finalized terminal boundary and produced meaningful successful work, but the requested operation scope was not fully satisfied.
+
+Operation-specific detail identifies the unsatisfied scope or issues. This state is a durable lifecycle fact, not a transient transport warning or presentation-only label.
 
 Terminal.
 
-### 20.6 `Cancelled`
+### 20.6 `Failed`
+
+The operation terminated because of a non-cancellation failure and did not reach a safe operation-defined completion boundary for the current execution attempt. Durable partial work may exist; partial work alone does not justify `CompletedWithIssues`.
+
+Terminal.
+
+### 20.7 `Cancelled`
 
 The operation acknowledged cancellation and reached a safe terminal boundary.
 
 Terminal.
 
-### 20.7 `Interrupted`
+### 20.8 `Interrupted`
 
 Execution ended unexpectedly but durable recovery checkpoints may permit a future resume as a new execution attempt.
 
@@ -717,7 +727,7 @@ Execution ended unexpectedly but durable recovery checkpoints may permit a futur
 
 `Interrupted` is not resumed automatically during MVP.
 
-### 20.8 `Abandoned`
+### 20.9 `Abandoned`
 
 Execution ended unexpectedly and the execution attempt cannot be resumed from its prior checkpoint state.
 
@@ -742,6 +752,7 @@ Preparing -> Cancelled
 Preparing -> Interrupted
 Preparing -> Abandoned
 Running -> Completed
+Running -> CompletedWithIssues
 Running -> Failed
 Running -> Cancelled
 Running -> Interrupted
@@ -749,7 +760,9 @@ Running -> Abandoned
 Interrupted -> terminal historical record; resume creates a new JobRun
 ```
 
-A completed, failed, cancelled, interrupted, or abandoned run never returns to active execution. `Interrupted` differs from the other terminal states only because it may be used as the recovery source for a new resumed `JobRun`.
+A `Completed`, `CompletedWithIssues`, `Failed`, `Cancelled`, `Interrupted`, or `Abandoned` run never returns to active execution. `Interrupted` differs from the other terminal states only because it may be used as the recovery source for a new resumed `JobRun`.
+
+Operation-specific contracts define the facts that justify `Completed`, `CompletedWithIssues`, or `Failed`. `Completed` is reserved for fully satisfied requested scope; `CompletedWithIssues` requires a safe durable terminal boundary plus meaningful successful work while some requested scope remains unsatisfied. `BackgroundOperationManager` remains authoritative for validating and persisting the generic lifecycle transition.
 
 ## 22. Retry and Resume
 
@@ -1170,7 +1183,7 @@ GetRuntimeHealth
 GetAppearanceSettings
 ```
 
-Query results remain the source of truth.
+Query results remain the source of truth. `GetJob` and `ListJobs` preserve the exact generic `JobRun` lifecycle state, including `CompletedWithIssues`; operation-specific detail contracts explain the scope or issues behind that state without adding feature-specific fields to the generic runtime model.
 
 ### 38.2 Push for responsiveness
 
@@ -1180,7 +1193,7 @@ Representative events include:
 
 ```text
 JobStateChanged
-JobProgressChanged
+JobProgress
 RuntimeStateChanged
 HealthChanged
 AppearanceSettingsChanged
@@ -1470,10 +1483,13 @@ Test every allowed and forbidden state transition.
 Test persistence and immutable history for:
 
 - Completed
+- CompletedWithIssues
 - Failed
 - Cancelled
 - Interrupted
 - Abandoned
+
+Test the distinction among `Completed`, `CompletedWithIssues`, and `Failed` using operation-reported completion facts, including rejection of invalid clean-completion requests when requested scope is known to be unsatisfied.
 
 ### 50.8 Retry and resume tests
 
@@ -1596,8 +1612,8 @@ SPEC-BE-004 is satisfied when:
 16. Retry creates a new `JobRunId` and starts from the beginning.
 17. Resume creates a new `JobRunId` and may use durable checkpoints.
 18. Resumability is declared by the operation.
-19. Persisted job states include Queued, Preparing, Running, Completed, Failed, Cancelled, Interrupted, and Abandoned.
-20. Completed, Failed, Cancelled, Interrupted, and Abandoned are terminal for their `JobRun`; Interrupted may be the source of a new resumed run.
+19. Persisted job states include Queued, Preparing, Running, Completed, CompletedWithIssues, Failed, Cancelled, Interrupted, and Abandoned.
+20. Completed, CompletedWithIssues, Failed, Cancelled, Interrupted, and Abandoned are terminal for their `JobRun`; `CompletedWithIssues` represents safely finalized meaningful work with incompletely satisfied requested scope, while Interrupted may be the source of a new resumed run.
 21. Background progress is structured and phase-local.
 22. The backend publishes no progress percentage field.
 23. Weighted overall progress is unsupported.
@@ -1637,6 +1653,7 @@ SPEC-BE-004 is satisfied when:
 - restarting a `Stopped` runtime instance
 - reusing one `JobRunId` across multiple execution attempts
 - automatically resuming significant MVP jobs at startup
+- collapsing safely finalized partly satisfied work into clean `Completed` when the operation-specific contract requires `CompletedWithIssues`
 - overall weighted progress
 - backend-published presentation percentage
 - requiring graceful shutdown for consistency

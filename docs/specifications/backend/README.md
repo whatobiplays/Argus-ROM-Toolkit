@@ -22,3 +22,4 @@ Identifiers use `SPEC-BE-NNN`.
 | SPEC-BE-010 | [Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md) | Ready for Implementation |
 | SPEC-BE-011 | [Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md) | Ready for Implementation |
 | SPEC-BE-012 | [Transformation and Hash-Scheme Contract](spec-be-012-transformation-and-hash-scheme-contract.md) | Ready for Implementation |
+| SPEC-BE-013 | [Library Source Management, Scan Operations, and Source Projections](spec-be-013-library-source-management-scan-operations-and-source-projections.md) | Ready for Implementation |

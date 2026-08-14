@@ -17,5 +17,7 @@ They define application structure, state architecture, client boundaries, routin
 | [SPEC-FE-005](spec-fe-005-startup-and-recovery-ui.md) | Startup and Recovery UI | Ready for Implementation |
 | [SPEC-FE-006](spec-fe-006-appearance-settings-and-theme-application.md) | Appearance Settings and Theme Application | Ready for Implementation |
 | [SPEC-FE-007](spec-fe-007-design-system-foundation-and-accessibility-baseline.md) | Design-System Foundation and Accessibility Baseline | Ready for Implementation |
+| [SPEC-FE-008](spec-fe-008-sources-and-library-folder-management.md) | Sources and Library Folder Management | Ready for Implementation |
+| [SPEC-FE-009](spec-fe-009-jobs-and-background-operation-presentation.md) | Jobs and Background Operation Presentation | Ready for Implementation |
 
 Use [the subsystem specification template](../../templates/subsystem-specification.md).

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -488,7 +488,7 @@ For appearance settings, event-driven reconciliation and focused read behavior a
 
 ## 29. Long-Running Operation Admission
 
-Future long-running backend work follows SPEC-BE-004/SPEC-BE-008 admission semantics.
+Long-running backend work follows SPEC-BE-004/SPEC-BE-008 admission semantics; Phase 001 activates the bounded Sources/Jobs bridge surface defined by SPEC-BE-008 Section 66.
 
 A focused operation that admits background work returns a typed frontend operation handle:
 
@@ -499,7 +499,7 @@ startImport(...)
 
 The returned handle means the operation was admitted, not that work completed.
 
-These operation-handle and operation-event semantics are reserved forward contracts. They do not authorize Phase 000 classes, mappers, fakes, providers, generated unions, or tests until an active later phase, slice, and task introduce persisted background operations.
+These operation-handle and job-event semantics do not authorize Phase 000 classes, mappers, fakes, providers, generated unions, or tests. Phase 001 activates them only through the bounded bridge contract, and later phases may add capabilities only through their own active contracts.
 
 ## 30. No Client-Side Await-Until-Finished Wrapper
 
@@ -1058,17 +1058,19 @@ RuntimeEventPayload
 └── appearanceSettingsChanged
 ```
 
-A later active phase that introduces persisted background operations may add:
+Phase 001 activates the bounded job and Sources notification variants defined by SPEC-BE-008 Section 66:
 
 ```text
-operationStarted
-operationProgress
-operationCompleted
-operationFailed
-operationCancelled
+jobStateChanged
+jobProgress
+libraryRootsChanged
+libraryRootChanged
+sourceEntriesChanged
 ```
 
-Those variants, mappers, fakes, and tests are absent from Phase 000. Each generated/client event union contains only variants implemented by its active contract version.
+The earlier reserved per-transition `operationStarted` / `operationCompleted` / `operationFailed` / `operationCancelled` variants are replaced before first activation and never enter the generated/client contract.
+
+Those Phase 001 variants, mappers, fakes, and tests are absent from Phase 000. Each generated/client event union contains only variants implemented by its active contract version.
 
 ## 75. No Stringly Typed Event Bus
 
@@ -1205,7 +1207,7 @@ Cancellation is capability-specific.
 
 A generic cancellation token is not attached to every focused API method.
 
-Long-running operation cancellation is exposed through the capability that owns the operation identity, such as a future `JobsApi`.
+Long-running operation cancellation is exposed through the capability that owns the operation identity, such as the Phase 001 `JobsApi`.
 
 ## 89. Controller Disposal vs Backend Cancellation
 
@@ -2002,7 +2004,7 @@ An implementation conforming to SPEC-FE-003 satisfies all of the following:
 41. Mutations are not automatically retried after ambiguous transport failure without explicit safe backend semantics.
 42. Focused API fakes are the ordinary feature/controller test seam, with `ClientBootstrap` as the narrow startup-lifecycle test seam.
 43. Feature tests do not require generated DTOs or the real Rust backend when an Argus-owned client seam exists.
-44. Mapper tests cover every DTO, identifier, error, runtime, and event contract implemented by the active scope; operation-handle conversion is added only when a later active phase introduces that contract.
+44. Mapper tests cover every DTO, identifier, error, runtime, and event contract implemented by the active scope; operation-handle conversion is added when the active phase introduces that contract.
 45. Root/client integration tests cover initialization, event connectivity, runtime replacement, and transport failure translation.
 46. A controlled test proves ambiguous settings mutation transport failure does not trigger duplicate automatic dispatch.
 47. Architecture verification prevents generated bridge/client implementation types from leaking upward.

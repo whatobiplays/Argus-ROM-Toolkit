@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-012  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011  
 **Supersedes:** None  
 **Superseded By:** None
@@ -1562,7 +1562,7 @@ Representative lifecycle remains:
 Queued
 -> Preparing
 -> Running
--> Completed / Failed / Cancelled / Interrupted / Abandoned
+-> Completed / CompletedWithIssues / Failed / Cancelled / Interrupted / Abandoned
 ```
 
 An interrupted historical `JobRun` remains terminal. Resume creates a new `JobRun` according to SPEC-BE-004.

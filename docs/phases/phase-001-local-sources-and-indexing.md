@@ -1,7 +1,7 @@
 # Phase 001 — Local Sources and Indexing
 
 **Document ID:** PHASE-001  
-**Status:** Draft  
+**Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-004, SPEC-BE-006, SPEC-BE-008, SPEC-BE-009, SPEC-BE-011, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007  
@@ -20,11 +20,11 @@ The governing product boundary is:
 
 ### 1.1 Active implementation authority
 
-Phase 001 implementation authority exists only after the focused Phase 001 public contracts identified in Section 6 are complete and this document moves to **Ready for Implementation**.
+Phase 001 implementation authority exists because the focused Phase 001 public contracts identified in Section 6 are complete and this document has moved to **Ready for Implementation**.
 
-Until then, this Draft phase is sequencing and product-scope authority, not authorization to implement unresolved bridge, application-service, Sources, or Jobs contracts.
+While this document was in Draft, it served as sequencing and product-scope authority only, not authorization to implement unresolved bridge, application-service, Sources, or Jobs contracts.
 
-When Phase 001 becomes Ready, executable scope for an agent remains the intersection of:
+Executable scope for an agent remains the intersection of:
 
 1. this phase;
 2. the active ordered slice or approved slice plan;
@@ -418,7 +418,7 @@ Phase 001 depends on the following existing contracts:
 
 ### 6.1 Focused contracts required before Ready
 
-The following work must be completed before this phase may move from Draft to **Ready for Implementation**:
+The following focused contracts were completed before this phase moved from Draft to **Ready for Implementation**:
 
 1. **SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections**  
    Defines the exact Phase 001 application use cases, read projections, folder-first local-source workflow, single/multi-root scan commands, root removal coordination, source-child queries, and scan-history contracts.
@@ -799,7 +799,7 @@ Phase 001 is complete when all of the following are true:
 - [x] User-visible outcome is defined
 - [x] Phase dependency on PHASE-000 is identified
 - [x] Scope and exclusions are explicit
-- [ ] Required Phase 001 public interfaces are fully specified in focused subsystem contracts
+- [x] Required Phase 001 public interfaces are fully specified in focused subsystem contracts
 - [x] Persistence impact is identified at the phase level
 - [x] Failure and cancellation behavior are identified at the phase level
 - [x] Security and privacy impact is identified
@@ -808,13 +808,13 @@ Phase 001 is complete when all of the following are true:
 - [x] Exit criteria are measurable
 - [x] No blocking phase-level product decisions remain
 - [x] Daniel has accepted the capability and scope
-- [ ] SPEC-BE-013 is written, reviewed, and Ready for Implementation
-- [ ] SPEC-FE-008 is written, reviewed, and Ready for Implementation
-- [ ] SPEC-FE-009 is written, reviewed, and Ready for Implementation
-- [ ] SPEC-BE-008 Phase 001 bridge amendments are written, reviewed, and internally consistent
-- [ ] Cross-document consistency review confirms no unresolved Phase 001 public-contract ambiguity
+- [x] SPEC-BE-013 is written, reviewed, and Ready for Implementation
+- [x] SPEC-FE-008 is written, reviewed, and Ready for Implementation
+- [x] SPEC-FE-009 is written, reviewed, and Ready for Implementation
+- [x] SPEC-BE-008 Phase 001 bridge amendments are written, reviewed, and internally consistent
+- [x] Cross-document consistency review confirms no unresolved Phase 001 public-contract ambiguity
 
-**Readiness rule:** this document remains **Draft** until every unchecked focused-contract/readiness item above is resolved. Moving the phase to Ready is a deliberate documentation-state change and must not be inferred merely because implementation could begin mechanically.
+**Readiness rule:** this document moves to **Ready for Implementation** only when every focused-contract/readiness item above is resolved. Moving the phase to Ready is a deliberate documentation-state change and must not be inferred merely because implementation could begin mechanically.
 
 ## 13. References
 
@@ -826,6 +826,7 @@ Phase 001 is complete when all of the following are true:
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](../specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](../specifications/backend/spec-be-009-application-service-contracts.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md)
+- [SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections](../specifications/backend/spec-be-013-library-source-management-scan-operations-and-source-projections.md)
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](../specifications/frontend/spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](../specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](../specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md)
@@ -833,3 +834,5 @@ Phase 001 is complete when all of the following are true:
 - [SPEC-FE-005 — Startup and Recovery UI](../specifications/frontend/spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-FE-006 — Appearance Settings and Theme Application](../specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](../specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
+- [SPEC-FE-008 — Sources and Library Folder Management](../specifications/frontend/spec-fe-008-sources-and-library-folder-management.md)
+- [SPEC-FE-009 — Jobs and Background Operation Presentation](../specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md)

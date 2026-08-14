@@ -88,7 +88,7 @@ Conceptually:
 
 ```text
 Argus application release      0.4.0
-build commit                   d74e164...
+build commit                   573e501...
 latest database migration      17
 minimum supported schema       1
 bridge contract major          1
@@ -225,7 +225,7 @@ Example:
 
 ```text
 application_version = 0.4.0
-build_commit        = d74e164889bf8952...
+build_commit        = 573e50136dba07f6...
 ```
 
 Build identity answers:

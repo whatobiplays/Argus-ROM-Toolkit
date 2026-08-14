@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust 1.97.1, Cargo resolver 3 / Rust 2024 edition, Flutter 3.44.7 with Dart 3.12.x through FVM, Flutter Material dependencies only, `flutter_lints` 6.x baseline, Bash, ShellCheck, `just`, GitHub Actions.
 
-**Re-evaluation baseline:** Revalidated on 2026-08-11 against the committed governed-document set at HEAD `80e38d73f59daf0a75a1286658572085342d7cb1`. This plan is subordinate to PHASE-000 and the governing architecture/specifications/conventions; later Ready contracts constrain compatibility but do not expand Slice 001 scope.
+**Re-evaluation baseline:** Revalidated on 2026-08-11 against the committed governed-document set at HEAD `847cef9cb3fd65697289df58cf621d81fe8483bf`. This plan is subordinate to PHASE-000 and the governing architecture/specifications/conventions; later Ready contracts constrain compatibility but do not expand Slice 001 scope.
 
 ## Global Constraints
 

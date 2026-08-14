@@ -8,7 +8,7 @@
 
 **Tech Stack:** Flutter 3.44.7, Dart 3.12.x, flutter_riverpod 3.3.2, riverpod_annotation 4.0.3 / riverpod_generator 4.0.4, Freezed 3.2.6-dev.1, Material 3, existing pure-Dart `SettingsApi` / `AppearanceSettings` / `ThemeMode` / `ClientFailure` contracts, flutter_test, FVM, build_runner, and the existing `just` / `rtk` workflow.
 
-**Re-evaluation baseline:** Revalidated on 2026-08-13 against clean `main` at HEAD `e24c2886a9ccdbaa260bcdc2dcbc5249feaabfe5` after Slice 006 lifecycle teardown completion. `PHASE-000` and `SPEC-FE-006` are already **Ready for Implementation** and contain the approved design.
+**Re-evaluation baseline:** Revalidated on 2026-08-13 against clean `main` at HEAD `9c4556c0eddc2e40186695525ed1074a11758e53` after Slice 006 lifecycle teardown completion. `PHASE-000` and `SPEC-FE-006` are already **Ready for Implementation** and contain the approved design.
 
 ## Global Constraints
 

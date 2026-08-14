@@ -151,7 +151,22 @@ void main() {
           isNot(contains('frb_generated')),
           reason: entry.key,
         );
-        expect(entry.value, isNot(contains('ArgusClient')), reason: entry.key);
+        if (entry.key == 'app/bootstrap/app_bootstrap.dart') {
+          // Slice 009's approved narrow bootstrap seam names the gateway
+          // factory interface; every other concrete-client token stays
+          // forbidden so only that seam may mention the client layer.
+          expect(
+            entry.value.replaceAll('ArgusClientGateway', ''),
+            isNot(contains('ArgusClient')),
+            reason: entry.key,
+          );
+        } else {
+          expect(
+            entry.value,
+            isNot(contains('ArgusClient')),
+            reason: entry.key,
+          );
+        }
       }
       expect(
         sources.keys.where((path) => path.startsWith('features/')).toList(),
@@ -377,17 +392,32 @@ void main() {
     );
   });
 
-  test('appearance sources contain no process-restart persistence proof', () {
+  test('appearance production sources own no process orchestration or restart '
+      'harness', () {
+    // Slice 009 proves restart restoration through integration tests, so
+    // appearance sources may describe restart behavior in prose. They must
+    // not launch child processes, inspect the Slice 009 test environment,
+    // or add a second persistence mechanism: process orchestration and
+    // harness input stay test-owned.
+    const forbiddenConcepts = <String>[
+      'dart:io',
+      'Process.run',
+      'ARGUS_PHASE_000_RESTART_MODE',
+      'ARGUS_PHASE_000_DATA_DIR',
+    ];
     for (final entry in sources.entries) {
-      final isSlice007AppSource =
+      final isAppAppearanceSource =
           entry.key == 'app/bootstrap/application_presentation.dart' ||
           entry.key == 'app/bootstrap/application_presentation_gate.dart' ||
           entry.key == 'app/bootstrap/app_bootstrap.dart' ||
           entry.key == 'app/bootstrap/argus_app.dart';
-      if (!entry.key.startsWith('features/settings/') && !isSlice007AppSource) {
+      if (!entry.key.startsWith('features/settings/') &&
+          !isAppAppearanceSource) {
         continue;
       }
-      expect(entry.value, isNot(contains('restart')), reason: entry.key);
+      for (final concept in forbiddenConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
+      }
     }
   });
 

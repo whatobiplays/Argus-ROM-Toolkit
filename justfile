@@ -78,4 +78,7 @@ test:
     @bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --workspace --all-features --locked
     cd flutter && fvm flutter test --no-pub
 
+test-phase-000-native:
+    bash scripts/run_phase_000_native_tests.sh
+
 check: check-generated _format-check lint _architecture test

@@ -1,5 +1,6 @@
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
+import 'package:argus/core/client/client.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
@@ -10,12 +11,23 @@ import 'appearance_event_coordinator.dart';
 /// Owns the single application-level Riverpod scope.
 class ArgusBootstrap extends StatelessWidget {
   /// Creates the application bootstrap root.
-  const ArgusBootstrap({super.key});
+  const ArgusBootstrap({this.clientGatewayFactory, super.key});
+
+  /// Optional narrow test seam for pointing the real composition at a
+  /// test-owned bridge gateway (for example an isolated data directory).
+  ///
+  /// Production startup uses [bootstrapArgus] with no override; this seam
+  /// deliberately exposes only the gateway factory, never an arbitrary
+  /// provider-override list or environment-driven behavior.
+  final ArgusClientGateway Function()? clientGatewayFactory;
 
   @override
   Widget build(BuildContext context) {
+    final factory = clientGatewayFactory;
     return ProviderScope(
       overrides: [
+        if (factory != null)
+          argusClientGatewayFactoryProvider.overrideWithValue(factory),
         appearanceSettingsApiProvider.overrideWith(
           (ref) => ref.watch(argusClientProvider).settings,
         ),

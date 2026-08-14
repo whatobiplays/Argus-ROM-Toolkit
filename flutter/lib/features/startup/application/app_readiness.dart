@@ -1,3 +1,4 @@
+import 'package:argus/core/client/client.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'startup_controller.dart';
@@ -26,3 +27,17 @@ AppReadiness appReadiness(Ref ref) {
 /// distinguish a certified failed runtime from other pre-ready states.
 bool appReadinessIsPreShell(AppReadiness readiness) =>
     readiness != AppReadiness.ready;
+
+/// Projects the current ready runtime identity, or null while backend
+/// readiness has not been certified.
+///
+/// This is the narrow typed seam app composition uses to keep the appearance
+/// feature bound to the runtime generation that owns settings authority.
+@Riverpod(keepAlive: true)
+RuntimeInstanceId? readyRuntimeInstanceId(Ref ref) {
+  final value = ref.watch(startupControllerProvider).value;
+  return switch (value) {
+    StartupStateReady(:final runtimeInstanceId) => runtimeInstanceId,
+    _ => null,
+  };
+}

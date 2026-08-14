@@ -1,3 +1,5 @@
+import 'package:argus/app/bootstrap/application_presentation.dart';
+import 'package:argus/app/bootstrap/application_presentation_gate.dart';
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
 import 'package:argus/features/startup/startup.dart';
@@ -13,13 +15,15 @@ class ArgusApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    final authoritativeThemeMode = ref.watch(rootThemeModeProvider);
 
     return MaterialApp.router(
       title: 'Argus ROM Toolkit',
       theme: ArgusTheme.light,
       darkTheme: ArgusTheme.dark,
-      themeMode: ThemeMode.system,
-      builder: (context, child) => StartupGate(child: child!),
+      themeMode: authoritativeThemeMode ?? ThemeMode.system,
+      builder: (context, child) =>
+          StartupGate(child: ApplicationPresentationGate(child: child!)),
       routerConfig: router,
     );
   }

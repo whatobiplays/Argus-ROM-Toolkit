@@ -1,4 +1,7 @@
 import 'package:argus/app/bootstrap/argus_app.dart';
+import 'package:argus/app/bootstrap/client_bootstrap.dart';
+import 'package:argus/features/settings/settings_composition.dart';
+import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,7 +12,22 @@ class ArgusBootstrap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ProviderScope(child: ArgusApp());
+    return ProviderScope(
+      overrides: [
+        appearanceSettingsApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).settings,
+        ),
+        appearanceRuntimeContextProvider.overrideWith((ref) {
+          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+          return runtimeInstanceId == null
+              ? const AppearanceRuntimeContext.preReady()
+              : AppearanceRuntimeContext.ready(
+                  runtimeInstanceId: runtimeInstanceId,
+                );
+        }),
+      ],
+      child: const ArgusApp(),
+    );
   }
 }
 

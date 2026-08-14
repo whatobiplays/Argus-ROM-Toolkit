@@ -2,11 +2,14 @@ import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/client/client.dart';
+import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
+import 'package:argus/features/settings/application/appearance_settings_state.dart';
 import 'package:argus/features/startup/startup.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../settings/appearance_settings_test_fakes.dart';
 import 'startup_test_fakes.dart';
 
 void main() {
@@ -180,12 +183,22 @@ void main() {
   ) async {
     final bootstrap = FakeClientBootstrap();
     final runtime = FakeRuntimeApi();
+    final settingsApi = FakeSettingsApi();
     final container = ProviderContainer(
       overrides: [
         clientBootstrapProvider.overrideWithValue(bootstrap),
         runtimeApiProvider.overrideWithValue(runtime),
         diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
         runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
+        appearanceSettingsApiProvider.overrideWithValue(settingsApi),
+        appearanceRuntimeContextProvider.overrideWith((ref) {
+          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+          return runtimeInstanceId == null
+              ? const AppearanceRuntimeContext.preReady()
+              : AppearanceRuntimeContext.ready(
+                  runtimeInstanceId: runtimeInstanceId,
+                );
+        }),
       ],
     );
     addTearDown(container.dispose);
@@ -212,6 +225,10 @@ void main() {
       RuntimeState.ready(runtimeInstanceId: testId('b')),
     );
     await retry;
+    await tester.pump();
+    settingsApi.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.light),
+    );
     await tester.pumpAndSettle();
 
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);

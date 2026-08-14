@@ -24,9 +24,10 @@ void main() {
   });
 
   test('appReadiness is ready only for authoritative Ready', () async {
+    final bootstrap = FakeClientBootstrap();
     final container = ProviderContainer(
       overrides: [
-        clientBootstrapProvider.overrideWithValue(FakeClientBootstrap()),
+        clientBootstrapProvider.overrideWithValue(bootstrap),
         runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
         diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
         runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
@@ -35,7 +36,46 @@ void main() {
     addTearDown(container.dispose);
 
     expect(container.read(appReadinessProvider), AppReadiness.preReady);
+    expect(container.read(readyRuntimeInstanceIdProvider), isNull);
     container.read(startupControllerProvider.notifier);
     expect(container.read(appReadinessProvider), AppReadiness.preReady);
+    expect(container.read(readyRuntimeInstanceIdProvider), isNull);
+
+    bootstrap.completers.single.complete(
+      RuntimeState.ready(runtimeInstanceId: testId('a')),
+    );
+    for (var i = 0; i < 100; i++) {
+      await Future<void>.value();
+    }
+
+    expect(container.read(appReadinessProvider), AppReadiness.ready);
+    expect(container.read(readyRuntimeInstanceIdProvider), testId('a'));
   });
+
+  test(
+    'readyRuntimeInstanceId stays null while startup never becomes Ready',
+    () async {
+      final bootstrap = FakeClientBootstrap();
+      final container = ProviderContainer(
+        overrides: [
+          clientBootstrapProvider.overrideWithValue(bootstrap),
+          runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
+          diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
+          runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.read(startupControllerProvider.notifier);
+      bootstrap.completers.single.completeError(
+        const TransportFailure('startup failed'),
+      );
+      for (var i = 0; i < 100; i++) {
+        await Future<void>.value();
+      }
+
+      expect(container.read(appReadinessProvider), AppReadiness.preReady);
+      expect(container.read(readyRuntimeInstanceIdProvider), isNull);
+    },
+  );
 }

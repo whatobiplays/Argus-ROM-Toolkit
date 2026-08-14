@@ -1,7 +1,8 @@
 /// Startup, recovery, and pre-ready admission for the Argus application.
 library;
 
-export 'application/app_readiness.dart' show AppReadiness, appReadinessProvider;
+export 'application/app_readiness.dart'
+    show AppReadiness, appReadinessProvider, readyRuntimeInstanceIdProvider;
 export 'application/startup_controller.dart'
     show StartupController, startupControllerProvider;
 export 'application/startup_state.dart'

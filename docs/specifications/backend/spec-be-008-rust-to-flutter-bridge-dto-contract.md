@@ -4,7 +4,7 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-X-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1546,6 +1546,8 @@ The root dimensions remain independent. The bridge must not collapse `availabili
 
 `lastScan`, when present, carries only the bounded terminal summary owned by SPEC-BE-013, including the relevant scan/job identities, status, and timestamps required by the consumer contract.
 
+Its status is the closed Phase 001 `LibraryRootLastScanStatusDto` vocabulary: `Complete`, `Partial`, `Unavailable`, `Cancelled`, `Failed`, or `Abandoned`; `lastScan = null` represents `NeverScanned`. This summary remains independent from root `availability`, so `Cancelled` and `Abandoned` do not imply an availability change.
+
 `activeScan`, when present, carries only the bounded current ownership/job summary required by the root projection. It does not replace `GetJob` as generic job authority.
 
 Source hierarchy browsing uses a row/detail split:
@@ -1710,6 +1712,8 @@ OverlapsExisting(existingLibraryRootId, relationship)
 
 `AlreadyConfigured` and `OverlapsExisting` are expected non-mutating outcomes, not infrastructure/application failures.
 
+Repeating the exact same validated selection is replay-safe: it returns `AlreadyConfigured(existingLibraryRootId)` without creating a duplicate root, mutating the existing root, or reporting a second creation.
+
 ### 66.10 Add local library root and scan
 
 Conceptually:
@@ -1729,7 +1733,7 @@ AddedAndScanAdmitted(
 
 AddedButScanNotAdmitted(
     root: LibraryRootDto,
-    boundedAdmissionReason
+    childIssue: LibraryScanChildAdmissionIssueDto
 )
 
 AlreadyConfigured(existingLibraryRootId)
@@ -1750,7 +1754,17 @@ child scan admission attempt
 
 `AddedButScanNotAdmitted` therefore includes the committed root and must not be translated into a failure shape suggesting root creation rolled back.
 
-The bounded admission reason is typed/sanitized application context. It is not a raw runtime/native error string.
+The child issue is the closed typed union:
+
+```text
+LibraryScanChildAdmissionIssueDto
+├── AlreadyScanning(activeJobRunId, activeScanRunId)
+└── AdmissionFailure(applicationError: ApplicationErrorDto)
+```
+
+It is never a free-form reason string or raw runtime/provider failure.
+
+After a transport-ambiguous `AddLocalLibraryRootAndScan` result, Flutter must not blindly replay the composite workflow. It may replay only `AddLocalLibraryRoot` with the exact same selection to establish the authoritative root identity, then query Sources and Jobs. Only when authoritative state shows no child admission may it issue an explicit `StartLibraryScan` request.
 
 ### 66.11 Single-root scan admission
 
@@ -1804,6 +1818,17 @@ Rules:
 4. `NothingEligible` creates no empty job.
 5. Existing scans are not silently queued behind or absorbed into a new Scan All job.
 
+The admitted/excluded target vocabulary is:
+
+```text
+LibraryScanTargetExclusionDto
+├── AlreadyScanning(libraryRootId, activeJobRunId, activeScanRunId)
+├── NoLongerConfigured(libraryRootId)
+└── InvalidConfiguration(libraryRootId, applicationError: ApplicationErrorDto)
+```
+
+Initial Scan All normally uses `AlreadyScanning` and `InvalidConfiguration`; retry revalidation may additionally use `NoLongerConfigured`.
+
 ### 66.13 Root removal result
 
 Conceptually:
@@ -1821,13 +1846,16 @@ Removed
 RootHasActiveScan(
     libraryRootId,
     jobRunId,
-    scanRunId
+    scanRunId,
+    owningJobRootCount
 )
 ```
 
 `Removed` means Argus configuration/current indexed state was removed. It never means user filesystem content was deleted or modified.
 
 `RootHasActiveScan` is an expected non-mutating coordination outcome used by the FE-008 Cancel Scan & Remove workflow.
+
+`owningJobRootCount` is the bounded authoritative size of the owning LibraryScan scope. A value greater than one allows the UI to disclose that job-scoped cancellation may stop work for other roots; the bridge does not imply nonexistent root-scoped cancellation.
 
 The mutation response does not include an updated root-list snapshot; Flutter reconciles through authoritative Sources queries.
 
@@ -2012,7 +2040,7 @@ admitted root summaries
 typed admission exclusions
 per-root ScanRun projections
 scan-specific structured progress
-historical root display snapshots
+historical root display snapshots containing `displayName` and bounded `safeLocationDisplay`
 retrySourceJobRunId nullable
 retrySuccessorJobRunId nullable
 ```
@@ -2077,6 +2105,11 @@ Typed successful outcomes:
 Admitted(operationHandle: OperationHandleDto)
 AlreadyRetried(existingJobRunId)
 NotAdmitted(reason: RetryNotAdmittedReasonDto)
+
+RetryNotAdmittedReasonDto
+├── SourceRunNotTerminal
+├── OperationNotRetryable
+└── NoEligibleTargets(exclusions: LibraryScanTargetExclusionDto[])
 ```
 
 Rules:
@@ -2181,15 +2214,21 @@ Conceptually:
 ```text
 SourceEntriesChangedDto
 - libraryRootId
-- parentSourceEntryId nullable
+- scope: SourceEntriesChangeScopeDto
+
+SourceEntriesChangeScopeDto
+├── RootChildren
+├── EntryChildren(parentSourceEntryId)
+└── EntireRootHierarchy
 ```
 
 Rules:
 
-1. The event invalidates source hierarchy information for the identified root.
-2. When `parentSourceEntryId` is present, the backend asserts that refreshing that child scope is a reliable response to this notification.
-3. When the backend cannot state that narrow scope reliably, the parent identity is omitted and the consumer performs the broader safe hierarchy reconciliation required by SPEC-FE-008.
-4. The event carries no `SourceEntryDto` collection or complete tree snapshot.
+1. `RootChildren` invalidates the direct configured-root child page.
+2. `EntryChildren` invalidates the direct child page of exactly one source entry.
+3. `EntireRootHierarchy` requires broader loaded-hierarchy reconciliation for the root.
+4. Coalescing may broaden narrow invalidations to `EntireRootHierarchy`; it must never narrow or misrepresent affected scope.
+5. The event carries no `SourceEntryDto` collection or complete tree snapshot.
 
 ### 66.31 Job and Sources event authority separation
 
@@ -2320,6 +2359,9 @@ LocalFilesystemRootSelectionDto
 
 LibraryRootDto
 LibraryRootPageDto
+LibraryRootLastScanStatusDto
+LibraryScanChildAdmissionIssueDto
+LibraryScanTargetExclusionDto
 SourceEntryDto
 SourceEntryDetailDto
 SourceEntryChildrenPageDto
@@ -2340,12 +2382,14 @@ LibraryScanJobDetailDto
 
 CancelJobResultDto
 RetryJobResultDto
+RetryNotAdmittedReasonDto
 
 JobStateChangedDto
 JobProgressDto
 LibraryRootsChangedDto
 LibraryRootChangedDto
 SourceEntriesChangedDto
+SourceEntriesChangeScopeDto
 ```
 
 Phase 001 does not generate empty DTO/API families for future games, metadata, hashing, artwork, verification, or resumable-operation functionality.
@@ -2358,9 +2402,12 @@ Required bridge contract coverage includes:
 - `OperationHandleDto.jobRunId` maps exactly to canonical `JobRunId`;
 - no second background-operation identity exists;
 - root availability/last-scan/active-scan dimensions retain their independent semantics/nullability;
+- root last-scan mapping covers `Complete`, `Partial`, `Unavailable`, `Cancelled`, `Failed`, `Abandoned`, and nullable `NeverScanned` semantics without deriving availability;
 - source row/detail DTO separation;
 - source cursors remain opaque;
 - all typed workflow-result variants map exhaustively;
+- Add-and-Scan child issues, Scan All/retry exclusions, and retry-not-admitted reasons map exhaustively without free-form strings;
+- active-root removal maps `owningJobRootCount` without implying root-scoped cancellation;
 - every generic job lifecycle state maps correctly, including `CompletedWithIssues`, `Interrupted`, and `Abandoned`;
 - control availability is mapped from backend authority rather than recomputed in the bridge;
 - typed `OperationDetailDto` mapping has no arbitrary extension bag;
@@ -2433,6 +2480,7 @@ The unified runtime event contract must prove:
 - `LibraryRootsChangedDto` carries no root list snapshot;
 - `LibraryRootChangedDto` carries no root snapshot;
 - `SourceEntriesChangedDto` carries no source-entry collection;
+- `SourceEntriesChangedDto` maps `RootChildren`, `EntryChildren`, and `EntireRootHierarchy` exactly and coalescing only broadens scope;
 - sequence gaps remain observable;
 - runtime replacement resets sequence interpretation;
 - dropped/coalesced notifications do not affect authoritative query correctness.
@@ -2466,19 +2514,19 @@ The Phase 001 amendment is satisfied when:
 5. Root/source DTOs preserve SPEC-BE-013 authoritative projection boundaries without screen-shaped aggregate DTOs.
 6. Root, source-child, and Jobs paging preserve their distinct governed semantics.
 7. Expected Sources workflow states map to typed successful unions rather than generic application failure.
-8. `AddLocalLibraryRootAndScan` preserves the committed-root/scan-admission split across the bridge.
-9. root removal exposes `RootHasActiveScan` as an expected non-mutating outcome and never implies filesystem deletion.
+8. `AddLocalLibraryRootAndScan` preserves the committed-root/typed-child-admission split, and ambiguous composite outcomes reconcile through replay-safe root creation plus authoritative queries rather than blind composite replay.
+9. root removal exposes `RootHasActiveScan` with owning-job scope as an expected non-mutating outcome, supports whole-job cancellation disclosure, and never implies filesystem deletion.
 10. `ListJobs` uses only the closed `Active` and `RecentTerminal` scopes required by Phase 001.
 11. `GetJob` returns generic `JobRunDto` plus typed `OperationDetailDto`.
 12. LibraryScan is the only active operation-detail variant and no arbitrary JSON extension bag is introduced.
 13. control availability is backend-authoritative and Phase 001 exposes `canCancel` / `canRetry` but no `canResume`.
 14. Phase 001 `JobsBridge` does not expose unused `ResumeJob`.
 15. Cancel distinguishes durable cancellation request from terminal cancellation.
-16. Retry creates new execution identity and returns typed `Admitted`, `AlreadyRetried`, or `NotAdmitted` outcomes.
+16. Retry creates new execution identity and returns typed `Admitted`, `AlreadyRetried`, or `NotAdmitted` outcomes with the exact Phase 001 reason/exclusion vocabulary.
 17. one LibraryScan execution has at most one direct retry successor and retry chains remain linear.
 18. ambiguous Retry recovery can establish the successor through authoritative job detail without blind duplicate replay.
 19. the inactive Phase 000 per-transition operation-event reservation is replaced before first activation by `JobStateChangedDto` plus `JobProgressDto`.
-20. Sources adds only the minimal typed invalidations `LibraryRootsChangedDto`, `LibraryRootChangedDto`, and `SourceEntriesChangedDto`.
+20. Sources adds only the minimal typed invalidations `LibraryRootsChangedDto`, `LibraryRootChangedDto`, and explicitly scoped `SourceEntriesChangedDto`; generic job lifecycle/progress remains runtime-owned.
 21. all Phase 001 notifications remain on the one unified runtime event stream.
 22. events remain notification-first; queries repair dropped/coalesced event uncertainty.
 23. no backend progress percentage or weighted overall LibraryScan percentage is published.

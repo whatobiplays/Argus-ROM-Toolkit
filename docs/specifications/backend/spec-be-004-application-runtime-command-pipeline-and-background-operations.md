@@ -1156,10 +1156,11 @@ On startup, persisted jobs left in active execution states from a previous runti
 
 The runtime must not assume that in-memory work survived.
 
-Jobs found in `Queued`, `Preparing`, or `Running` from a prior runtime are reconciled according to the operation's recovery policy and durable execution state:
+Jobs found in `Queued`, `Preparing`, or `Running` from a prior runtime are reconciled according to the operation's recovery policy and durable execution state, including any accepted cancellation intent:
 
 - `Interrupted` when a prior execution produced a valid durable checkpoint that permits future resume
-- `Abandoned` when the prior execution cannot resume safely, including queued work that never established resumable execution state
+- `Cancelled` when durable cancellation intent had already been accepted and the operation's recovery policy maps that intent to terminal cancellation
+- `Abandoned` when the prior execution cannot resume safely and no accepted cancellation intent maps it to `Cancelled`, including queued work that never established resumable execution state
 
 During MVP:
 

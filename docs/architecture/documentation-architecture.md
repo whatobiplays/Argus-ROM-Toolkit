@@ -3,7 +3,7 @@
 **Document ID:** ARCH-002  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -169,16 +169,22 @@ Templates may contain bracketed authoring prompts. Ready or Complete documents m
 
 ## 7. Reference Direction
 
-Dependencies point upward:
+Authoritative dependencies point only to prerequisites and remain acyclic:
 
 ```text
-Phase → Architecture / Reference
-Specification → Architecture / Phase / Reference
-Slice → Phase / Specification / Reference
+Architecture → prerequisite Architecture / Reference
+Reference → Architecture / prerequisite Reference
+Phase → Architecture / Reference / prerequisite earlier Phase
+Specification → Architecture / governing Phase / Reference / prerequisite Specification / Convention
+Slice → Phase / Specification / Reference / Convention
 Task → Slice / Specification / Convention / Reference
 ```
 
-Higher-level documents should not depend on lower-level implementation tasks.
+A phase must not list same-phase subsystem specifications that refine that phase in its authoritative `Depends On` metadata. Those refining contracts belong in the phase's required-specification and reference sections; listing them as prerequisites would create a semantic dependency cycle.
+
+A specification may depend on another prerequisite specification when the relationship is explicit and acyclic. A phase may depend on an earlier phase whose completed capability is a prerequisite.
+
+Higher-level documents should not depend on lower-level implementation slices or tasks.
 
 Related-document links may be bidirectional for navigation, but the authoritative `Depends On` relationship must remain acyclic.
 
@@ -292,4 +298,4 @@ When documents conflict, agents apply the highest-level authoritative contract a
 
 ## 16. Current Documentation Milestone
 
-Implement `PHASE-000` through bounded implementation slices and Codex tasks while keeping specifications synchronized with repository evidence. Later-ready MVP specifications remain forward contracts until an active phase and slice invoke them.
+The Phase 000 product and automated verification baseline is implemented, while `PHASE-000` remains `In Progress` until its explicitly deferred manual evidence is executed honestly. Implement `PHASE-001` through bounded vertical slices and Codex tasks while keeping architecture, Phase 000 contracts, and the active Phase 001 specifications synchronized with repository evidence. Deferred Phase 000 manual evidence does not block Phase 001 unless it later exposes a foundation defect. Later-ready MVP specifications remain forward contracts until an active phase and slice invoke them.

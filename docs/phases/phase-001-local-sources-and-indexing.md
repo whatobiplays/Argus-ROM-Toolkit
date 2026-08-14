@@ -4,7 +4,7 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-004, SPEC-BE-006, SPEC-BE-008, SPEC-BE-009, SPEC-BE-011, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -21,6 +21,8 @@ The governing product boundary is:
 ### 1.1 Active implementation authority
 
 Phase 001 implementation authority exists because the focused Phase 001 public contracts identified in Section 6 are complete and this document has moved to **Ready for Implementation**.
+
+Section 6 lists governing prerequisites and same-phase refining contracts. Those same-phase subsystem specifications intentionally do not appear in this phase's authoritative `Depends On` metadata because they refine this phase rather than precede it.
 
 While this document was in Draft, it served as sequencing and product-scope authority only, not authorization to implement unresolved bridge, application-service, Sources, or Jobs contracts.
 
@@ -134,22 +136,31 @@ Required capabilities include:
 
 Phase 001 does not require arbitrary editing of provider configuration, root locators, or discovery policy after creation. A later focused specification may add edit workflows when there is concrete user value.
 
-### 4.2 Fixed Discovery Policy
+### 4.2 Fixed Discovery and Classification Policy
 
-Phase 001 uses one centrally owned, deterministic MVP discovery policy.
+Phase 001 uses one centrally owned, deterministic MVP discovery and classification policy. It answers what provider-visible source objects exist without guessing game/content meaning or silently filtering ordinary storage objects by name.
 
-The phase requires:
+The fixed policy is:
 
-- recursive discovery of retained provider-native directory/file structure within the configured root;
-- no symlink, alias, junction, or equivalent link-like traversal;
-- bounded traversal/resource behavior;
-- deterministic policy capture for one scan plan;
-- no user-facing include/exclude editor;
-- no hidden/system-file preference UI;
-- no user-configurable maximum depth;
-- no archive/container expansion in this phase.
+| Provider observation | Retain | Traverse | Phase 001 persisted kind | Phase 001 classification |
+|---|---:|---:|---|---|
+| Directory | Yes | Yes | `Directory` | `Container` |
+| File | Yes | No | `File` | `Unknown` |
+| Link-like | Yes | No | `LinkLike` | `Ignored` |
+| Other/unsupported structural object | Yes | No | `Unknown` | `Ignored` |
 
-Potential archives, disc images, playlists, and other meaningful files are retained in Phase 001 as ordinary provider-observed `File` entries. Phase 001 does not refine them into archive, playlist, disc-image, or other transformation-owned semantic kinds. Later transformation work may refine application-owned kind/classification without changing stable `SourceEntryId` when its contract permits.
+Additional invariants:
+
+- no filename, extension, include-pattern, exclude-pattern, hidden, or system-attribute rule removes an otherwise provider-visible ordinary entry from the managed graph;
+- hidden/system directories and files follow the same structural mapping above;
+- symlinks, aliases, junctions, and equivalent link-like objects are retained as non-traversable evidence and are never followed;
+- no user-facing include/exclude editor, hidden/system preference, or maximum-depth setting exists;
+- no semantic maximum depth is treated as a successful policy exclusion;
+- bounded safety/resource limits remain mandatory, but exhausting one makes the affected scope incomplete and produces `Partial` or `Failed` according to committed useful work; it never grants absence authority or silently truncates a `Complete` scan;
+- the complete effective policy and policy revision are frozen into each scan plan;
+- archive/container expansion is not performed in this phase.
+
+Potential archives, disc images, playlists, and other meaningful files are retained as ordinary provider-observed `File` entries classified `Unknown`. Phase 001 does not refine them into archive, playlist, disc-image, content-candidate, or other transformation-owned semantic kinds. Later transformation work may refine application-owned kind/classification without changing stable `SourceEntryId` when its contract permits.
 
 ### 4.3 Durable Background Job Activation
 
@@ -246,6 +257,8 @@ Absence authority is strictly bounded:
 ### 4.8 Conservative Move Preservation
 
 Phase 001 preserves `SourceEntryId` across a move only when the provider/indexing contracts establish trustworthy continuity.
+
+Phase 001 has no authoritative `ContentIdentity`, so SPEC-BE-011's strong-content-identity move tier is inactive. Only unambiguous stable provider-native identity may preserve `SourceEntryId`; every other apparent move is removal plus creation once the relevant completed scope has absence authority.
 
 It must not preserve identity based only on:
 
@@ -356,6 +369,8 @@ The persisted provider type remains one `LocalFilesystem` family across desktop 
 
 Correctness must be based on effective resolved-root/provider guarantees rather than broad OS stereotypes about case sensitivity, identity, link behavior, or filesystem semantics.
 
+Platforms that require durable filesystem authorization (for example a sandboxed macOS application) keep that authorization provider-owned and opaque: persisted configuration may carry provider-owned opaque authorization material in addition to the logical path/location, reopening a configured root restores or reacquires authorization before traversal, and a stale/revoked authorization is a typed source-access failure rather than a reason to delete the configured root.
+
 The primary complete native E2E milestone may remain macOS-based. Windows and Linux require targeted native filesystem/provider coverage sufficient to prove their implementation is exercised rather than dead compile-only code.
 
 ## 5. Out of Scope
@@ -403,8 +418,11 @@ Phase 001 depends on the following existing contracts:
 | ARCH-001 | Argus ROM Toolkit Architecture | MVP scope, source/indexing model, jobs, Flutter ownership, scalability, security |
 | ARCH-002 | Documentation Architecture | authority hierarchy, phase/slice rules, readiness requirements |
 | PHASE-000 | Foundation | runtime, persistence, bridge, Flutter shell, startup/recovery, settings, events |
+| SPEC-BE-002 | SQLite, Migrations, Repositories, and Unit of Work | Phase 000-to-Phase 001 migrations, repositories, transactional checkpoints, historical/current-state separation |
+| SPEC-BE-003 | Application Errors, Logging, Diagnostics, and Observability | stable failures, trace correlation, sanitization, diagnostics boundaries |
 | SPEC-BE-004 | Application Runtime, Command Pipeline, and Background Operations | durable jobs, cancellation, progress, restart reconciliation |
 | SPEC-BE-006 | Minimal Domain Event Bus | post-commit application event semantics |
+| SPEC-BE-007 | Startup Coordination and Recovery Contract | Phase 001 service composition and bounded stale-execution reconciliation before readiness |
 | SPEC-BE-008 | Rust-to-Flutter Bridge DTO Contract | bridge identity/result/event rules and long-running operation foundation |
 | SPEC-BE-009 | Application Service Contracts | use-case, transaction, repository, gateway, and event-recording ownership |
 | SPEC-BE-011 | Source Provider and Indexing Contract | local source provider, roots, observations, source graph, reconciliation, scan semantics |
@@ -415,6 +433,7 @@ Phase 001 depends on the following existing contracts:
 | SPEC-FE-005 | Startup and Recovery UI | preservation of Phase 000 startup/recovery authority |
 | SPEC-FE-006 | Appearance Settings and Theme Application | preservation of root-theme authority |
 | SPEC-FE-007 | Design-System Foundation and Accessibility Baseline | responsive/accessibility presentation baseline |
+| SPEC-X-001 | Versioning and Compatibility Contract | additive bridge evolution, migration compatibility, and durable contract semantics |
 
 ### 6.1 Focused contracts required before Ready
 
@@ -438,6 +457,8 @@ These focused contracts must refine the approved phase decisions rather than reo
 
 Phase 001 uses seven vertical slices. Infrastructure may be introduced only when required by the observable outcome of the active slice.
 
+Before any Phase 001 slice relies on the foundation, the repository must satisfy the applicable automated Phase 000 implementation and verification gates. The explicitly deferred Phase 000 manual evidence remains `NOT RUN`, must never be reported as passed, and does not block Phase 001 unless executing it later exposes a foundation defect. A Phase 001 slice may extend the implemented foundation; it must not silently compensate for an incomplete or defective Phase 000 contract by creating a parallel runtime, persistence, bridge, event, startup, routing, or theme path.
+
 ### SLICE-P01-001 — Sources Navigation and Library Folder Configuration
 
 **Outcome:** The shipped application exposes a genuine Sources destination where a user can select, validate, persist, list, and safely remove local library folders using the folder-first product model, while preserving Phase 000 startup/theme behavior and without implementing scan execution yet.
@@ -446,9 +467,9 @@ This slice establishes only the source/root configuration contracts required by 
 
 ### SLICE-P01-002 — Durable Library Scan Job Foundation
 
-**Outcome:** A configured root can start one real single-root `LibraryScan` background execution with persisted job/scan identity, durable lifecycle/progress evidence, cancellation plumbing, a genuine Jobs destination, and shell active-job indication.
+**Outcome:** A never-scanned configured root can start one real single-root `LibraryScan` background execution with persisted job/scan identity, durable lifecycle/progress evidence, cancellation plumbing, a genuine Jobs destination, shell active-job indication, and incremental persistence of retained positive source observations under the fixed Phase 001 policy.
 
-The scan must exercise the real local-filesystem operation boundary and durable runtime lifecycle. This slice does not yet claim complete source-graph reconciliation behavior reserved for Slice 003.
+The scan must exercise the real local-filesystem operation boundary and durable runtime lifecycle. It may report `Complete` only when the first scan fully enumerated and persisted the initially empty managed graph. This slice does not activate repeat-scan absence deletion, prior-entry reconciliation, or move preservation; those authority-sensitive behaviors begin in Slice 003.
 
 ### SLICE-P01-003 — Authoritative Source Graph Indexing and Reconciliation
 
@@ -513,16 +534,20 @@ Root-level source unavailability remains distinct from a nested inaccessible/mis
 
 ### 8.4 Cancellation
 
-Cancellation is cooperative and durable.
+Cancellation is cooperative, durable, and job-scoped.
 
 Required invariants:
 
-- cancellation intent is persisted through the job/runtime contract;
+- cancellation targets the owning `LibraryScan` background execution (the logical scan operation/job), never an individual root inside a multi-root Scan All job; Phase 001 provides no root-scoped cancellation;
+- cancellation intent is persisted through the job/runtime contract and remains distinguishable from unexpected process loss;
 - providers/indexing stop initiating new work promptly at safe checkpoints;
-- committed positive observations remain valid;
+- a cancellation request arriving while a coherent mutation or scope finalization is already committing does not interrupt that in-flight transaction; the mutation commits atomically and cancellation is observed at the next safe checkpoint;
+- a root whose child `ScanRun` already reached `Complete` before cancellation keeps that durable outcome; other still-active roots terminate as `Cancelled`, and the owning job is `Cancelled` when cancellation determines termination;
+- committed positive observations remain valid, including partial discoveries from interrupted roots;
 - cancellation grants no absence authority;
 - terminal historical runs are immutable;
-- a retry creates new execution identities.
+- a retry creates new execution identities;
+- after restart, accepted durable cancellation intent maps stale active child scans to `Cancelled`, while unexpected loss maps them to recovery-only `Abandoned` (see Section 8.7).
 
 ### 8.5 Folder removal while scanning
 
@@ -544,21 +569,30 @@ remove root + current Argus-managed source graph
 
 Destructive current-state removal must not proceed merely because Flutter lost contact with a cancellation request.
 
+`CancelJob` is job-scoped. When the root belongs to a multi-root Scan All execution, approving **Cancel Scan & Remove** cancels the entire owning job and may stop work for other roots. The confirmation and typed active-owner detail must disclose that impact; Phase 001 does not pretend to provide root-scoped cancellation inside a multi-root job.
+
 ### 8.6 Multi-root failure isolation
 
 A Scan All job may have mixed root outcomes.
 
 Failure, unavailability, existing ownership, or cancellation affecting one root must not be silently reinterpreted as success for that root. Other roots may continue when permitted by the focused orchestration contract.
 
+A root that completes while another root is still enumerating keeps its durable `Complete` child outcome; aggregate job status is derived from all child outcomes and never rewrites an already-terminal child.
+
 ### 8.7 Restart recovery
 
-On startup, persisted library scan jobs left in active states from a previous runtime are reconciled according to SPEC-BE-004 and the scan-specific contract.
+Before the replacement runtime becomes `Ready`, startup performs bounded mandatory persistence reconciliation for stale Phase 001 execution. It performs no provider I/O, enumeration, retry admission, automatic resume, or new significant user work.
 
-Phase 001 does not automatically resume significant user work.
+For each stale `LibraryScan` job:
 
-Stale active `ScanRun` records become recovery-terminal history according to the focused contract, with committed positive observations preserved and no retroactive absence authority.
+1. already-terminal child `ScanRun`s remain unchanged;
+2. a child still marked `Running` becomes `Cancelled` when durable cancellation intent had been accepted for the owning job, otherwise it becomes recovery-only `Abandoned`;
+3. if every child was already terminal because the process died after child finalization but before generic job aggregation, the `JobRun` terminal state is derived from those durable child outcomes and admission exclusions rather than defaulted to `Abandoned`;
+4. otherwise any recovery-cancelled child makes the owning job `Cancelled`, and any recovery-abandoned child makes it `Abandoned`;
+5. root last-scan summaries are updated from the recovered child terminal result, while `Cancelled` and `Abandoned` do not change root availability;
+6. stale root ownership is cleared, committed positive observations remain valid, and no incomplete scope gains absence authority.
 
-The user explicitly starts a fresh scan/retry after restart.
+Failure of this mandatory reconciliation prevents readiness. The user explicitly starts Scan Again, Scan All, or Retry afterward, creating new execution identities.
 
 ### 8.8 Event uncertainty
 
@@ -591,6 +625,9 @@ Required security/privacy rules are:
 11. No credentials, tokens, API keys, or new credential-storage mechanism are introduced.
 12. No remote provider/network activity is introduced by scanning local folders.
 13. Temporary test/E2E directories must be test-owned and must never point at the developer's real ROM library or normal Argus application-data directory.
+14. On platforms that require durable access authorization (for example a sandboxed macOS application), provider-owned opaque authorization material is persisted with the configured source only inside the provider boundary; the domain/application model never depends on platform-specific bookmark or authorization types.
+15. Reopening a configured local source after restart restores or reacquires platform authorization before traversal; stale, missing, or revoked authorization produces a typed source-access failure and never silently deletes the configured source/root.
+16. Non-sandboxed platforms/providers remain free to use simpler authorization representations.
 
 ## 10. Test Strategy
 
@@ -625,7 +662,11 @@ Required coverage includes:
 - cancellation never grants absence authority;
 - stale/incompatible scan-plan authority suppresses destructive finalization;
 - policy pruning follows the governing distinction between exclusion and physical absence;
-- root-level unavailability remains distinct from nested failure.
+- root-level unavailability remains distinct from nested failure;
+- the fixed Phase 001 observation-to-kind/classification table is applied exactly;
+- hidden/system ordinary entries are retained rather than silently filtered;
+- bounded resource-limit exhaustion yields an incomplete scope and never a falsely complete truncation;
+- Phase 001 move preservation never uses the inactive `ContentIdentity` tier.
 
 ### 10.3 Persistence and migration tests
 
@@ -656,6 +697,7 @@ Use real temporary test-owned directory trees to exercise:
 - link-like entries without traversal;
 - rename/move identity where the effective provider/filesystem guarantee supports it;
 - platform-specific locator, case, and identity semantics where they materially differ.
+- platform authorization restore/reacquire and stale/revoked failure behavior where the platform requires it (for example sandboxed macOS).
 
 Tests must not encode broad OS stereotypes as provider guarantees.
 
@@ -670,6 +712,11 @@ Required coverage includes:
 - shutdown/process-interruption safety;
 - startup reconciliation;
 - no automatic resume;
+- stale child recovery distinguishes durable cancellation intent (`Cancelled`) from unexpected loss (`Abandoned`);
+- already-terminal child runs drive aggregate job recovery instead of being overwritten;
+- recovery performs no provider I/O, new admission, retry, or resume;
+- cancellation arriving during a coherent commit/finalization checkpoint completes the in-flight mutation before the next safe checkpoint;
+- a root that completes before another root is cancelled keeps its `Complete` child outcome while the job terminates `Cancelled`;
 - one active owner per root;
 - multi-root failure isolation;
 - event sequencing/uncertainty behavior.
@@ -779,8 +826,8 @@ Phase 001 is complete when all of the following are true:
 15. The shell exposes truthful active-job status without becoming job-state authority.
 16. Cancellation reaches a safe durable terminal boundary and preserves committed positive observations.
 17. Retry/rescan creates new immutable execution identities.
-18. Startup reconciles stale active scan execution without automatic resume.
-19. Removing a root safely coordinates with active ownership and never modifies user filesystem content.
+18. Startup reconciles stale active scan execution before readiness, distinguishes accepted cancellation from unexpected abandonment, derives aggregate state from already-terminal children where applicable, and performs no automatic resume.
+19. Removing a root safely coordinates with active ownership, discloses that cancelling a multi-root owner cancels the whole job, and never modifies user filesystem content.
 20. Terminal historical job/scan records remain intelligible after current root removal according to the focused application contract.
 21. Event gaps/runtime replacement cannot make Sources or Jobs state incorrect; authoritative queries recover state.
 22. Local-filesystem behavior satisfies the Phase 001 contract on Windows, macOS, and Linux.
@@ -821,8 +868,11 @@ Phase 001 is complete when all of the following are true:
 - [ARCH-001 — Argus ROM Toolkit Architecture](../architecture/architecture-overview.md)
 - [ARCH-002 — Documentation Architecture](../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](phase-000-foundation.md)
+- [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](../specifications/backend/spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
+- [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](../specifications/backend/spec-be-003-application-errors-logging-and-diagnostics.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](../specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
 - [SPEC-BE-006 — Minimal Domain Event Bus](../specifications/backend/spec-be-006-minimal-domain-event-bus.md)
+- [SPEC-BE-007 — Startup Coordination and Recovery Contract](../specifications/backend/spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](../specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](../specifications/backend/spec-be-009-application-service-contracts.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](../specifications/backend/spec-be-011-source-provider-and-indexing-contract.md)
@@ -836,3 +886,4 @@ Phase 001 is complete when all of the following are true:
 - [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](../specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
 - [SPEC-FE-008 — Sources and Library Folder Management](../specifications/frontend/spec-fe-008-sources-and-library-folder-management.md)
 - [SPEC-FE-009 — Jobs and Background Operation Presentation](../specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md)
+- [SPEC-X-001 — Versioning and Compatibility Contract](../specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)

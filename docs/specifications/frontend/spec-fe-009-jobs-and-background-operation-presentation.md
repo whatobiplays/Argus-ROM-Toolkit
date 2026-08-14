@@ -4,7 +4,7 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-X-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -217,16 +217,18 @@ Active/terminal classification follows the backend lifecycle contract. In partic
 
 ## 9. Jobs Destination Placement
 
-Jobs is a lower-frequency semantic destination.
+Jobs is the global operational-work destination and remains a directly reachable primary destination in Phase 001.
 
 Canonical adaptive placement:
 
 | Size class | Jobs placement |
 |---|---|
-| Compact | under `More` |
+| Compact | direct bottom-navigation item |
 | Medium | navigation rail |
 | Expanded | sidebar |
 | Large | sidebar |
+
+Jobs is never moved under Compact `More`; Sources and Settings use the secondary placement rules owned by SPEC-FE-004. Diagnostics is not an active Phase 001 destination and has no placement in the active shell.
 
 Jobs remains available when there are zero active jobs and zero history rows.
 
@@ -424,7 +426,7 @@ Where available, detail includes:
 - typed admission exclusions;
 - per-root `ScanRun` projections/outcomes;
 - current/active root context when meaningful;
-- historical root display snapshots;
+- historical root display snapshots containing `displayName` plus backend-supplied bounded `safeLocationDisplay`;
 - scan-specific progress facts;
 - bounded issue information;
 - retry relationship to the source execution where available.
@@ -573,6 +575,8 @@ Rules:
 
 Retry appears only on job detail and only when authorized.
 
+For Phase 001 `LibraryScan`, authorization is possible only for terminal `CompletedWithIssues`, `Failed`, `Cancelled`, or `Abandoned` attempts with at least one currently eligible original target and no direct retry successor. A clean `Completed` attempt uses Sources **Scan Again** to create a new independent scan rather than Jobs Retry. `Interrupted` is not a LibraryScan outcome because the operation is non-resumable.
+
 Retry means a new execution attempt, never reopening the selected historical run.
 
 Canonical successful flow:
@@ -595,6 +599,14 @@ Rules:
 6. Retry never broadens LibraryScan intent beyond the original requested scope.
 7. If no original target remains eligible and no new execution is admitted, the user remains on the historical detail with a typed explanation.
 8. Jobs must not fabricate an empty new job.
+
+Typed retry outcomes are presented exactly:
+
+- `Admitted(newOperationHandle)` navigates to the new execution identity;
+- `AlreadyRetried(existingJobRunId)` navigates to or links the already-created successor and does not dispatch another retry;
+- `NotAdmitted(SourceRunNotTerminal)` refreshes the historical detail;
+- `NotAdmitted(OperationNotRetryable)` explains that Retry is unavailable, including clean-completion cases that use Sources Scan Again;
+- `NotAdmitted(NoEligibleTargets(exclusions))` presents bounded typed target exclusions and remains on the historical run.
 
 ## 27. Retry Transport Ambiguity
 
@@ -998,13 +1010,16 @@ After application restart:
 
 ## 51. `LibraryScan` Restart Presentation
 
-Phase 001 `LibraryScan` is non-resumable.
+Phase 001 `LibraryScan` is non-resumable. Before Flutter enters the ready shell, the backend reconciles stale execution deterministically:
 
-A stale active scan reconciled to `Abandoned` must be presented as historical terminal work.
+- accepted durable cancellation intent produces terminal `Cancelled` children/jobs;
+- unexpected loss of still-running work produces recovery-only `Abandoned` children/jobs;
+- already-terminal children remain unchanged and drive the normal aggregate job result when child finalization had completed before process loss;
+- no provider work, Retry, Resume, or automatic scan admission occurs during recovery.
 
-The detail may expose Retry when backend control availability permits it, but it must not imply that the original scan continues from its previous execution checkpoint.
+Jobs presents the resulting authoritative terminal state as immutable history and never shows the stale pre-restart in-memory value as Running. `Cancelled` remains distinct from `Abandoned`; neither is relabeled as `Interrupted` for LibraryScan.
 
-Committed positive source observations remain outside Jobs frontend ownership and are not rolled back by presentation logic.
+The detail exposes Retry only under the exact eligibility rules above and never implies continuation from the original checkpoint. Committed positive source observations remain outside Jobs frontend ownership and are not rolled back by presentation logic.
 
 ## 52. Controller Test Requirements
 
@@ -1032,6 +1047,11 @@ Deterministic controller tests must cover at least:
 - Retry definite failure;
 - Retry ambiguous outcome without duplicate replay;
 - Retry unavailability when original intent cannot be admitted;
+- Retry eligibility only for `CompletedWithIssues`, `Failed`, `Cancelled`, and `Abandoned` LibraryScan attempts;
+- clean `Completed` LibraryScan uses Sources Scan Again rather than Jobs Retry;
+- `AlreadyRetried` resolves to the existing successor without duplicate dispatch;
+- exact `SourceRunNotTerminal`, `OperationNotRetryable`, and `NoEligibleTargets` presentation;
+- restart recovery distinguishes accepted cancellation (`Cancelled`) from unexpected loss (`Abandoned`) and preserves already-terminal child aggregation;
 - LibraryScan Resume unavailable;
 - historical LibraryScan detail after root removal;
 - shell summary with zero active jobs;
@@ -1042,7 +1062,7 @@ Deterministic controller tests must cover at least:
 
 Deterministic widget tests must cover at least:
 
-- Jobs semantic destination presentation at representative size classes;
+- Jobs as a direct Compact bottom-navigation item, a Medium rail item, and an Expanded/Large sidebar item, never under Compact `More`;
 - Jobs empty state;
 - Active and Recent sections;
 - job-list navigation;
@@ -1073,6 +1093,7 @@ Normal frontend tests use focused API/provider fakes rather than a real Rust bac
 
 The Phase 001 focused client/bridge amendment must support mapper tests covering:
 
+- compatible additive DTO/model evolution and unknown-field tolerance according to SPEC-X-001;
 - all generic `JobRun` lifecycle states;
 - `CompletedWithIssues` preservation;
 - typed `JobRunId` mapping;
@@ -1084,8 +1105,8 @@ The Phase 001 focused client/bridge amendment must support mapper tests covering
 - progress facts with nullable/unknown totals preserved;
 - cancellation-requested state;
 - bounded failure mapping;
-- Retry/Resume result identity relationships required by the frontend contract;
-- historical root display snapshots;
+- Retry result identity relationships plus `AlreadyRetried`, `SourceRunNotTerminal`, `OperationNotRetryable`, and typed `NoEligibleTargets` exclusions;
+- historical root display snapshots preserve `displayName` and bounded `safeLocationDisplay` without raw provider locators;
 - invalid required representation rejected as contract mismatch rather than defaulted.
 
 ## 55. Integration and Native Verification
@@ -1167,7 +1188,7 @@ SPEC-FE-009 intentionally excludes:
 
 SPEC-FE-009 is satisfied when:
 
-1. Jobs is a genuine lower-frequency semantic destination presented under More on Compact, rail on Medium, and sidebar on Expanded/Large.
+1. Jobs is a genuine global operational-work destination presented as a direct bottom-navigation item on Compact, rail on Medium, and sidebar on Expanded/Large; it is never placed under Compact More.
 2. Jobs remains available independently of current job count.
 3. Canonical routes are `/jobs` and `/jobs/:jobRunId` across all layouts.
 4. `JobRunId` route identity identifies one immutable execution attempt.
@@ -1177,7 +1198,7 @@ SPEC-FE-009 is satisfied when:
 8. Phase 001 adds no Jobs search/filter/tab UI.
 9. Job list rows are navigational and do not expose inline lifecycle controls.
 10. Generic job detail presents lifecycle facts independently from typed operation detail.
-11. LibraryScan detail uses a typed operation-specific projection and remains intelligible after root removal.
+11. LibraryScan detail uses a typed operation-specific projection and remains intelligible after root removal through durable `displayName` plus bounded `safeLocationDisplay`, without consulting current Sources state or exposing raw provider locators.
 12. Jobs renders the exact backend lifecycle vocabulary, including `CompletedWithIssues`, `Interrupted`, and `Abandoned`.
 13. `CompletedWithIssues` is not collapsed into clean success or generic failure.
 14. LibraryScan progress shows only authoritative phases/counters and never fabricates an overall percentage.
@@ -1185,9 +1206,9 @@ SPEC-FE-009 is satisfied when:
 16. Cancel appears only when backend control availability permits it and uses an explicit confirmation.
 17. Cancel does not locally mark a job terminal; Jobs reconciles authoritative state.
 18. Cancellation-requested work remains Active until authoritative terminalization.
-19. Retry appears only when authorized and creates a new execution identity.
-20. Successful Retry navigates directly to `/jobs/:newJobRunId` while the old run remains immutable history.
-21. Ambiguous Retry transport outcomes are reconciled without blind replay or duplicate execution creation.
+19. LibraryScan Retry is authorized only for terminal `CompletedWithIssues`, `Failed`, `Cancelled`, or `Abandoned` attempts with at least one currently eligible original target and no direct retry successor; clean `Completed` work uses Sources Scan Again instead.
+20. `Admitted` Retry navigates directly to `/jobs/:newJobRunId`, while `AlreadyRetried` resolves to the existing successor without duplicate dispatch; the old run remains immutable history in both cases.
+21. Ambiguous Retry transport outcomes reconcile successor relationships without blind replay, while definite `SourceRunNotTerminal`, `OperationNotRetryable`, and `NoEligibleTargets` outcomes remain typed non-admissions on the historical run.
 22. LibraryScan never exposes Resume because it is non-resumable.
 23. Lifecycle-control availability is backend-authoritative rather than operation-name string logic.
 24. The shell active-job indicator uses a narrow authoritative summary independent of Jobs private controller lifetime.
@@ -1205,7 +1226,7 @@ SPEC-FE-009 is satisfied when:
 36. Jobs normal UI does not expose provider-native locators, raw Rust/native failures, or arbitrary internal payloads.
 37. Keyboard, focus, accessibility, text-scale, and Light/Dark/System behavior meet FE-007 requirements.
 38. Jobs remains bounded as history grows and does not eagerly load full operation detail for list rows.
-39. Restart presentation reflects backend-reconciled persistent job state and does not automatically resume LibraryScan.
+39. Restart presentation reflects pre-readiness backend reconciliation, distinguishes accepted cancellation (`Cancelled`) from unexpected loss (`Abandoned`), preserves already-terminal child aggregation, and never automatically resumes or retries LibraryScan.
 40. Deterministic controller/widget/client tests cover the approved list, detail, progress, control, uncertainty, shell-indicator, adaptive, and accessibility contracts.
 41. Phase 001 integration/native verification exercises a real LibraryScan through Jobs and the shell indicator without treating deferred manual checks as passed.
 
@@ -1225,3 +1246,4 @@ SPEC-FE-009 is satisfied when:
 - `docs/specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md` — SPEC-FE-006
 - `docs/specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md` — SPEC-FE-007
 - `docs/specifications/frontend/spec-fe-008-sources-and-library-folder-management.md` — SPEC-FE-008
+- `docs/specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md` — SPEC-X-001

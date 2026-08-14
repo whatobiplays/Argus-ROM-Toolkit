@@ -1,9 +1,9 @@
 # Phase 000 — Foundation
 
 **Document ID:** PHASE-000  
-**Status:** Ready for Implementation  
+**Status:** In Progress  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -21,6 +21,10 @@ This is a product milestone rather than a collection of disconnected infrastruct
 Phase 000 authorizes only the behavior and infrastructure required by its ordered slices and canonical theme workflow. Ready specifications for later MVP capabilities constrain compatibility, but they do not authorize placeholder modules, migrations, DTOs, dependencies, fixtures, tests, routes, or background-operation infrastructure in this phase.
 
 An implementation agent must use the intersection of this phase, the active slice or approved plan, the explicit task, and governing specifications/conventions. When a later-ready specification describes more than Phase 000 needs, its Phase 000 minimum and this phase's exclusions are authoritative.
+
+### 1.2 Completion status
+
+The Phase 000 product and automated verification baseline is implemented. The phase remains **In Progress**, rather than `Complete`, because the manual evidence slots in [Phase 000 Foundation — Completion Verification](../implementation/phase-000-foundation-verification.md) are intentionally deferred and remain `NOT RUN`. Deferred evidence is never reported as passed. It does not block Phase 001 implementation unless executing it later exposes a foundation defect; such a defect must be corrected against the Phase 000 contracts before affected later work proceeds.
 
 ## 2. User-Visible Outcome
 

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-006  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005  
 **Supersedes:** None  
 **Superseded By:** None
@@ -161,9 +161,10 @@ Preferred examples:
 
 ```text
 AppearanceSettingsChanged
-LibrarySourceAdded
-LibraryScanCompleted
+LibraryRootsChanged
+LibraryRootChanged
 SourceEntriesChanged
+JobStateChanged
 MetadataProviderHealthChanged
 MetadataAssignmentChanged
 ```

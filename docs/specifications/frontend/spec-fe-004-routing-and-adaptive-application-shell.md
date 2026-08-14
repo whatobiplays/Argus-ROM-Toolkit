@@ -4,7 +4,7 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-004, SPEC-BE-007, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-004, SPEC-BE-007, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -213,7 +213,7 @@ Feature-specific screen construction remains feature-owned.
 
 A route identifies durable location or scope.
 
-Representative durable identities include the Phase 001 canonical routes:
+Representative durable identities include the active Phase 001 canonical routes:
 
 ```text
 /sources
@@ -221,8 +221,9 @@ Representative durable identities include the Phase 001 canonical routes:
 /jobs
 /jobs/:jobRunId
 /settings
-/diagnostics
 ```
+
+`/diagnostics` remains a reserved route identity and is not an active Phase 001 destination. A later slice may activate it only together with real Diagnostics destination capability; no production route graph contains it in Phase 001.
 
 Future phases may add representative identities such as:
 
@@ -430,6 +431,8 @@ AppDestination.diagnostics
 
 Future destination values such as `AppDestination.library` and `AppDestination.collections` remain reserved for later active phases.
 
+`AppDestination.diagnostics` also remains reserved: it is not an active Phase 001 destination, even though the route identity and destination vocabulary are established.
+
 Only destinations implemented by the active product slice are required to exist.
 
 ## 26. Destination Metadata
@@ -456,7 +459,7 @@ Examples:
 /jobs                      → Jobs
 /jobs/:jobRunId            → Jobs
 /settings                  → Settings
-/diagnostics               → Diagnostics
+/diagnostics               → Diagnostics (reserved; active only when a slice implements the destination)
 ```
 
 Future examples such as `/library/platforms/:platformId → Library` and `/games/:gameId → Library` apply when those destinations become active.
@@ -496,7 +499,7 @@ Stateful ready shell
 └── future Collections branch
 ```
 
-The actual Phase 000 branch set contains only implemented destinations.
+The historical Phase 000 branch set contains only its implemented destinations. Phase 001 activates genuine Sources and Jobs branches alongside the retained Settings destination; Diagnostics remains a reserved branch and is not an active Phase 001 destination. Future Library and Collections branches remain absent.
 
 ## 30. Branch History
 
@@ -578,6 +581,16 @@ Conceptually:
 | lower-frequency destination | More | rail/secondary area | sidebar/secondary area |
 
 Exact final visual grouping belongs to the implemented destination catalog and SPEC-FE-007 styling rules.
+
+Phase 001 fixes the active destination placement:
+
+| Destination | Compact | Medium | Expanded/Large |
+|---|---|---|---|
+| Jobs | direct bottom item | rail item | sidebar item |
+| Sources | Compact `More` | rail/secondary area | sidebar item |
+| Settings | Compact `More` | secondary area | sidebar/secondary area |
+
+Jobs remains directly reachable on Compact because it is the global active-work surface. Sources and Settings remain canonical semantic destinations even when Compact presents them through `More`; no `/more` route exists. Diagnostics is not an active Phase 001 destination and therefore has no placement in this table.
 
 ## 36. Phase 000 Destination Availability
 
@@ -1469,6 +1482,8 @@ The same semantic destination must be exercised under Compact, Medium, Expanded,
 
 Tests verify that presentation changes do not change route URI, destination identity, or branch history.
 
+Phase 001 tests additionally verify that Jobs is a direct Compact bottom item, Sources is available through Compact `More`, Settings uses its specified secondary placement, Diagnostics is not an active Phase 001 destination, and all active destinations retain the same canonical routes across resize.
+
 ## 124. Compact `More` Tests
 
 Where implemented, tests verify:
@@ -1477,6 +1492,7 @@ Where implemented, tests verify:
 - selecting a lower-frequency destination uses its canonical route;
 - returning/resizing does not introduce `/more` state into location;
 - active destination remains correct when the destination is accessed through More.
+- Phase 001 Jobs remains a direct Compact destination and is never placed under `More` merely because Sources/Settings use it.
 
 ## 125. Restoration Tests
 
@@ -1614,7 +1630,7 @@ Later specs may refine:
 
 - exact library query parameter catalog;
 - exact game-detail master/detail composition;
-- exact Jobs and Sources route catalogs;
+- post-Phase-001 Jobs/Sources route extensions beyond `/jobs`, `/jobs/:jobRunId`, `/sources`, and `/sources/roots/:libraryRootId`;
 - release-stable deep-link guarantees beyond local restoration;
 - global keyboard navigation shortcuts;
 - route-worthy modal catalog;
@@ -1661,6 +1677,7 @@ SPEC-FE-004 is satisfied when:
 33. Routing/shell tests run deterministically without requiring the real Rust backend for ordinary coverage.
 34. Branch, redirect, restoration, route parsing, unknown-route, and adaptive-shell behavior are explicitly tested.
 35. Phase 000 registers only genuine implemented destinations; future-feature shell-validation placeholders are test-only and never enter the production route graph.
+36. Phase 001 registers genuine Sources and Jobs routes/branches; Jobs is directly reachable on Compact while Sources and Settings use the specified adaptive secondary placements without changing canonical route identity, and Diagnostics remains a reserved non-active destination.
 
 ## 138. Phase 000 Minimum Implementation
 
@@ -1683,7 +1700,7 @@ app/shell
 └── narrow global status/notice host as required
 ```
 
-with one or more genuine Phase 000 routed destinations such as Settings and Diagnostics according to implemented slices.
+with one or more genuine Phase 000 routed destinations such as Settings and, where implemented by a slice, Diagnostics.
 
 No future Library, Collections, Jobs, Sources, provider, metadata, or ROM-management behavior is required merely by this specification.
 
@@ -1697,7 +1714,7 @@ This specification intentionally leaves the following to later frontend specific
 - exact accessibility/focus/keyboard implementation;
 - detailed Library browse/search/filter route-query schema;
 - final game-detail master/detail pane behavior;
-- Jobs/Sources/Collections route catalogs;
+- future Collections and logical Library route catalogs, plus Jobs/Sources extensions beyond the active Phase 001 routes;
 - external OS protocol/deep-link registration;
 - custom native window title bar integration;
 - persistent frontend caching/offline navigation behavior.
@@ -1709,6 +1726,7 @@ It does not define a second navigation state framework, custom URL dispatcher, o
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](../backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](../backend/spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
@@ -1717,6 +1735,8 @@ It does not define a second navigation state framework, custom URL dispatcher, o
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
+- [SPEC-FE-008 — Sources and Library Folder Management](spec-fe-008-sources-and-library-folder-management.md)
+- [SPEC-FE-009 — Jobs and Background Operation Presentation](spec-fe-009-jobs-and-background-operation-presentation.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-007  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006  
+**Last Updated:** 2026-08-14  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -334,6 +334,22 @@ Responsible for constructing the mandatory application service graph required by
 
 For Phase 000 this includes only the core services required for startup, settings, diagnostics, and bridge operation.
 
+For Phase 001 it additionally constructs and validates the runtime-composed source-provider registry, focused Sources and Jobs application capabilities, LibraryScan operation-handler registration, required query/projection adapters, and the background-operation resources needed by the active phase.
+
+After those services exist, and before startup advances to event-infrastructure initialization, this phase performs the mandatory bounded persistence reconciliation for stale Phase 001 LibraryScan execution. That reconciliation:
+
+- performs no provider access, enumeration, automatic resume, retry admission, or new significant user work;
+- preserves already-terminal child runs;
+- maps a stale `Running` child to `Cancelled` only when durable cancellation intent had already been accepted, otherwise to recovery-only `Abandoned`;
+- derives a still-active parent job from already-terminal children and durable admission exclusions when all child work had already terminalized;
+- otherwise maps recovery-cancelled ownership to `Cancelled` and recovery-abandoned ownership to `Abandoned`;
+- updates root last-scan summaries without changing availability merely because recovery produced `Cancelled` or `Abandoned`;
+- clears stale root ownership while preserving committed positive observations and absence-authority rules.
+
+Failure of this mandatory reconciliation fails `CoreServicesInitialization` and prevents readiness. Because no normal frontend consumer is connected before `Ready`, correctness does not depend on delivering a synthetic pre-ready runtime event; post-ready queries observe the reconciled durable state.
+
+SPEC-BE-011 and SPEC-BE-013 refine the source/scan semantics used by this amendment. They remain related refining contracts rather than `Depends On` prerequisites here because both already build on this startup contract.
+
 Future phases may add additional mandatory or optional service initialization through explicit specification updates.
 
 This phase must not start hidden business workflows.
@@ -346,6 +362,8 @@ The outer `argus-bridge` composition supplies a bridge-specific notification ada
 
 Phase 000 readiness requires the `AppearanceSettingsChanged` path to reach the injected notification sink. Bridge sequence numbering, coalescing, bounded queueing, overflow, and transport adaptation remain owned by the runtime/bridge stream boundary rather than the internal event bus.
 
+Phase 001 readiness additionally requires the activated job-state, job-progress, library-root-list, library-root, and source-entry invalidation paths to reach the same unified runtime notification boundary. No feature-specific native stream is introduced.
+
 ## 17. `ReadinessValidation`
 
 `ReadinessValidation` performs active verification of the fully assembled runtime composition.
@@ -357,6 +375,8 @@ It verifies at least:
 - required runtime entry points exist
 - mandatory event registrations are complete
 - required persistence/settings capabilities are available
+- mandatory Phase 001 stale-execution reconciliation completed successfully when Phase 001 is active
+- no stale Phase 001 root ownership remains classified as active after that reconciliation
 - runtime composition is internally consistent
 - the runtime can safely admit normal operations after transition
 
@@ -1026,7 +1046,21 @@ Verify:
 - cleanup runs for previously successful phases
 - user shutdown does not incorrectly become `StartupFailed`
 
-### 45.12 Architecture tests
+### 45.12 Phase 001 activation tests
+
+Verify:
+
+- Phase 001 source-provider, Sources, Jobs, LibraryScan, query, and background-operation capabilities are composed before readiness;
+- stale `Running` child scans with accepted cancellation intent become `Cancelled`;
+- stale `Running` child scans without accepted cancellation intent become `Abandoned`;
+- already-terminal child scans remain unchanged and drive parent aggregation when every child had terminalized;
+- recovered `Cancelled` and `Abandoned` summaries do not change root availability;
+- reconciliation clears stale root ownership and preserves committed positive observations;
+- reconciliation performs no provider I/O, new admission, Retry, Resume, or automatic significant work;
+- reconciliation failure prevents readiness;
+- post-ready authoritative queries observe the recovered state even when no synthetic pre-ready notification was delivered.
+
+### 45.13 Architecture tests
 
 Verify:
 
@@ -1058,6 +1092,10 @@ Phase 000 implements:
 - architecture and lifecycle tests required by this specification
 
 Phase 000 does not implement destructive database reset, automatic repair, provider-specific recovery, backup/restore, or cross-runtime automatic retry loops.
+
+### 46.1 Phase 001 activation
+
+Phase 001 reuses the same eight startup phases. It extends `CoreServicesInitialization`, `EventInfrastructureInitialization`, and `ReadinessValidation` with the mandatory service composition, stale LibraryScan reconciliation, notification-path validation, and readiness checks defined above. It does not add a technology-named startup phase or automatically resume significant work.
 
 ## 47. Acceptance Criteria
 
@@ -1093,7 +1131,11 @@ SPEC-BE-007 is satisfied when:
 28. Stale recovery actions cannot execute against a replacement runtime.
 29. Startup cleanup and recovery are distinct concepts.
 30. Startup/recovery contracts expose no concrete persistence, async-runtime, or bridge technology.
-31. Startup, cleanup, readiness, replacement, recovery, observability, and architecture tests cover the specified behavior.
+31. Phase 001 composes its mandatory source, Sources, Jobs, LibraryScan, query, and background-operation capabilities within the existing eight-phase pipeline.
+32. Phase 001 stale LibraryScan reconciliation completes before readiness, distinguishes accepted cancellation from unexpected abandonment, preserves terminal child truth, and clears stale ownership.
+33. Phase 001 startup reconciliation performs no provider I/O, automatic Resume, Retry admission, or new significant user work.
+34. A failure in mandatory Phase 001 stale-execution reconciliation prevents readiness.
+35. Startup, cleanup, readiness, replacement, recovery, observability, Phase 001 activation, and architecture tests cover the specified behavior.
 
 ## 48. Prohibited Patterns
 
@@ -1138,10 +1180,13 @@ This specification does not finalize:
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
 - [SPEC-BE-005 — Settings Service and Appearance Settings](spec-be-005-settings-service-and-appearance-settings.md)
 - [SPEC-BE-006 — Minimal Domain Event Bus](spec-be-006-minimal-domain-event-bus.md)
+- [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
+- [SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections](spec-be-013-library-source-management-scan-operations-and-source-projections.md)
 - [Backend Specifications Index](README.md)

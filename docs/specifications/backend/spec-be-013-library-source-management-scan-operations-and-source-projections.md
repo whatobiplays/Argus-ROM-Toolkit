@@ -4,7 +4,9 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-009, SPEC-BE-011  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-X-001  
+**Supersedes:** None  
+**Superseded By:** None
 
 ## 1. Purpose
 
@@ -165,7 +167,7 @@ Rules:
 
 1. It is created lazily when the first local library folder is added.
 2. Every Phase 001 local `LibraryRoot` references this same `LibrarySourceId`.
-3. Its source-level provider configuration is empty or minimal according to `SPEC-BE-011`; user-selected folder coordinates belong to each root.
+3. Its source-level provider configuration is empty or minimal according to `SPEC-BE-011`; it may include provider-owned opaque platform authorization material where the platform requires it. User-selected folder coordinates belong to each root.
 4. It has no user-facing create, rename, configure, or delete operation in Phase 001.
 5. Removing the final root does not require deleting the internal local-filesystem source.
 6. Later local roots reuse the durable source identity.
@@ -227,6 +229,7 @@ Rules:
 - `Unknown` is conservatively admissible;
 - no rejected duplicate/overlap mutation becomes authoritative;
 - generic application code never derives relationship semantics by comparing locator strings.
+- repeating the exact same validated local-folder selection is idempotent and returns `AlreadyConfigured(existing_root_id)` without creating a duplicate root, mutating the existing root, or emitting a second root-created event.
 
 ## 9. `AddLocalLibraryRootAndScan`
 
@@ -252,10 +255,18 @@ Representative outcomes are:
 
 ```text
 AddedAndScanAdmitted(root, operation_handle)
-AddedButScanNotAdmitted(root, bounded_admission_reason)
+AddedButScanNotAdmitted(root, child_issue)
 AlreadyConfigured(existing_root_id)
 OverlapsExisting(existing_root_id, relationship)
+
+LibraryScanChildAdmissionIssue
+├── AlreadyScanning(active_job_run_id, active_scan_run_id)
+└── AdmissionFailure(application_error)
 ```
+
+`AdmissionFailure` carries the canonical bounded `ApplicationError`; it never substitutes a free-form reason string or raw runtime/provider failure.
+
+After a transport-ambiguous `AddLocalLibraryRootAndScan` result, callers must not blindly replay the composite workflow. They may replay only the idempotent `AddLocalLibraryRoot` step with the exact same typed selection to establish the authoritative root identity, then query the root and Jobs projections. Only after authoritative state shows that no child scan admission was established may the caller issue an explicit `StartLibraryScan` request. This preserves the original folder intent without risking duplicate jobs.
 
 Rules:
 
@@ -267,6 +278,18 @@ Rules:
 
 ## 10. Library Scan Admission
 
+Library scan admission has two distinct boundaries:
+
+```text
+application admission (LibraryService)
+    validates request/ownership, freezes the plan, creates JobRun + ScanRuns, acquires root ownership
+    ↓
+runtime admission (BackgroundOperationManager)
+    registers the run, validates resource/scheduling policy, begins execution
+```
+
+A failure before the application admission boundary creates no `JobRun` or `ScanRun`. A failure after durable admission is represented through the normal `JobRun`/`ScanRun` lifecycle (`Failed`, `Partial`, or `Cancelled` as applicable) rather than a phantom rollback of admitted state.
+
 ### 10.1 Single-root scan
 
 `StartLibraryScan(root_id)`:
@@ -275,7 +298,7 @@ Rules:
 2. checks active scan ownership;
 3. freezes the effective scan plan/configuration revision required by `SPEC-BE-011`;
 4. creates one durable `JobRun`;
-5. creates one associated durable `ScanRun`;
+5. creates one associated durable `ScanRun` in the active `Running` state;
 6. establishes runtime responsibility according to `SPEC-BE-004`;
 7. returns `OperationHandle(JobRunId)`.
 
@@ -295,7 +318,7 @@ AlreadyScanning
 Rules:
 
 1. Eligible roots are admitted into one new `LibraryScan` `JobRun`.
-2. Each admitted root receives one new `ScanRun`.
+2. Each admitted root receives one new `ScanRun` in the active `Running` state.
 3. Already-owned or otherwise non-admissible roots are excluded with typed reasons.
 4. Excluded roots receive no fake `ScanRun`.
 5. Existing scans are not queued behind or absorbed into the new job.
@@ -303,7 +326,16 @@ Rules:
 7. If no root is eligible, no empty `JobRun` is created.
 8. The admission result includes the operation handle, admitted roots, and typed exclusions.
 
-Representative exclusion vocabulary includes `AlreadyScanning` and other operation-owned stable reasons required by current-state revalidation.
+The shared typed exclusion vocabulary is:
+
+```text
+LibraryScanTargetExclusion
+├── AlreadyScanning(root_id, active_job_run_id, active_scan_run_id)
+├── NoLongerConfigured(root_id)
+└── InvalidConfiguration(root_id, application_error)
+```
+
+Initial Scan All admission normally uses `AlreadyScanning` and `InvalidConfiguration`; retry revalidation may additionally produce `NoLongerConfigured`. `application_error` is the canonical bounded `ApplicationError`, never a free-form or raw provider failure.
 
 ### 10.3 Durable LibraryScan admission context
 
@@ -354,6 +386,8 @@ An admission failure must not leave an orphan nonterminal `JobRun`, orphan activ
 
 For `AddLocalLibraryRootAndScan`, this invariant begins only after the independently committed root-creation boundary. Failure of child scan admission may leave the root configured, but must not leave partial background-operation state.
 
+Before enumeration starts, every admitted child `ScanRun` already exists durably in the active `Running` state with its immutable scan plan and root ownership established. No child identity, plan, or ownership is created inside the operation handler.
+
 ## 11. `ScanRun` Model and Historical Provenance
 
 One `ScanRun` describes one root scan inside one generic job execution attempt.
@@ -376,12 +410,15 @@ ScanRun
 Canonical scan statuses remain governed by `SPEC-BE-011`:
 
 ```text
+Running
 Complete
 Partial
 Failed
 Cancelled
 Abandoned
 ```
+
+`Running` is the only active status and exists from durable admission until terminalization. Terminal statuses are `Complete`, `Partial`, `Failed`, `Cancelled`, and recovery-only `Abandoned`; root last-scan summaries additionally use `NeverScanned` and root-level `Unavailable` according to `SPEC-BE-011`.
 
 `ScanRun` and `JobRun` are deliberately not one-to-one concepts; one multi-root `JobRun` may own multiple `ScanRun`s.
 
@@ -392,7 +429,7 @@ At scan admission, Argus captures bounded immutable user-meaningful root present
 The snapshot:
 
 - retains the historical `LibraryRootId`;
-- retains the historical display label and other explicitly required safe presentation context;
+- retains the historical `display_name` and one backend-supplied `safe_location_display` sufficient to disambiguate similarly named roots in Jobs history;
 - does not require the live root row to remain present;
 - does not preserve provider-native identity, locator equality keys, fingerprints, or unnecessary raw provider configuration;
 - does not require indefinite retention of absolute filesystem coordinates.
@@ -416,6 +453,8 @@ LibraryRootProjection
 - last_scan nullable
 - active_scan nullable
 ```
+
+When present, `last_scan.status` uses `Complete`, `Partial`, `Unavailable`, `Cancelled`, `Failed`, or `Abandoned`; absence represents `NeverScanned`. `Cancelled` and `Abandoned` summarize execution history and do not independently change `availability`.
 
 `availability` uses the application-owned evidence vocabulary from `SPEC-BE-011`:
 
@@ -505,6 +544,7 @@ Rules:
 6. No query requires materializing the full tree.
 7. Phase 001 defines no source-entry search/filter API.
 8. `GetSourceEntry` returns one bounded detail projection without exposing provider/persistence internals.
+9. `GetSourceEntry` accepts the globally unique `SourceEntryId` only. Requiring both `LibraryRootId` and `SourceEntryId` would create redundant identity authority and inconsistent client signatures.
 
 ## 15. LibraryScan Operation Handler
 
@@ -512,8 +552,8 @@ A focused `LibraryScanOperationHandler` owns operation-specific behavior inside 
 
 It owns:
 
-- immutable scan-plan construction;
-- creation/coordination of the job's `ScanRun`s;
+- execution of immutable scan plans created by admission;
+- coordination of the job's already-created `ScanRun`s;
 - source traversal orchestration through source-provider ports;
 - reconciliation orchestration according to `SPEC-BE-011`;
 - bounded persistence checkpoints;
@@ -523,6 +563,8 @@ It owns:
 - retry reconstruction semantics;
 - the operation-specific completion facts reported to the runtime.
 
+Admission owns the immutable execution boundary: it freezes the effective source/root configuration and policy revision, creates the owning `JobRun`, creates every admitted child `ScanRun`, persists the target/exclusion snapshot, and acquires root ownership before execution begins. The handler consumes those identities and plans; it must not reconstruct a new plan from mutable configuration or allocate replacement runs inside the same attempt.
+
 It does not directly write arbitrary generic `JobRun` lifecycle states. `BackgroundOperationManager` remains authoritative for those transitions.
 
 ### 15.1 Phase 001 fixed discovery policy
@@ -531,13 +573,18 @@ Every Phase 001 LibraryScan freezes the same centrally owned deterministic MVP d
 
 Required behavior is:
 
-- recursively discover retained provider-native directories and files beneath the configured root;
-- retain provider-observed link-like entries when they are within managed scope, but never schedule traversal through symlinks, aliases, junctions, or equivalent redirects;
-- enforce bounded traversal/resource behavior through application/runtime policy;
-- use a bounded maximum-depth/resource policy that is implementation/specification-defined rather than user-configurable in Phase 001;
-- expose no user-facing include/exclude glob editor;
-- expose no hidden/system-file preference UI;
-- perform no archive/container expansion during Phase 001 indexing.
+| Provider observation | Retain | Traverse | Persisted kind | Classification |
+|---|---:|---:|---|---|
+| Directory | Yes | Yes | `Directory` | `Container` |
+| File | Yes | No | `File` | `Unknown` |
+| Link-like | Yes | No | `LinkLike` | `Ignored` |
+| Other/unsupported structural object | Yes | No | `Unknown` | `Ignored` |
+
+- no filename, extension, include-pattern, exclude-pattern, hidden, or system-attribute rule removes an otherwise provider-visible ordinary entry;
+- symlinks, aliases, junctions, and equivalent redirects are retained as non-traversable evidence and are never followed;
+- no user-facing include/exclude, hidden/system, or maximum-depth control exists;
+- bounded safety/resource limits remain mandatory, but exhausting one makes the affected scope incomplete and yields `Partial` or `Failed` according to committed useful work; it never creates a truncated `Complete` result or absence authority;
+- no archive/container expansion or filename-based semantic refinement occurs during Phase 001 indexing.
 
 Potential archives, disc images, playlists, and similar meaningful files remain ordinary provider-observed `File` entries during Phase 001. The scan must not refine them into archive-, playlist-, disc-image-, or transformation-owned semantic kinds. Later transformation work may refine application-owned kind/classification under its own governed contract while preserving source identity where permitted.
 
@@ -611,7 +658,10 @@ no meaningful indexing result across admitted work
 cancellation determines operation termination
     -> Cancelled
 
-unexpected restart leaves stale non-resumable active execution
+stale active execution with accepted durable cancellation intent
+    -> Cancelled
+
+stale active execution without accepted durable cancellation intent
     -> Abandoned
 ```
 
@@ -661,6 +711,8 @@ Short recent-job history may use bounded offset pagination according to `ARCH-00
 
 ## 20. Cancellation
 
+Cancellation is job-scoped. It targets the owning `LibraryScan` background execution, never an individual root inside a multi-root Scan All job; Phase 001 provides no root-scoped cancellation.
+
 User-requested cancellation is performed through:
 
 ```text
@@ -675,6 +727,10 @@ Rules:
 4. Already committed positive source observations remain.
 5. Cancellation grants no absence authority.
 6. A cancelled historical run is immutable; retry creates new identities.
+7. A child `ScanRun` that already reached `Complete` before cancellation keeps that durable outcome; still-active child runs terminate as `Cancelled`. The owning `JobRun` is `Cancelled` when cancellation determines termination, even when some roots completed first.
+8. A cancellation request arriving while a coherent mutation or scope finalization is already committing does not interrupt that in-flight transaction. The mutation commits atomically, the finalized scope keeps its `Complete` outcome, and cancellation is observed at the next safe checkpoint.
+9. Partial discoveries from interrupted roots remain valid and are never rolled back.
+10. After restart, accepted durable cancellation intent maps stale active children to `Cancelled`; unexpected loss maps them to `Abandoned` (Section 23). Neither relabels committed child outcomes as `Interrupted`.
 
 ## 21. Root Removal
 
@@ -687,7 +743,10 @@ RootHasActiveScan
 - root_id
 - job_run_id
 - scan_run_id
+- owning_job_root_count
 ```
+
+`owning_job_root_count` is a bounded durable projection of the owning LibraryScan scope. Because `CancelJob` is job-scoped, a value greater than one tells the caller that cancelling this owner may stop work for other roots; the application must not imply root-scoped cancellation that does not exist.
 
 The required workflow is:
 
@@ -721,6 +780,8 @@ Re-adding the same physical folder later creates a new `LibraryRootId` and confi
 
 `LibraryScan` is retryable.
 
+Retry is available only when the source run is terminal in `CompletedWithIssues`, `Failed`, `Cancelled`, or `Abandoned`, at least one original target remains currently eligible, and no direct retry successor exists. A clean `Completed` LibraryScan is not retryable; the user starts a new independent **Scan Again** job instead. `LibraryScan` is non-resumable and therefore does not use `Interrupted` as a recoverable operation outcome.
+
 Retry reconstructs the original operation intent from durable operation-specific history and then revalidates that intent against current authoritative state.
 
 For a multi-root job:
@@ -752,8 +813,15 @@ Expected retry-control outcomes are equivalent to:
 ```text
 Admitted(new_operation_handle)
 AlreadyRetried(existing_job_run_id)
-NotAdmitted(typed_reason)
+NotAdmitted(reason)
+
+RetryNotAdmittedReason
+├── SourceRunNotTerminal
+├── OperationNotRetryable
+└── NoEligibleTargets(exclusions)
 ```
+
+`NoEligibleTargets` carries the typed `LibraryScanTargetExclusion` values established above. `AlreadyRetried` remains a distinct successful lookup of the existing successor rather than being collapsed into a generic admission failure.
 
 The source run's direct successor relation is stored as durable retry-link metadata separate from the immutable admission context, so rule 10.3.7 remains intact. The new run continues to record `retry_source_job_run_id` in its own immutable admission context.
 
@@ -765,18 +833,19 @@ The source run's direct successor relation is stored as durable retry-link metad
 
 ## 23. Restart Recovery
 
-At startup, stale active LibraryScan execution is reconciled according to `SPEC-BE-004` and `SPEC-BE-011`.
+Before the replacement runtime becomes `Ready`, stale LibraryScan execution is reconciled through the mandatory bounded persistence-only step defined by SPEC-BE-007 and SPEC-BE-011.
 
-For non-resumable Phase 001 scanning:
+Rules:
 
-```text
-stale active JobRun -> Abandoned
-stale active ScanRun -> Abandoned
-```
+1. Already-terminal `ScanRun`s remain unchanged.
+2. A stale `Running` child becomes `Cancelled` when durable cancellation intent had already been accepted for the owning job; otherwise it becomes recovery-only `Abandoned`.
+3. When every child was already terminal because the process died before parent aggregation, the `JobRun` is derived through the normal LibraryScan aggregation rules from those child outcomes and durable exclusions.
+4. Otherwise a recovery-cancelled child makes the owning job `Cancelled`, while a recovery-abandoned child makes it `Abandoned`. Job-scoped cancellation intent makes these cases mutually consistent across stale children.
+5. Root last-scan summaries are updated from recovered child outcomes; `Cancelled` and `Abandoned` do not change root availability merely because execution stopped.
+6. Stale root ownership is cleared, committed positive observations survive, and no incomplete scope gains absence authority.
+7. Recovery performs no provider I/O, enumeration, new admission, retry, resume, or other significant user work.
 
-Committed positive source observations survive.
-
-No scan is automatically resumed or restarted. The user must explicitly choose Scan Again, Scan All, or Retry, each of which creates new execution identities.
+No scan is automatically resumed or restarted. The user explicitly chooses Scan Again, Scan All, or Retry afterward, and each admitted action creates new execution identities. Failure of this mandatory reconciliation prevents readiness.
 
 ## 24. Events and Authoritative Reconciliation
 
@@ -787,6 +856,17 @@ Representative notification intent includes changes to:
 - root configuration/projection state;
 - active scan ownership;
 - source-entry graph state;
+
+Source-entry invalidation uses one explicit scope union rather than overloading a nullable parent identifier:
+
+```text
+SourceEntriesChangeScope
+├── RootChildren
+├── EntryChildren(parent_source_entry_id)
+└── EntireRootHierarchy
+```
+
+Every source-entry invalidation also carries its `LibraryRootId`. Coalescing may broaden multiple narrow invalidations to `EntireRootHierarchy`, but it must not narrow or misrepresent their affected scope. Generic job-state and job-progress notifications remain owned by SPEC-BE-004 rather than a competing LibraryScan-completion event.
 - job state;
 - LibraryScan progress.
 
@@ -824,6 +904,8 @@ Phase 001 persistence must support the semantics of this specification, includin
 - removal of current root/index state without deleting terminal execution history.
 
 Schema design must preserve the Phase 000 migration path rather than assuming only fresh databases.
+
+Schema and durable contract evolution follow SPEC-X-001: migration compatibility is explicit, additive bridge/model evolution remains compatible, and unsupported compatibility state fails safely rather than being silently rewritten.
 
 Long-term scan/job-history pruning policy remains deferred. This specification requires durable terminal history and bounded per-run payloads but does not define a retention duration.
 
@@ -884,6 +966,7 @@ Provider-native failures are translated before crossing infrastructure boundarie
 12. Phase 001 does not persist ROM bytes merely because a file was indexed.
 13. Scanning introduces no network access, credentials, API keys, or telemetry requirement.
 14. Tests use only test-owned temporary roots and application data.
+15. Platforms that require durable platform authorization (for example a sandboxed macOS application) keep that authorization provider-owned and opaque: it is not a domain type, never crosses bridge/UI/diagnostics contracts, is restored or reacquired before traversal after restart, and a stale/revoked authorization surfaces as a typed source-access failure without deleting the configured root.
 
 ## 29. Performance and Scalability Requirements
 
@@ -912,16 +995,26 @@ Required coverage includes:
 - root identity/display-name behavior;
 - provider-verifiable overlap handling;
 - `Added`, `AlreadyConfigured`, and `OverlapsExisting` outcomes;
+- exact-selection replay returns `AlreadyConfigured` without duplicate mutation or duplicate event;
+- provider-overlap and child-admission failures use the canonical typed reason vocabularies;
 - Add & Scan two-boundary semantics;
+- transport-ambiguous Add & Scan reconciles through idempotent root creation plus authoritative root/job queries and never blindly replays the composite workflow;
 - scan-admission failure after root commit;
 - single-root admission;
+- admission atomically freezes the scan plan/target snapshot, creates the owning `JobRun` and child `ScanRun`s, and acquires root ownership before handler execution;
+- each admitted child `ScanRun` exists in the active `Running` state before enumeration starts;
+- the operation handler consumes those persisted identities and cannot allocate replacement runs or rebuild the plan from mutable configuration;
 - duplicate same-root ownership;
 - Scan All partial admission;
 - zero-eligible-root behavior;
 - root projections with independent availability/last-scan/active-scan dimensions;
 - removal blocking under active ownership;
+- active-owner detail includes the owning job root count so whole-job cancellation impact is observable;
 - terminal-history preservation after removal;
+- historical root snapshots retain `display_name` plus bounded `safe_location_display` without retaining raw provider locators or identities;
 - retry revalidation and new identities;
+- retry eligibility for `CompletedWithIssues`, `Failed`, `Cancelled`, and `Abandoned`, with clean `Completed` using a separate Scan Again admission;
+- exact retry-not-admitted reasons and `AlreadyRetried` successor idempotency;
 - retry exclusions after root removal/ineligibility;
 - no retry broadening to newly configured roots;
 - one direct retry successor per historical run;
@@ -938,7 +1031,13 @@ Required cases include:
 - mixed complete/partial/failed roots with meaningful success -> `CompletedWithIssues`;
 - no meaningful successful result across admitted work -> `Failed`;
 - cancellation-determined termination -> `Cancelled`;
-- stale non-resumable active execution after restart -> `Abandoned`;
+- one root completes before another root is cancelled -> completed child keeps `Complete` while the job terminates `Cancelled`;
+- cancellation arriving during a coherent commit/finalization checkpoint -> in-flight mutation commits and cancellation is observed at the next safe checkpoint;
+- stale child with accepted cancellation intent -> child/job `Cancelled`;
+- stale child without accepted cancellation intent -> child/job `Abandoned`;
+- already-terminal children remain unchanged and drive normal parent aggregation when all child work had terminalized;
+- recovered `Cancelled`/`Abandoned` summaries clear ownership without changing root availability or granting absence authority;
+- reconciliation failure prevents readiness and reconciliation performs no provider/new work;
 - no eligible targets -> no empty `JobRun`.
 
 ### 30.3 Reconciliation tests
@@ -955,6 +1054,10 @@ Required coverage remains aligned with `SPEC-BE-011`, including:
 - cancellation;
 - stale/incompatible plan finalization suppression;
 - root-level unavailability versus nested failure.
+- exact Phase 001 observation-to-kind/classification mapping;
+- hidden/system ordinary entries retained under the same structural rules;
+- bounded resource-limit exhaustion remains incomplete and cannot report a truncated `Complete` result;
+- no Phase 001 move preservation uses the inactive strong-content-identity tier.
 
 ### 30.4 Persistence/migration tests
 
@@ -982,6 +1085,7 @@ Use real test-owned temporary directory trees to cover:
 - case/locator/native-identity semantics where materially different;
 - cancellation during enumeration;
 - rescan/reconciliation after changes.
+- platform authorization restore/reacquire and stale/revoked failure behavior where the platform requires it (for example sandboxed macOS).
 
 Windows, macOS, and Linux receive targeted native provider coverage. macOS remains the primary full native milestone proof for Phase 001.
 
@@ -997,6 +1101,8 @@ Required coverage includes:
 - resource admission;
 - multi-root failure isolation;
 - event sequencing/coalescing/gaps;
+- source-entry invalidation scope for root children, one entry's children, and the entire root hierarchy, including safe coalescing broadening;
+- no competing LibraryScan lifecycle event duplicates generic runtime-owned job state/progress notification authority;
 - authoritative reconciliation after event uncertainty/runtime replacement.
 
 ### 30.7 Manual verification
@@ -1039,8 +1145,8 @@ SPEC-BE-013 is satisfied when:
 4. One durable internal LocalFilesystem `LibrarySource` is lazily created and reused by all local roots.
 5. Local folder selections are validated/converted to provider-owned locators by the LocalFilesystem boundary rather than Flutter/generic application code.
 6. Root display names are independently persisted application presentation facts.
-7. Duplicate/provider-verifiable overlap outcomes are typed and non-mutating.
-8. Add & Scan commits the root before child scan admission and preserves the root if admission fails.
+7. Exact duplicate local-folder selection is idempotent and returns the existing root; provider-verifiable overlaps are typed and non-mutating.
+8. Add & Scan commits the root before typed child scan admission, preserves the root if admission fails, and requires authoritative reconciliation rather than blind composite replay after ambiguous transport.
 9. One root has at most one active scan owner.
 10. Scan All admits eligible roots, reports typed exclusions, and creates no empty job when nothing is eligible.
 11. Source graph reconciliation obeys exact-scope authority from SPEC-BE-011.
@@ -1050,17 +1156,19 @@ SPEC-BE-013 is satisfied when:
 15. Source hierarchy browsing uses bounded cursor pagination and deterministic backend ordering.
 16. Generic job projection remains capability-neutral while LibraryScan supplies typed operation-specific detail.
 17. Terminal scan/job history remains intelligible after current root removal without requiring soft-deleted live roots.
-18. Root removal is blocked while an active scan owns the root and never modifies user filesystem content.
+18. Root removal is blocked while an active scan owns the root, exposes the owning job scope so whole-job cancellation impact can be disclosed, and never modifies user filesystem content.
 19. LibraryScan progress is structured, phase-local, and percentage-free.
 20. `CompletedWithIssues` is used when meaningful successful work exists but requested scope was not fully satisfied.
-21. Retry reconstructs original intent, revalidates current targets, creates new identities, and never broadens to unrelated current roots.
+21. Retry is limited to issue/failed/cancelled/abandoned terminal attempts, reconstructs original intent, revalidates current targets, creates new identities, never broadens to unrelated roots, and remains distinct from a clean completed root's independent Scan Again action.
 22. Each LibraryScan run has at most one direct retry successor; repeated retry of the same source returns that successor and later retries continue from the latest attempt as a linear chain.
-23. LibraryScan is explicitly non-resumable and stale active scans become `Abandoned` after restart.
-24. Events remain notification-first and authoritative queries repair uncertainty.
+23. LibraryScan is explicitly non-resumable; pre-readiness reconciliation preserves terminal children, maps accepted cancellation to `Cancelled` and unexpected loss to `Abandoned`, derives aggregate job truth deterministically, clears stale ownership, and performs no provider or automatic work.
+24. Events remain notification-first, source-entry invalidation uses explicit root-children/entry-children/entire-root scope, generic job lifecycle events remain runtime-owned, and authoritative queries repair uncertainty.
 25. Persistence/migrations preserve the Phase 000 upgrade path and current/history separation.
 26. Security/privacy rules prevent provider internals and unnecessary sensitive filesystem context from leaking into normal diagnostics/UI contracts.
 27. Tests cover application, aggregation, reconciliation, persistence, native filesystem, runtime, and event uncertainty behavior.
 28. Cross-platform native filesystem behavior is exercised on Windows, macOS, and Linux, with macOS providing the primary full Phase 001 native milestone proof.
+29. Cancellation is job-scoped; completed child outcomes remain durable, in-flight coherent commits complete before the next checkpoint, and accepted cancellation intent maps stale active children to `Cancelled` at restart.
+30. Platform-durable authorization is provider-owned opaque configuration; stale/revoked authorization yields a typed source-access failure without deleting the configured root.
 
 ## 33. References
 
@@ -1071,8 +1179,10 @@ SPEC-BE-013 is satisfied when:
 - `docs/specifications/backend/spec-be-003-application-errors-logging-and-diagnostics.md` — SPEC-BE-003
 - `docs/specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md` — SPEC-BE-004
 - `docs/specifications/backend/spec-be-006-minimal-domain-event-bus.md` — SPEC-BE-006
+- `docs/specifications/backend/spec-be-007-startup-coordination-and-recovery-contract.md` — SPEC-BE-007
 - `docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md` — SPEC-BE-008
 - `docs/specifications/backend/spec-be-009-application-service-contracts.md` — SPEC-BE-009
 - `docs/specifications/backend/spec-be-011-source-provider-and-indexing-contract.md` — SPEC-BE-011
 - `docs/specifications/frontend/spec-fe-008-sources-and-library-folder-management.md` — SPEC-FE-008
 - `docs/specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md` — SPEC-FE-009
+- `docs/specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md` — SPEC-X-001

@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-011  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010  
+**Last Updated:** 2026-08-14  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -20,7 +20,7 @@ The governing rule is:
 
 ### 1.1 Activation scope
 
-This is a forward MVP contract. Ready status does not activate source providers, indexing schema, scan jobs, fixtures, dependencies, or placeholder modules during Phase 000. Only an active later phase, slice, and task may implement them.
+This was a forward MVP contract during Phase 000. PHASE-001 now activates only the local-filesystem provider, configured local roots, source-graph indexing, and LibraryScan subset explicitly bounded by the active phase and slices. Ready status alone still does not activate additional providers, watching, content processing, or placeholder modules beyond that scope.
 
 ## 2. Scope
 
@@ -342,6 +342,20 @@ The MVP `LocalFilesystem` provider may legitimately use an empty source-level co
 
 User-selected scan paths belong to `LibraryRoot.root_locator`, not an invented provider configuration field.
 
+### 9.4 Durable Platform Authorization
+
+Some platforms require durable platform-specific authorization before a configured source can be accessed. For example, a sandboxed macOS application may persist a security-scoped bookmark so a user-selected folder remains accessible after restart.
+
+Persisted source/root configuration may therefore include provider-owned opaque authorization material in addition to the logical path/location. The exact storage location is provider-owned configuration, not a domain-model field.
+
+Rules:
+
+1. The domain/application model never depends on platform-specific bookmark or authorization types; opaque authorization material is decoded only by the owning provider factory/adapter.
+2. Generic application and repository code must not interpret persisted authorization material.
+3. Reopening a configured local source after restart must restore or reacquire platform authorization before traversal begins. A persisted path string alone is not sufficient durable authorization on platforms that require more.
+4. Stale, missing, or revoked authorization produces a typed `SourceAccessError`; it must not silently delete or rewrite the configured source/root, and it does not by itself prove the storage disappeared.
+5. Non-sandboxed platforms/providers remain free to use simpler or empty authorization representations.
+
 ## 10. `LibraryRoot` Configuration
 
 Conceptually:
@@ -381,6 +395,7 @@ Partial
 Unavailable
 Cancelled
 Failed
+Abandoned
 ```
 
 ## 11. Provider Registry and Binding
@@ -852,6 +867,23 @@ Discovery policy may include:
 
 Policy evaluation is deterministic for a frozen scan plan.
 
+### 22.1 Phase 001 fixed discovery policy
+
+PHASE-001 activates one non-configurable policy:
+
+| Provider observation | Retain | Traverse |
+|---|---:|---:|
+| Directory | Yes | Yes |
+| File | Yes | No |
+| Link-like | Yes | No |
+| Other/unsupported structural object | Yes | No |
+
+The active policy has no filename-, extension-, include-pattern-, exclude-pattern-, hidden-, or system-attribute exclusion rule. Ordinary provider-visible hidden/system directories and files therefore remain in the managed graph under the same structural rules.
+
+Link-like objects are retained as evidence but never traversed. Phase 001 has no user-configurable semantic maximum depth. Implementations still enforce bounded safety/resource limits; exhausting such a limit makes the affected scope incomplete and therefore yields `Partial` or `Failed` according to committed useful work. It never authorizes absence or a falsely truncated `Complete` result.
+
+The full effective policy and policy revision are frozen into the scan plan.
+
 ## 23. Classification
 
 Classification is application-owned and occurs after a retained observation has been reconciled into the source graph.
@@ -895,6 +927,19 @@ structural exclusion
 Classification::Ignored
     -> retained SourceEntry intentionally treated as non-content
 ```
+
+### 23.1 Phase 001 fixed classification
+
+PHASE-001 maps retained observations deterministically:
+
+| Persisted source kind | Classification |
+|---|---|
+| `Directory` | `Container` |
+| `File` | `Unknown` |
+| `LinkLike` | `Ignored` |
+| `Unknown` | `Ignored` |
+
+Archive-like, disc-image-like, playlist-like, and similarly named files remain ordinary `File` entries classified `Unknown`. Phase 001 does not infer `ContentCandidate`, archive, playlist, disc-image, or logical game meaning from a filename or extension.
 
 ## 24. Traversal Ownership
 
@@ -1066,7 +1111,7 @@ It is not released between scope transactions.
 
 A multi-root job may continue processing other roots even if one requested root is already scanning. MVP does not hide a retry queue behind this condition.
 
-After a process crash, runtime-local ownership disappears. Startup recovery under SPEC-BE-004 marks stale `Running` scans `Abandoned` under this scan-specific policy, after which a fresh scan may be admitted with new `JobRun` and `ScanRun` identities.
+After a process crash, runtime-local ownership disappears. Before the replacement runtime becomes `Ready`, startup recovery under SPEC-BE-004 and the scan-specific policy in Section 46 reconciles stale `Running` scans: a stale `Running` scan whose owning job has accepted durable cancellation intent becomes `Cancelled`; any other stale `Running` scan becomes recovery-only `Abandoned`. After that reconciliation, a fresh scan may be admitted with new `JobRun` and `ScanRun` identities.
 
 No distributed lease is required for MVP.
 
@@ -1090,26 +1135,33 @@ ScanRun
 - failure_reason
 ```
 
+`Running` is the only active `ScanRun` status. Terminal statuses are `Complete`, `Partial`, `Failed`, `Cancelled`, and recovery-only `Abandoned`. `Unavailable` is a root last-scan summary derived from a failed root-level access attempt; it is not a separate terminal `ScanRun` status.
+
 One `JobRun` may own multiple `ScanRun` records.
 
 Job status and individual root-scan status are not required to be one-to-one.
 
 A retry creates a new `JobRun` and new `ScanRun` records. Historical runs are not reopened.
 
-On startup, any stale `ScanRun` still marked `Running` becomes `Abandoned`, aligned with generic runtime recovery.
+On startup, a stale `ScanRun` still marked `Running` becomes `Cancelled` when durable cancellation intent had already been accepted for its owning `JobRun`; otherwise it becomes recovery-only `Abandoned`. Already-terminal `ScanRun` records remain unchanged and drive aggregate job recovery rather than being overwritten.
 
 `LibraryRoot.last_scan_*` fields are summaries of recent root state, not replacements for durable `ScanRun` history.
 
 ## 30. Scan Execution Flow
 
-MVP execution is conceptually:
+Admission and execution are separate boundaries:
 
 ```text
-admit root scan ownership
+admission (LibraryService / focused workflow handler)
+    validate request and active ownership
     ↓
-allocate ScanRunId + build immutable ScanPlan
+freeze effective ScanPlan / configuration revision
     ↓
-persist ScanRun(Running)
+create JobRun + child ScanRun(Running) + acquire root ownership
+    ↓
+hand off to BackgroundOperationManager
+    ↓
+execution (LibraryScanOperationHandler)
     ↓
 bind LibrarySourceAccess
     ↓
@@ -1184,6 +1236,8 @@ When stable provider-native identity is supported and an observation unambiguous
 When no reliable native identity exists, `ContentIdentity` may support move reconciliation only when one absent prior entry and one new entry form a unique one-to-one match in the relevant completed reconciliation scope.
 
 This tier is available only when strong content identity already exists from later content-processing work. Indexing does not eagerly compute it merely to improve move detection.
+
+PHASE-001 has no authoritative `ContentIdentity`, so this tier is inactive for the entire phase. During Phase 001 only an unambiguous stable provider-native identity may preserve `SourceEntryId`; every other apparent move becomes removal plus creation after the relevant completed scope establishes absence authority.
 
 ### 33.3 Tier 3: Removal Plus Creation
 
@@ -1295,6 +1349,7 @@ Representative variants:
 SourceUnavailable
 EntryNotFound
 PermissionDenied
+AuthorizationUnavailable
 InvalidLocator
 InvalidConfiguration
 UnsupportedOperation
@@ -1306,6 +1361,8 @@ Cancelled
 Concrete adapters translate native filesystem/SDK errors before those errors cross the infrastructure boundary.
 
 `SourceAccessError` explains why an operation failed. It is separate from `EnumerationOutcome`, which expresses whether a scope is authoritative.
+
+`AuthorizationUnavailable` covers stale, missing, or revoked platform authorization for a configured source (for example an expired macOS security-scoped bookmark). It must never cause the configured source/root to be deleted or rewritten, and it does not by itself prove that the underlying storage physically disappeared.
 
 MVP source access has no generic automatic retry layer. A local filesystem failure is returned to the owning indexing workflow rather than silently retried as policy. Retry behavior for future remote/network source providers requires an explicit later contract; it must not be inferred from metadata-provider retry rules in SPEC-BE-010.
 
@@ -1326,6 +1383,8 @@ Representative interpretation:
 - cancellation -> does not make the root unavailable.
 
 A permission failure at the configured root is a scan failure, but it must not automatically be treated as proof that the root physically disappeared.
+
+A stale/revoked platform authorization prevents traversal and may contribute application-owned evidence of `Unavailable` or `Unknown`, but it never deletes the configured source/root and never grants absence authority.
 
 Availability policy may evolve later, but providers themselves do not write these states.
 
@@ -1372,7 +1431,7 @@ Cancellation is not converted to `Partial` merely because some work was committe
 
 `Abandoned` is recovery-only. Normal scan execution does not explicitly choose it.
 
-Startup converts stale `Running` scans to `Abandoned` under SPEC-BE-004 restart reconciliation and this scan-specific policy.
+Startup converts a stale `Running` scan to `Abandoned` only when durable cancellation intent had not been accepted for the owning job; a stale `Running` scan with accepted durable cancellation intent becomes `Cancelled` instead. Both mappings follow SPEC-BE-004 restart reconciliation and this scan-specific policy.
 
 ## 41. Root Last-Scan Status Mapping
 
@@ -1383,6 +1442,7 @@ ScanRun Complete   -> LibraryRoot Complete
 ScanRun Partial    -> LibraryRoot Partial
 ScanRun Cancelled  -> LibraryRoot Cancelled
 ScanRun Failed     -> LibraryRoot Failed
+ScanRun Abandoned  -> LibraryRoot Abandoned
 ```
 
 A root-level source-unavailability failure is represented specially:
@@ -1396,6 +1456,8 @@ LibraryRoot.availability_status = Unavailable
 A nested unavailable scope under an otherwise reachable root produces a `Partial` scan and does not make the root itself unavailable.
 
 `ScanRun.failure_reason` stores only a bounded terminal summary. Detailed provider/scope failures belong in diagnostics according to SPEC-BE-003.
+
+`Cancelled` and `Abandoned` root last-scan summaries describe execution history; they do not by themselves change root availability.
 
 ## 42. Transaction and Unit of Work Strategy
 
@@ -1555,6 +1617,16 @@ Generic application-side native path concatenation is prohibited.
 
 The adapter must enforce that requested source access cannot escape the resolved root namespace.
 
+### 44.7 Platform Authorization
+
+On platforms that require durable platform authorization (for example a sandboxed macOS application), the provider restores or reacquires that authorization before resolving/enumerating a configured root after restart.
+
+Rules:
+
+1. Authorization material is provider-owned and opaque; it never crosses application, bridge, event, or diagnostics contracts.
+2. The provider must not treat the persisted logical path/location alone as durable authorization on platforms that require more.
+3. If authorization cannot be restored or has been revoked, the provider returns a typed source-access failure (Section 38). The configured source/root remains persisted and may be revalidated; it is never silently deleted or rewritten by a failed authorization attempt.
+
 ## 45. Cancellation
 
 Cancellation propagates from the owning runtime operation through scan traversal and source access.
@@ -1567,20 +1639,30 @@ Already committed positive observations remain valid.
 
 Cancellation never creates absence authority and never changes root availability merely because the user stopped the operation.
 
+Cancellation is job-scoped: it targets the owning background execution, not an individual root inside a multi-root `JobRun`. A root whose child `ScanRun` already reached `Complete` before cancellation keeps that durable outcome; still-active child runs terminate as `Cancelled`, and the owning job is `Cancelled` when cancellation determines termination.
+
+A cancellation request arriving while a coherent mutation or scope finalization is already committing does not interrupt that in-flight transaction. The mutation commits atomically, the finalized scope retains its `Complete` outcome, and cancellation is observed at the next safe checkpoint.
+
 ## 46. Crash and Recovery Semantics
 
 Indexing uses in-place committed presence rather than a scan-wide transaction, so a process may terminate after some observations have been committed.
 
-On restart:
+Before the replacement runtime becomes `Ready`, bounded persistence-only reconciliation applies these rules:
 
-- stale `Running` `ScanRun` records become `Abandoned`;
+- already-terminal `ScanRun` records remain unchanged;
+- a stale `Running` `ScanRun` becomes `Cancelled` when durable cancellation intent had already been accepted for its owning `JobRun`;
+- otherwise a stale `Running` `ScanRun` becomes recovery-only `Abandoned`;
+- the owning root's last-scan summary is updated to the recovered child outcome;
+- `Cancelled` and `Abandoned` do not change root availability merely because execution stopped;
 - committed positive observations remain valid;
 - no incomplete scope gains absence authority retroactively;
-- runtime-local root ownership disappears;
-- the root may be admitted for a fresh scan;
-- the new scan uses a new `JobRunId` and `ScanRunId`.
+- stale runtime-local root ownership disappears;
+- recovery performs no provider I/O, enumeration, retry admission, automatic resume, or new scan work;
+- a fresh user-initiated scan uses a new `JobRunId` and `ScanRunId`.
 
-No rollback of the entire abandoned scan is attempted.
+Already-terminal child truth is not overwritten merely because parent job aggregation was interrupted. Parent-job aggregation and readiness failure behavior are governed by SPEC-BE-007 and SPEC-BE-013.
+
+No rollback of the entire cancelled or abandoned scan is attempted.
 
 ## 47. Events
 
@@ -1588,12 +1670,14 @@ Indexing follows SPEC-BE-006 event durability rules.
 
 Persistence commits before event publication.
 
-Representative events include:
+Representative indexing-owned events include:
 
 ```text
 SourceEntriesChanged
-LibraryScanCompleted
+LibraryRootChanged
 ```
+
+Generic `JobStateChanged` and `JobProgress` notifications remain owned by the background-operation/runtime contract. Indexing does not introduce a competing `LibraryScanCompleted` lifecycle event.
 
 Events describe committed application state changes; they are not the durable scan history.
 
@@ -1728,9 +1812,16 @@ Required scan tests include:
 - different roots may proceed independently;
 - one `JobRun` may own multiple `ScanRun` records;
 - retry creates new run identities;
-- startup converts stale `Running` scans to `Abandoned`;
-- committed positive observations from an abandoned scan remain valid;
+- startup preserves already-terminal child scans;
+- startup converts a stale `Running` scan with accepted durable cancellation intent to `Cancelled`;
+- startup converts any other stale `Running` scan to `Abandoned`;
+- recovery updates root last-scan summaries without changing availability for `Cancelled` or `Abandoned`;
+- recovery performs no provider I/O, new admission, retry, or resume;
+- committed positive observations from a cancelled or abandoned scan remain valid;
 - cancellation produces `Cancelled` when it determines termination;
+- cancellation is job-scoped and never rewrites an already-terminal child `ScanRun`;
+- cancellation arriving during a coherent commit/finalization checkpoint completes the in-flight mutation before the next safe checkpoint;
+- a root completing before another root is cancelled keeps its `Complete` child outcome while the job terminates `Cancelled`;
 - partial useful work produces `Partial` rather than `Failed`;
 - root-level unavailability maps `ScanRun` to `Failed` and root last-scan status to `Unavailable`;
 - nested unavailability produces `Partial` without marking the root unavailable;
@@ -1749,7 +1840,11 @@ Tests must verify:
 - provider `ObservedEntryKind` does not report archive/playlist/disc semantics;
 - application-owned `SourceEntryKind` may be refined without changing `SourceEntryId`;
 - classification does not trigger network metadata calls or eager hashing;
-- `ContentCandidate` does not automatically create `GameContent`.
+- `ContentCandidate` does not automatically create `GameContent`;
+- the Phase 001 observation-to-kind/classification mapping is exact;
+- hidden/system ordinary entries remain retained under the same structural rules;
+- Phase 001 resource-limit exhaustion produces an incomplete scope rather than a truncated `Complete` result;
+- Phase 001 never invokes the inactive strong-content-identity move tier.
 
 ## 56. Source Read Tests
 
@@ -1778,7 +1873,8 @@ Deterministic temporary-filesystem integration tests should cover, where platfor
 - link-like entry observation without traversal;
 - case-comparison behavior according to the effective filesystem semantics;
 - cancellation during enumeration;
-- source-read validation behavior.
+- source-read validation behavior;
+- platform authorization restore/reacquire and stale/revoked failure behavior where the platform requires it (for example sandboxed macOS).
 
 Tests must not require a user's actual ROM library.
 
@@ -1829,7 +1925,7 @@ SPEC-BE-011 is satisfied when:
 39. `ContentCandidate` does not automatically create `GameContent`.
 40. Source adapters translate native failures into stable `SourceAccessError` values.
 41. Root availability is application-owned interpretation, not provider-owned persisted state.
-42. `Complete`, `Partial`, `Failed`, `Cancelled`, and recovery-only `Abandoned` follow the semantic status rules defined here.
+42. `Running` is the sole active `ScanRun` status; `Complete`, `Partial`, `Failed`, `Cancelled`, and recovery-only `Abandoned` follow the semantic terminal rules defined here, while root last-scan summaries also represent `NeverScanned` and root-level `Unavailable`.
 43. Root-level unavailability remains distinct from nested scope failure.
 44. A scan uses short coherent Unit of Work mutations and never one scan-wide transaction.
 45. Provider/source I/O is not held across indexing database write transactions.
@@ -1839,9 +1935,11 @@ SPEC-BE-011 is satisfied when:
 49. Local-filesystem capabilities are conservative and based on effective resolved-root semantics rather than OS-name assumptions.
 50. Local filesystem links/junctions/aliases are not followed for traversal.
 51. Cancellation preserves already committed positive observations and never grants absence authority.
-52. Startup recovery preserves committed presence from abandoned scans.
+52. Startup recovery preserves committed presence, keeps already-terminal child truth, maps accepted cancellation to `Cancelled` and unexpected loss to `Abandoned`, clears stale ownership, and performs no provider I/O or automatic work.
 53. Source/indexing events publish only after durable commits.
 54. Architecture, provider-contract, reconciliation, scan-lifecycle, discovery/classification, read-consistency, and filesystem integration tests enforce the defined boundaries.
+55. Cancellation is job-scoped, preserves already-terminal child outcomes, and treats an in-flight coherent commit as completing before the next safe checkpoint.
+56. Platform-durable authorization is provider-owned opaque configuration; stale/revoked authorization yields a typed source-access failure without deleting or rewriting the configured source/root.
 
 ## 59. Prohibited Patterns
 
@@ -1895,7 +1993,7 @@ This specification intentionally defers:
 - provider-specific network retry policy for future remote source providers;
 - automatic reconciliation/merge of pre-existing duplicate `GameContent` records;
 - final orphan `GameContent` lifecycle;
-- final UI source/root configuration workflow;
+- post-Phase-001 provider-generic source configuration, editing, rename, credential, and advanced root-policy workflows beyond the fixed local-folder UI owned by SPEC-FE-008;
 - long-term scan-history retention policy;
 - durable per-observation scan history;
 - exact event coalescing thresholds;
@@ -1906,6 +2004,7 @@ This specification intentionally defers:
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)

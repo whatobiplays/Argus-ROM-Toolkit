@@ -4,7 +4,7 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -43,7 +43,7 @@ This specification owns frontend rules for:
 - bridge DTO to frontend model mapping;
 - typed identifier conversion;
 - focused API query and mutation semantics;
-- future long-running operation-handle semantics;
+- Phase 001 typed long-running operation admission/handle semantics and later additive extensions;
 - typed frontend application failures;
 - typed frontend transport failures;
 - preservation of backend error dimensions;
@@ -490,12 +490,16 @@ For appearance settings, event-driven reconciliation and focused read behavior a
 
 Long-running backend work follows SPEC-BE-004/SPEC-BE-008 admission semantics; Phase 001 activates the bounded Sources/Jobs bridge surface defined by SPEC-BE-008 Section 66.
 
-A focused operation that admits background work returns a typed frontend operation handle:
+A focused operation that admits background work returns a typed frontend admission result containing the canonical operation handle. The active Phase 001 example is:
 
 ```text
-startImport(...)
-    → OperationHandle
+SourcesApi.startLibraryScan(libraryRootId)
+    → StartLibraryScanResult
+       ├── admitted(OperationHandle)
+       └── alreadyScanning(activeJobRunId, activeScanRunId)
 ```
+
+Scan All, Add & Scan, and Retry likewise preserve their own typed expected outcomes rather than collapsing every call to a bare handle.
 
 The returned handle means the operation was admitted, not that work completed.
 
@@ -1067,6 +1071,8 @@ libraryRootsChanged
 libraryRootChanged
 sourceEntriesChanged
 ```
+
+The mapped `sourceEntriesChanged` payload carries `libraryRootId` plus the closed scope union `rootChildren`, `entryChildren(parentSourceEntryId)`, or `entireRootHierarchy`. It never represents broad invalidation by overloading a nullable parent identifier, and client mapping must preserve that scope exactly.
 
 The earlier reserved per-transition `operationStarted` / `operationCompleted` / `operationFailed` / `operationCancelled` variants are replaced before first activation and never enter the generated/client contract.
 
@@ -1972,7 +1978,7 @@ An implementation conforming to SPEC-FE-003 satisfies all of the following:
 9. `BridgeResult` never appears in feature-facing signatures.
 10. Queries return immutable frontend snapshots.
 11. Mutations do not invent authoritative return state not supplied by the backend contract.
-12. Future long-running admission returns typed operation handles rather than waiting for completion.
+12. Phase 001 long-running admission returns typed expected-result unions containing canonical operation handles rather than waiting for completion; later operations extend this pattern additively.
 13. Typed frontend identifiers replace bridge string/primitives before ordinary feature use.
 14. Runtime identity is represented by a typed `RuntimeInstanceId`.
 15. Runtime lifecycle values preserve backend semantics.
@@ -2004,7 +2010,7 @@ An implementation conforming to SPEC-FE-003 satisfies all of the following:
 41. Mutations are not automatically retried after ambiguous transport failure without explicit safe backend semantics.
 42. Focused API fakes are the ordinary feature/controller test seam, with `ClientBootstrap` as the narrow startup-lifecycle test seam.
 43. Feature tests do not require generated DTOs or the real Rust backend when an Argus-owned client seam exists.
-44. Mapper tests cover every DTO, identifier, error, runtime, and event contract implemented by the active scope; operation-handle conversion is added when the active phase introduces that contract.
+44. Mapper tests cover every DTO, identifier, error, runtime, event, typed Phase 001 admission/result, and canonical operation-handle contract implemented by the active scope.
 45. Root/client integration tests cover initialization, event connectivity, runtime replacement, and transport failure translation.
 46. A controlled test proves ambiguous settings mutation transport failure does not trigger duplicate automatic dispatch.
 47. Architecture verification prevents generated bridge/client implementation types from leaking upward.
@@ -2043,7 +2049,7 @@ This specification intentionally leaves later specifications to define:
 - exact `go_router` route ownership and route-driven client requests;
 - startup/recovery UI variants and presentation policy;
 - exact appearance-settings state/control semantics;
-- library/game/job/source API operation catalogs beyond the generic client rules here;
+- logical Library/game catalogs and any Jobs/Sources operations beyond the bounded Phase 001 catalogs owned by SPEC-BE-008, SPEC-FE-008, and SPEC-FE-009;
 - persistent frontend caching/offline synchronization;
 - future provider/account authentication UX;
 - future streaming media/artwork transport needs;
@@ -2056,6 +2062,7 @@ It does not define a generic RPC framework, plugin API, frontend repository laye
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](../backend/spec-be-003-application-errors-logging-and-diagnostics.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](../backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
 - [SPEC-BE-005 — Settings Service and Appearance Settings](../backend/spec-be-005-settings-service-and-appearance-settings.md)
@@ -2068,6 +2075,8 @@ It does not define a generic RPC framework, plugin API, frontend repository laye
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
+- [SPEC-FE-008 — Sources and Library Folder Management](spec-fe-008-sources-and-library-folder-management.md)
+- [SPEC-FE-009 — Jobs and Background Operation Presentation](spec-fe-009-jobs-and-background-operation-presentation.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)

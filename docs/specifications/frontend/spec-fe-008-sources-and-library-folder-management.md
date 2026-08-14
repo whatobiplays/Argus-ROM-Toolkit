@@ -4,7 +4,7 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-X-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -139,7 +139,7 @@ removeLibraryRoot(rootId)
 startLibraryScan(rootId)
 startLibraryScanAll()
 listSourceEntryChildren(rootId, parentEntryId?, cursor?, pageSize)
-getSourceEntry(rootId, sourceEntryId)
+getSourceEntry(sourceEntryId)
 ```
 
 The feature also requires generic Jobs navigation/control capabilities sufficient to:
@@ -155,7 +155,8 @@ Focused client calls follow SPEC-FE-003:
 - background admission returns an operation handle/admission result rather than awaiting completion;
 - successful mutations do not cause Flutter to fabricate authoritative read state;
 - application failures remain distinct from transport failures;
-- ambiguous mutation transport outcomes are not blindly replayed.
+- ambiguous mutation transport outcomes are not blindly replayed;
+- compatible additive DTO/model evolution follows SPEC-X-001; unknown additive fields are tolerated rather than rejected.
 
 ## 7. Sources Destination Placement
 
@@ -330,10 +331,10 @@ sidebarOverride = null
     -> use adaptive default
 
 sidebarOverride = collapsed
-    -> collapsed for the remainder of this application runtime session
+    -> collapsed for the remainder of the current Flutter application/provider-scope session
 
 sidebarOverride = expanded
-    -> expanded for the remainder of this application runtime session
+    -> expanded for the remainder of the current Flutter application/provider-scope session
 ```
 
 Adaptive default while the override is `null`:
@@ -488,9 +489,9 @@ Sources:
 
 1. preserves the committed root;
 2. navigates to `/sources/roots/:rootId`;
-3. presents truthful never-scanned/current root state;
-4. explains in bounded product language that scanning did not start;
-5. exposes explicit **Scan** when currently eligible.
+3. reconciles the authoritative root and Jobs projections;
+4. for `AlreadyScanning`, presents the existing active-scan summary and **View Job** without offering a duplicate scan;
+5. for `AdmissionFailure`, presents the bounded `ApplicationError` in product language and exposes explicit **Scan** only after authoritative state confirms no active owner and current eligibility.
 
 The UI must never compensate by deleting the committed root merely to make Add & Scan appear atomic.
 
@@ -533,6 +534,14 @@ For Add, Add & Scan, scan admission, cancellation, or removal when transport out
 4. the UI exposes synchronization uncertainty when the committed outcome cannot yet be proven;
 5. a conflicting/destructive follow-up mutation remains unavailable until the relevant uncertainty is resolved.
 
+Capability-specific replay rules refine the general prohibition:
+
+- the exact same `AddLocalLibraryRoot` selection may be replayed because backend creation is explicitly idempotent and returns `AlreadyConfigured`;
+- `AddLocalLibraryRootAndScan` is never replayed as a composite after an ambiguous response;
+- for ambiguous Add & Scan, replay only the idempotent add step to establish the authoritative root identity, then query the root and Jobs state;
+- issue an explicit `startLibraryScan` only after those authoritative reads establish that no child scan admission exists;
+- ambiguous scan, cancellation, or removal still reconciles through the relevant root/job queries before any conflicting repeat.
+
 This follows SPEC-FE-002 and SPEC-FE-003 mutation/reconciliation conventions.
 
 ## 20. Root Detail State Dimensions
@@ -559,6 +568,8 @@ activeScan = Running
 ```
 
 Presentation may summarize those facts for readability, but the controller retains the independent authoritative dimensions.
+
+When present, `lastScan.status` is one of `Complete`, `Partial`, `Unavailable`, `Cancelled`, `Failed`, or `Abandoned`; a missing summary means `NeverScanned`. `Cancelled` and `Abandoned` describe historical execution termination and do not by themselves change root availability.
 
 ## 21. Root Availability Presentation
 
@@ -605,7 +616,7 @@ Backend same-root ownership remains the race authority even when Flutter pre-dis
 
 ## 23. Scan All
 
-`/sources` exposes **Scan All** when at least one configured root may meaningfully participate.
+`/sources` exposes **Scan All** when the authoritative root-list projection reports `totalCount > 0` and the normal read/admission guard permits interaction. Flutter does not infer target eligibility from the currently loaded root page; backend admission remains authoritative and may return partial exclusions or `NothingEligible`.
 
 The control belongs to the Sources landing/global Sources action region rather than being duplicated on every root.
 
@@ -677,6 +688,8 @@ On successful removal:
 If current state or a removal attempt establishes active scan ownership, Sources uses one explicit guided cancel-and-remove flow.
 
 The user is asked to approve **Cancel Scan & Remove**.
+
+Because cancellation is job-scoped, the confirmation consumes `owningJobRootCount`. When that count is greater than one, it must explicitly state that cancelling the scan also stops work for the other roots in the same Scan All job. The UI must not imply that only the selected root's child work can be cancelled.
 
 Conceptually:
 
@@ -903,13 +916,18 @@ Normal Sources UI must not expose:
 
 ## 36. Phase 001 File Semantics
 
-Phase 001 Sources reflects the fixed Phase 001 source-indexing policy.
+Sources presents the fixed Phase 001 source-indexing policy exactly:
 
-Archive-like, disc-image-like, playlist-like, and similar files remain ordinary provider-observed file entries unless a later active phase has created authoritative transformed semantics.
+| Authoritative kind | Classification | Traversal presentation |
+|---|---|---|
+| `Directory` | `Container` | expandable/drill-down capable |
+| `File` | `Unknown` | non-container entry |
+| `LinkLike` | `Ignored` | retained evidence, never traversable |
+| `Unknown` | `Ignored` | retained unsupported structural entry, never traversable |
 
-FE-008 must not guess or decorate future semantic kinds from filename extension alone.
+Archive-like, disc-image-like, playlist-like, and similarly named files remain ordinary `File`/`Unknown` entries unless a later active phase supplies authoritative transformed semantics. FE-008 never guesses or decorates future kinds from filename or extension.
 
-Link-like entries may be presented where retained by the authoritative graph but are never represented as traversable folders when the backend contract says traversal is disabled.
+Hidden/system ordinary entries follow the same authoritative mapping and are not silently hidden by a frontend preference or name rule. If bounded backend resource limits make a scope incomplete, Sources presents the resulting `Partial`/`Failed` truth rather than implying a successfully truncated complete hierarchy.
 
 ## 37. Live Source-Graph Reconciliation
 
@@ -936,6 +954,14 @@ Flutter must not directly create, remove, or reparent source entries from event 
 ## 38. Reconciliation Scope
 
 Sources refreshes the smallest reliable authoritative scope.
+
+`SourceEntriesChanged` scope is explicit:
+
+- `rootChildren` refreshes the configured root's direct-child page;
+- `entryChildren(parentSourceEntryId)` refreshes that entry's direct-child page;
+- `entireRootHierarchy` invalidates/reconciles all loaded hierarchy scopes for the identified root while preserving usable confirmed content during refresh.
+
+Coalescing may broaden several narrow demands to `entireRootHierarchy`; it must never narrow them or interpret a missing/nullable parent as ambiguous scope.
 
 Examples:
 
@@ -1021,6 +1047,7 @@ Required rules:
 8. Link-like entries are not presented as traversable when traversal is disallowed.
 9. Raw platform/native picker errors are mapped/sanitized before normal user presentation.
 10. Tests use test-owned fake or temporary folder contexts and never point at a developer's actual ROM library.
+11. On platforms that require durable platform authorization (for example a sandboxed macOS application), a persisted path string is not durable authorization; authorization is provider-owned and opaque, is restored/reacquired before traversal after restart, and a stale/revoked authorization surfaces as a typed source-access failure without Sources deleting the configured root.
 
 ## 44. Root Action Hierarchy
 
@@ -1202,7 +1229,8 @@ Required coverage includes:
 - refresh failure preserving confirmed roots;
 - event-driven root-list reconciliation;
 - stale async completion protection;
-- Scan All eligibility/admission feedback;
+- Scan All hidden when root-list `totalCount == 0` and available when `totalCount > 0` without inferring per-root eligibility from the loaded page;
+- Scan All admission/exclusion feedback remains backend-authoritative;
 - zero-eligible Scan All behavior;
 - mixed admitted/excluded concise feedback without duplicating Jobs detail.
 
@@ -1213,6 +1241,7 @@ Required coverage includes:
 - valid root load;
 - stale/deleted routed root canonicalization demand;
 - independent availability/lastScan/activeScan preservation;
+- `Complete`, `Partial`, `Unavailable`, `Cancelled`, `Failed`, `Abandoned`, and nullable `NeverScanned` presentation without deriving availability;
 - Scan admission;
 - Scan Again admission;
 - AlreadyScanning reconciliation;
@@ -1233,7 +1262,8 @@ Required coverage includes:
 - AlreadyConfigured navigates to existing root;
 - OverlapsExisting is non-mutating and explains conflict;
 - Add Without Scanning success;
-- ambiguous mutation outcome performs authoritative reconciliation instead of blind replay;
+- ambiguous Add is safely replayable through exact idempotent root creation;
+- ambiguous Add & Scan never replays the composite, establishes root identity through idempotent Add, queries root/Jobs authority, and starts an explicit scan only when no child admission exists;
 - provider-native/locator details are absent from normal UI.
 
 ## 59. Removal Workflow Tests
@@ -1244,6 +1274,7 @@ Required coverage includes:
 - removal confirmation states user files are untouched;
 - cancellation of confirmation;
 - active scan -> explicit Cancel Scan & Remove flow;
+- multi-root owner -> confirmation discloses that job-scoped cancellation stops other roots in the same Scan All job;
 - cancellation success -> authoritative no-owner reconciliation -> removal;
 - cancellation definite failure -> no removal;
 - cancellation transport ambiguity -> no removal until reconciled;
@@ -1263,6 +1294,8 @@ Required coverage includes:
 - scoped pagination failure and retry;
 - loaded children preserved during failed next-page request;
 - authoritative refresh of one loaded scope;
+- `rootChildren`, `entryChildren`, and `entireRootHierarchy` invalidations refresh exactly the required loaded scopes;
+- coalescing broadens but never narrows source invalidation scope;
 - selection preservation by stable identity;
 - expansion preservation by stable identity;
 - selected-entry removal clears selection;
@@ -1287,7 +1320,7 @@ Required coverage includes:
 - one-root default collapsed sidebar;
 - two-plus-root default expanded sidebar;
 - explicit sidebar toggle overrides adaptive root-count changes for the current session;
-- sidebar override reset on fresh runtime/session fixture;
+- sidebar override resets only on a fresh Flutter application/provider-scope fixture;
 - backend runtime/event-generation replacement alone does not reset the current Flutter-session sidebar override;
 - collapsed sidebar does not clear root or source-entry selection;
 - no alternate selected-root query URI.
@@ -1306,6 +1339,9 @@ Required coverage includes:
 - loaded pages not mistaken for complete hierarchy;
 - safe source facts only;
 - archive/disc-image/playlist-like files not given speculative semantic UI.
+- exact Directory/Container, File/Unknown, LinkLike/Ignored, and Unknown/Ignored presentation mapping;
+- hidden/system ordinary entries are not silently filtered;
+- incomplete resource-limited scopes never appear as successfully complete hierarchies.
 
 ## 63. Accessibility and Keyboard Tests
 
@@ -1402,25 +1438,25 @@ SPEC-FE-008 is satisfied when:
 3. Source-entry selection/expansion/drill-down remains transient feature state rather than route state.
 4. Expanded/Large root detail supports a collapsible root-list sidebar.
 5. With no explicit session override, one root defaults collapsed and two or more roots default expanded.
-6. A user's explicit sidebar toggle overrides later root-count changes for the remainder of the current runtime session.
+6. A user's explicit sidebar toggle overrides later root-count changes for the remainder of the current Flutter application/provider-scope session and is unaffected by backend runtime replacement alone.
 7. Sidebar preference is not durable in MVP, and post-MVP persistence is documented as governed Settings work.
 8. Add Library Folder invokes a native picker without mutating Argus merely from selection.
 9. Folder selection is followed by explicit Add & Scan primary and Add Without Scanning secondary actions.
-10. Add & Scan uses the backend composite workflow and preserves a committed root when scan admission fails.
+10. Add & Scan uses the backend composite workflow, presents typed child-admission outcomes, and preserves a committed root when scan admission fails.
 11. AlreadyConfigured and OverlapsExisting are typed, non-mutating product outcomes.
-12. Ambiguous mutation transport outcomes reconcile authoritative state before conflicting replay.
-13. Root detail exposes truthful availability, last-scan, and active-scan dimensions without inventing a duplicate authority enum.
+12. Ambiguous Add may use exact idempotent replay, ambiguous Add & Scan never replays the composite, and all other ambiguous mutations reconcile authoritative state before conflicting repeat.
+13. Root detail exposes independent availability, active-scan, and complete last-scan truth including `Abandoned`, without inventing a duplicate authority enum or deriving availability from historical execution status.
 14. Scan/Scan Again remain usable without blocking unrelated Sources state.
-15. Scan All presents concise admitted/excluded feedback and delegates full execution detail to Jobs.
+15. Scan All is exposed from authoritative root-list `totalCount > 0`, never infers per-root eligibility from the loaded page, presents concise typed admitted/excluded feedback, and delegates full execution detail to Jobs.
 16. Sources exposes View Job rather than duplicating the complete Jobs UI.
 17. Root removal explicitly states that user files are untouched.
-18. Active-scan removal performs explicit CancelJob, authoritative no-owner reconciliation, then RemoveLibraryRoot.
+18. Active-scan removal discloses whole-job impact for multi-root owners, performs explicit CancelJob, authoritatively proves no remaining ownership, then calls RemoveLibraryRoot.
 19. Removal stops while cancellation/ownership remains uncertain.
 20. Successful removal canonicalizes stale root detail to `/sources` and discards root-specific transient hierarchy state.
 21. Source hierarchy loads direct children incrementally with independent per-parent pagination.
 22. Compact uses drill-down hierarchy, Expanded/Large uses expandable tree, and Medium adapts locally while using the same state model.
 23. Selected-entry inspector is transient/adaptive and never changes route identity.
-24. Live scan updates cause focused authoritative reconciliation rather than direct event-driven source-graph mutation.
+24. Live scan updates use explicit root-children/entry-children/entire-root invalidation scope to drive focused authoritative reconciliation rather than direct event-driven source-graph mutation.
 25. Stable source identity preserves selection/expansion where authoritative entities still exist; removed entities clear stale transient references.
 26. Root unavailability does not erase valid last-confirmed indexed hierarchy.
 27. Sources never exposes provider-native locators, identities, fingerprints, or database metadata in normal UI.
@@ -1428,6 +1464,7 @@ SPEC-FE-008 is satisfied when:
 29. The feature remains bounded for very large source graphs and never requires full-tree materialization in Flutter.
 30. Deterministic controller/widget tests cover all approved workflows, uncertainty behavior, adaptive layouts, hierarchy paging/reconciliation, and accessibility interactions.
 31. Phase 001 native/integration verification exercises the real Sources workflow without treating deferred manual checks as passed.
+32. Sources presents the exact Phase 001 kind/classification/traversal mapping, retains hidden/system ordinary entries, and never presents an incomplete resource-limited scope as a complete hierarchy.
 
 ## 69. References
 
@@ -1445,3 +1482,4 @@ SPEC-FE-008 is satisfied when:
 - `docs/specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md` — SPEC-FE-006
 - `docs/specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md` — SPEC-FE-007
 - `docs/specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md` — SPEC-FE-009
+- `docs/specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md` — SPEC-X-001

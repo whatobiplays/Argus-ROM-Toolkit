@@ -14,5 +14,5 @@ Use [the phase template](../templates/phase.md).
 
 | ID | Phase | Status |
 |---|---|---|
-| PHASE-000 | [Foundation](phase-000-foundation.md) | Ready for Implementation |
+| PHASE-000 | [Foundation](phase-000-foundation.md) | In Progress |
 | PHASE-001 | [Local Sources and Indexing](phase-001-local-sources-and-indexing.md) | Ready for Implementation |

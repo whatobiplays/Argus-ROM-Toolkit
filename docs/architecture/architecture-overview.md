@@ -210,6 +210,7 @@ Partial
 Unavailable
 Cancelled
 Failed
+Abandoned
 ```
 
 Root availability and scan completeness govern whether absence is authoritative.
@@ -393,6 +394,17 @@ They may be observed or ignored according to discovery policy, but must not be t
 
 Opening source content returns a transient provider-owned read with explicit consistency semantics. Providers that cannot guarantee an atomic stable-version read must support completion validation. Trusted immutable derived facts such as content identities, hashes, or authoritative derived-container structure may be committed only after the read is known to represent one stable source version.
 
+### 7.5 Durable platform authorization
+
+A configured source may require platform-specific durable authorization before its storage can be accessed. For example, a sandboxed macOS application may persist a security-scoped bookmark so a user-selected folder remains accessible after restart. Platform authorization is provider-owned and opaque outside the provider/platform boundary.
+
+Rules:
+
+1. The domain/application model never depends on platform-specific bookmark or authorization types. Persisted source/root configuration may include provider-owned opaque authorization material in addition to the logical path/location, but generic application and repository code must not interpret it.
+2. Reopening a configured local source after restart must restore or reacquire platform authorization before any traversal begins. A persisted path string alone is not sufficient durable authorization on platforms that require more.
+3. Stale, missing, or revoked authorization surfaces as a typed source-access failure. It never silently deletes or rewrites the configured source/root, and it does not by itself prove the storage disappeared.
+4. Non-sandboxed platforms/providers remain free to use simpler or empty authorization representations.
+
 ## 8. Indexing architecture
 
 ### 8.1 Responsibilities
@@ -499,7 +511,7 @@ Cancelled
 Abandoned
 ```
 
-On startup, any scan still marked `Running` becomes `Abandoned`.
+On startup, before the replacement runtime becomes `Ready`, stale `Running` scans are reconciled: a scan whose owning job has accepted durable cancellation intent becomes `Cancelled`; any other stale `Running` scan becomes recovery-only `Abandoned`. Already-terminal child scans remain unchanged and drive aggregate job recovery rather than being overwritten.
 
 `ScanRun` is distinct from the generic `JobRun`: one job execution attempt may own multiple root scan records, and each retry creates new run identities. Only one active `ScanRun` may own a given `LibraryRoot` at a time.
 
@@ -1435,6 +1447,17 @@ Library scope uses hierarchical routes:
 /library/library-roots/:libraryRootId
 ```
 
+Phase 001 operational source-management and background-execution routes are distinct from the future logical Library scope:
+
+```text
+/sources
+/sources/roots/:libraryRootId
+/jobs
+/jobs/:jobRunId
+```
+
+`/sources` manages configured storage boundaries and the indexed source graph. Future `/library/sources/:sourceId` represents a logical Library browsing scope after game-content capability exists; the two route families must not be conflated.
+
 Temporary filters, sorting, and view mode use query parameters.
 
 Game selection is route-addressable and presents differently by available width without changing the route identity.
@@ -1663,6 +1686,7 @@ Database location and backup/recovery policy must be designed before the first p
 - External provider URLs and responses are treated as untrusted input.
 - Archive and container parsing must enforce resource limits and avoid unsafe path traversal.
 - Source-provider locators must be normalized and validated.
+- Platform-specific durable filesystem authorization (for example security-scoped bookmarks on macOS) is provider-owned and opaque outside the provider boundary; the domain/application model never depends on platform bookmark types, and authorization must be restored or reacquired before traversal after restart.
 - Link traversal is disabled in MVP.
 - Destructive startup recovery actions require explicit confirmation and preserve the old database where practical.
 

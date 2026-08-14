@@ -1,11 +1,62 @@
 import 'package:argus/app/routing/app_destination.dart';
 import 'package:argus/app/shell/application_shell.dart';
+import 'package:argus/core/client/client.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
+import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
+import 'package:argus/features/settings/application/appearance_settings_state.dart';
 import 'package:argus/features/settings/settings.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ThemeMode;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../features/settings/appearance_settings_test_fakes.dart';
+
 void main() {
+  Future<void> pumpSurface(
+    WidgetTester tester, {
+    required ThemeData theme,
+  }) async {
+    final api = FakeSettingsApi();
+    final container = ProviderContainer(
+      overrides: [
+        appearanceSettingsApiProvider.overrideWithValue(api),
+        appearanceRuntimeContextProvider.overrideWith(
+          (ref) => ref.watch(appearanceRuntimeContextHostProvider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(appearanceRuntimeContextHostProvider.notifier)
+        .setContext(
+          AppearanceRuntimeContext.ready(
+            runtimeInstanceId: appearanceTestId('a'),
+          ),
+        );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: theme,
+          home: MediaQuery(
+            data: const MediaQueryData(size: Size(1440, 800)),
+            child: ApplicationShell(
+              currentDestination: AppDestination.settings,
+              onSettingsSelected: () {},
+              child: const SettingsPage(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    api.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.light),
+    );
+    await tester.pumpAndSettle();
+  }
+
   test('light production theme uses Material 3', () {
     final theme = ArgusTheme.light;
 
@@ -27,20 +78,7 @@ void main() {
   ) async {
     final semanticsHandle = tester.ensureSemantics();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ArgusTheme.light,
-        home: MediaQuery(
-          data: const MediaQueryData(size: Size(1440, 800)),
-          child: ApplicationShell(
-            currentDestination: AppDestination.settings,
-            onSettingsSelected: () {},
-            child: const SettingsPage(),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await pumpSurface(tester, theme: ArgusTheme.light);
 
     try {
       await expectLater(tester, meetsGuideline(textContrastGuideline));
@@ -54,20 +92,7 @@ void main() {
   ) async {
     final semanticsHandle = tester.ensureSemantics();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ArgusTheme.dark,
-        home: MediaQuery(
-          data: const MediaQueryData(size: Size(1440, 800)),
-          child: ApplicationShell(
-            currentDestination: AppDestination.settings,
-            onSettingsSelected: () {},
-            child: const SettingsPage(),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await pumpSurface(tester, theme: ArgusTheme.dark);
 
     try {
       await expectLater(tester, meetsGuideline(textContrastGuideline));

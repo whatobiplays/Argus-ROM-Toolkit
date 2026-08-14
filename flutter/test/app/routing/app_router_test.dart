@@ -1,10 +1,15 @@
+import 'package:argus/app/routing/app_destination.dart';
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/app/routing/app_routes.dart';
-import 'package:argus/app/routing/app_destination.dart';
+import 'package:argus/core/client/client.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
-import 'package:flutter/material.dart';
+import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
+import 'package:argus/features/settings/application/appearance_settings_state.dart';
+import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../features/settings/appearance_settings_test_fakes.dart';
 
 void main() {
   test('typed Settings route and semantic mapping are canonical', () {
@@ -17,38 +22,65 @@ void main() {
     expect(destinationForUri(Uri.parse('/unknown')), isNull);
   });
 
-  testWidgets('root redirects to Settings and renders the static page', (
+  ({ProviderContainer container, FakeSettingsApi api}) createHost() {
+    final api = FakeSettingsApi();
+    final container = ProviderContainer(
+      overrides: [
+        appearanceSettingsApiProvider.overrideWithValue(api),
+        appearanceRuntimeContextProvider.overrideWith(
+          (ref) => ref.watch(appearanceRuntimeContextHostProvider),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(appearanceRuntimeContextHostProvider.notifier)
+        .setContext(
+          AppearanceRuntimeContext.ready(
+            runtimeInstanceId: appearanceTestId('a'),
+          ),
+        );
+    return (container: container, api: api);
+  }
+
+  Future<void> loadAppearance(WidgetTester tester, FakeSettingsApi api) async {
+    await tester.pump();
+    api.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.light),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('root redirects to Settings and renders the Settings page', (
     tester,
   ) async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-    final router = container.read(appRouterProvider);
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
-        container: container,
+        container: host.container,
         child: const _RouterHost(),
       ),
     );
-    await tester.pumpAndSettle();
+    await loadAppearance(tester, host.api);
 
     expect(router.routeInformationProvider.value.uri.path, '/settings');
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
   });
 
   testWidgets('direct Settings navigation renders Settings', (tester) async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-    final router = container.read(appRouterProvider);
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
-        container: container,
+        container: host.container,
         child: const _RouterHost(),
       ),
     );
     router.go('/settings');
-    await tester.pumpAndSettle();
+    await loadAppearance(tester, host.api);
 
     expect(router.routeInformationProvider.value.uri.path, '/settings');
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
@@ -57,16 +89,16 @@ void main() {
   testWidgets('unknown paths use a bounded sanitized not-found surface', (
     tester,
   ) async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-    final router = container.read(appRouterProvider);
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
-        container: container,
+        container: host.container,
         child: const _RouterHost(),
       ),
     );
+    await loadAppearance(tester, host.api);
     router.go('/missing?secret=do-not-show#fragment');
     await tester.pumpAndSettle();
 
@@ -84,16 +116,16 @@ void main() {
   testWidgets('production graph exposes only root redirect and Settings', (
     tester,
   ) async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-    final router = container.read(appRouterProvider);
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
-        container: container,
+        container: host.container,
         child: const _RouterHost(),
       ),
     );
+    await loadAppearance(tester, host.api);
 
     for (final path in <String>[
       '/more',
@@ -118,16 +150,15 @@ void main() {
       tester.view.physicalSize = const Size(480, 800);
       addTearDown(tester.view.reset);
 
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      final router = container.read(appRouterProvider);
+      final host = createHost();
+      final router = host.container.read(appRouterProvider);
       await tester.pumpWidget(
         UncontrolledProviderScope(
-          container: container,
+          container: host.container,
           child: const _RouterHost(),
         ),
       );
-      await tester.pumpAndSettle();
+      await loadAppearance(tester, host.api);
 
       for (final testCase in <({double width, Key key})>[
         (width: 480, key: const ValueKey<String>('compact-more-button')),
@@ -164,15 +195,14 @@ void main() {
         tester.view.physicalSize = Size(testCase.width, 800);
         tester.binding.platformDispatcher.textScaleFactorTestValue = scale;
 
-        final container = ProviderContainer();
-        addTearDown(container.dispose);
+        final host = createHost();
         await tester.pumpWidget(
           UncontrolledProviderScope(
-            container: container,
+            container: host.container,
             child: const _RouterHost(),
           ),
         );
-        await tester.pumpAndSettle();
+        await loadAppearance(tester, host.api);
 
         expect(find.byKey(ValueKey<String>(testCase.key)), findsOneWidget);
         expect(find.bySemanticsLabel('Settings'), findsOneWidget);

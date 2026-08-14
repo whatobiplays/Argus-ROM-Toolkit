@@ -5,7 +5,6 @@
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
 **Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-009, SPEC-BE-011  
-**Related:** SPEC-BE-008, SPEC-FE-008, SPEC-FE-009
 
 ## 1. Purpose
 
@@ -1075,3 +1074,5 @@ SPEC-BE-013 is satisfied when:
 - `docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md` — SPEC-BE-008
 - `docs/specifications/backend/spec-be-009-application-service-contracts.md` — SPEC-BE-009
 - `docs/specifications/backend/spec-be-011-source-provider-and-indexing-contract.md` — SPEC-BE-011
+- `docs/specifications/frontend/spec-fe-008-sources-and-library-folder-management.md` — SPEC-FE-008
+- `docs/specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md` — SPEC-FE-009

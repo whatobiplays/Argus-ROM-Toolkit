@@ -4,10 +4,9 @@
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
 **Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013  
 **Supersedes:** None  
 **Superseded By:** None
-**Related:** SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-FE-008, SPEC-FE-009
 
 ## 1. Purpose
 

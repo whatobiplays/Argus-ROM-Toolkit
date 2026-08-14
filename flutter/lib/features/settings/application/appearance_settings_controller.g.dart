@@ -73,7 +73,7 @@ final class AppearanceSettingsControllerProvider
 }
 
 String _$appearanceSettingsControllerHash() =>
-    r'a802c15a2131cbd58d89ab0a02900bef4fe7564d';
+    r'5db7510c081f6c006b9cfb511953af79e937b646';
 
 /// One application-lifetime owner of frontend appearance state.
 ///

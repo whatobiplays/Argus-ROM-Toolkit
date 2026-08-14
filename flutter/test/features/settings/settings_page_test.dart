@@ -274,6 +274,81 @@ void main() {
     },
   );
 
+  testWidgets(
+    'blocked states disable every Theme Mode choice and keep Retry interactive',
+    (tester) async {
+      await pumpPage(tester);
+      await loadAppearance(tester, ThemeMode.light);
+
+      bool allDisabled() {
+        for (final tile in find.byType(RadioListTile<ThemeMode>).evaluate()) {
+          final widget = tester.widget<RadioListTile<ThemeMode>>(
+            find.byWidget(tile.widget),
+          );
+          if (widget.enabled ?? true) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      bool allEnabled() {
+        for (final tile in find.byType(RadioListTile<ThemeMode>).evaluate()) {
+          final widget = tester.widget<RadioListTile<ThemeMode>>(
+            find.byWidget(tile.widget),
+          );
+          if (!(widget.enabled ?? true)) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      // While a save is pending, System, Light, and Dark are all non-interactive.
+      await tester.tap(find.text('Dark'));
+      await tester.pump();
+      expect(allDisabled(), isTrue);
+      await tester.tap(find.text('System'));
+      await tester.pump();
+      expect(api.updateRequests, hasLength(1));
+
+      // While synchronization is uncertain, all choices stay non-interactive.
+      api.updateRequests.single.completer.complete();
+      await tester.pump();
+      api.readRequests[1].completeError(
+        const TransportFailure(
+          'reconciliation read failed',
+          kind: TransportFailureKind.communicationFailed,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(allDisabled(), isTrue);
+      await tester.tap(find.text('Light'));
+      await tester.pump();
+      expect(api.updateRequests, hasLength(1));
+
+      // Retry remains interactive during uncertainty and issues only a read.
+      final retryButton = tester.widget<TextButton>(
+        find.widgetWithText(TextButton, 'Retry'),
+      );
+      expect(retryButton.onPressed, isNotNull);
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      expect(api.readRequests, hasLength(3));
+      expect(api.updateRequests, hasLength(1));
+
+      // After successful read-only recovery, all three choices are interactive.
+      api.readRequests[2].complete(
+        const AppearanceSettings(themeMode: ThemeMode.dark),
+      );
+      await tester.pumpAndSettle();
+      expect(allEnabled(), isTrue);
+      await tester.tap(find.text('System'));
+      await tester.pump();
+      expect(api.updateRequests, hasLength(2));
+    },
+  );
+
   testWidgets('theme mode choices are keyboard operable', (tester) async {
     await pumpPage(tester);
     await loadAppearance(tester, ThemeMode.light);

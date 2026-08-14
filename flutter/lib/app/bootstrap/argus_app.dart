@@ -21,6 +21,7 @@ class ArgusApp extends ConsumerWidget {
       title: 'Argus ROM Toolkit',
       theme: ArgusTheme.light,
       darkTheme: ArgusTheme.dark,
+      themeAnimationDuration: Duration.zero,
       themeMode: authoritativeThemeMode ?? ThemeMode.system,
       builder: (context, child) =>
           StartupGate(child: ApplicationPresentationGate(child: child!)),

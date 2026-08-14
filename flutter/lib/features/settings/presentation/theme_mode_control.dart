@@ -35,10 +35,13 @@ class ThemeModeControl extends StatelessWidget {
           onChanged: (value) => onChanged(value!),
           child: Column(
             children: <Widget>[
-              const RadioListTile<ThemeMode>(
+              RadioListTile<ThemeMode>(
                 value: ThemeMode.system,
-                title: Text('System'),
-                subtitle: Text('Follows your operating system appearance.'),
+                enabled: enabled,
+                title: const Text('System'),
+                subtitle: const Text(
+                  'Follows your operating system appearance.',
+                ),
               ),
               RadioListTile<ThemeMode>(
                 value: ThemeMode.light,

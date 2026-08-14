@@ -261,13 +261,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('Settings shell'), findsOneWidget);
-    // The root theme authority is dark on the first shell frame; the default
-    // theme animation settles the effective brightness immediately after.
+    // The first visible normal-shell frame must already be effective Dark.
     expect(
       tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode?.name,
       'dark',
     );
-    await tester.pump(const Duration(milliseconds: 300));
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,
       Brightness.dark,
@@ -329,7 +327,6 @@ void main() {
     );
     await selection;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
 
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,
@@ -363,7 +360,6 @@ void main() {
       const AppearanceSettings(themeMode: ThemeMode.system),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Settings shell'), findsOneWidget);
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,
@@ -378,7 +374,6 @@ void main() {
       tester.binding.platformDispatcher.clearPlatformBrightnessTestValue,
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
 
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,
@@ -425,7 +420,6 @@ void main() {
       const AppearanceSettings(themeMode: ThemeMode.dark),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,
       Brightness.dark,
@@ -439,7 +433,6 @@ void main() {
       tester.binding.platformDispatcher.clearPlatformBrightnessTestValue,
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
 
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,

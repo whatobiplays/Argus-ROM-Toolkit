@@ -22,13 +22,17 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
   AppearanceSettingsState? _lastLoaded;
   int _readToken = 0;
   bool _readInFlight = false;
+  int _mutationToken = 0;
+  bool _mutationInFlight = false;
 
   @override
   AsyncValue<AppearanceSettingsState> build() {
     final context = ref.watch(appearanceRuntimeContextProvider);
     // Any context change invalidates older completions and operation flags.
     _readToken++;
+    _mutationToken++;
     _readInFlight = false;
+    _mutationInFlight = false;
     _activeRuntimeInstanceId = switch (context) {
       AppearanceRuntimeContextPreReady() => null,
       AppearanceRuntimeContextReady(:final runtimeInstanceId) =>
@@ -58,7 +62,7 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
   /// Read-only recovery: this never calls [SettingsApi.updateAppearanceSettings].
   Future<void> retryAuthoritativeRead() async {
     final runtimeId = _activeRuntimeInstanceId;
-    if (runtimeId == null || _readInFlight) return;
+    if (runtimeId == null || _readInFlight || _mutationInFlight) return;
 
     if (state.hasError) {
       state = const AsyncLoading();
@@ -77,6 +81,117 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
     await _readAuthoritative(runtimeId, token: _readToken);
   }
 
+  /// Admitted Phase 000 appearance mutation intent.
+  ///
+  /// A mutation and its mandatory post-command read form one single-flight
+  /// operation. A successful update never promotes the requested value; only
+  /// the confirming read becomes authority. Ambiguous transport failures are
+  /// never replayed.
+  Future<void> selectThemeMode(ThemeMode value) async {
+    final current = state.value;
+    if (current is! AppearanceSettingsStateReady ||
+        _mutationInFlight ||
+        _readInFlight ||
+        current.synchronization is! AppearanceSynchronizationSynchronized) {
+      return;
+    }
+    if (current.confirmed.themeMode == value) return;
+    final runtimeId = _activeRuntimeInstanceId;
+    if (runtimeId == null) return;
+
+    final requested = current.confirmed.copyWith(themeMode: value);
+    _mutationInFlight = true;
+    final mutationToken = ++_mutationToken;
+    _publish(
+      AppearanceSettingsState.ready(
+        confirmed: current.confirmed,
+        presented: requested,
+        saveOperation: AppearanceSaveOperation.saving(requested: requested),
+        synchronization: current.synchronization,
+      ),
+    );
+
+    final api = ref.read(appearanceSettingsApiProvider);
+    try {
+      await api.updateAppearanceSettings(requested);
+      if (mutationToken != _mutationToken ||
+          runtimeId != _activeRuntimeInstanceId) {
+        return;
+      }
+      await _reconcileAfterMutation(
+        runtimeId: runtimeId,
+        mutationToken: mutationToken,
+        readFailureSaveOperation: null,
+      );
+    } on ApplicationFailure catch (failure) {
+      if (mutationToken != _mutationToken ||
+          runtimeId != _activeRuntimeInstanceId) {
+        return;
+      }
+      _mutationInFlight = false;
+      final lastKnown = state.value!;
+      _publish(
+        AppearanceSettingsState.ready(
+          confirmed: lastKnown.confirmed,
+          presented: lastKnown.confirmed,
+          saveOperation: AppearanceSaveOperation.failed(failure: failure),
+          synchronization: const AppearanceSynchronization.synchronized(),
+        ),
+      );
+    } on TransportFailure catch (failure) {
+      if (mutationToken != _mutationToken ||
+          runtimeId != _activeRuntimeInstanceId) {
+        return;
+      }
+      final lastKnown = state.value!;
+      _publish(
+        AppearanceSettingsState.ready(
+          confirmed: lastKnown.confirmed,
+          presented: lastKnown.confirmed,
+          saveOperation: AppearanceSaveOperation.outcomeUnknown(
+            failure: failure,
+          ),
+          synchronization: const AppearanceSynchronization.refreshing(),
+        ),
+      );
+      await _reconcileAfterMutation(
+        runtimeId: runtimeId,
+        mutationToken: mutationToken,
+        readFailureSaveOperation: AppearanceSaveOperation.outcomeUnknown(
+          failure: failure,
+        ),
+      );
+    }
+  }
+
+  Future<void> _reconcileAfterMutation({
+    required RuntimeInstanceId runtimeId,
+    required int mutationToken,
+    required AppearanceSaveOperation? readFailureSaveOperation,
+  }) async {
+    await _readAuthoritative(
+      runtimeId,
+      token: _readToken,
+      onFailure: (readFailure, current) {
+        return AppearanceSettingsState.ready(
+          confirmed: current.confirmed,
+          presented: current.confirmed,
+          saveOperation:
+              readFailureSaveOperation ??
+              AppearanceSaveOperation.committedButUnreconciled(
+                failure: readFailure,
+              ),
+          synchronization: AppearanceSynchronization.uncertain(
+            failure: readFailure,
+          ),
+        );
+      },
+    );
+    if (mutationToken == _mutationToken) {
+      _mutationInFlight = false;
+    }
+  }
+
   Future<void> _adoptRuntimeContext(AppearanceRuntimeContext context) async {
     final runtimeId = switch (context) {
       AppearanceRuntimeContextPreReady() => null,
@@ -92,6 +207,11 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
   Future<void> _readAuthoritative(
     RuntimeInstanceId runtimeId, {
     required int token,
+    AppearanceSettingsState Function(
+      ClientFailure failure,
+      AppearanceSettingsState current,
+    )?
+    onFailure,
   }) async {
     if (_readInFlight) return;
     _readInFlight = true;
@@ -99,14 +219,14 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
     try {
       final result = await api.getAppearanceSettings();
       if (token != _readToken || runtimeId != _activeRuntimeInstanceId) return;
-      final loaded = AppearanceSettingsState.ready(
-        confirmed: result,
-        presented: result,
-        saveOperation: const AppearanceSaveOperation.idle(),
-        synchronization: const AppearanceSynchronization.synchronized(),
+      _publish(
+        AppearanceSettingsState.ready(
+          confirmed: result,
+          presented: result,
+          saveOperation: const AppearanceSaveOperation.idle(),
+          synchronization: const AppearanceSynchronization.synchronized(),
+        ),
       );
-      _lastLoaded = loaded;
-      state = AsyncData(loaded);
     } catch (error, stackTrace) {
       if (token != _readToken || runtimeId != _activeRuntimeInstanceId) return;
       final failure = _asClientFailure(error);
@@ -114,16 +234,17 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
       if (current == null) {
         state = AsyncError(failure, stackTrace);
       } else {
-        final uncertain = AppearanceSettingsState.ready(
-          confirmed: current.confirmed,
-          presented: current.confirmed,
-          saveOperation: current.saveOperation,
-          synchronization: AppearanceSynchronization.uncertain(
-            failure: failure,
-          ),
-        );
-        _lastLoaded = uncertain;
-        state = AsyncData(uncertain);
+        final updated = onFailure != null
+            ? onFailure(failure, current)
+            : AppearanceSettingsState.ready(
+                confirmed: current.confirmed,
+                presented: current.confirmed,
+                saveOperation: current.saveOperation,
+                synchronization: AppearanceSynchronization.uncertain(
+                  failure: failure,
+                ),
+              );
+        _publish(updated);
       }
     } finally {
       if (token == _readToken) {
@@ -143,6 +264,11 @@ class AppearanceSettingsController extends _$AppearanceSettingsController {
       saveOperation: ready.saveOperation,
       synchronization: synchronization,
     );
+  }
+
+  void _publish(AppearanceSettingsState loaded) {
+    _lastLoaded = loaded;
+    state = AsyncData(loaded);
   }
 
   ClientFailure _asClientFailure(Object error) {

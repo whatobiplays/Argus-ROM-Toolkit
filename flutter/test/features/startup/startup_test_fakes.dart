@@ -336,8 +336,8 @@ final class CountingGateway implements ArgusClientGateway {
       Future<void>.value();
 
   @override
-  Stream<RuntimeEvent> subscribeEvents(RuntimeInstanceId generation) {
+  Future<EventBindResult> subscribeEvents(RuntimeInstanceId generation) async {
     listenCount++;
-    return _events.stream;
+    return EventBindResult(stream: _events.stream, nativeAttached: true);
   }
 }

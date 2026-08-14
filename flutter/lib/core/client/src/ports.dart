@@ -92,10 +92,27 @@ abstract interface class DiagnosticsApi {
   );
 }
 
+/// Outcome of one event-bind attempt.
+///
+/// [stream] is the mapped runtime-event stream. [nativeAttached] reports
+/// whether this attempt actually established the one native event connection;
+/// a lifecycle-expected rejection (stale admission epoch or closed boundary)
+/// returns a normally-completing stream with `nativeAttached == false`.
+final class EventBindResult {
+  const EventBindResult({required this.stream, required this.nativeAttached});
+
+  final Stream<RuntimeEvent> stream;
+  final bool nativeAttached;
+}
+
 /// Native stream adapter. The generation argument is a logical admission
 /// guard; the FRB operation itself reads the authoritative current generation.
+/// The returned future completes only after the one native event connection
+/// for that generation has attached (or was deterministically rejected), so
+/// callers can distinguish native connection readiness from local
+/// stream-listener installation.
 abstract interface class EventGateway {
-  Stream<RuntimeEvent> subscribeEvents(RuntimeInstanceId generation);
+  Future<EventBindResult> subscribeEvents(RuntimeInstanceId generation);
 }
 
 /// Focused mapped notification stream. Generated stream handles and native

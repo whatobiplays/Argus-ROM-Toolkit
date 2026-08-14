@@ -18,8 +18,8 @@ use argus_application::{
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
     RuntimeEvent, RuntimeEventPayload, RuntimeEventPublisher, RuntimeEventStreamError,
-    RuntimeInstanceId, RuntimeLifecycle, RuntimeNotificationSink, RuntimeState, StartupFailure,
-    StartupPhase,
+    RuntimeEventSubscription, RuntimeInstanceId, RuntimeLifecycle, RuntimeNotificationSink,
+    RuntimeState, StartupFailure, StartupPhase,
 };
 
 #[allow(unsafe_code, clippy::result_large_err)]
@@ -351,6 +351,7 @@ pub fn general_shutdown() -> Result<(), ApplicationErrorDto> {
 /// deterministically before local disposal.
 #[allow(clippy::result_large_err)]
 pub fn close_event_connection() -> Result<(), ApplicationErrorDto> {
+    *pending_event_subscription() = None;
     host()
         .close_active_event_connection()
         .map_err(|error| application_error_dto(&error))
@@ -449,25 +450,75 @@ pub fn open_startup_data_directory(
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Bridge-private holder for the one attached native event subscription
+/// awaiting its receive loop.
+struct PendingEventSubscription {
+    attach_epoch: u64,
+    subscription: RuntimeEventSubscription,
+}
+
+static PENDING_EVENT_SUBSCRIPTION: Mutex<Option<PendingEventSubscription>> = Mutex::new(None);
+
+fn pending_event_subscription() -> std::sync::MutexGuard<'static, Option<PendingEventSubscription>>
+{
+    PENDING_EVENT_SUBSCRIPTION
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
+/// Bridge-private: attaches the one native event connection for the current
+/// admission epoch and stores it for the subsequent receive call. Completing
+/// this FRB call is the native-attachment acknowledgement the Dart client
+/// awaits before reporting event binding usable.
+pub fn attach_event_subscription(attach_epoch: u64) -> Result<bool, BridgeTransportError> {
+    let subscription = match host().subscribe_events_with_epoch(attach_epoch) {
+        Ok(subscription) => subscription,
+        Err(error) => {
+            *pending_event_subscription() = None;
+            if let Some(transport_error) = classify_subscribe_error(&error) {
+                return Err(transport_error);
+            }
+            // Lifecycle-expected rejection (stale epoch or closed boundary):
+            // the receive call completes normally, matching the existing
+            // subscribe_events contract.
+            return Ok(false);
+        }
+    };
+    *pending_event_subscription() = Some(PendingEventSubscription {
+        attach_epoch,
+        subscription,
+    });
+    Ok(true)
+}
+
 /// Starts the single unified runtime event stream. Each item is a
-/// `RuntimeEventDto`, never a `BridgeResult<RuntimeEventDto>`.
+/// `RuntimeEventDto`, never a `BridgeResult<RuntimeEventDto>`. Consumes the
+/// subscription attached by [attach_event_subscription] for the same epoch;
+/// falls back to attaching directly so the receive call remains usable on its
+/// own.
 pub fn subscribe_events(
     attach_epoch: u64,
     sink: StreamSink<RuntimeEventDto>,
 ) -> Result<(), BridgeTransportError> {
-    let subscription = match host().subscribe_events_with_epoch(attach_epoch) {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            if let Some(transport_error) = classify_subscribe_error(&error) {
-                return Err(transport_error);
+    let subscription = match pending_event_subscription()
+        .take_if(|pending| pending.attach_epoch == attach_epoch)
+    {
+        Some(pending) => pending.subscription,
+        None => match host().subscribe_events_with_epoch(attach_epoch) {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                if let Some(transport_error) = classify_subscribe_error(&error) {
+                    return Err(transport_error);
+                }
+                // A subscription carrying a stale admission epoch or attaching
+                // to an already-closed boundary is an expected lifecycle
+                // outcome (generation replacement, shutdown, or client
+                // teardown racing the attach). Complete the stream normally
+                // instead of surfacing a transport error after client
+                // teardown.
+                return Ok(());
             }
-            // A subscription carrying a stale admission epoch or attaching to
-            // an already-closed boundary is an expected lifecycle outcome
-            // (generation replacement, shutdown, or client teardown racing the
-            // attach). Complete the stream normally instead of surfacing a
-            // transport error after client teardown.
-            return Ok(());
-        }
+        },
     };
     loop {
         match subscription.recv() {

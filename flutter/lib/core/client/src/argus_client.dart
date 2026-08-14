@@ -42,6 +42,7 @@ final class ArgusClient implements ClientBootstrap {
   bool _suppressStreamErrors = false;
   bool _shuttingDown = false;
   bool _closed = false;
+  ClientFailure? _lateBindCloseFailure;
 
   /// The currently bound runtime generation, if initialization has completed.
   RuntimeInstanceId? get boundGeneration => _boundGeneration;
@@ -130,6 +131,21 @@ final class ArgusClient implements ClientBootstrap {
                 cause: error,
                 stackTrace: stackTrace,
               );
+      }
+      try {
+        // Await a bind in flight so its stale-branch cleanup can close any
+        // native connection established after shutdown closed the boundary.
+        await _bindingTask;
+      } catch (_) {
+        // Bind errors during shutdown are already represented by the close
+        // handling above; the in-flight task must never block shutdown.
+      }
+      final lateCloseFailure = _lateBindCloseFailure;
+      _lateBindCloseFailure = null;
+      if (lateCloseFailure != null) {
+        // A late cleanup-close failure keeps close-error precedence: primary
+        // shutdown error still wins, and this outranks Dart cancellation.
+        closeError ??= lateCloseFailure;
       }
       Object? cancelError;
       try {
@@ -222,17 +238,55 @@ final class ArgusClient implements ClientBootstrap {
 
     _boundGeneration = generation;
     final token = _subscriptionToken;
-    final Stream<RuntimeEvent> stream;
+    // The gateway future completes only after the one native event connection
+    // for this generation has attached; initialize/reconnect therefore never
+    // reports binding usable while a committed change could fall into the
+    // pre-attachment gap.
+    final EventBindResult bind;
     try {
-      stream = _gateway.subscribeEvents(generation);
+      bind = await _gateway.subscribeEvents(generation);
     } catch (error, stackTrace) {
       throw _asTransportFailure(error, stackTrace);
+    }
+    if (token != _subscriptionToken || _closed || _shuttingDown) {
+      // A newer bind or teardown superseded this attempt. If this attempt
+      // established a native connection after teardown began, close it now:
+      // Dart-side cancellation alone cannot be assumed to release the parked
+      // native receive loop, and teardown awaits this task before completing.
+      if (bind.nativeAttached) {
+        try {
+          await _gateway.closeEventConnection();
+        } catch (error, stackTrace) {
+          // The cleanup close still physically released the connection, but
+          // its typed failure must reach teardown with close-error precedence.
+          // Record it here and keep cleaning up the stale stream regardless.
+          _lateBindCloseFailure = error is ClientFailure
+              ? error
+              : TransportFailure(
+                  'Native event connection could not be closed',
+                  cause: error,
+                  stackTrace: stackTrace,
+                );
+        }
+      }
+      final stale = bind.stream.listen(
+        (_) {},
+        onError: (Object _, StackTrace _) {},
+      );
+      try {
+        await stale.cancel();
+      } catch (_) {
+        // The stale stream's cancellation is teardown cleanup; its failure is
+        // secondary to any recorded cleanup-close failure and must not fail
+        // the racing caller.
+      }
+      return;
     }
 
     var terminalReported = false;
     late final StreamSubscription<RuntimeEvent> subscription;
     try {
-      subscription = stream.listen(
+      subscription = bind.stream.listen(
         (event) {
           if (token != _subscriptionToken ||
               event.runtimeInstanceId != generation) {
@@ -274,7 +328,7 @@ final class ArgusClient implements ClientBootstrap {
     } catch (error, stackTrace) {
       throw _asTransportFailure(error, stackTrace);
     }
-    if (token == _subscriptionToken && !_closed) {
+    if (token == _subscriptionToken && !_closed && !_shuttingDown) {
       _eventSubscription = subscription;
     } else {
       await subscription.cancel();
@@ -354,7 +408,11 @@ final class ArgusClient implements ClientBootstrap {
     _closed = true;
     _shuttingDown = true;
     Object? teardownError;
-    final hadEventConnection = _eventSubscription != null;
+    // A pending bind/reconnect also owns (or is about to own) the native
+    // connection, so teardown must close it even before the Dart subscription
+    // exists; otherwise the native attach could linger past disposal.
+    final hadEventConnection =
+        _eventSubscription != null || _bindingTask != null;
     if (hadEventConnection) {
       try {
         // Close the native event connection first so a parked FRB subscription
@@ -369,6 +427,24 @@ final class ArgusClient implements ClientBootstrap {
                 stackTrace: stackTrace,
               );
       }
+    }
+    try {
+      // A bind in flight may resume after the close and attach with the
+      // post-close admission epoch. Teardown must await that task so its
+      // stale-branch cleanup closes any late native connection before a
+      // replacement client can bind.
+      await _bindingTask;
+    } catch (_) {
+      // Bind errors during teardown are already represented by the close
+      // handling above; the in-flight task must never block disposal.
+    }
+    final lateCloseFailure = _lateBindCloseFailure;
+    _lateBindCloseFailure = null;
+    if (lateCloseFailure != null) {
+      // The stale bind's cleanup close failed after teardown began: surface it
+      // with close-error precedence (after a first-close error, before any
+      // Dart cancellation error).
+      teardownError ??= lateCloseFailure;
     }
     try {
       await _unbindEvents();

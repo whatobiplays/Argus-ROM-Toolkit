@@ -36,6 +36,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApplicationErrorDto dco_decode_application_error_dto(dynamic raw);
 
   @protected
+  bool dco_decode_bool(dynamic raw);
+
+  @protected
   DiagnosticsExportRequestDto
   dco_decode_box_autoadd_diagnostics_export_request_dto(dynamic raw);
 
@@ -151,6 +154,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApplicationErrorDto sse_decode_application_error_dto(
     SseDeserializer deserializer,
   );
+
+  @protected
+  bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
   DiagnosticsExportRequestDto
@@ -283,9 +289,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  bool sse_decode_bool(SseDeserializer deserializer);
-
-  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -311,6 +314,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ApplicationErrorDto self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_diagnostics_export_request_dto(
@@ -470,9 +476,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     UpdateAppearanceSettingsRequestDto self,
     SseSerializer serializer,
   );
-
-  @protected
-  void sse_encode_bool(bool self, SseSerializer serializer);
 }
 
 // Section: wire_class

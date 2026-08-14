@@ -173,17 +173,42 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
       );
 
   @override
-  Stream<RuntimeEvent> subscribeEvents(RuntimeInstanceId generation) async* {
+  Future<EventBindResult> subscribeEvents(RuntimeInstanceId generation) async {
     try {
       await _ensureInitialized();
+      final factory = _eventStreamFactory;
+      if (factory != null) {
+        return EventBindResult(
+          stream: _mapEvents(factory(), generation),
+          nativeAttached: false,
+        );
+      }
       // Re-read the current admission epoch so a fresh subscription after
       // client teardown is admitted while a stale delayed attach is rejected.
-      final factory = _eventStreamFactory;
-      final events = factory != null
-          ? factory()
-          : _rustApi.crateSubscribeEvents(
-              attachEpoch: await _rustApi.crateGetEventAttachEpoch(),
-            );
+      final epoch = await _rustApi.crateGetEventAttachEpoch();
+      // Bridge-private native-attachment acknowledgement: this completes only
+      // after the one native event connection for this epoch has attached (or
+      // was deterministically rejected as lifecycle-expected).
+      final attached = await _rustApi.crateAttachEventSubscription(
+        attachEpoch: epoch,
+      );
+      return EventBindResult(
+        stream: _mapEvents(
+          _rustApi.crateSubscribeEvents(attachEpoch: epoch),
+          generation,
+        ),
+        nativeAttached: attached,
+      );
+    } catch (error, stackTrace) {
+      throw _mapFailure(error, stackTrace);
+    }
+  }
+
+  Stream<RuntimeEvent> _mapEvents(
+    Stream<dto.RuntimeEventDto> events,
+    RuntimeInstanceId generation,
+  ) async* {
+    try {
       await for (final event in events) {
         final mapped = runtimeEventFromDto(event);
         if (mapped.runtimeInstanceId == generation) yield mapped;

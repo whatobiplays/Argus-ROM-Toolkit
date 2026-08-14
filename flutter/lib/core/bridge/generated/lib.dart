@@ -8,8 +8,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `host_with_options`, `host`, `initialize_with_options`, `lifecycle_dto`, `parse_runtime_id`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `severity_name`, `startup_failure_dto`, `startup_phase_dto`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`
+// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `host_with_options`, `host`, `initialize_with_options`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `severity_name`, `startup_failure_dto`, `startup_phase_dto`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `application_error_dto`, `runtime_event_dto`, `runtime_state_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
@@ -96,8 +96,18 @@ Future<void> openStartupDataDirectory({
   expectedRuntimeInstanceId: expectedRuntimeInstanceId,
 );
 
+/// Bridge-private: attaches the one native event connection for the current
+/// admission epoch and stores it for the subsequent receive call. Completing
+/// this FRB call is the native-attachment acknowledgement the Dart client
+/// awaits before reporting event binding usable.
+Future<bool> attachEventSubscription({required BigInt attachEpoch}) =>
+    RustLib.instance.api.crateAttachEventSubscription(attachEpoch: attachEpoch);
+
 /// Starts the single unified runtime event stream. Each item is a
-/// `RuntimeEventDto`, never a `BridgeResult<RuntimeEventDto>`.
+/// `RuntimeEventDto`, never a `BridgeResult<RuntimeEventDto>`. Consumes the
+/// subscription attached by [attach_event_subscription] for the same epoch;
+/// falls back to attaching directly so the receive call remains usable on its
+/// own.
 Stream<RuntimeEventDto> subscribeEvents({required BigInt attachEpoch}) =>
     RustLib.instance.api.crateSubscribeEvents(attachEpoch: attachEpoch);
 

@@ -103,8 +103,9 @@ void main() {
         ),
       );
 
+      final bind = await gateway.subscribeEvents(RuntimeInstanceId('a' * 32));
       await expectLater(
-        gateway.subscribeEvents(RuntimeInstanceId('a' * 32)),
+        bind.stream,
         emitsError(
           isA<TransportFailure>().having(
             (failure) => failure.kind,

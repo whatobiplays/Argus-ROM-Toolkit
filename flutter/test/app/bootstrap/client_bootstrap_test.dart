@@ -206,8 +206,8 @@ final class _FakeGateway implements ArgusClientGateway {
       Future<void>.value();
 
   @override
-  Stream<RuntimeEvent> subscribeEvents(RuntimeInstanceId generation) =>
-      _events.stream;
+  Future<EventBindResult> subscribeEvents(RuntimeInstanceId generation) async =>
+      EventBindResult(stream: _events.stream, nativeAttached: true);
 }
 
 final class _FailingRetireGateway extends _FakeGateway {

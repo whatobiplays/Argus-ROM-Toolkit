@@ -308,7 +308,7 @@ final class FakeGateway implements ArgusClientGateway {
       _result(null);
 
   @override
-  Stream<RuntimeEvent> subscribeEvents(RuntimeInstanceId generation) {
+  Future<EventBindResult> subscribeEvents(RuntimeInstanceId generation) async {
     subscribeCount++;
     final controller = StreamController<RuntimeEvent>(
       onListen: () {
@@ -320,6 +320,6 @@ final class FakeGateway implements ArgusClientGateway {
       onCancel: () => activeSubscriptions--,
     );
     controllers.add(controller);
-    return controller.stream;
+    return EventBindResult(stream: controller.stream, nativeAttached: true);
   }
 }

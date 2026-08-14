@@ -1,1 +1,1 @@
-export 'src/settings_page.dart' show SettingsPage;
+export 'presentation/settings_page.dart' show SettingsPage;

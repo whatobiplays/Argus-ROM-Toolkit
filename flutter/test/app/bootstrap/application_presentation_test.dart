@@ -336,4 +336,116 @@ void main() {
       Brightness.dark,
     );
   });
+
+  testWidgets('System follows platform brightness without settings traffic', (
+    tester,
+  ) async {
+    final bootstrap = FakeClientBootstrap();
+    final settingsApi = FakeSettingsApi();
+    final testRouter = GoRouter(
+      initialLocation: '/fixture',
+      routes: <RouteBase>[
+        GoRoute(path: '/fixture', builder: (context, state) => shell()),
+      ],
+    );
+    addTearDown(testRouter.dispose);
+
+    await tester.pumpWidget(
+      buildApp(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
+        router: testRouter,
+      ),
+    );
+    await tester.pump();
+    await makeBackendReady(tester, bootstrap);
+    settingsApi.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.system),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Settings shell'), findsOneWidget);
+    expect(
+      Theme.of(tester.element(find.text('Settings shell'))).brightness,
+      Brightness.light,
+    );
+
+    final readsBefore = settingsApi.readRequests.length;
+    final updatesBefore = settingsApi.updateRequests.length;
+    tester.binding.platformDispatcher.platformBrightnessTestValue =
+        Brightness.dark;
+    addTearDown(
+      tester.binding.platformDispatcher.clearPlatformBrightnessTestValue,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      Theme.of(tester.element(find.text('Settings shell'))).brightness,
+      Brightness.dark,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Settings shell')),
+    );
+    expect(
+      container
+          .read(appearanceSettingsControllerProvider)
+          .value!
+          .confirmed
+          .themeMode,
+      ThemeMode.system,
+    );
+    expect(settingsApi.readRequests.length, readsBefore);
+    expect(settingsApi.updateRequests.length, updatesBefore);
+  });
+
+  testWidgets('explicit Dark ignores platform brightness changes', (
+    tester,
+  ) async {
+    final bootstrap = FakeClientBootstrap();
+    final settingsApi = FakeSettingsApi();
+    final testRouter = GoRouter(
+      initialLocation: '/fixture',
+      routes: <RouteBase>[
+        GoRoute(path: '/fixture', builder: (context, state) => shell()),
+      ],
+    );
+    addTearDown(testRouter.dispose);
+
+    await tester.pumpWidget(
+      buildApp(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
+        router: testRouter,
+      ),
+    );
+    await tester.pump();
+    await makeBackendReady(tester, bootstrap);
+    settingsApi.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.dark),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      Theme.of(tester.element(find.text('Settings shell'))).brightness,
+      Brightness.dark,
+    );
+
+    final readsBefore = settingsApi.readRequests.length;
+    final updatesBefore = settingsApi.updateRequests.length;
+    tester.binding.platformDispatcher.platformBrightnessTestValue =
+        Brightness.light;
+    addTearDown(
+      tester.binding.platformDispatcher.clearPlatformBrightnessTestValue,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      Theme.of(tester.element(find.text('Settings shell'))).brightness,
+      Brightness.dark,
+    );
+    expect(settingsApi.readRequests.length, readsBefore);
+    expect(settingsApi.updateRequests.length, updatesBefore);
+  });
 }

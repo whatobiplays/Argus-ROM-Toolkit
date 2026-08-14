@@ -35,8 +35,11 @@ void main() {
         .toList(growable: false);
 
     expect(generatedProviderFiles, <String>[
+      'app/bootstrap/application_presentation.dart',
       'app/bootstrap/client_bootstrap.dart',
       'app/routing/app_router.dart',
+      'features/settings/application/appearance_settings_controller.dart',
+      'features/settings/application/appearance_settings_dependencies.dart',
       'features/startup/application/app_readiness.dart',
       'features/startup/application/startup_controller.dart',
       'features/startup/presentation/presentation_seams.dart',
@@ -152,8 +155,15 @@ void main() {
       expect(
         sources.keys.where((path) => path.startsWith('features/')).toList(),
         <String>[
+          'features/settings/application/appearance_settings_controller.dart',
+          'features/settings/application/appearance_settings_dependencies.dart',
+          'features/settings/application/appearance_settings_state.dart',
+          'features/settings/presentation/appearance_initialization_view.dart',
+          'features/settings/presentation/appearance_messages.dart',
+          'features/settings/presentation/settings_page.dart',
+          'features/settings/presentation/theme_mode_control.dart',
           'features/settings/settings.dart',
-          'features/settings/src/settings_page.dart',
+          'features/settings/settings_composition.dart',
           'features/startup/application/app_readiness.dart',
           'features/startup/application/startup_controller.dart',
           'features/startup/application/startup_state.dart',
@@ -196,16 +206,154 @@ void main() {
   test('Settings public barrel owns the feature-private export boundary', () {
     expect(
       sources['features/settings/settings.dart'],
-      "export 'src/settings_page.dart' show SettingsPage;\n",
+      "export 'presentation/settings_page.dart' show SettingsPage;\n",
     );
     for (final entry in sources.entries) {
-      if (entry.key != 'features/settings/settings.dart') {
-        expect(
-          entry.value,
-          isNot(contains('features/settings/src/')),
-          reason: entry.key,
-        );
+      if (entry.key.startsWith('features/settings/')) continue;
+      expect(
+        entry.value,
+        isNot(contains('features/settings/application/')),
+        reason: entry.key,
+      );
+      expect(
+        entry.value,
+        isNot(contains('features/settings/presentation/')),
+        reason: entry.key,
+      );
+      expect(
+        entry.value,
+        isNot(contains('features/settings/src/')),
+        reason: entry.key,
+      );
+    }
+  });
+
+  test('settings application stays framework-, bridge-, and routing-free', () {
+    _expectNoForbiddenImports(
+      sources,
+      prefix: 'features/settings/application/',
+      forbidden: <String>[
+        'app/',
+        'features/startup/',
+        'features/',
+        'core/bridge/',
+        'frb_generated',
+        'core/client/src/',
+        'flutter_rust_bridge',
+        'sqlite',
+        'BuildContext',
+        'go_router',
+        'dart:io',
+        'file_selector',
+      ],
+    );
+  });
+
+  test('settings presentation has no generated or direct API calls', () {
+    for (final entry in sources.entries) {
+      if (!entry.key.startsWith('features/settings/presentation/')) continue;
+      expect(entry.value, isNot(contains('.g.dart')), reason: entry.key);
+      expect(entry.value, isNot(contains('.freezed.dart')), reason: entry.key);
+      expect(
+        entry.value,
+        isNot(contains('flutter_rust_bridge')),
+        reason: entry.key,
+      );
+      expect(
+        entry.value,
+        isNot(contains('getAppearanceSettings(')),
+        reason: entry.key,
+      );
+      expect(
+        entry.value,
+        isNot(contains('updateAppearanceSettings(')),
+        reason: entry.key,
+      );
+    }
+  });
+
+  test('router policy never executes settings workflows', () {
+    const settingsConcepts = <String>[
+      'SettingsApi',
+      'getAppearanceSettings',
+      'updateAppearanceSettings',
+      'AppearanceSettingsController',
+      'appearanceSettingsControllerProvider',
+      'ApplicationPresentationGate',
+      'selectThemeMode',
+      'retryAuthoritativeRead',
+    ];
+    for (final entry in sources.entries) {
+      if (!entry.key.startsWith('app/routing/')) continue;
+      for (final concept in settingsConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
       }
+    }
+  });
+
+  test('root theme mode has one derived assignment and no mutable owner', () {
+    final argusApp = sources['app/bootstrap/argus_app.dart']!;
+    expect(argusApp, contains('rootThemeModeProvider'));
+    expect(argusApp, contains('themeMode:'));
+    expect(argusApp, isNot(contains('themeMode: ThemeMode.system')));
+    for (final entry in sources.entries) {
+      if (entry.key == 'app/bootstrap/argus_app.dart' ||
+          entry.key == 'app/bootstrap/application_presentation.dart') {
+        continue;
+      }
+      expect(entry.value, isNot(contains('MaterialApp(')), reason: entry.key);
+      expect(entry.value, isNot(contains('rootThemeMode')), reason: entry.key);
+    }
+  });
+
+  test('appearance state uses typed ThemeMode, not wire strings', () {
+    for (final entry in sources.entries) {
+      if (!entry.key.startsWith('features/settings/')) continue;
+      expect(entry.value, isNot(contains("'system'")), reason: entry.key);
+      expect(entry.value, isNot(contains("'light'")), reason: entry.key);
+      expect(entry.value, isNot(contains("'dark'")), reason: entry.key);
+    }
+  });
+
+  test(
+    'settings and appearance code never consumes event or reconnect concepts',
+    () {
+      const forbiddenConcepts = <String>[
+        'RuntimeEventPayloadAppearanceSettingsChanged',
+        'AppearanceSettingsChanged',
+        'EventsApi',
+        'sequence',
+        'gap',
+        'reconnect',
+      ];
+      for (final entry in sources.entries) {
+        final isSlice007AppSource =
+            entry.key == 'app/bootstrap/application_presentation.dart' ||
+            entry.key == 'app/bootstrap/application_presentation_gate.dart' ||
+            entry.key == 'app/bootstrap/app_bootstrap.dart' ||
+            entry.key == 'app/bootstrap/argus_app.dart';
+        if (!entry.key.startsWith('features/settings/') &&
+            !isSlice007AppSource) {
+          continue;
+        }
+        for (final concept in forbiddenConcepts) {
+          expect(entry.value, isNot(contains(concept)), reason: entry.key);
+        }
+      }
+    },
+  );
+
+  test('appearance sources contain no process-restart persistence proof', () {
+    for (final entry in sources.entries) {
+      final isSlice007AppSource =
+          entry.key == 'app/bootstrap/application_presentation.dart' ||
+          entry.key == 'app/bootstrap/application_presentation_gate.dart' ||
+          entry.key == 'app/bootstrap/app_bootstrap.dart' ||
+          entry.key == 'app/bootstrap/argus_app.dart';
+      if (!entry.key.startsWith('features/settings/') && !isSlice007AppSource) {
+        continue;
+      }
+      expect(entry.value, isNot(contains('restart')), reason: entry.key);
     }
   });
 

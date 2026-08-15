@@ -3608,6 +3608,302 @@ as ScanRunId,
 }
 
 /// @nodoc
+mixin _$SourceEntriesChangeScope {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScope);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScope()';
+}
+
+
+}
+
+/// @nodoc
+class $SourceEntriesChangeScopeCopyWith<$Res>  {
+$SourceEntriesChangeScopeCopyWith(SourceEntriesChangeScope _, $Res Function(SourceEntriesChangeScope) __);
+}
+
+
+/// Adds pattern-matching-related methods to [SourceEntriesChangeScope].
+extension SourceEntriesChangeScopePatterns on SourceEntriesChangeScope {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourceEntriesChangeScopeRootChildren value)?  rootChildren,TResult Function( SourceEntriesChangeScopeEntryChildren value)?  entryChildren,TResult Function( SourceEntriesChangeScopeEntireRootHierarchy value)?  entireRootHierarchy,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeRootChildren() when rootChildren != null:
+return rootChildren(_that);case SourceEntriesChangeScopeEntryChildren() when entryChildren != null:
+return entryChildren(_that);case SourceEntriesChangeScopeEntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourceEntriesChangeScopeRootChildren value)  rootChildren,required TResult Function( SourceEntriesChangeScopeEntryChildren value)  entryChildren,required TResult Function( SourceEntriesChangeScopeEntireRootHierarchy value)  entireRootHierarchy,}){
+final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeRootChildren():
+return rootChildren(_that);case SourceEntriesChangeScopeEntryChildren():
+return entryChildren(_that);case SourceEntriesChangeScopeEntireRootHierarchy():
+return entireRootHierarchy(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourceEntriesChangeScopeRootChildren value)?  rootChildren,TResult? Function( SourceEntriesChangeScopeEntryChildren value)?  entryChildren,TResult? Function( SourceEntriesChangeScopeEntireRootHierarchy value)?  entireRootHierarchy,}){
+final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeRootChildren() when rootChildren != null:
+return rootChildren(_that);case SourceEntriesChangeScopeEntryChildren() when entryChildren != null:
+return entryChildren(_that);case SourceEntriesChangeScopeEntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  rootChildren,TResult Function( SourceEntryId parentSourceEntryId)?  entryChildren,TResult Function()?  entireRootHierarchy,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeRootChildren() when rootChildren != null:
+return rootChildren();case SourceEntriesChangeScopeEntryChildren() when entryChildren != null:
+return entryChildren(_that.parentSourceEntryId);case SourceEntriesChangeScopeEntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  rootChildren,required TResult Function( SourceEntryId parentSourceEntryId)  entryChildren,required TResult Function()  entireRootHierarchy,}) {final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeRootChildren():
+return rootChildren();case SourceEntriesChangeScopeEntryChildren():
+return entryChildren(_that.parentSourceEntryId);case SourceEntriesChangeScopeEntireRootHierarchy():
+return entireRootHierarchy();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  rootChildren,TResult? Function( SourceEntryId parentSourceEntryId)?  entryChildren,TResult? Function()?  entireRootHierarchy,}) {final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeRootChildren() when rootChildren != null:
+return rootChildren();case SourceEntriesChangeScopeEntryChildren() when entryChildren != null:
+return entryChildren(_that.parentSourceEntryId);case SourceEntriesChangeScopeEntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class SourceEntriesChangeScopeRootChildren implements SourceEntriesChangeScope {
+  const SourceEntriesChangeScopeRootChildren();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScopeRootChildren);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScope.rootChildren()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class SourceEntriesChangeScopeEntryChildren implements SourceEntriesChangeScope {
+  const SourceEntriesChangeScopeEntryChildren({required this.parentSourceEntryId});
+
+
+ final  SourceEntryId parentSourceEntryId;
+
+/// Create a copy of SourceEntriesChangeScope
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourceEntriesChangeScopeEntryChildrenCopyWith<SourceEntriesChangeScopeEntryChildren> get copyWith => _$SourceEntriesChangeScopeEntryChildrenCopyWithImpl<SourceEntriesChangeScopeEntryChildren>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScopeEntryChildren&&(identical(other.parentSourceEntryId, parentSourceEntryId) || other.parentSourceEntryId == parentSourceEntryId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,parentSourceEntryId);
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScope.entryChildren(parentSourceEntryId: $parentSourceEntryId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourceEntriesChangeScopeEntryChildrenCopyWith<$Res> implements $SourceEntriesChangeScopeCopyWith<$Res> {
+  factory $SourceEntriesChangeScopeEntryChildrenCopyWith(SourceEntriesChangeScopeEntryChildren value, $Res Function(SourceEntriesChangeScopeEntryChildren) _then) = _$SourceEntriesChangeScopeEntryChildrenCopyWithImpl;
+@useResult
+$Res call({
+ SourceEntryId parentSourceEntryId
+});
+
+
+
+
+}
+/// @nodoc
+class _$SourceEntriesChangeScopeEntryChildrenCopyWithImpl<$Res>
+    implements $SourceEntriesChangeScopeEntryChildrenCopyWith<$Res> {
+  _$SourceEntriesChangeScopeEntryChildrenCopyWithImpl(this._self, this._then);
+
+  final SourceEntriesChangeScopeEntryChildren _self;
+  final $Res Function(SourceEntriesChangeScopeEntryChildren) _then;
+
+/// Create a copy of SourceEntriesChangeScope
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? parentSourceEntryId = null,}) {
+  return _then(SourceEntriesChangeScopeEntryChildren(
+parentSourceEntryId: null == parentSourceEntryId ? _self.parentSourceEntryId : parentSourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class SourceEntriesChangeScopeEntireRootHierarchy implements SourceEntriesChangeScope {
+  const SourceEntriesChangeScopeEntireRootHierarchy();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScopeEntireRootHierarchy);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScope.entireRootHierarchy()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$SafeContextValue {
 
  Object get value;
@@ -6628,6 +6924,538 @@ as LibraryRootActiveScan?,
 }
 
 /// @nodoc
+mixin _$SourceEntry {
+
+ SourceEntryId get sourceEntryId; SourceEntryId? get parentSourceEntryId; String get displayName; String get displayLocation; SourceEntryKind get kind; SourceEntryClassification get classification;
+/// Create a copy of SourceEntry
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourceEntryCopyWith<SourceEntry> get copyWith => _$SourceEntryCopyWithImpl<SourceEntry>(this as SourceEntry, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntry&&(identical(other.sourceEntryId, sourceEntryId) || other.sourceEntryId == sourceEntryId)&&(identical(other.parentSourceEntryId, parentSourceEntryId) || other.parentSourceEntryId == parentSourceEntryId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.displayLocation, displayLocation) || other.displayLocation == displayLocation)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.classification, classification) || other.classification == classification));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,sourceEntryId,parentSourceEntryId,displayName,displayLocation,kind,classification);
+
+@override
+String toString() {
+  return 'SourceEntry(sourceEntryId: $sourceEntryId, parentSourceEntryId: $parentSourceEntryId, displayName: $displayName, displayLocation: $displayLocation, kind: $kind, classification: $classification)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourceEntryCopyWith<$Res>  {
+  factory $SourceEntryCopyWith(SourceEntry value, $Res Function(SourceEntry) _then) = _$SourceEntryCopyWithImpl;
+@useResult
+$Res call({
+ SourceEntryId sourceEntryId, SourceEntryId? parentSourceEntryId, String displayName, String displayLocation, SourceEntryKind kind, SourceEntryClassification classification
+});
+
+
+
+
+}
+/// @nodoc
+class _$SourceEntryCopyWithImpl<$Res>
+    implements $SourceEntryCopyWith<$Res> {
+  _$SourceEntryCopyWithImpl(this._self, this._then);
+
+  final SourceEntry _self;
+  final $Res Function(SourceEntry) _then;
+
+/// Create a copy of SourceEntry
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? sourceEntryId = null,Object? parentSourceEntryId = freezed,Object? displayName = null,Object? displayLocation = null,Object? kind = null,Object? classification = null,}) {
+  return _then(_self.copyWith(
+sourceEntryId: null == sourceEntryId ? _self.sourceEntryId : sourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId,parentSourceEntryId: freezed == parentSourceEntryId ? _self.parentSourceEntryId : parentSourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId?,displayName: null == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String,displayLocation: null == displayLocation ? _self.displayLocation : displayLocation // ignore: cast_nullable_to_non_nullable
+as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as SourceEntryKind,classification: null == classification ? _self.classification : classification // ignore: cast_nullable_to_non_nullable
+as SourceEntryClassification,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [SourceEntry].
+extension SourceEntryPatterns on SourceEntry {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _SourceEntry value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _SourceEntry() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _SourceEntry value)  $default,){
+final _that = this;
+switch (_that) {
+case _SourceEntry():
+return $default(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _SourceEntry value)?  $default,){
+final _that = this;
+switch (_that) {
+case _SourceEntry() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( SourceEntryId sourceEntryId,  SourceEntryId? parentSourceEntryId,  String displayName,  String displayLocation,  SourceEntryKind kind,  SourceEntryClassification classification)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _SourceEntry() when $default != null:
+return $default(_that.sourceEntryId,_that.parentSourceEntryId,_that.displayName,_that.displayLocation,_that.kind,_that.classification);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( SourceEntryId sourceEntryId,  SourceEntryId? parentSourceEntryId,  String displayName,  String displayLocation,  SourceEntryKind kind,  SourceEntryClassification classification)  $default,) {final _that = this;
+switch (_that) {
+case _SourceEntry():
+return $default(_that.sourceEntryId,_that.parentSourceEntryId,_that.displayName,_that.displayLocation,_that.kind,_that.classification);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( SourceEntryId sourceEntryId,  SourceEntryId? parentSourceEntryId,  String displayName,  String displayLocation,  SourceEntryKind kind,  SourceEntryClassification classification)?  $default,) {final _that = this;
+switch (_that) {
+case _SourceEntry() when $default != null:
+return $default(_that.sourceEntryId,_that.parentSourceEntryId,_that.displayName,_that.displayLocation,_that.kind,_that.classification);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class _SourceEntry implements SourceEntry {
+  const _SourceEntry({required this.sourceEntryId, this.parentSourceEntryId, required this.displayName, required this.displayLocation, required this.kind, required this.classification});
+
+
+@override final  SourceEntryId sourceEntryId;
+@override final  SourceEntryId? parentSourceEntryId;
+@override final  String displayName;
+@override final  String displayLocation;
+@override final  SourceEntryKind kind;
+@override final  SourceEntryClassification classification;
+
+/// Create a copy of SourceEntry
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$SourceEntryCopyWith<_SourceEntry> get copyWith => __$SourceEntryCopyWithImpl<_SourceEntry>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SourceEntry&&(identical(other.sourceEntryId, sourceEntryId) || other.sourceEntryId == sourceEntryId)&&(identical(other.parentSourceEntryId, parentSourceEntryId) || other.parentSourceEntryId == parentSourceEntryId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.displayLocation, displayLocation) || other.displayLocation == displayLocation)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.classification, classification) || other.classification == classification));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,sourceEntryId,parentSourceEntryId,displayName,displayLocation,kind,classification);
+
+@override
+String toString() {
+  return 'SourceEntry(sourceEntryId: $sourceEntryId, parentSourceEntryId: $parentSourceEntryId, displayName: $displayName, displayLocation: $displayLocation, kind: $kind, classification: $classification)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$SourceEntryCopyWith<$Res> implements $SourceEntryCopyWith<$Res> {
+  factory _$SourceEntryCopyWith(_SourceEntry value, $Res Function(_SourceEntry) _then) = __$SourceEntryCopyWithImpl;
+@override @useResult
+$Res call({
+ SourceEntryId sourceEntryId, SourceEntryId? parentSourceEntryId, String displayName, String displayLocation, SourceEntryKind kind, SourceEntryClassification classification
+});
+
+
+
+
+}
+/// @nodoc
+class __$SourceEntryCopyWithImpl<$Res>
+    implements _$SourceEntryCopyWith<$Res> {
+  __$SourceEntryCopyWithImpl(this._self, this._then);
+
+  final _SourceEntry _self;
+  final $Res Function(_SourceEntry) _then;
+
+/// Create a copy of SourceEntry
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? sourceEntryId = null,Object? parentSourceEntryId = freezed,Object? displayName = null,Object? displayLocation = null,Object? kind = null,Object? classification = null,}) {
+  return _then(_SourceEntry(
+sourceEntryId: null == sourceEntryId ? _self.sourceEntryId : sourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId,parentSourceEntryId: freezed == parentSourceEntryId ? _self.parentSourceEntryId : parentSourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId?,displayName: null == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String,displayLocation: null == displayLocation ? _self.displayLocation : displayLocation // ignore: cast_nullable_to_non_nullable
+as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as SourceEntryKind,classification: null == classification ? _self.classification : classification // ignore: cast_nullable_to_non_nullable
+as SourceEntryClassification,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$SourceEntryDetail {
+
+ SourceEntryId get sourceEntryId; SourceEntryId? get parentSourceEntryId; String get displayName; String get displayLocation; SourceEntryKind get kind; SourceEntryClassification get classification;
+/// Create a copy of SourceEntryDetail
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourceEntryDetailCopyWith<SourceEntryDetail> get copyWith => _$SourceEntryDetailCopyWithImpl<SourceEntryDetail>(this as SourceEntryDetail, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntryDetail&&(identical(other.sourceEntryId, sourceEntryId) || other.sourceEntryId == sourceEntryId)&&(identical(other.parentSourceEntryId, parentSourceEntryId) || other.parentSourceEntryId == parentSourceEntryId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.displayLocation, displayLocation) || other.displayLocation == displayLocation)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.classification, classification) || other.classification == classification));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,sourceEntryId,parentSourceEntryId,displayName,displayLocation,kind,classification);
+
+@override
+String toString() {
+  return 'SourceEntryDetail(sourceEntryId: $sourceEntryId, parentSourceEntryId: $parentSourceEntryId, displayName: $displayName, displayLocation: $displayLocation, kind: $kind, classification: $classification)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourceEntryDetailCopyWith<$Res>  {
+  factory $SourceEntryDetailCopyWith(SourceEntryDetail value, $Res Function(SourceEntryDetail) _then) = _$SourceEntryDetailCopyWithImpl;
+@useResult
+$Res call({
+ SourceEntryId sourceEntryId, SourceEntryId? parentSourceEntryId, String displayName, String displayLocation, SourceEntryKind kind, SourceEntryClassification classification
+});
+
+
+
+
+}
+/// @nodoc
+class _$SourceEntryDetailCopyWithImpl<$Res>
+    implements $SourceEntryDetailCopyWith<$Res> {
+  _$SourceEntryDetailCopyWithImpl(this._self, this._then);
+
+  final SourceEntryDetail _self;
+  final $Res Function(SourceEntryDetail) _then;
+
+/// Create a copy of SourceEntryDetail
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? sourceEntryId = null,Object? parentSourceEntryId = freezed,Object? displayName = null,Object? displayLocation = null,Object? kind = null,Object? classification = null,}) {
+  return _then(_self.copyWith(
+sourceEntryId: null == sourceEntryId ? _self.sourceEntryId : sourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId,parentSourceEntryId: freezed == parentSourceEntryId ? _self.parentSourceEntryId : parentSourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId?,displayName: null == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String,displayLocation: null == displayLocation ? _self.displayLocation : displayLocation // ignore: cast_nullable_to_non_nullable
+as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as SourceEntryKind,classification: null == classification ? _self.classification : classification // ignore: cast_nullable_to_non_nullable
+as SourceEntryClassification,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [SourceEntryDetail].
+extension SourceEntryDetailPatterns on SourceEntryDetail {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _SourceEntryDetail value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _SourceEntryDetail() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _SourceEntryDetail value)  $default,){
+final _that = this;
+switch (_that) {
+case _SourceEntryDetail():
+return $default(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _SourceEntryDetail value)?  $default,){
+final _that = this;
+switch (_that) {
+case _SourceEntryDetail() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( SourceEntryId sourceEntryId,  SourceEntryId? parentSourceEntryId,  String displayName,  String displayLocation,  SourceEntryKind kind,  SourceEntryClassification classification)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _SourceEntryDetail() when $default != null:
+return $default(_that.sourceEntryId,_that.parentSourceEntryId,_that.displayName,_that.displayLocation,_that.kind,_that.classification);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( SourceEntryId sourceEntryId,  SourceEntryId? parentSourceEntryId,  String displayName,  String displayLocation,  SourceEntryKind kind,  SourceEntryClassification classification)  $default,) {final _that = this;
+switch (_that) {
+case _SourceEntryDetail():
+return $default(_that.sourceEntryId,_that.parentSourceEntryId,_that.displayName,_that.displayLocation,_that.kind,_that.classification);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( SourceEntryId sourceEntryId,  SourceEntryId? parentSourceEntryId,  String displayName,  String displayLocation,  SourceEntryKind kind,  SourceEntryClassification classification)?  $default,) {final _that = this;
+switch (_that) {
+case _SourceEntryDetail() when $default != null:
+return $default(_that.sourceEntryId,_that.parentSourceEntryId,_that.displayName,_that.displayLocation,_that.kind,_that.classification);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class _SourceEntryDetail implements SourceEntryDetail {
+  const _SourceEntryDetail({required this.sourceEntryId, this.parentSourceEntryId, required this.displayName, required this.displayLocation, required this.kind, required this.classification});
+
+
+@override final  SourceEntryId sourceEntryId;
+@override final  SourceEntryId? parentSourceEntryId;
+@override final  String displayName;
+@override final  String displayLocation;
+@override final  SourceEntryKind kind;
+@override final  SourceEntryClassification classification;
+
+/// Create a copy of SourceEntryDetail
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$SourceEntryDetailCopyWith<_SourceEntryDetail> get copyWith => __$SourceEntryDetailCopyWithImpl<_SourceEntryDetail>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SourceEntryDetail&&(identical(other.sourceEntryId, sourceEntryId) || other.sourceEntryId == sourceEntryId)&&(identical(other.parentSourceEntryId, parentSourceEntryId) || other.parentSourceEntryId == parentSourceEntryId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.displayLocation, displayLocation) || other.displayLocation == displayLocation)&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.classification, classification) || other.classification == classification));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,sourceEntryId,parentSourceEntryId,displayName,displayLocation,kind,classification);
+
+@override
+String toString() {
+  return 'SourceEntryDetail(sourceEntryId: $sourceEntryId, parentSourceEntryId: $parentSourceEntryId, displayName: $displayName, displayLocation: $displayLocation, kind: $kind, classification: $classification)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$SourceEntryDetailCopyWith<$Res> implements $SourceEntryDetailCopyWith<$Res> {
+  factory _$SourceEntryDetailCopyWith(_SourceEntryDetail value, $Res Function(_SourceEntryDetail) _then) = __$SourceEntryDetailCopyWithImpl;
+@override @useResult
+$Res call({
+ SourceEntryId sourceEntryId, SourceEntryId? parentSourceEntryId, String displayName, String displayLocation, SourceEntryKind kind, SourceEntryClassification classification
+});
+
+
+
+
+}
+/// @nodoc
+class __$SourceEntryDetailCopyWithImpl<$Res>
+    implements _$SourceEntryDetailCopyWith<$Res> {
+  __$SourceEntryDetailCopyWithImpl(this._self, this._then);
+
+  final _SourceEntryDetail _self;
+  final $Res Function(_SourceEntryDetail) _then;
+
+/// Create a copy of SourceEntryDetail
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? sourceEntryId = null,Object? parentSourceEntryId = freezed,Object? displayName = null,Object? displayLocation = null,Object? kind = null,Object? classification = null,}) {
+  return _then(_SourceEntryDetail(
+sourceEntryId: null == sourceEntryId ? _self.sourceEntryId : sourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId,parentSourceEntryId: freezed == parentSourceEntryId ? _self.parentSourceEntryId : parentSourceEntryId // ignore: cast_nullable_to_non_nullable
+as SourceEntryId?,displayName: null == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String,displayLocation: null == displayLocation ? _self.displayLocation : displayLocation // ignore: cast_nullable_to_non_nullable
+as String,kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as SourceEntryKind,classification: null == classification ? _self.classification : classification // ignore: cast_nullable_to_non_nullable
+as SourceEntryClassification,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$AddLocalLibraryRootResult {
 
 
@@ -7908,7 +8736,7 @@ $Res call({
 });
 
 
-
+$SourceEntriesChangeScopeCopyWith<$Res> get scope;
 
 }
 /// @nodoc
@@ -7929,7 +8757,16 @@ as SourceEntriesChangeScope,
   ));
 }
 
+/// Create a copy of RuntimeEventPayload
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$SourceEntriesChangeScopeCopyWith<$Res> get scope {
 
+  return $SourceEntriesChangeScopeCopyWith<$Res>(_self.scope, (value) {
+    return _then(_self.copyWith(scope: value));
+  });
+}
 }
 
 /// @nodoc

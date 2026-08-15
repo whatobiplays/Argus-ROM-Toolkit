@@ -84,6 +84,7 @@ pub enum ErrorCode {
     InternalInvariantViolation,
     JobRunNotFound,
     OperationCapacityUnavailable,
+    ConfigurationSourceEntryNotFound,
 }
 
 /// Central policy metadata for one published code.
@@ -200,7 +201,7 @@ impl ErrorCode {
     /// `all` and `phase_000_all` retain their original shapes for source
     /// compatibility; this additive accessor includes every Phase 000 entry
     /// plus the codes introduced by Phase 001 slices.
-    pub const fn phase_001_all() -> &'static [Self; 22] {
+    pub const fn phase_001_all() -> &'static [Self; 23] {
         &[
             Self::ValidationInvalidArgument,
             Self::ConfigurationInvalid,
@@ -224,6 +225,7 @@ impl ErrorCode {
             Self::FilesystemInvalidRootSelection,
             Self::JobRunNotFound,
             Self::OperationCapacityUnavailable,
+            Self::ConfigurationSourceEntryNotFound,
         ]
     }
 
@@ -260,6 +262,9 @@ impl ErrorCode {
             Self::InternalInvariantViolation => "ARGUS.V1.INTERNAL.INVARIANT_VIOLATION",
             Self::JobRunNotFound => "ARGUS.V1.JOBS.JOB_RUN_NOT_FOUND",
             Self::OperationCapacityUnavailable => "ARGUS.V1.OPERATION.CAPACITY_UNAVAILABLE",
+            Self::ConfigurationSourceEntryNotFound => {
+                "ARGUS.V1.CONFIGURATION.SOURCE_ENTRY_NOT_FOUND"
+            }
         }
     }
 
@@ -440,6 +445,14 @@ impl ErrorCode {
                 Recoverability::Retry,
                 RetryPolicy::UserInitiated,
                 "errors.operation.capacity_unavailable",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ConfigurationSourceEntryNotFound => policy(
+                ErrorCategory::Configuration,
+                ApplicationSeverity::Error,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.configuration.source_entry_not_found",
                 COMMON_FAILURE_FIELDS,
             ),
         }

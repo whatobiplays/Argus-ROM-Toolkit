@@ -25,14 +25,16 @@ use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
     CancelJobResult, DiagnosticStage, ErrorCode, EventName, FailureRole,
-    GetAppearanceSettingsQuery, GetLibraryRootQuery, JobDetail, JobRunId, JobSummaryPage,
-    JobsService, LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryRootRepository,
-    LibraryScanAdmissionResult, LibraryService, LibrarySourceRepository, ListJobsQuery,
-    ListLibraryRootsQuery, LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome,
-    ObservabilitySink, OperationContext, OperationName, PathClass, PersistenceError, PlatformClass,
+    GetAppearanceSettingsQuery, GetLibraryRootQuery, GetSourceEntryQuery, JobDetail, JobRunId,
+    JobSummaryPage, JobsService, LibraryRootId, LibraryRootPage, LibraryRootProjection,
+    LibraryRootRepository, LibraryScanAdmissionResult, LibraryService, LibrarySourceRepository,
+    ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
+    OperationContext, OperationName, PathClass, PersistenceError, PlatformClass,
     RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
-    SafeContextValue, SettingsService, StartLibraryScanCommand, StartupCollector, SubsystemName,
-    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
+    SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
+    SourceEntryId, StartLibraryScanCommand, StartupCollector, SubsystemName, TechnicalClass,
+    TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
     UpdateAppearanceSettingsCommand, Version,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
@@ -41,7 +43,8 @@ use argus_infrastructure::sqlite::{
     SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteDatabaseExecutor,
     SqliteExecutorError, SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryRootQueries,
     SqliteLibraryRootRepository, SqliteLibraryScanTargetRepository, SqliteLibrarySourceRepository,
-    SqliteScanRunRepository, SqliteSourceEntryRepository, SqliteUnitOfWork,
+    SqliteScanRunRepository, SqliteSourceEntryQueries, SqliteSourceEntryRepository,
+    SqliteUnitOfWork,
 };
 
 pub mod background;
@@ -319,6 +322,7 @@ pub struct KernelBootstrap {
     settings_service: SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>,
     library_service: LibraryService<
         SqliteLibraryRootQueries,
+        SqliteSourceEntryQueries,
         SqliteDatabaseExecutor,
         InfraLocalFilesystemProvider,
     >,
@@ -756,6 +760,7 @@ impl KernelBootstrap {
         settings_service: SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>,
         library_service: LibraryService<
             SqliteLibraryRootQueries,
+            SqliteSourceEntryQueries,
             SqliteDatabaseExecutor,
             InfraLocalFilesystemProvider,
         >,
@@ -794,6 +799,7 @@ impl KernelBootstrap {
         );
         let library_service = LibraryService::new(
             SqliteLibraryRootQueries::new(executor.clone()),
+            SqliteSourceEntryQueries::new(executor.clone()),
             executor.clone(),
             InfraLocalFilesystemProvider,
         );
@@ -957,6 +963,28 @@ impl KernelBootstrap {
     ) -> Result<LibraryRootProjection, ApplicationError> {
         self.library_service
             .get_library_root(GetLibraryRootQuery::new(root_id), context.clone())
+    }
+
+    /// Reads one bounded authoritative direct-child page under an admitted
+    /// operation context.
+    pub fn list_source_entry_children_with_context(
+        &self,
+        query: &ListSourceEntryChildrenQuery,
+        context: &OperationContext,
+    ) -> Result<SourceEntryChildrenPage, ApplicationError> {
+        self.library_service
+            .list_source_entry_children(query.clone(), context.clone())
+    }
+
+    /// Reads one authoritative source-entry detail under an admitted
+    /// operation context.
+    pub fn get_source_entry_with_context(
+        &self,
+        source_entry_id: SourceEntryId,
+        context: &OperationContext,
+    ) -> Result<SourceEntryDetailProjection, ApplicationError> {
+        self.library_service
+            .get_source_entry(GetSourceEntryQuery::new(source_entry_id), context.clone())
     }
 
     /// Configures one root-only local library folder and publishes after commit.
@@ -1318,6 +1346,7 @@ pub fn bootstrap_kernel_with_event_bus(
     );
     let library_service = LibraryService::new(
         SqliteLibraryRootQueries::new(executor.clone()),
+        SqliteSourceEntryQueries::new(executor.clone()),
         executor.clone(),
         InfraLocalFilesystemProvider,
     );

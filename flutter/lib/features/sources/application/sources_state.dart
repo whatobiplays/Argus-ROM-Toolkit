@@ -37,6 +37,12 @@ sealed class SourcesReconciliationDemand with _$SourcesReconciliationDemand {
   const factory SourcesReconciliationDemand.rootChanged({
     required LibraryRootId libraryRootId,
   }) = SourcesReconciliationDemandRootChanged;
+
+  /// One loaded source hierarchy scope may have changed.
+  const factory SourcesReconciliationDemand.sourceChanged({
+    required LibraryRootId libraryRootId,
+    required SourceEntriesChangeScope scope,
+  }) = SourcesReconciliationDemandSourceChanged;
 }
 
 /// Synchronous carrier for the Sources reconciliation demand stream.

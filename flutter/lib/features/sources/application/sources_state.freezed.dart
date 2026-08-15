@@ -313,12 +313,13 @@ extension SourcesReconciliationDemandPatterns on SourcesReconciliationDemand {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,TResult Function( SourcesReconciliationDemandSourceChanged value)?  sourceChanged,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged(_that);case SourcesReconciliationDemandRootChanged() when rootChanged != null:
-return rootChanged(_that);case _:
+return rootChanged(_that);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
+return sourceChanged(_that);case _:
   return orElse();
 
 }
@@ -336,12 +337,13 @@ return rootChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourcesReconciliationDemandRootsChanged value)  rootsChanged,required TResult Function( SourcesReconciliationDemandRootChanged value)  rootChanged,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourcesReconciliationDemandRootsChanged value)  rootsChanged,required TResult Function( SourcesReconciliationDemandRootChanged value)  rootChanged,required TResult Function( SourcesReconciliationDemandSourceChanged value)  sourceChanged,}){
 final _that = this;
 switch (_that) {
 case SourcesReconciliationDemandRootsChanged():
 return rootsChanged(_that);case SourcesReconciliationDemandRootChanged():
-return rootChanged(_that);}
+return rootChanged(_that);case SourcesReconciliationDemandSourceChanged():
+return sourceChanged(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -355,12 +357,13 @@ return rootChanged(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult? Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult? Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,TResult? Function( SourcesReconciliationDemandSourceChanged value)?  sourceChanged,}){
 final _that = this;
 switch (_that) {
 case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged(_that);case SourcesReconciliationDemandRootChanged() when rootChanged != null:
-return rootChanged(_that);case _:
+return rootChanged(_that);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
+return sourceChanged(_that);case _:
   return null;
 
 }
@@ -377,11 +380,12 @@ return rootChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  rootsChanged,TResult Function( LibraryRootId libraryRootId)?  rootChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  rootsChanged,TResult Function( LibraryRootId libraryRootId)?  rootChanged,TResult Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)?  sourceChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged();case SourcesReconciliationDemandRootChanged() when rootChanged != null:
-return rootChanged(_that.libraryRootId);case _:
+return rootChanged(_that.libraryRootId);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
+return sourceChanged(_that.libraryRootId,_that.scope);case _:
   return orElse();
 
 }
@@ -399,11 +403,12 @@ return rootChanged(_that.libraryRootId);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  rootsChanged,required TResult Function( LibraryRootId libraryRootId)  rootChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  rootsChanged,required TResult Function( LibraryRootId libraryRootId)  rootChanged,required TResult Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)  sourceChanged,}) {final _that = this;
 switch (_that) {
 case SourcesReconciliationDemandRootsChanged():
 return rootsChanged();case SourcesReconciliationDemandRootChanged():
-return rootChanged(_that.libraryRootId);}
+return rootChanged(_that.libraryRootId);case SourcesReconciliationDemandSourceChanged():
+return sourceChanged(_that.libraryRootId,_that.scope);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -417,11 +422,12 @@ return rootChanged(_that.libraryRootId);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  rootsChanged,TResult? Function( LibraryRootId libraryRootId)?  rootChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  rootsChanged,TResult? Function( LibraryRootId libraryRootId)?  rootChanged,TResult? Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)?  sourceChanged,}) {final _that = this;
 switch (_that) {
 case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged();case SourcesReconciliationDemandRootChanged() when rootChanged != null:
-return rootChanged(_that.libraryRootId);case _:
+return rootChanged(_that.libraryRootId);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
+return sourceChanged(_that.libraryRootId,_that.scope);case _:
   return null;
 
 }
@@ -525,6 +531,83 @@ as LibraryRootId,
 }
 
 
+}
+
+/// @nodoc
+
+
+class SourcesReconciliationDemandSourceChanged implements SourcesReconciliationDemand {
+  const SourcesReconciliationDemandSourceChanged({required this.libraryRootId, required this.scope});
+
+
+ final  LibraryRootId libraryRootId;
+ final  SourceEntriesChangeScope scope;
+
+/// Create a copy of SourcesReconciliationDemand
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourcesReconciliationDemandSourceChangedCopyWith<SourcesReconciliationDemandSourceChanged> get copyWith => _$SourcesReconciliationDemandSourceChangedCopyWithImpl<SourcesReconciliationDemandSourceChanged>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourcesReconciliationDemandSourceChanged&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.scope, scope) || other.scope == scope));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,libraryRootId,scope);
+
+@override
+String toString() {
+  return 'SourcesReconciliationDemand.sourceChanged(libraryRootId: $libraryRootId, scope: $scope)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourcesReconciliationDemandSourceChangedCopyWith<$Res> implements $SourcesReconciliationDemandCopyWith<$Res> {
+  factory $SourcesReconciliationDemandSourceChangedCopyWith(SourcesReconciliationDemandSourceChanged value, $Res Function(SourcesReconciliationDemandSourceChanged) _then) = _$SourcesReconciliationDemandSourceChangedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId libraryRootId, SourceEntriesChangeScope scope
+});
+
+
+$SourceEntriesChangeScopeCopyWith<$Res> get scope;
+
+}
+/// @nodoc
+class _$SourcesReconciliationDemandSourceChangedCopyWithImpl<$Res>
+    implements $SourcesReconciliationDemandSourceChangedCopyWith<$Res> {
+  _$SourcesReconciliationDemandSourceChangedCopyWithImpl(this._self, this._then);
+
+  final SourcesReconciliationDemandSourceChanged _self;
+  final $Res Function(SourcesReconciliationDemandSourceChanged) _then;
+
+/// Create a copy of SourcesReconciliationDemand
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,Object? scope = null,}) {
+  return _then(SourcesReconciliationDemandSourceChanged(
+libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,scope: null == scope ? _self.scope : scope // ignore: cast_nullable_to_non_nullable
+as SourceEntriesChangeScope,
+  ));
+}
+
+/// Create a copy of SourcesReconciliationDemand
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$SourceEntriesChangeScopeCopyWith<$Res> get scope {
+
+  return $SourceEntriesChangeScopeCopyWith<$Res>(_self.scope, (value) {
+    return _then(_self.copyWith(scope: value));
+  });
+}
 }
 
 // dart format on

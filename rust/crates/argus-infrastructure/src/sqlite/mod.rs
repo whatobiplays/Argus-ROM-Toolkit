@@ -11,6 +11,7 @@ mod errors;
 mod executor;
 mod jobs;
 mod migrations;
+mod source_entries;
 mod sources;
 mod unit_of_work;
 
@@ -27,6 +28,7 @@ pub use jobs::{
 pub use migrations::{
     Migration, MigrationKind, MigrationOutcome, MigrationRegistry, MigrationSummary,
 };
+pub use source_entries::SqliteSourceEntryQueries;
 pub use sources::{
     SqliteLibraryRootQueries, SqliteLibraryRootRepository, SqliteLibrarySourceRepository,
 };

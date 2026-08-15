@@ -171,6 +171,18 @@ final class _SourcesFakeGateway
     LibraryRootId libraryRootId,
   ) async => throw const TransportFailure('Sources stub is not focused');
 
+  @override
+  Future<SourceEntryChildrenPage> listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  }) async => throw const TransportFailure('Sources stub is not focused');
+
+  @override
+  Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) async =>
+      throw const TransportFailure('Sources stub is not focused');
+
   LibraryRoot _root() => LibraryRoot(
     id: const LibraryRootId(_rootIdHex),
     displayName: 'Games',

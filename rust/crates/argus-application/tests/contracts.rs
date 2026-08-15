@@ -339,7 +339,7 @@ fn phase_001_catalog_snapshot_is_additive_and_exact() {
     let phase_000 = ErrorCode::phase_000_all();
     let phase_001 = ErrorCode::phase_001_all();
 
-    assert_eq!(phase_001.len(), phase_000.len() + 4);
+    assert_eq!(phase_001.len(), phase_000.len() + 5);
     assert_eq!(&phase_001[..phase_000.len()], phase_000);
 
     let expected: [(
@@ -349,7 +349,7 @@ fn phase_001_catalog_snapshot_is_additive_and_exact() {
         Recoverability,
         RetryPolicy,
         &str,
-    ); 4] = [
+    ); 5] = [
         (
             "ARGUS.V1.CONFIGURATION.LIBRARY_ROOT_NOT_FOUND",
             ErrorCategory::Configuration,
@@ -381,6 +381,14 @@ fn phase_001_catalog_snapshot_is_additive_and_exact() {
             Recoverability::Retry,
             RetryPolicy::UserInitiated,
             "errors.operation.capacity_unavailable",
+        ),
+        (
+            "ARGUS.V1.CONFIGURATION.SOURCE_ENTRY_NOT_FOUND",
+            ErrorCategory::Configuration,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.configuration.source_entry_not_found",
         ),
     ];
 

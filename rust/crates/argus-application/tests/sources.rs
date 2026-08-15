@@ -13,13 +13,15 @@ use argus_application::{
     LibraryRootConfiguration, LibraryRootId, LibraryRootLastScanSummary, LibraryRootPage,
     LibraryRootProjection, LibraryRootQueries, LibraryRootRepository, LibraryRootScanConfiguration,
     LibraryRootsChanged, LibraryRootsSubscriber, LibraryScanTarget, LibraryScanTargetRepository,
-    LibraryService, LibrarySourceAccess, ListLibraryRootsQuery, LocalFilesystemProvider,
-    LocalFilesystemRootSelection, NativeIdentityMatch, NewJobRun, NewLibraryRoot,
-    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext, OperationName,
-    PersistenceError, ProviderError, RemoveLibraryRootCommand, RemoveLibraryRootResult,
-    RootLocator, RootRelationship, ScanRunId, ScanRunProjection, ScanRunRepository, ScanRunStatus,
-    SourceAccessError, SourceEntryId, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
-    SourceProviderType, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory, ValidatedLocalRoot,
+    LibraryService, LibrarySourceAccess, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemProvider, LocalFilesystemRootSelection, NativeIdentityMatch, NewJobRun,
+    NewLibraryRoot, NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext,
+    OperationName, PersistenceError, ProviderError, RemoveLibraryRootCommand,
+    RemoveLibraryRootResult, RootLocator, RootRelationship, ScanRunId, ScanRunProjection,
+    ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntryChildrenPage,
+    SourceEntryDetailProjection, SourceEntryId, SourceEntryQueries, SourceEntryRecord,
+    SourceEntryRepository, SourceLocatorKey, SourceProviderType, SubsystemName, TraceId,
+    UnitOfWork, UnitOfWorkFactory, ValidatedLocalRoot,
 };
 use argus_domain::LibrarySourceId;
 
@@ -123,6 +125,28 @@ impl LocalFilesystemProvider for FakeProvider {
 struct FakeQueries {
     roots: Rc<RefCell<Vec<LibraryRootProjection>>>,
     configs: Rc<RefCell<Vec<LibraryRootConfiguration>>>,
+}
+
+/// Read-side no-op source-entry hierarchy query fake for unrelated root tests.
+#[derive(Clone, Default)]
+struct FakeSourceEntryQueries;
+
+impl SourceEntryQueries for FakeSourceEntryQueries {
+    fn list_children(
+        &self,
+        _context: &OperationContext,
+        _query: &ListSourceEntryChildrenQuery,
+    ) -> Result<SourceEntryChildrenPage, PersistenceError> {
+        Ok(SourceEntryChildrenPage::new(Vec::new(), None))
+    }
+
+    fn get(
+        &self,
+        _context: &OperationContext,
+        _source_entry_id: SourceEntryId,
+    ) -> Result<Option<SourceEntryDetailProjection>, PersistenceError> {
+        Ok(None)
+    }
 }
 
 impl FakeQueries {
@@ -595,6 +619,7 @@ fn list_library_roots_returns_a_bounded_authoritative_page() {
     queries.roots.borrow_mut().push(projection(ROOT_B, "Beta"));
     let service = LibraryService::new(
         queries.clone(),
+        FakeSourceEntryQueries,
         FakeFactory::default(),
         FakeProvider::new(Ok(validated("/tmp/games"))),
     );
@@ -615,6 +640,7 @@ fn get_library_root_returns_the_authoritative_projection() {
     queries.roots.borrow_mut().push(projection(ROOT_A, "Alpha"));
     let service = LibraryService::new(
         queries,
+        FakeSourceEntryQueries,
         FakeFactory::default(),
         FakeProvider::new(Ok(validated("/tmp/games"))),
     );
@@ -631,6 +657,7 @@ fn get_library_root_maps_a_missing_root_to_a_typed_configuration_failure() {
     let queries = FakeQueries::default();
     let service = LibraryService::new(
         queries,
+        FakeSourceEntryQueries,
         FakeFactory::default(),
         FakeProvider::new(Ok(validated("/tmp/games"))),
     );
@@ -654,7 +681,12 @@ fn get_library_root_maps_a_missing_root_to_a_typed_configuration_failure() {
 fn add_local_library_root_validates_before_any_mutation() {
     let provider = FakeProvider::new(Err(ProviderError::NotADirectory));
     let factory = FakeFactory::default();
-    let service = LibraryService::new(FakeQueries::default(), factory.clone(), provider);
+    let service = LibraryService::new(
+        FakeQueries::default(),
+        FakeSourceEntryQueries,
+        factory.clone(),
+        provider,
+    );
 
     let error = service
         .add_local_library_root(
@@ -683,7 +715,7 @@ fn add_local_library_root_creates_the_internal_source_and_root_then_commits() {
     let factory = FakeFactory::default();
     let provider = FakeProvider::new(Ok(validated("/tmp/games")));
     let recorder = FakeRecorder::default();
-    let service = LibraryService::new(queries, factory.clone(), provider);
+    let service = LibraryService::new(queries, FakeSourceEntryQueries, factory.clone(), provider);
 
     let result = service
         .add_local_library_root(
@@ -732,7 +764,7 @@ fn add_local_library_root_is_idempotent_for_the_same_selection() {
     let queries = FakeQueries::with_configs(vec![config(ROOT_EXISTING, "/tmp/games")]);
     let factory = FakeFactory::default();
     let recorder = FakeRecorder::default();
-    let service = LibraryService::new(queries, factory.clone(), provider);
+    let service = LibraryService::new(queries, FakeSourceEntryQueries, factory.clone(), provider);
 
     let result = service
         .add_local_library_root(
@@ -760,7 +792,8 @@ fn add_local_library_root_rejects_provably_overlapping_ancestor_and_descendant_r
         let queries = FakeQueries::with_configs(vec![config(ROOT_EXISTING, "/tmp")]);
         let factory = FakeFactory::default();
         let recorder = FakeRecorder::default();
-        let service = LibraryService::new(queries, factory.clone(), provider);
+        let service =
+            LibraryService::new(queries, FakeSourceEntryQueries, factory.clone(), provider);
 
         let result = service
             .add_local_library_root(
@@ -788,7 +821,8 @@ fn add_local_library_root_allows_disjoint_and_unknown_relationships() {
         let queries = FakeQueries::with_configs(vec![config(ROOT_EXISTING, "/tmp/other")]);
         let factory = FakeFactory::default();
         let recorder = FakeRecorder::default();
-        let service = LibraryService::new(queries, factory.clone(), provider);
+        let service =
+            LibraryService::new(queries, FakeSourceEntryQueries, factory.clone(), provider);
 
         let result = service
             .add_local_library_root(
@@ -809,6 +843,7 @@ fn remove_library_root_commits_the_delete_and_records_events() {
     let recorder = FakeRecorder::default();
     let service = LibraryService::new(
         FakeQueries::default(),
+        FakeSourceEntryQueries,
         factory.clone(),
         FakeProvider::new(Ok(validated("/tmp/games"))),
     );

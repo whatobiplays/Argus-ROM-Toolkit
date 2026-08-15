@@ -61,4 +61,34 @@ abstract final class SourcesMessages {
   static const String backToSources = 'Go to Sources';
   static const String invalidLocation =
       'This location is not a valid library-folder location.';
+
+  static const String hierarchyLoading = 'Loading indexed entries…';
+  static const String hierarchyLoadFailed =
+      'Indexed entries could not be loaded.';
+  static const String hierarchyRefreshFailed =
+      'Could not refresh indexed entries. Showing the last confirmed state.';
+  static const String hierarchyEmpty = 'No indexed entries yet.';
+  static const String loadMore = 'Load more entries';
+  static const String back = 'Back';
+  static const String libraryRootLevel = 'Library root';
+  static const String entryDetails = 'Entry details';
+  static const String entryDetailsLoading = 'Loading entry details…';
+  static const String entryDetailsFailed = 'Entry details could not be loaded.';
+
+  static String entryKindLabel(SourceEntryKind kind) => switch (kind) {
+    SourceEntryKind.directory => 'Folder',
+    SourceEntryKind.file => 'File',
+    SourceEntryKind.linkLike => 'Link',
+    SourceEntryKind.unknown => 'Other',
+  };
+
+  static String entryClassificationLabel(
+    SourceEntryClassification classification,
+  ) => switch (classification) {
+    SourceEntryClassification.container => 'Container',
+    SourceEntryClassification.contentCandidate => 'Content candidate',
+    SourceEntryClassification.supportingEntry => 'Supporting entry',
+    SourceEntryClassification.ignored => 'Ignored',
+    SourceEntryClassification.unknown => 'Unknown',
+  };
 }

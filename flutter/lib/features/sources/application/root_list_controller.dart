@@ -179,6 +179,9 @@ class SourcesRootListController extends _$SourcesRootListController {
           // A single-root invalidation may still change list projections or
           // ordering; one focused list refresh covers it.
           unawaited(refresh());
+        case SourcesReconciliationDemandSourceChanged():
+          // Source scopes are owned by the hierarchy controller.
+          break;
       }
     });
     final previous = _demandSubscription;

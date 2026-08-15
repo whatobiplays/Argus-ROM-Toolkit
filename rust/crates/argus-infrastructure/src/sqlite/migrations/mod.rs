@@ -109,6 +109,11 @@ impl MigrationRegistry {
                 "0004_source_reconciliation",
                 include_bytes!("sql/0004_source_reconciliation.sql"),
             ),
+            Migration::sql(
+                5,
+                "0005_source_hierarchy",
+                include_bytes!("sql/0005_source_hierarchy.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

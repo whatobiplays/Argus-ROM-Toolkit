@@ -13,7 +13,7 @@ use argus_application::{
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     DEFAULT_QUEUE_CAPACITY, SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor,
-    SqliteJobsQueries, SqliteLibraryRootQueries,
+    SqliteJobsQueries, SqliteLibraryRootQueries, SqliteSourceEntryQueries,
 };
 
 use crate::background::{BackgroundManagerConfig, BackgroundOperationManager};
@@ -109,6 +109,7 @@ struct StartupResources {
     library_service: Option<
         LibraryService<
             SqliteLibraryRootQueries,
+            SqliteSourceEntryQueries,
             SqliteDatabaseExecutor,
             InfraLocalFilesystemProvider,
         >,
@@ -441,6 +442,7 @@ impl StartupCoordinator {
             );
             let library_service = LibraryService::new(
                 SqliteLibraryRootQueries::new(executor.clone()),
+                SqliteSourceEntryQueries::new(executor.clone()),
                 executor.clone(),
                 InfraLocalFilesystemProvider,
             );

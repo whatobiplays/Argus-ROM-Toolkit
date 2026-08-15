@@ -23,6 +23,7 @@ class SourcesEventCoordinator extends _$SourcesEventCoordinator {
   int _subscriptionToken = 0;
   RuntimeInstanceId? _domainRuntimeId;
   BigInt? _lastSequence;
+  final Set<LibraryRootId> _recentSourceRootIds = {};
 
   @override
   SourcesReconciliationDemandSource build() {
@@ -44,6 +45,7 @@ class SourcesEventCoordinator extends _$SourcesEventCoordinator {
   void _resetDomain(RuntimeInstanceId? runtimeId) {
     _domainRuntimeId = runtimeId;
     _lastSequence = null;
+    _recentSourceRootIds.clear();
   }
 
   /// Subscribes to a mapped [EventsApi] stream without owning reconnect.
@@ -58,11 +60,13 @@ class SourcesEventCoordinator extends _$SourcesEventCoordinator {
       onError: (Object error, StackTrace stackTrace) {
         if (token == _subscriptionToken && _domainRuntimeId != null) {
           _emitRootsChangedDemand();
+          _emitBroadSourceDemands();
         }
       },
       onDone: () {
         if (token == _subscriptionToken && _domainRuntimeId != null) {
           _emitRootsChangedDemand();
+          _emitBroadSourceDemands();
         }
       },
       cancelOnError: false,
@@ -89,8 +93,11 @@ class SourcesEventCoordinator extends _$SourcesEventCoordinator {
     }
 
     // Any non-contiguous same-runtime sequence is delivery uncertainty and
-    // requires one authoritative root-list refresh, regardless of payload.
+    // requires one authoritative root-list refresh plus a broad loaded-hierarchy
+    // refresh for every root that had source-graph activity, regardless of
+    // payload. Events are never replayed.
     _emitRootsChangedDemand();
+    _emitBroadSourceDemands();
     if (event.sequence > previous) {
       _lastSequence = event.sequence;
     }
@@ -102,9 +109,39 @@ class SourcesEventCoordinator extends _$SourcesEventCoordinator {
         _emitRootsChangedDemand();
       case RuntimeEventPayloadLibraryRootChanged(:final libraryRootId):
         _emitRootChangedDemand(libraryRootId);
+      case RuntimeEventPayloadSourceEntriesChanged(
+        :final libraryRootId,
+        :final scope,
+      ):
+        _recentSourceRootIds.add(libraryRootId);
+        _emitSourceChangedDemand(libraryRootId, scope);
       default:
         // Other payload families do not invalidate Sources state.
         break;
+    }
+  }
+
+  void _emitBroadSourceDemands() {
+    for (final libraryRootId in _recentSourceRootIds.toList()) {
+      _emitSourceChangedDemand(
+        libraryRootId,
+        const SourceEntriesChangeScope.entireRootHierarchy(),
+      );
+    }
+  }
+
+  void _emitSourceChangedDemand(
+    LibraryRootId libraryRootId,
+    SourceEntriesChangeScope scope,
+  ) {
+    final demands = _demands;
+    if (demands != null && !demands.isClosed) {
+      demands.add(
+        SourcesReconciliationDemand.sourceChanged(
+          libraryRootId: libraryRootId,
+          scope: scope,
+        ),
+      );
     }
   }
 

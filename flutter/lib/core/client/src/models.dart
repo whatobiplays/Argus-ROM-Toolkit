@@ -101,6 +101,34 @@ final class ScanRunId {
   int get hashCode => value.hashCode;
 }
 
+/// Opaque identity for one persisted source-graph entry.
+final class SourceEntryId {
+  const SourceEntryId(this.value);
+
+  final String value;
+
+  /// Parses one canonical lowercase hex identity, or returns null when the
+  /// value is malformed.
+  static SourceEntryId? tryParse(String value) {
+    final id = SourceEntryId(value);
+    return id.isValid ? id : null;
+  }
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SourceEntryId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
 /// Minimal identity-only handle returned by successful background admission.
 final class OperationHandle {
   const OperationHandle({required this.jobRunId, required this.operationType});
@@ -356,20 +384,20 @@ sealed class StartLibraryScanResult with _$StartLibraryScanResult {
 enum CancelJobResult { cancellationRequested, noLongerCancellable }
 
 /// Explicit source-graph invalidation scope union.
-enum SourceEntriesChangeScope {
-  rootChildren,
-  entryChildren,
-  entireRootHierarchy;
+///
+/// `entryChildren` preserves the exact parent identity end-to-end; the scope
+/// is an invalidation hint only and never becomes data authority.
+@freezed
+sealed class SourceEntriesChangeScope with _$SourceEntriesChangeScope {
+  const factory SourceEntriesChangeScope.rootChildren() =
+      SourceEntriesChangeScopeRootChildren;
 
-  static SourceEntriesChangeScope fromWire(String value) => switch (value) {
-    'root_children' => SourceEntriesChangeScope.rootChildren,
-    'entry_children' => SourceEntriesChangeScope.entryChildren,
-    'entire_root_hierarchy' => SourceEntriesChangeScope.entireRootHierarchy,
-    _ => throw const TransportFailure(
-      'Unknown source-entries scope',
-      kind: TransportFailureKind.contractMismatch,
-    ),
-  };
+  const factory SourceEntriesChangeScope.entryChildren({
+    required SourceEntryId parentSourceEntryId,
+  }) = SourceEntriesChangeScopeEntryChildren;
+
+  const factory SourceEntriesChangeScope.entireRootHierarchy() =
+      SourceEntriesChangeScopeEntireRootHierarchy;
 }
 
 /// Stable machine-readable application error code.
@@ -748,6 +776,46 @@ enum LibraryRootLastScanStatus {
   };
 }
 
+/// Application-owned persisted source-entry kind vocabulary.
+enum SourceEntryKind {
+  directory,
+  file,
+  linkLike,
+  unknown;
+
+  static SourceEntryKind fromWire(String value) => switch (value) {
+    'directory' => SourceEntryKind.directory,
+    'file' => SourceEntryKind.file,
+    'link_like' => SourceEntryKind.linkLike,
+    'unknown' => SourceEntryKind.unknown,
+    _ => throw const TransportFailure(
+      'Unknown source-entry kind',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Application-owned source-entry classification vocabulary.
+enum SourceEntryClassification {
+  container,
+  contentCandidate,
+  supportingEntry,
+  ignored,
+  unknown;
+
+  static SourceEntryClassification fromWire(String value) => switch (value) {
+    'container' => SourceEntryClassification.container,
+    'content_candidate' => SourceEntryClassification.contentCandidate,
+    'supporting_entry' => SourceEntryClassification.supportingEntry,
+    'ignored' => SourceEntryClassification.ignored,
+    'unknown' => SourceEntryClassification.unknown,
+    _ => throw const TransportFailure(
+      'Unknown source-entry classification',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
 /// Bounded terminal scan-history summary carried by a root projection.
 final class LibraryRootLastScan {
   const LibraryRootLastScan({
@@ -824,6 +892,42 @@ final class LibraryRootPage {
   final int offset;
   final int pageSize;
   final int totalCount;
+}
+
+/// Safe authoritative row projection for one source entry.
+@freezed
+sealed class SourceEntry with _$SourceEntry {
+  const factory SourceEntry({
+    required SourceEntryId sourceEntryId,
+    SourceEntryId? parentSourceEntryId,
+    required String displayName,
+    required String displayLocation,
+    required SourceEntryKind kind,
+    required SourceEntryClassification classification,
+  }) = _SourceEntry;
+}
+
+/// Safe authoritative detail projection for one source entry.
+@freezed
+sealed class SourceEntryDetail with _$SourceEntryDetail {
+  const factory SourceEntryDetail({
+    required SourceEntryId sourceEntryId,
+    SourceEntryId? parentSourceEntryId,
+    required String displayName,
+    required String displayLocation,
+    required SourceEntryKind kind,
+    required SourceEntryClassification classification,
+  }) = _SourceEntryDetail;
+}
+
+/// One bounded authoritative direct-child page.
+final class SourceEntryChildrenPage {
+  const SourceEntryChildrenPage({required this.items, this.nextCursor});
+
+  final List<SourceEntry> items;
+
+  /// Opaque continuation token. Flutter never parses or synthesizes it.
+  final String? nextCursor;
 }
 
 /// Untrusted typed local-folder selection from the native picker seam.

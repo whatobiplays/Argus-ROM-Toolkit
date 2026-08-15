@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'remove_root_dialog.dart';
 import 'root_sidebar.dart';
+import 'source_hierarchy_browser.dart';
 import 'sources_messages.dart';
 
 /// One configured root's detail surface.
@@ -76,6 +77,7 @@ class SourcesRootDetailPage extends ConsumerWidget {
           :final removalBlockedByActiveScan,
         ) =>
           _RootDetailContent(
+            rootId: rootId,
             root: root,
             removing: removing,
             removalAmbiguous: removalAmbiguous,
@@ -127,6 +129,7 @@ class SourcesRootDetailPage extends ConsumerWidget {
 
 class _RootDetailContent extends StatelessWidget {
   const _RootDetailContent({
+    required this.rootId,
     required this.root,
     required this.removing,
     required this.removalAmbiguous,
@@ -139,6 +142,7 @@ class _RootDetailContent extends StatelessWidget {
   });
 
   final LibraryRoot root;
+  final LibraryRootId rootId;
   final bool removing;
   final bool removalAmbiguous;
   final bool scanning;
@@ -206,26 +210,31 @@ class _RootDetailContent extends StatelessWidget {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
-              const Spacer(),
-              if (canScan) ...[
-                FilledButton.icon(
-                  key: const ValueKey<String>('sources-start-scan'),
-                  onPressed: scanning ? null : onScan,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text(SourcesMessages.scan),
-                ),
-                const SizedBox(height: 12),
-              ],
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  key: const ValueKey<String>('sources-remove-library-folder'),
-                  // Destructive actions stay unavailable while a removal
-                  // outcome is unresolved or a removal is in flight.
-                  onPressed: removing || removalAmbiguous ? null : onRemove,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text(SourcesMessages.removeLibraryFolder),
-                ),
+              const SizedBox(height: 16),
+              Expanded(child: SourceHierarchyBrowser(rootId: rootId)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (canScan) ...[
+                    FilledButton.icon(
+                      key: const ValueKey<String>('sources-start-scan'),
+                      onPressed: scanning ? null : onScan,
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text(SourcesMessages.scan),
+                    ),
+                    const Spacer(),
+                  ],
+                  OutlinedButton.icon(
+                    key: const ValueKey<String>(
+                      'sources-remove-library-folder',
+                    ),
+                    // Destructive actions stay unavailable while a removal
+                    // outcome is unresolved or a removal is in flight.
+                    onPressed: removing || removalAmbiguous ? null : onRemove,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text(SourcesMessages.removeLibraryFolder),
+                  ),
+                ],
               ),
             ],
           ),

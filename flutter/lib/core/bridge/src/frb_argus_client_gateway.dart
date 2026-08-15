@@ -192,6 +192,35 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   );
 
   @override
+  Future<SourceEntryChildrenPage> listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  }) => _call(
+    () async => sourceEntryChildrenPageFromDto(
+      await _rustApi.crateListSourceEntryChildren(
+        request: dto.ListSourceEntryChildrenRequestDto(
+          libraryRootId: libraryRootId.value,
+          parentSourceEntryId: parentSourceEntryId?.value,
+          cursor: cursor,
+          pageSize: pageSize,
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) =>
+      _call(
+        () async => sourceEntryDetailFromDto(
+          await _rustApi.crateGetSourceEntry(
+            sourceEntryId: sourceEntryId.value,
+          ),
+        ),
+      );
+
+  @override
   Future<JobSummaryPage> listActiveJobs() => _call(
     () async => jobSummaryPageFromDto(
       await _rustApi.crateListJobs(
@@ -618,6 +647,68 @@ LibraryRootPage libraryRootPageFromDto(dto.LibraryRootPageDto value) =>
       totalCount: value.totalCount,
     );
 
+SourceEntryId sourceEntryIdFromDto(String value) {
+  final id = SourceEntryId(value);
+  if (!id.isValid) {
+    throw const TransportFailure(
+      'Native source-entry identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return id;
+}
+
+SourceEntryKind sourceEntryKindFromDto(dto.SourceEntryKindDto value) =>
+    switch (value) {
+      dto.SourceEntryKindDto.directory => SourceEntryKind.directory,
+      dto.SourceEntryKindDto.file => SourceEntryKind.file,
+      dto.SourceEntryKindDto.linkLike => SourceEntryKind.linkLike,
+      dto.SourceEntryKindDto.unknown => SourceEntryKind.unknown,
+    };
+
+SourceEntryClassification sourceEntryClassificationFromDto(
+  dto.SourceEntryClassificationDto value,
+) => switch (value) {
+  dto.SourceEntryClassificationDto.container =>
+    SourceEntryClassification.container,
+  dto.SourceEntryClassificationDto.contentCandidate =>
+    SourceEntryClassification.contentCandidate,
+  dto.SourceEntryClassificationDto.supportingEntry =>
+    SourceEntryClassification.supportingEntry,
+  dto.SourceEntryClassificationDto.ignored => SourceEntryClassification.ignored,
+  dto.SourceEntryClassificationDto.unknown => SourceEntryClassification.unknown,
+};
+
+SourceEntry sourceEntryFromDto(dto.SourceEntryDto value) => SourceEntry(
+  sourceEntryId: sourceEntryIdFromDto(value.sourceEntryId),
+  parentSourceEntryId: value.parentSourceEntryId == null
+      ? null
+      : sourceEntryIdFromDto(value.parentSourceEntryId!),
+  displayName: value.displayName,
+  displayLocation: value.displayLocation,
+  kind: sourceEntryKindFromDto(value.kind),
+  classification: sourceEntryClassificationFromDto(value.classification),
+);
+
+SourceEntryDetail sourceEntryDetailFromDto(dto.SourceEntryDetailDto value) =>
+    SourceEntryDetail(
+      sourceEntryId: sourceEntryIdFromDto(value.sourceEntryId),
+      parentSourceEntryId: value.parentSourceEntryId == null
+          ? null
+          : sourceEntryIdFromDto(value.parentSourceEntryId!),
+      displayName: value.displayName,
+      displayLocation: value.displayLocation,
+      kind: sourceEntryKindFromDto(value.kind),
+      classification: sourceEntryClassificationFromDto(value.classification),
+    );
+
+SourceEntryChildrenPage sourceEntryChildrenPageFromDto(
+  dto.SourceEntryChildrenPageDto value,
+) => SourceEntryChildrenPage(
+  items: [for (final item in value.items) sourceEntryFromDto(item)],
+  nextCursor: value.nextCursor,
+);
+
 AddLocalLibraryRootResult addLocalLibraryRootResultFromDto(
   dto.AddLocalLibraryRootResultDto value,
 ) => switch (value) {
@@ -752,11 +843,13 @@ SourceEntriesChangeScope sourceEntriesChangeScopeFromDto(
   dto.SourceEntriesChangeScopeDto value,
 ) => switch (value) {
   dto.SourceEntriesChangeScopeDto_RootChildren() =>
-    SourceEntriesChangeScope.rootChildren,
-  dto.SourceEntriesChangeScopeDto_EntryChildren() =>
-    SourceEntriesChangeScope.entryChildren,
+    const SourceEntriesChangeScope.rootChildren(),
+  dto.SourceEntriesChangeScopeDto_EntryChildren(:final field0) =>
+    SourceEntriesChangeScope.entryChildren(
+      parentSourceEntryId: sourceEntryIdFromDto(field0),
+    ),
   dto.SourceEntriesChangeScopeDto_EntireRootHierarchy() =>
-    SourceEntriesChangeScope.entireRootHierarchy,
+    const SourceEntriesChangeScope.entireRootHierarchy(),
 };
 
 StartLibraryScanResult startLibraryScanResultFromDto(

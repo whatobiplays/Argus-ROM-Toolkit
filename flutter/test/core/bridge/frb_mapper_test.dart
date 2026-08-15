@@ -506,4 +506,142 @@ void main() {
     );
     expect(entries.payload, isA<RuntimeEventPayloadSourceEntriesChanged>());
   });
+
+  test(
+    'source-entry scope entryChildren preserves the exact parent identity',
+    () {
+      final event = runtimeEventFromDto(
+        dto.RuntimeEventDto(
+          runtimeInstanceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          sequence: BigInt.from(3),
+          occurredAtMs: BigInt.from(3),
+          payload: dto.RuntimeEventPayloadDto.sourceEntriesChanged(
+            libraryRootId: 'cccccccccccccccccccccccccccccccc',
+            scope: dto.SourceEntriesChangeScopeDto.entryChildren(
+              'dddddddddddddddddddddddddddddddd',
+            ),
+          ),
+        ),
+      );
+
+      final payload = event.payload as RuntimeEventPayloadSourceEntriesChanged;
+      expect(
+        payload.scope,
+        SourceEntriesChangeScope.entryChildren(
+          parentSourceEntryId: const SourceEntryId(
+            'dddddddddddddddddddddddddddddddd',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'source-entry row DTO maps safe fields and reserved status stays null',
+    () {
+      final entry = sourceEntryFromDto(
+        const dto.SourceEntryDto(
+          sourceEntryId: '11111111111111111111111111111111',
+          parentSourceEntryId: '22222222222222222222222222222222',
+          displayName: 'a.bin',
+          displayLocation: 'a.bin',
+          kind: dto.SourceEntryKindDto.file,
+          classification: dto.SourceEntryClassificationDto.unknown,
+          boundedStatusSummary: null,
+        ),
+      );
+
+      expect(
+        entry.sourceEntryId,
+        const SourceEntryId('11111111111111111111111111111111'),
+      );
+      expect(
+        entry.parentSourceEntryId,
+        const SourceEntryId('22222222222222222222222222222222'),
+      );
+      expect(entry.displayName, 'a.bin');
+      expect(entry.kind, SourceEntryKind.file);
+      expect(entry.classification, SourceEntryClassification.unknown);
+    },
+  );
+
+  test('source-entry detail DTO maps safe fields without provenance', () {
+    final detail = sourceEntryDetailFromDto(
+      const dto.SourceEntryDetailDto(
+        sourceEntryId: '11111111111111111111111111111111',
+        parentSourceEntryId: null,
+        displayName: 'Sub',
+        displayLocation: 'Sub',
+        kind: dto.SourceEntryKindDto.directory,
+        classification: dto.SourceEntryClassificationDto.container,
+      ),
+    );
+
+    expect(detail.kind, SourceEntryKind.directory);
+    expect(detail.classification, SourceEntryClassification.container);
+  });
+
+  test('source-entry children page preserves the opaque cursor', () {
+    final page = sourceEntryChildrenPageFromDto(
+      dto.SourceEntryChildrenPageDto(
+        items: const [
+          dto.SourceEntryDto(
+            sourceEntryId: '11111111111111111111111111111111',
+            displayName: 'a.bin',
+            displayLocation: 'a.bin',
+            kind: dto.SourceEntryKindDto.file,
+            classification: dto.SourceEntryClassificationDto.unknown,
+          ),
+        ],
+        nextCursor: 'v1:1700000000:11111111111111111111111111111111',
+      ),
+    );
+
+    expect(page.items.single.displayName, 'a.bin');
+    expect(page.nextCursor, 'v1:1700000000:11111111111111111111111111111111');
+  });
+
+  test('source-entry DTO rejects malformed identity as contract mismatch', () {
+    expect(
+      () => sourceEntryFromDto(
+        const dto.SourceEntryDto(
+          sourceEntryId: 'not-an-id',
+          displayName: 'a.bin',
+          displayLocation: 'a.bin',
+          kind: dto.SourceEntryKindDto.file,
+          classification: dto.SourceEntryClassificationDto.unknown,
+        ),
+      ),
+      throwsA(
+        isA<TransportFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          TransportFailureKind.contractMismatch,
+        ),
+      ),
+    );
+  });
+
+  test('source-entry kind and classification wire enums are exhaustive', () {
+    expect(
+      sourceEntryKindFromDto(dto.SourceEntryKindDto.directory),
+      SourceEntryKind.directory,
+    );
+    expect(
+      sourceEntryKindFromDto(dto.SourceEntryKindDto.linkLike),
+      SourceEntryKind.linkLike,
+    );
+    expect(
+      sourceEntryClassificationFromDto(
+        dto.SourceEntryClassificationDto.contentCandidate,
+      ),
+      SourceEntryClassification.contentCandidate,
+    );
+    expect(
+      sourceEntryClassificationFromDto(
+        dto.SourceEntryClassificationDto.supportingEntry,
+      ),
+      SourceEntryClassification.supportingEntry,
+    );
+  });
 }

@@ -86,6 +86,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_list_library_roots_request_dto(dynamic raw);
 
   @protected
+  ListSourceEntryChildrenRequestDto
+  dco_decode_box_autoadd_list_source_entry_children_request_dto(dynamic raw);
+
+  @protected
   LocalFilesystemRootSelectionDto
   dco_decode_box_autoadd_local_filesystem_root_selection_dto(dynamic raw);
 
@@ -230,6 +234,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ScanRunDto> dco_decode_list_scan_run_dto(dynamic raw);
 
   @protected
+  ListSourceEntryChildrenRequestDto
+  dco_decode_list_source_entry_children_request_dto(dynamic raw);
+
+  @protected
+  List<SourceEntryDto> dco_decode_list_source_entry_dto(dynamic raw);
+
+  @protected
   LocalFilesystemRootSelectionDto
   dco_decode_local_filesystem_root_selection_dto(dynamic raw);
 
@@ -314,6 +325,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SourceEntriesChangeScopeDto dco_decode_source_entries_change_scope_dto(
     dynamic raw,
   );
+
+  @protected
+  SourceEntryChildrenPageDto dco_decode_source_entry_children_page_dto(
+    dynamic raw,
+  );
+
+  @protected
+  SourceEntryClassificationDto dco_decode_source_entry_classification_dto(
+    dynamic raw,
+  );
+
+  @protected
+  SourceEntryDetailDto dco_decode_source_entry_detail_dto(dynamic raw);
+
+  @protected
+  SourceEntryDto dco_decode_source_entry_dto(dynamic raw);
+
+  @protected
+  SourceEntryKindDto dco_decode_source_entry_kind_dto(dynamic raw);
 
   @protected
   StartLibraryScanResultDto dco_decode_start_library_scan_result_dto(
@@ -424,6 +454,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ListLibraryRootsRequestDto
   sse_decode_box_autoadd_list_library_roots_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListSourceEntryChildrenRequestDto
+  sse_decode_box_autoadd_list_source_entry_children_request_dto(
     SseDeserializer deserializer,
   );
 
@@ -612,6 +648,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ScanRunDto> sse_decode_list_scan_run_dto(SseDeserializer deserializer);
 
   @protected
+  ListSourceEntryChildrenRequestDto
+  sse_decode_list_source_entry_children_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<SourceEntryDto> sse_decode_list_source_entry_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LocalFilesystemRootSelectionDto
   sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer);
 
@@ -718,6 +765,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SourceEntriesChangeScopeDto sse_decode_source_entries_change_scope_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SourceEntryChildrenPageDto sse_decode_source_entry_children_page_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SourceEntryClassificationDto sse_decode_source_entry_classification_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SourceEntryDetailDto sse_decode_source_entry_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SourceEntryDto sse_decode_source_entry_dto(SseDeserializer deserializer);
+
+  @protected
+  SourceEntryKindDto sse_decode_source_entry_kind_dto(
     SseDeserializer deserializer,
   );
 
@@ -853,6 +923,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_list_library_roots_request_dto(
     ListLibraryRootsRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_list_source_entry_children_request_dto(
+    ListSourceEntryChildrenRequestDto self,
     SseSerializer serializer,
   );
 
@@ -1082,6 +1158,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_source_entry_children_request_dto(
+    ListSourceEntryChildrenRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_source_entry_dto(
+    List<SourceEntryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_local_filesystem_root_selection_dto(
     LocalFilesystemRootSelectionDto self,
     SseSerializer serializer,
@@ -1216,6 +1304,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_source_entries_change_scope_dto(
     SourceEntriesChangeScopeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_source_entry_children_page_dto(
+    SourceEntryChildrenPageDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_source_entry_classification_dto(
+    SourceEntryClassificationDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_source_entry_detail_dto(
+    SourceEntryDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_source_entry_dto(
+    SourceEntryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_source_entry_kind_dto(
+    SourceEntryKindDto self,
     SseSerializer serializer,
   );
 

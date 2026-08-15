@@ -69,7 +69,7 @@ final class SourcesEventCoordinatorProvider
 }
 
 String _$sourcesEventCoordinatorHash() =>
-    r'c3580e9ae9f7efbe8dc79e633f0cd94d1698fea6';
+    r'f2384d01e6ccc6c51e6bb9fbac7b2dd8096fb82a';
 
 /// App-level owner of runtime-event delivery interpretation for Sources.
 ///

@@ -6,6 +6,7 @@ export 'application/sources_state.dart'
         SourcesReconciliationDemand,
         SourcesReconciliationDemandRootChanged,
         SourcesReconciliationDemandRootsChanged,
+        SourcesReconciliationDemandSourceChanged,
         SourcesReconciliationDemandSource,
         SourcesRuntimeContext,
         SourcesRuntimeContextPreReady,
@@ -35,6 +36,12 @@ export 'application/add_library_folder_controller.dart'
         SourcesAddOperationOverlapsExisting,
         SourcesAddOperationSubmitting,
         sourcesAddLibraryFolderControllerProvider;
+export 'application/source_entry_detail_controller.dart'
+    show SourceEntryDetailController, sourceEntryDetailControllerProvider;
+export 'application/source_hierarchy_controller.dart'
+    show SourceHierarchyController, sourceHierarchyControllerProvider;
+export 'application/source_hierarchy_state.dart'
+    show ParentScopeState, SourceHierarchyState;
 export 'application/sources_session_presentation.dart'
     show
         SourcesSidebarOverride,
@@ -47,5 +54,7 @@ export 'sources_composition.dart'
         sourcesRuntimeContextProvider;
 export 'presentation/library_folder_picker.dart'
     show LibraryFolderPicker, libraryFolderPickerProvider;
+export 'presentation/source_entry_inspector.dart' show SourceEntryInspector;
+export 'presentation/source_hierarchy_browser.dart' show SourceHierarchyBrowser;
 export 'presentation/sources_page.dart' show SourcesPage;
 export 'presentation/root_detail_page.dart' show SourcesRootDetailPage;

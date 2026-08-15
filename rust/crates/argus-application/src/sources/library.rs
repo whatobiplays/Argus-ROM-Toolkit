@@ -13,6 +13,11 @@ use crate::{
     UnitOfWorkFactory,
 };
 
+use super::hierarchy::{
+    GetSourceEntryHandler, GetSourceEntryQuery, ListSourceEntryChildrenHandler,
+    ListSourceEntryChildrenQuery, SourceEntryChildrenPage, SourceEntryDetailProjection,
+    SourceEntryQueries,
+};
 use super::provider::{
     LocalFilesystemProvider, LocalFilesystemRootSelection, ProviderError, RootLocator,
     RootRelationship,
@@ -1080,24 +1085,27 @@ enum AdmissionWork {
 }
 
 /// Thin application capability façade for library-root configuration.
-pub struct LibraryService<Q, U, P> {
+pub struct LibraryService<Q, S, U, P> {
     queries: Q,
+    source_entry_queries: S,
     unit_of_work: U,
     provider: P,
 }
 
-impl<Q, U, P> LibraryService<Q, U, P> {
-    /// Composes the focused root query, Unit of Work, and provider ports.
-    pub const fn new(queries: Q, unit_of_work: U, provider: P) -> Self {
+impl<Q, S, U, P> LibraryService<Q, S, U, P> {
+    /// Composes the focused root query, source-entry query, Unit of Work, and
+    /// provider ports.
+    pub const fn new(queries: Q, source_entry_queries: S, unit_of_work: U, provider: P) -> Self {
         Self {
             queries,
+            source_entry_queries,
             unit_of_work,
             provider,
         }
     }
 }
 
-impl<Q, U, P> LibraryService<Q, U, P>
+impl<Q, S, U, P> LibraryService<Q, S, U, P>
 where
     Q: LibraryRootQueries,
 {
@@ -1130,7 +1138,30 @@ where
     }
 }
 
-impl<Q, U, P> LibraryService<Q, U, P>
+impl<Q, S, U, P> LibraryService<Q, S, U, P>
+where
+    S: SourceEntryQueries,
+{
+    /// Delegates the bounded authoritative direct-child query.
+    pub fn list_source_entry_children(
+        &self,
+        query: ListSourceEntryChildrenQuery,
+        context: OperationContext,
+    ) -> Result<SourceEntryChildrenPage, ApplicationError> {
+        ListSourceEntryChildrenHandler::new(&self.source_entry_queries).handle(query, context)
+    }
+
+    /// Delegates the authoritative source-entry detail query.
+    pub fn get_source_entry(
+        &self,
+        query: GetSourceEntryQuery,
+        context: OperationContext,
+    ) -> Result<SourceEntryDetailProjection, ApplicationError> {
+        GetSourceEntryHandler::new(&self.source_entry_queries).handle(query, context)
+    }
+}
+
+impl<Q, S, U, P> LibraryService<Q, S, U, P>
 where
     Q: LibraryRootQueries + Clone,
     P: LocalFilesystemProvider + Clone,
@@ -1261,7 +1292,7 @@ fn map_provider_error(trace_id: crate::TraceId, error: ProviderError) -> Applica
     application_error(trace_id, code)
 }
 
-fn application_error(trace_id: crate::TraceId, code: ErrorCode) -> ApplicationError {
+pub(crate) fn application_error(trace_id: crate::TraceId, code: ErrorCode) -> ApplicationError {
     ApplicationError::from_code(code, trace_id, SafeContext::new())
         .expect("sources error context follows the published catalog")
 }

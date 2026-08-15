@@ -36,4 +36,16 @@ mixin SourcesGatewayStub implements SourcesGateway {
   Future<StartLibraryScanResult> startLibraryScan(
     LibraryRootId libraryRootId,
   ) async => throw const TransportFailure('Sources stub is not focused');
+
+  @override
+  Future<SourceEntryChildrenPage> listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  }) async => throw const TransportFailure('Sources stub is not focused');
+
+  @override
+  Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) async =>
+      throw const TransportFailure('Sources stub is not focused');
 }

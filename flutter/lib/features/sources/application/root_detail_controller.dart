@@ -222,6 +222,9 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           if (libraryRootId == rootId) {
             unawaited(_readAuthoritative(rootId));
           }
+        case SourcesReconciliationDemandSourceChanged():
+          // Source scopes are owned by the hierarchy controller.
+          break;
       }
     });
     final previous = _demandSubscription;

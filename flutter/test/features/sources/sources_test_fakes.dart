@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 
 /// Deterministic focused Sources API fake.
@@ -16,6 +18,34 @@ final class FakeSourcesApi implements SourcesApi {
   int getCalls = 0;
   int addCalls = 0;
   int removeCalls = 0;
+  int listChildrenCalls = 0;
+  int getEntryCalls = 0;
+  final List<String> getEntryCallIds = [];
+
+  /// Direct children by parent key (`''` = root scope) in backend order.
+  final Map<String, List<SourceEntry>> childrenByParent = {};
+
+  /// Focused details keyed by source-entry identity.
+  final Map<String, SourceEntryDetail> detailsByEntry = {};
+
+  /// Throw-once failures for hierarchy reads.
+  Object? listChildrenFailure;
+  Object? getDetailFailure;
+
+  /// Deterministic gates awaited before hierarchy reads return.
+  Future<void> Function()? listChildrenGate;
+  Future<void> Function()? getDetailGate;
+  final List<Completer<void>> listChildrenGates = [];
+  final List<Completer<void>> getDetailGates = [];
+
+  /// Deterministic precomputed child-page responses, consumed in order after
+  /// any gates. Lets tests control exact old/new snapshots for supersession.
+  final List<SourceEntryChildrenPage> listChildrenScripted = [];
+
+  int getDetailInFlight = 0;
+  int maxGetDetailInFlight = 0;
+  int maxListChildrenInFlight = 0;
+  int _listChildrenInFlight = 0;
 
   @override
   Future<AddLocalLibraryRootResult> addLocalLibraryRoot(
@@ -94,6 +124,80 @@ final class FakeSourcesApi implements SourcesApi {
       ),
     );
   }
+
+  @override
+  Future<SourceEntryChildrenPage> listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  }) async {
+    listChildrenCalls++;
+    if (listChildrenGates.isNotEmpty) {
+      final gate = listChildrenGates.removeAt(0);
+      await gate.future;
+    }
+    final gate = listChildrenGate;
+    if (gate != null) {
+      await gate();
+    }
+    _listChildrenInFlight++;
+    if (_listChildrenInFlight > maxListChildrenInFlight) {
+      maxListChildrenInFlight = _listChildrenInFlight;
+    }
+    try {
+      final failure = listChildrenFailure;
+      if (failure != null) {
+        listChildrenFailure = null;
+        throw failure;
+      }
+      if (listChildrenScripted.isNotEmpty) {
+        return listChildrenScripted.removeAt(0);
+      }
+      final key = parentSourceEntryId?.value ?? '';
+      final all = childrenByParent[key] ?? const <SourceEntry>[];
+      final offset = cursor == null ? 0 : int.parse(cursor);
+      final end = (offset + pageSize).clamp(0, all.length);
+      return SourceEntryChildrenPage(
+        items: all.sublist(offset, end),
+        nextCursor: end < all.length ? '$end' : null,
+      );
+    } finally {
+      _listChildrenInFlight--;
+    }
+  }
+
+  @override
+  Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) async {
+    getEntryCalls++;
+    getEntryCallIds.add(sourceEntryId.value);
+    if (getDetailGates.isNotEmpty) {
+      final gate = getDetailGates.removeAt(0);
+      await gate.future;
+    }
+    final gate = getDetailGate;
+    if (gate != null) {
+      await gate();
+    }
+    getDetailInFlight++;
+    if (getDetailInFlight > maxGetDetailInFlight) {
+      maxGetDetailInFlight = getDetailInFlight;
+    }
+    try {
+      final failure = getDetailFailure;
+      if (failure != null) {
+        getDetailFailure = null;
+        throw failure;
+      }
+      final detail = detailsByEntry[sourceEntryId.value];
+      if (detail == null) {
+        throw sourceEntryNotFoundFailure();
+      }
+      return detail;
+    } finally {
+      getDetailInFlight--;
+    }
+  }
 }
 
 LibraryRoot fakeRoot({
@@ -119,6 +223,49 @@ ApplicationFailure rootNotFoundFailure() => ApplicationFailure(
     traceId: const TraceId('11111111111111111111111111111111'),
     safeContext: const [],
   ),
+);
+
+ApplicationFailure sourceEntryNotFoundFailure() => ApplicationFailure(
+  ClientApplicationError(
+    code: const ErrorCode('ARGUS.V1.CONFIGURATION.SOURCE_ENTRY_NOT_FOUND'),
+    category: ErrorCategory.configuration,
+    severity: ApplicationSeverity.error,
+    recoverability: Recoverability.userAction,
+    retryPolicy: RetryPolicy.never,
+    messageKey: const MessageKey('errors.configuration.source_entry_not_found'),
+    traceId: const TraceId('11111111111111111111111111111111'),
+    safeContext: const [],
+  ),
+);
+
+SourceEntry fakeEntry({
+  required String id,
+  String? parentId,
+  String name = 'Entry',
+  SourceEntryKind kind = SourceEntryKind.file,
+  SourceEntryClassification classification = SourceEntryClassification.unknown,
+}) => SourceEntry(
+  sourceEntryId: SourceEntryId(id),
+  parentSourceEntryId: parentId == null ? null : SourceEntryId(parentId),
+  displayName: name,
+  displayLocation: name,
+  kind: kind,
+  classification: classification,
+);
+
+SourceEntryDetail fakeDetail({
+  required String id,
+  String? parentId,
+  String name = 'Entry',
+  SourceEntryKind kind = SourceEntryKind.file,
+  SourceEntryClassification classification = SourceEntryClassification.unknown,
+}) => SourceEntryDetail(
+  sourceEntryId: SourceEntryId(id),
+  parentSourceEntryId: parentId == null ? null : SourceEntryId(parentId),
+  displayName: name,
+  displayLocation: name,
+  kind: kind,
+  classification: classification,
 );
 
 TransportFailure transportFailure() =>

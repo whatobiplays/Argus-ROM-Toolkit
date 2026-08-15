@@ -78,6 +78,15 @@ abstract interface class SourcesGateway {
   );
 
   Future<StartLibraryScanResult> startLibraryScan(LibraryRootId libraryRootId);
+
+  Future<SourceEntryChildrenPage> listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  });
+
+  Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId);
 }
 
 /// Focused Sources capability. Queries return immutable authoritative
@@ -99,6 +108,15 @@ abstract interface class SourcesApi {
   );
 
   Future<StartLibraryScanResult> startLibraryScan(LibraryRootId libraryRootId);
+
+  Future<SourceEntryChildrenPage> listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  });
+
+  Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId);
 }
 
 /// Framework-neutral durable job observation and control operations.

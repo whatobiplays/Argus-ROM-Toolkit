@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1218822094;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 549807420;
 
 // Section: executor
 
@@ -444,6 +444,39 @@ fn wire__crate__get_runtime_state_impl(
         },
     )
 }
+fn wire__crate__get_source_entry_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_source_entry",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_source_entry_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_source_entry(api_source_entry_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__initialize_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -569,6 +602,40 @@ fn wire__crate__list_library_roots_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::list_library_roots(api_request)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__list_source_entry_children_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_source_entry_children",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request =
+                <crate::ListSourceEntryChildrenRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::list_source_entry_children(api_request)?;
                     Ok(output_ok)
                 })())
             }
@@ -1442,6 +1509,34 @@ impl SseDecode for Vec<crate::ScanRunDto> {
     }
 }
 
+impl SseDecode for crate::ListSourceEntryChildrenRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_libraryRootId = <String>::sse_decode(deserializer);
+        let mut var_parentSourceEntryId = <Option<String>>::sse_decode(deserializer);
+        let mut var_cursor = <Option<String>>::sse_decode(deserializer);
+        let mut var_pageSize = <u32>::sse_decode(deserializer);
+        return crate::ListSourceEntryChildrenRequestDto {
+            library_root_id: var_libraryRootId,
+            parent_source_entry_id: var_parentSourceEntryId,
+            cursor: var_cursor,
+            page_size: var_pageSize,
+        };
+    }
+}
+
+impl SseDecode for Vec<crate::SourceEntryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::SourceEntryDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for crate::LocalFilesystemRootSelectionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1853,6 +1948,98 @@ impl SseDecode for crate::SourceEntriesChangeScopeDto {
     }
 }
 
+impl SseDecode for crate::SourceEntryChildrenPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_items = <Vec<crate::SourceEntryDto>>::sse_decode(deserializer);
+        let mut var_nextCursor = <Option<String>>::sse_decode(deserializer);
+        return crate::SourceEntryChildrenPageDto {
+            items: var_items,
+            next_cursor: var_nextCursor,
+        };
+    }
+}
+
+impl SseDecode for crate::SourceEntryClassificationDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::SourceEntryClassificationDto::Container,
+            1 => crate::SourceEntryClassificationDto::ContentCandidate,
+            2 => crate::SourceEntryClassificationDto::SupportingEntry,
+            3 => crate::SourceEntryClassificationDto::Ignored,
+            4 => crate::SourceEntryClassificationDto::Unknown,
+            _ => unreachable!(
+                "Invalid variant for SourceEntryClassificationDto: {}",
+                inner
+            ),
+        };
+    }
+}
+
+impl SseDecode for crate::SourceEntryDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sourceEntryId = <String>::sse_decode(deserializer);
+        let mut var_parentSourceEntryId = <Option<String>>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        let mut var_displayLocation = <String>::sse_decode(deserializer);
+        let mut var_kind = <crate::SourceEntryKindDto>::sse_decode(deserializer);
+        let mut var_classification =
+            <crate::SourceEntryClassificationDto>::sse_decode(deserializer);
+        let mut var_boundedStatusSummary = <Option<String>>::sse_decode(deserializer);
+        let mut var_boundedObservationStatusDetail = <Option<String>>::sse_decode(deserializer);
+        return crate::SourceEntryDetailDto {
+            source_entry_id: var_sourceEntryId,
+            parent_source_entry_id: var_parentSourceEntryId,
+            display_name: var_displayName,
+            display_location: var_displayLocation,
+            kind: var_kind,
+            classification: var_classification,
+            bounded_status_summary: var_boundedStatusSummary,
+            bounded_observation_status_detail: var_boundedObservationStatusDetail,
+        };
+    }
+}
+
+impl SseDecode for crate::SourceEntryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sourceEntryId = <String>::sse_decode(deserializer);
+        let mut var_parentSourceEntryId = <Option<String>>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        let mut var_displayLocation = <String>::sse_decode(deserializer);
+        let mut var_kind = <crate::SourceEntryKindDto>::sse_decode(deserializer);
+        let mut var_classification =
+            <crate::SourceEntryClassificationDto>::sse_decode(deserializer);
+        let mut var_boundedStatusSummary = <Option<String>>::sse_decode(deserializer);
+        return crate::SourceEntryDto {
+            source_entry_id: var_sourceEntryId,
+            parent_source_entry_id: var_parentSourceEntryId,
+            display_name: var_displayName,
+            display_location: var_displayLocation,
+            kind: var_kind,
+            classification: var_classification,
+            bounded_status_summary: var_boundedStatusSummary,
+        };
+    }
+}
+
+impl SseDecode for crate::SourceEntryKindDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::SourceEntryKindDto::Directory,
+            1 => crate::SourceEntryKindDto::File,
+            2 => crate::SourceEntryKindDto::LinkLike,
+            3 => crate::SourceEntryKindDto::Unknown,
+            _ => unreachable!("Invalid variant for SourceEntryKindDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::StartLibraryScanResultDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1989,18 +2176,20 @@ fn pde_ffi_dispatcher_primary_impl(
         10 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
         11 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
         12 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2581,6 +2770,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ListLibraryRootsRequestDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ListSourceEntryChildrenRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.library_root_id.into_into_dart().into_dart(),
+            self.parent_source_entry_id.into_into_dart().into_dart(),
+            self.cursor.into_into_dart().into_dart(),
+            self.page_size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ListSourceEntryChildrenRequestDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ListSourceEntryChildrenRequestDto>
+    for crate::ListSourceEntryChildrenRequestDto
+{
+    fn into_into_dart(self) -> crate::ListSourceEntryChildrenRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::LocalFilesystemRootSelectionDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.selected_folder_path.into_into_dart().into_dart()].into_dart()
@@ -2937,6 +3149,116 @@ impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntriesChangeScopeDto>
     for crate::SourceEntriesChangeScopeDto
 {
     fn into_into_dart(self) -> crate::SourceEntriesChangeScopeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::SourceEntryChildrenPageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.items.into_into_dart().into_dart(),
+            self.next_cursor.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::SourceEntryChildrenPageDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntryChildrenPageDto>
+    for crate::SourceEntryChildrenPageDto
+{
+    fn into_into_dart(self) -> crate::SourceEntryChildrenPageDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::SourceEntryClassificationDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Container => 0.into_dart(),
+            Self::ContentCandidate => 1.into_dart(),
+            Self::SupportingEntry => 2.into_dart(),
+            Self::Ignored => 3.into_dart(),
+            Self::Unknown => 4.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::SourceEntryClassificationDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntryClassificationDto>
+    for crate::SourceEntryClassificationDto
+{
+    fn into_into_dart(self) -> crate::SourceEntryClassificationDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::SourceEntryDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.source_entry_id.into_into_dart().into_dart(),
+            self.parent_source_entry_id.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+            self.display_location.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.classification.into_into_dart().into_dart(),
+            self.bounded_status_summary.into_into_dart().into_dart(),
+            self.bounded_observation_status_detail
+                .into_into_dart()
+                .into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::SourceEntryDetailDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntryDetailDto>
+    for crate::SourceEntryDetailDto
+{
+    fn into_into_dart(self) -> crate::SourceEntryDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::SourceEntryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.source_entry_id.into_into_dart().into_dart(),
+            self.parent_source_entry_id.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+            self.display_location.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.classification.into_into_dart().into_dart(),
+            self.bounded_status_summary.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::SourceEntryDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntryDto> for crate::SourceEntryDto {
+    fn into_into_dart(self) -> crate::SourceEntryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::SourceEntryKindDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Directory => 0.into_dart(),
+            Self::File => 1.into_dart(),
+            Self::LinkLike => 2.into_dart(),
+            Self::Unknown => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::SourceEntryKindDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntryKindDto> for crate::SourceEntryKindDto {
+    fn into_into_dart(self) -> crate::SourceEntryKindDto {
         self
     }
 }
@@ -3530,6 +3852,26 @@ impl SseEncode for Vec<crate::ScanRunDto> {
     }
 }
 
+impl SseEncode for crate::ListSourceEntryChildrenRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.library_root_id, serializer);
+        <Option<String>>::sse_encode(self.parent_source_entry_id, serializer);
+        <Option<String>>::sse_encode(self.cursor, serializer);
+        <u32>::sse_encode(self.page_size, serializer);
+    }
+}
+
+impl SseEncode for Vec<crate::SourceEntryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::SourceEntryDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::LocalFilesystemRootSelectionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3891,6 +4233,78 @@ impl SseEncode for crate::SourceEntriesChangeScopeDto {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::SourceEntryChildrenPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::SourceEntryDto>>::sse_encode(self.items, serializer);
+        <Option<String>>::sse_encode(self.next_cursor, serializer);
+    }
+}
+
+impl SseEncode for crate::SourceEntryClassificationDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::SourceEntryClassificationDto::Container => 0,
+                crate::SourceEntryClassificationDto::ContentCandidate => 1,
+                crate::SourceEntryClassificationDto::SupportingEntry => 2,
+                crate::SourceEntryClassificationDto::Ignored => 3,
+                crate::SourceEntryClassificationDto::Unknown => 4,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::SourceEntryDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.source_entry_id, serializer);
+        <Option<String>>::sse_encode(self.parent_source_entry_id, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+        <String>::sse_encode(self.display_location, serializer);
+        <crate::SourceEntryKindDto>::sse_encode(self.kind, serializer);
+        <crate::SourceEntryClassificationDto>::sse_encode(self.classification, serializer);
+        <Option<String>>::sse_encode(self.bounded_status_summary, serializer);
+        <Option<String>>::sse_encode(self.bounded_observation_status_detail, serializer);
+    }
+}
+
+impl SseEncode for crate::SourceEntryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.source_entry_id, serializer);
+        <Option<String>>::sse_encode(self.parent_source_entry_id, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+        <String>::sse_encode(self.display_location, serializer);
+        <crate::SourceEntryKindDto>::sse_encode(self.kind, serializer);
+        <crate::SourceEntryClassificationDto>::sse_encode(self.classification, serializer);
+        <Option<String>>::sse_encode(self.bounded_status_summary, serializer);
+    }
+}
+
+impl SseEncode for crate::SourceEntryKindDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::SourceEntryKindDto::Directory => 0,
+                crate::SourceEntryKindDto::File => 1,
+                crate::SourceEntryKindDto::LinkLike => 2,
+                crate::SourceEntryKindDto::Unknown => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 

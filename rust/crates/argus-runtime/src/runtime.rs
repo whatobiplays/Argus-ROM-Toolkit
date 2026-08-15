@@ -16,8 +16,9 @@ use argus_application::{
     AddLocalLibraryRootResult, AppearanceSettingsSubscriber, ApplicationError, CancelJobResult,
     ErrorCode, EventSubscriberError, JobDetail, JobProgressChanged, JobRunId, JobStateChanged,
     JobSummaryPage, LibraryRootId, LibraryRootPage, LibraryRootProjection, ListJobsQuery,
-    ListLibraryRootsQuery, LocalFilesystemRootSelection, OperationContext, OperationName,
-    RemoveLibraryRootResult, SourceEntriesChangeScope, SourceEntriesChanged,
+    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection,
+    OperationContext, OperationName, RemoveLibraryRootResult, SourceEntriesChangeScope,
+    SourceEntriesChanged, SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId,
     StartLibraryScanResult, SubsystemName, TraceId,
 };
 
@@ -1695,6 +1696,66 @@ impl ApplicationHost {
         }
         self.with_ready_kernel(context, |kernel| {
             kernel.get_library_root_with_context(root_id, context)
+        })
+    }
+
+    /// Executes the bounded authoritative direct-child page through the
+    /// admitted ready generation.
+    pub fn list_source_entry_children(
+        &self,
+        query: ListSourceEntryChildrenQuery,
+    ) -> Result<SourceEntryChildrenPage, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "list_source_entry_children")?;
+        self.list_source_entry_children_with_context(&query, &context)
+    }
+
+    /// Executes the direct-child page under an existing top-level context.
+    pub fn list_source_entry_children_with_context(
+        &self,
+        query: &ListSourceEntryChildrenQuery,
+        context: &OperationContext,
+    ) -> Result<SourceEntryChildrenPage, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.list_source_entry_children_with_context(query, context)
+        })
+    }
+
+    /// Executes the authoritative source-entry detail through the admitted
+    /// ready generation.
+    pub fn get_source_entry(
+        &self,
+        source_entry_id: SourceEntryId,
+    ) -> Result<SourceEntryDetailProjection, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "get_source_entry")?;
+        self.get_source_entry_with_context(source_entry_id, &context)
+    }
+
+    /// Executes the source-entry detail under an existing top-level context.
+    pub fn get_source_entry_with_context(
+        &self,
+        source_entry_id: SourceEntryId,
+        context: &OperationContext,
+    ) -> Result<SourceEntryDetailProjection, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.get_source_entry_with_context(source_entry_id, context)
         })
     }
 

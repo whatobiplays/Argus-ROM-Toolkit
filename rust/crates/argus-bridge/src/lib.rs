@@ -15,11 +15,14 @@ use argus_application::{
     JobRunState, JobSummary, JobSummaryPage, LibraryRootAvailability, LibraryRootId,
     LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
     LibraryScanAdmissionExclusion, LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery,
-    ListJobsScope, ListLibraryRootsQuery, LocalFilesystemRootSelection, MigrationOutcome,
-    OperationDetail, PathClass, PersistedSettingsReason, PlatformClass, Recoverability,
-    RemoveLibraryRootResult, RetryPolicy, RootRelationship, SafeContext, SafeContextField,
-    SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus, SettingsDomain,
-    SourceEntriesChangeScope, StartLibraryScanResult, TechnicalClass, ThemeMode,
+    ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemRootSelection, MigrationOutcome, OperationDetail, PathClass,
+    PersistedSettingsReason, PlatformClass, Recoverability, RemoveLibraryRootResult, RetryPolicy,
+    RootRelationship, SafeContext, SafeContextField, SafeContextValue, ScanProgressFacts,
+    ScanRunProjection, ScanRunStatus, SettingsDomain, SourceEntriesChangeScope,
+    SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor,
+    SourceEntryDetailProjection, SourceEntryId, SourceEntryKind, SourceEntryProjection,
+    StartLibraryScanResult, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
@@ -211,6 +214,73 @@ pub struct LibraryRootPageDto {
     pub offset: u32,
     pub page_size: u32,
     pub total_count: u32,
+}
+
+/// Application-owned source-entry kind vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceEntryKindDto {
+    Directory,
+    File,
+    LinkLike,
+    Unknown,
+}
+
+/// Application-owned source-entry classification vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceEntryClassificationDto {
+    Container,
+    ContentCandidate,
+    SupportingEntry,
+    Ignored,
+    Unknown,
+}
+
+/// Safe authoritative row projection for one source entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceEntryDto {
+    pub source_entry_id: String,
+    pub parent_source_entry_id: Option<String>,
+    pub display_name: String,
+    pub display_location: String,
+    pub kind: SourceEntryKindDto,
+    pub classification: SourceEntryClassificationDto,
+    /// Reserved BE-008 status field. Always `None` in Slice 004: current
+    /// authoritative data has no user-meaningful status fact, and provenance
+    /// is never relabeled as status.
+    pub bounded_status_summary: Option<String>,
+}
+
+/// Safe authoritative detail projection for one source entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceEntryDetailDto {
+    pub source_entry_id: String,
+    pub parent_source_entry_id: Option<String>,
+    pub display_name: String,
+    pub display_location: String,
+    pub kind: SourceEntryKindDto,
+    pub classification: SourceEntryClassificationDto,
+    /// Reserved BE-008 status field. Always `None` in Slice 004.
+    pub bounded_status_summary: Option<String>,
+    /// Reserved BE-008 detail status field. Always `None` in Slice 004.
+    pub bounded_observation_status_detail: Option<String>,
+}
+
+/// One bounded authoritative direct-child page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceEntryChildrenPageDto {
+    pub items: Vec<SourceEntryDto>,
+    /// Opaque continuation token; Flutter never parses or synthesizes it.
+    pub next_cursor: Option<String>,
+}
+
+/// One bounded direct-child paging request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListSourceEntryChildrenRequestDto {
+    pub library_root_id: String,
+    pub parent_source_entry_id: Option<String>,
+    /// Untrusted external cursor text; validated at this bridge boundary.
+    pub cursor: Option<String>,
+    pub page_size: u32,
 }
 
 /// Provider-owned overlap vocabulary.
@@ -824,6 +894,44 @@ pub fn start_library_scan(
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Lists one bounded authoritative direct-child page.
+#[allow(clippy::result_large_err)]
+pub fn list_source_entry_children(
+    request: ListSourceEntryChildrenRequestDto,
+) -> Result<SourceEntryChildrenPageDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "list_source_entry_children")
+        .map_err(|error| application_error_dto(&error))?;
+    let query = ListSourceEntryChildrenQuery::new(
+        parse_library_root_id(&request.library_root_id, context.trace_id())?,
+        match request.parent_source_entry_id {
+            Some(parent) => Some(parse_source_entry_id(&parent, context.trace_id())?),
+            None => None,
+        },
+        parse_source_entry_cursor(request.cursor, context.trace_id())?,
+        request.page_size,
+    );
+    host()
+        .list_source_entry_children_with_context(&query, &context)
+        .map(|page| source_entry_children_page_dto(&page))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads one authoritative source-entry detail.
+#[allow(clippy::result_large_err)]
+pub fn get_source_entry(
+    source_entry_id: String,
+) -> Result<SourceEntryDetailDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "get_source_entry")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_source_entry_id(&source_entry_id, context.trace_id())?;
+    host()
+        .get_source_entry_with_context(id, &context)
+        .map(|detail| source_entry_detail_projection_dto(&detail))
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Lists one closed authoritative Jobs scope.
 #[allow(clippy::result_large_err)]
 pub fn list_jobs(request: ListJobsRequestDto) -> Result<JobSummaryPageDto, ApplicationErrorDto> {
@@ -1154,6 +1262,46 @@ pub fn parse_library_root_id(
     })
 }
 
+/// Parses one bridge-supplied source-entry identity with typed validation.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn parse_source_entry_id(
+    value: &str,
+    trace_id: argus_application::TraceId,
+) -> Result<SourceEntryId, ApplicationErrorDto> {
+    SourceEntryId::try_from(value).map_err(|_| validation_failure(trace_id))
+}
+
+/// Validates one externally supplied opaque cursor at the bridge boundary.
+///
+/// Malformed external cursor text is a validation/application failure, never
+/// a persistence failure. The returned cursor is the structured
+/// application-owned value consumed by persistence.
+#[allow(unexpected_cfgs)]
+#[allow(clippy::result_large_err)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn parse_source_entry_cursor(
+    value: Option<String>,
+    trace_id: argus_application::TraceId,
+) -> Result<Option<SourceEntryCursor>, ApplicationErrorDto> {
+    value
+        .map(|value| {
+            SourceEntryCursor::try_from(value.as_str()).map_err(|_| validation_failure(trace_id))
+        })
+        .transpose()
+}
+
+fn validation_failure(trace_id: argus_application::TraceId) -> ApplicationErrorDto {
+    application_error_dto(
+        &ApplicationError::from_code(
+            argus_application::ErrorCode::ValidationInvalidArgument,
+            trace_id,
+            SafeContext::new(),
+        )
+        .expect("validation error"),
+    )
+}
+
 fn appearance_settings_dto(
     settings: argus_application::AppearanceSettings,
 ) -> AppearanceSettingsDto {
@@ -1217,6 +1365,78 @@ pub fn library_root_page_dto(page: &LibraryRootPage) -> LibraryRootPageDto {
         offset: page.offset(),
         page_size: page.page_size(),
         total_count: page.total_count(),
+    }
+}
+
+/// Maps one safe source-entry row projection into its canonical DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn source_entry_projection_dto(projection: &SourceEntryProjection) -> SourceEntryDto {
+    SourceEntryDto {
+        source_entry_id: projection.source_entry_id().to_string(),
+        parent_source_entry_id: projection.parent_source_entry_id().map(|id| id.to_string()),
+        display_name: projection.display_name().to_owned(),
+        display_location: projection.display_location().to_owned(),
+        kind: source_entry_kind_dto(projection.kind()),
+        classification: source_entry_classification_dto(projection.classification()),
+        bounded_status_summary: None,
+    }
+}
+
+/// Maps one safe source-entry detail projection into its canonical DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn source_entry_detail_projection_dto(
+    projection: &SourceEntryDetailProjection,
+) -> SourceEntryDetailDto {
+    SourceEntryDetailDto {
+        source_entry_id: projection.source_entry_id().to_string(),
+        parent_source_entry_id: projection.parent_source_entry_id().map(|id| id.to_string()),
+        display_name: projection.display_name().to_owned(),
+        display_location: projection.display_location().to_owned(),
+        kind: source_entry_kind_dto(projection.kind()),
+        classification: source_entry_classification_dto(projection.classification()),
+        bounded_status_summary: None,
+        bounded_observation_status_detail: None,
+    }
+}
+
+fn source_entry_kind_dto(kind: SourceEntryKind) -> SourceEntryKindDto {
+    match kind {
+        SourceEntryKind::Directory => SourceEntryKindDto::Directory,
+        SourceEntryKind::File => SourceEntryKindDto::File,
+        SourceEntryKind::LinkLike => SourceEntryKindDto::LinkLike,
+        SourceEntryKind::Unknown => SourceEntryKindDto::Unknown,
+    }
+}
+
+fn source_entry_classification_dto(
+    classification: SourceEntryClassification,
+) -> SourceEntryClassificationDto {
+    match classification {
+        SourceEntryClassification::Container => SourceEntryClassificationDto::Container,
+        SourceEntryClassification::ContentCandidate => {
+            SourceEntryClassificationDto::ContentCandidate
+        }
+        SourceEntryClassification::SupportingEntry => SourceEntryClassificationDto::SupportingEntry,
+        SourceEntryClassification::Ignored => SourceEntryClassificationDto::Ignored,
+        SourceEntryClassification::Unknown => SourceEntryClassificationDto::Unknown,
+    }
+}
+
+/// Maps one bounded direct-child page into its canonical DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn source_entry_children_page_dto(
+    page: &SourceEntryChildrenPage,
+) -> SourceEntryChildrenPageDto {
+    SourceEntryChildrenPageDto {
+        items: page
+            .items()
+            .iter()
+            .map(source_entry_projection_dto)
+            .collect(),
+        next_cursor: page.next_cursor().map(ToString::to_string),
     }
 }
 

@@ -8,10 +8,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `startup_failure_dto`, `startup_phase_dto`
+// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `parse_job_run_id`, `parse_library_root_id`, `remove_library_root_dto`, `runtime_event_dto`, `runtime_state_dto`, `start_library_scan_result_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_result_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -96,6 +96,15 @@ Future<RemoveLibraryRootResultDto> removeLibraryRoot({
 Future<StartLibraryScanResultDto> startLibraryScan({
   required String libraryRootId,
 }) => RustLib.instance.api.crateStartLibraryScan(libraryRootId: libraryRootId);
+
+/// Lists one bounded authoritative direct-child page.
+Future<SourceEntryChildrenPageDto> listSourceEntryChildren({
+  required ListSourceEntryChildrenRequestDto request,
+}) => RustLib.instance.api.crateListSourceEntryChildren(request: request);
+
+/// Reads one authoritative source-entry detail.
+Future<SourceEntryDetailDto> getSourceEntry({required String sourceEntryId}) =>
+    RustLib.instance.api.crateGetSourceEntry(sourceEntryId: sourceEntryId);
 
 /// Lists one closed authoritative Jobs scope.
 Future<JobSummaryPageDto> listJobs({required ListJobsRequestDto request}) =>
@@ -794,6 +803,40 @@ class ListLibraryRootsRequestDto {
           pageSize == other.pageSize;
 }
 
+/// One bounded direct-child paging request.
+class ListSourceEntryChildrenRequestDto {
+  final String libraryRootId;
+  final String? parentSourceEntryId;
+
+  /// Untrusted external cursor text; validated at this bridge boundary.
+  final String? cursor;
+  final int pageSize;
+
+  const ListSourceEntryChildrenRequestDto({
+    required this.libraryRootId,
+    this.parentSourceEntryId,
+    this.cursor,
+    required this.pageSize,
+  });
+
+  @override
+  int get hashCode =>
+      libraryRootId.hashCode ^
+      parentSourceEntryId.hashCode ^
+      cursor.hashCode ^
+      pageSize.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ListSourceEntryChildrenRequestDto &&
+          runtimeType == other.runtimeType &&
+          libraryRootId == other.libraryRootId &&
+          parentSourceEntryId == other.parentSourceEntryId &&
+          cursor == other.cursor &&
+          pageSize == other.pageSize;
+}
+
 /// Untrusted typed local-folder selection supplied by the native picker seam.
 class LocalFilesystemRootSelectionDto {
   final String selectedFolderPath;
@@ -1128,6 +1171,140 @@ sealed class SourceEntriesChangeScopeDto with _$SourceEntriesChangeScopeDto {
   const factory SourceEntriesChangeScopeDto.entireRootHierarchy() =
       SourceEntriesChangeScopeDto_EntireRootHierarchy;
 }
+
+/// One bounded authoritative direct-child page.
+class SourceEntryChildrenPageDto {
+  final List<SourceEntryDto> items;
+
+  /// Opaque continuation token; Flutter never parses or synthesizes it.
+  final String? nextCursor;
+
+  const SourceEntryChildrenPageDto({required this.items, this.nextCursor});
+
+  @override
+  int get hashCode => items.hashCode ^ nextCursor.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SourceEntryChildrenPageDto &&
+          runtimeType == other.runtimeType &&
+          items == other.items &&
+          nextCursor == other.nextCursor;
+}
+
+/// Application-owned source-entry classification vocabulary.
+enum SourceEntryClassificationDto {
+  container,
+  contentCandidate,
+  supportingEntry,
+  ignored,
+  unknown,
+}
+
+/// Safe authoritative detail projection for one source entry.
+class SourceEntryDetailDto {
+  final String sourceEntryId;
+  final String? parentSourceEntryId;
+  final String displayName;
+  final String displayLocation;
+  final SourceEntryKindDto kind;
+  final SourceEntryClassificationDto classification;
+
+  /// Reserved BE-008 status field. Always `None` in Slice 004.
+  final String? boundedStatusSummary;
+
+  /// Reserved BE-008 detail status field. Always `None` in Slice 004.
+  final String? boundedObservationStatusDetail;
+
+  const SourceEntryDetailDto({
+    required this.sourceEntryId,
+    this.parentSourceEntryId,
+    required this.displayName,
+    required this.displayLocation,
+    required this.kind,
+    required this.classification,
+    this.boundedStatusSummary,
+    this.boundedObservationStatusDetail,
+  });
+
+  @override
+  int get hashCode =>
+      sourceEntryId.hashCode ^
+      parentSourceEntryId.hashCode ^
+      displayName.hashCode ^
+      displayLocation.hashCode ^
+      kind.hashCode ^
+      classification.hashCode ^
+      boundedStatusSummary.hashCode ^
+      boundedObservationStatusDetail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SourceEntryDetailDto &&
+          runtimeType == other.runtimeType &&
+          sourceEntryId == other.sourceEntryId &&
+          parentSourceEntryId == other.parentSourceEntryId &&
+          displayName == other.displayName &&
+          displayLocation == other.displayLocation &&
+          kind == other.kind &&
+          classification == other.classification &&
+          boundedStatusSummary == other.boundedStatusSummary &&
+          boundedObservationStatusDetail ==
+              other.boundedObservationStatusDetail;
+}
+
+/// Safe authoritative row projection for one source entry.
+class SourceEntryDto {
+  final String sourceEntryId;
+  final String? parentSourceEntryId;
+  final String displayName;
+  final String displayLocation;
+  final SourceEntryKindDto kind;
+  final SourceEntryClassificationDto classification;
+
+  /// Reserved BE-008 status field. Always `None` in Slice 004: current
+  /// authoritative data has no user-meaningful status fact, and provenance
+  /// is never relabeled as status.
+  final String? boundedStatusSummary;
+
+  const SourceEntryDto({
+    required this.sourceEntryId,
+    this.parentSourceEntryId,
+    required this.displayName,
+    required this.displayLocation,
+    required this.kind,
+    required this.classification,
+    this.boundedStatusSummary,
+  });
+
+  @override
+  int get hashCode =>
+      sourceEntryId.hashCode ^
+      parentSourceEntryId.hashCode ^
+      displayName.hashCode ^
+      displayLocation.hashCode ^
+      kind.hashCode ^
+      classification.hashCode ^
+      boundedStatusSummary.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SourceEntryDto &&
+          runtimeType == other.runtimeType &&
+          sourceEntryId == other.sourceEntryId &&
+          parentSourceEntryId == other.parentSourceEntryId &&
+          displayName == other.displayName &&
+          displayLocation == other.displayLocation &&
+          kind == other.kind &&
+          classification == other.classification &&
+          boundedStatusSummary == other.boundedStatusSummary;
+}
+
+/// Application-owned source-entry kind vocabulary.
+enum SourceEntryKindDto { directory, file, linkLike, unknown }
 
 @freezed
 sealed class StartLibraryScanResultDto with _$StartLibraryScanResultDto {

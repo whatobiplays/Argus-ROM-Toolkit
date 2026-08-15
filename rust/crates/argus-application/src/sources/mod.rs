@@ -1,11 +1,20 @@
 //! Phase 001 library-source and library-root configuration capabilities.
 
 mod events;
+mod hierarchy;
 mod library;
 mod provider;
 mod scan;
 
 pub use events::{LibraryRootChanged, LibraryRootsChanged, LibraryRootsSubscriber};
+pub use hierarchy::{
+    GetSourceEntryHandler, GetSourceEntryQuery, ListSourceEntryChildrenHandler,
+    ListSourceEntryChildrenQuery,
+};
+pub use hierarchy::{
+    SourceEntryChildrenPage, SourceEntryCursor, SourceEntryCursorError,
+    SourceEntryDetailProjection, SourceEntryProjection, SourceEntryQueries,
+};
 pub use library::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootHandler, AddLocalLibraryRootResult,
     GetLibraryRootHandler, GetLibraryRootQuery, LibraryRootActiveScanSummary,

@@ -202,6 +202,23 @@ final class ArgusClient implements ClientBootstrap {
     LibraryRootId libraryRootId,
   ) => _request(() => _gateway.startLibraryScan(libraryRootId));
 
+  Future<SourceEntryChildrenPage> _listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  }) => _request(
+    () => _gateway.listSourceEntryChildren(
+      libraryRootId: libraryRootId,
+      parentSourceEntryId: parentSourceEntryId,
+      cursor: cursor,
+      pageSize: pageSize,
+    ),
+  );
+
+  Future<SourceEntryDetail> _getSourceEntry(SourceEntryId sourceEntryId) =>
+      _request(() => _gateway.getSourceEntry(sourceEntryId));
+
   Future<JobSummaryPage> _listActiveJobs() => _request(_gateway.listActiveJobs);
 
   Future<JobSummaryPage> _listRecentTerminalJobs({
@@ -576,6 +593,23 @@ final class _SourcesApi implements SourcesApi {
   Future<StartLibraryScanResult> startLibraryScan(
     LibraryRootId libraryRootId,
   ) => _client._startLibraryScan(libraryRootId);
+
+  @override
+  Future<SourceEntryChildrenPage> listSourceEntryChildren({
+    required LibraryRootId libraryRootId,
+    SourceEntryId? parentSourceEntryId,
+    String? cursor,
+    required int pageSize,
+  }) => _client._listSourceEntryChildren(
+    libraryRootId: libraryRootId,
+    parentSourceEntryId: parentSourceEntryId,
+    cursor: cursor,
+    pageSize: pageSize,
+  );
+
+  @override
+  Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) =>
+      _client._getSourceEntry(sourceEntryId);
 }
 
 final class _JobsApi implements JobsApi {

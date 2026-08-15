@@ -38,9 +38,16 @@ void main() {
       'app/bootstrap/appearance_event_coordinator.dart',
       'app/bootstrap/application_presentation.dart',
       'app/bootstrap/client_bootstrap.dart',
+      'app/bootstrap/sources_event_coordinator.dart',
       'app/routing/app_router.dart',
       'features/settings/application/appearance_settings_controller.dart',
       'features/settings/application/appearance_settings_dependencies.dart',
+      'features/sources/application/add_library_folder_controller.dart',
+      'features/sources/application/root_detail_controller.dart',
+      'features/sources/application/root_list_controller.dart',
+      'features/sources/application/sources_session_presentation.dart',
+      'features/sources/presentation/library_folder_picker.dart',
+      'features/sources/sources_composition.dart',
       'features/startup/application/app_readiness.dart',
       'features/startup/application/startup_controller.dart',
       'features/startup/presentation/presentation_seams.dart',
@@ -125,7 +132,6 @@ void main() {
         'LibraryRoute',
         'CollectionsRoute',
         'JobsRoute',
-        'SourcesRoute',
         'GameDetailRoute',
         'DiagnosticsRoute',
       ];
@@ -180,6 +186,20 @@ void main() {
           'features/settings/presentation/theme_mode_control.dart',
           'features/settings/settings.dart',
           'features/settings/settings_composition.dart',
+          'features/sources/application/add_library_folder_controller.dart',
+          'features/sources/application/root_detail_controller.dart',
+          'features/sources/application/root_list_controller.dart',
+          'features/sources/application/sources_session_presentation.dart',
+          'features/sources/application/sources_state.dart',
+          'features/sources/presentation/add_library_folder_flow.dart',
+          'features/sources/presentation/library_folder_picker.dart',
+          'features/sources/presentation/remove_root_dialog.dart',
+          'features/sources/presentation/root_detail_page.dart',
+          'features/sources/presentation/root_sidebar.dart',
+          'features/sources/presentation/sources_messages.dart',
+          'features/sources/presentation/sources_page.dart',
+          'features/sources/sources.dart',
+          'features/sources/sources_composition.dart',
           'features/startup/application/app_readiness.dart',
           'features/startup/application/startup_controller.dart',
           'features/startup/application/startup_state.dart',
@@ -263,6 +283,45 @@ void main() {
         'file_selector',
       ],
     );
+  });
+
+  test('sources feature stays framework-, bridge-, and routing-free', () {
+    final sourcesApplication = sources.entries
+        .where((entry) => entry.key.startsWith('features/sources/application/'))
+        .toList();
+    expect(sourcesApplication, isNotEmpty);
+
+    for (final entry in sourcesApplication) {
+      for (final forbidden in <String>[
+        'package:flutter/',
+        'dart:io',
+        'file_selector',
+        'core/bridge/',
+        'flutter_rust_bridge',
+        'app/routing',
+        'go_router',
+        'GoRouter(',
+      ]) {
+        expect(
+          entry.value,
+          isNot(contains(forbidden)),
+          reason: '${entry.key} must stay focused',
+        );
+      }
+    }
+
+    // Sources feature code never reaches the root client implementation
+    // directly; it consumes focused APIs through composition.
+    for (final entry in sources.entries.where(
+      (entry) => entry.key.startsWith('features/sources/'),
+    )) {
+      expect(
+        entry.value,
+        isNot(contains('core/client/src/')),
+        reason: entry.key,
+      );
+      expect(entry.value, isNot(contains('core/bridge/')), reason: entry.key);
+    }
   });
 
   test('settings presentation has no generated or direct API calls', () {
@@ -549,7 +608,6 @@ void main() {
       'JobsApi',
       'LibraryApi',
       'CollectionsApi',
-      'SourcesApi',
       'GameApi',
       'ProviderApi',
       'Invoke(',

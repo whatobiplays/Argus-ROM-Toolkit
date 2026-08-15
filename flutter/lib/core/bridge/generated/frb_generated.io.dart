@@ -30,6 +30,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AddLocalLibraryRootResultDto dco_decode_add_local_library_root_result_dto(
+    dynamic raw,
+  );
+
+  @protected
   AppearanceSettingsDto dco_decode_appearance_settings_dto(dynamic raw);
 
   @protected
@@ -41,6 +46,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   DiagnosticsExportRequestDto
   dco_decode_box_autoadd_diagnostics_export_request_dto(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  LibraryRootActiveScanDto dco_decode_box_autoadd_library_root_active_scan_dto(
+    dynamic raw,
+  );
+
+  @protected
+  LibraryRootDto dco_decode_box_autoadd_library_root_dto(dynamic raw);
+
+  @protected
+  LibraryRootLastScanDto dco_decode_box_autoadd_library_root_last_scan_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ListLibraryRootsRequestDto
+  dco_decode_box_autoadd_list_library_roots_request_dto(dynamic raw);
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  dco_decode_box_autoadd_local_filesystem_root_selection_dto(dynamic raw);
 
   @protected
   StartupFailureDto dco_decode_box_autoadd_startup_failure_dto(dynamic raw);
@@ -72,6 +101,39 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  LibraryRootActiveScanDto dco_decode_library_root_active_scan_dto(dynamic raw);
+
+  @protected
+  LibraryRootAvailabilityDto dco_decode_library_root_availability_dto(
+    dynamic raw,
+  );
+
+  @protected
+  LibraryRootDto dco_decode_library_root_dto(dynamic raw);
+
+  @protected
+  LibraryRootLastScanDto dco_decode_library_root_last_scan_dto(dynamic raw);
+
+  @protected
+  LibraryRootLastScanStatusDto dco_decode_library_root_last_scan_status_dto(
+    dynamic raw,
+  );
+
+  @protected
+  LibraryRootPageDto dco_decode_library_root_page_dto(dynamic raw);
+
+  @protected
+  List<LibraryRootDto> dco_decode_list_library_root_dto(dynamic raw);
+
+  @protected
+  ListLibraryRootsRequestDto dco_decode_list_library_roots_request_dto(
+    dynamic raw,
+  );
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -79,6 +141,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<SafeContextEntryDto> dco_decode_list_safe_context_entry_dto(dynamic raw);
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  dco_decode_local_filesystem_root_selection_dto(dynamic raw);
+
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  LibraryRootActiveScanDto?
+  dco_decode_opt_box_autoadd_library_root_active_scan_dto(dynamic raw);
+
+  @protected
+  LibraryRootLastScanDto? dco_decode_opt_box_autoadd_library_root_last_scan_dto(
+    dynamic raw,
+  );
 
   @protected
   StartupFailureDto? dco_decode_opt_box_autoadd_startup_failure_dto(
@@ -93,6 +171,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecoveryActionKindDto dco_decode_recovery_action_kind_dto(dynamic raw);
+
+  @protected
+  RemoveLibraryRootResultDto dco_decode_remove_library_root_result_dto(
+    dynamic raw,
+  );
+
+  @protected
+  RootRelationshipDto dco_decode_root_relationship_dto(dynamic raw);
 
   @protected
   RuntimeEventDto dco_decode_runtime_event_dto(dynamic raw);
@@ -122,6 +208,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ThemeModeDto dco_decode_theme_mode_dto(dynamic raw);
 
   @protected
+  int dco_decode_u_32(dynamic raw);
+
+  @protected
   BigInt dco_decode_u_64(dynamic raw);
 
   @protected
@@ -146,6 +235,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AddLocalLibraryRootResultDto sse_decode_add_local_library_root_result_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   AppearanceSettingsDto sse_decode_appearance_settings_dto(
     SseDeserializer deserializer,
   );
@@ -161,6 +255,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   DiagnosticsExportRequestDto
   sse_decode_box_autoadd_diagnostics_export_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  LibraryRootActiveScanDto sse_decode_box_autoadd_library_root_active_scan_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRootDto sse_decode_box_autoadd_library_root_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRootLastScanDto sse_decode_box_autoadd_library_root_last_scan_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListLibraryRootsRequestDto
+  sse_decode_box_autoadd_list_library_roots_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  sse_decode_box_autoadd_local_filesystem_root_selection_dto(
     SseDeserializer deserializer,
   );
 
@@ -204,6 +328,47 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  LibraryRootActiveScanDto sse_decode_library_root_active_scan_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRootAvailabilityDto sse_decode_library_root_availability_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRootDto sse_decode_library_root_dto(SseDeserializer deserializer);
+
+  @protected
+  LibraryRootLastScanDto sse_decode_library_root_last_scan_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRootLastScanStatusDto sse_decode_library_root_last_scan_status_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRootPageDto sse_decode_library_root_page_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LibraryRootDto> sse_decode_list_library_root_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListLibraryRootsRequestDto sse_decode_list_library_roots_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -213,6 +378,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<SafeContextEntryDto> sse_decode_list_safe_context_entry_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  LibraryRootActiveScanDto?
+  sse_decode_opt_box_autoadd_library_root_active_scan_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRootLastScanDto? sse_decode_opt_box_autoadd_library_root_last_scan_dto(
     SseDeserializer deserializer,
   );
 
@@ -233,6 +416,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecoveryActionKindDto sse_decode_recovery_action_kind_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RemoveLibraryRootResultDto sse_decode_remove_library_root_result_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RootRelationshipDto sse_decode_root_relationship_dto(
     SseDeserializer deserializer,
   );
 
@@ -274,6 +467,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ThemeModeDto sse_decode_theme_mode_dto(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
+
+  @protected
   BigInt sse_decode_u_64(SseDeserializer deserializer);
 
   @protected
@@ -304,6 +500,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_add_local_library_root_result_dto(
+    AddLocalLibraryRootResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_appearance_settings_dto(
     AppearanceSettingsDto self,
     SseSerializer serializer,
@@ -321,6 +523,42 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_diagnostics_export_request_dto(
     DiagnosticsExportRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_library_root_active_scan_dto(
+    LibraryRootActiveScanDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_library_root_dto(
+    LibraryRootDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_library_root_last_scan_dto(
+    LibraryRootLastScanDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_list_library_roots_request_dto(
+    ListLibraryRootsRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_local_filesystem_root_selection_dto(
+    LocalFilesystemRootSelectionDto self,
     SseSerializer serializer,
   );
 
@@ -370,6 +608,57 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_library_root_active_scan_dto(
+    LibraryRootActiveScanDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_root_availability_dto(
+    LibraryRootAvailabilityDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_root_dto(
+    LibraryRootDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_root_last_scan_dto(
+    LibraryRootLastScanDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_root_last_scan_status_dto(
+    LibraryRootLastScanStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_root_page_dto(
+    LibraryRootPageDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_library_root_dto(
+    List<LibraryRootDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_library_roots_request_dto(
+    ListLibraryRootsRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -384,6 +673,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_safe_context_entry_dto(
     List<SafeContextEntryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_local_filesystem_root_selection_dto(
+    LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_library_root_active_scan_dto(
+    LibraryRootActiveScanDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_library_root_last_scan_dto(
+    LibraryRootLastScanDto? self,
     SseSerializer serializer,
   );
 
@@ -408,6 +721,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_recovery_action_kind_dto(
     RecoveryActionKindDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_remove_library_root_result_dto(
+    RemoveLibraryRootResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_root_relationship_dto(
+    RootRelationshipDto self,
     SseSerializer serializer,
   );
 
@@ -461,6 +786,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_theme_mode_dto(ThemeModeDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_64(BigInt self, SseSerializer serializer);

@@ -5,4 +5,5 @@
 //! failures; callers never receive a `rusqlite` error or transaction value.
 
 pub mod diagnostics;
+pub mod local_filesystem;
 pub mod sqlite;

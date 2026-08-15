@@ -2,11 +2,14 @@
 
 use rusqlite::{OptionalExtension, Transaction, types::Value};
 
-use argus_application::{ApplicationPortError, OperationContext, PersistenceError, UnitOfWork};
+use argus_application::{
+    ApplicationPortError, NewLibraryRoot, OperationContext, PersistenceError, UnitOfWork,
+};
 
 use super::appearance::SqliteAppearanceSettingsRepository;
 use super::connection::SqliteValue;
 use super::errors::{SqliteOperationError, operation_error};
+use super::sources::{SqliteLibraryRootRepository, SqliteLibrarySourceRepository};
 
 /// One top-level transaction that cannot be reused after terminal completion.
 pub struct SqliteUnitOfWork<'connection> {
@@ -146,6 +149,97 @@ impl<'connection> SqliteUnitOfWork<'connection> {
         Ok(())
     }
 
+    /// Returns the single internal LocalFilesystem source identity, creating
+    /// it lazily on first use.
+    pub(crate) fn ensure_local_filesystem_source(
+        &mut self,
+    ) -> Result<argus_application::LibrarySourceId, PersistenceError> {
+        let existing: Option<String> = self
+            .transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .query_row(
+                "SELECT library_source_id FROM library_source
+                 WHERE source_provider_type = 'local_filesystem'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        if let Some(value) = existing {
+            return parse_source_id(value);
+        }
+        let created: String = self
+            .transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .query_row(
+                "INSERT INTO library_source
+                    (library_source_id, source_provider_type, display_name, provider_config,
+                     config_revision, created_at, updated_at)
+                 VALUES
+                    (lower(hex(randomblob(16))), 'local_filesystem', 'Local Filesystem',
+                     '{\"schema_version\":1,\"config\":{}}', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                 RETURNING library_source_id",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(map_persistence_operation_error)?;
+        parse_source_id(created)
+    }
+
+    /// Inserts one configured root and returns its stable identity.
+    pub(crate) fn insert_library_root(
+        &mut self,
+        root: &NewLibraryRoot,
+    ) -> Result<argus_application::LibraryRootId, PersistenceError> {
+        let created: String = self
+            .transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .query_row(
+                "INSERT INTO library_root
+                    (library_root_id, library_source_id, root_locator, display_name,
+                     safe_location_presentation, availability_status, config_revision,
+                     created_at, updated_at)
+                 VALUES
+                    (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                 RETURNING library_root_id",
+                rusqlite::params![
+                    root.library_source_id().to_string(),
+                    root.locator().as_provider_value(),
+                    root.display_name(),
+                    root.safe_location_presentation(),
+                    root.availability().as_str(),
+                    i64::from(root.config_revision()),
+                ],
+                |row| row.get(0),
+            )
+            .map_err(map_persistence_operation_error)?;
+        parse_root_id(created)
+    }
+
+    /// Deletes one configured root and reports whether a row was removed.
+    pub(crate) fn delete_library_root(
+        &mut self,
+        root_id: argus_application::LibraryRootId,
+    ) -> Result<bool, PersistenceError> {
+        let changed = self
+            .transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .execute(
+                "DELETE FROM library_root WHERE library_root_id = ?1",
+                [root_id.to_string()],
+            )
+            .map_err(map_persistence_operation_error)?;
+        match changed {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(PersistenceError::CorruptOrIncompatible),
+        }
+    }
+
     /// Commits the transaction and consumes this scope.
     pub fn commit(mut self) -> Result<(), ApplicationPortError> {
         let transaction = self
@@ -174,9 +268,25 @@ impl<'connection> UnitOfWork for SqliteUnitOfWork<'connection> {
         = SqliteAppearanceSettingsRepository<'scope, 'connection>
     where
         Self: 'scope;
+    type LibrarySourceRepository<'scope>
+        = SqliteLibrarySourceRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type LibraryRootRepository<'scope>
+        = SqliteLibraryRootRepository<'scope, 'connection>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         SqliteAppearanceSettingsRepository::new(self)
+    }
+
+    fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+        SqliteLibrarySourceRepository::new(self)
+    }
+
+    fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+        SqliteLibraryRootRepository::new(self)
     }
 
     fn commit(self) -> Result<(), ApplicationPortError>
@@ -216,6 +326,16 @@ fn map_persistence_operation_error(error: rusqlite::Error) -> PersistenceError {
         SqliteOperationError::Failed => PersistenceError::Internal,
         SqliteOperationError::Application(_) => PersistenceError::Internal,
     }
+}
+
+fn parse_source_id(value: String) -> Result<argus_application::LibrarySourceId, PersistenceError> {
+    argus_application::LibrarySourceId::try_from(value.as_str())
+        .map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+fn parse_root_id(value: String) -> Result<argus_application::LibraryRootId, PersistenceError> {
+    argus_application::LibraryRootId::try_from(value.as_str())
+        .map_err(|_| PersistenceError::CorruptOrIncompatible)
 }
 
 #[cfg(test)]

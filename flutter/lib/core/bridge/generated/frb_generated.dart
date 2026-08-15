@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -983047788;
+  int get rustContentHash => 108486862;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -76,6 +76,10 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<AddLocalLibraryRootResultDto> crateAddLocalLibraryRoot({
+    required LocalFilesystemRootSelectionDto selection,
+  });
+
   Future<bool> crateAttachEventSubscription({required BigInt attachEpoch});
 
   Future<void> crateCloseEventConnection();
@@ -95,6 +99,8 @@ abstract class RustLibApi extends BaseApi {
 
   Future<BigInt> crateGetEventAttachEpoch();
 
+  Future<LibraryRootDto> crateGetLibraryRoot({required String libraryRootId});
+
   Future<RuntimeStateDto> crateGetRuntimeState();
 
   Future<RuntimeStateDto> crateInitialize();
@@ -103,8 +109,16 @@ abstract class RustLibApi extends BaseApi {
     required String dataDirectory,
   });
 
+  Future<LibraryRootPageDto> crateListLibraryRoots({
+    required ListLibraryRootsRequestDto request,
+  });
+
   Future<void> crateOpenStartupDataDirectory({
     required String expectedRuntimeInstanceId,
+  });
+
+  Future<RemoveLibraryRootResultDto> crateRemoveLibraryRoot({
+    required String libraryRootId,
   });
 
   Future<RuntimeStateDto> crateResetAppearanceSettings({
@@ -135,6 +149,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<AddLocalLibraryRootResultDto> crateAddLocalLibraryRoot({
+    required LocalFilesystemRootSelectionDto selection,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_local_filesystem_root_selection_dto(
+            selection,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_add_local_library_root_result_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateAddLocalLibraryRootConstMeta,
+        argValues: [selection],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateAddLocalLibraryRootConstMeta => const TaskConstMeta(
+    debugName: "add_local_library_root",
+    argNames: ["selection"],
+  );
+
+  @override
   Future<bool> crateAttachEventSubscription({required BigInt attachEpoch}) {
     return handler.executeNormal(
       NormalTask(
@@ -144,7 +193,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 2,
             port: port_,
           );
         },
@@ -174,7 +223,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -204,7 +253,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -241,7 +290,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -271,7 +320,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -298,7 +347,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -325,7 +374,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -344,6 +393,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_event_attach_epoch", argNames: []);
 
   @override
+  Future<LibraryRootDto> crateGetLibraryRoot({required String libraryRootId}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(libraryRootId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 9,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_library_root_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateGetLibraryRootConstMeta,
+        argValues: [libraryRootId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateGetLibraryRootConstMeta => const TaskConstMeta(
+    debugName: "get_library_root",
+    argNames: ["libraryRootId"],
+  );
+
+  @override
   Future<RuntimeStateDto> crateGetRuntimeState() {
     return handler.executeNormal(
       NormalTask(
@@ -352,7 +431,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 10,
             port: port_,
           );
         },
@@ -379,7 +458,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 11,
             port: port_,
           );
         },
@@ -409,7 +488,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 12,
             port: port_,
           );
         },
@@ -431,6 +510,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<LibraryRootPageDto> crateListLibraryRoots({
+    required ListLibraryRootsRequestDto request,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_list_library_roots_request_dto(
+            request,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 13,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_library_root_page_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateListLibraryRootsConstMeta,
+        argValues: [request],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateListLibraryRootsConstMeta => const TaskConstMeta(
+    debugName: "list_library_roots",
+    argNames: ["request"],
+  );
+
+  @override
   Future<void> crateOpenStartupDataDirectory({
     required String expectedRuntimeInstanceId,
   }) {
@@ -442,7 +556,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 14,
             port: port_,
           );
         },
@@ -464,6 +578,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<RemoveLibraryRootResultDto> crateRemoveLibraryRoot({
+    required String libraryRootId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(libraryRootId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 15,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_remove_library_root_result_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateRemoveLibraryRootConstMeta,
+        argValues: [libraryRootId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateRemoveLibraryRootConstMeta => const TaskConstMeta(
+    debugName: "remove_library_root",
+    argNames: ["libraryRootId"],
+  );
+
+  @override
   Future<RuntimeStateDto> crateResetAppearanceSettings({
     required String expectedRuntimeInstanceId,
   }) {
@@ -475,7 +621,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 16,
             port: port_,
           );
         },
@@ -508,7 +654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 17,
             port: port_,
           );
         },
@@ -540,7 +686,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 18,
             port: port_,
           );
         },
@@ -574,7 +720,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 15,
+              funcId: 19,
               port: port_,
             );
           },
@@ -611,7 +757,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 20,
             port: port_,
           );
         },
@@ -653,6 +799,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AddLocalLibraryRootResultDto dco_decode_add_local_library_root_result_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return AddLocalLibraryRootResultDto_Added(
+          dco_decode_box_autoadd_library_root_dto(raw[1]),
+        );
+      case 1:
+        return AddLocalLibraryRootResultDto_AlreadyConfigured(
+          dco_decode_String(raw[1]),
+        );
+      case 2:
+        return AddLocalLibraryRootResultDto_OverlapsExisting(
+          dco_decode_String(raw[1]),
+          dco_decode_root_relationship_dto(raw[2]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
   AppearanceSettingsDto dco_decode_appearance_settings_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -690,6 +860,48 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   dco_decode_box_autoadd_diagnostics_export_request_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_diagnostics_export_request_dto(raw);
+  }
+
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_i_64(raw);
+  }
+
+  @protected
+  LibraryRootActiveScanDto dco_decode_box_autoadd_library_root_active_scan_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_library_root_active_scan_dto(raw);
+  }
+
+  @protected
+  LibraryRootDto dco_decode_box_autoadd_library_root_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_library_root_dto(raw);
+  }
+
+  @protected
+  LibraryRootLastScanDto dco_decode_box_autoadd_library_root_last_scan_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_library_root_last_scan_dto(raw);
+  }
+
+  @protected
+  ListLibraryRootsRequestDto
+  dco_decode_box_autoadd_list_library_roots_request_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_list_library_roots_request_dto(raw);
+  }
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  dco_decode_box_autoadd_local_filesystem_root_selection_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_local_filesystem_root_selection_dto(raw);
   }
 
   @protected
@@ -755,6 +967,109 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeI64(raw);
+  }
+
+  @protected
+  LibraryRootActiveScanDto dco_decode_library_root_active_scan_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LibraryRootActiveScanDto(
+      scanRunId: dco_decode_String(arr[0]),
+      jobRunId: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  LibraryRootAvailabilityDto dco_decode_library_root_availability_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return LibraryRootAvailabilityDto.values[raw as int];
+  }
+
+  @protected
+  LibraryRootDto dco_decode_library_root_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return LibraryRootDto(
+      libraryRootId: dco_decode_String(arr[0]),
+      displayName: dco_decode_String(arr[1]),
+      safeLocationPresentation: dco_decode_String(arr[2]),
+      availability: dco_decode_library_root_availability_dto(arr[3]),
+      lastScan: dco_decode_opt_box_autoadd_library_root_last_scan_dto(arr[4]),
+      activeScan: dco_decode_opt_box_autoadd_library_root_active_scan_dto(
+        arr[5],
+      ),
+    );
+  }
+
+  @protected
+  LibraryRootLastScanDto dco_decode_library_root_last_scan_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return LibraryRootLastScanDto(
+      scanRunId: dco_decode_String(arr[0]),
+      jobRunId: dco_decode_String(arr[1]),
+      status: dco_decode_library_root_last_scan_status_dto(arr[2]),
+      startedAtMs: dco_decode_i_64(arr[3]),
+      completedAtMs: dco_decode_opt_box_autoadd_i_64(arr[4]),
+    );
+  }
+
+  @protected
+  LibraryRootLastScanStatusDto dco_decode_library_root_last_scan_status_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return LibraryRootLastScanStatusDto.values[raw as int];
+  }
+
+  @protected
+  LibraryRootPageDto dco_decode_library_root_page_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return LibraryRootPageDto(
+      items: dco_decode_list_library_root_dto(arr[0]),
+      offset: dco_decode_u_32(arr[1]),
+      pageSize: dco_decode_u_32(arr[2]),
+      totalCount: dco_decode_u_32(arr[3]),
+    );
+  }
+
+  @protected
+  List<LibraryRootDto> dco_decode_list_library_root_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_library_root_dto).toList();
+  }
+
+  @protected
+  ListLibraryRootsRequestDto dco_decode_list_library_roots_request_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ListLibraryRootsRequestDto(
+      offset: dco_decode_u_32(arr[0]),
+      pageSize: dco_decode_u_32(arr[1]),
+    );
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
@@ -774,6 +1089,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return (raw as List<dynamic>)
         .map(dco_decode_safe_context_entry_dto)
         .toList();
+  }
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  dco_decode_local_filesystem_root_selection_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return LocalFilesystemRootSelectionDto(
+      selectedFolderPath: dco_decode_String(arr[0]),
+    );
+  }
+
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_i_64(raw);
+  }
+
+  @protected
+  LibraryRootActiveScanDto?
+  dco_decode_opt_box_autoadd_library_root_active_scan_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_library_root_active_scan_dto(raw);
+  }
+
+  @protected
+  LibraryRootLastScanDto? dco_decode_opt_box_autoadd_library_root_last_scan_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_library_root_last_scan_dto(raw);
   }
 
   @protected
@@ -806,6 +1158,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RemoveLibraryRootResultDto dco_decode_remove_library_root_result_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RemoveLibraryRootResultDto.values[raw as int];
+  }
+
+  @protected
+  RootRelationshipDto dco_decode_root_relationship_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RootRelationshipDto.values[raw as int];
+  }
+
+  @protected
   RuntimeEventDto dco_decode_runtime_event_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -833,6 +1199,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         );
       case 2:
         return RuntimeEventPayloadDto_AppearanceSettingsChanged();
+      case 3:
+        return RuntimeEventPayloadDto_LibraryRootsChanged();
+      case 4:
+        return RuntimeEventPayloadDto_LibraryRootChanged(
+          libraryRootId: dco_decode_String(raw[1]),
+        );
       default:
         throw Exception("unreachable");
     }
@@ -905,6 +1277,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
   BigInt dco_decode_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeU64(raw);
@@ -957,6 +1335,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AddLocalLibraryRootResultDto sse_decode_add_local_library_root_result_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_field0 = sse_decode_box_autoadd_library_root_dto(deserializer);
+        return AddLocalLibraryRootResultDto_Added(var_field0);
+      case 1:
+        var var_field0 = sse_decode_String(deserializer);
+        return AddLocalLibraryRootResultDto_AlreadyConfigured(var_field0);
+      case 2:
+        var var_field0 = sse_decode_String(deserializer);
+        var var_field1 = sse_decode_root_relationship_dto(deserializer);
+        return AddLocalLibraryRootResultDto_OverlapsExisting(
+          var_field0,
+          var_field1,
+        );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   AppearanceSettingsDto sse_decode_appearance_settings_dto(
     SseDeserializer deserializer,
   ) {
@@ -1003,6 +1407,54 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_diagnostics_export_request_dto(deserializer));
+  }
+
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_i_64(deserializer));
+  }
+
+  @protected
+  LibraryRootActiveScanDto sse_decode_box_autoadd_library_root_active_scan_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_library_root_active_scan_dto(deserializer));
+  }
+
+  @protected
+  LibraryRootDto sse_decode_box_autoadd_library_root_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_library_root_dto(deserializer));
+  }
+
+  @protected
+  LibraryRootLastScanDto sse_decode_box_autoadd_library_root_last_scan_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_library_root_last_scan_dto(deserializer));
+  }
+
+  @protected
+  ListLibraryRootsRequestDto
+  sse_decode_box_autoadd_list_library_roots_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_list_library_roots_request_dto(deserializer));
+  }
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  sse_decode_box_autoadd_local_filesystem_root_selection_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_local_filesystem_root_selection_dto(deserializer));
   }
 
   @protected
@@ -1077,6 +1529,130 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
+  LibraryRootActiveScanDto sse_decode_library_root_active_scan_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_scanRunId = sse_decode_String(deserializer);
+    var var_jobRunId = sse_decode_String(deserializer);
+    return LibraryRootActiveScanDto(
+      scanRunId: var_scanRunId,
+      jobRunId: var_jobRunId,
+    );
+  }
+
+  @protected
+  LibraryRootAvailabilityDto sse_decode_library_root_availability_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return LibraryRootAvailabilityDto.values[inner];
+  }
+
+  @protected
+  LibraryRootDto sse_decode_library_root_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_libraryRootId = sse_decode_String(deserializer);
+    var var_displayName = sse_decode_String(deserializer);
+    var var_safeLocationPresentation = sse_decode_String(deserializer);
+    var var_availability = sse_decode_library_root_availability_dto(
+      deserializer,
+    );
+    var var_lastScan = sse_decode_opt_box_autoadd_library_root_last_scan_dto(
+      deserializer,
+    );
+    var var_activeScan =
+        sse_decode_opt_box_autoadd_library_root_active_scan_dto(deserializer);
+    return LibraryRootDto(
+      libraryRootId: var_libraryRootId,
+      displayName: var_displayName,
+      safeLocationPresentation: var_safeLocationPresentation,
+      availability: var_availability,
+      lastScan: var_lastScan,
+      activeScan: var_activeScan,
+    );
+  }
+
+  @protected
+  LibraryRootLastScanDto sse_decode_library_root_last_scan_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_scanRunId = sse_decode_String(deserializer);
+    var var_jobRunId = sse_decode_String(deserializer);
+    var var_status = sse_decode_library_root_last_scan_status_dto(deserializer);
+    var var_startedAtMs = sse_decode_i_64(deserializer);
+    var var_completedAtMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    return LibraryRootLastScanDto(
+      scanRunId: var_scanRunId,
+      jobRunId: var_jobRunId,
+      status: var_status,
+      startedAtMs: var_startedAtMs,
+      completedAtMs: var_completedAtMs,
+    );
+  }
+
+  @protected
+  LibraryRootLastScanStatusDto sse_decode_library_root_last_scan_status_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return LibraryRootLastScanStatusDto.values[inner];
+  }
+
+  @protected
+  LibraryRootPageDto sse_decode_library_root_page_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_items = sse_decode_list_library_root_dto(deserializer);
+    var var_offset = sse_decode_u_32(deserializer);
+    var var_pageSize = sse_decode_u_32(deserializer);
+    var var_totalCount = sse_decode_u_32(deserializer);
+    return LibraryRootPageDto(
+      items: var_items,
+      offset: var_offset,
+      pageSize: var_pageSize,
+      totalCount: var_totalCount,
+    );
+  }
+
+  @protected
+  List<LibraryRootDto> sse_decode_list_library_root_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LibraryRootDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_library_root_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  ListLibraryRootsRequestDto sse_decode_list_library_roots_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_offset = sse_decode_u_32(deserializer);
+    var var_pageSize = sse_decode_u_32(deserializer);
+    return ListLibraryRootsRequestDto(
+      offset: var_offset,
+      pageSize: var_pageSize,
+    );
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -1109,6 +1685,56 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ans_.add(sse_decode_safe_context_entry_dto(deserializer));
     }
     return ans_;
+  }
+
+  @protected
+  LocalFilesystemRootSelectionDto
+  sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_selectedFolderPath = sse_decode_String(deserializer);
+    return LocalFilesystemRootSelectionDto(
+      selectedFolderPath: var_selectedFolderPath,
+    );
+  }
+
+  @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_i_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  LibraryRootActiveScanDto?
+  sse_decode_opt_box_autoadd_library_root_active_scan_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_library_root_active_scan_dto(
+        deserializer,
+      ));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  LibraryRootLastScanDto? sse_decode_opt_box_autoadd_library_root_last_scan_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_library_root_last_scan_dto(deserializer));
+    } else {
+      return null;
+    }
   }
 
   @protected
@@ -1156,6 +1782,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RemoveLibraryRootResultDto sse_decode_remove_library_root_result_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RemoveLibraryRootResultDto.values[inner];
+  }
+
+  @protected
+  RootRelationshipDto sse_decode_root_relationship_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RootRelationshipDto.values[inner];
+  }
+
+  @protected
   RuntimeEventDto sse_decode_runtime_event_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_runtimeInstanceId = sse_decode_String(deserializer);
@@ -1188,6 +1832,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return RuntimeEventPayloadDto_StartupFailed(phase: var_phase);
       case 2:
         return RuntimeEventPayloadDto_AppearanceSettingsChanged();
+      case 3:
+        return RuntimeEventPayloadDto_LibraryRootsChanged();
+      case 4:
+        var var_libraryRootId = sse_decode_String(deserializer);
+        return RuntimeEventPayloadDto_LibraryRootChanged(
+          libraryRootId: var_libraryRootId,
+        );
       default:
         throw UnimplementedError('');
     }
@@ -1270,6 +1921,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
+  }
+
+  @protected
   BigInt sse_decode_u_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getBigUint64();
@@ -1329,6 +1986,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_add_local_library_root_result_dto(
+    AddLocalLibraryRootResultDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case AddLocalLibraryRootResultDto_Added(field0: final field0):
+        sse_encode_i_32(0, serializer);
+        sse_encode_box_autoadd_library_root_dto(field0, serializer);
+      case AddLocalLibraryRootResultDto_AlreadyConfigured(field0: final field0):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(field0, serializer);
+      case AddLocalLibraryRootResultDto_OverlapsExisting(
+        field0: final field0,
+        field1: final field1,
+      ):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(field0, serializer);
+        sse_encode_root_relationship_dto(field1, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_appearance_settings_dto(
     AppearanceSettingsDto self,
     SseSerializer serializer,
@@ -1366,6 +2046,60 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_diagnostics_export_request_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_library_root_active_scan_dto(
+    LibraryRootActiveScanDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_library_root_active_scan_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_library_root_dto(
+    LibraryRootDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_library_root_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_library_root_last_scan_dto(
+    LibraryRootLastScanDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_library_root_last_scan_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_list_library_roots_request_dto(
+    ListLibraryRootsRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_library_roots_request_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_local_filesystem_root_selection_dto(
+    LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_local_filesystem_root_selection_dto(self, serializer);
   }
 
   @protected
@@ -1439,6 +2173,107 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
+  void sse_encode_library_root_active_scan_dto(
+    LibraryRootActiveScanDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.scanRunId, serializer);
+    sse_encode_String(self.jobRunId, serializer);
+  }
+
+  @protected
+  void sse_encode_library_root_availability_dto(
+    LibraryRootAvailabilityDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_library_root_dto(
+    LibraryRootDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.libraryRootId, serializer);
+    sse_encode_String(self.displayName, serializer);
+    sse_encode_String(self.safeLocationPresentation, serializer);
+    sse_encode_library_root_availability_dto(self.availability, serializer);
+    sse_encode_opt_box_autoadd_library_root_last_scan_dto(
+      self.lastScan,
+      serializer,
+    );
+    sse_encode_opt_box_autoadd_library_root_active_scan_dto(
+      self.activeScan,
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_library_root_last_scan_dto(
+    LibraryRootLastScanDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.scanRunId, serializer);
+    sse_encode_String(self.jobRunId, serializer);
+    sse_encode_library_root_last_scan_status_dto(self.status, serializer);
+    sse_encode_i_64(self.startedAtMs, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.completedAtMs, serializer);
+  }
+
+  @protected
+  void sse_encode_library_root_last_scan_status_dto(
+    LibraryRootLastScanStatusDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_library_root_page_dto(
+    LibraryRootPageDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_library_root_dto(self.items, serializer);
+    sse_encode_u_32(self.offset, serializer);
+    sse_encode_u_32(self.pageSize, serializer);
+    sse_encode_u_32(self.totalCount, serializer);
+  }
+
+  @protected
+  void sse_encode_list_library_root_dto(
+    List<LibraryRootDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_library_root_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_library_roots_request_dto(
+    ListLibraryRootsRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.offset, serializer);
+    sse_encode_u_32(self.pageSize, serializer);
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -1469,6 +2304,54 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_safe_context_entry_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_local_filesystem_root_selection_dto(
+    LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.selectedFolderPath, serializer);
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_i_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_library_root_active_scan_dto(
+    LibraryRootActiveScanDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_library_root_active_scan_dto(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_library_root_last_scan_dto(
+    LibraryRootLastScanDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_library_root_last_scan_dto(self, serializer);
     }
   }
 
@@ -1517,6 +2400,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_remove_library_root_result_dto(
+    RemoveLibraryRootResultDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_root_relationship_dto(
+    RootRelationshipDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_runtime_event_dto(
     RuntimeEventDto self,
     SseSerializer serializer,
@@ -1545,6 +2446,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_startup_phase_dto(phase, serializer);
       case RuntimeEventPayloadDto_AppearanceSettingsChanged():
         sse_encode_i_32(2, serializer);
+      case RuntimeEventPayloadDto_LibraryRootsChanged():
+        sse_encode_i_32(3, serializer);
+      case RuntimeEventPayloadDto_LibraryRootChanged(
+        libraryRootId: final libraryRootId,
+      ):
+        sse_encode_i_32(4, serializer);
+        sse_encode_String(libraryRootId, serializer);
     }
   }
 
@@ -1615,6 +2523,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_theme_mode_dto(ThemeModeDto self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
   }
 
   @protected

@@ -4,7 +4,8 @@ use std::rc::Rc;
 
 use argus_application::{
     AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
-    ApplicationSeverity, ErrorCategory, ErrorCode, EventName, LogEvent, LogLevel,
+    ApplicationSeverity, ErrorCategory, ErrorCode, EventName, LibraryRootId, LibraryRootRepository,
+    LibrarySourceId, LibrarySourceRepository, LogEvent, LogLevel, NewLibraryRoot,
     ObservabilitySink, OperationContext, OperationName, PathClass, PersistenceError,
     Recoverability, RetryPolicy, SafeContext, SafeContextError, SafeContextField, SafeContextValue,
     StartupCollector, SubsystemName, ThemeMode, TraceEvent, TraceEventPhase, TraceId, TraceIdError,
@@ -328,6 +329,54 @@ fn phase_000_catalog_snapshot_is_exact() {
 }
 
 #[test]
+fn phase_001_catalog_snapshot_is_additive_and_exact() {
+    let phase_000 = ErrorCode::phase_000_all();
+    let phase_001 = ErrorCode::phase_001_all();
+
+    assert_eq!(phase_001.len(), phase_000.len() + 2);
+    assert_eq!(&phase_001[..phase_000.len()], phase_000);
+
+    let expected: [(
+        &str,
+        ErrorCategory,
+        ApplicationSeverity,
+        Recoverability,
+        RetryPolicy,
+        &str,
+    ); 2] = [
+        (
+            "ARGUS.V1.CONFIGURATION.LIBRARY_ROOT_NOT_FOUND",
+            ErrorCategory::Configuration,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.configuration.library_root_not_found",
+        ),
+        (
+            "ARGUS.V1.FILESYSTEM.INVALID_ROOT_SELECTION",
+            ErrorCategory::Filesystem,
+            ApplicationSeverity::Error,
+            Recoverability::UserAction,
+            RetryPolicy::Never,
+            "errors.filesystem.invalid_root_selection",
+        ),
+    ];
+
+    for (code, (name, category, severity, recoverability, retry, message)) in
+        phase_001[phase_000.len()..].iter().zip(expected.iter())
+    {
+        assert_eq!(code.as_str(), *name);
+        let policy = code.policy();
+        assert_eq!(policy.category, *category);
+        assert_eq!(policy.severity, *severity);
+        assert_eq!(policy.recoverability, *recoverability);
+        assert_eq!(policy.retry_policy, *retry);
+        assert_eq!(policy.message_key.as_str(), *message);
+        ApplicationError::from_code(*code, trace_id(), SafeContext::new()).expect("catalog entry");
+    }
+}
+
+#[test]
 fn application_error_enforces_catalog_owned_context_policy() {
     let mut fields = SafeContext::new();
     fields
@@ -395,14 +444,58 @@ impl AppearanceSettingsRepository for NoopAppearanceRepository<'_> {
     }
 }
 
+struct NoopLibrarySourceRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibrarySourceRepository for NoopLibrarySourceRepository<'_> {
+    fn ensure_local_filesystem_source(&mut self) -> Result<LibrarySourceId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
+struct NoopLibraryRootRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibraryRootRepository for NoopLibraryRootRepository<'_> {
+    fn insert(&mut self, _root: NewLibraryRoot) -> Result<LibraryRootId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn delete(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
 impl UnitOfWork for RecordingUnitOfWork<'_> {
     type AppearanceSettingsRepository<'scope>
         = NoopAppearanceRepository<'scope>
     where
         Self: 'scope;
+    type LibrarySourceRepository<'scope>
+        = NoopLibrarySourceRepository<'scope>
+    where
+        Self: 'scope;
+    type LibraryRootRepository<'scope>
+        = NoopLibraryRootRepository<'scope>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         NoopAppearanceRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+        NoopLibrarySourceRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+        NoopLibraryRootRepository {
             marker: PhantomData,
         }
     }

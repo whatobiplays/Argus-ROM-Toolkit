@@ -4,8 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use argus_application::{
     AppearanceSettingsChanged, AppearanceSettingsSubscriber, ApplicationError, ApplicationEvent,
-    EventName, EventRecorder, EventRecordingError, EventSubscriberError, LogEvent, LogLevel,
-    ObservabilitySink, ObservabilitySinkError, OperationContext, SafeContext, TraceEvent,
+    EventName, EventRecorder, EventRecordingError, EventSubscriberError, LibraryRootChanged,
+    LibraryRootsChanged, LibraryRootsSubscriber, LogEvent, LogLevel, ObservabilitySink,
+    ObservabilitySinkError, OperationContext, SafeContext, TraceEvent,
 };
 
 const MAX_PENDING_EVENTS: usize = 64;
@@ -66,32 +67,62 @@ pub(crate) struct EventPublicationReport {
 /// Composition-owned in-process bus for the closed application-event set.
 pub struct EventBus {
     appearance_subscribers: Vec<Box<dyn AppearanceSettingsSubscriber>>,
+    library_roots_subscribers: Vec<Box<dyn LibraryRootsSubscriber>>,
 }
 
 impl EventBus {
-    /// Creates a bus with its explicitly composed appearance subscribers.
-    pub fn new(subscribers: Vec<Box<dyn AppearanceSettingsSubscriber>>) -> Self {
+    /// Creates a bus with its explicitly composed subscribers.
+    pub fn new(
+        appearance_subscribers: Vec<Box<dyn AppearanceSettingsSubscriber>>,
+        library_roots_subscribers: Vec<Box<dyn LibraryRootsSubscriber>>,
+    ) -> Self {
         Self {
-            appearance_subscribers: subscribers,
+            appearance_subscribers,
+            library_roots_subscribers,
         }
     }
 
     /// Returns the number of registered appearance subscribers.
     pub(crate) fn subscriber_count(&self) -> usize {
-        self.appearance_subscribers.len()
+        self.appearance_subscribers.len() + self.library_roots_subscribers.len()
     }
 
     /// Publishes one committed event, isolating each subscriber failure.
     pub(crate) fn publish(&self, event: ApplicationEvent) -> EventPublicationReport {
-        let ApplicationEvent::AppearanceSettingsChanged(_) = event;
-        let mut report = EventPublicationReport::default();
-        for subscriber in &self.appearance_subscribers {
-            match subscriber.appearance_settings_changed(AppearanceSettingsChanged) {
-                Ok(()) => report.delivered += 1,
-                Err(EventSubscriberError::Failed) => report.failed += 1,
+        match event {
+            ApplicationEvent::AppearanceSettingsChanged(_) => {
+                let mut report = EventPublicationReport::default();
+                for subscriber in &self.appearance_subscribers {
+                    match subscriber.appearance_settings_changed(AppearanceSettingsChanged) {
+                        Ok(()) => report.delivered += 1,
+                        Err(EventSubscriberError::Failed) => report.failed += 1,
+                    }
+                }
+                report
+            }
+            ApplicationEvent::LibraryRootsChanged(_) => {
+                let mut report = EventPublicationReport::default();
+                for subscriber in &self.library_roots_subscribers {
+                    match subscriber.library_roots_changed(LibraryRootsChanged) {
+                        Ok(()) => report.delivered += 1,
+                        Err(EventSubscriberError::Failed) => report.failed += 1,
+                    }
+                }
+                report
+            }
+            ApplicationEvent::LibraryRootChanged(event) => {
+                let mut report = EventPublicationReport::default();
+                for subscriber in &self.library_roots_subscribers {
+                    match subscriber.library_root_changed(LibraryRootChanged {
+                        library_root_id: event.library_root_id,
+                    }) {
+                        Ok(()) => report.delivered += 1,
+                        Err(EventSubscriberError::Failed) => report.failed += 1,
+                    }
+                }
+                report
             }
         }
-        report
     }
 }
 
@@ -117,6 +148,36 @@ pub(crate) fn finalize_appearance_update(
                 }
             }
             Ok(())
+        }
+        Err(error) => {
+            collector.discard();
+            Err(error)
+        }
+    }
+}
+
+/// Completes one library-roots mutation's post-commit event lifecycle.
+///
+/// A failed handler result discards pending events. A successful result
+/// drains and publishes only after the handler has committed. Subscriber
+/// failures are recorded as bounded structured diagnostics and never alter
+/// committed command success.
+pub(crate) fn finalize_library_roots_update<T>(
+    result: Result<T, ApplicationError>,
+    context: &OperationContext,
+    collector: PendingEventCollector,
+    event_bus: &EventBus,
+    publication_diagnostics: &Mutex<PublicationDiagnostics>,
+) -> Result<T, ApplicationError> {
+    match result {
+        Ok(value) => {
+            for event in collector.take_all() {
+                let report = event_bus.publish(event);
+                for _ in 0..report.failed {
+                    record_subscriber_failure(context, publication_diagnostics);
+                }
+            }
+            Ok(value)
         }
         Err(error) => {
             collector.discard();
@@ -153,7 +214,7 @@ fn now_millis() -> i64 {
 
 impl Default for EventBus {
     fn default() -> Self {
-        Self::new(Vec::new())
+        Self::new(Vec::new(), Vec::new())
     }
 }
 
@@ -217,8 +278,9 @@ mod tests {
     use super::*;
     use argus_application::{
         AppearanceSettings, AppearanceSettingsQueries, AppearanceSettingsRepository,
-        ApplicationPortError, OperationContext, OperationName, PersistenceError, SettingsService,
-        SubsystemName, ThemeMode, TraceId, UnitOfWork, UnitOfWorkFactory,
+        ApplicationPortError, LibraryRootId, LibraryRootRepository, LibrarySourceId,
+        LibrarySourceRepository, NewLibraryRoot, OperationContext, OperationName, PersistenceError,
+        SettingsService, SubsystemName, ThemeMode, TraceId, UnitOfWork, UnitOfWorkFactory,
         UpdateAppearanceSettingsCommand,
     };
     use std::marker::PhantomData;
@@ -234,6 +296,30 @@ mod tests {
     impl AppearanceSettingsQueries for FakeQueries {
         fn get(&self, _context: &OperationContext) -> Result<AppearanceSettings, PersistenceError> {
             Ok(AppearanceSettings::new(ThemeMode::System))
+        }
+    }
+
+    struct NoopLibrarySourceRepository<'scope> {
+        marker: PhantomData<&'scope mut ()>,
+    }
+
+    impl LibrarySourceRepository for NoopLibrarySourceRepository<'_> {
+        fn ensure_local_filesystem_source(&mut self) -> Result<LibrarySourceId, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+    }
+
+    struct NoopLibraryRootRepository<'scope> {
+        marker: PhantomData<&'scope mut ()>,
+    }
+
+    impl LibraryRootRepository for NoopLibraryRootRepository<'_> {
+        fn insert(&mut self, _root: NewLibraryRoot) -> Result<LibraryRootId, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn delete(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
         }
     }
 
@@ -265,10 +351,30 @@ mod tests {
             = FailingCommitRepository<'scope>
         where
             Self: 'scope;
+        type LibrarySourceRepository<'scope>
+            = NoopLibrarySourceRepository<'scope>
+        where
+            Self: 'scope;
+        type LibraryRootRepository<'scope>
+            = NoopLibraryRootRepository<'scope>
+        where
+            Self: 'scope;
 
         fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
             FailingCommitRepository {
                 state: std::sync::Arc::clone(&self.state),
+                marker: PhantomData,
+            }
+        }
+
+        fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+            NoopLibrarySourceRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+            NoopLibraryRootRepository {
                 marker: PhantomData,
             }
         }
@@ -355,10 +461,30 @@ mod tests {
             = SaveFailureRepository<'scope>
         where
             Self: 'scope;
+        type LibrarySourceRepository<'scope>
+            = NoopLibrarySourceRepository<'scope>
+        where
+            Self: 'scope;
+        type LibraryRootRepository<'scope>
+            = NoopLibraryRootRepository<'scope>
+        where
+            Self: 'scope;
 
         fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
             SaveFailureRepository {
                 state: std::sync::Arc::clone(&self.state),
+                marker: PhantomData,
+            }
+        }
+
+        fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+            NoopLibrarySourceRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+            NoopLibraryRootRepository {
                 marker: PhantomData,
             }
         }
@@ -479,10 +605,30 @@ mod tests {
             = OrderedRepository<'scope>
         where
             Self: 'scope;
+        type LibrarySourceRepository<'scope>
+            = NoopLibrarySourceRepository<'scope>
+        where
+            Self: 'scope;
+        type LibraryRootRepository<'scope>
+            = NoopLibraryRootRepository<'scope>
+        where
+            Self: 'scope;
 
         fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
             OrderedRepository {
                 state: std::sync::Arc::clone(&self.state),
+                marker: PhantomData,
+            }
+        }
+
+        fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+            NoopLibrarySourceRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+            NoopLibraryRootRepository {
                 marker: PhantomData,
             }
         }
@@ -600,9 +746,12 @@ mod tests {
         );
         collector.discard();
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let bus = EventBus::new(vec![Box::new(CountingSubscriber {
-            calls: std::sync::Arc::clone(&calls),
-        })]);
+        let bus = EventBus::new(
+            vec![Box::new(CountingSubscriber {
+                calls: std::sync::Arc::clone(&calls),
+            })],
+            Vec::new(),
+        );
         for event in collector.take_all() {
             let _ = bus.publish(event);
         }
@@ -636,9 +785,12 @@ mod tests {
         let events = collector.take_all();
         assert!(events.is_empty(), "a failed save cannot record an event");
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let bus = EventBus::new(vec![Box::new(CountingSubscriber {
-            calls: std::sync::Arc::clone(&calls),
-        })]);
+        let bus = EventBus::new(
+            vec![Box::new(CountingSubscriber {
+                calls: std::sync::Arc::clone(&calls),
+            })],
+            Vec::new(),
+        );
         for event in events {
             let _ = bus.publish(event);
         }
@@ -666,9 +818,12 @@ mod tests {
             collector.recorder(),
             Arc::new(|| false),
         );
-        let bus = EventBus::new(vec![Box::new(OrderedSubscriber {
-            order: std::sync::Arc::clone(&order),
-        })]);
+        let bus = EventBus::new(
+            vec![Box::new(OrderedSubscriber {
+                order: std::sync::Arc::clone(&order),
+            })],
+            Vec::new(),
+        );
         let diagnostics = std::sync::Mutex::new(PublicationDiagnostics::new());
 
         assert!(
@@ -704,14 +859,17 @@ mod tests {
         );
         let failing_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let later_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let bus = EventBus::new(vec![
-            Box::new(FailingSubscriber {
-                calls: std::sync::Arc::clone(&failing_calls),
-            }),
-            Box::new(CountingSubscriber {
-                calls: std::sync::Arc::clone(&later_calls),
-            }),
-        ]);
+        let bus = EventBus::new(
+            vec![
+                Box::new(FailingSubscriber {
+                    calls: std::sync::Arc::clone(&failing_calls),
+                }),
+                Box::new(CountingSubscriber {
+                    calls: std::sync::Arc::clone(&later_calls),
+                }),
+            ],
+            Vec::new(),
+        );
         let diagnostics = std::sync::Mutex::new(PublicationDiagnostics::new());
 
         assert!(

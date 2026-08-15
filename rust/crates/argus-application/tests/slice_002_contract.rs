@@ -4,11 +4,13 @@ use std::rc::Rc;
 
 use argus_application::{
     AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
-    ApplicationSeverity, ArchitectureClass, ErrorCategory, ErrorCode, FailureRole, LogEvent,
-    LogLevel, MigrationOutcome, ObservabilitySink, OperationContext, OperationName, PathClass,
-    PersistenceError, PlatformClass, Recoverability, RetryPolicy, SafeContext, SafeContextError,
-    SafeContextField, SafeContextValue, StartupCollector, TechnicalClass, ThemeMode, TraceEvent,
-    TraceEventPhase, TraceId, TraceIdError, UnitOfWork, UnitOfWorkFactory, Version,
+    ApplicationSeverity, ArchitectureClass, ErrorCategory, ErrorCode, FailureRole, LibraryRootId,
+    LibraryRootRepository, LibrarySourceId, LibrarySourceRepository, LogEvent, LogLevel,
+    MigrationOutcome, NewLibraryRoot, ObservabilitySink, OperationContext, OperationName,
+    PathClass, PersistenceError, PlatformClass, Recoverability, RetryPolicy, SafeContext,
+    SafeContextError, SafeContextField, SafeContextValue, StartupCollector, TechnicalClass,
+    ThemeMode, TraceEvent, TraceEventPhase, TraceId, TraceIdError, UnitOfWork, UnitOfWorkFactory,
+    Version,
 };
 
 fn context() -> OperationContext {
@@ -354,14 +356,58 @@ impl AppearanceSettingsRepository for NoopAppearanceRepository<'_> {
     }
 }
 
+struct NoopLibrarySourceRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibrarySourceRepository for NoopLibrarySourceRepository<'_> {
+    fn ensure_local_filesystem_source(&mut self) -> Result<LibrarySourceId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
+struct NoopLibraryRootRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibraryRootRepository for NoopLibraryRootRepository<'_> {
+    fn insert(&mut self, _root: NewLibraryRoot) -> Result<LibraryRootId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn delete(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
 impl UnitOfWork for RecordingUnitOfWork<'_> {
     type AppearanceSettingsRepository<'scope>
         = NoopAppearanceRepository<'scope>
     where
         Self: 'scope;
+    type LibrarySourceRepository<'scope>
+        = NoopLibrarySourceRepository<'scope>
+    where
+        Self: 'scope;
+    type LibraryRootRepository<'scope>
+        = NoopLibraryRootRepository<'scope>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         NoopAppearanceRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+        NoopLibrarySourceRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+        NoopLibraryRootRepository {
             marker: PhantomData,
         }
     }

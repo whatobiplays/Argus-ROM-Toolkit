@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use argus_application::{
     AppearanceSettings, AppearanceSettingsQueries, AppearanceSettingsRepository, ApplicationEvent,
     ApplicationPortError, EventRecorder, EventRecordingError, GetAppearanceSettingsHandler,
-    GetAppearanceSettingsQuery, OperationContext, OperationName, PersistenceError,
+    GetAppearanceSettingsQuery, LibraryRootId, LibraryRootRepository, LibrarySourceId,
+    LibrarySourceRepository, NewLibraryRoot, OperationContext, OperationName, PersistenceError,
     SafeContextField, SafeContextValue, SettingsDomain, SettingsService, SubsystemName, ThemeMode,
     TraceId, UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand,
 };
@@ -30,6 +31,30 @@ impl AppearanceSettingsQueries for FakeQueries {
 struct FakeRepository<'scope> {
     state: Arc<Mutex<FakeState>>,
     marker: PhantomData<&'scope mut ()>,
+}
+
+struct NoopLibrarySourceRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibrarySourceRepository for NoopLibrarySourceRepository<'_> {
+    fn ensure_local_filesystem_source(&mut self) -> Result<LibrarySourceId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
+struct NoopLibraryRootRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibraryRootRepository for NoopLibraryRootRepository<'_> {
+    fn insert(&mut self, _root: NewLibraryRoot) -> Result<LibraryRootId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn delete(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
 }
 
 impl AppearanceSettingsRepository for FakeRepository<'_> {
@@ -58,10 +83,30 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
         = FakeRepository<'scope>
     where
         Self: 'scope;
+    type LibrarySourceRepository<'scope>
+        = NoopLibrarySourceRepository<'scope>
+    where
+        Self: 'scope;
+    type LibraryRootRepository<'scope>
+        = NoopLibraryRootRepository<'scope>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         FakeRepository {
             state: Arc::clone(&self.state),
+            marker: PhantomData,
+        }
+    }
+
+    fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+        NoopLibrarySourceRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+        NoopLibraryRootRepository {
             marker: PhantomData,
         }
     }

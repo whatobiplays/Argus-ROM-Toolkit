@@ -6,6 +6,7 @@ import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/client/client.dart';
+import '../../core/client/sources_gateway_stub.dart';
 import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
 import 'package:argus/features/settings/application/appearance_settings_state.dart';
 import 'package:argus/features/startup/startup.dart';
@@ -178,7 +179,9 @@ void main() {
   });
 }
 
-final class _PendingGateway implements ArgusClientGateway {
+final class _PendingGateway
+    with SourcesGatewayStub
+    implements ArgusClientGateway {
   final Completer<RuntimeState> initialization = Completer<RuntimeState>();
   int initializeCalls = 0;
 

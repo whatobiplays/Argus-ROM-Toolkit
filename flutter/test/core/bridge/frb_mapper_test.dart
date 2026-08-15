@@ -4,6 +4,147 @@ import 'package:argus/core/client/client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('library root DTO maps projections without locator leakage', () {
+    final root = libraryRootFromDto(
+      const dto.LibraryRootDto(
+        libraryRootId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        displayName: 'Games',
+        safeLocationPresentation: '/library/Games',
+        availability: dto.LibraryRootAvailabilityDto.available,
+        lastScan: null,
+        activeScan: null,
+      ),
+    );
+
+    expect(root.id.value, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(root.displayName, 'Games');
+    expect(root.safeLocationPresentation, '/library/Games');
+    expect(root.availability, LibraryRootAvailability.available);
+    expect(root.lastScan, isNull);
+    expect(root.activeScan, isNull);
+  });
+
+  test('library root DTO rejects malformed identity as contract mismatch', () {
+    expect(
+      () => libraryRootFromDto(
+        const dto.LibraryRootDto(
+          libraryRootId: 'not-an-id',
+          displayName: 'Games',
+          safeLocationPresentation: '/library/Games',
+          availability: dto.LibraryRootAvailabilityDto.unknown,
+        ),
+      ),
+      throwsA(
+        isA<TransportFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          TransportFailureKind.contractMismatch,
+        ),
+      ),
+    );
+  });
+
+  test('library root page DTO maps bounded paging facts', () {
+    final page = libraryRootPageFromDto(
+      const dto.LibraryRootPageDto(
+        items: [
+          dto.LibraryRootDto(
+            libraryRootId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            displayName: 'Games',
+            safeLocationPresentation: '/library/Games',
+            availability: dto.LibraryRootAvailabilityDto.available,
+          ),
+        ],
+        offset: 0,
+        pageSize: 10,
+        totalCount: 1,
+      ),
+    );
+
+    expect(page.items.single.displayName, 'Games');
+    expect(page.offset, 0);
+    expect(page.pageSize, 10);
+    expect(page.totalCount, 1);
+  });
+
+  test('add result DTO maps every typed outcome', () {
+    final added = addLocalLibraryRootResultFromDto(
+      dto.AddLocalLibraryRootResultDto.added(
+        const dto.LibraryRootDto(
+          libraryRootId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          displayName: 'Games',
+          safeLocationPresentation: '/library/Games',
+          availability: dto.LibraryRootAvailabilityDto.available,
+        ),
+      ),
+    );
+    expect(added, isA<AddLocalLibraryRootResultAdded>());
+
+    final already = addLocalLibraryRootResultFromDto(
+      dto.AddLocalLibraryRootResultDto.alreadyConfigured(
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      ),
+    );
+    expect(
+      already,
+      AddLocalLibraryRootResult.alreadyConfigured(
+        const LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+      ),
+    );
+
+    final overlap = addLocalLibraryRootResultFromDto(
+      dto.AddLocalLibraryRootResultDto.overlapsExisting(
+        'cccccccccccccccccccccccccccccccc',
+        dto.RootRelationshipDto.ancestor,
+      ),
+    );
+    expect(
+      overlap,
+      AddLocalLibraryRootResult.overlapsExisting(
+        existingLibraryRootId: const LibraryRootId(
+          'cccccccccccccccccccccccccccccccc',
+        ),
+        relationship: RootRelationship.ancestor,
+      ),
+    );
+  });
+
+  test('remove result DTO maps the slice outcome', () {
+    expect(
+      removeLibraryRootResultFromDto(dto.RemoveLibraryRootResultDto.removed),
+      RemoveLibraryRootResult.removed,
+    );
+  });
+
+  test('sources event payloads map with bounded identity only', () {
+    final roots = runtimeEventFromDto(
+      dto.RuntimeEventDto(
+        runtimeInstanceId: '1234567890abcdef1234567890abcdef',
+        sequence: BigInt.one,
+        occurredAtMs: BigInt.from(100),
+        payload: const dto.RuntimeEventPayloadDto.libraryRootsChanged(),
+      ),
+    );
+    expect(roots.payload, isA<RuntimeEventPayloadLibraryRootsChanged>());
+
+    final root = runtimeEventFromDto(
+      dto.RuntimeEventDto(
+        runtimeInstanceId: '1234567890abcdef1234567890abcdef',
+        sequence: BigInt.two,
+        occurredAtMs: BigInt.from(101),
+        payload: const dto.RuntimeEventPayloadDto.libraryRootChanged(
+          libraryRootId: 'dddddddddddddddddddddddddddddddd',
+        ),
+      ),
+    );
+    expect(
+      root.payload,
+      RuntimeEventPayload.libraryRootChanged(
+        libraryRootId: const LibraryRootId('dddddddddddddddddddddddddddddddd'),
+      ),
+    );
+  });
+
   test('invalid runtime identity fails through TransportFailure', () {
     expect(
       () => runtimeStateFromDto(

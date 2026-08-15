@@ -9,9 +9,13 @@ mod errors;
 mod events;
 mod observability;
 mod settings;
+mod sources;
 mod unit_of_work;
 
-pub use argus_domain::{AppearanceSettings, ThemeMode, ThemeModeParseError};
+pub use argus_domain::{
+    AppearanceSettings, LibraryRootId, LibraryRootIdError, LibrarySourceId, LibrarySourceIdError,
+    ThemeMode, ThemeModeParseError,
+};
 pub use diagnostics::{
     DiagnosticArtifact, DiagnosticContributor, DiagnosticContributorError, HealthSnapshot,
     SubsystemHealthState,
@@ -36,5 +40,16 @@ pub use settings::{
     AppearanceSettingsQueries, AppearanceSettingsRepository, GetAppearanceSettingsHandler,
     GetAppearanceSettingsQuery, SettingsService, UpdateAppearanceSettingsCommand,
     UpdateAppearanceSettingsHandler,
+};
+pub use sources::{
+    AddLocalLibraryRootCommand, AddLocalLibraryRootHandler, AddLocalLibraryRootResult,
+    GetLibraryRootHandler, GetLibraryRootQuery, LibraryRootActiveScanSummary,
+    LibraryRootAvailability, LibraryRootChanged, LibraryRootConfiguration,
+    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootPage, LibraryRootProjection,
+    LibraryRootQueries, LibraryRootRepository, LibraryRootsChanged, LibraryRootsSubscriber,
+    LibraryService, LibrarySourceRepository, ListLibraryRootsHandler, ListLibraryRootsQuery,
+    LocalFilesystemProvider, LocalFilesystemRootSelection, NewLibraryRoot, ProviderError,
+    RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult, RootLocator,
+    RootRelationship, SourceProviderType, SourceProviderTypeError, ValidatedLocalRoot,
 };
 pub use unit_of_work::{UnitOfWork, UnitOfWorkFactory};

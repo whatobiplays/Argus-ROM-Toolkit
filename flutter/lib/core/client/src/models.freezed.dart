@@ -2766,6 +2766,647 @@ as String,
 }
 
 /// @nodoc
+mixin _$LibraryRoot {
+
+ LibraryRootId get id; String get displayName; String get safeLocationPresentation; LibraryRootAvailability get availability; LibraryRootLastScan? get lastScan; LibraryRootActiveScan? get activeScan;
+/// Create a copy of LibraryRoot
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryRootCopyWith<LibraryRoot> get copyWith => _$LibraryRootCopyWithImpl<LibraryRoot>(this as LibraryRoot, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryRoot&&(identical(other.id, id) || other.id == id)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.safeLocationPresentation, safeLocationPresentation) || other.safeLocationPresentation == safeLocationPresentation)&&(identical(other.availability, availability) || other.availability == availability)&&(identical(other.lastScan, lastScan) || other.lastScan == lastScan)&&(identical(other.activeScan, activeScan) || other.activeScan == activeScan));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,id,displayName,safeLocationPresentation,availability,lastScan,activeScan);
+
+@override
+String toString() {
+  return 'LibraryRoot(id: $id, displayName: $displayName, safeLocationPresentation: $safeLocationPresentation, availability: $availability, lastScan: $lastScan, activeScan: $activeScan)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryRootCopyWith<$Res>  {
+  factory $LibraryRootCopyWith(LibraryRoot value, $Res Function(LibraryRoot) _then) = _$LibraryRootCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId id, String displayName, String safeLocationPresentation, LibraryRootAvailability availability, LibraryRootLastScan? lastScan, LibraryRootActiveScan? activeScan
+});
+
+
+
+
+}
+/// @nodoc
+class _$LibraryRootCopyWithImpl<$Res>
+    implements $LibraryRootCopyWith<$Res> {
+  _$LibraryRootCopyWithImpl(this._self, this._then);
+
+  final LibraryRoot _self;
+  final $Res Function(LibraryRoot) _then;
+
+/// Create a copy of LibraryRoot
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? displayName = null,Object? safeLocationPresentation = null,Object? availability = null,Object? lastScan = freezed,Object? activeScan = freezed,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,displayName: null == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String,safeLocationPresentation: null == safeLocationPresentation ? _self.safeLocationPresentation : safeLocationPresentation // ignore: cast_nullable_to_non_nullable
+as String,availability: null == availability ? _self.availability : availability // ignore: cast_nullable_to_non_nullable
+as LibraryRootAvailability,lastScan: freezed == lastScan ? _self.lastScan : lastScan // ignore: cast_nullable_to_non_nullable
+as LibraryRootLastScan?,activeScan: freezed == activeScan ? _self.activeScan : activeScan // ignore: cast_nullable_to_non_nullable
+as LibraryRootActiveScan?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [LibraryRoot].
+extension LibraryRootPatterns on LibraryRoot {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _LibraryRoot value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _LibraryRoot() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _LibraryRoot value)  $default,){
+final _that = this;
+switch (_that) {
+case _LibraryRoot():
+return $default(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _LibraryRoot value)?  $default,){
+final _that = this;
+switch (_that) {
+case _LibraryRoot() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( LibraryRootId id,  String displayName,  String safeLocationPresentation,  LibraryRootAvailability availability,  LibraryRootLastScan? lastScan,  LibraryRootActiveScan? activeScan)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _LibraryRoot() when $default != null:
+return $default(_that.id,_that.displayName,_that.safeLocationPresentation,_that.availability,_that.lastScan,_that.activeScan);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( LibraryRootId id,  String displayName,  String safeLocationPresentation,  LibraryRootAvailability availability,  LibraryRootLastScan? lastScan,  LibraryRootActiveScan? activeScan)  $default,) {final _that = this;
+switch (_that) {
+case _LibraryRoot():
+return $default(_that.id,_that.displayName,_that.safeLocationPresentation,_that.availability,_that.lastScan,_that.activeScan);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( LibraryRootId id,  String displayName,  String safeLocationPresentation,  LibraryRootAvailability availability,  LibraryRootLastScan? lastScan,  LibraryRootActiveScan? activeScan)?  $default,) {final _that = this;
+switch (_that) {
+case _LibraryRoot() when $default != null:
+return $default(_that.id,_that.displayName,_that.safeLocationPresentation,_that.availability,_that.lastScan,_that.activeScan);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class _LibraryRoot implements LibraryRoot {
+  const _LibraryRoot({required this.id, required this.displayName, required this.safeLocationPresentation, required this.availability, this.lastScan, this.activeScan});
+
+
+@override final  LibraryRootId id;
+@override final  String displayName;
+@override final  String safeLocationPresentation;
+@override final  LibraryRootAvailability availability;
+@override final  LibraryRootLastScan? lastScan;
+@override final  LibraryRootActiveScan? activeScan;
+
+/// Create a copy of LibraryRoot
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$LibraryRootCopyWith<_LibraryRoot> get copyWith => __$LibraryRootCopyWithImpl<_LibraryRoot>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryRoot&&(identical(other.id, id) || other.id == id)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.safeLocationPresentation, safeLocationPresentation) || other.safeLocationPresentation == safeLocationPresentation)&&(identical(other.availability, availability) || other.availability == availability)&&(identical(other.lastScan, lastScan) || other.lastScan == lastScan)&&(identical(other.activeScan, activeScan) || other.activeScan == activeScan));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,id,displayName,safeLocationPresentation,availability,lastScan,activeScan);
+
+@override
+String toString() {
+  return 'LibraryRoot(id: $id, displayName: $displayName, safeLocationPresentation: $safeLocationPresentation, availability: $availability, lastScan: $lastScan, activeScan: $activeScan)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$LibraryRootCopyWith<$Res> implements $LibraryRootCopyWith<$Res> {
+  factory _$LibraryRootCopyWith(_LibraryRoot value, $Res Function(_LibraryRoot) _then) = __$LibraryRootCopyWithImpl;
+@override @useResult
+$Res call({
+ LibraryRootId id, String displayName, String safeLocationPresentation, LibraryRootAvailability availability, LibraryRootLastScan? lastScan, LibraryRootActiveScan? activeScan
+});
+
+
+
+
+}
+/// @nodoc
+class __$LibraryRootCopyWithImpl<$Res>
+    implements _$LibraryRootCopyWith<$Res> {
+  __$LibraryRootCopyWithImpl(this._self, this._then);
+
+  final _LibraryRoot _self;
+  final $Res Function(_LibraryRoot) _then;
+
+/// Create a copy of LibraryRoot
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? displayName = null,Object? safeLocationPresentation = null,Object? availability = null,Object? lastScan = freezed,Object? activeScan = freezed,}) {
+  return _then(_LibraryRoot(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,displayName: null == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String,safeLocationPresentation: null == safeLocationPresentation ? _self.safeLocationPresentation : safeLocationPresentation // ignore: cast_nullable_to_non_nullable
+as String,availability: null == availability ? _self.availability : availability // ignore: cast_nullable_to_non_nullable
+as LibraryRootAvailability,lastScan: freezed == lastScan ? _self.lastScan : lastScan // ignore: cast_nullable_to_non_nullable
+as LibraryRootLastScan?,activeScan: freezed == activeScan ? _self.activeScan : activeScan // ignore: cast_nullable_to_non_nullable
+as LibraryRootActiveScan?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$AddLocalLibraryRootResult {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootResult);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootResult()';
+}
+
+
+}
+
+/// @nodoc
+class $AddLocalLibraryRootResultCopyWith<$Res>  {
+$AddLocalLibraryRootResultCopyWith(AddLocalLibraryRootResult _, $Res Function(AddLocalLibraryRootResult) __);
+}
+
+
+/// Adds pattern-matching-related methods to [AddLocalLibraryRootResult].
+extension AddLocalLibraryRootResultPatterns on AddLocalLibraryRootResult {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( AddLocalLibraryRootResultAdded value)?  added,TResult Function( AddLocalLibraryRootResultAlreadyConfigured value)?  alreadyConfigured,TResult Function( AddLocalLibraryRootResultOverlapsExisting value)?  overlapsExisting,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case AddLocalLibraryRootResultAdded() when added != null:
+return added(_that);case AddLocalLibraryRootResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that);case AddLocalLibraryRootResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( AddLocalLibraryRootResultAdded value)  added,required TResult Function( AddLocalLibraryRootResultAlreadyConfigured value)  alreadyConfigured,required TResult Function( AddLocalLibraryRootResultOverlapsExisting value)  overlapsExisting,}){
+final _that = this;
+switch (_that) {
+case AddLocalLibraryRootResultAdded():
+return added(_that);case AddLocalLibraryRootResultAlreadyConfigured():
+return alreadyConfigured(_that);case AddLocalLibraryRootResultOverlapsExisting():
+return overlapsExisting(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( AddLocalLibraryRootResultAdded value)?  added,TResult? Function( AddLocalLibraryRootResultAlreadyConfigured value)?  alreadyConfigured,TResult? Function( AddLocalLibraryRootResultOverlapsExisting value)?  overlapsExisting,}){
+final _that = this;
+switch (_that) {
+case AddLocalLibraryRootResultAdded() when added != null:
+return added(_that);case AddLocalLibraryRootResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that);case AddLocalLibraryRootResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryRoot root)?  added,TResult Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case AddLocalLibraryRootResultAdded() when added != null:
+return added(_that.root);case AddLocalLibraryRootResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that.existingLibraryRootId);case AddLocalLibraryRootResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that.existingLibraryRootId,_that.relationship);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryRoot root)  added,required TResult Function( LibraryRootId existingLibraryRootId)  alreadyConfigured,required TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)  overlapsExisting,}) {final _that = this;
+switch (_that) {
+case AddLocalLibraryRootResultAdded():
+return added(_that.root);case AddLocalLibraryRootResultAlreadyConfigured():
+return alreadyConfigured(_that.existingLibraryRootId);case AddLocalLibraryRootResultOverlapsExisting():
+return overlapsExisting(_that.existingLibraryRootId,_that.relationship);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryRoot root)?  added,TResult? Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult? Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,}) {final _that = this;
+switch (_that) {
+case AddLocalLibraryRootResultAdded() when added != null:
+return added(_that.root);case AddLocalLibraryRootResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that.existingLibraryRootId);case AddLocalLibraryRootResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that.existingLibraryRootId,_that.relationship);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class AddLocalLibraryRootResultAdded implements AddLocalLibraryRootResult {
+  const AddLocalLibraryRootResultAdded(this.root);
+
+
+ final  LibraryRoot root;
+
+/// Create a copy of AddLocalLibraryRootResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLocalLibraryRootResultAddedCopyWith<AddLocalLibraryRootResultAdded> get copyWith => _$AddLocalLibraryRootResultAddedCopyWithImpl<AddLocalLibraryRootResultAdded>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootResultAdded&&(identical(other.root, root) || other.root == root));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,root);
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootResult.added(root: $root)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLocalLibraryRootResultAddedCopyWith<$Res> implements $AddLocalLibraryRootResultCopyWith<$Res> {
+  factory $AddLocalLibraryRootResultAddedCopyWith(AddLocalLibraryRootResultAdded value, $Res Function(AddLocalLibraryRootResultAdded) _then) = _$AddLocalLibraryRootResultAddedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRoot root
+});
+
+
+$LibraryRootCopyWith<$Res> get root;
+
+}
+/// @nodoc
+class _$AddLocalLibraryRootResultAddedCopyWithImpl<$Res>
+    implements $AddLocalLibraryRootResultAddedCopyWith<$Res> {
+  _$AddLocalLibraryRootResultAddedCopyWithImpl(this._self, this._then);
+
+  final AddLocalLibraryRootResultAdded _self;
+  final $Res Function(AddLocalLibraryRootResultAdded) _then;
+
+/// Create a copy of AddLocalLibraryRootResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? root = null,}) {
+  return _then(AddLocalLibraryRootResultAdded(
+null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
+as LibraryRoot,
+  ));
+}
+
+/// Create a copy of AddLocalLibraryRootResult
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryRootCopyWith<$Res> get root {
+
+  return $LibraryRootCopyWith<$Res>(_self.root, (value) {
+    return _then(_self.copyWith(root: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class AddLocalLibraryRootResultAlreadyConfigured implements AddLocalLibraryRootResult {
+  const AddLocalLibraryRootResultAlreadyConfigured(this.existingLibraryRootId);
+
+
+ final  LibraryRootId existingLibraryRootId;
+
+/// Create a copy of AddLocalLibraryRootResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLocalLibraryRootResultAlreadyConfiguredCopyWith<AddLocalLibraryRootResultAlreadyConfigured> get copyWith => _$AddLocalLibraryRootResultAlreadyConfiguredCopyWithImpl<AddLocalLibraryRootResultAlreadyConfigured>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootResultAlreadyConfigured&&(identical(other.existingLibraryRootId, existingLibraryRootId) || other.existingLibraryRootId == existingLibraryRootId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,existingLibraryRootId);
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootResult.alreadyConfigured(existingLibraryRootId: $existingLibraryRootId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLocalLibraryRootResultAlreadyConfiguredCopyWith<$Res> implements $AddLocalLibraryRootResultCopyWith<$Res> {
+  factory $AddLocalLibraryRootResultAlreadyConfiguredCopyWith(AddLocalLibraryRootResultAlreadyConfigured value, $Res Function(AddLocalLibraryRootResultAlreadyConfigured) _then) = _$AddLocalLibraryRootResultAlreadyConfiguredCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId existingLibraryRootId
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLocalLibraryRootResultAlreadyConfiguredCopyWithImpl<$Res>
+    implements $AddLocalLibraryRootResultAlreadyConfiguredCopyWith<$Res> {
+  _$AddLocalLibraryRootResultAlreadyConfiguredCopyWithImpl(this._self, this._then);
+
+  final AddLocalLibraryRootResultAlreadyConfigured _self;
+  final $Res Function(AddLocalLibraryRootResultAlreadyConfigured) _then;
+
+/// Create a copy of AddLocalLibraryRootResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? existingLibraryRootId = null,}) {
+  return _then(AddLocalLibraryRootResultAlreadyConfigured(
+null == existingLibraryRootId ? _self.existingLibraryRootId : existingLibraryRootId // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class AddLocalLibraryRootResultOverlapsExisting implements AddLocalLibraryRootResult {
+  const AddLocalLibraryRootResultOverlapsExisting({required this.existingLibraryRootId, required this.relationship});
+
+
+ final  LibraryRootId existingLibraryRootId;
+ final  RootRelationship relationship;
+
+/// Create a copy of AddLocalLibraryRootResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLocalLibraryRootResultOverlapsExistingCopyWith<AddLocalLibraryRootResultOverlapsExisting> get copyWith => _$AddLocalLibraryRootResultOverlapsExistingCopyWithImpl<AddLocalLibraryRootResultOverlapsExisting>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootResultOverlapsExisting&&(identical(other.existingLibraryRootId, existingLibraryRootId) || other.existingLibraryRootId == existingLibraryRootId)&&(identical(other.relationship, relationship) || other.relationship == relationship));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,existingLibraryRootId,relationship);
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootResult.overlapsExisting(existingLibraryRootId: $existingLibraryRootId, relationship: $relationship)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLocalLibraryRootResultOverlapsExistingCopyWith<$Res> implements $AddLocalLibraryRootResultCopyWith<$Res> {
+  factory $AddLocalLibraryRootResultOverlapsExistingCopyWith(AddLocalLibraryRootResultOverlapsExisting value, $Res Function(AddLocalLibraryRootResultOverlapsExisting) _then) = _$AddLocalLibraryRootResultOverlapsExistingCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId existingLibraryRootId, RootRelationship relationship
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLocalLibraryRootResultOverlapsExistingCopyWithImpl<$Res>
+    implements $AddLocalLibraryRootResultOverlapsExistingCopyWith<$Res> {
+  _$AddLocalLibraryRootResultOverlapsExistingCopyWithImpl(this._self, this._then);
+
+  final AddLocalLibraryRootResultOverlapsExisting _self;
+  final $Res Function(AddLocalLibraryRootResultOverlapsExisting) _then;
+
+/// Create a copy of AddLocalLibraryRootResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? existingLibraryRootId = null,Object? relationship = null,}) {
+  return _then(AddLocalLibraryRootResultOverlapsExisting(
+existingLibraryRootId: null == existingLibraryRootId ? _self.existingLibraryRootId : existingLibraryRootId // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,relationship: null == relationship ? _self.relationship : relationship // ignore: cast_nullable_to_non_nullable
+as RootRelationship,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$RuntimeEventPayload {
 
 
@@ -2809,13 +3450,15 @@ extension RuntimeEventPayloadPatterns on RuntimeEventPayload {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RuntimeEventPayloadRuntimeStateChanged value)?  runtimeStateChanged,TResult Function( RuntimeEventPayloadStartupFailed value)?  startupFailed,TResult Function( RuntimeEventPayloadAppearanceSettingsChanged value)?  appearanceSettingsChanged,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RuntimeEventPayloadRuntimeStateChanged value)?  runtimeStateChanged,TResult Function( RuntimeEventPayloadStartupFailed value)?  startupFailed,TResult Function( RuntimeEventPayloadAppearanceSettingsChanged value)?  appearanceSettingsChanged,TResult Function( RuntimeEventPayloadLibraryRootsChanged value)?  libraryRootsChanged,TResult Function( RuntimeEventPayloadLibraryRootChanged value)?  libraryRootChanged,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RuntimeEventPayloadRuntimeStateChanged() when runtimeStateChanged != null:
 return runtimeStateChanged(_that);case RuntimeEventPayloadStartupFailed() when startupFailed != null:
 return startupFailed(_that);case RuntimeEventPayloadAppearanceSettingsChanged() when appearanceSettingsChanged != null:
-return appearanceSettingsChanged(_that);case _:
+return appearanceSettingsChanged(_that);case RuntimeEventPayloadLibraryRootsChanged() when libraryRootsChanged != null:
+return libraryRootsChanged(_that);case RuntimeEventPayloadLibraryRootChanged() when libraryRootChanged != null:
+return libraryRootChanged(_that);case _:
   return orElse();
 
 }
@@ -2833,13 +3476,15 @@ return appearanceSettingsChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RuntimeEventPayloadRuntimeStateChanged value)  runtimeStateChanged,required TResult Function( RuntimeEventPayloadStartupFailed value)  startupFailed,required TResult Function( RuntimeEventPayloadAppearanceSettingsChanged value)  appearanceSettingsChanged,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RuntimeEventPayloadRuntimeStateChanged value)  runtimeStateChanged,required TResult Function( RuntimeEventPayloadStartupFailed value)  startupFailed,required TResult Function( RuntimeEventPayloadAppearanceSettingsChanged value)  appearanceSettingsChanged,required TResult Function( RuntimeEventPayloadLibraryRootsChanged value)  libraryRootsChanged,required TResult Function( RuntimeEventPayloadLibraryRootChanged value)  libraryRootChanged,}){
 final _that = this;
 switch (_that) {
 case RuntimeEventPayloadRuntimeStateChanged():
 return runtimeStateChanged(_that);case RuntimeEventPayloadStartupFailed():
 return startupFailed(_that);case RuntimeEventPayloadAppearanceSettingsChanged():
-return appearanceSettingsChanged(_that);}
+return appearanceSettingsChanged(_that);case RuntimeEventPayloadLibraryRootsChanged():
+return libraryRootsChanged(_that);case RuntimeEventPayloadLibraryRootChanged():
+return libraryRootChanged(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2853,13 +3498,15 @@ return appearanceSettingsChanged(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RuntimeEventPayloadRuntimeStateChanged value)?  runtimeStateChanged,TResult? Function( RuntimeEventPayloadStartupFailed value)?  startupFailed,TResult? Function( RuntimeEventPayloadAppearanceSettingsChanged value)?  appearanceSettingsChanged,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RuntimeEventPayloadRuntimeStateChanged value)?  runtimeStateChanged,TResult? Function( RuntimeEventPayloadStartupFailed value)?  startupFailed,TResult? Function( RuntimeEventPayloadAppearanceSettingsChanged value)?  appearanceSettingsChanged,TResult? Function( RuntimeEventPayloadLibraryRootsChanged value)?  libraryRootsChanged,TResult? Function( RuntimeEventPayloadLibraryRootChanged value)?  libraryRootChanged,}){
 final _that = this;
 switch (_that) {
 case RuntimeEventPayloadRuntimeStateChanged() when runtimeStateChanged != null:
 return runtimeStateChanged(_that);case RuntimeEventPayloadStartupFailed() when startupFailed != null:
 return startupFailed(_that);case RuntimeEventPayloadAppearanceSettingsChanged() when appearanceSettingsChanged != null:
-return appearanceSettingsChanged(_that);case _:
+return appearanceSettingsChanged(_that);case RuntimeEventPayloadLibraryRootsChanged() when libraryRootsChanged != null:
+return libraryRootsChanged(_that);case RuntimeEventPayloadLibraryRootChanged() when libraryRootChanged != null:
+return libraryRootChanged(_that);case _:
   return null;
 
 }
@@ -2876,12 +3523,14 @@ return appearanceSettingsChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( RuntimeLifecycle lifecycle)?  runtimeStateChanged,TResult Function( StartupPhase phase)?  startupFailed,TResult Function()?  appearanceSettingsChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( RuntimeLifecycle lifecycle)?  runtimeStateChanged,TResult Function( StartupPhase phase)?  startupFailed,TResult Function()?  appearanceSettingsChanged,TResult Function()?  libraryRootsChanged,TResult Function( LibraryRootId libraryRootId)?  libraryRootChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RuntimeEventPayloadRuntimeStateChanged() when runtimeStateChanged != null:
 return runtimeStateChanged(_that.lifecycle);case RuntimeEventPayloadStartupFailed() when startupFailed != null:
 return startupFailed(_that.phase);case RuntimeEventPayloadAppearanceSettingsChanged() when appearanceSettingsChanged != null:
-return appearanceSettingsChanged();case _:
+return appearanceSettingsChanged();case RuntimeEventPayloadLibraryRootsChanged() when libraryRootsChanged != null:
+return libraryRootsChanged();case RuntimeEventPayloadLibraryRootChanged() when libraryRootChanged != null:
+return libraryRootChanged(_that.libraryRootId);case _:
   return orElse();
 
 }
@@ -2899,12 +3548,14 @@ return appearanceSettingsChanged();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( RuntimeLifecycle lifecycle)  runtimeStateChanged,required TResult Function( StartupPhase phase)  startupFailed,required TResult Function()  appearanceSettingsChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( RuntimeLifecycle lifecycle)  runtimeStateChanged,required TResult Function( StartupPhase phase)  startupFailed,required TResult Function()  appearanceSettingsChanged,required TResult Function()  libraryRootsChanged,required TResult Function( LibraryRootId libraryRootId)  libraryRootChanged,}) {final _that = this;
 switch (_that) {
 case RuntimeEventPayloadRuntimeStateChanged():
 return runtimeStateChanged(_that.lifecycle);case RuntimeEventPayloadStartupFailed():
 return startupFailed(_that.phase);case RuntimeEventPayloadAppearanceSettingsChanged():
-return appearanceSettingsChanged();}
+return appearanceSettingsChanged();case RuntimeEventPayloadLibraryRootsChanged():
+return libraryRootsChanged();case RuntimeEventPayloadLibraryRootChanged():
+return libraryRootChanged(_that.libraryRootId);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2918,12 +3569,14 @@ return appearanceSettingsChanged();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( RuntimeLifecycle lifecycle)?  runtimeStateChanged,TResult? Function( StartupPhase phase)?  startupFailed,TResult? Function()?  appearanceSettingsChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( RuntimeLifecycle lifecycle)?  runtimeStateChanged,TResult? Function( StartupPhase phase)?  startupFailed,TResult? Function()?  appearanceSettingsChanged,TResult? Function()?  libraryRootsChanged,TResult? Function( LibraryRootId libraryRootId)?  libraryRootChanged,}) {final _that = this;
 switch (_that) {
 case RuntimeEventPayloadRuntimeStateChanged() when runtimeStateChanged != null:
 return runtimeStateChanged(_that.lifecycle);case RuntimeEventPayloadStartupFailed() when startupFailed != null:
 return startupFailed(_that.phase);case RuntimeEventPayloadAppearanceSettingsChanged() when appearanceSettingsChanged != null:
-return appearanceSettingsChanged();case _:
+return appearanceSettingsChanged();case RuntimeEventPayloadLibraryRootsChanged() when libraryRootsChanged != null:
+return libraryRootsChanged();case RuntimeEventPayloadLibraryRootChanged() when libraryRootChanged != null:
+return libraryRootChanged(_that.libraryRootId);case _:
   return null;
 
 }
@@ -3094,6 +3747,104 @@ String toString() {
 
 
 
+
+/// @nodoc
+
+
+class RuntimeEventPayloadLibraryRootsChanged implements RuntimeEventPayload {
+  const RuntimeEventPayloadLibraryRootsChanged();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RuntimeEventPayloadLibraryRootsChanged);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RuntimeEventPayload.libraryRootsChanged()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RuntimeEventPayloadLibraryRootChanged implements RuntimeEventPayload {
+  const RuntimeEventPayloadLibraryRootChanged({required this.libraryRootId});
+
+
+ final  LibraryRootId libraryRootId;
+
+/// Create a copy of RuntimeEventPayload
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RuntimeEventPayloadLibraryRootChangedCopyWith<RuntimeEventPayloadLibraryRootChanged> get copyWith => _$RuntimeEventPayloadLibraryRootChangedCopyWithImpl<RuntimeEventPayloadLibraryRootChanged>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RuntimeEventPayloadLibraryRootChanged&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,libraryRootId);
+
+@override
+String toString() {
+  return 'RuntimeEventPayload.libraryRootChanged(libraryRootId: $libraryRootId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RuntimeEventPayloadLibraryRootChangedCopyWith<$Res> implements $RuntimeEventPayloadCopyWith<$Res> {
+  factory $RuntimeEventPayloadLibraryRootChangedCopyWith(RuntimeEventPayloadLibraryRootChanged value, $Res Function(RuntimeEventPayloadLibraryRootChanged) _then) = _$RuntimeEventPayloadLibraryRootChangedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId libraryRootId
+});
+
+
+
+
+}
+/// @nodoc
+class _$RuntimeEventPayloadLibraryRootChangedCopyWithImpl<$Res>
+    implements $RuntimeEventPayloadLibraryRootChangedCopyWith<$Res> {
+  _$RuntimeEventPayloadLibraryRootChangedCopyWithImpl(this._self, this._then);
+
+  final RuntimeEventPayloadLibraryRootChanged _self;
+  final $Res Function(RuntimeEventPayloadLibraryRootChanged) _then;
+
+/// Create a copy of RuntimeEventPayload
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,}) {
+  return _then(RuntimeEventPayloadLibraryRootChanged(
+libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,
+  ));
+}
+
+
+}
 
 /// @nodoc
 mixin _$RuntimeEvent {

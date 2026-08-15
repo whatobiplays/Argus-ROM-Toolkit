@@ -25,6 +25,35 @@ final class RuntimeInstanceId {
   int get hashCode => value.hashCode;
 }
 
+/// Opaque identity for one configured library root.
+final class LibraryRootId {
+  const LibraryRootId(this.value);
+
+  final String value;
+
+  /// Parses one canonical lowercase hex identity, or returns null when the
+  /// value is malformed. Route boundaries use this to keep invalid identifiers
+  /// out of feature state.
+  static LibraryRootId? tryParse(String value) {
+    final id = LibraryRootId(value);
+    return id.isValid ? id : null;
+  }
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibraryRootId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
 /// Stable machine-readable application error code.
 final class ErrorCode {
   const ErrorCode(this.value);
@@ -340,6 +369,171 @@ sealed class TechnicalDetails with _$TechnicalDetails {
   const factory TechnicalDetails({required String text}) = _TechnicalDetails;
 }
 
+/// Application-owned root availability vocabulary.
+enum LibraryRootAvailability {
+  available,
+  unavailable,
+  unknown;
+
+  static LibraryRootAvailability fromWire(String value) => switch (value) {
+    'available' => LibraryRootAvailability.available,
+    'unavailable' => LibraryRootAvailability.unavailable,
+    'unknown' => LibraryRootAvailability.unknown,
+    _ => throw const TransportFailure(
+      'Unknown root availability',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Provider-owned overlap vocabulary projected from the backend.
+enum RootRelationship {
+  same,
+  ancestor,
+  descendant,
+  disjoint,
+  unknown;
+
+  static RootRelationship fromWire(String value) => switch (value) {
+    'same' => RootRelationship.same,
+    'ancestor' => RootRelationship.ancestor,
+    'descendant' => RootRelationship.descendant,
+    'disjoint' => RootRelationship.disjoint,
+    'unknown' => RootRelationship.unknown,
+    _ => throw const TransportFailure(
+      'Unknown root relationship',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Closed historical root last-scan status vocabulary.
+enum LibraryRootLastScanStatus {
+  complete,
+  partial,
+  unavailable,
+  cancelled,
+  failed,
+  abandoned;
+
+  static LibraryRootLastScanStatus fromWire(String value) => switch (value) {
+    'complete' => LibraryRootLastScanStatus.complete,
+    'partial' => LibraryRootLastScanStatus.partial,
+    'unavailable' => LibraryRootLastScanStatus.unavailable,
+    'cancelled' => LibraryRootLastScanStatus.cancelled,
+    'failed' => LibraryRootLastScanStatus.failed,
+    'abandoned' => LibraryRootLastScanStatus.abandoned,
+    _ => throw const TransportFailure(
+      'Unknown root last-scan status',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Bounded terminal scan-history summary carried by a root projection.
+final class LibraryRootLastScan {
+  const LibraryRootLastScan({
+    required this.scanRunId,
+    required this.jobRunId,
+    required this.status,
+    required this.startedAtMs,
+    this.completedAtMs,
+  });
+
+  final String scanRunId;
+  final String jobRunId;
+  final LibraryRootLastScanStatus status;
+  final int startedAtMs;
+  final int? completedAtMs;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibraryRootLastScan &&
+      other.scanRunId == scanRunId &&
+      other.jobRunId == jobRunId &&
+      other.status == status &&
+      other.startedAtMs == startedAtMs &&
+      other.completedAtMs == completedAtMs;
+
+  @override
+  int get hashCode =>
+      Object.hash(scanRunId, jobRunId, status, startedAtMs, completedAtMs);
+}
+
+/// Bounded active scan-ownership summary carried by a root projection.
+final class LibraryRootActiveScan {
+  const LibraryRootActiveScan({
+    required this.scanRunId,
+    required this.jobRunId,
+  });
+
+  final String scanRunId;
+  final String jobRunId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibraryRootActiveScan &&
+      other.scanRunId == scanRunId &&
+      other.jobRunId == jobRunId;
+
+  @override
+  int get hashCode => Object.hash(scanRunId, jobRunId);
+}
+
+/// Authoritative immutable projection of one configured library root.
+@freezed
+sealed class LibraryRoot with _$LibraryRoot {
+  const factory LibraryRoot({
+    required LibraryRootId id,
+    required String displayName,
+    required String safeLocationPresentation,
+    required LibraryRootAvailability availability,
+    LibraryRootLastScan? lastScan,
+    LibraryRootActiveScan? activeScan,
+  }) = _LibraryRoot;
+}
+
+/// Bounded authoritative configured-root page.
+final class LibraryRootPage {
+  const LibraryRootPage({
+    required this.items,
+    required this.offset,
+    required this.pageSize,
+    required this.totalCount,
+  });
+
+  final List<LibraryRoot> items;
+  final int offset;
+  final int pageSize;
+  final int totalCount;
+}
+
+/// Untrusted typed local-folder selection from the native picker seam.
+final class LocalFilesystemRootSelection {
+  const LocalFilesystemRootSelection(this.selectedFolderPath);
+
+  final String selectedFolderPath;
+}
+
+/// Typed outcome of one root-only add operation.
+@freezed
+sealed class AddLocalLibraryRootResult with _$AddLocalLibraryRootResult {
+  const factory AddLocalLibraryRootResult.added(LibraryRoot root) =
+      AddLocalLibraryRootResultAdded;
+
+  const factory AddLocalLibraryRootResult.alreadyConfigured(
+    LibraryRootId existingLibraryRootId,
+  ) = AddLocalLibraryRootResultAlreadyConfigured;
+
+  const factory AddLocalLibraryRootResult.overlapsExisting({
+    required LibraryRootId existingLibraryRootId,
+    required RootRelationship relationship,
+  }) = AddLocalLibraryRootResultOverlapsExisting;
+}
+
+/// Typed outcome of one root-removal operation for the active slice.
+enum RemoveLibraryRootResult { removed }
+
 /// Typed outward runtime notifications. The sequence remains visible so a
 /// reconnect cannot silently claim that notifications were reconciled.
 @freezed
@@ -354,6 +548,13 @@ sealed class RuntimeEventPayload with _$RuntimeEventPayload {
 
   const factory RuntimeEventPayload.appearanceSettingsChanged() =
       RuntimeEventPayloadAppearanceSettingsChanged;
+
+  const factory RuntimeEventPayload.libraryRootsChanged() =
+      RuntimeEventPayloadLibraryRootsChanged;
+
+  const factory RuntimeEventPayload.libraryRootChanged({
+    required LibraryRootId libraryRootId,
+  }) = RuntimeEventPayloadLibraryRootChanged;
 }
 
 @freezed

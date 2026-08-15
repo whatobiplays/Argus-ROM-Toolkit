@@ -1,6 +1,6 @@
 //! Strongly typed application notifications and their recording boundary.
 
-use crate::ApplicationPortError;
+use crate::{ApplicationPortError, LibraryRootChanged, LibraryRootsChanged};
 
 /// Notification that the authoritative appearance aggregate changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,11 +22,16 @@ pub trait AppearanceSettingsSubscriber: Send + Sync {
     ) -> Result<(), EventSubscriberError>;
 }
 
-/// Closed Phase 000 application-event representation.
+/// Application-event representation for the implemented product slices.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApplicationEvent {
     /// Consumers receive notification that the authoritative appearance may have changed.
     AppearanceSettingsChanged(AppearanceSettingsChanged),
+    /// Consumers receive notification that configured root-list membership or
+    /// ordering may have changed.
+    LibraryRootsChanged(LibraryRootsChanged),
+    /// Consumers receive notification that one root projection may have changed.
+    LibraryRootChanged(LibraryRootChanged),
 }
 
 /// Failure while recording a pending application event.

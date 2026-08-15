@@ -44,6 +44,7 @@ void main() {
             child: ApplicationShell(
               currentDestination: AppDestination.settings,
               onSettingsSelected: () {},
+              onSourcesSelected: () {},
               child: const SettingsPage(),
             ),
           ),

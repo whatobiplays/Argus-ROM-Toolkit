@@ -87,7 +87,7 @@ fn map_theme_mode_value(value: Option<Value>) -> Result<AppearanceSettings, Pers
     Ok(AppearanceSettings::new(theme_mode))
 }
 
-fn map_executor_error(error: SqliteExecutorError) -> PersistenceError {
+pub(crate) fn map_executor_error(error: SqliteExecutorError) -> PersistenceError {
     match error {
         SqliteExecutorError::ApplicationCallback(error) => match error {
             argus_application::ApplicationPortError::Persistence(error) => error,

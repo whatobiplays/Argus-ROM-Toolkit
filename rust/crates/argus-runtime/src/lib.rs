@@ -22,22 +22,31 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use argus_application::{
-    AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
-    ArchitectureClass, DiagnosticStage, ErrorCode, EventName, FailureRole,
-    GetAppearanceSettingsQuery, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
-    OperationContext, OperationName, PathClass, PersistenceError, PlatformClass, SafeContext,
-    SafeContextField, SafeContextValue, SettingsService, StartupCollector, SubsystemName,
-    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
-    UpdateAppearanceSettingsCommand, Version,
+    AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
+    AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
+    DiagnosticStage, ErrorCode, EventName, FailureRole, GetAppearanceSettingsQuery,
+    GetLibraryRootQuery, LibraryRootId, LibraryRootPage, LibraryRootProjection,
+    LibraryRootRepository, LibraryService, LibrarySourceRepository, ListLibraryRootsQuery,
+    LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
+    OperationContext, OperationName, PathClass, PersistenceError, PlatformClass,
+    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
+    SafeContextValue, SettingsService, StartupCollector, SubsystemName, TechnicalClass, TraceEvent,
+    TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand,
+    Version,
 };
+use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     MigrationOutcome as InfrastructureMigrationOutcome, MigrationSummary,
     SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteDatabaseExecutor,
-    SqliteExecutorError, SqliteUnitOfWork,
+    SqliteExecutorError, SqliteLibraryRootQueries, SqliteLibraryRootRepository,
+    SqliteLibrarySourceRepository, SqliteUnitOfWork,
 };
 
 pub use events::EventBus;
-use events::{PendingEventCollector, PublicationDiagnostics, finalize_appearance_update};
+use events::{
+    PendingEventCollector, PublicationDiagnostics, finalize_appearance_update,
+    finalize_library_roots_update,
+};
 pub use notification_sink::{
     InProcessNotificationSink, NotificationSinkError, RuntimeEventPublisher,
     RuntimeNotificationSink,
@@ -305,6 +314,11 @@ pub struct KernelBootstrap {
     migration_summary: KernelMigrationSummary,
     executor: Option<SqliteDatabaseExecutor>,
     settings_service: SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>,
+    library_service: LibraryService<
+        SqliteLibraryRootQueries,
+        SqliteDatabaseExecutor,
+        InfraLocalFilesystemProvider,
+    >,
     event_bus: EventBus,
     publication_diagnostics: Mutex<PublicationDiagnostics>,
     collector: StartupCollector,
@@ -339,6 +353,37 @@ pub struct KernelAppearanceSettingsRepository<'scope, 'connection> {
     inner: SqliteAppearanceSettingsRepository<'scope, 'connection>,
 }
 
+/// Technology-neutral transaction-scoped library-source repository wrapper.
+pub struct KernelLibrarySourceRepository<'scope, 'connection> {
+    inner: SqliteLibrarySourceRepository<'scope, 'connection>,
+}
+
+impl LibrarySourceRepository for KernelLibrarySourceRepository<'_, '_> {
+    fn ensure_local_filesystem_source(
+        &mut self,
+    ) -> Result<argus_application::LibrarySourceId, PersistenceError> {
+        self.inner.ensure_local_filesystem_source()
+    }
+}
+
+/// Technology-neutral transaction-scoped library-root repository wrapper.
+pub struct KernelLibraryRootRepository<'scope, 'connection> {
+    inner: SqliteLibraryRootRepository<'scope, 'connection>,
+}
+
+impl LibraryRootRepository for KernelLibraryRootRepository<'_, '_> {
+    fn insert(
+        &mut self,
+        root: argus_application::NewLibraryRoot,
+    ) -> Result<LibraryRootId, PersistenceError> {
+        self.inner.insert(root)
+    }
+
+    fn delete(&mut self, root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+        self.inner.delete(root_id)
+    }
+}
+
 impl AppearanceSettingsRepository for KernelAppearanceSettingsRepository<'_, '_> {
     fn get(&mut self) -> Result<argus_application::AppearanceSettings, PersistenceError> {
         self.inner.get()
@@ -357,10 +402,30 @@ impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection
         = KernelAppearanceSettingsRepository<'scope, 'connection>
     where
         Self: 'scope;
+    type LibrarySourceRepository<'scope>
+        = KernelLibrarySourceRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type LibraryRootRepository<'scope>
+        = KernelLibraryRootRepository<'scope, 'connection>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         KernelAppearanceSettingsRepository {
             inner: self.inner.appearance_settings(),
+        }
+    }
+
+    fn library_source(&mut self) -> Self::LibrarySourceRepository<'_> {
+        KernelLibrarySourceRepository {
+            inner: self.inner.library_source(),
+        }
+    }
+
+    fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
+        KernelLibraryRootRepository {
+            inner: self.inner.library_roots(),
         }
     }
 
@@ -382,6 +447,11 @@ impl KernelBootstrap {
         migration_summary: KernelMigrationSummary,
         executor: SqliteDatabaseExecutor,
         settings_service: SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>,
+        library_service: LibraryService<
+            SqliteLibraryRootQueries,
+            SqliteDatabaseExecutor,
+            InfraLocalFilesystemProvider,
+        >,
         event_bus: EventBus,
         collector: StartupCollector,
     ) -> Self {
@@ -391,6 +461,7 @@ impl KernelBootstrap {
             migration_summary,
             executor: Some(executor),
             settings_service,
+            library_service,
             event_bus,
             publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
             collector,
@@ -411,6 +482,11 @@ impl KernelBootstrap {
             SqliteAppearanceSettingsQueries::new(executor.clone()),
             executor.clone(),
         );
+        let library_service = LibraryService::new(
+            SqliteLibraryRootQueries::new(executor.clone()),
+            executor.clone(),
+            InfraLocalFilesystemProvider,
+        );
         let mut kernel = KernelBootstrap::from_parts(
             new_trace_id(),
             PathClass::ExplicitOverride,
@@ -421,7 +497,8 @@ impl KernelBootstrap {
             },
             executor,
             settings_service,
-            EventBus::new(Vec::new()),
+            library_service,
+            EventBus::new(Vec::new(), Vec::new()),
             StartupCollector::new(),
         );
         kernel.fail_next_shutdown_for_tests();
@@ -515,6 +592,114 @@ impl KernelBootstrap {
             pre_commit,
         );
         finalize_appearance_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
+    /// Reads the authoritative configured-root list.
+    pub fn list_library_roots(
+        &self,
+        query: ListLibraryRootsQuery,
+    ) -> Result<LibraryRootPage, ApplicationError> {
+        let context = sources_operation_context("list", self.trace_id);
+        self.list_library_roots_with_context(&query, &context)
+    }
+
+    /// Reads the authoritative configured-root list under an admitted context.
+    pub fn list_library_roots_with_context(
+        &self,
+        query: &ListLibraryRootsQuery,
+        context: &OperationContext,
+    ) -> Result<LibraryRootPage, ApplicationError> {
+        self.library_service
+            .list_library_roots(*query, context.clone())
+    }
+
+    /// Reads one authoritative configured root.
+    pub fn get_library_root(
+        &self,
+        root_id: LibraryRootId,
+    ) -> Result<LibraryRootProjection, ApplicationError> {
+        let context = sources_operation_context("get", self.trace_id);
+        self.get_library_root_with_context(root_id, &context)
+    }
+
+    /// Reads one authoritative configured root under an admitted context.
+    pub fn get_library_root_with_context(
+        &self,
+        root_id: LibraryRootId,
+        context: &OperationContext,
+    ) -> Result<LibraryRootProjection, ApplicationError> {
+        self.library_service
+            .get_library_root(GetLibraryRootQuery::new(root_id), context.clone())
+    }
+
+    /// Configures one root-only local library folder and publishes after commit.
+    pub fn add_local_library_root(
+        &self,
+        selection: LocalFilesystemRootSelection,
+    ) -> Result<AddLocalLibraryRootResult, ApplicationError> {
+        let context = sources_operation_context("add", self.trace_id);
+        self.add_local_library_root_with_context(&context, selection, Arc::new(|| false))
+    }
+
+    /// Configures one root under an admitted operation context.
+    pub fn add_local_library_root_with_context(
+        &self,
+        context: &OperationContext,
+        selection: LocalFilesystemRootSelection,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<AddLocalLibraryRootResult, ApplicationError> {
+        if is_cancelled() {
+            return Err(cancelled_sources_error(context.trace_id()));
+        }
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let result = self.library_service.add_local_library_root(
+            AddLocalLibraryRootCommand::new(selection),
+            context.clone(),
+            recorder,
+        );
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
+    /// Removes one configured root and publishes after commit.
+    pub fn remove_library_root(
+        &self,
+        root_id: LibraryRootId,
+    ) -> Result<RemoveLibraryRootResult, ApplicationError> {
+        let context = sources_operation_context("remove", self.trace_id);
+        self.remove_library_root_with_context(&context, root_id, Arc::new(|| false))
+    }
+
+    /// Removes one configured root under an admitted operation context.
+    pub fn remove_library_root_with_context(
+        &self,
+        context: &OperationContext,
+        root_id: LibraryRootId,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<RemoveLibraryRootResult, ApplicationError> {
+        if is_cancelled() {
+            return Err(cancelled_sources_error(context.trace_id()));
+        }
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let result = self.library_service.remove_library_root(
+            RemoveLibraryRootCommand::new(root_id),
+            context.clone(),
+            recorder,
+        );
+        finalize_library_roots_update(
             result,
             context,
             collector,
@@ -719,6 +904,11 @@ pub fn bootstrap_kernel_with_event_bus(
         SqliteAppearanceSettingsQueries::new(executor.clone()),
         executor.clone(),
     );
+    let library_service = LibraryService::new(
+        SqliteLibraryRootQueries::new(executor.clone()),
+        executor.clone(),
+        InfraLocalFilesystemProvider,
+    );
     let mut migration_fields = environment_fields(path_class, platform_class, architecture);
     insert(
         &mut migration_fields,
@@ -764,6 +954,7 @@ pub fn bootstrap_kernel_with_event_bus(
         migration_summary: summary,
         executor: Some(executor),
         settings_service,
+        library_service,
         event_bus,
         publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
         collector,
@@ -787,6 +978,28 @@ pub(crate) fn settings_operation_context(
         SubsystemName::try_from("settings").expect("static subsystem is valid"),
         OperationName::try_from(operation).expect("static operation is valid"),
     )
+}
+
+pub(crate) fn sources_operation_context(
+    operation: &'static str,
+    startup_trace_id: TraceId,
+) -> OperationContext {
+    let trace_id = loop {
+        let candidate = new_trace_id();
+        if candidate != startup_trace_id {
+            break candidate;
+        }
+    };
+    OperationContext::new(
+        trace_id,
+        SubsystemName::try_from("sources").expect("static subsystem is valid"),
+        OperationName::try_from(operation).expect("static operation is valid"),
+    )
+}
+
+fn cancelled_sources_error(trace_id: TraceId) -> ApplicationError {
+    ApplicationError::from_code(ErrorCode::OperationCancelled, trace_id, SafeContext::new())
+        .expect("operation cancelled uses an allowlisted empty context")
 }
 
 pub(crate) fn map_application_port_error(

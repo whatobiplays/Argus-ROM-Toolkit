@@ -6,12 +6,14 @@ use std::sync::Arc;
 
 use argus_application::{
     ApplicationError, ArchitectureClass, DiagnosticStage, ErrorCode, FailureRole,
-    GetAppearanceSettingsQuery, LogLevel, OperationContext, PathClass, PlatformClass, RetryPolicy,
-    SafeContext, SafeContextField, SafeContextValue, SettingsService, StartupCollector,
-    TraceEventPhase, TraceId,
+    GetAppearanceSettingsQuery, LibraryService, LogLevel, OperationContext, PathClass,
+    PlatformClass, RetryPolicy, SafeContext, SafeContextField, SafeContextValue, SettingsService,
+    StartupCollector, TraceEventPhase, TraceId,
 };
+use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     DEFAULT_QUEUE_CAPACITY, SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor,
+    SqliteLibraryRootQueries,
 };
 
 use crate::{
@@ -101,6 +103,13 @@ struct StartupResources {
     executor: Option<SqliteDatabaseExecutor>,
     settings_service:
         Option<SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>>,
+    library_service: Option<
+        LibraryService<
+            SqliteLibraryRootQueries,
+            SqliteDatabaseExecutor,
+            InfraLocalFilesystemProvider,
+        >,
+    >,
     event_bus: Option<EventBus>,
     diagnostics_ready: bool,
     data_directory_ready: bool,
@@ -419,6 +428,14 @@ impl StartupCoordinator {
         if self.resources.settings_service.is_none() {
             return Err(core_service_error(self.trace_id));
         }
+        if let Some(executor) = &self.resources.executor {
+            let library_service = LibraryService::new(
+                SqliteLibraryRootQueries::new(executor.clone()),
+                executor.clone(),
+                InfraLocalFilesystemProvider,
+            );
+            self.resources.library_service = Some(library_service);
+        }
         self.resources.core_services_ready = true;
         Ok(())
     }
@@ -437,9 +454,13 @@ impl StartupCoordinator {
             .map_err(|_| not_ready_error(self.trace_id))?;
         sink.validate()
             .map_err(|_| not_ready_error(self.trace_id))?;
-        let bus = EventBus::new(vec![Box::new(RuntimeEventSubscriber {
+        let subscriber = RuntimeEventSubscriber {
             outward: outward_sink,
-        })]);
+        };
+        let bus = EventBus::new(
+            vec![Box::new(subscriber.clone())],
+            vec![Box::new(subscriber)],
+        );
         if bus.subscriber_count() == 0 {
             return Err(core_service_error(self.trace_id));
         }
@@ -451,6 +472,7 @@ impl StartupCoordinator {
         if !self.resources.data_directory_ready
             || self.resources.executor.is_none()
             || self.resources.settings_service.is_none()
+            || self.resources.library_service.is_none()
             || self.resources.event_bus.is_none()
             || !self.resources.core_services_ready
         {
@@ -483,6 +505,11 @@ impl StartupCoordinator {
             .settings_service
             .take()
             .expect("readiness validated settings");
+        let library_service = self
+            .resources
+            .library_service
+            .take()
+            .expect("readiness validated library service");
         let event_bus = self
             .resources
             .event_bus
@@ -503,6 +530,7 @@ impl StartupCoordinator {
             migration_summary,
             executor,
             settings_service,
+            library_service,
             event_bus,
             self.collector,
         );

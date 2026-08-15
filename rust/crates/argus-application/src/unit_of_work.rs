@@ -1,6 +1,7 @@
 //! Consuming callback-scope transaction contracts owned by the application.
 
 use crate::settings::AppearanceSettingsRepository;
+use crate::sources::{LibraryRootRepository, LibrarySourceRepository};
 use crate::{ApplicationPortError, OperationContext};
 
 /// One active transaction scope.
@@ -10,8 +11,24 @@ pub trait UnitOfWork: Sized {
     where
         Self: 'scope;
 
+    /// The short-lived internal library-source repository view.
+    type LibrarySourceRepository<'scope>: LibrarySourceRepository + 'scope
+    where
+        Self: 'scope;
+
+    /// The short-lived configured-root repository view.
+    type LibraryRootRepository<'scope>: LibraryRootRepository + 'scope
+    where
+        Self: 'scope;
+
     /// Borrows a typed appearance repository from the active transaction.
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_>;
+
+    /// Borrows a typed internal library-source repository.
+    fn library_source(&mut self) -> Self::LibrarySourceRepository<'_>;
+
+    /// Borrows a typed configured-root repository.
+    fn library_roots(&mut self) -> Self::LibraryRootRepository<'_>;
 
     /// Explicitly commits and consumes this scope.
     fn commit(self) -> Result<(), ApplicationPortError>;

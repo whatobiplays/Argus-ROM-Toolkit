@@ -14,6 +14,7 @@ final class ArgusClient implements ClientBootstrap {
     : _gateway = gateway {
     runtime = _RuntimeApi(this);
     settings = _SettingsApi(this);
+    sources = _SourcesApi(this);
     diagnostics = _DiagnosticsApi(this);
     events = _EventsApi(this);
   }
@@ -27,6 +28,9 @@ final class ArgusClient implements ClientBootstrap {
 
   /// Appearance-settings operations owned by this root client.
   late final SettingsApi settings;
+
+  /// Configured library-root operations owned by this root client.
+  late final SourcesApi sources;
 
   /// Failed-startup diagnostics operations owned by this root client.
   late final DiagnosticsApi diagnostics;
@@ -171,6 +175,24 @@ final class ArgusClient implements ClientBootstrap {
 
   Future<void> _updateAppearanceSettings(AppearanceSettings settings) =>
       _requestVoid(() => _gateway.updateAppearanceSettings(settings));
+
+  Future<LibraryRootPage> _listLibraryRoots({
+    required int offset,
+    required int pageSize,
+  }) => _request(
+    () => _gateway.listLibraryRoots(offset: offset, pageSize: pageSize),
+  );
+
+  Future<LibraryRoot> _getLibraryRoot(LibraryRootId libraryRootId) =>
+      _request(() => _gateway.getLibraryRoot(libraryRootId));
+
+  Future<AddLocalLibraryRootResult> _addLocalLibraryRoot(
+    LocalFilesystemRootSelection selection,
+  ) => _request(() => _gateway.addLocalLibraryRoot(selection));
+
+  Future<RemoveLibraryRootResult> _removeLibraryRoot(
+    LibraryRootId libraryRootId,
+  ) => _request(() => _gateway.removeLibraryRoot(libraryRootId));
 
   Future<DiagnosticsExport> _exportStartupDiagnostics(
     RuntimeInstanceId expected,
@@ -500,6 +522,32 @@ final class _SettingsApi implements SettingsApi {
   @override
   Future<void> updateAppearanceSettings(AppearanceSettings settings) =>
       _client._updateAppearanceSettings(settings);
+}
+
+final class _SourcesApi implements SourcesApi {
+  _SourcesApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<LibraryRootPage> listLibraryRoots({
+    required int offset,
+    required int pageSize,
+  }) => _client._listLibraryRoots(offset: offset, pageSize: pageSize);
+
+  @override
+  Future<LibraryRoot> getLibraryRoot(LibraryRootId libraryRootId) =>
+      _client._getLibraryRoot(libraryRootId);
+
+  @override
+  Future<AddLocalLibraryRootResult> addLocalLibraryRoot(
+    LocalFilesystemRootSelection selection,
+  ) => _client._addLocalLibraryRoot(selection);
+
+  @override
+  Future<RemoveLibraryRootResult> removeLibraryRoot(
+    LibraryRootId libraryRootId,
+  ) => _client._removeLibraryRoot(libraryRootId);
 }
 
 final class _DiagnosticsApi implements DiagnosticsApi {

@@ -10,8 +10,8 @@ part 'lib.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `host_with_options`, `host`, `initialize_with_options`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `severity_name`, `startup_failure_dto`, `startup_phase_dto`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `application_error_dto`, `runtime_event_dto`, `runtime_state_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_dto`, `application_error_dto`, `library_root_dto`, `library_root_page_dto`, `parse_library_root_id`, `remove_library_root_dto`, `runtime_event_dto`, `runtime_state_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -73,6 +73,25 @@ Future<void> updateAppearanceSettings({
   required UpdateAppearanceSettingsRequestDto request,
 }) => RustLib.instance.api.crateUpdateAppearanceSettings(request: request);
 
+/// Lists a bounded authoritative configured-root page.
+Future<LibraryRootPageDto> listLibraryRoots({
+  required ListLibraryRootsRequestDto request,
+}) => RustLib.instance.api.crateListLibraryRoots(request: request);
+
+/// Reads one authoritative configured root.
+Future<LibraryRootDto> getLibraryRoot({required String libraryRootId}) =>
+    RustLib.instance.api.crateGetLibraryRoot(libraryRootId: libraryRootId);
+
+/// Configures one root-only local library folder.
+Future<AddLocalLibraryRootResultDto> addLocalLibraryRoot({
+  required LocalFilesystemRootSelectionDto selection,
+}) => RustLib.instance.api.crateAddLocalLibraryRoot(selection: selection);
+
+/// Removes one configured root. User filesystem content is never modified.
+Future<RemoveLibraryRootResultDto> removeLibraryRoot({
+  required String libraryRootId,
+}) => RustLib.instance.api.crateRemoveLibraryRoot(libraryRootId: libraryRootId);
+
 /// Writes sanitized startup diagnostics to the embedding-selected path.
 Future<DiagnosticsExportDto> exportStartupDiagnostics({
   required String expectedRuntimeInstanceId,
@@ -110,6 +129,20 @@ Future<bool> attachEventSubscription({required BigInt attachEpoch}) =>
 /// own.
 Stream<RuntimeEventDto> subscribeEvents({required BigInt attachEpoch}) =>
     RustLib.instance.api.crateSubscribeEvents(attachEpoch: attachEpoch);
+
+@freezed
+sealed class AddLocalLibraryRootResultDto with _$AddLocalLibraryRootResultDto {
+  const AddLocalLibraryRootResultDto._();
+
+  const factory AddLocalLibraryRootResultDto.added(LibraryRootDto field0) =
+      AddLocalLibraryRootResultDto_Added;
+  const factory AddLocalLibraryRootResultDto.alreadyConfigured(String field0) =
+      AddLocalLibraryRootResultDto_AlreadyConfigured;
+  const factory AddLocalLibraryRootResultDto.overlapsExisting(
+    String field0,
+    RootRelationshipDto field1,
+  ) = AddLocalLibraryRootResultDto_OverlapsExisting;
+}
 
 /// Complete appearance aggregate projection.
 class AppearanceSettingsDto {
@@ -221,6 +254,188 @@ class DiagnosticsExportRequestDto {
           destination == other.destination;
 }
 
+/// Bounded active scan-ownership summary carried by a root projection.
+class LibraryRootActiveScanDto {
+  final String scanRunId;
+  final String jobRunId;
+
+  const LibraryRootActiveScanDto({
+    required this.scanRunId,
+    required this.jobRunId,
+  });
+
+  @override
+  int get hashCode => scanRunId.hashCode ^ jobRunId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryRootActiveScanDto &&
+          runtimeType == other.runtimeType &&
+          scanRunId == other.scanRunId &&
+          jobRunId == other.jobRunId;
+}
+
+/// Application-owned root availability vocabulary.
+enum LibraryRootAvailabilityDto { available, unavailable, unknown }
+
+/// Authoritative immutable root projection.
+class LibraryRootDto {
+  final String libraryRootId;
+  final String displayName;
+  final String safeLocationPresentation;
+  final LibraryRootAvailabilityDto availability;
+  final LibraryRootLastScanDto? lastScan;
+  final LibraryRootActiveScanDto? activeScan;
+
+  const LibraryRootDto({
+    required this.libraryRootId,
+    required this.displayName,
+    required this.safeLocationPresentation,
+    required this.availability,
+    this.lastScan,
+    this.activeScan,
+  });
+
+  @override
+  int get hashCode =>
+      libraryRootId.hashCode ^
+      displayName.hashCode ^
+      safeLocationPresentation.hashCode ^
+      availability.hashCode ^
+      lastScan.hashCode ^
+      activeScan.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryRootDto &&
+          runtimeType == other.runtimeType &&
+          libraryRootId == other.libraryRootId &&
+          displayName == other.displayName &&
+          safeLocationPresentation == other.safeLocationPresentation &&
+          availability == other.availability &&
+          lastScan == other.lastScan &&
+          activeScan == other.activeScan;
+}
+
+/// Bounded terminal scan-history summary carried by a root projection.
+class LibraryRootLastScanDto {
+  final String scanRunId;
+  final String jobRunId;
+  final LibraryRootLastScanStatusDto status;
+  final PlatformInt64 startedAtMs;
+  final PlatformInt64? completedAtMs;
+
+  const LibraryRootLastScanDto({
+    required this.scanRunId,
+    required this.jobRunId,
+    required this.status,
+    required this.startedAtMs,
+    this.completedAtMs,
+  });
+
+  @override
+  int get hashCode =>
+      scanRunId.hashCode ^
+      jobRunId.hashCode ^
+      status.hashCode ^
+      startedAtMs.hashCode ^
+      completedAtMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryRootLastScanDto &&
+          runtimeType == other.runtimeType &&
+          scanRunId == other.scanRunId &&
+          jobRunId == other.jobRunId &&
+          status == other.status &&
+          startedAtMs == other.startedAtMs &&
+          completedAtMs == other.completedAtMs;
+}
+
+/// Closed historical root last-scan status vocabulary.
+enum LibraryRootLastScanStatusDto {
+  complete,
+  partial,
+  unavailable,
+  cancelled,
+  failed,
+  abandoned,
+}
+
+/// Bounded authoritative root-list page.
+class LibraryRootPageDto {
+  final List<LibraryRootDto> items;
+  final int offset;
+  final int pageSize;
+  final int totalCount;
+
+  const LibraryRootPageDto({
+    required this.items,
+    required this.offset,
+    required this.pageSize,
+    required this.totalCount,
+  });
+
+  @override
+  int get hashCode =>
+      items.hashCode ^
+      offset.hashCode ^
+      pageSize.hashCode ^
+      totalCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryRootPageDto &&
+          runtimeType == other.runtimeType &&
+          items == other.items &&
+          offset == other.offset &&
+          pageSize == other.pageSize &&
+          totalCount == other.totalCount;
+}
+
+/// Bounded root-list request.
+class ListLibraryRootsRequestDto {
+  final int offset;
+  final int pageSize;
+
+  const ListLibraryRootsRequestDto({
+    required this.offset,
+    required this.pageSize,
+  });
+
+  @override
+  int get hashCode => offset.hashCode ^ pageSize.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ListLibraryRootsRequestDto &&
+          runtimeType == other.runtimeType &&
+          offset == other.offset &&
+          pageSize == other.pageSize;
+}
+
+/// Untrusted typed local-folder selection supplied by the native picker seam.
+class LocalFilesystemRootSelectionDto {
+  final String selectedFolderPath;
+
+  const LocalFilesystemRootSelectionDto({required this.selectedFolderPath});
+
+  @override
+  int get hashCode => selectedFolderPath.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LocalFilesystemRootSelectionDto &&
+          runtimeType == other.runtimeType &&
+          selectedFolderPath == other.selectedFolderPath;
+}
+
 /// One declarative failed-startup action.
 class RecoveryActionDto {
   final RecoveryActionKindDto kind;
@@ -247,6 +462,12 @@ enum RecoveryActionKindDto {
   openDataDirectory,
   exit,
 }
+
+/// Typed outcome of one root-removal operation for the active slice.
+enum RemoveLibraryRootResultDto { removed }
+
+/// Provider-owned overlap vocabulary.
+enum RootRelationshipDto { same, ancestor, descendant, disjoint, unknown }
 
 /// Unified runtime event envelope.
 class RuntimeEventDto {
@@ -292,6 +513,11 @@ sealed class RuntimeEventPayloadDto with _$RuntimeEventPayloadDto {
   }) = RuntimeEventPayloadDto_StartupFailed;
   const factory RuntimeEventPayloadDto.appearanceSettingsChanged() =
       RuntimeEventPayloadDto_AppearanceSettingsChanged;
+  const factory RuntimeEventPayloadDto.libraryRootsChanged() =
+      RuntimeEventPayloadDto_LibraryRootsChanged;
+  const factory RuntimeEventPayloadDto.libraryRootChanged({
+    required String libraryRootId,
+  }) = RuntimeEventPayloadDto_LibraryRootChanged;
 }
 
 /// Wire lifecycle projection.

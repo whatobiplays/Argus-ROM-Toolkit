@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:argus/core/client/client.dart';
+import 'sources_gateway_stub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -208,7 +209,7 @@ RuntimeEvent _event(RuntimeInstanceId id, int sequence) => RuntimeEvent(
   payload: const RuntimeEventPayload.appearanceSettingsChanged(),
 );
 
-final class FakeGateway implements ArgusClientGateway {
+final class FakeGateway with SourcesGatewayStub implements ArgusClientGateway {
   FakeGateway(this.id) : nextState = RuntimeState.ready(runtimeInstanceId: id);
 
   final RuntimeInstanceId id;

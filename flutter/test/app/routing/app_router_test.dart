@@ -5,16 +5,27 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
 import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
 import 'package:argus/features/settings/application/appearance_settings_state.dart';
+import 'package:argus/features/sources/sources_composition.dart';
+import 'package:argus/features/sources/application/sources_state.dart';
 import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../features/settings/appearance_settings_test_fakes.dart';
+import '../../features/sources/sources_test_fakes.dart';
 
 void main() {
   test('typed Settings route and semantic mapping are canonical', () {
     expect(const SettingsRoute().location, '/settings');
+    expect(const SourcesRoute().location, '/sources');
     expect(destinationForUri(Uri.parse('/settings')), AppDestination.settings);
+    expect(destinationForUri(Uri.parse('/sources')), AppDestination.sources);
+    expect(
+      destinationForUri(
+        Uri.parse('/sources/roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      ),
+      AppDestination.sources,
+    );
     expect(
       destinationForUri(Uri.parse('/settings?source=test')),
       AppDestination.settings,
@@ -22,13 +33,27 @@ void main() {
     expect(destinationForUri(Uri.parse('/unknown')), isNull);
   });
 
-  ({ProviderContainer container, FakeSettingsApi api}) createHost() {
+  ({
+    ProviderContainer container,
+    FakeSettingsApi api,
+    FakeSourcesApi sourcesApi,
+  })
+  createHost({FakeSourcesApi? sources}) {
     final api = FakeSettingsApi();
+    final sourcesApi = sources ?? FakeSourcesApi();
     final container = ProviderContainer(
       overrides: [
         appearanceSettingsApiProvider.overrideWithValue(api),
         appearanceRuntimeContextProvider.overrideWith(
           (ref) => ref.watch(appearanceRuntimeContextHostProvider),
+        ),
+        sourcesApiProvider.overrideWithValue(sourcesApi),
+        sourcesRuntimeContextProvider.overrideWith(
+          (ref) => const SourcesRuntimeContext.ready(
+            runtimeInstanceId: RuntimeInstanceId(
+              '1234567890abcdef1234567890abcdef',
+            ),
+          ),
         ),
       ],
     );
@@ -40,7 +65,7 @@ void main() {
             runtimeInstanceId: appearanceTestId('a'),
           ),
         );
-    return (container: container, api: api);
+    return (container: container, api: api, sourcesApi: sourcesApi);
   }
 
   Future<void> loadAppearance(WidgetTester tester, FakeSettingsApi api) async {
@@ -113,9 +138,8 @@ void main() {
     expect(router.routeInformationProvider.value.uri.path, '/settings');
   });
 
-  testWidgets('production graph exposes only root redirect and Settings', (
-    tester,
-  ) async {
+  testWidgets('unimplemented future paths still use the controlled not-found '
+      'surface', (tester) async {
     final host = createHost();
     final router = host.container.read(appRouterProvider);
 
@@ -133,7 +157,6 @@ void main() {
       '/library',
       '/collections',
       '/jobs',
-      '/sources',
       '/game-detail',
       '/diagnostics',
     ]) {
@@ -141,6 +164,93 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Page not found'), findsOneWidget, reason: path);
     }
+  });
+
+  testWidgets('Sources renders the configured-root landing and opens detail', (
+    tester,
+  ) async {
+    final host = createHost(
+      sources: FakeSourcesApi(
+        roots: [
+          fakeRoot(
+            id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            displayName: 'Games',
+          ),
+        ],
+      ),
+    );
+    final router = host.container.read(appRouterProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: host.container,
+        child: const _RouterHost(),
+      ),
+    );
+    await loadAppearance(tester, host.api);
+    router.go('/sources');
+    await tester.pumpAndSettle();
+
+    expect(router.routeInformationProvider.value.uri.path, '/sources');
+    expect(find.text('Games'), findsOneWidget);
+    expect(find.text('Never scanned'), findsOneWidget);
+
+    await tester.tap(find.text('Games'));
+    await tester.pumpAndSettle();
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      '/sources/roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    expect(find.text('Remove Library Folder'), findsOneWidget);
+  });
+
+  testWidgets('malformed root route data renders the distinguishable '
+      'invalid-location surface', (tester) async {
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: host.container,
+        child: const _RouterHost(),
+      ),
+    );
+    await loadAppearance(tester, host.api);
+    router.go('/sources/roots/not-an-id');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid location'), findsOneWidget);
+    expect(find.text('Page not found'), findsNothing);
+    expect(find.textContaining('not-an-id'), findsOneWidget);
+    // Route state remains at the malformed location; no silent redirect.
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      '/sources/roots/not-an-id',
+    );
+
+    await tester.tap(find.text('Go to Sources'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/sources');
+  });
+
+  testWidgets('a valid but missing root canonicalizes through authoritative '
+      'state', (tester) async {
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: host.container,
+        child: const _RouterHost(),
+      ),
+    );
+    await loadAppearance(tester, host.api);
+    router.go('/sources/roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+
+    expect(router.routeInformationProvider.value.uri.path, '/sources');
+    expect(find.text('No library folders yet'), findsOneWidget);
   });
 
   testWidgets(

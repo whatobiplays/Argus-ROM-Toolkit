@@ -54,10 +54,13 @@ fn kernel_query_and_update_round_trip_through_the_authoritative_backend() {
 fn no_op_update_does_not_publish_and_change_publishes_once() {
     let directory = tempdir().expect("temporary directory");
     let calls = Arc::new(Mutex::new(0));
-    let bus = EventBus::new(vec![Box::new(CountingSubscriber {
-        calls: Arc::clone(&calls),
-        fail: false,
-    })]);
+    let bus = EventBus::new(
+        vec![Box::new(CountingSubscriber {
+            calls: Arc::clone(&calls),
+            fail: false,
+        })],
+        Vec::new(),
+    );
     let kernel = bootstrap_kernel_with_event_bus(
         KernelBootstrapOptions::with_data_directory(directory.path()),
         bus,
@@ -80,16 +83,19 @@ fn subscriber_failure_isolated_after_commit_and_is_not_retried() {
     let directory = tempdir().expect("temporary directory");
     let failing_calls = Arc::new(Mutex::new(0));
     let later_calls = Arc::new(Mutex::new(0));
-    let bus = EventBus::new(vec![
-        Box::new(CountingSubscriber {
-            calls: Arc::clone(&failing_calls),
-            fail: true,
-        }),
-        Box::new(CountingSubscriber {
-            calls: Arc::clone(&later_calls),
-            fail: false,
-        }),
-    ]);
+    let bus = EventBus::new(
+        vec![
+            Box::new(CountingSubscriber {
+                calls: Arc::clone(&failing_calls),
+                fail: true,
+            }),
+            Box::new(CountingSubscriber {
+                calls: Arc::clone(&later_calls),
+                fail: false,
+            }),
+        ],
+        Vec::new(),
+    );
     let kernel = bootstrap_kernel_with_event_bus(
         KernelBootstrapOptions::with_data_directory(directory.path()),
         bus,

@@ -60,6 +60,43 @@ abstract interface class SettingsApi {
   Future<void> updateAppearanceSettings(AppearanceSettings settings);
 }
 
+/// Framework-neutral configured library-root operations.
+abstract interface class SourcesGateway {
+  Future<LibraryRootPage> listLibraryRoots({
+    required int offset,
+    required int pageSize,
+  });
+
+  Future<LibraryRoot> getLibraryRoot(LibraryRootId libraryRootId);
+
+  Future<AddLocalLibraryRootResult> addLocalLibraryRoot(
+    LocalFilesystemRootSelection selection,
+  );
+
+  Future<RemoveLibraryRootResult> removeLibraryRoot(
+    LibraryRootId libraryRootId,
+  );
+}
+
+/// Focused Sources capability. Queries return immutable authoritative
+/// snapshots; mutations return typed outcomes and never fabricate read state.
+abstract interface class SourcesApi {
+  Future<LibraryRootPage> listLibraryRoots({
+    required int offset,
+    required int pageSize,
+  });
+
+  Future<LibraryRoot> getLibraryRoot(LibraryRootId libraryRootId);
+
+  Future<AddLocalLibraryRootResult> addLocalLibraryRoot(
+    LocalFilesystemRootSelection selection,
+  );
+
+  Future<RemoveLibraryRootResult> removeLibraryRoot(
+    LibraryRootId libraryRootId,
+  );
+}
+
 /// Framework-neutral diagnostics operations.
 abstract interface class DiagnosticsGateway {
   Future<DiagnosticsExport> exportStartupDiagnostics(
@@ -133,4 +170,5 @@ abstract interface class ArgusClientGateway
         RuntimeGateway,
         AppearanceGateway,
         DiagnosticsGateway,
+        SourcesGateway,
         EventGateway {}

@@ -64,8 +64,10 @@ impl MessageKey {
 pub enum ErrorCode {
     ValidationInvalidArgument,
     ConfigurationInvalid,
+    ConfigurationLibraryRootNotFound,
     ConfigurationPersistedSettingsInvalid,
     FilesystemPermissionDenied,
+    FilesystemInvalidRootSelection,
     PersistenceDatabaseOpenFailed,
     PersistenceDatabaseLocked,
     PersistenceMigrationFailed,
@@ -191,15 +193,49 @@ impl ErrorCode {
         ]
     }
 
+    /// Returns the complete catalog currently required by Phase 001.
+    ///
+    /// `all` and `phase_000_all` retain their original shapes for source
+    /// compatibility; this additive accessor includes every Phase 000 entry
+    /// plus the codes introduced by Phase 001 slices.
+    pub const fn phase_001_all() -> &'static [Self; 20] {
+        &[
+            Self::ValidationInvalidArgument,
+            Self::ConfigurationInvalid,
+            Self::ConfigurationPersistedSettingsInvalid,
+            Self::PersistenceDatabaseOpenFailed,
+            Self::PersistenceDatabaseLocked,
+            Self::PersistenceMigrationFailed,
+            Self::PersistenceIncompatibleSchema,
+            Self::FilesystemPermissionDenied,
+            Self::RuntimeBridgeInitializationFailed,
+            Self::RuntimeCoreServiceInitializationFailed,
+            Self::RuntimeNotReady,
+            Self::RuntimeStartupFailed,
+            Self::RuntimeShuttingDown,
+            Self::RuntimeStopped,
+            Self::RuntimeStaleInstance,
+            Self::OperationCancelled,
+            Self::InternalUnexpected,
+            Self::InternalInvariantViolation,
+            Self::ConfigurationLibraryRootNotFound,
+            Self::FilesystemInvalidRootSelection,
+        ]
+    }
+
     /// Returns the permanent machine-readable code.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ValidationInvalidArgument => "ARGUS.V1.VALIDATION.INVALID_ARGUMENT",
             Self::ConfigurationInvalid => "ARGUS.V1.CONFIGURATION.INVALID",
+            Self::ConfigurationLibraryRootNotFound => {
+                "ARGUS.V1.CONFIGURATION.LIBRARY_ROOT_NOT_FOUND"
+            }
             Self::ConfigurationPersistedSettingsInvalid => {
                 "ARGUS.V1.CONFIGURATION.PERSISTED_SETTINGS_INVALID"
             }
             Self::FilesystemPermissionDenied => "ARGUS.V1.FILESYSTEM.PERMISSION_DENIED",
+            Self::FilesystemInvalidRootSelection => "ARGUS.V1.FILESYSTEM.INVALID_ROOT_SELECTION",
             Self::PersistenceDatabaseOpenFailed => "ARGUS.V1.PERSISTENCE.DATABASE_OPEN_FAILED",
             Self::PersistenceDatabaseLocked => "ARGUS.V1.PERSISTENCE.DATABASE_LOCKED",
             Self::PersistenceMigrationFailed => "ARGUS.V1.PERSISTENCE.MIGRATION_FAILED",
@@ -240,6 +276,14 @@ impl ErrorCode {
                 "errors.configuration.invalid",
                 COMMON_FAILURE_FIELDS,
             ),
+            Self::ConfigurationLibraryRootNotFound => policy(
+                ErrorCategory::Configuration,
+                ApplicationSeverity::Error,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.configuration.library_root_not_found",
+                COMMON_FAILURE_FIELDS,
+            ),
             Self::ConfigurationPersistedSettingsInvalid => policy(
                 ErrorCategory::Configuration,
                 ApplicationSeverity::Error,
@@ -254,6 +298,14 @@ impl ErrorCode {
                 Recoverability::UserAction,
                 RetryPolicy::UserInitiated,
                 "errors.filesystem.permission_denied",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::FilesystemInvalidRootSelection => policy(
+                ErrorCategory::Filesystem,
+                ApplicationSeverity::Error,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.filesystem.invalid_root_selection",
                 COMMON_FAILURE_FIELDS,
             ),
             Self::PersistenceDatabaseOpenFailed => policy(

@@ -96,11 +96,10 @@ impl MigrationRegistry {
 
     /// Returns the embedded Phase 000 migration registry.
     pub fn embedded() -> Self {
-        Self::new(vec![Migration::sql(
-            1,
-            "0001_initial",
-            include_bytes!("sql/0001_initial.sql"),
-        )])
+        Self::new(vec![
+            Migration::sql(1, "0001_initial", include_bytes!("sql/0001_initial.sql")),
+            Migration::sql(2, "0002_sources", include_bytes!("sql/0002_sources.sql")),
+        ])
         .expect("embedded migration registry is valid")
     }
 

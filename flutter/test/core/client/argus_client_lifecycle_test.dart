@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:argus/core/client/client.dart';
+import 'sources_gateway_stub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -464,7 +465,9 @@ ApplicationFailure _applicationFailure() => ApplicationFailure(
   ),
 );
 
-final class _ControlledGateway implements ArgusClientGateway {
+final class _ControlledGateway
+    with SourcesGatewayStub
+    implements ArgusClientGateway {
   RuntimeState state = RuntimeState.ready(runtimeInstanceId: _idA);
   final List<_NativeTask> tasks = <_NativeTask>[];
   int generalShutdownCalls = 0;

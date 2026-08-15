@@ -2,11 +2,13 @@ import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/settings/settings_composition.dart';
+import 'package:argus/features/sources/sources.dart';
 import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'appearance_event_coordinator.dart';
+import 'sources_event_coordinator.dart';
 
 /// Owns the single application-level Riverpod scope.
 class ArgusBootstrap extends StatelessWidget {
@@ -41,6 +43,20 @@ class ArgusBootstrap extends StatelessWidget {
         }),
         appearanceReconciliationDemandProvider.overrideWith(
           (ref) => ref.watch(appearanceEventCoordinatorProvider),
+        ),
+        sourcesApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).sources,
+        ),
+        sourcesRuntimeContextProvider.overrideWith((ref) {
+          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+          return runtimeInstanceId == null
+              ? const SourcesRuntimeContext.preReady()
+              : SourcesRuntimeContext.ready(
+                  runtimeInstanceId: runtimeInstanceId,
+                );
+        }),
+        sourcesReconciliationDemandProvider.overrideWith(
+          (ref) => ref.watch(sourcesEventCoordinatorProvider),
         ),
       ],
       child: const ArgusApp(),

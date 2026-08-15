@@ -8,6 +8,7 @@ class ApplicationShell extends StatelessWidget {
   const ApplicationShell({
     required this.currentDestination,
     required this.onSettingsSelected,
+    required this.onSourcesSelected,
     required this.child,
     super.key,
   });
@@ -17,6 +18,9 @@ class ApplicationShell extends StatelessWidget {
 
   /// Navigates to the typed Settings route at the composition boundary.
   final VoidCallback onSettingsSelected;
+
+  /// Navigates to the typed Sources route at the composition boundary.
+  final VoidCallback onSourcesSelected;
 
   /// The routed destination content.
   final Widget child;
@@ -28,6 +32,7 @@ class ApplicationShell extends StatelessWidget {
     return switch (sizeClass) {
       WindowSizeClass.compact => _CompactShell(
         onSettingsSelected: onSettingsSelected,
+        onSourcesSelected: onSourcesSelected,
         child: child,
       ),
       WindowSizeClass.medium => _RailShell(
@@ -35,6 +40,7 @@ class ApplicationShell extends StatelessWidget {
         extended: false,
         key: const ValueKey<String>('medium-navigation-rail'),
         onSettingsSelected: onSettingsSelected,
+        onSourcesSelected: onSourcesSelected,
         child: child,
       ),
       WindowSizeClass.expanded => _RailShell(
@@ -42,6 +48,7 @@ class ApplicationShell extends StatelessWidget {
         extended: true,
         key: const ValueKey<String>('expanded-navigation-sidebar'),
         onSettingsSelected: onSettingsSelected,
+        onSourcesSelected: onSourcesSelected,
         child: child,
       ),
       WindowSizeClass.large => _RailShell(
@@ -49,6 +56,7 @@ class ApplicationShell extends StatelessWidget {
         extended: true,
         key: const ValueKey<String>('large-navigation-sidebar'),
         onSettingsSelected: onSettingsSelected,
+        onSourcesSelected: onSourcesSelected,
         child: child,
       ),
     };
@@ -56,23 +64,41 @@ class ApplicationShell extends StatelessWidget {
 }
 
 class _CompactShell extends StatelessWidget {
-  const _CompactShell({required this.child, required this.onSettingsSelected});
+  const _CompactShell({
+    required this.child,
+    required this.onSettingsSelected,
+    required this.onSourcesSelected,
+  });
 
   final Widget child;
   final VoidCallback onSettingsSelected;
+  final VoidCallback onSourcesSelected;
 
   Future<void> _showMore(BuildContext context) async {
     await showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) {
         return SafeArea(
-          child: ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('Settings'),
-            onTap: () {
-              Navigator.of(sheetContext).pop();
-              onSettingsSelected();
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: const Text('Sources'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  onSourcesSelected();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('Settings'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  onSettingsSelected();
+                },
+              ),
+            ],
           ),
         );
       },
@@ -108,6 +134,7 @@ class _RailShell extends StatelessWidget {
     required this.currentDestination,
     required this.extended,
     required this.onSettingsSelected,
+    required this.onSourcesSelected,
     super.key,
   });
 
@@ -115,12 +142,15 @@ class _RailShell extends StatelessWidget {
   final AppDestination? currentDestination;
   final bool extended;
   final VoidCallback onSettingsSelected;
+  final VoidCallback onSourcesSelected;
 
   @override
   Widget build(BuildContext context) {
-    final selectedIndex = currentDestination == AppDestination.settings
-        ? 0
-        : null;
+    final selectedIndex = switch (currentDestination) {
+      AppDestination.settings => 0,
+      AppDestination.sources => 1,
+      null => null,
+    };
 
     return Scaffold(
       body: Row(
@@ -129,12 +159,23 @@ class _RailShell extends StatelessWidget {
             extended: extended,
             labelType: extended ? null : NavigationRailLabelType.none,
             selectedIndex: selectedIndex,
-            onDestinationSelected: (_) => onSettingsSelected(),
+            onDestinationSelected: (index) {
+              if (index == 0) {
+                onSettingsSelected();
+              } else {
+                onSourcesSelected();
+              }
+            },
             destinations: const <NavigationRailDestination>[
               NavigationRailDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Settings'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.folder_outlined),
+                selectedIcon: Icon(Icons.folder),
+                label: Text('Sources'),
               ),
             ],
           ),

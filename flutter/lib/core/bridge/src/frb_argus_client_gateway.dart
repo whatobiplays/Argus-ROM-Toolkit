@@ -141,6 +141,48 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
       );
 
   @override
+  Future<LibraryRootPage> listLibraryRoots({
+    required int offset,
+    required int pageSize,
+  }) => _call(
+    () async => libraryRootPageFromDto(
+      await _rustApi.crateListLibraryRoots(
+        request: dto.ListLibraryRootsRequestDto(
+          offset: offset,
+          pageSize: pageSize,
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Future<LibraryRoot> getLibraryRoot(LibraryRootId libraryRootId) => _call(
+    () async => libraryRootFromDto(
+      await _rustApi.crateGetLibraryRoot(libraryRootId: libraryRootId.value),
+    ),
+  );
+
+  @override
+  Future<AddLocalLibraryRootResult> addLocalLibraryRoot(
+    LocalFilesystemRootSelection selection,
+  ) => _call(
+    () async => addLocalLibraryRootResultFromDto(
+      await _rustApi.crateAddLocalLibraryRoot(
+        selection: selectionToDto(selection),
+      ),
+    ),
+  );
+
+  @override
+  Future<RemoveLibraryRootResult> removeLibraryRoot(
+    LibraryRootId libraryRootId,
+  ) => _call(
+    () async => removeLibraryRootResultFromDto(
+      await _rustApi.crateRemoveLibraryRoot(libraryRootId: libraryRootId.value),
+    ),
+  );
+
+  @override
   Future<DiagnosticsExport> exportStartupDiagnostics(
     RuntimeInstanceId expected,
     String destination,
@@ -460,6 +502,10 @@ RuntimeEvent runtimeEventFromDto(dto.RuntimeEventDto value) {
     ),
     appearanceSettingsChanged: (_) =>
         const RuntimeEventPayload.appearanceSettingsChanged(),
+    libraryRootsChanged: (_) => const RuntimeEventPayload.libraryRootsChanged(),
+    libraryRootChanged: (event) => RuntimeEventPayload.libraryRootChanged(
+      libraryRootId: libraryRootIdFromDto(event.libraryRootId),
+    ),
   );
   return RuntimeEvent(
     runtimeInstanceId: generation,
@@ -468,6 +514,109 @@ RuntimeEvent runtimeEventFromDto(dto.RuntimeEventDto value) {
     payload: payload,
   );
 }
+
+LibraryRootId libraryRootIdFromDto(String value) {
+  final id = LibraryRootId(value);
+  if (!id.isValid) {
+    throw const TransportFailure(
+      'Native library-root identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return id;
+}
+
+LibraryRoot libraryRootFromDto(dto.LibraryRootDto value) => LibraryRoot(
+  id: libraryRootIdFromDto(value.libraryRootId),
+  displayName: value.displayName,
+  safeLocationPresentation: value.safeLocationPresentation,
+  availability: libraryRootAvailabilityFromDto(value.availability),
+  lastScan: value.lastScan == null
+      ? null
+      : LibraryRootLastScan(
+          scanRunId: value.lastScan!.scanRunId,
+          jobRunId: value.lastScan!.jobRunId,
+          status: libraryRootLastScanStatusFromDto(value.lastScan!.status),
+          startedAtMs: value.lastScan!.startedAtMs.toInt(),
+          completedAtMs: value.lastScan!.completedAtMs?.toInt(),
+        ),
+  activeScan: value.activeScan == null
+      ? null
+      : LibraryRootActiveScan(
+          scanRunId: value.activeScan!.scanRunId,
+          jobRunId: value.activeScan!.jobRunId,
+        ),
+);
+
+LibraryRootPage libraryRootPageFromDto(dto.LibraryRootPageDto value) =>
+    LibraryRootPage(
+      items: [for (final item in value.items) libraryRootFromDto(item)],
+      offset: value.offset,
+      pageSize: value.pageSize,
+      totalCount: value.totalCount,
+    );
+
+AddLocalLibraryRootResult addLocalLibraryRootResultFromDto(
+  dto.AddLocalLibraryRootResultDto value,
+) => switch (value) {
+  dto.AddLocalLibraryRootResultDto_Added(:final field0) =>
+    AddLocalLibraryRootResult.added(libraryRootFromDto(field0)),
+  dto.AddLocalLibraryRootResultDto_AlreadyConfigured(:final field0) =>
+    AddLocalLibraryRootResult.alreadyConfigured(libraryRootIdFromDto(field0)),
+  dto.AddLocalLibraryRootResultDto_OverlapsExisting(
+    :final field0,
+    :final field1,
+  ) =>
+    AddLocalLibraryRootResult.overlapsExisting(
+      existingLibraryRootId: libraryRootIdFromDto(field0),
+      relationship: rootRelationshipFromDto(field1),
+    ),
+};
+
+RemoveLibraryRootResult removeLibraryRootResultFromDto(
+  dto.RemoveLibraryRootResultDto value,
+) => switch (value) {
+  dto.RemoveLibraryRootResultDto.removed => RemoveLibraryRootResult.removed,
+};
+
+dto.LocalFilesystemRootSelectionDto selectionToDto(
+  LocalFilesystemRootSelection selection,
+) => dto.LocalFilesystemRootSelectionDto(
+  selectedFolderPath: selection.selectedFolderPath,
+);
+
+LibraryRootAvailability libraryRootAvailabilityFromDto(
+  dto.LibraryRootAvailabilityDto value,
+) => switch (value) {
+  dto.LibraryRootAvailabilityDto.available => LibraryRootAvailability.available,
+  dto.LibraryRootAvailabilityDto.unavailable =>
+    LibraryRootAvailability.unavailable,
+  dto.LibraryRootAvailabilityDto.unknown => LibraryRootAvailability.unknown,
+};
+
+LibraryRootLastScanStatus libraryRootLastScanStatusFromDto(
+  dto.LibraryRootLastScanStatusDto value,
+) => switch (value) {
+  dto.LibraryRootLastScanStatusDto.complete =>
+    LibraryRootLastScanStatus.complete,
+  dto.LibraryRootLastScanStatusDto.partial => LibraryRootLastScanStatus.partial,
+  dto.LibraryRootLastScanStatusDto.unavailable =>
+    LibraryRootLastScanStatus.unavailable,
+  dto.LibraryRootLastScanStatusDto.cancelled =>
+    LibraryRootLastScanStatus.cancelled,
+  dto.LibraryRootLastScanStatusDto.failed => LibraryRootLastScanStatus.failed,
+  dto.LibraryRootLastScanStatusDto.abandoned =>
+    LibraryRootLastScanStatus.abandoned,
+};
+
+RootRelationship rootRelationshipFromDto(dto.RootRelationshipDto value) =>
+    switch (value) {
+      dto.RootRelationshipDto.same => RootRelationship.same,
+      dto.RootRelationshipDto.ancestor => RootRelationship.ancestor,
+      dto.RootRelationshipDto.descendant => RootRelationship.descendant,
+      dto.RootRelationshipDto.disjoint => RootRelationship.disjoint,
+      dto.RootRelationshipDto.unknown => RootRelationship.unknown,
+    };
 
 RuntimeLifecycle runtimeLifecycleFromDto(dto.RuntimeLifecycleDto value) =>
     switch (value) {

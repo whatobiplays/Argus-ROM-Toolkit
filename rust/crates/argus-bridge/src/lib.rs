@@ -10,10 +10,12 @@ use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
-    ApplicationError, ApplicationSeverity, ArchitectureClass, DiagnosticStage, ErrorCategory,
-    ErrorCode, FailureRole, MigrationOutcome, PathClass, PersistedSettingsReason, PlatformClass,
-    Recoverability, RetryPolicy, SafeContext, SafeContextField, SafeContextValue, SettingsDomain,
-    TechnicalClass, ThemeMode,
+    AddLocalLibraryRootResult, ApplicationError, ApplicationSeverity, ArchitectureClass,
+    DiagnosticStage, ErrorCategory, ErrorCode, FailureRole, LibraryRootAvailability, LibraryRootId,
+    LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection, ListLibraryRootsQuery,
+    LocalFilesystemRootSelection, MigrationOutcome, PathClass, PersistedSettingsReason,
+    PlatformClass, Recoverability, RemoveLibraryRootResult, RetryPolicy, RootRelationship,
+    SafeContext, SafeContextField, SafeContextValue, SettingsDomain, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
@@ -138,6 +140,99 @@ pub struct UpdateAppearanceSettingsRequestDto {
     pub theme_mode: ThemeModeDto,
 }
 
+/// Untrusted typed local-folder selection supplied by the native picker seam.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemRootSelectionDto {
+    pub selected_folder_path: String,
+}
+
+/// Bounded root-list request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ListLibraryRootsRequestDto {
+    pub offset: u32,
+    pub page_size: u32,
+}
+
+/// Application-owned root availability vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryRootAvailabilityDto {
+    Available,
+    Unavailable,
+    Unknown,
+}
+
+/// Closed historical root last-scan status vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryRootLastScanStatusDto {
+    Complete,
+    Partial,
+    Unavailable,
+    Cancelled,
+    Failed,
+    Abandoned,
+}
+
+/// Bounded terminal scan-history summary carried by a root projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRootLastScanDto {
+    pub scan_run_id: String,
+    pub job_run_id: String,
+    pub status: LibraryRootLastScanStatusDto,
+    pub started_at_ms: i64,
+    pub completed_at_ms: Option<i64>,
+}
+
+/// Bounded active scan-ownership summary carried by a root projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRootActiveScanDto {
+    pub scan_run_id: String,
+    pub job_run_id: String,
+}
+
+/// Authoritative immutable root projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRootDto {
+    pub library_root_id: String,
+    pub display_name: String,
+    pub safe_location_presentation: String,
+    pub availability: LibraryRootAvailabilityDto,
+    pub last_scan: Option<LibraryRootLastScanDto>,
+    pub active_scan: Option<LibraryRootActiveScanDto>,
+}
+
+/// Bounded authoritative root-list page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRootPageDto {
+    pub items: Vec<LibraryRootDto>,
+    pub offset: u32,
+    pub page_size: u32,
+    pub total_count: u32,
+}
+
+/// Provider-owned overlap vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootRelationshipDto {
+    Same,
+    Ancestor,
+    Descendant,
+    Disjoint,
+    Unknown,
+}
+
+/// Typed outcome of one root-only add operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AddLocalLibraryRootResultDto {
+    Added(LibraryRootDto),
+    AlreadyConfigured(String),
+    OverlapsExisting(String, RootRelationshipDto),
+}
+
+/// Typed outcome of one root-removal operation for the active slice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RemoveLibraryRootResultDto {
+    Removed,
+}
+
 /// User-selected diagnostic export destination.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiagnosticsExportRequestDto {
@@ -173,6 +268,8 @@ pub enum RuntimeEventPayloadDto {
     RuntimeStateChanged { lifecycle: RuntimeLifecycleDto },
     StartupFailed { phase: StartupPhaseDto },
     AppearanceSettingsChanged,
+    LibraryRootsChanged,
+    LibraryRootChanged { library_root_id: String },
 }
 
 /// Unified runtime event envelope.
@@ -247,6 +344,12 @@ pub fn runtime_event_dto(event: &RuntimeEvent) -> RuntimeEventDto {
             },
             RuntimeEventPayload::AppearanceSettingsChanged => {
                 RuntimeEventPayloadDto::AppearanceSettingsChanged
+            }
+            RuntimeEventPayload::LibraryRootsChanged => RuntimeEventPayloadDto::LibraryRootsChanged,
+            RuntimeEventPayload::LibraryRootChanged { library_root_id } => {
+                RuntimeEventPayloadDto::LibraryRootChanged {
+                    library_root_id: library_root_id.to_string(),
+                }
             }
         },
     }
@@ -392,6 +495,68 @@ pub fn update_appearance_settings(
             &context,
             appearance_settings_from_dto(request.theme_mode),
         )
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Lists a bounded authoritative configured-root page.
+#[allow(clippy::result_large_err)]
+pub fn list_library_roots(
+    request: ListLibraryRootsRequestDto,
+) -> Result<LibraryRootPageDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "list_library_roots")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .list_library_roots_with_context(
+            &ListLibraryRootsQuery::new(request.offset, request.page_size),
+            &context,
+        )
+        .map(|page| library_root_page_dto(&page))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads one authoritative configured root.
+#[allow(clippy::result_large_err)]
+pub fn get_library_root(library_root_id: String) -> Result<LibraryRootDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "get_library_root")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_library_root_id(&library_root_id, context.trace_id())?;
+    host()
+        .get_library_root_with_context(id, &context)
+        .map(|root| library_root_dto(&root))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Configures one root-only local library folder.
+#[allow(clippy::result_large_err)]
+pub fn add_local_library_root(
+    selection: LocalFilesystemRootSelectionDto,
+) -> Result<AddLocalLibraryRootResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "add_local_library_root")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .add_local_library_root_with_context(
+            &context,
+            LocalFilesystemRootSelection::new(selection.selected_folder_path),
+        )
+        .map(|result| add_local_library_root_dto(&result))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Removes one configured root. User filesystem content is never modified.
+#[allow(clippy::result_large_err)]
+pub fn remove_library_root(
+    library_root_id: String,
+) -> Result<RemoveLibraryRootResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "remove_library_root")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_library_root_id(&library_root_id, context.trace_id())?;
+    host()
+        .remove_library_root_with_context(&context, id)
+        .map(|result| remove_library_root_dto(&result))
         .map_err(|error| application_error_dto(&error))
 }
 
@@ -655,6 +820,25 @@ fn parse_runtime_id(
     })
 }
 
+/// Parses one bridge-supplied root identity with typed validation.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn parse_library_root_id(
+    value: &str,
+    trace_id: argus_application::TraceId,
+) -> Result<LibraryRootId, ApplicationErrorDto> {
+    LibraryRootId::try_from(value).map_err(|_| {
+        application_error_dto(
+            &ApplicationError::from_code(
+                argus_application::ErrorCode::ValidationInvalidArgument,
+                trace_id,
+                SafeContext::new(),
+            )
+            .expect("validation error"),
+        )
+    })
+}
+
 fn appearance_settings_dto(
     settings: argus_application::AppearanceSettings,
 ) -> AppearanceSettingsDto {
@@ -673,6 +857,89 @@ fn appearance_settings_from_dto(mode: ThemeModeDto) -> argus_application::Appear
         ThemeModeDto::Light => ThemeMode::Light,
         ThemeModeDto::Dark => ThemeMode::Dark,
     })
+}
+
+/// Maps one authoritative root projection into its canonical DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn library_root_dto(root: &LibraryRootProjection) -> LibraryRootDto {
+    LibraryRootDto {
+        library_root_id: root.root_id().to_string(),
+        display_name: root.display_name().to_owned(),
+        safe_location_presentation: root.safe_location_presentation().to_owned(),
+        availability: match root.availability() {
+            LibraryRootAvailability::Available => LibraryRootAvailabilityDto::Available,
+            LibraryRootAvailability::Unavailable => LibraryRootAvailabilityDto::Unavailable,
+            LibraryRootAvailability::Unknown => LibraryRootAvailabilityDto::Unknown,
+        },
+        last_scan: root.last_scan().map(|summary| LibraryRootLastScanDto {
+            scan_run_id: summary.scan_run_id().to_owned(),
+            job_run_id: summary.job_run_id().to_owned(),
+            status: match summary.status() {
+                LibraryRootLastScanStatus::Complete => LibraryRootLastScanStatusDto::Complete,
+                LibraryRootLastScanStatus::Partial => LibraryRootLastScanStatusDto::Partial,
+                LibraryRootLastScanStatus::Unavailable => LibraryRootLastScanStatusDto::Unavailable,
+                LibraryRootLastScanStatus::Cancelled => LibraryRootLastScanStatusDto::Cancelled,
+                LibraryRootLastScanStatus::Failed => LibraryRootLastScanStatusDto::Failed,
+                LibraryRootLastScanStatus::Abandoned => LibraryRootLastScanStatusDto::Abandoned,
+            },
+            started_at_ms: summary.started_at_ms(),
+            completed_at_ms: summary.completed_at_ms(),
+        }),
+        active_scan: root.active_scan().map(|summary| LibraryRootActiveScanDto {
+            scan_run_id: summary.scan_run_id().to_owned(),
+            job_run_id: summary.job_run_id().to_owned(),
+        }),
+    }
+}
+
+/// Maps one authoritative root page into its canonical DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn library_root_page_dto(page: &LibraryRootPage) -> LibraryRootPageDto {
+    LibraryRootPageDto {
+        items: page.items().iter().map(library_root_dto).collect(),
+        offset: page.offset(),
+        page_size: page.page_size(),
+        total_count: page.total_count(),
+    }
+}
+
+/// Maps one root-only add outcome into its typed transport union.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn add_local_library_root_dto(
+    result: &AddLocalLibraryRootResult,
+) -> AddLocalLibraryRootResultDto {
+    match result {
+        AddLocalLibraryRootResult::Added(root) => {
+            AddLocalLibraryRootResultDto::Added(library_root_dto(root))
+        }
+        AddLocalLibraryRootResult::AlreadyConfigured(id) => {
+            AddLocalLibraryRootResultDto::AlreadyConfigured(id.to_string())
+        }
+        AddLocalLibraryRootResult::OverlapsExisting(id, relationship) => {
+            AddLocalLibraryRootResultDto::OverlapsExisting(
+                id.to_string(),
+                match relationship {
+                    RootRelationship::Same => RootRelationshipDto::Same,
+                    RootRelationship::Ancestor => RootRelationshipDto::Ancestor,
+                    RootRelationship::Descendant => RootRelationshipDto::Descendant,
+                    RootRelationship::Disjoint => RootRelationshipDto::Disjoint,
+                    RootRelationship::Unknown => RootRelationshipDto::Unknown,
+                },
+            )
+        }
+    }
+}
+
+/// Maps one root-removal outcome into its typed transport union.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn remove_library_root_dto(result: &RemoveLibraryRootResult) -> RemoveLibraryRootResultDto {
+    match result {
+        RemoveLibraryRootResult::Removed => RemoveLibraryRootResultDto::Removed,
+    }
 }
 
 fn startup_failure_dto(failure: &StartupFailure) -> StartupFailureDto {

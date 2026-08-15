@@ -1,2 +1,2 @@
 /// Semantic destinations currently implemented by the application.
-enum AppDestination { settings }
+enum AppDestination { settings, sources }

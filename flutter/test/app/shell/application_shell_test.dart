@@ -11,6 +11,7 @@ Future<void> pumpShell(
   required double width,
   AppDestination? currentDestination = AppDestination.settings,
   VoidCallback? onSettingsSelected,
+  VoidCallback? onSourcesSelected,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -23,6 +24,7 @@ Future<void> pumpShell(
           child: ApplicationShell(
             currentDestination: currentDestination,
             onSettingsSelected: onSettingsSelected ?? () {},
+            onSourcesSelected: onSourcesSelected ?? () {},
             child: const Center(child: Text('route child')),
           ),
         ),
@@ -33,9 +35,19 @@ Future<void> pumpShell(
 }
 
 void main() {
-  test('production exposes only the Settings semantic destination', () {
-    expect(AppDestination.values, <AppDestination>[AppDestination.settings]);
+  test('production exposes the implemented semantic destinations', () {
+    expect(AppDestination.values, <AppDestination>[
+      AppDestination.settings,
+      AppDestination.sources,
+    ]);
     expect(destinationForUri(Uri.parse('/settings')), AppDestination.settings);
+    expect(destinationForUri(Uri.parse('/sources')), AppDestination.sources);
+    expect(
+      destinationForUri(
+        Uri.parse('/sources/roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      ),
+      AppDestination.sources,
+    );
     expect(destinationForUri(Uri.parse('/unknown')), isNull);
   });
 
@@ -77,6 +89,7 @@ void main() {
     );
     expect(expandedRail.extended, isTrue);
     expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sources'), findsOneWidget);
     expect(find.text('route child'), findsOneWidget);
 
     await pumpShell(tester, width: 1440);
@@ -85,15 +98,20 @@ void main() {
     );
     expect(largeRail.extended, isTrue);
     expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sources'), findsOneWidget);
     expect(find.text('route child'), findsOneWidget);
   });
 
-  testWidgets('Compact More is transient and selects Settings', (tester) async {
-    var selectionCount = 0;
+  testWidgets('Compact More is transient and selects Sources then Settings', (
+    tester,
+  ) async {
+    var sourcesSelectionCount = 0;
+    var settingsSelectionCount = 0;
     await pumpShell(
       tester,
       width: 480,
-      onSettingsSelected: () => selectionCount++,
+      onSourcesSelected: () => sourcesSelectionCount++,
+      onSettingsSelected: () => settingsSelectionCount++,
     );
 
     expect(find.byTooltip('More'), findsOneWidget);
@@ -101,34 +119,57 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Settings'), findsOneWidget);
-    expect(selectionCount, 0);
+    expect(find.text('Sources'), findsOneWidget);
+    expect(sourcesSelectionCount, 0);
+    expect(settingsSelectionCount, 0);
+
+    await tester.tap(find.text('Sources'));
+    await tester.pumpAndSettle();
+    expect(sourcesSelectionCount, 1);
+    expect(settingsSelectionCount, 0);
+
+    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
 
-    expect(selectionCount, 1);
+    expect(settingsSelectionCount, 1);
   });
 
-  testWidgets('Compact More is keyboard-operable and dismissible', (
+  testWidgets('Compact More is keyboard-operable across both destinations', (
     tester,
   ) async {
-    var selectionCount = 0;
+    final selected = <String>[];
     await pumpShell(
       tester,
       width: 480,
-      onSettingsSelected: () => selectionCount++,
+      onSourcesSelected: () => selected.add('sources'),
+      onSettingsSelected: () => selected.add('settings'),
     );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sources'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
-    expect(selectionCount, 1);
+    // The first Tab focuses the first destination (Sources); Enter activates.
+    expect(selected, <String>['sources']);
+    selected.clear();
+
+    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(selected, <String>['settings']);
   });
 
   testWidgets('Compact More dismisses with Escape without a keyboard trap', (
@@ -141,21 +182,21 @@ void main() {
       onSettingsSelected: () => selectionCount++,
     );
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
     await tester.pumpAndSettle();
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sources'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
     expect(find.text('Settings'), findsNothing);
+    expect(find.text('Sources'), findsNothing);
     expect(selectionCount, 0);
 
     // The modal returns focus to More, so ordinary activation remains usable.
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
     await tester.pumpAndSettle();
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sources'), findsOneWidget);
     expect(selectionCount, 0);
   });
 

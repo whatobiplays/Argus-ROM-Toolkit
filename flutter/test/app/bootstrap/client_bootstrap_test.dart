@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
+import '../../core/client/sources_gateway_stub.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -140,7 +141,7 @@ void main() {
   );
 }
 
-final class _FakeGateway implements ArgusClientGateway {
+final class _FakeGateway with SourcesGatewayStub implements ArgusClientGateway {
   final StreamController<RuntimeEvent> _events =
       StreamController<RuntimeEvent>.broadcast();
   int initializeCalls = 0;

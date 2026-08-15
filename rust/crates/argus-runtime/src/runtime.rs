@@ -13,8 +13,10 @@ use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argus_application::{
-    AppearanceSettingsSubscriber, ApplicationError, ErrorCode, EventSubscriberError,
-    OperationContext, OperationName, SubsystemName, TraceId,
+    AddLocalLibraryRootResult, AppearanceSettingsSubscriber, ApplicationError, ErrorCode,
+    EventSubscriberError, LibraryRootId, LibraryRootPage, LibraryRootProjection,
+    ListLibraryRootsQuery, LocalFilesystemRootSelection, OperationContext, OperationName,
+    RemoveLibraryRootResult, SubsystemName, TraceId,
 };
 
 use crate::{
@@ -307,9 +309,17 @@ impl RuntimeState {
 /// Typed outward event payloads active in Phase 000.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeEventPayload {
-    RuntimeStateChanged { lifecycle: RuntimeLifecycle },
-    StartupFailed { phase: StartupPhase },
+    RuntimeStateChanged {
+        lifecycle: RuntimeLifecycle,
+    },
+    StartupFailed {
+        phase: StartupPhase,
+    },
     AppearanceSettingsChanged,
+    LibraryRootsChanged,
+    LibraryRootChanged {
+        library_root_id: argus_application::LibraryRootId,
+    },
 }
 
 /// Generation and sequence metadata surrounding one notification.
@@ -548,6 +558,7 @@ impl EventBoundary {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct RuntimeEventSubscriber {
     pub(crate) outward: Option<Arc<dyn RuntimeNotificationSink>>,
 }
@@ -594,6 +605,38 @@ impl AppearanceSettingsSubscriber for RuntimeEventSubscriber {
         if let Some(sink) = &self.outward
             && sink
                 .publish(RuntimeEventPayload::AppearanceSettingsChanged)
+                .is_err()
+        {
+            return Err(EventSubscriberError::Failed);
+        }
+        Ok(())
+    }
+}
+
+impl argus_application::LibraryRootsSubscriber for RuntimeEventSubscriber {
+    fn library_roots_changed(
+        &self,
+        _event: argus_application::LibraryRootsChanged,
+    ) -> Result<(), EventSubscriberError> {
+        if let Some(sink) = &self.outward
+            && sink
+                .publish(RuntimeEventPayload::LibraryRootsChanged)
+                .is_err()
+        {
+            return Err(EventSubscriberError::Failed);
+        }
+        Ok(())
+    }
+
+    fn library_root_changed(
+        &self,
+        event: argus_application::LibraryRootChanged,
+    ) -> Result<(), EventSubscriberError> {
+        if let Some(sink) = &self.outward
+            && sink
+                .publish(RuntimeEventPayload::LibraryRootChanged {
+                    library_root_id: event.library_root_id,
+                })
                 .is_err()
         {
             return Err(EventSubscriberError::Failed);
@@ -900,6 +943,27 @@ impl ApplicationHost {
             context,
             OperationGuard::new(token, Arc::clone(&self.inner.top_level_operations)),
         ))
+    }
+
+    /// Runs one operation against the ready generation's kernel.
+    fn with_ready_kernel<T>(
+        &self,
+        context: &OperationContext,
+        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
+    ) -> Result<T, ApplicationError> {
+        let handle = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.kernel_handle().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?
+        };
+        let kernel_guard = handle.lock().map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel = kernel_guard.as_ref().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        operation(kernel)
     }
 
     /// Publishes one outward runtime payload through the injected sink route.
@@ -1483,6 +1547,137 @@ impl ApplicationHost {
             Arc::new(move || pre_dispatch_token.is_cancelled()),
             Arc::new(move || pre_commit_token.is_cancelled()),
         )
+    }
+
+    /// Executes the authoritative configured-root list through the admitted
+    /// ready generation.
+    pub fn list_library_roots(
+        &self,
+        query: ListLibraryRootsQuery,
+    ) -> Result<LibraryRootPage, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "list_library_roots")?;
+        self.list_library_roots_with_context(&query, &context)
+    }
+
+    /// Executes the root list under an existing top-level context.
+    pub fn list_library_roots_with_context(
+        &self,
+        query: &ListLibraryRootsQuery,
+        context: &OperationContext,
+    ) -> Result<LibraryRootPage, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.list_library_roots_with_context(query, context)
+        })
+    }
+
+    /// Executes the authoritative root-detail query through the admitted
+    /// ready generation.
+    pub fn get_library_root(
+        &self,
+        root_id: LibraryRootId,
+    ) -> Result<LibraryRootProjection, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "get_library_root")?;
+        self.get_library_root_with_context(root_id, &context)
+    }
+
+    /// Executes the root-detail query under an existing top-level context.
+    pub fn get_library_root_with_context(
+        &self,
+        root_id: LibraryRootId,
+        context: &OperationContext,
+    ) -> Result<LibraryRootProjection, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.get_library_root_with_context(root_id, context)
+        })
+    }
+
+    /// Configures one root-only local library folder through the admitted
+    /// ready generation.
+    pub fn add_local_library_root(
+        &self,
+        selection: LocalFilesystemRootSelection,
+    ) -> Result<AddLocalLibraryRootResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "add_local_library_root")?;
+        self.add_local_library_root_with_context(&context, selection)
+    }
+
+    /// Executes the root-only add under an existing top-level context.
+    pub fn add_local_library_root_with_context(
+        &self,
+        context: &OperationContext,
+        selection: LocalFilesystemRootSelection,
+    ) -> Result<AddLocalLibraryRootResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let token = guard.token().clone();
+        let pre_dispatch_token = token;
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.add_local_library_root_with_context(
+                context,
+                selection,
+                Arc::new(move || pre_dispatch_token.is_cancelled()),
+            )
+        })
+    }
+
+    /// Removes one configured root through the admitted ready generation.
+    pub fn remove_library_root(
+        &self,
+        root_id: LibraryRootId,
+    ) -> Result<RemoveLibraryRootResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "remove_library_root")?;
+        self.remove_library_root_with_context(&context, root_id)
+    }
+
+    /// Executes the root removal under an existing top-level context.
+    pub fn remove_library_root_with_context(
+        &self,
+        context: &OperationContext,
+        root_id: LibraryRootId,
+    ) -> Result<RemoveLibraryRootResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let token = guard.token().clone();
+        let pre_dispatch_token = token;
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.remove_library_root_with_context(
+                context,
+                root_id,
+                Arc::new(move || pre_dispatch_token.is_cancelled()),
+            )
+        })
     }
 
     /// Opens the one active logical event connection for the current generation.

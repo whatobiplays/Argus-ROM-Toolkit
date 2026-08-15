@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:argus/core/client/client.dart';
+import 'sources_gateway_stub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -33,7 +34,9 @@ void main() {
   );
 }
 
-final class _AttachControlledGateway implements ArgusClientGateway {
+final class _AttachControlledGateway
+    with SourcesGatewayStub
+    implements ArgusClientGateway {
   final RuntimeInstanceId id = RuntimeInstanceId('a' * 32);
   final Completer<void> attach = Completer<void>();
   final StreamController<RuntimeEvent> _events =

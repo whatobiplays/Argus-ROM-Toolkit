@@ -203,6 +203,17 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   );
 
   @override
+  Future<StartLibraryScanAllResult> startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  ) => _call(
+    () async => startLibraryScanAllResultFromDto(
+      await _rustApi.crateStartLibraryScanAll(
+        requestIdentity: requestIdentity.value,
+      ),
+    ),
+  );
+
+  @override
   Future<SourceEntryChildrenPage> listSourceEntryChildren({
     required LibraryRootId libraryRootId,
     SourceEntryId? parentSourceEntryId,
@@ -284,6 +295,17 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
     () async => libraryRootScanAdmissionFromDto(
       await _rustApi.crateGetRootScanAdmission(
         libraryRootId: libraryRootId.value,
+      ),
+    ),
+  );
+
+  @override
+  Future<LibraryScanAllRequestResolution> resolveScanAllRequest(
+    ScanAllRequestIdentity requestIdentity,
+  ) => _call(
+    () async => libraryScanAllRequestResolutionFromDto(
+      await _rustApi.crateResolveScanAllRequest(
+        requestIdentity: requestIdentity.value,
       ),
     ),
   );
@@ -665,6 +687,7 @@ LibraryRoot libraryRootFromDto(dto.LibraryRootDto value) => LibraryRoot(
       : LibraryRootActiveScan(
           scanRunId: value.activeScan!.scanRunId,
           jobRunId: value.activeScan!.jobRunId,
+          owningJobRootCount: value.activeScan!.owningJobRootCount,
         ),
 );
 
@@ -951,6 +974,71 @@ StartLibraryScanResult startLibraryScanResultFromDto(
     ),
 };
 
+LibraryScanAdmissionExclusion libraryScanAdmissionExclusionFromDto(
+  dto.LibraryScanAdmissionExclusionDto value,
+) => LibraryScanAdmissionExclusion(
+  libraryRootId: libraryRootIdFromDto(value.libraryRootId),
+  reason: value.reason,
+  activeJobRunId: value.activeJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.activeJobRunId!),
+  activeScanRunId: value.activeScanRunId == null
+      ? null
+      : scanRunIdFromDto(value.activeScanRunId!),
+  applicationError: value.applicationError == null
+      ? null
+      : applicationErrorFromDto(value.applicationError!),
+);
+
+StartLibraryScanAllResult startLibraryScanAllResultFromDto(
+  dto.StartLibraryScanAllResultDto value,
+) => switch (value) {
+  dto.StartLibraryScanAllResultDto_Admitted(
+    :final operationHandle,
+    :final admittedRoots,
+    :final exclusions,
+  ) =>
+    StartLibraryScanAllResult.admitted(
+      handle: operationHandleFromDto(operationHandle),
+      admittedRoots: [
+        for (final rootId in admittedRoots) libraryRootIdFromDto(rootId),
+      ],
+      exclusions: [
+        for (final exclusion in exclusions)
+          libraryScanAdmissionExclusionFromDto(exclusion),
+      ],
+    ),
+  dto.StartLibraryScanAllResultDto_NothingEligible(:final exclusions) =>
+    StartLibraryScanAllResult.nothingEligible(
+      exclusions: [
+        for (final exclusion in exclusions)
+          libraryScanAdmissionExclusionFromDto(exclusion),
+      ],
+    ),
+};
+
+LibraryScanAllRequestResolution libraryScanAllRequestResolutionFromDto(
+  dto.LibraryScanAllRequestResolutionDto value,
+) => switch (value) {
+  dto.LibraryScanAllRequestResolutionDto_Admitted(
+    :final operationHandle,
+    :final admittedRoots,
+    :final exclusions,
+  ) =>
+    LibraryScanAllRequestResolution.admitted(
+      handle: operationHandleFromDto(operationHandle),
+      admittedRoots: [
+        for (final rootId in admittedRoots) libraryRootIdFromDto(rootId),
+      ],
+      exclusions: [
+        for (final exclusion in exclusions)
+          libraryScanAdmissionExclusionFromDto(exclusion),
+      ],
+    ),
+  dto.LibraryScanAllRequestResolutionDto_NothingAdmitted() =>
+    const LibraryScanAllRequestResolution.nothingAdmitted(),
+};
+
 OperationHandle operationHandleFromDto(dto.OperationHandleDto value) =>
     OperationHandle(
       jobRunId: jobRunIdFromDto(value.jobRunId),
@@ -982,16 +1070,7 @@ RetryJobResult retryJobResultFromDto(dto.RetryJobResultDto value) =>
           dto.RetryNotAdmittedReasonDto_NoEligibleTargets(:final field0) =>
             RetryNotAdmittedReason.noEligibleTargets([
               for (final exclusion in field0)
-                LibraryScanAdmissionExclusion(
-                  libraryRootId: libraryRootIdFromDto(exclusion.libraryRootId),
-                  reason: exclusion.reason,
-                  activeJobRunId: exclusion.activeJobRunId == null
-                      ? null
-                      : jobRunIdFromDto(exclusion.activeJobRunId!),
-                  activeScanRunId: exclusion.activeScanRunId == null
-                      ? null
-                      : scanRunIdFromDto(exclusion.activeScanRunId!),
-                ),
+                libraryScanAdmissionExclusionFromDto(exclusion),
             ]),
         }),
     };
@@ -1081,16 +1160,7 @@ LibraryScanJobDetail libraryScanJobDetailFromDto(
   ],
   exclusions: [
     for (final exclusion in value.exclusions)
-      LibraryScanAdmissionExclusion(
-        libraryRootId: libraryRootIdFromDto(exclusion.libraryRootId),
-        reason: exclusion.reason,
-        activeJobRunId: exclusion.activeJobRunId == null
-            ? null
-            : jobRunIdFromDto(exclusion.activeJobRunId!),
-        activeScanRunId: exclusion.activeScanRunId == null
-            ? null
-            : scanRunIdFromDto(exclusion.activeScanRunId!),
-      ),
+      libraryScanAdmissionExclusionFromDto(exclusion),
   ],
   scanRuns: [
     for (final scan in value.scanRuns)

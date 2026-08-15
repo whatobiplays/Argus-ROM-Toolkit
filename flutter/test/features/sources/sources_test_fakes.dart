@@ -17,6 +17,8 @@ final class FakeSourcesApi implements SourcesApi {
   Object? listFailure;
   RemoveLibraryRootResult Function(LibraryRootId libraryRootId)? onRemove;
   StartLibraryScanResult Function(LibraryRootId libraryRootId)? onStartScan;
+  StartLibraryScanAllResult Function(ScanAllRequestIdentity requestIdentity)?
+  onStartScanAll;
 
   int listCalls = 0;
   int getCalls = 0;
@@ -24,6 +26,7 @@ final class FakeSourcesApi implements SourcesApi {
   int addAndScanCalls = 0;
   int removeCalls = 0;
   int startScanCalls = 0;
+  int startScanAllCalls = 0;
   int listChildrenCalls = 0;
   int getEntryCalls = 0;
   final List<String> getEntryCallIds = [];
@@ -151,6 +154,16 @@ final class FakeSourcesApi implements SourcesApi {
         operationType: 'library_scan',
       ),
     );
+  }
+
+  @override
+  Future<StartLibraryScanAllResult> startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  ) async {
+    startScanAllCalls++;
+    final handler = onStartScanAll;
+    if (handler != null) return handler(requestIdentity);
+    throw const TransportFailure('FakeSourcesApi has no Scan All handler');
   }
 
   @override

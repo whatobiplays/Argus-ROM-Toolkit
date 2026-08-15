@@ -25,6 +25,8 @@ abstract final class JobsMessages {
   static const String rootsRequested = 'Roots requested';
   static const String rootsAdmitted = 'Roots admitted';
   static const String rootsTerminal = 'Roots terminal';
+  static const String requestedFolders = 'Requested folders';
+  static const String excluded = 'Excluded';
   static const String entriesObserved = 'Entries observed';
   static const String entriesCommitted = 'Entries committed';
   static const String issues = 'Issues';
@@ -46,4 +48,10 @@ abstract final class JobsMessages {
       'No original folder remains eligible, so no new scan was created.';
   static const String retriedFrom = 'Retried from';
   static const String retriedAs = 'Retried as';
+  static String exclusionLabel(String reason) => switch (reason) {
+    'already_scanning' => 'Already being scanned',
+    'no_longer_configured' => 'No longer configured',
+    'invalid_configuration' => 'Invalid configuration',
+    _ => 'Not eligible',
+  };
 }

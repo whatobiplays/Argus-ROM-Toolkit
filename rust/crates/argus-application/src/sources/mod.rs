@@ -25,7 +25,8 @@ pub use library::{
     LibraryScanChildAdmission, LibraryScanChildAdmissionIssue, LibraryService,
     LibrarySourceRepository, ListLibraryRootsHandler, ListLibraryRootsQuery, NewLibraryRoot,
     RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult,
-    StartLibraryScanCommand, StartLibraryScanHandler,
+    StartLibraryScanAllCommand, StartLibraryScanAllHandler, StartLibraryScanCommand,
+    StartLibraryScanHandler,
 };
 pub use provider::{
     DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, LibrarySourceAccess,

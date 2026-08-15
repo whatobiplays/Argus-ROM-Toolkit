@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use argus_application::{
     ApplicationError, ArchitectureClass, DiagnosticStage, ErrorCode, FailureRole,
-    GetAppearanceSettingsQuery, JobsService, LibraryService, LogLevel, OperationContext, PathClass,
-    PlatformClass, RetryPolicy, SafeContext, SafeContextField, SafeContextValue, SettingsService,
-    StartupCollector, TraceEventPhase, TraceId,
+    GetAppearanceSettingsQuery, JobsService, LibraryScanRecoveryHandler, LibraryService, LogLevel,
+    OperationContext, PathClass, PlatformClass, RetryPolicy, SafeContext, SafeContextField,
+    SafeContextValue, SettingsService, StartupCollector, TraceEventPhase, TraceId,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
@@ -449,6 +449,15 @@ impl StartupCoordinator {
             self.resources.unit_of_work = Some(unit_of_work);
             self.resources.jobs_service = Some(jobs_service);
             self.resources.library_service = Some(library_service);
+            LibraryScanRecoveryHandler::new(
+                SqliteJobsQueries::new(executor.clone()),
+                self.resources
+                    .unit_of_work
+                    .clone()
+                    .expect("unit of work composed above"),
+            )
+            .handle(&self.context)
+            .map_err(|_| core_service_error(self.trace_id))?;
         }
         self.resources.core_services_ready = true;
         Ok(())

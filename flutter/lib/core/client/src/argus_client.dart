@@ -206,6 +206,10 @@ final class ArgusClient implements ClientBootstrap {
     LibraryRootId libraryRootId,
   ) => _request(() => _gateway.startLibraryScan(libraryRootId));
 
+  Future<StartLibraryScanAllResult> _startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  ) => _request(() => _gateway.startLibraryScanAll(requestIdentity));
+
   Future<SourceEntryChildrenPage> _listSourceEntryChildren({
     required LibraryRootId libraryRootId,
     SourceEntryId? parentSourceEntryId,
@@ -244,6 +248,10 @@ final class ArgusClient implements ClientBootstrap {
   Future<LibraryRootScanAdmission?> _getRootScanAdmission(
     LibraryRootId libraryRootId,
   ) => _request(() => _gateway.getRootScanAdmission(libraryRootId));
+
+  Future<LibraryScanAllRequestResolution> _resolveScanAllRequest(
+    ScanAllRequestIdentity requestIdentity,
+  ) => _request(() => _gateway.resolveScanAllRequest(requestIdentity));
 
   Future<DiagnosticsExport> _exportStartupDiagnostics(
     RuntimeInstanceId expected,
@@ -611,6 +619,11 @@ final class _SourcesApi implements SourcesApi {
   ) => _client._startLibraryScan(libraryRootId);
 
   @override
+  Future<StartLibraryScanAllResult> startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  ) => _client._startLibraryScanAll(requestIdentity);
+
+  @override
   Future<SourceEntryChildrenPage> listSourceEntryChildren({
     required LibraryRootId libraryRootId,
     SourceEntryId? parentSourceEntryId,
@@ -657,6 +670,11 @@ final class _JobsApi implements JobsApi {
   Future<LibraryRootScanAdmission?> getRootScanAdmission(
     LibraryRootId libraryRootId,
   ) => _client._getRootScanAdmission(libraryRootId);
+
+  @override
+  Future<LibraryScanAllRequestResolution> resolveScanAllRequest(
+    ScanAllRequestIdentity requestIdentity,
+  ) => _client._resolveScanAllRequest(requestIdentity);
 
   @override
   Future<ActiveJobSummary> getActiveJobSummary() async {

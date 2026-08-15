@@ -129,6 +129,41 @@ final class SourceEntryId {
   int get hashCode => value.hashCode;
 }
 
+/// Durable client-generated identity for one Scan All request.
+///
+/// The identity is used only for Scan All transport-ambiguity
+/// reconciliation; it is never a logical Job identity.
+final class ScanAllRequestIdentity {
+  const ScanAllRequestIdentity(this.value);
+
+  static const int maxBytes = 256;
+
+  final String value;
+
+  /// Parses one canonical request identity, or returns null when the value
+  /// is malformed (empty, too long, or containing characters outside the
+  /// canonical ASCII alphanumeric `-_.` alphabet).
+  static ScanAllRequestIdentity? tryParse(String value) {
+    final identity = ScanAllRequestIdentity(value);
+    return identity.isValid ? identity : null;
+  }
+
+  bool get isValid =>
+      value.isNotEmpty &&
+      value.length <= maxBytes &&
+      RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(value);
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanAllRequestIdentity && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
 /// Minimal identity-only handle returned by successful background admission.
 final class OperationHandle {
   const OperationHandle({required this.jobRunId, required this.operationType});
@@ -297,6 +332,7 @@ sealed class LibraryScanAdmissionExclusion
     required String reason,
     JobRunId? activeJobRunId,
     ScanRunId? activeScanRunId,
+    ClientApplicationError? applicationError,
   }) = _LibraryScanAdmissionExclusion;
 }
 
@@ -380,6 +416,35 @@ sealed class StartLibraryScanResult with _$StartLibraryScanResult {
     required JobRunId activeJobRunId,
     required ScanRunId activeScanRunId,
   }) = StartLibraryScanResultAlreadyScanning;
+}
+
+/// Typed outcome of one multi-root Scan All admission.
+@freezed
+sealed class StartLibraryScanAllResult with _$StartLibraryScanAllResult {
+  const factory StartLibraryScanAllResult.admitted({
+    required OperationHandle handle,
+    required List<LibraryRootId> admittedRoots,
+    required List<LibraryScanAdmissionExclusion> exclusions,
+  }) = StartLibraryScanAllResultAdmitted;
+
+  const factory StartLibraryScanAllResult.nothingEligible({
+    required List<LibraryScanAdmissionExclusion> exclusions,
+  }) = StartLibraryScanAllResultNothingEligible;
+}
+
+/// Authoritative resolution of one Scan All request identity after
+/// transport ambiguity.
+@freezed
+sealed class LibraryScanAllRequestResolution
+    with _$LibraryScanAllRequestResolution {
+  const factory LibraryScanAllRequestResolution.admitted({
+    required OperationHandle handle,
+    required List<LibraryRootId> admittedRoots,
+    required List<LibraryScanAdmissionExclusion> exclusions,
+  }) = LibraryScanAllRequestResolutionAdmitted;
+
+  const factory LibraryScanAllRequestResolution.nothingAdmitted() =
+      LibraryScanAllRequestResolutionNothingAdmitted;
 }
 
 /// Typed outcome of one cancel request.
@@ -880,19 +945,22 @@ final class LibraryRootActiveScan {
   const LibraryRootActiveScan({
     required this.scanRunId,
     required this.jobRunId,
+    required this.owningJobRootCount,
   });
 
   final String scanRunId;
   final String jobRunId;
+  final int owningJobRootCount;
 
   @override
   bool operator ==(Object other) =>
       other is LibraryRootActiveScan &&
       other.scanRunId == scanRunId &&
-      other.jobRunId == jobRunId;
+      other.jobRunId == jobRunId &&
+      other.owningJobRootCount == owningJobRootCount;
 
   @override
-  int get hashCode => Object.hash(scanRunId, jobRunId);
+  int get hashCode => Object.hash(scanRunId, jobRunId, owningJobRootCount);
 }
 
 /// Authoritative immutable projection of one configured library root.

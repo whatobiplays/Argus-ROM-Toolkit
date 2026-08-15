@@ -27,15 +27,17 @@ use argus_application::{
     CancelJobResult, DiagnosticStage, ErrorCode, EventName, FailureRole,
     GetAppearanceSettingsQuery, GetLibraryRootQuery, GetSourceEntryQuery, JobDetail, JobRunId,
     JobSummaryPage, JobsService, LibraryRootId, LibraryRootPage, LibraryRootProjection,
-    LibraryRootRepository, LibraryScanAdmissionResult, LibraryService, LibrarySourceRepository,
-    ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LibraryRootRepository, LibraryScanAdmissionResult, LibraryScanAllAdmissionResult,
+    LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup, LibraryService,
+    LibrarySourceRepository, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
     LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome,
     NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationName, PathClass,
     PersistenceError, PlatformClass, RemoveLibraryRootCommand, RemoveLibraryRootResult,
     SafeContext, SafeContextField, SafeContextValue, SettingsService, SourceEntryChildrenPage,
-    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanCommand, StartupCollector,
-    SubsystemName, TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork,
-    UnitOfWorkFactory, UpdateAppearanceSettingsCommand, Version,
+    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllCommand,
+    StartLibraryScanAllResult, StartLibraryScanCommand, StartupCollector, SubsystemName,
+    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
+    UpdateAppearanceSettingsCommand, Version,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
@@ -1137,6 +1139,52 @@ impl KernelBootstrap {
             &self.event_bus,
             &self.publication_diagnostics,
         )
+    }
+
+    /// Admits one durable multi-root Scan All under an admitted context.
+    pub fn start_library_scan_all_with_context(
+        &self,
+        context: &OperationContext,
+        request_identity: LibraryScanAllRequestIdentity,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<LibraryScanAllAdmissionResult, ApplicationError> {
+        if is_cancelled() {
+            return Err(cancelled_sources_error(context.trace_id()));
+        }
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let executor = self
+            .executor
+            .clone()
+            .ok_or_else(|| cancelled_sources_error(context.trace_id()))?;
+        let lookup = SqliteJobsQueries::new(executor);
+        let result = self.library_service.start_library_scan_all(
+            StartLibraryScanAllCommand::new(request_identity),
+            context.clone(),
+            &lookup,
+            recorder,
+        );
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
+    /// Resolves one durable Scan All request identity to its accepted
+    /// admission or authoritative no-admission proof.
+    pub fn resolve_scan_all_request_with_context(
+        &self,
+        context: &OperationContext,
+        request_identity: LibraryScanAllRequestIdentity,
+    ) -> Result<Option<StartLibraryScanAllResult>, ApplicationError> {
+        let executor = self
+            .executor
+            .clone()
+            .ok_or_else(|| cancelled_sources_error(context.trace_id()))?;
+        SqliteJobsQueries::new(executor).find_existing(context, &request_identity)
     }
 
     /// Terminalizes an admitted run whose manager registration failed.

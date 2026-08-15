@@ -13,6 +13,12 @@ export 'application/sources_state.dart'
         SourcesRuntimeContextReady;
 export 'application/root_list_controller.dart'
     show
+        SourcesScanAllStatus,
+        SourcesScanAllStatusAdmitted,
+        SourcesScanAllStatusIdle,
+        SourcesScanAllStatusNothingEligible,
+        SourcesScanAllStatusSubmitting,
+        SourcesScanAllStatusUncertain,
         SourcesRootListController,
         SourcesRootListState,
         SourcesRootListStateReady,
@@ -49,6 +55,7 @@ export 'application/sources_session_presentation.dart'
         sourcesSidebarPreferenceProvider;
 export 'sources_composition.dart'
     show
+        sourcesJobsApiProvider,
         sourcesApiProvider,
         sourcesReconciliationDemandProvider,
         sourcesRuntimeContextProvider;

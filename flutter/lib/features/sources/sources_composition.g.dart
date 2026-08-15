@@ -63,6 +63,64 @@ final class SourcesApiProvider
 
 String _$sourcesApiHash() => r'95355846b91c5ed32b66889d4e06b6c84920a6dd';
 
+/// Focused Jobs capability injected for Sources-owned coordination (Scan All
+/// ambiguity reconciliation and cancel-and-remove).
+///
+/// This is a dependency-injection seam only: Sources never reconstructs Jobs
+/// truth from events and never owns the full job-detail surface.
+
+@ProviderFor(sourcesJobsApi)
+final sourcesJobsApiProvider = SourcesJobsApiProvider._();
+
+/// Focused Jobs capability injected for Sources-owned coordination (Scan All
+/// ambiguity reconciliation and cancel-and-remove).
+///
+/// This is a dependency-injection seam only: Sources never reconstructs Jobs
+/// truth from events and never owns the full job-detail surface.
+
+final class SourcesJobsApiProvider
+    extends $FunctionalProvider<JobsApi, JobsApi, JobsApi>
+    with $Provider<JobsApi> {
+  /// Focused Jobs capability injected for Sources-owned coordination (Scan All
+  /// ambiguity reconciliation and cancel-and-remove).
+  ///
+  /// This is a dependency-injection seam only: Sources never reconstructs Jobs
+  /// truth from events and never owns the full job-detail surface.
+  SourcesJobsApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'sourcesJobsApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$sourcesJobsApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<JobsApi> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  JobsApi create(Ref ref) {
+    return sourcesJobsApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(JobsApi value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<JobsApi>(value),
+    );
+  }
+}
+
+String _$sourcesJobsApiHash() => r'9b0be7b50ef7a316a3a9c527116fc2e13c681d67';
+
 /// Runtime generation context injected by app composition.
 ///
 /// The default is pre-ready; app composition supplies the current runtime

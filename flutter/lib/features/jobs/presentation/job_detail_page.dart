@@ -267,7 +267,7 @@ class _JobDetailContent extends StatelessWidget {
               const SizedBox(height: 16),
               if (scanDetail.requestedRoots.isNotEmpty) ...[
                 Text(
-                  'Requested folders',
+                  JobsMessages.requestedFolders,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 for (final root in scanDetail.requestedRoots)
@@ -281,14 +281,17 @@ class _JobDetailContent extends StatelessWidget {
               if (scanDetail.exclusions.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Excluded',
+                  JobsMessages.excluded,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 for (final exclusion in scanDetail.exclusions)
                   ListTile(
                     dense: true,
                     leading: const Icon(Icons.block),
-                    title: Text(exclusion.reason),
+                    title: Text(JobsMessages.exclusionLabel(exclusion.reason)),
+                    subtitle: exclusion.applicationError == null
+                        ? null
+                        : Text(exclusion.applicationError!.code.value),
                   ),
               ],
               for (final scan in scanDetail.scanRuns)

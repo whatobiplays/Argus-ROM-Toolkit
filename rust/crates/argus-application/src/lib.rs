@@ -33,13 +33,16 @@ pub use events::{
     SourceEntriesChangeScope, SourceEntriesChanged, SourceEntriesSubscriber,
 };
 pub use jobs::{
-    ActiveScanOwnership, AdmittedScan, ApplicationEventSink, BackgroundOperationHandler,
-    CancelJobResult, JobControlAvailability, JobDetail, JobProgress, JobProgressError,
-    JobProgressReporter, JobRunProjection, JobRunRepository, JobRunState, JobRunStateParseError,
-    JobSummary, JobSummaryPage, JobsQueries, JobsService, LibraryScanAdmissionContext,
-    LibraryScanAdmissionContextRepository, LibraryScanAdmissionExclusion,
-    LibraryScanAdmissionResult, LibraryScanExecutionPlan, LibraryScanInvocationKind,
-    LibraryScanJobDetail, LibraryScanRetryEvaluation, LibraryScanRootSummary, LibraryScanTarget,
+    ActiveScanOwnership, AdmittedLibraryScanJob, AdmittedScan, ApplicationEventSink,
+    BackgroundOperationHandler, CancelJobResult, JobControlAvailability, JobDetail, JobProgress,
+    JobProgressError, JobProgressReporter, JobRunProjection, JobRunRepository, JobRunState,
+    JobRunStateParseError, JobSummary, JobSummaryPage, JobsQueries, JobsService,
+    LibraryScanAdmissionContext, LibraryScanAdmissionContextRepository,
+    LibraryScanAdmissionExclusion, LibraryScanAdmissionResult, LibraryScanAllAdmissionResult,
+    LibraryScanAllRequestIdentity, LibraryScanAllRequestIdentityError, LibraryScanAllRequestLookup,
+    LibraryScanChildCompletion, LibraryScanExecutionPlan, LibraryScanInvocationKind,
+    LibraryScanInvocationKindParseError, LibraryScanJobDetail, LibraryScanRecoveryHandler,
+    LibraryScanRetryEvaluation, LibraryScanRootSummary, LibraryScanTarget,
     LibraryScanTargetEligibility, LibraryScanTargetExclusionReason, LibraryScanTargetKind,
     LibraryScanTargetRepository, ListJobsQuery, ListJobsScope, NativeIdentityMatch, NewJobRun,
     NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, NewSourceEntry,
@@ -47,7 +50,9 @@ pub use jobs::{
     RetryJobAdmissionResult, RetryJobCommand, RetryJobHandler, RetryJobResult,
     RetryNotAdmittedReason, ScanAdmissionReference, ScanProgressFacts, ScanRunProjection,
     ScanRunRepository, ScanRunStatus, ScanRunStatusParseError, SourceEntryRecord,
-    SourceEntryRepository, StartLibraryScanResult, evaluate_retry_eligibility,
+    SourceEntryRepository, StaleLibraryScanJob, StaleLibraryScanQueries, StaleLibraryScanRun,
+    StartLibraryScanAllResult, StartLibraryScanResult, aggregate_library_scan_state,
+    evaluate_retry_eligibility, evaluate_retry_eligibility_with_trace,
 };
 pub use observability::{
     ArchitectureClass, DiagnosticStage, EventName, FailureRole, LogEvent, LogLevel,
@@ -79,6 +84,7 @@ pub use sources::{
     SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor, SourceEntryCursorError,
     SourceEntryDetailProjection, SourceEntryKind, SourceEntryProjection, SourceEntryQueries,
     SourceLocatorKey, SourceObservation, SourceProviderType, SourceProviderTypeError,
-    StartLibraryScanCommand, StartLibraryScanHandler, ValidatedLocalRoot,
+    StartLibraryScanAllCommand, StartLibraryScanAllHandler, StartLibraryScanCommand,
+    StartLibraryScanHandler, ValidatedLocalRoot,
 };
 pub use unit_of_work::{UnitOfWork, UnitOfWorkFactory};

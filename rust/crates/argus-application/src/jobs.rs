@@ -8,8 +8,9 @@
 use crate::unit_of_work::UnitOfWork;
 use crate::{
     ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, JobRunId, LibraryRootId,
-    LibraryRootLastScanSummary, LibraryRootRepository, OperationContext, PersistenceError,
-    SafeContext, ScanRunId, SourceEntryId, TraceId,
+    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootRepository, OperationContext,
+    PersistenceError, SafeContext, SafeContextField, SafeContextValue, ScanRunId, SourceEntryId,
+    TraceId,
 };
 
 use crate::sources::{RelativeSourceLocator, RootLocator, SourceLocatorKey};
@@ -722,6 +723,7 @@ pub struct LibraryScanAdmissionExclusion {
     reason: LibraryScanTargetExclusionReason,
     active_job_run_id: Option<JobRunId>,
     active_scan_run_id: Option<ScanRunId>,
+    application_error: Option<ApplicationError>,
 }
 
 impl LibraryScanAdmissionExclusion {
@@ -737,6 +739,22 @@ impl LibraryScanAdmissionExclusion {
             reason,
             active_job_run_id,
             active_scan_run_id,
+            application_error: None,
+        }
+    }
+
+    /// Creates one `InvalidConfiguration` exclusion carrying the canonical
+    /// bounded application error.
+    pub fn invalid_configuration(
+        library_root_id: LibraryRootId,
+        application_error: ApplicationError,
+    ) -> Self {
+        Self {
+            library_root_id,
+            reason: LibraryScanTargetExclusionReason::InvalidConfiguration,
+            active_job_run_id: None,
+            active_scan_run_id: None,
+            application_error: Some(application_error),
         }
     }
 
@@ -758,6 +776,11 @@ impl LibraryScanAdmissionExclusion {
     /// Returns the related active scan identity, when applicable.
     pub fn active_scan_run_id(&self) -> Option<ScanRunId> {
         self.active_scan_run_id
+    }
+
+    /// Returns the bounded `InvalidConfiguration` error, when applicable.
+    pub fn application_error(&self) -> Option<&ApplicationError> {
+        self.application_error.as_ref()
     }
 }
 
@@ -1168,6 +1191,203 @@ impl LibraryScanAdmissionResult {
     }
 }
 
+/// One accepted multi-root Scan All execution payload.
+///
+/// One job owns the ordered collection of admitted child plans. The order is
+/// canonical historical `LibraryRootId` ascending and is therefore durable and
+/// reproducible from the admitted target rows alone.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdmittedLibraryScanJob {
+    job_run_id: JobRunId,
+    plans: Vec<LibraryScanExecutionPlan>,
+}
+
+impl AdmittedLibraryScanJob {
+    /// Creates one accepted multi-root job from its ordered child plans.
+    pub fn new(job_run_id: JobRunId, plans: Vec<LibraryScanExecutionPlan>) -> Self {
+        Self { job_run_id, plans }
+    }
+
+    /// Returns the owning job identity.
+    pub fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the admitted child plans in canonical execution order.
+    pub fn plans(&self) -> &[LibraryScanExecutionPlan] {
+        &self.plans
+    }
+}
+
+/// Typed caller-visible outcome of one Scan All admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StartLibraryScanAllResult {
+    /// One durable job was admitted for all eligible roots.
+    Admitted {
+        operation_handle: OperationHandle,
+        admitted_roots: Vec<LibraryRootId>,
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    },
+    /// No configured root was eligible, so no job was created.
+    NothingEligible {
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    },
+}
+
+impl StartLibraryScanAllResult {
+    /// Returns the admission handle for `Admitted`.
+    pub fn operation_handle(&self) -> Option<&OperationHandle> {
+        match self {
+            Self::Admitted {
+                operation_handle, ..
+            } => Some(operation_handle),
+            Self::NothingEligible { .. } => None,
+        }
+    }
+
+    /// Returns admitted root identities in canonical order.
+    pub fn admitted_roots(&self) -> &[LibraryRootId] {
+        match self {
+            Self::Admitted { admitted_roots, .. } => admitted_roots,
+            Self::NothingEligible { .. } => &[],
+        }
+    }
+
+    /// Returns typed admission exclusions.
+    pub fn exclusions(&self) -> &[LibraryScanAdmissionExclusion] {
+        match self {
+            Self::Admitted { exclusions, .. } => exclusions,
+            Self::NothingEligible { exclusions } => exclusions,
+        }
+    }
+}
+
+/// Application-level Scan All admission result.
+///
+/// `admitted` carries the frozen execution payload only when this request
+/// durably created the job. Idempotent request-identity replays return an
+/// `Admitted` caller outcome with no fresh registration payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryScanAllAdmissionResult {
+    outcome: StartLibraryScanAllResult,
+    admitted: Option<AdmittedLibraryScanJob>,
+}
+
+impl LibraryScanAllAdmissionResult {
+    /// Creates a non-admitted or replay-only Scan All outcome.
+    pub fn not_admitted(outcome: StartLibraryScanAllResult) -> Self {
+        Self {
+            outcome,
+            admitted: None,
+        }
+    }
+
+    /// Creates an admitted Scan All outcome with its execution payload.
+    pub fn admitted(
+        handle: OperationHandle,
+        admitted_roots: Vec<LibraryRootId>,
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+        admitted: AdmittedLibraryScanJob,
+    ) -> Self {
+        Self {
+            outcome: StartLibraryScanAllResult::Admitted {
+                operation_handle: handle,
+                admitted_roots,
+                exclusions,
+            },
+            admitted: Some(admitted),
+        }
+    }
+
+    /// Returns the caller-visible typed outcome.
+    pub fn outcome(&self) -> &StartLibraryScanAllResult {
+        &self.outcome
+    }
+
+    /// Returns the fresh execution payload, if this request created the job.
+    pub fn admitted_job(&self) -> Option<&AdmittedLibraryScanJob> {
+        self.admitted.as_ref()
+    }
+}
+
+/// The reason a Scan All client request identity is invalid.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryScanAllRequestIdentityError {
+    /// The identity is empty.
+    Empty,
+    /// The identity exceeds the bounded durable length.
+    TooLong,
+    /// The identity contains a non-ASCII or non-identifier character.
+    InvalidCharacter,
+}
+
+impl std::fmt::Display for LibraryScanAllRequestIdentityError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("scan all request identity is empty"),
+            Self::TooLong => formatter.write_str("scan all request identity is too long"),
+            Self::InvalidCharacter => {
+                formatter.write_str("scan all request identity contains an invalid character")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LibraryScanAllRequestIdentityError {}
+
+/// Durable client-generated identity used to reconcile one ambiguous Scan All
+/// transport outcome. It is operation metadata, never a second Job identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LibraryScanAllRequestIdentity(String);
+
+impl LibraryScanAllRequestIdentity {
+    /// Maximum persisted identity length in UTF-8 bytes.
+    pub const MAX_BYTES: usize = 256;
+
+    /// Returns the canonical durable representation.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<&str> for LibraryScanAllRequestIdentity {
+    type Error = LibraryScanAllRequestIdentityError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            return Err(LibraryScanAllRequestIdentityError::Empty);
+        }
+        if value.len() > Self::MAX_BYTES {
+            return Err(LibraryScanAllRequestIdentityError::TooLong);
+        }
+        if !value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        }) {
+            return Err(LibraryScanAllRequestIdentityError::InvalidCharacter);
+        }
+        Ok(Self(value.to_owned()))
+    }
+}
+
+impl TryFrom<String> for LibraryScanAllRequestIdentity {
+    type Error = LibraryScanAllRequestIdentityError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_str())
+    }
+}
+
+/// Authoritative replay lookup for one Scan All request identity.
+pub trait LibraryScanAllRequestLookup {
+    /// Returns the already accepted Scan All outcome for `request_identity`,
+    /// or `None` when no admission is durably associated with it.
+    fn find_existing(
+        &self,
+        context: &OperationContext,
+        request_identity: &LibraryScanAllRequestIdentity,
+    ) -> Result<Option<StartLibraryScanAllResult>, ApplicationError>;
+}
+
 /// Closed Jobs list scopes for Slice 002.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ListJobsScope {
@@ -1247,6 +1467,8 @@ pub enum RetryNotAdmittedReason {
 pub struct RetryJobAdmissionResult {
     outcome: RetryJobResult,
     admitted: Option<AdmittedScan>,
+    admitted_job: Option<AdmittedLibraryScanJob>,
+    admitted_job_exclusion_count: usize,
 }
 
 impl RetryJobAdmissionResult {
@@ -1255,6 +1477,8 @@ impl RetryJobAdmissionResult {
         Self {
             outcome,
             admitted: None,
+            admitted_job: None,
+            admitted_job_exclusion_count: 0,
         }
     }
 
@@ -1263,6 +1487,22 @@ impl RetryJobAdmissionResult {
         Self {
             outcome: RetryJobResult::Admitted(handle),
             admitted: Some(admitted),
+            admitted_job: None,
+            admitted_job_exclusion_count: 0,
+        }
+    }
+
+    /// Creates an admitted multi-root Scan All retry outcome.
+    pub fn admitted_scan_all(
+        handle: OperationHandle,
+        admitted_job: AdmittedLibraryScanJob,
+        exclusion_count: usize,
+    ) -> Self {
+        Self {
+            outcome: RetryJobResult::Admitted(handle),
+            admitted: None,
+            admitted_job: Some(admitted_job),
+            admitted_job_exclusion_count: exclusion_count,
         }
     }
 
@@ -1274,6 +1514,17 @@ impl RetryJobAdmissionResult {
     /// Returns the admitted execution payload, if admission succeeded.
     pub fn admitted_scan(&self) -> Option<&AdmittedScan> {
         self.admitted.as_ref()
+    }
+
+    /// Returns the admitted multi-root execution payload, if applicable.
+    pub fn admitted_job(&self) -> Option<&AdmittedLibraryScanJob> {
+        self.admitted_job.as_ref()
+    }
+
+    /// Returns the number of durable exclusions carried by an admitted Scan
+    /// All retry payload.
+    pub fn admitted_job_exclusion_count(&self) -> usize {
+        self.admitted_job_exclusion_count
     }
 }
 
@@ -1625,6 +1876,10 @@ pub enum LibraryScanInvocationKind {
     InitialSingleRoot,
     /// A retry that reconstructs one original single-root request.
     RetrySingleRoot,
+    /// A first multi-root Scan All request.
+    InitialScanAll,
+    /// A retry that reconstructs one original multi-root Scan All request.
+    RetryScanAll,
 }
 
 impl LibraryScanInvocationKind {
@@ -1633,6 +1888,34 @@ impl LibraryScanInvocationKind {
         match self {
             Self::InitialSingleRoot => "initial_single_root",
             Self::RetrySingleRoot => "retry_single_root",
+            Self::InitialScanAll => "initial_scan_all",
+            Self::RetryScanAll => "retry_scan_all",
+        }
+    }
+}
+
+/// Failure while parsing a persisted LibraryScan invocation kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LibraryScanInvocationKindParseError;
+
+impl std::fmt::Display for LibraryScanInvocationKindParseError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("invalid library scan invocation kind")
+    }
+}
+
+impl std::error::Error for LibraryScanInvocationKindParseError {}
+
+impl TryFrom<&str> for LibraryScanInvocationKind {
+    type Error = LibraryScanInvocationKindParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "initial_single_root" => Ok(Self::InitialSingleRoot),
+            "retry_single_root" => Ok(Self::RetrySingleRoot),
+            "initial_scan_all" => Ok(Self::InitialScanAll),
+            "retry_scan_all" => Ok(Self::RetryScanAll),
+            _ => Err(LibraryScanInvocationKindParseError),
         }
     }
 }
@@ -1643,6 +1926,7 @@ pub struct LibraryScanAdmissionContext {
     job_run_id: JobRunId,
     invocation_kind: LibraryScanInvocationKind,
     retry_source_job_run_id: Option<JobRunId>,
+    scan_all_request_identity: Option<LibraryScanAllRequestIdentity>,
 }
 
 impl LibraryScanAdmissionContext {
@@ -1656,6 +1940,23 @@ impl LibraryScanAdmissionContext {
             job_run_id,
             invocation_kind,
             retry_source_job_run_id,
+            scan_all_request_identity: None,
+        }
+    }
+
+    /// Creates one loaded Scan All admission-context record carrying the
+    /// durable client request identity.
+    pub const fn with_scan_all_request_identity(
+        job_run_id: JobRunId,
+        invocation_kind: LibraryScanInvocationKind,
+        retry_source_job_run_id: Option<JobRunId>,
+        scan_all_request_identity: LibraryScanAllRequestIdentity,
+    ) -> Self {
+        Self {
+            job_run_id,
+            invocation_kind,
+            retry_source_job_run_id,
+            scan_all_request_identity: Some(scan_all_request_identity),
         }
     }
 
@@ -1673,14 +1974,20 @@ impl LibraryScanAdmissionContext {
     pub const fn retry_source_job_run_id(&self) -> Option<JobRunId> {
         self.retry_source_job_run_id
     }
+
+    /// Returns the durable Scan All request identity, when applicable.
+    pub const fn scan_all_request_identity(&self) -> Option<&LibraryScanAllRequestIdentity> {
+        self.scan_all_request_identity.as_ref()
+    }
 }
 
 /// One new immutable LibraryScan admission-context record.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NewLibraryScanAdmissionContext {
     job_run_id: JobRunId,
     invocation_kind: LibraryScanInvocationKind,
     retry_source_job_run_id: Option<JobRunId>,
+    scan_all_request_identity: Option<LibraryScanAllRequestIdentity>,
 }
 
 impl NewLibraryScanAdmissionContext {
@@ -1694,6 +2001,23 @@ impl NewLibraryScanAdmissionContext {
             job_run_id,
             invocation_kind,
             retry_source_job_run_id,
+            scan_all_request_identity: None,
+        }
+    }
+
+    /// Creates one new Scan All admission-context insert carrying the durable
+    /// client request identity.
+    pub const fn with_scan_all_request_identity(
+        job_run_id: JobRunId,
+        invocation_kind: LibraryScanInvocationKind,
+        retry_source_job_run_id: Option<JobRunId>,
+        scan_all_request_identity: LibraryScanAllRequestIdentity,
+    ) -> Self {
+        Self {
+            job_run_id,
+            invocation_kind,
+            retry_source_job_run_id,
+            scan_all_request_identity: Some(scan_all_request_identity),
         }
     }
 
@@ -1710,6 +2034,11 @@ impl NewLibraryScanAdmissionContext {
     /// Returns the immutable retry source identity, when this run is a retry.
     pub const fn retry_source_job_run_id(&self) -> Option<JobRunId> {
         self.retry_source_job_run_id
+    }
+
+    /// Returns the durable Scan All request identity, when applicable.
+    pub const fn scan_all_request_identity(&self) -> Option<&LibraryScanAllRequestIdentity> {
+        self.scan_all_request_identity.as_ref()
     }
 }
 
@@ -2084,6 +2413,17 @@ pub fn evaluate_retry_eligibility(
     has_successor: bool,
     targets: &[(LibraryScanTarget, LibraryScanTargetEligibility)],
 ) -> LibraryScanRetryEvaluation {
+    evaluate_retry_eligibility_with_trace(None, source_state, has_successor, targets)
+}
+
+/// Shared retry-eligibility seam that may carry a bounded `InvalidConfiguration`
+/// error for mutation. The projection-only caller passes `None`.
+pub fn evaluate_retry_eligibility_with_trace(
+    trace_id: Option<crate::TraceId>,
+    source_state: JobRunState,
+    has_successor: bool,
+    targets: &[(LibraryScanTarget, LibraryScanTargetEligibility)],
+) -> LibraryScanRetryEvaluation {
     let source_eligible = matches!(
         source_state,
         JobRunState::CompletedWithIssues
@@ -2105,12 +2445,19 @@ pub fn evaluate_retry_eligibility(
                 None,
             ));
         } else if !eligibility.configuration_valid {
-            exclusions.push(LibraryScanAdmissionExclusion::new(
-                target.library_root_id(),
-                LibraryScanTargetExclusionReason::InvalidConfiguration,
-                None,
-                None,
-            ));
+            let exclusion = match trace_id {
+                Some(trace_id) => LibraryScanAdmissionExclusion::invalid_configuration(
+                    target.library_root_id(),
+                    invalid_configuration_error(trace_id),
+                ),
+                None => LibraryScanAdmissionExclusion::new(
+                    target.library_root_id(),
+                    LibraryScanTargetExclusionReason::InvalidConfiguration,
+                    None,
+                    None,
+                ),
+            };
+            exclusions.push(exclusion);
         } else if let Some(owner) = eligibility.active_owner {
             exclusions.push(LibraryScanAdmissionExclusion::new(
                 target.library_root_id(),
@@ -2126,6 +2473,24 @@ pub fn evaluate_retry_eligibility(
         can_retry: source_eligible && !has_successor && any_eligible,
         exclusions,
     }
+}
+
+fn invalid_configuration_error(trace_id: crate::TraceId) -> ApplicationError {
+    let mut safe_context = SafeContext::new();
+    safe_context
+        .try_insert(
+            SafeContextField::TechnicalClass,
+            SafeContextValue::TechnicalClass(crate::TechnicalClass::ConfigurationInvalid),
+        )
+        .expect("technical class is an allowed ConfigurationInvalid field");
+    safe_context
+        .try_insert(
+            SafeContextField::FailureRole,
+            SafeContextValue::FailureRole(crate::FailureRole::Primary),
+        )
+        .expect("failure role is an allowed ConfigurationInvalid field");
+    ApplicationError::from_code(ErrorCode::ConfigurationInvalid, trace_id, safe_context)
+        .expect("ConfigurationInvalid context follows the published catalog")
 }
 
 /// Independent authoritative jobs query port.
@@ -2163,6 +2528,14 @@ pub trait JobsQueries {
         job_run_id: JobRunId,
     ) -> Result<Option<Vec<LibraryScanTarget>>, PersistenceError>;
 
+    /// Returns the immutable LibraryScan invocation kind for one job, if the
+    /// identity is known and is a LibraryScan job.
+    fn find_library_scan_invocation_kind(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<LibraryScanInvocationKind>, PersistenceError>;
+
     /// Finds the newest scan-run admission (active or terminal) owned by one
     /// historical root. This is the Jobs-authoritative fact used to reconcile
     /// an ambiguous Add & Scan transport outcome.
@@ -2171,6 +2544,236 @@ pub trait JobsQueries {
         context: &OperationContext,
         library_root_id: LibraryRootId,
     ) -> Result<Option<ScanAdmissionReference>, PersistenceError>;
+}
+
+/// One child scan-run record needed by persistence-only startup recovery.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StaleLibraryScanRun {
+    scan_run_id: ScanRunId,
+    job_run_id: JobRunId,
+    library_root_id: LibraryRootId,
+    status: ScanRunStatus,
+    started_at_ms: i64,
+}
+
+impl StaleLibraryScanRun {
+    /// Creates one stale child record.
+    pub const fn new(
+        scan_run_id: ScanRunId,
+        job_run_id: JobRunId,
+        library_root_id: LibraryRootId,
+        status: ScanRunStatus,
+        started_at_ms: i64,
+    ) -> Self {
+        Self {
+            scan_run_id,
+            job_run_id,
+            library_root_id,
+            status,
+            started_at_ms,
+        }
+    }
+
+    /// Returns the child scan identity.
+    pub const fn scan_run_id(&self) -> ScanRunId {
+        self.scan_run_id
+    }
+
+    /// Returns the owning job identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the historical root identity.
+    pub const fn library_root_id(&self) -> LibraryRootId {
+        self.library_root_id
+    }
+
+    /// Returns the durable child status.
+    pub const fn status(&self) -> ScanRunStatus {
+        self.status
+    }
+
+    /// Returns the durable child start timestamp.
+    pub const fn started_at_ms(&self) -> i64 {
+        self.started_at_ms
+    }
+}
+
+/// One stale active LibraryScan job plus its durable child/scope facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StaleLibraryScanJob {
+    job_run_id: JobRunId,
+    state: JobRunState,
+    cancellation_requested: bool,
+    scan_runs: Vec<StaleLibraryScanRun>,
+    exclusions: Vec<LibraryScanAdmissionExclusion>,
+}
+
+impl StaleLibraryScanJob {
+    /// Creates one stale active job snapshot.
+    pub fn new(
+        job_run_id: JobRunId,
+        state: JobRunState,
+        cancellation_requested: bool,
+        scan_runs: Vec<StaleLibraryScanRun>,
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    ) -> Self {
+        Self {
+            job_run_id,
+            state,
+            cancellation_requested,
+            scan_runs,
+            exclusions,
+        }
+    }
+
+    /// Returns the stale job identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the durable active parent state.
+    pub const fn state(&self) -> JobRunState {
+        self.state
+    }
+
+    /// Returns whether durable cancellation intent was already accepted.
+    pub const fn cancellation_requested(&self) -> bool {
+        self.cancellation_requested
+    }
+
+    /// Returns all child scan-run records in canonical root order.
+    pub fn scan_runs(&self) -> &[StaleLibraryScanRun] {
+        &self.scan_runs
+    }
+
+    /// Returns the durable admission exclusions for this job.
+    pub fn exclusions(&self) -> &[LibraryScanAdmissionExclusion] {
+        &self.exclusions
+    }
+}
+
+/// Persistence-only query port for startup LibraryScan reconciliation.
+pub trait StaleLibraryScanQueries {
+    /// Lists every active LibraryScan job and its durable children/exclusions
+    /// without resolving providers or performing any user-visible work.
+    fn list_stale_library_scan_jobs(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<StaleLibraryScanJob>, PersistenceError>;
+}
+
+/// Persistence-only startup recovery for stale active LibraryScan jobs.
+///
+/// This handler has no provider, enumeration, or scheduling capability. It
+/// terminalizes stale running children as `Cancelled` (accepted cancellation
+/// intent) or `Abandoned` (no cancellation), preserves already-terminal
+/// children, and then derives the parent state from durable child/exclusion
+/// facts. Every mutation is a persistence transaction; no user files are
+/// touched and no automatic resume is admitted.
+pub struct LibraryScanRecoveryHandler<Q, U> {
+    queries: Q,
+    unit_of_work: U,
+}
+
+impl<Q, U> LibraryScanRecoveryHandler<Q, U> {
+    /// Composes the stale query and Unit of Work capabilities.
+    pub const fn new(queries: Q, unit_of_work: U) -> Self {
+        Self {
+            queries,
+            unit_of_work,
+        }
+    }
+}
+
+impl<Q, U> LibraryScanRecoveryHandler<Q, U>
+where
+    Q: StaleLibraryScanQueries,
+    U: crate::UnitOfWorkFactory + Clone,
+{
+    /// Reconciles every stale active LibraryScan job and returns only after
+    /// all recovered state is coherent.
+    pub fn handle(&self, context: &OperationContext) -> Result<(), ApplicationError> {
+        let stale_jobs = self
+            .queries
+            .list_stale_library_scan_jobs(context)
+            .map_err(|error| map_persistence_error(context.trace_id(), error))?;
+        for job in stale_jobs {
+            self.reconcile_job(context, job)?;
+        }
+        Ok(())
+    }
+
+    fn reconcile_job(
+        &self,
+        context: &OperationContext,
+        job: StaleLibraryScanJob,
+    ) -> Result<(), ApplicationError> {
+        let now = now_millis();
+        let cancellation_requested = job.cancellation_requested();
+        let exclusions_count = job.exclusions().len();
+        self.unit_of_work
+            .clone()
+            .execute(context, move |mut scope| {
+                let mut child_statuses = Vec::with_capacity(job.scan_runs().len());
+                for child in job.scan_runs() {
+                    let status = if child.status() == ScanRunStatus::Running {
+                        let target = if cancellation_requested {
+                            ScanRunStatus::Cancelled
+                        } else {
+                            ScanRunStatus::Abandoned
+                        };
+                        scope.scan_runs().set_status(
+                            child.scan_run_id(),
+                            target,
+                            Some(now),
+                            None,
+                        )?;
+                        let last_scan_status = if cancellation_requested {
+                            LibraryRootLastScanStatus::Cancelled
+                        } else {
+                            LibraryRootLastScanStatus::Abandoned
+                        };
+                        scope.library_roots().set_last_scan(
+                            child.library_root_id(),
+                            Some(LibraryRootLastScanSummary::new(
+                                child.scan_run_id().to_string(),
+                                child.job_run_id().to_string(),
+                                last_scan_status,
+                                child.started_at_ms(),
+                                Some(now),
+                            )),
+                        )?;
+                        target
+                    } else {
+                        child.status()
+                    };
+                    child_statuses.push(status);
+                }
+                let parent_state = aggregate_library_scan_state(
+                    child_statuses.len() + exclusions_count,
+                    child_statuses.len(),
+                    &child_statuses
+                        .iter()
+                        .map(|status| match *status {
+                            ScanRunStatus::Complete => LibraryScanChildCompletion::Complete,
+                            ScanRunStatus::Partial => LibraryScanChildCompletion::Partial,
+                            ScanRunStatus::Failed => LibraryScanChildCompletion::Failed,
+                            ScanRunStatus::Cancelled => LibraryScanChildCompletion::Cancelled,
+                            ScanRunStatus::Abandoned => LibraryScanChildCompletion::Abandoned,
+                            ScanRunStatus::Running => LibraryScanChildCompletion::Abandoned,
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                scope
+                    .job_runs()
+                    .set_state(job.job_run_id(), parent_state, now)?;
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(())
+            })
+            .map_err(|error| map_port_error(context.trace_id(), error))
+    }
 }
 
 impl<Q> JobsQueries for &Q
@@ -2212,6 +2815,14 @@ where
         job_run_id: JobRunId,
     ) -> Result<Option<Vec<LibraryScanTarget>>, PersistenceError> {
         (*self).list_requested_library_scan_targets(context, job_run_id)
+    }
+
+    fn find_library_scan_invocation_kind(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<LibraryScanInvocationKind>, PersistenceError> {
+        (*self).find_library_scan_invocation_kind(context, job_run_id)
     }
 
     fn find_scan_admission_for_root(
@@ -2451,16 +3062,33 @@ where
                 ApplicationError::from_code(ErrorCode::JobRunNotFound, trace_id, SafeContext::new())
                     .expect("job run not found uses an allowlisted empty context")
             })?;
+        let invocation_kind = self
+            .queries
+            .find_library_scan_invocation_kind(&context, source_job_run_id)
+            .map_err(|error| map_persistence_error(trace_id, error))?
+            .ok_or_else(|| {
+                ApplicationError::from_code(ErrorCode::JobRunNotFound, trace_id, SafeContext::new())
+                    .expect("job run not found uses an allowlisted empty context")
+            })?;
+        let is_scan_all = matches!(
+            invocation_kind,
+            LibraryScanInvocationKind::InitialScanAll | LibraryScanInvocationKind::RetryScanAll
+        );
 
         #[derive(Clone, Debug, Eq, PartialEq)]
         enum RetryWork {
             NoEligibleTargets {
                 exclusions: Vec<LibraryScanAdmissionExclusion>,
             },
-            Admitted {
+            AdmittedSingle {
                 job_run_id: JobRunId,
                 scan_run_id: ScanRunId,
                 plan: LibraryScanExecutionPlan,
+            },
+            AdmittedScanAll {
+                job_run_id: JobRunId,
+                plans: Vec<LibraryScanExecutionPlan>,
+                exclusions_len: usize,
             },
         }
 
@@ -2495,8 +3123,12 @@ where
                         .iter()
                         .map(|(target, eligibility, _)| (target.clone(), eligibility.clone()))
                         .collect();
-                let evaluation =
-                    evaluate_retry_eligibility(source_state, false, &eligibility_input);
+                let evaluation = evaluate_retry_eligibility_with_trace(
+                    Some(trace_id),
+                    source_state,
+                    false,
+                    &eligibility_input,
+                );
                 if !evaluation.can_retry() {
                     scope.commit()?;
                     return Ok::<_, ApplicationPortError>(RetryWork::NoEligibleTargets {
@@ -2507,16 +3139,20 @@ where
                 let job_run_id = scope
                     .job_runs()
                     .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
+                let invocation_kind = if is_scan_all {
+                    LibraryScanInvocationKind::RetryScanAll
+                } else {
+                    LibraryScanInvocationKind::RetrySingleRoot
+                };
                 scope.library_scan_admission_context().insert(
                     NewLibraryScanAdmissionContext::new(
                         job_run_id,
-                        LibraryScanInvocationKind::RetrySingleRoot,
+                        invocation_kind,
                         Some(source_job_run_id),
                     ),
                 )?;
 
-                let mut admitted_scan_run_id: Option<ScanRunId> = None;
-                let mut admitted_plan: Option<LibraryScanExecutionPlan> = None;
+                let mut admitted_plans = Vec::new();
                 let mut admitted_root_ids = Vec::new();
                 for (target, eligibility, configuration) in &evaluated {
                     scope
@@ -2559,21 +3195,18 @@ where
                                 None,
                             ))?;
                         admitted_root_ids.push(configuration.root_id());
-                        if admitted_scan_run_id.is_none() {
-                            admitted_scan_run_id = Some(scan_run_id);
-                            admitted_plan = Some(LibraryScanExecutionPlan::new(
-                                configuration.root_id(),
-                                job_run_id,
-                                scan_run_id,
-                                configuration.locator().clone(),
-                                configuration.display_name().to_owned(),
-                                configuration.safe_location_presentation().to_owned(),
-                                configuration.source_config_revision(),
-                                configuration.config_revision(),
-                                configuration.discovery_policy_revision(),
-                                created_at_ms,
-                            ));
-                        }
+                        admitted_plans.push(LibraryScanExecutionPlan::new(
+                            configuration.root_id(),
+                            job_run_id,
+                            scan_run_id,
+                            configuration.locator().clone(),
+                            configuration.display_name().to_owned(),
+                            configuration.safe_location_presentation().to_owned(),
+                            configuration.source_config_revision(),
+                            configuration.config_revision(),
+                            configuration.discovery_policy_revision(),
+                            created_at_ms,
+                        ));
                     } else {
                         let exclusion = evaluation
                             .exclusions()
@@ -2595,12 +3228,12 @@ where
                             ))?;
                     }
                 }
-                let Some(scan_run_id) = admitted_scan_run_id else {
+                if admitted_plans.is_empty() {
                     scope.rollback()?;
                     return Ok(RetryWork::NoEligibleTargets {
                         exclusions: evaluation.exclusions().to_vec(),
                     });
-                };
+                }
                 scope
                     .job_runs()
                     .insert_retry_link(source_job_run_id, job_run_id)?;
@@ -2618,11 +3251,23 @@ where
                     ))?;
                 }
                 scope.commit()?;
-                Ok::<_, ApplicationPortError>(RetryWork::Admitted {
-                    job_run_id,
-                    scan_run_id,
-                    plan: admitted_plan.expect("admitted retry always builds one plan"),
-                })
+                if is_scan_all {
+                    Ok::<_, ApplicationPortError>(RetryWork::AdmittedScanAll {
+                        job_run_id,
+                        plans: admitted_plans,
+                        exclusions_len: evaluation.exclusions().len(),
+                    })
+                } else {
+                    let plan = admitted_plans
+                        .into_iter()
+                        .next()
+                        .expect("single-root retry always builds one plan");
+                    Ok::<_, ApplicationPortError>(RetryWork::AdmittedSingle {
+                        job_run_id,
+                        scan_run_id: plan.scan_run_id(),
+                        plan,
+                    })
+                }
             })
             .map_err(|error| map_port_error(trace_id, error))?;
 
@@ -2632,7 +3277,7 @@ where
                     RetryNotAdmittedReason::NoEligibleTargets(exclusions),
                 )),
             ),
-            RetryWork::Admitted {
+            RetryWork::AdmittedSingle {
                 job_run_id,
                 scan_run_id,
                 plan,
@@ -2641,6 +3286,18 @@ where
                 Ok(RetryJobAdmissionResult::admitted(
                     handle,
                     AdmittedScan::new(job_run_id, scan_run_id, plan),
+                ))
+            }
+            RetryWork::AdmittedScanAll {
+                job_run_id,
+                plans,
+                exclusions_len,
+            } => {
+                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                Ok(RetryJobAdmissionResult::admitted_scan_all(
+                    handle,
+                    AdmittedLibraryScanJob::new(job_run_id, plans),
+                    exclusions_len,
                 ))
             }
         }
@@ -2702,6 +3359,68 @@ impl OperationCompletion {
     pub fn terminal_safe_context(&self) -> Option<&str> {
         self.terminal_safe_context.as_deref()
     }
+}
+
+/// One terminal child outcome used by the shared LibraryScan parent
+/// aggregation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryScanChildCompletion {
+    /// The child scan completed with no issues.
+    Complete,
+    /// The child scan produced meaningful positive work but had issues.
+    Partial,
+    /// The child scan failed without meaningful indexing success.
+    Failed,
+    /// The child was terminalized because accepted job cancellation
+    /// determined its termination.
+    Cancelled,
+    /// The child was terminalized by startup recovery without accepted
+    /// cancellation intent.
+    Abandoned,
+}
+
+/// Derives the terminal parent state for a LibraryScan job from its durable
+/// requested/admitted scope and terminal child outcomes.
+///
+/// This is the single shared aggregation used by normal multi-root
+/// completion and startup recovery so the two paths cannot drift:
+/// - any `Cancelled` child (accepted cancellation determines termination)
+///   yields `Cancelled`;
+/// - any `Abandoned` child (recovery without accepted cancellation intent)
+///   yields `Abandoned`;
+/// - every requested root admitted and every child `Complete` yields
+///   `Completed`;
+/// - meaningful indexing success exists (`Complete` or `Partial` child) but
+///   the requested scope was not fully satisfied yields `CompletedWithIssues`;
+/// - otherwise the parent is `Failed`.
+pub fn aggregate_library_scan_state(
+    requested_count: usize,
+    admitted_count: usize,
+    children: &[LibraryScanChildCompletion],
+) -> JobRunState {
+    if children.contains(&LibraryScanChildCompletion::Cancelled) {
+        return JobRunState::Cancelled;
+    }
+    if children.contains(&LibraryScanChildCompletion::Abandoned) {
+        return JobRunState::Abandoned;
+    }
+    let fully_admitted = admitted_count == requested_count && children.len() == admitted_count;
+    if fully_admitted
+        && children
+            .iter()
+            .all(|child| *child == LibraryScanChildCompletion::Complete)
+    {
+        return JobRunState::Completed;
+    }
+    if children.iter().any(|child| {
+        matches!(
+            child,
+            LibraryScanChildCompletion::Complete | LibraryScanChildCompletion::Partial
+        )
+    }) {
+        return JobRunState::CompletedWithIssues;
+    }
+    JobRunState::Failed
 }
 
 /// One registered background operation handler.

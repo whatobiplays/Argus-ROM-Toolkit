@@ -3,15 +3,19 @@
 use std::sync::Arc;
 
 use crate::jobs::{
-    AdmittedScan, JobRunRepository, LibraryScanExecutionPlan, LibraryScanTargetKind,
-    LibraryScanTargetRepository, OPERATION_TYPE_LIBRARY_SCAN, OperationHandle, ScanRunRepository,
-    SourceEntryRepository,
+    AdmittedLibraryScanJob, AdmittedScan, JobRunRepository, LibraryScanAdmissionContextRepository,
+    LibraryScanAdmissionExclusion, LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity,
+    LibraryScanAllRequestLookup, LibraryScanExecutionPlan, LibraryScanInvocationKind,
+    LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
+    OPERATION_TYPE_LIBRARY_SCAN, OperationHandle, ScanRunRepository, SourceEntryRepository,
+    StartLibraryScanAllResult,
 };
 use crate::{
-    ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder, JobRunId,
-    JobRunState, LibraryRootChanged, LibraryRootId, LibraryRootsChanged,
-    LibraryScanAdmissionResult, NewJobRun, NewLibraryScanTarget, NewScanRun, OperationContext,
-    PersistenceError, SafeContext, ScanRunId, StartLibraryScanResult, UnitOfWork,
+    ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder,
+    FailureRole, JobRunId, JobRunState, LibraryRootChanged, LibraryRootId, LibraryRootsChanged,
+    LibraryScanAdmissionResult, NewJobRun, NewLibraryScanAdmissionContext, NewLibraryScanTarget,
+    NewScanRun, OperationContext, PersistenceError, SafeContext, SafeContextField,
+    SafeContextValue, ScanRunId, StartLibraryScanResult, TechnicalClass, UnitOfWork,
     UnitOfWorkFactory,
 };
 
@@ -134,14 +138,16 @@ impl LibraryRootLastScanSummary {
 pub struct LibraryRootActiveScanSummary {
     scan_run_id: String,
     job_run_id: String,
+    owning_job_root_count: u32,
 }
 
 impl LibraryRootActiveScanSummary {
     /// Creates one bounded active ownership summary.
-    pub fn new(scan_run_id: String, job_run_id: String) -> Self {
+    pub fn new(scan_run_id: String, job_run_id: String, owning_job_root_count: u32) -> Self {
         Self {
             scan_run_id,
             job_run_id,
+            owning_job_root_count,
         }
     }
 
@@ -153,6 +159,11 @@ impl LibraryRootActiveScanSummary {
     /// Returns the opaque job-run identity projection.
     pub fn job_run_id(&self) -> &str {
         &self.job_run_id
+    }
+
+    /// Returns the number of roots owned by the owning job.
+    pub fn owning_job_root_count(&self) -> u32 {
+        self.owning_job_root_count
     }
 }
 
@@ -638,6 +649,24 @@ impl StartLibraryScanCommand {
     /// Returns the requested root identity.
     pub const fn root_id(self) -> LibraryRootId {
         self.root_id
+    }
+}
+
+/// One multi-root Scan All admission request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StartLibraryScanAllCommand {
+    request_identity: LibraryScanAllRequestIdentity,
+}
+
+impl StartLibraryScanAllCommand {
+    /// Creates a Scan All request carrying the durable client request identity.
+    pub fn new(request_identity: LibraryScanAllRequestIdentity) -> Self {
+        Self { request_identity }
+    }
+
+    /// Returns the durable request identity used for ambiguity reconciliation.
+    pub fn request_identity(&self) -> &LibraryScanAllRequestIdentity {
+        &self.request_identity
     }
 }
 
@@ -1139,6 +1168,13 @@ where
                 let job_run_id = scope
                     .job_runs()
                     .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
+                scope.library_scan_admission_context().insert(
+                    NewLibraryScanAdmissionContext::new(
+                        job_run_id,
+                        LibraryScanInvocationKind::InitialSingleRoot,
+                        None,
+                    ),
+                )?;
                 let scan_run_id = scope.scan_runs().insert(NewScanRun::new(
                     job_run_id,
                     root_id,
@@ -1222,6 +1258,275 @@ where
             }
         }
     }
+}
+
+/// Handles one durable multi-root Scan All admission.
+pub struct StartLibraryScanAllHandler<Q, U> {
+    queries: Q,
+    unit_of_work: U,
+}
+
+impl<Q, U> StartLibraryScanAllHandler<Q, U> {
+    /// Composes the root query and Unit of Work capabilities.
+    pub const fn new(queries: Q, unit_of_work: U) -> Self {
+        Self {
+            queries,
+            unit_of_work,
+        }
+    }
+}
+
+impl<Q, U> StartLibraryScanAllHandler<Q, U>
+where
+    Q: LibraryRootQueries,
+    U: UnitOfWorkFactory + Clone,
+{
+    /// Snapshots the configured roots, validates them in canonical historical
+    /// `LibraryRootId` ascending order, and atomically establishes one
+    /// multi-root LibraryScan job when at least one root is eligible.
+    pub fn handle<L, R>(
+        &self,
+        command: StartLibraryScanAllCommand,
+        context: OperationContext,
+        lookup: &L,
+        recorder: R,
+    ) -> Result<LibraryScanAllAdmissionResult, ApplicationError>
+    where
+        L: LibraryScanAllRequestLookup,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        let trace_id = context.trace_id();
+        if let Some(existing) = lookup.find_existing(&context, command.request_identity())? {
+            return Ok(LibraryScanAllAdmissionResult::not_admitted(existing));
+        }
+
+        let mut configured_roots = self
+            .queries
+            .list_root_configurations(&context)
+            .map_err(|error| map_persistence_error(trace_id, error))?;
+        configured_roots.sort_by_key(|configuration| configuration.root_id());
+
+        let created_at_ms = now_millis();
+        let work = self
+            .unit_of_work
+            .clone()
+            .execute(&context, move |mut scope| {
+                #[derive(Clone)]
+                struct EvaluatedScanAllTarget {
+                    root_id: LibraryRootId,
+                    locator: RootLocator,
+                    display_name: String,
+                    safe_location_display: String,
+                    configuration: Option<LibraryRootScanConfiguration>,
+                    exclusion: Option<LibraryScanAdmissionExclusion>,
+                }
+
+                let mut evaluations = Vec::with_capacity(configured_roots.len());
+                for configured in &configured_roots {
+                    let root_id = configured.root_id();
+                    let exists = scope.library_roots().exists(root_id)?;
+                    let configuration = if exists {
+                        scope.library_roots().get_scan_authority(root_id)?
+                    } else {
+                        None
+                    };
+                    let active_owner = scope.scan_runs().find_active_ownership(root_id)?;
+
+                    let (display_name, safe_location_display) =
+                        if let Some(configuration) = configuration.as_ref() {
+                            (
+                                configuration.display_name().to_owned(),
+                                configuration.safe_location_presentation().to_owned(),
+                            )
+                        } else {
+                            (
+                                root_id.to_string(),
+                                configured.locator().as_provider_value().to_owned(),
+                            )
+                        };
+
+                    let exclusion = if !exists {
+                        Some(LibraryScanAdmissionExclusion::new(
+                            root_id,
+                            LibraryScanTargetExclusionReason::NoLongerConfigured,
+                            None,
+                            None,
+                        ))
+                    } else if configuration.is_none() {
+                        Some(LibraryScanAdmissionExclusion::invalid_configuration(
+                            root_id,
+                            invalid_scan_all_configuration_error(trace_id),
+                        ))
+                    } else {
+                        active_owner.map(|owner| {
+                            LibraryScanAdmissionExclusion::new(
+                                root_id,
+                                LibraryScanTargetExclusionReason::AlreadyScanning,
+                                Some(owner.job_run_id()),
+                                Some(owner.scan_run_id()),
+                            )
+                        })
+                    };
+
+                    evaluations.push(EvaluatedScanAllTarget {
+                        root_id,
+                        locator: configured.locator().clone(),
+                        display_name,
+                        safe_location_display,
+                        configuration,
+                        exclusion,
+                    });
+                }
+
+                let eligible_count = evaluations
+                    .iter()
+                    .filter(|evaluation| evaluation.exclusion.is_none())
+                    .count();
+                if eligible_count == 0 {
+                    scope.commit()?;
+                    return Ok::<_, ApplicationPortError>(ScanAllAdmissionWork::NothingEligible {
+                        exclusions: evaluations
+                            .iter()
+                            .filter_map(|evaluation| evaluation.exclusion.clone())
+                            .collect(),
+                    });
+                }
+
+                let job_run_id = scope
+                    .job_runs()
+                    .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
+                scope.library_scan_admission_context().insert(
+                    NewLibraryScanAdmissionContext::with_scan_all_request_identity(
+                        job_run_id,
+                        LibraryScanInvocationKind::InitialScanAll,
+                        None,
+                        command.request_identity().clone(),
+                    ),
+                )?;
+
+                let mut admitted_plans = Vec::with_capacity(eligible_count);
+                let mut admitted_root_ids = Vec::with_capacity(eligible_count);
+                let mut exclusions = Vec::new();
+                for evaluation in evaluations {
+                    scope
+                        .library_scan_targets()
+                        .insert(NewLibraryScanTarget::new(
+                            job_run_id,
+                            LibraryScanTargetKind::Requested,
+                            evaluation.root_id,
+                            evaluation.display_name.clone(),
+                            evaluation.safe_location_display.clone(),
+                            None,
+                            None,
+                        ))?;
+                    if let Some(exclusion) = evaluation.exclusion {
+                        scope
+                            .library_scan_targets()
+                            .insert(NewLibraryScanTarget::new(
+                                job_run_id,
+                                LibraryScanTargetKind::Excluded,
+                                evaluation.root_id,
+                                evaluation.display_name,
+                                evaluation.safe_location_display,
+                                None,
+                                Some(exclusion.clone()),
+                            ))?;
+                        exclusions.push(exclusion);
+                        continue;
+                    }
+
+                    let configuration = evaluation
+                        .configuration
+                        .as_ref()
+                        .expect("eligible Scan All target has a valid configuration");
+                    let scan_run_id = scope.scan_runs().insert(NewScanRun::new(
+                        job_run_id,
+                        evaluation.root_id,
+                        evaluation.locator,
+                        evaluation.display_name.clone(),
+                        evaluation.safe_location_display.clone(),
+                        configuration.source_config_revision(),
+                        configuration.config_revision(),
+                        created_at_ms,
+                    ))?;
+                    scope
+                        .library_scan_targets()
+                        .insert(NewLibraryScanTarget::new(
+                            job_run_id,
+                            LibraryScanTargetKind::Admitted,
+                            evaluation.root_id,
+                            evaluation.display_name.clone(),
+                            evaluation.safe_location_display.clone(),
+                            Some(scan_run_id),
+                            None,
+                        ))?;
+                    admitted_plans.push(LibraryScanExecutionPlan::new(
+                        evaluation.root_id,
+                        job_run_id,
+                        scan_run_id,
+                        configuration.locator().clone(),
+                        evaluation.display_name,
+                        evaluation.safe_location_display,
+                        configuration.source_config_revision(),
+                        configuration.config_revision(),
+                        configuration.discovery_policy_revision(),
+                        created_at_ms,
+                    ));
+                    admitted_root_ids.push(evaluation.root_id);
+                    recorder.record(ApplicationEvent::LibraryRootChanged(LibraryRootChanged {
+                        library_root_id: evaluation.root_id,
+                    }))?;
+                }
+
+                recorder.record(ApplicationEvent::JobStateChanged(crate::JobStateChanged {
+                    job_run_id,
+                }))?;
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(ScanAllAdmissionWork::Admitted {
+                    job_run_id,
+                    admitted_plans,
+                    admitted_roots: admitted_root_ids,
+                    exclusions,
+                })
+            })
+            .map_err(|error| map_port_error(trace_id, error))?;
+
+        match work {
+            ScanAllAdmissionWork::NothingEligible { exclusions } => {
+                Ok(LibraryScanAllAdmissionResult::not_admitted(
+                    StartLibraryScanAllResult::NothingEligible { exclusions },
+                ))
+            }
+            ScanAllAdmissionWork::Admitted {
+                job_run_id,
+                admitted_plans,
+                admitted_roots,
+                exclusions,
+            } => {
+                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                let admitted = AdmittedLibraryScanJob::new(job_run_id, admitted_plans);
+                Ok(LibraryScanAllAdmissionResult::admitted(
+                    handle,
+                    admitted_roots,
+                    exclusions,
+                    admitted,
+                ))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ScanAllAdmissionWork {
+    NothingEligible {
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    },
+    Admitted {
+        job_run_id: JobRunId,
+        admitted_plans: Vec<LibraryScanExecutionPlan>,
+        admitted_roots: Vec<LibraryRootId>,
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1381,6 +1686,24 @@ where
             .handle(command, context, recorder)
     }
 
+    /// Admit one durable multi-root Scan All through the supplied request
+    /// replay lookup. The lookup reconciles ambiguous transport before a
+    /// fresh admission may be created.
+    pub fn start_library_scan_all<L, R>(
+        &self,
+        command: StartLibraryScanAllCommand,
+        context: OperationContext,
+        lookup: &L,
+        recorder: R,
+    ) -> Result<LibraryScanAllAdmissionResult, ApplicationError>
+    where
+        L: LibraryScanAllRequestLookup,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        StartLibraryScanAllHandler::new(self.queries.clone(), self.unit_of_work.clone())
+            .handle(command, context, lookup, recorder)
+    }
+
     /// Terminalizes an admitted run whose manager registration failed so no
     /// orphan nonterminal JobRun/ScanRun survives.
     pub fn fail_unregistered_scan<R>(
@@ -1469,6 +1792,24 @@ fn map_provider_error(trace_id: crate::TraceId, error: ProviderError) -> Applica
 pub(crate) fn application_error(trace_id: crate::TraceId, code: ErrorCode) -> ApplicationError {
     ApplicationError::from_code(code, trace_id, SafeContext::new())
         .expect("sources error context follows the published catalog")
+}
+
+fn invalid_scan_all_configuration_error(trace_id: crate::TraceId) -> ApplicationError {
+    let mut safe_context = SafeContext::new();
+    safe_context
+        .try_insert(
+            SafeContextField::TechnicalClass,
+            SafeContextValue::TechnicalClass(TechnicalClass::ConfigurationInvalid),
+        )
+        .expect("technical class is an allowed ConfigurationInvalid field");
+    safe_context
+        .try_insert(
+            SafeContextField::FailureRole,
+            SafeContextValue::FailureRole(FailureRole::Primary),
+        )
+        .expect("failure role is an allowed ConfigurationInvalid field");
+    ApplicationError::from_code(ErrorCode::ConfigurationInvalid, trace_id, safe_context)
+        .expect("scan all ConfigurationInvalid context follows the published catalog")
 }
 
 pub(crate) fn now_millis() -> i64 {

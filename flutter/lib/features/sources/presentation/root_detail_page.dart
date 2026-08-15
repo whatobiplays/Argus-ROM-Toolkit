@@ -75,6 +75,9 @@ class SourcesRootDetailPage extends ConsumerWidget {
           :final scanning,
           :final admittedScanJobRunId,
           :final removalBlockedByActiveScan,
+          :final removalBlockedOwner,
+          :final cancelAndRemovePending,
+          :final cancelAndRemoveAmbiguous,
         ) =>
           _RootDetailContent(
             rootId: rootId,
@@ -84,6 +87,9 @@ class SourcesRootDetailPage extends ConsumerWidget {
             scanning: scanning,
             admittedScanJobRunId: admittedScanJobRunId,
             removalBlockedByActiveScan: removalBlockedByActiveScan,
+            removalBlockedOwner: removalBlockedOwner,
+            cancelAndRemovePending: cancelAndRemovePending,
+            cancelAndRemoveAmbiguous: cancelAndRemoveAmbiguous,
             onOpenJob: onOpenJob,
             onScan: () async {
               final jobRunId = await ref
@@ -94,14 +100,26 @@ class SourcesRootDetailPage extends ConsumerWidget {
               }
             },
             onRemove: () async {
-              final confirmed = await showRemoveRootConfirmation(
-                context,
-                root: root,
-              );
+              final owner = root.activeScan ?? removalBlockedOwner;
+              final confirmed = owner == null
+                  ? await showRemoveRootConfirmation(context, root: root)
+                  : await showCancelAndRemoveConfirmation(
+                      context,
+                      root: root,
+                      activeScan: owner,
+                    );
               if (confirmed && context.mounted) {
-                await ref
-                    .read(sourcesRootDetailControllerProvider(rootId).notifier)
-                    .remove(rootId);
+                final notifier = ref.read(
+                  sourcesRootDetailControllerProvider(rootId).notifier,
+                );
+                if (owner == null) {
+                  await notifier.remove(rootId);
+                } else {
+                  await notifier.cancelAndRemove(
+                    rootId,
+                    JobRunId(owner.jobRunId),
+                  );
+                }
                 final latest = ref.read(
                   sourcesRootDetailControllerProvider(rootId),
                 );
@@ -136,6 +154,9 @@ class _RootDetailContent extends StatelessWidget {
     required this.scanning,
     required this.admittedScanJobRunId,
     required this.removalBlockedByActiveScan,
+    required this.removalBlockedOwner,
+    required this.cancelAndRemovePending,
+    required this.cancelAndRemoveAmbiguous,
     required this.onOpenJob,
     required this.onScan,
     required this.onRemove,
@@ -148,13 +169,18 @@ class _RootDetailContent extends StatelessWidget {
   final bool scanning;
   final JobRunId? admittedScanJobRunId;
   final bool removalBlockedByActiveScan;
+  final LibraryRootActiveScan? removalBlockedOwner;
+  final bool cancelAndRemovePending;
+  final bool cancelAndRemoveAmbiguous;
   final void Function(JobRunId jobRunId) onOpenJob;
   final VoidCallback onScan;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
-    final lastFailureMessage = removalAmbiguous
+    final lastFailureMessage = cancelAndRemoveAmbiguous
+        ? SourcesMessages.cancelAndRemoveUncertain
+        : removalAmbiguous
         ? SourcesMessages.removeAmbiguous
         : null;
     final activeScan = root.activeScan;
@@ -205,11 +231,37 @@ class _RootDetailContent extends StatelessWidget {
                   label: const Text(SourcesMessages.viewJob),
                 ),
               ],
-              if (removalBlockedByActiveScan) ...[
+              if (removalBlockedByActiveScan &&
+                  removalBlockedOwner != null &&
+                  removalBlockedOwner!.owningJobRootCount > 1) ...[
+                const SizedBox(height: 12),
+                Text(
+                  SourcesMessages.cancelAndRemoveStopsOtherRoots(
+                    removalBlockedOwner!.owningJobRootCount - 1,
+                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ] else if (removalBlockedByActiveScan) ...[
                 const SizedBox(height: 12),
                 Text(
                   SourcesMessages.rootHasActiveScan,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              if (cancelAndRemovePending) ...[
+                const SizedBox(height: 12),
+                const Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(SourcesMessages.cancelAndRemovePending),
+                    ),
+                  ],
                 ),
               ],
               if (lastFailureMessage != null) ...[
@@ -243,7 +295,13 @@ class _RootDetailContent extends StatelessWidget {
                     ),
                     // Destructive actions stay unavailable while a removal
                     // outcome is unresolved or a removal is in flight.
-                    onPressed: removing || removalAmbiguous ? null : onRemove,
+                    onPressed:
+                        removing ||
+                            removalAmbiguous ||
+                            cancelAndRemovePending ||
+                            cancelAndRemoveAmbiguous
+                        ? null
+                        : onRemove,
                     icon: const Icon(Icons.delete_outline),
                     label: const Text(SourcesMessages.removeLibraryFolder),
                   ),

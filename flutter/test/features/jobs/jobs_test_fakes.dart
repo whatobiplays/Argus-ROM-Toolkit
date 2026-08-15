@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 
 /// Deterministic focused Jobs API fake.
@@ -19,6 +21,10 @@ final class FakeJobsApi implements JobsApi {
   RetryJobResult Function(JobRunId jobRunId)? onRetry;
   LibraryRootScanAdmission? Function(LibraryRootId libraryRootId)?
   onRootScanAdmission;
+  FutureOr<LibraryScanAllRequestResolution> Function(
+    ScanAllRequestIdentity requestIdentity,
+  )?
+  onResolveScanAllRequest;
 
   int activeCalls = 0;
   int recentCalls = 0;
@@ -26,6 +32,7 @@ final class FakeJobsApi implements JobsApi {
   int cancelCalls = 0;
   int retryCalls = 0;
   int rootScanAdmissionCalls = 0;
+  int resolveScanAllRequestCalls = 0;
 
   @override
   Future<JobSummaryPage> listActiveJobs() async {
@@ -99,6 +106,16 @@ final class FakeJobsApi implements JobsApi {
   }
 
   @override
+  Future<LibraryScanAllRequestResolution> resolveScanAllRequest(
+    ScanAllRequestIdentity requestIdentity,
+  ) async {
+    resolveScanAllRequestCalls++;
+    final handler = onResolveScanAllRequest;
+    if (handler != null) return handler(requestIdentity);
+    return const LibraryScanAllRequestResolution.nothingAdmitted();
+  }
+
+  @override
   Future<ActiveJobSummary> getActiveJobSummary() async {
     final active = await listActiveJobs();
     return ActiveJobSummary(
@@ -134,6 +151,12 @@ JobDetail jobDetail({
   int? entriesObserved,
   int? entriesCommitted,
   int? issueCount,
+  List<LibraryScanRootSummary> requestedRoots = const [],
+  List<LibraryScanAdmissionExclusion> exclusions = const [],
+  List<ScanRunSummary> scanRuns = const [],
+  int rootsRequested = 1,
+  int rootsAdmitted = 1,
+  int rootsTerminal = 0,
 }) => JobDetail(
   job: JobRunProjection(
     jobRunId: JobRunId(id),
@@ -148,14 +171,14 @@ JobDetail jobDetail({
   ),
   operationDetail: OperationDetail.libraryScan(
     LibraryScanJobDetail(
-      requestedRoots: const [],
+      requestedRoots: requestedRoots,
       admittedRoots: const [],
-      exclusions: const [],
-      scanRuns: const [],
+      exclusions: exclusions,
+      scanRuns: scanRuns,
       progress: ScanProgressFacts(
-        rootsRequested: 1,
-        rootsAdmitted: 1,
-        rootsTerminal: 0,
+        rootsRequested: rootsRequested,
+        rootsAdmitted: rootsAdmitted,
+        rootsTerminal: rootsTerminal,
         entriesObserved: entriesObserved,
         entriesCommitted: entriesCommitted,
         issueCount: issueCount,

@@ -49,6 +49,9 @@ class ArgusBootstrap extends StatelessWidget {
         sourcesApiProvider.overrideWith(
           (ref) => ref.watch(argusClientProvider).sources,
         ),
+        sourcesJobsApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).jobs,
+        ),
         sourcesRuntimeContextProvider.overrideWith((ref) {
           final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
           return runtimeInstanceId == null

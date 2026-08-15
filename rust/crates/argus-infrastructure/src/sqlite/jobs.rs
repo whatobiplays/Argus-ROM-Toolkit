@@ -2,18 +2,23 @@
 //! source-entry state.
 
 use argus_application::{
-    ActiveScanOwnership, ApplicationPortError, JobControlAvailability, JobDetail, JobProgress,
+    ActiveScanOwnership, ApplicationError, ApplicationPortError, ArchitectureClass,
+    DiagnosticStage, ErrorCode, FailureRole, JobControlAvailability, JobDetail, JobProgress,
     JobRunId, JobRunProjection, JobRunRepository, JobRunState, JobSummary, JobSummaryPage,
     JobsQueries, LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
     LibraryScanAdmissionContext, LibraryScanAdmissionContextRepository,
-    LibraryScanAdmissionExclusion, LibraryScanInvocationKind, LibraryScanJobDetail,
-    LibraryScanRootSummary, LibraryScanTarget, LibraryScanTargetEligibility,
-    LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
-    NativeIdentityMatch, NewJobRun, NewLibraryScanAdmissionContext, NewLibraryScanTarget,
-    NewScanRun, NewSourceEntry, OperationContext, PersistenceError, RelativeSourceLocator,
-    ScanAdmissionReference, ScanProgressFacts, ScanRunId, ScanRunProjection, ScanRunRepository,
-    ScanRunStatus, SourceEntryClassification, SourceEntryId, SourceEntryKind, SourceEntryRecord,
-    SourceEntryRepository, SourceLocatorKey, evaluate_retry_eligibility,
+    LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
+    LibraryScanInvocationKind, LibraryScanJobDetail, LibraryScanRootSummary, LibraryScanTarget,
+    LibraryScanTargetEligibility, LibraryScanTargetExclusionReason, LibraryScanTargetKind,
+    LibraryScanTargetRepository, MigrationOutcome, NativeIdentityMatch, NewJobRun,
+    NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, NewSourceEntry,
+    OPERATION_TYPE_LIBRARY_SCAN, OperationContext, OperationHandle, PathClass,
+    PersistedSettingsReason, PersistenceError, PlatformClass, RelativeSourceLocator, SafeContext,
+    SafeContextField, SafeContextValue, ScanAdmissionReference, ScanProgressFacts, ScanRunId,
+    ScanRunProjection, ScanRunRepository, ScanRunStatus, SettingsDomain, SourceEntryClassification,
+    SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
+    StaleLibraryScanJob, StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
+    TechnicalClass, TraceId, Version, evaluate_retry_eligibility,
 };
 use rusqlite::OptionalExtension;
 
@@ -367,7 +372,7 @@ impl ScanRunRepository for SqliteScanRunRepository<'_, '_> {
                         root_display_name, safe_location_display, status,
                         started_at, completed_at
                  FROM scan_run WHERE job_run_id = ?1
-                 ORDER BY started_at ASC, scan_run_id ASC",
+                 ORDER BY historical_library_root_id ASC",
             )
             .map_err(map_persistence_operation_error)?;
         let rows = statement
@@ -770,14 +775,20 @@ impl<'scope, 'connection> SqliteLibraryScanTargetRepository<'scope, 'connection>
 impl LibraryScanTargetRepository for SqliteLibraryScanTargetRepository<'_, '_> {
     fn insert(&mut self, target: NewLibraryScanTarget) -> Result<(), PersistenceError> {
         let exclusion = target.exclusion();
+        let exclusion_error = exclusion
+            .and_then(|exclusion| exclusion.application_error())
+            .map(encode_exclusion_error)
+            .transpose()?;
         self.work
             .transaction_mut()?
             .execute(
                 "INSERT INTO library_scan_target
                     (job_run_id, target_kind, historical_library_root_id, display_name,
                      safe_location_display, scan_run_id, exclusion_reason,
-                     related_job_run_id, related_scan_run_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                     related_job_run_id, related_scan_run_id,
+                     exclusion_error_code, exclusion_error_trace_id,
+                     exclusion_error_safe_context)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 rusqlite::params![
                     target.job_run_id().to_string(),
                     target.kind().as_str(),
@@ -792,6 +803,9 @@ impl LibraryScanTargetRepository for SqliteLibraryScanTargetRepository<'_, '_> {
                     exclusion.and_then(|exclusion| exclusion
                         .active_scan_run_id()
                         .map(|id| id.to_string())),
+                    exclusion_error.as_ref().map(|error| error.0.as_str()),
+                    exclusion_error.as_ref().map(|error| error.1.as_str()),
+                    exclusion_error.as_ref().map(|error| error.2.as_str()),
                 ],
             )
             .map_err(map_persistence_operation_error)?;
@@ -824,12 +838,14 @@ impl LibraryScanAdmissionContextRepository for SqliteLibraryScanAdmissionContext
             .transaction_mut()?
             .execute(
                 "INSERT INTO library_scan_admission_context
-                    (job_run_id, invocation_kind, retry_source_job_run_id)
-                 VALUES (?1, ?2, ?3)",
+                    (job_run_id, invocation_kind, retry_source_job_run_id,
+                     scan_all_request_identity)
+                 VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![
                     new.job_run_id().to_string(),
                     new.invocation_kind().as_str(),
                     new.retry_source_job_run_id().map(|id| id.to_string()),
+                    new.scan_all_request_identity().map(|id| id.as_str()),
                 ],
             )
             .map_err(map_persistence_operation_error)?;
@@ -840,30 +856,44 @@ impl LibraryScanAdmissionContextRepository for SqliteLibraryScanAdmissionContext
         &mut self,
         job_run_id: JobRunId,
     ) -> Result<Option<LibraryScanAdmissionContext>, PersistenceError> {
-        let raw: Option<(String, Option<String>)> = self
+        let raw: Option<(String, Option<String>, Option<String>)> = self
             .work
             .transaction_mut()?
             .query_row(
-                "SELECT invocation_kind, retry_source_job_run_id
+                "SELECT invocation_kind, retry_source_job_run_id,
+                        scan_all_request_identity
                  FROM library_scan_admission_context WHERE job_run_id = ?1",
                 [job_run_id.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
             .map_err(map_persistence_operation_error)?;
-        let Some((invocation_kind, retry_source)) = raw else {
+        let Some((invocation_kind, retry_source, scan_all_request_identity)) = raw else {
             return Ok(None);
         };
         let invocation_kind = match invocation_kind.as_str() {
             "initial_single_root" => LibraryScanInvocationKind::InitialSingleRoot,
             "retry_single_root" => LibraryScanInvocationKind::RetrySingleRoot,
+            "initial_scan_all" => LibraryScanInvocationKind::InitialScanAll,
+            "retry_scan_all" => LibraryScanInvocationKind::RetryScanAll,
             _ => return Err(PersistenceError::CorruptOrIncompatible),
         };
-        Ok(Some(LibraryScanAdmissionContext::new(
-            job_run_id,
-            invocation_kind,
-            retry_source.map(parse_job_run_id).transpose()?,
-        )))
+        let retry_source = retry_source.map(parse_job_run_id).transpose()?;
+        let scan_all_request_identity = scan_all_request_identity
+            .map(|value| {
+                LibraryScanAllRequestIdentity::try_from(value.as_str())
+                    .map_err(|_| PersistenceError::CorruptOrIncompatible)
+            })
+            .transpose()?;
+        Ok(Some(match scan_all_request_identity {
+            Some(identity) => LibraryScanAdmissionContext::with_scan_all_request_identity(
+                job_run_id,
+                invocation_kind,
+                retry_source,
+                identity,
+            ),
+            None => LibraryScanAdmissionContext::new(job_run_id, invocation_kind, retry_source),
+        }))
     }
 }
 
@@ -876,7 +906,9 @@ fn read_library_scan_targets(
         .prepare(
             "SELECT target_kind, historical_library_root_id, display_name,
                     safe_location_display, scan_run_id, exclusion_reason,
-                    related_job_run_id, related_scan_run_id
+                    related_job_run_id, related_scan_run_id,
+                    exclusion_error_code, exclusion_error_trace_id,
+                    exclusion_error_safe_context
              FROM library_scan_target WHERE job_run_id = ?1
              ORDER BY target_kind ASC, historical_library_root_id ASC",
         )
@@ -892,6 +924,9 @@ fn read_library_scan_targets(
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<String>>(10)?,
             ))
         })
         .map_err(map_persistence_operation_error)?;
@@ -909,6 +944,9 @@ fn read_library_scan_targets(
                 exclusion_reason,
                 related_job_run_id,
                 related_scan_run_id,
+                exclusion_error_code,
+                exclusion_error_trace_id,
+                exclusion_error_safe_context,
             )| {
                 let kind = match kind.as_str() {
                     "requested" => LibraryScanTargetKind::Requested,
@@ -916,8 +954,15 @@ fn read_library_scan_targets(
                     "excluded" => LibraryScanTargetKind::Excluded,
                     _ => return Err(PersistenceError::CorruptOrIncompatible),
                 };
-                let exclusion = match (exclusion_reason, related_job_run_id, related_scan_run_id) {
-                    (Some(reason), job, scan) => {
+                let exclusion = match (
+                    exclusion_reason,
+                    related_job_run_id,
+                    related_scan_run_id,
+                    exclusion_error_code,
+                    exclusion_error_trace_id,
+                    exclusion_error_safe_context,
+                ) {
+                    (Some(reason), job, scan, error_code, error_trace, error_safe) => {
                         let reason = match reason.as_str() {
                             "already_scanning" => LibraryScanTargetExclusionReason::AlreadyScanning,
                             "no_longer_configured" => {
@@ -928,14 +973,26 @@ fn read_library_scan_targets(
                             }
                             _ => return Err(PersistenceError::CorruptOrIncompatible),
                         };
-                        Some(LibraryScanAdmissionExclusion::new(
-                            parse_root_id(root.clone())?,
-                            reason,
-                            job.map(parse_job_run_id).transpose()?,
-                            scan.map(parse_scan_run_id).transpose()?,
-                        ))
+                        if reason == LibraryScanTargetExclusionReason::InvalidConfiguration {
+                            let error = decode_exclusion_error(
+                                error_code.as_deref(),
+                                error_trace.as_deref(),
+                                error_safe.as_deref(),
+                            )?;
+                            Some(LibraryScanAdmissionExclusion::invalid_configuration(
+                                parse_root_id(root.clone())?,
+                                error,
+                            ))
+                        } else {
+                            Some(LibraryScanAdmissionExclusion::new(
+                                parse_root_id(root.clone())?,
+                                reason,
+                                job.map(parse_job_run_id).transpose()?,
+                                scan.map(parse_scan_run_id).transpose()?,
+                            ))
+                        }
                     }
-                    (None, None, None) => None,
+                    (None, None, None, None, None, None) => None,
                     _ => return Err(PersistenceError::CorruptOrIncompatible),
                 };
                 Ok(LibraryScanTarget::new(
@@ -1083,6 +1140,39 @@ impl JobsQueries for SqliteJobsQueries {
             .map_err(map_executor_error)
     }
 
+    fn find_library_scan_invocation_kind(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<LibraryScanInvocationKind>, PersistenceError> {
+        self.executor
+            .with_connection(context.clone(), move |connection| {
+                let raw: Option<String> = connection
+                    .connection
+                    .query_row(
+                        "SELECT c.invocation_kind
+                         FROM library_scan_admission_context c
+                         JOIN job_run j ON j.job_run_id = c.job_run_id
+                         WHERE c.job_run_id = ?1
+                           AND j.operation_type = 'library_scan'",
+                        [job_run_id.to_string()],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|error| corrupt_sqlite(map_persistence_operation_error(error)))?;
+                raw.map(|value| match value.as_str() {
+                    "initial_single_root" => Ok(LibraryScanInvocationKind::InitialSingleRoot),
+                    "retry_single_root" => Ok(LibraryScanInvocationKind::RetrySingleRoot),
+                    "initial_scan_all" => Ok(LibraryScanInvocationKind::InitialScanAll),
+                    "retry_scan_all" => Ok(LibraryScanInvocationKind::RetryScanAll),
+                    _ => Err(PersistenceError::CorruptOrIncompatible),
+                })
+                .transpose()
+                .map_err(corrupt_sqlite)
+            })
+            .map_err(map_executor_error)
+    }
+
     fn find_scan_admission_for_root(
         &self,
         context: &OperationContext,
@@ -1114,6 +1204,170 @@ impl JobsQueries for SqliteJobsQueries {
             })
             .map_err(map_executor_error)
     }
+}
+
+impl LibraryScanAllRequestLookup for SqliteJobsQueries {
+    fn find_existing(
+        &self,
+        context: &OperationContext,
+        request_identity: &LibraryScanAllRequestIdentity,
+    ) -> Result<Option<StartLibraryScanAllResult>, ApplicationError> {
+        let request_identity = request_identity.as_str().to_owned();
+        let existing = self
+            .executor
+            .with_connection(context.clone(), move |connection| {
+                let raw: Option<String> = connection
+                    .connection
+                    .query_row(
+                        "SELECT job_run_id
+                         FROM library_scan_admission_context
+                         WHERE scan_all_request_identity = ?1",
+                        [request_identity.as_str()],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|error| corrupt_sqlite(map_persistence_operation_error(error)))?;
+                let Some(raw) = raw else {
+                    return Ok(None);
+                };
+                let job_run_id = parse_job_run_id(raw).map_err(corrupt_sqlite)?;
+                let targets =
+                    read_library_scan_targets(connection.connection, &job_run_id.to_string())
+                        .map_err(corrupt_sqlite)?;
+                Ok(Some((job_run_id, targets)))
+            })
+            .map_err(map_executor_error)
+            .map_err(|error| application_error_from_persistence(context.trace_id(), error))?;
+
+        let Some((job_run_id, targets)) = existing else {
+            return Ok(None);
+        };
+        let admitted_roots: Vec<LibraryRootId> = targets
+            .iter()
+            .filter(|target| target.kind() == LibraryScanTargetKind::Admitted)
+            .map(|target| target.library_root_id())
+            .collect();
+        if admitted_roots.is_empty() {
+            return Ok(None);
+        }
+        let exclusions = targets
+            .iter()
+            .filter(|target| target.kind() == LibraryScanTargetKind::Excluded)
+            .filter_map(|target| target.exclusion().cloned())
+            .collect();
+        Ok(Some(StartLibraryScanAllResult::Admitted {
+            operation_handle: OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN),
+            admitted_roots,
+            exclusions,
+        }))
+    }
+}
+
+impl StaleLibraryScanQueries for SqliteJobsQueries {
+    fn list_stale_library_scan_jobs(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<StaleLibraryScanJob>, PersistenceError> {
+        self.executor
+            .with_connection(context.clone(), |connection| {
+                read_stale_library_scan_jobs(connection).map_err(corrupt_sqlite)
+            })
+            .map_err(map_executor_error)
+    }
+}
+
+fn read_stale_library_scan_jobs(
+    connection: &mut SqliteConnection<'_>,
+) -> Result<Vec<StaleLibraryScanJob>, PersistenceError> {
+    let mut jobs = Vec::new();
+    let mut statement = connection
+        .connection
+        .prepare(
+            "SELECT job_run_id, state, cancellation_requested
+             FROM job_run
+             WHERE operation_type = 'library_scan'
+               AND state IN ('queued', 'preparing', 'running')
+             ORDER BY created_at ASC, job_run_id ASC",
+        )
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(map_persistence_operation_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(map_persistence_operation_error)?;
+    drop(statement);
+
+    for (job_run_id, state, cancellation_requested) in rows {
+        let job_run_id = parse_job_run_id(job_run_id)?;
+        let state = parse_job_state(&state)?;
+        let scan_runs = read_stale_scan_runs(connection, job_run_id)?;
+        let exclusions = read_stale_exclusions(connection, job_run_id)?;
+        jobs.push(StaleLibraryScanJob::new(
+            job_run_id,
+            state,
+            cancellation_requested != 0,
+            scan_runs,
+            exclusions,
+        ));
+    }
+    Ok(jobs)
+}
+
+fn read_stale_scan_runs(
+    connection: &mut SqliteConnection<'_>,
+    job_run_id: JobRunId,
+) -> Result<Vec<StaleLibraryScanRun>, PersistenceError> {
+    let mut statement = connection
+        .connection
+        .prepare(
+            "SELECT scan_run_id, job_run_id, historical_library_root_id, status, started_at
+             FROM scan_run
+             WHERE job_run_id = ?1
+             ORDER BY historical_library_root_id ASC",
+        )
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map([job_run_id.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
+        })
+        .map_err(map_persistence_operation_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(map_persistence_operation_error)?;
+    rows.into_iter()
+        .map(|(scan_run_id, job, root, status, started_at)| {
+            Ok(StaleLibraryScanRun::new(
+                parse_scan_run_id(scan_run_id)?,
+                parse_job_run_id(job)?,
+                parse_root_id(root)?,
+                parse_scan_status(&status)?,
+                started_at,
+            ))
+        })
+        .collect()
+}
+
+fn read_stale_exclusions(
+    connection: &mut SqliteConnection<'_>,
+    job_run_id: JobRunId,
+) -> Result<Vec<LibraryScanAdmissionExclusion>, PersistenceError> {
+    let targets = read_library_scan_targets(connection.connection, &job_run_id.to_string())?;
+    Ok(targets
+        .into_iter()
+        .filter(|target| target.kind() == LibraryScanTargetKind::Excluded)
+        .filter_map(|target| target.exclusion().cloned())
+        .collect())
 }
 
 fn read_job_summaries(
@@ -1268,7 +1522,7 @@ fn read_job_detail(
                         started_at, completed_at, entries_observed,
                         entries_committed, issue_count
                  FROM scan_run WHERE job_run_id = ?1
-                 ORDER BY started_at ASC, scan_run_id ASC",
+                 ORDER BY historical_library_root_id ASC",
             )
             .map_err(|error| super::errors::operation_error(&error))?;
         let rows = statement
@@ -1458,6 +1712,327 @@ fn aggregate_scan_counter(values: &[Option<u64>]) -> Option<u64> {
         total = total.checked_add((*value)?)?;
     }
     Some(total)
+}
+
+/// Encodes one bounded application error into its durable column tuple.
+fn encode_exclusion_error(
+    error: &ApplicationError,
+) -> Result<(String, String, String), PersistenceError> {
+    Ok((
+        error.code.as_str().to_owned(),
+        error.trace_id.to_string(),
+        encode_safe_context(&error.safe_context),
+    ))
+}
+
+/// Reconstructs one bounded application error from its durable columns.
+fn decode_exclusion_error(
+    code: Option<&str>,
+    trace_id: Option<&str>,
+    safe_context: Option<&str>,
+) -> Result<ApplicationError, PersistenceError> {
+    let (Some(code), Some(trace_id), Some(safe_context)) = (code, trace_id, safe_context) else {
+        return Err(PersistenceError::CorruptOrIncompatible);
+    };
+    let code = parse_error_code(code)?;
+    let trace_bytes = hex_decode(trace_id)?;
+    let trace_bytes: [u8; 16] = trace_bytes
+        .try_into()
+        .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+    let trace_id =
+        TraceId::try_from(trace_bytes).map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+    let safe_context = decode_safe_context(safe_context)?;
+    ApplicationError::from_code(code, trace_id, safe_context)
+        .map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+/// Encodes a typed safe context as order-independent `field:hex` entries.
+fn encode_safe_context(context: &SafeContext) -> String {
+    context
+        .iter()
+        .map(|(field, value)| {
+            let field = safe_context_field_name(*field);
+            let value = safe_context_value_name(value).into_bytes();
+            let mut hex = String::with_capacity(value.len() * 2);
+            for byte in value {
+                use std::fmt::Write;
+                let _ = write!(hex, "{byte:02x}");
+            }
+            format!("{field}:{hex}")
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Decodes a typed safe context from order-independent `field:hex` entries.
+fn decode_safe_context(encoded: &str) -> Result<SafeContext, PersistenceError> {
+    let mut context = SafeContext::new();
+    for entry in encoded.split(';') {
+        if entry.is_empty() {
+            continue;
+        }
+        let (field, hex) = entry
+            .split_once(':')
+            .ok_or(PersistenceError::CorruptOrIncompatible)?;
+        let field = safe_context_field_from_str(field)?;
+        let bytes = hex_decode(hex)?;
+        let value =
+            std::str::from_utf8(&bytes).map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+        let value = safe_context_value_from_str(field, value)?;
+        context
+            .try_insert(field, value)
+            .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+    }
+    Ok(context)
+}
+
+fn hex_decode(hex: &str) -> Result<Vec<u8>, PersistenceError> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(PersistenceError::CorruptOrIncompatible);
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for index in (0..hex.len()).step_by(2) {
+        let high = hex
+            .as_bytes()
+            .get(index)
+            .and_then(|byte| hex_digit(*byte))
+            .ok_or(PersistenceError::CorruptOrIncompatible)?;
+        let low = hex
+            .as_bytes()
+            .get(index + 1)
+            .and_then(|byte| hex_digit(*byte))
+            .ok_or(PersistenceError::CorruptOrIncompatible)?;
+        bytes.push((high << 4) | low);
+    }
+    Ok(bytes)
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn safe_context_field_name(field: SafeContextField) -> &'static str {
+    match field {
+        SafeContextField::Stage => "stage",
+        SafeContextField::PathClass => "path_class",
+        SafeContextField::MigrationCount => "migration_count",
+        SafeContextField::SchemaVersion => "schema_version",
+        SafeContextField::MigrationOutcome => "migration_outcome",
+        SafeContextField::ApplicationVersion => "application_version",
+        SafeContextField::BackendVersion => "backend_version",
+        SafeContextField::Platform => "platform",
+        SafeContextField::Architecture => "architecture",
+        SafeContextField::TechnicalClass => "technical_class",
+        SafeContextField::FailureRole => "failure_role",
+        SafeContextField::SettingsDomain => "settings_domain",
+        SafeContextField::PersistedSettingsReason => "persisted_settings_reason",
+    }
+}
+
+fn safe_context_field_from_str(value: &str) -> Result<SafeContextField, PersistenceError> {
+    match value {
+        "stage" => Ok(SafeContextField::Stage),
+        "path_class" => Ok(SafeContextField::PathClass),
+        "migration_count" => Ok(SafeContextField::MigrationCount),
+        "schema_version" => Ok(SafeContextField::SchemaVersion),
+        "migration_outcome" => Ok(SafeContextField::MigrationOutcome),
+        "application_version" => Ok(SafeContextField::ApplicationVersion),
+        "backend_version" => Ok(SafeContextField::BackendVersion),
+        "platform" => Ok(SafeContextField::Platform),
+        "architecture" => Ok(SafeContextField::Architecture),
+        "technical_class" => Ok(SafeContextField::TechnicalClass),
+        "failure_role" => Ok(SafeContextField::FailureRole),
+        "settings_domain" => Ok(SafeContextField::SettingsDomain),
+        "persisted_settings_reason" => Ok(SafeContextField::PersistedSettingsReason),
+        _ => Err(PersistenceError::CorruptOrIncompatible),
+    }
+}
+
+fn safe_context_value_name(value: &SafeContextValue) -> String {
+    match value {
+        SafeContextValue::Stage(stage) => match stage {
+            DiagnosticStage::Environment => "environment".to_owned(),
+            DiagnosticStage::Observability => "observability".to_owned(),
+            DiagnosticStage::Persistence => "persistence".to_owned(),
+        },
+        SafeContextValue::PathClass(path_class) => match path_class {
+            PathClass::StandardApplicationData => "standard_application_data".to_owned(),
+            PathClass::ExplicitOverride => "explicit_override".to_owned(),
+        },
+        SafeContextValue::MigrationCount(count) => count.to_string(),
+        SafeContextValue::SchemaVersion(version) => version.to_string(),
+        SafeContextValue::MigrationOutcome(outcome) => match outcome {
+            MigrationOutcome::Applied => "applied".to_owned(),
+            MigrationOutcome::AlreadyCurrent => "already_current".to_owned(),
+        },
+        SafeContextValue::ApplicationVersion(version) => version.as_str().to_owned(),
+        SafeContextValue::BackendVersion(version) => version.as_str().to_owned(),
+        SafeContextValue::Platform(platform) => match platform {
+            PlatformClass::Windows => "windows".to_owned(),
+            PlatformClass::MacOs => "macos".to_owned(),
+            PlatformClass::Unix => "unix".to_owned(),
+        },
+        SafeContextValue::Architecture(architecture) => match architecture {
+            ArchitectureClass::X8664 => "x86_64".to_owned(),
+            ArchitectureClass::Aarch64 => "aarch64".to_owned(),
+            ArchitectureClass::X86 => "x86".to_owned(),
+            ArchitectureClass::Arm => "arm".to_owned(),
+            ArchitectureClass::Unknown => "unknown".to_owned(),
+        },
+        SafeContextValue::TechnicalClass(technical) => match technical {
+            TechnicalClass::ConfigurationInvalid => "configuration_invalid".to_owned(),
+            TechnicalClass::FilesystemPermissionDenied => "filesystem_permission_denied".to_owned(),
+            TechnicalClass::DatabaseOpenFailed => "database_open_failed".to_owned(),
+            TechnicalClass::DatabaseLocked => "database_locked".to_owned(),
+            TechnicalClass::MigrationFailed => "migration_failed".to_owned(),
+            TechnicalClass::IncompatibleSchema => "incompatible_schema".to_owned(),
+            TechnicalClass::Internal => "internal".to_owned(),
+        },
+        SafeContextValue::FailureRole(role) => match role {
+            FailureRole::Primary => "primary".to_owned(),
+            FailureRole::Secondary => "secondary".to_owned(),
+        },
+        SafeContextValue::SettingsDomain(domain) => match domain {
+            SettingsDomain::Appearance => "appearance".to_owned(),
+        },
+        SafeContextValue::PersistedSettingsReason(reason) => match reason {
+            PersistedSettingsReason::Missing => "missing".to_owned(),
+            PersistedSettingsReason::InvalidValue => "invalid_value".to_owned(),
+            PersistedSettingsReason::MappingFailed => "mapping_failed".to_owned(),
+        },
+    }
+}
+
+fn safe_context_value_from_str(
+    field: SafeContextField,
+    value: &str,
+) -> Result<SafeContextValue, PersistenceError> {
+    let invalid = || PersistenceError::CorruptOrIncompatible;
+    Ok(match field {
+        SafeContextField::Stage => SafeContextValue::Stage(match value {
+            "environment" => DiagnosticStage::Environment,
+            "observability" => DiagnosticStage::Observability,
+            "persistence" => DiagnosticStage::Persistence,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::PathClass => SafeContextValue::PathClass(match value {
+            "standard_application_data" => PathClass::StandardApplicationData,
+            "explicit_override" => PathClass::ExplicitOverride,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::MigrationCount => {
+            SafeContextValue::MigrationCount(value.parse().map_err(|_| invalid())?)
+        }
+        SafeContextField::SchemaVersion => {
+            SafeContextValue::SchemaVersion(value.parse().map_err(|_| invalid())?)
+        }
+        SafeContextField::MigrationOutcome => SafeContextValue::MigrationOutcome(match value {
+            "applied" => MigrationOutcome::Applied,
+            "already_current" => MigrationOutcome::AlreadyCurrent,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::ApplicationVersion => {
+            SafeContextValue::ApplicationVersion(Version::try_from(value).map_err(|_| invalid())?)
+        }
+        SafeContextField::BackendVersion => {
+            SafeContextValue::BackendVersion(Version::try_from(value).map_err(|_| invalid())?)
+        }
+        SafeContextField::Platform => SafeContextValue::Platform(match value {
+            "windows" => PlatformClass::Windows,
+            "macos" => PlatformClass::MacOs,
+            "unix" => PlatformClass::Unix,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::Architecture => SafeContextValue::Architecture(match value {
+            "x86_64" => ArchitectureClass::X8664,
+            "aarch64" => ArchitectureClass::Aarch64,
+            "x86" => ArchitectureClass::X86,
+            "arm" => ArchitectureClass::Arm,
+            "unknown" => ArchitectureClass::Unknown,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::TechnicalClass => SafeContextValue::TechnicalClass(match value {
+            "configuration_invalid" => TechnicalClass::ConfigurationInvalid,
+            "filesystem_permission_denied" => TechnicalClass::FilesystemPermissionDenied,
+            "database_open_failed" => TechnicalClass::DatabaseOpenFailed,
+            "database_locked" => TechnicalClass::DatabaseLocked,
+            "migration_failed" => TechnicalClass::MigrationFailed,
+            "incompatible_schema" => TechnicalClass::IncompatibleSchema,
+            "internal" => TechnicalClass::Internal,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::FailureRole => SafeContextValue::FailureRole(match value {
+            "primary" => FailureRole::Primary,
+            "secondary" => FailureRole::Secondary,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::SettingsDomain => SafeContextValue::SettingsDomain(match value {
+            "appearance" => SettingsDomain::Appearance,
+            _ => return Err(invalid()),
+        }),
+        SafeContextField::PersistedSettingsReason => {
+            SafeContextValue::PersistedSettingsReason(match value {
+                "missing" => PersistedSettingsReason::Missing,
+                "invalid_value" => PersistedSettingsReason::InvalidValue,
+                "mapping_failed" => PersistedSettingsReason::MappingFailed,
+                _ => return Err(invalid()),
+            })
+        }
+    })
+}
+
+fn parse_error_code(value: &str) -> Result<ErrorCode, PersistenceError> {
+    match value {
+        "ARGUS.V1.VALIDATION.INVALID_ARGUMENT" => Ok(ErrorCode::ValidationInvalidArgument),
+        "ARGUS.V1.CONFIGURATION.INVALID" => Ok(ErrorCode::ConfigurationInvalid),
+        "ARGUS.V1.CONFIGURATION.LIBRARY_ROOT_NOT_FOUND" => {
+            Ok(ErrorCode::ConfigurationLibraryRootNotFound)
+        }
+        "ARGUS.V1.CONFIGURATION.PERSISTED_SETTINGS_INVALID" => {
+            Ok(ErrorCode::ConfigurationPersistedSettingsInvalid)
+        }
+        "ARGUS.V1.FILESYSTEM.PERMISSION_DENIED" => Ok(ErrorCode::FilesystemPermissionDenied),
+        "ARGUS.V1.FILESYSTEM.INVALID_ROOT_SELECTION" => {
+            Ok(ErrorCode::FilesystemInvalidRootSelection)
+        }
+        "ARGUS.V1.PERSISTENCE.DATABASE_OPEN_FAILED" => Ok(ErrorCode::PersistenceDatabaseOpenFailed),
+        "ARGUS.V1.PERSISTENCE.DATABASE_LOCKED" => Ok(ErrorCode::PersistenceDatabaseLocked),
+        "ARGUS.V1.PERSISTENCE.MIGRATION_FAILED" => Ok(ErrorCode::PersistenceMigrationFailed),
+        "ARGUS.V1.PERSISTENCE.INCOMPATIBLE_SCHEMA" => Ok(ErrorCode::PersistenceIncompatibleSchema),
+        "ARGUS.V1.INTERNAL.UNEXPECTED" => Ok(ErrorCode::InternalUnexpected),
+        "ARGUS.V1.RUNTIME.NOT_READY" => Ok(ErrorCode::RuntimeNotReady),
+        "ARGUS.V1.RUNTIME.STARTUP_FAILED" => Ok(ErrorCode::RuntimeStartupFailed),
+        "ARGUS.V1.RUNTIME.SHUTTING_DOWN" => Ok(ErrorCode::RuntimeShuttingDown),
+        "ARGUS.V1.RUNTIME.STOPPED" => Ok(ErrorCode::RuntimeStopped),
+        "ARGUS.V1.RUNTIME.STALE_INSTANCE" => Ok(ErrorCode::RuntimeStaleInstance),
+        "ARGUS.V1.RUNTIME.BRIDGE_INITIALIZATION_FAILED" => {
+            Ok(ErrorCode::RuntimeBridgeInitializationFailed)
+        }
+        "ARGUS.V1.RUNTIME.CORE_SERVICE_INITIALIZATION_FAILED" => {
+            Ok(ErrorCode::RuntimeCoreServiceInitializationFailed)
+        }
+        "ARGUS.V1.OPERATION.CANCELLED" => Ok(ErrorCode::OperationCancelled),
+        "ARGUS.V1.INTERNAL.INVARIANT_VIOLATION" => Ok(ErrorCode::InternalInvariantViolation),
+        "ARGUS.V1.JOBS.JOB_RUN_NOT_FOUND" => Ok(ErrorCode::JobRunNotFound),
+        "ARGUS.V1.OPERATION.CAPACITY_UNAVAILABLE" => Ok(ErrorCode::OperationCapacityUnavailable),
+        "ARGUS.V1.CONFIGURATION.SOURCE_ENTRY_NOT_FOUND" => {
+            Ok(ErrorCode::ConfigurationSourceEntryNotFound)
+        }
+        _ => Err(PersistenceError::CorruptOrIncompatible),
+    }
+}
+
+fn application_error_from_persistence(
+    trace_id: TraceId,
+    _error: PersistenceError,
+) -> ApplicationError {
+    ApplicationError::from_code(ErrorCode::InternalUnexpected, trace_id, SafeContext::new())
+        .expect("internal request-identity lookup failure uses an allowlisted empty context")
 }
 
 fn parse_job_state(value: &str) -> Result<JobRunState, PersistenceError> {

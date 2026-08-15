@@ -16,6 +16,18 @@ SourcesApi sourcesApi(Ref ref) {
   throw StateError('sourcesApiProvider must be supplied by app composition');
 }
 
+/// Focused Jobs capability injected for Sources-owned coordination (Scan All
+/// ambiguity reconciliation and cancel-and-remove).
+///
+/// This is a dependency-injection seam only: Sources never reconstructs Jobs
+/// truth from events and never owns the full job-detail surface.
+@Riverpod(keepAlive: true)
+JobsApi sourcesJobsApi(Ref ref) {
+  throw StateError(
+    'sourcesJobsApiProvider must be supplied by app composition',
+  );
+}
+
 /// Runtime generation context injected by app composition.
 ///
 /// The default is pre-ready; app composition supplies the current runtime

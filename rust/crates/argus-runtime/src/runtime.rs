@@ -14,14 +14,17 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argus_application::{
     AddLocalLibraryRootAndScanCommand, AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult,
-    AdmittedScan, AppearanceSettingsSubscriber, ApplicationError, CancelJobResult, ErrorCode,
-    EventSubscriberError, JobDetail, JobProgressChanged, JobRunId, JobStateChanged, JobSummaryPage,
-    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionResult,
-    LibraryScanChildAdmission, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemRootSelection, OperationContext, OperationName, RemoveLibraryRootResult,
+    AdmittedLibraryScanJob, AdmittedScan, AppearanceSettingsSubscriber, ApplicationError,
+    CancelJobResult, ErrorCode, EventSubscriberError, JobDetail, JobProgressChanged, JobRunId,
+    JobRunRepository, JobRunState, JobStateChanged, JobSummaryPage, LibraryRootId, LibraryRootPage,
+    LibraryRootProjection, LibraryScanAdmissionResult, LibraryScanAllRequestIdentity,
+    LibraryScanChildAdmission, LibraryScanChildCompletion, LibraryScanExecutionPlan, ListJobsQuery,
+    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection,
+    OperationCompletion, OperationContext, OperationName, RemoveLibraryRootResult,
     RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference, SourceEntriesChangeScope,
     SourceEntriesChanged, SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId,
-    StartLibraryScanResult, SubsystemName, TraceId,
+    StartLibraryScanAllResult, StartLibraryScanResult, SubsystemName, TraceId, UnitOfWork,
+    UnitOfWorkFactory, aggregate_library_scan_state,
 };
 
 use crate::{
@@ -37,6 +40,7 @@ use crate::{
 use argus_application::LocalFilesystemProvider;
 use argus_application::{LibraryScanOperationHandler, OperationHandle};
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
+use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 
 /// Opaque identity for one runtime generation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1843,6 +1847,16 @@ impl ApplicationHost {
         self.start_library_scan_with_context(root_id, &context)
     }
 
+    /// Admits one durable multi-root Scan All and registers one job-level
+    /// background operation for every admitted child plan.
+    pub fn start_library_scan_all(
+        &self,
+        request_identity: LibraryScanAllRequestIdentity,
+    ) -> Result<StartLibraryScanAllResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "start_library_scan_all")?;
+        self.start_library_scan_all_with_context(request_identity, &context)
+    }
+
     /// Executes the Add & Scan composite workflow through the ready kernel.
     pub fn add_local_library_root_and_scan(
         &self,
@@ -1907,6 +1921,55 @@ impl ApplicationHost {
             )?;
             if let Some(admitted) = admission.admitted_scan() {
                 register_library_scan(&manager, kernel, context, admitted)?;
+            }
+            admission
+        };
+        Ok(admission.outcome().clone())
+    }
+
+    /// Admits one multi-root Scan All under an existing top-level context and
+    /// registers one job-level background operation for its admitted payload.
+    pub fn start_library_scan_all_with_context(
+        &self,
+        request_identity: LibraryScanAllRequestIdentity,
+        context: &OperationContext,
+    ) -> Result<StartLibraryScanAllResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::BackgroundOperation)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let admission = {
+            let generation = self.lock_generation_with_context(context)?;
+            let manager = generation.background.clone().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let handle = generation.kernel_handle().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let kernel_guard = handle.lock().map_err(|_| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let kernel = kernel_guard.as_ref().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let admission = kernel.start_library_scan_all_with_context(
+                context,
+                request_identity,
+                Arc::new(move || guard.token().is_cancelled()),
+            )?;
+            if let Some(admitted) = admission.admitted_job() {
+                register_library_scan_all(
+                    &manager,
+                    kernel,
+                    context,
+                    admitted,
+                    admission.outcome().exclusions().len(),
+                )?;
             }
             admission
         };
@@ -2011,6 +2074,14 @@ impl ApplicationHost {
             )?;
             if let Some(admitted) = admission.admitted_scan() {
                 register_library_scan(&manager, kernel, context, admitted)?;
+            } else if let Some(admitted_job) = admission.admitted_job() {
+                register_library_scan_all(
+                    &manager,
+                    kernel,
+                    context,
+                    admitted_job,
+                    admission.admitted_job_exclusion_count(),
+                )?;
             }
             Ok::<_, ApplicationError>(admission)
         })();
@@ -2042,6 +2113,37 @@ impl ApplicationHost {
             kernel
                 .jobs_service
                 .get_root_scan_admission(library_root_id, context.clone())
+        })
+    }
+
+    /// Resolves one durable Scan All request identity after transport
+    /// ambiguity.
+    pub fn resolve_scan_all_request(
+        &self,
+        request_identity: LibraryScanAllRequestIdentity,
+    ) -> Result<Option<StartLibraryScanAllResult>, ApplicationError> {
+        let (context, _guard) = self.begin_operation("jobs", "resolve_scan_all_request")?;
+        self.resolve_scan_all_request_with_context(request_identity, &context)
+    }
+
+    /// Resolves one durable Scan All request identity under an existing
+    /// context.
+    pub fn resolve_scan_all_request_with_context(
+        &self,
+        request_identity: LibraryScanAllRequestIdentity,
+        context: &OperationContext,
+    ) -> Result<Option<StartLibraryScanAllResult>, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.resolve_scan_all_request_with_context(context, request_identity)
         })
     }
 
@@ -2452,6 +2554,184 @@ fn register_library_scan(
             )
             .expect("background admission error follows the published catalog"))
         }
+    }
+}
+
+/// Registers one durably admitted multi-root Scan All job with one handler.
+///
+/// A registration failure terminalizes every admitted child plus the parent
+/// coherently and returns a definite application error.
+fn register_library_scan_all(
+    manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
+    kernel: &KernelBootstrap,
+    context: &OperationContext,
+    admitted: &AdmittedLibraryScanJob,
+    exclusion_count: usize,
+) -> Result<(), ApplicationError> {
+    let handler = LibraryScanAllOperationHandler::new(
+        admitted.plans().to_vec(),
+        kernel.unit_of_work_factory().clone(),
+        crate::events::EventBusSink::new(kernel.event_bus().clone()),
+        100,
+        exclusion_count,
+    );
+    let handle = OperationHandle::new(
+        admitted.job_run_id(),
+        argus_application::OPERATION_TYPE_LIBRARY_SCAN,
+    );
+    match manager.register(
+        &handle,
+        Arc::new(handler),
+        &[
+            ResourceClass::FilesystemRead,
+            ResourceClass::PersistenceWrite,
+        ],
+    ) {
+        Ok(()) => Ok(()),
+        Err(registration_error) => {
+            terminalize_unregistered_scan_all(kernel, context, admitted);
+            let code = match registration_error {
+                crate::background::ManagerAdmissionError::Internal => ErrorCode::InternalUnexpected,
+                crate::background::ManagerAdmissionError::ShuttingDown
+                | crate::background::ManagerAdmissionError::CapacityExceeded => {
+                    ErrorCode::OperationCapacityUnavailable
+                }
+            };
+            Err(ApplicationError::from_code(
+                code,
+                context.trace_id(),
+                argus_application::SafeContext::new(),
+            )
+            .expect("background admission error follows the published catalog"))
+        }
+    }
+}
+
+fn terminalize_unregistered_scan_all(
+    kernel: &KernelBootstrap,
+    context: &OperationContext,
+    admitted: &AdmittedLibraryScanJob,
+) {
+    for plan in admitted.plans() {
+        let handler = LibraryScanOperationHandler::new(
+            plan.clone(),
+            LocalFilesystemSourceAccess::new(plan.root_locator()),
+            kernel.unit_of_work_factory().clone(),
+            crate::events::EventBusSink::new(kernel.event_bus().clone()),
+            100,
+        );
+        let _ = handler.fail_without_execution(context);
+    }
+    let job_run_id = admitted.job_run_id();
+    let operation_context = context.clone();
+    let _ = kernel
+        .unit_of_work_factory()
+        .clone()
+        .execute(&operation_context, move |mut scope| {
+            scope.job_runs().set_terminal_failure(
+                job_run_id,
+                JobRunState::Failed,
+                Some(ErrorCode::OperationCapacityUnavailable.as_str().to_owned()),
+                None,
+                crate::now_millis(),
+            )?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>(())
+        });
+}
+
+struct LibraryScanAllOperationHandler {
+    plans: Vec<LibraryScanExecutionPlan>,
+    unit_of_work: KernelUnitOfWorkFactory,
+    event_sink: crate::events::EventBusSink,
+    checkpoint_size: usize,
+    exclusion_count: usize,
+}
+
+impl LibraryScanAllOperationHandler {
+    fn new(
+        plans: Vec<LibraryScanExecutionPlan>,
+        unit_of_work: KernelUnitOfWorkFactory,
+        event_sink: crate::events::EventBusSink,
+        checkpoint_size: usize,
+        exclusion_count: usize,
+    ) -> Self {
+        Self {
+            plans,
+            unit_of_work,
+            event_sink,
+            checkpoint_size: checkpoint_size.max(1),
+            exclusion_count,
+        }
+    }
+}
+
+impl argus_application::BackgroundOperationHandler for LibraryScanAllOperationHandler {
+    fn execute(
+        &self,
+        context: &OperationContext,
+        is_cancelled: &dyn Fn() -> bool,
+        progress: &dyn argus_application::JobProgressReporter,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        let mut child_completions = Vec::with_capacity(self.plans.len());
+        for plan in &self.plans {
+            let access = LocalFilesystemSourceAccess::new(plan.root_locator());
+            let child = LibraryScanOperationHandler::new(
+                plan.clone(),
+                access,
+                self.unit_of_work.clone(),
+                self.event_sink.clone(),
+                self.checkpoint_size,
+            );
+            if is_cancelled() {
+                child.cancel_without_execution(context)?;
+                child_completions.push(OperationCompletion::new(
+                    JobRunState::Cancelled,
+                    None,
+                    None,
+                ));
+            } else {
+                child_completions.push(child.execute(context, is_cancelled, progress)?);
+            }
+        }
+        let child_states = child_completions
+            .iter()
+            .map(|completion| match completion.state() {
+                JobRunState::Completed => LibraryScanChildCompletion::Complete,
+                JobRunState::CompletedWithIssues => LibraryScanChildCompletion::Partial,
+                JobRunState::Failed | JobRunState::Interrupted => {
+                    LibraryScanChildCompletion::Failed
+                }
+                JobRunState::Cancelled => LibraryScanChildCompletion::Cancelled,
+                JobRunState::Abandoned => LibraryScanChildCompletion::Abandoned,
+                JobRunState::Queued | JobRunState::Preparing | JobRunState::Running => {
+                    LibraryScanChildCompletion::Failed
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = aggregate_library_scan_state(
+            self.plans.len() + self.exclusion_count,
+            self.plans.len(),
+            &child_states,
+        );
+        Ok(OperationCompletion::new(state, None, None))
+    }
+
+    fn cancelled_before_execution(
+        &self,
+        context: &OperationContext,
+    ) -> Result<(), ApplicationError> {
+        for plan in &self.plans {
+            let child = LibraryScanOperationHandler::new(
+                plan.clone(),
+                LocalFilesystemSourceAccess::new(plan.root_locator()),
+                self.unit_of_work.clone(),
+                self.event_sink.clone(),
+                self.checkpoint_size,
+            );
+            child.cancel_without_execution(context)?;
+        }
+        Ok(())
     }
 }
 

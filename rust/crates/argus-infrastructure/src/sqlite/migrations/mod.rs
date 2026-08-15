@@ -119,6 +119,11 @@ impl MigrationRegistry {
                 "0006_retry_and_progress",
                 include_bytes!("sql/0006_retry_and_progress.sql"),
             ),
+            Migration::sql(
+                7,
+                "0007_scan_all_recovery",
+                include_bytes!("sql/0007_scan_all_recovery.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

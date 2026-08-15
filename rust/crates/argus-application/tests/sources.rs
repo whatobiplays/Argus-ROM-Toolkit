@@ -951,7 +951,7 @@ fn library_root_projection_is_immutable_and_dimension_separated() {
         Some(2),
     );
     let active_scan =
-        LibraryRootActiveScanSummary::new("scan-run".to_owned(), "job-run".to_owned());
+        LibraryRootActiveScanSummary::new("scan-run".to_owned(), "job-run".to_owned(), 2);
     let root = projection(ROOT_A, "Alpha")
         .with_last_scan(last_scan.clone())
         .with_active_scan(active_scan.clone());

@@ -1658,7 +1658,7 @@ as String,
 /// @nodoc
 mixin _$LibraryScanAdmissionExclusion {
 
- LibraryRootId get libraryRootId; String get reason; JobRunId? get activeJobRunId; ScanRunId? get activeScanRunId;
+ LibraryRootId get libraryRootId; String get reason; JobRunId? get activeJobRunId; ScanRunId? get activeScanRunId; ClientApplicationError? get applicationError;
 /// Create a copy of LibraryScanAdmissionExclusion
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1669,16 +1669,16 @@ $LibraryScanAdmissionExclusionCopyWith<LibraryScanAdmissionExclusion> get copyWi
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAdmissionExclusion&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.activeJobRunId, activeJobRunId) || other.activeJobRunId == activeJobRunId)&&(identical(other.activeScanRunId, activeScanRunId) || other.activeScanRunId == activeScanRunId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAdmissionExclusion&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.activeJobRunId, activeJobRunId) || other.activeJobRunId == activeJobRunId)&&(identical(other.activeScanRunId, activeScanRunId) || other.activeScanRunId == activeScanRunId)&&(identical(other.applicationError, applicationError) || other.applicationError == applicationError));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,libraryRootId,reason,activeJobRunId,activeScanRunId);
+int get hashCode => Object.hash(runtimeType,libraryRootId,reason,activeJobRunId,activeScanRunId,applicationError);
 
 @override
 String toString() {
-  return 'LibraryScanAdmissionExclusion(libraryRootId: $libraryRootId, reason: $reason, activeJobRunId: $activeJobRunId, activeScanRunId: $activeScanRunId)';
+  return 'LibraryScanAdmissionExclusion(libraryRootId: $libraryRootId, reason: $reason, activeJobRunId: $activeJobRunId, activeScanRunId: $activeScanRunId, applicationError: $applicationError)';
 }
 
 
@@ -1689,11 +1689,11 @@ abstract mixin class $LibraryScanAdmissionExclusionCopyWith<$Res>  {
   factory $LibraryScanAdmissionExclusionCopyWith(LibraryScanAdmissionExclusion value, $Res Function(LibraryScanAdmissionExclusion) _then) = _$LibraryScanAdmissionExclusionCopyWithImpl;
 @useResult
 $Res call({
- LibraryRootId libraryRootId, String reason, JobRunId? activeJobRunId, ScanRunId? activeScanRunId
+ LibraryRootId libraryRootId, String reason, JobRunId? activeJobRunId, ScanRunId? activeScanRunId, ClientApplicationError? applicationError
 });
 
 
-
+$ClientApplicationErrorCopyWith<$Res>? get applicationError;
 
 }
 /// @nodoc
@@ -1706,16 +1706,29 @@ class _$LibraryScanAdmissionExclusionCopyWithImpl<$Res>
 
 /// Create a copy of LibraryScanAdmissionExclusion
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? libraryRootId = null,Object? reason = null,Object? activeJobRunId = freezed,Object? activeScanRunId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? libraryRootId = null,Object? reason = null,Object? activeJobRunId = freezed,Object? activeScanRunId = freezed,Object? applicationError = freezed,}) {
   return _then(_self.copyWith(
 libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
 as LibraryRootId,reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
 as String,activeJobRunId: freezed == activeJobRunId ? _self.activeJobRunId : activeJobRunId // ignore: cast_nullable_to_non_nullable
 as JobRunId?,activeScanRunId: freezed == activeScanRunId ? _self.activeScanRunId : activeScanRunId // ignore: cast_nullable_to_non_nullable
-as ScanRunId?,
+as ScanRunId?,applicationError: freezed == applicationError ? _self.applicationError : applicationError // ignore: cast_nullable_to_non_nullable
+as ClientApplicationError?,
   ));
 }
+/// Create a copy of LibraryScanAdmissionExclusion
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ClientApplicationErrorCopyWith<$Res>? get applicationError {
+    if (_self.applicationError == null) {
+    return null;
+  }
 
+  return $ClientApplicationErrorCopyWith<$Res>(_self.applicationError!, (value) {
+    return _then(_self.copyWith(applicationError: value));
+  });
+}
 }
 
 
@@ -1794,10 +1807,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( LibraryRootId libraryRootId,  String reason,  JobRunId? activeJobRunId,  ScanRunId? activeScanRunId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( LibraryRootId libraryRootId,  String reason,  JobRunId? activeJobRunId,  ScanRunId? activeScanRunId,  ClientApplicationError? applicationError)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _LibraryScanAdmissionExclusion() when $default != null:
-return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.activeScanRunId);case _:
+return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.activeScanRunId,_that.applicationError);case _:
   return orElse();
 
 }
@@ -1815,10 +1828,10 @@ return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.acti
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( LibraryRootId libraryRootId,  String reason,  JobRunId? activeJobRunId,  ScanRunId? activeScanRunId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( LibraryRootId libraryRootId,  String reason,  JobRunId? activeJobRunId,  ScanRunId? activeScanRunId,  ClientApplicationError? applicationError)  $default,) {final _that = this;
 switch (_that) {
 case _LibraryScanAdmissionExclusion():
-return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.activeScanRunId);}
+return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.activeScanRunId,_that.applicationError);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -1832,10 +1845,10 @@ return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.acti
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( LibraryRootId libraryRootId,  String reason,  JobRunId? activeJobRunId,  ScanRunId? activeScanRunId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( LibraryRootId libraryRootId,  String reason,  JobRunId? activeJobRunId,  ScanRunId? activeScanRunId,  ClientApplicationError? applicationError)?  $default,) {final _that = this;
 switch (_that) {
 case _LibraryScanAdmissionExclusion() when $default != null:
-return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.activeScanRunId);case _:
+return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.activeScanRunId,_that.applicationError);case _:
   return null;
 
 }
@@ -1847,13 +1860,14 @@ return $default(_that.libraryRootId,_that.reason,_that.activeJobRunId,_that.acti
 
 
 class _LibraryScanAdmissionExclusion implements LibraryScanAdmissionExclusion {
-  const _LibraryScanAdmissionExclusion({required this.libraryRootId, required this.reason, this.activeJobRunId, this.activeScanRunId});
+  const _LibraryScanAdmissionExclusion({required this.libraryRootId, required this.reason, this.activeJobRunId, this.activeScanRunId, this.applicationError});
 
 
 @override final  LibraryRootId libraryRootId;
 @override final  String reason;
 @override final  JobRunId? activeJobRunId;
 @override final  ScanRunId? activeScanRunId;
+@override final  ClientApplicationError? applicationError;
 
 /// Create a copy of LibraryScanAdmissionExclusion
 /// with the given fields replaced by the non-null parameter values.
@@ -1865,16 +1879,16 @@ _$LibraryScanAdmissionExclusionCopyWith<_LibraryScanAdmissionExclusion> get copy
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryScanAdmissionExclusion&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.activeJobRunId, activeJobRunId) || other.activeJobRunId == activeJobRunId)&&(identical(other.activeScanRunId, activeScanRunId) || other.activeScanRunId == activeScanRunId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryScanAdmissionExclusion&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.activeJobRunId, activeJobRunId) || other.activeJobRunId == activeJobRunId)&&(identical(other.activeScanRunId, activeScanRunId) || other.activeScanRunId == activeScanRunId)&&(identical(other.applicationError, applicationError) || other.applicationError == applicationError));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,libraryRootId,reason,activeJobRunId,activeScanRunId);
+int get hashCode => Object.hash(runtimeType,libraryRootId,reason,activeJobRunId,activeScanRunId,applicationError);
 
 @override
 String toString() {
-  return 'LibraryScanAdmissionExclusion(libraryRootId: $libraryRootId, reason: $reason, activeJobRunId: $activeJobRunId, activeScanRunId: $activeScanRunId)';
+  return 'LibraryScanAdmissionExclusion(libraryRootId: $libraryRootId, reason: $reason, activeJobRunId: $activeJobRunId, activeScanRunId: $activeScanRunId, applicationError: $applicationError)';
 }
 
 
@@ -1885,11 +1899,11 @@ abstract mixin class _$LibraryScanAdmissionExclusionCopyWith<$Res> implements $L
   factory _$LibraryScanAdmissionExclusionCopyWith(_LibraryScanAdmissionExclusion value, $Res Function(_LibraryScanAdmissionExclusion) _then) = __$LibraryScanAdmissionExclusionCopyWithImpl;
 @override @useResult
 $Res call({
- LibraryRootId libraryRootId, String reason, JobRunId? activeJobRunId, ScanRunId? activeScanRunId
+ LibraryRootId libraryRootId, String reason, JobRunId? activeJobRunId, ScanRunId? activeScanRunId, ClientApplicationError? applicationError
 });
 
 
-
+@override $ClientApplicationErrorCopyWith<$Res>? get applicationError;
 
 }
 /// @nodoc
@@ -1902,17 +1916,30 @@ class __$LibraryScanAdmissionExclusionCopyWithImpl<$Res>
 
 /// Create a copy of LibraryScanAdmissionExclusion
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,Object? reason = null,Object? activeJobRunId = freezed,Object? activeScanRunId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,Object? reason = null,Object? activeJobRunId = freezed,Object? activeScanRunId = freezed,Object? applicationError = freezed,}) {
   return _then(_LibraryScanAdmissionExclusion(
 libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
 as LibraryRootId,reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
 as String,activeJobRunId: freezed == activeJobRunId ? _self.activeJobRunId : activeJobRunId // ignore: cast_nullable_to_non_nullable
 as JobRunId?,activeScanRunId: freezed == activeScanRunId ? _self.activeScanRunId : activeScanRunId // ignore: cast_nullable_to_non_nullable
-as ScanRunId?,
+as ScanRunId?,applicationError: freezed == applicationError ? _self.applicationError : applicationError // ignore: cast_nullable_to_non_nullable
+as ClientApplicationError?,
   ));
 }
 
+/// Create a copy of LibraryScanAdmissionExclusion
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ClientApplicationErrorCopyWith<$Res>? get applicationError {
+    if (_self.applicationError == null) {
+    return null;
+  }
 
+  return $ClientApplicationErrorCopyWith<$Res>(_self.applicationError!, (value) {
+    return _then(_self.copyWith(applicationError: value));
+  });
+}
 }
 
 /// @nodoc
@@ -3612,6 +3639,625 @@ as ScanRunId,
 
 
 }
+
+/// @nodoc
+mixin _$StartLibraryScanAllResult {
+
+ List<LibraryScanAdmissionExclusion> get exclusions;
+/// Create a copy of StartLibraryScanAllResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanAllResultCopyWith<StartLibraryScanAllResult> get copyWith => _$StartLibraryScanAllResultCopyWithImpl<StartLibraryScanAllResult>(this as StartLibraryScanAllResult, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanAllResult&&const DeepCollectionEquality().equals(other.exclusions, exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(exclusions));
+
+@override
+String toString() {
+  return 'StartLibraryScanAllResult(exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanAllResultCopyWith<$Res>  {
+  factory $StartLibraryScanAllResultCopyWith(StartLibraryScanAllResult value, $Res Function(StartLibraryScanAllResult) _then) = _$StartLibraryScanAllResultCopyWithImpl;
+@useResult
+$Res call({
+ List<LibraryScanAdmissionExclusion> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanAllResultCopyWithImpl<$Res>
+    implements $StartLibraryScanAllResultCopyWith<$Res> {
+  _$StartLibraryScanAllResultCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanAllResult _self;
+  final $Res Function(StartLibraryScanAllResult) _then;
+
+/// Create a copy of StartLibraryScanAllResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? exclusions = null,}) {
+  return _then(_self.copyWith(
+exclusions: null == exclusions ? _self.exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusion>,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [StartLibraryScanAllResult].
+extension StartLibraryScanAllResultPatterns on StartLibraryScanAllResult {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( StartLibraryScanAllResultAdmitted value)?  admitted,TResult Function( StartLibraryScanAllResultNothingEligible value)?  nothingEligible,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultAdmitted() when admitted != null:
+return admitted(_that);case StartLibraryScanAllResultNothingEligible() when nothingEligible != null:
+return nothingEligible(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( StartLibraryScanAllResultAdmitted value)  admitted,required TResult Function( StartLibraryScanAllResultNothingEligible value)  nothingEligible,}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultAdmitted():
+return admitted(_that);case StartLibraryScanAllResultNothingEligible():
+return nothingEligible(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( StartLibraryScanAllResultAdmitted value)?  admitted,TResult? Function( StartLibraryScanAllResultNothingEligible value)?  nothingEligible,}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultAdmitted() when admitted != null:
+return admitted(_that);case StartLibraryScanAllResultNothingEligible() when nothingEligible != null:
+return nothingEligible(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( OperationHandle handle,  List<LibraryRootId> admittedRoots,  List<LibraryScanAdmissionExclusion> exclusions)?  admitted,TResult Function( List<LibraryScanAdmissionExclusion> exclusions)?  nothingEligible,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultAdmitted() when admitted != null:
+return admitted(_that.handle,_that.admittedRoots,_that.exclusions);case StartLibraryScanAllResultNothingEligible() when nothingEligible != null:
+return nothingEligible(_that.exclusions);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( OperationHandle handle,  List<LibraryRootId> admittedRoots,  List<LibraryScanAdmissionExclusion> exclusions)  admitted,required TResult Function( List<LibraryScanAdmissionExclusion> exclusions)  nothingEligible,}) {final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultAdmitted():
+return admitted(_that.handle,_that.admittedRoots,_that.exclusions);case StartLibraryScanAllResultNothingEligible():
+return nothingEligible(_that.exclusions);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( OperationHandle handle,  List<LibraryRootId> admittedRoots,  List<LibraryScanAdmissionExclusion> exclusions)?  admitted,TResult? Function( List<LibraryScanAdmissionExclusion> exclusions)?  nothingEligible,}) {final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultAdmitted() when admitted != null:
+return admitted(_that.handle,_that.admittedRoots,_that.exclusions);case StartLibraryScanAllResultNothingEligible() when nothingEligible != null:
+return nothingEligible(_that.exclusions);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class StartLibraryScanAllResultAdmitted implements StartLibraryScanAllResult {
+  const StartLibraryScanAllResultAdmitted({required this.handle, required final  List<LibraryRootId> admittedRoots, required final  List<LibraryScanAdmissionExclusion> exclusions}): _admittedRoots = admittedRoots,_exclusions = exclusions;
+
+
+ final  OperationHandle handle;
+ final  List<LibraryRootId> _admittedRoots;
+ List<LibraryRootId> get admittedRoots {
+  if (_admittedRoots is EqualUnmodifiableListView) return _admittedRoots;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_admittedRoots);
+}
+
+ final  List<LibraryScanAdmissionExclusion> _exclusions;
+@override List<LibraryScanAdmissionExclusion> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+
+/// Create a copy of StartLibraryScanAllResult
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanAllResultAdmittedCopyWith<StartLibraryScanAllResultAdmitted> get copyWith => _$StartLibraryScanAllResultAdmittedCopyWithImpl<StartLibraryScanAllResultAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanAllResultAdmitted&&(identical(other.handle, handle) || other.handle == handle)&&const DeepCollectionEquality().equals(other._admittedRoots, _admittedRoots)&&const DeepCollectionEquality().equals(other._exclusions, _exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,handle,const DeepCollectionEquality().hash(_admittedRoots),const DeepCollectionEquality().hash(_exclusions));
+
+@override
+String toString() {
+  return 'StartLibraryScanAllResult.admitted(handle: $handle, admittedRoots: $admittedRoots, exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanAllResultAdmittedCopyWith<$Res> implements $StartLibraryScanAllResultCopyWith<$Res> {
+  factory $StartLibraryScanAllResultAdmittedCopyWith(StartLibraryScanAllResultAdmitted value, $Res Function(StartLibraryScanAllResultAdmitted) _then) = _$StartLibraryScanAllResultAdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ OperationHandle handle, List<LibraryRootId> admittedRoots, List<LibraryScanAdmissionExclusion> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanAllResultAdmittedCopyWithImpl<$Res>
+    implements $StartLibraryScanAllResultAdmittedCopyWith<$Res> {
+  _$StartLibraryScanAllResultAdmittedCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanAllResultAdmitted _self;
+  final $Res Function(StartLibraryScanAllResultAdmitted) _then;
+
+/// Create a copy of StartLibraryScanAllResult
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? handle = null,Object? admittedRoots = null,Object? exclusions = null,}) {
+  return _then(StartLibraryScanAllResultAdmitted(
+handle: null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
+as OperationHandle,admittedRoots: null == admittedRoots ? _self._admittedRoots : admittedRoots // ignore: cast_nullable_to_non_nullable
+as List<LibraryRootId>,exclusions: null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusion>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class StartLibraryScanAllResultNothingEligible implements StartLibraryScanAllResult {
+  const StartLibraryScanAllResultNothingEligible({required final  List<LibraryScanAdmissionExclusion> exclusions}): _exclusions = exclusions;
+
+
+ final  List<LibraryScanAdmissionExclusion> _exclusions;
+@override List<LibraryScanAdmissionExclusion> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+
+/// Create a copy of StartLibraryScanAllResult
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanAllResultNothingEligibleCopyWith<StartLibraryScanAllResultNothingEligible> get copyWith => _$StartLibraryScanAllResultNothingEligibleCopyWithImpl<StartLibraryScanAllResultNothingEligible>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanAllResultNothingEligible&&const DeepCollectionEquality().equals(other._exclusions, _exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_exclusions));
+
+@override
+String toString() {
+  return 'StartLibraryScanAllResult.nothingEligible(exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanAllResultNothingEligibleCopyWith<$Res> implements $StartLibraryScanAllResultCopyWith<$Res> {
+  factory $StartLibraryScanAllResultNothingEligibleCopyWith(StartLibraryScanAllResultNothingEligible value, $Res Function(StartLibraryScanAllResultNothingEligible) _then) = _$StartLibraryScanAllResultNothingEligibleCopyWithImpl;
+@override @useResult
+$Res call({
+ List<LibraryScanAdmissionExclusion> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanAllResultNothingEligibleCopyWithImpl<$Res>
+    implements $StartLibraryScanAllResultNothingEligibleCopyWith<$Res> {
+  _$StartLibraryScanAllResultNothingEligibleCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanAllResultNothingEligible _self;
+  final $Res Function(StartLibraryScanAllResultNothingEligible) _then;
+
+/// Create a copy of StartLibraryScanAllResult
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? exclusions = null,}) {
+  return _then(StartLibraryScanAllResultNothingEligible(
+exclusions: null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusion>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$LibraryScanAllRequestResolution {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAllRequestResolution);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LibraryScanAllRequestResolution()';
+}
+
+
+}
+
+/// @nodoc
+class $LibraryScanAllRequestResolutionCopyWith<$Res>  {
+$LibraryScanAllRequestResolutionCopyWith(LibraryScanAllRequestResolution _, $Res Function(LibraryScanAllRequestResolution) __);
+}
+
+
+/// Adds pattern-matching-related methods to [LibraryScanAllRequestResolution].
+extension LibraryScanAllRequestResolutionPatterns on LibraryScanAllRequestResolution {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LibraryScanAllRequestResolutionAdmitted value)?  admitted,TResult Function( LibraryScanAllRequestResolutionNothingAdmitted value)?  nothingAdmitted,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionAdmitted() when admitted != null:
+return admitted(_that);case LibraryScanAllRequestResolutionNothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LibraryScanAllRequestResolutionAdmitted value)  admitted,required TResult Function( LibraryScanAllRequestResolutionNothingAdmitted value)  nothingAdmitted,}){
+final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionAdmitted():
+return admitted(_that);case LibraryScanAllRequestResolutionNothingAdmitted():
+return nothingAdmitted(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LibraryScanAllRequestResolutionAdmitted value)?  admitted,TResult? Function( LibraryScanAllRequestResolutionNothingAdmitted value)?  nothingAdmitted,}){
+final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionAdmitted() when admitted != null:
+return admitted(_that);case LibraryScanAllRequestResolutionNothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( OperationHandle handle,  List<LibraryRootId> admittedRoots,  List<LibraryScanAdmissionExclusion> exclusions)?  admitted,TResult Function()?  nothingAdmitted,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionAdmitted() when admitted != null:
+return admitted(_that.handle,_that.admittedRoots,_that.exclusions);case LibraryScanAllRequestResolutionNothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( OperationHandle handle,  List<LibraryRootId> admittedRoots,  List<LibraryScanAdmissionExclusion> exclusions)  admitted,required TResult Function()  nothingAdmitted,}) {final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionAdmitted():
+return admitted(_that.handle,_that.admittedRoots,_that.exclusions);case LibraryScanAllRequestResolutionNothingAdmitted():
+return nothingAdmitted();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( OperationHandle handle,  List<LibraryRootId> admittedRoots,  List<LibraryScanAdmissionExclusion> exclusions)?  admitted,TResult? Function()?  nothingAdmitted,}) {final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionAdmitted() when admitted != null:
+return admitted(_that.handle,_that.admittedRoots,_that.exclusions);case LibraryScanAllRequestResolutionNothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class LibraryScanAllRequestResolutionAdmitted implements LibraryScanAllRequestResolution {
+  const LibraryScanAllRequestResolutionAdmitted({required this.handle, required final  List<LibraryRootId> admittedRoots, required final  List<LibraryScanAdmissionExclusion> exclusions}): _admittedRoots = admittedRoots,_exclusions = exclusions;
+
+
+ final  OperationHandle handle;
+ final  List<LibraryRootId> _admittedRoots;
+ List<LibraryRootId> get admittedRoots {
+  if (_admittedRoots is EqualUnmodifiableListView) return _admittedRoots;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_admittedRoots);
+}
+
+ final  List<LibraryScanAdmissionExclusion> _exclusions;
+ List<LibraryScanAdmissionExclusion> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+
+/// Create a copy of LibraryScanAllRequestResolution
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryScanAllRequestResolutionAdmittedCopyWith<LibraryScanAllRequestResolutionAdmitted> get copyWith => _$LibraryScanAllRequestResolutionAdmittedCopyWithImpl<LibraryScanAllRequestResolutionAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAllRequestResolutionAdmitted&&(identical(other.handle, handle) || other.handle == handle)&&const DeepCollectionEquality().equals(other._admittedRoots, _admittedRoots)&&const DeepCollectionEquality().equals(other._exclusions, _exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,handle,const DeepCollectionEquality().hash(_admittedRoots),const DeepCollectionEquality().hash(_exclusions));
+
+@override
+String toString() {
+  return 'LibraryScanAllRequestResolution.admitted(handle: $handle, admittedRoots: $admittedRoots, exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryScanAllRequestResolutionAdmittedCopyWith<$Res> implements $LibraryScanAllRequestResolutionCopyWith<$Res> {
+  factory $LibraryScanAllRequestResolutionAdmittedCopyWith(LibraryScanAllRequestResolutionAdmitted value, $Res Function(LibraryScanAllRequestResolutionAdmitted) _then) = _$LibraryScanAllRequestResolutionAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ OperationHandle handle, List<LibraryRootId> admittedRoots, List<LibraryScanAdmissionExclusion> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$LibraryScanAllRequestResolutionAdmittedCopyWithImpl<$Res>
+    implements $LibraryScanAllRequestResolutionAdmittedCopyWith<$Res> {
+  _$LibraryScanAllRequestResolutionAdmittedCopyWithImpl(this._self, this._then);
+
+  final LibraryScanAllRequestResolutionAdmitted _self;
+  final $Res Function(LibraryScanAllRequestResolutionAdmitted) _then;
+
+/// Create a copy of LibraryScanAllRequestResolution
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? handle = null,Object? admittedRoots = null,Object? exclusions = null,}) {
+  return _then(LibraryScanAllRequestResolutionAdmitted(
+handle: null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
+as OperationHandle,admittedRoots: null == admittedRoots ? _self._admittedRoots : admittedRoots // ignore: cast_nullable_to_non_nullable
+as List<LibraryRootId>,exclusions: null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusion>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LibraryScanAllRequestResolutionNothingAdmitted implements LibraryScanAllRequestResolution {
+  const LibraryScanAllRequestResolutionNothingAdmitted();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAllRequestResolutionNothingAdmitted);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LibraryScanAllRequestResolution.nothingAdmitted()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 mixin _$RetryNotAdmittedReason {

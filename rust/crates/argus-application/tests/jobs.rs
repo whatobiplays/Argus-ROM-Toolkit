@@ -14,16 +14,17 @@ use argus_application::{
     JobProgress, JobProgressError, JobProgressReporter, JobRunId, JobRunRepository, JobRunState,
     JobRunStateParseError, LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus,
     LibraryRootLastScanSummary, LibraryRootQueries, LibraryRootRepository,
-    LibraryRootScanConfiguration, LibraryScanExecutionPlan, LibraryScanOperationHandler,
-    LibraryScanTargetRepository, LibrarySourceAccess, NativeIdentityMatch, NewJobRun,
-    NewLibraryScanTarget, NewScanRun, NewSourceEntry, ObservedEntryKind, OperationCompletion,
-    OperationContext, OperationName, PersistenceError, RelativeSourceLocator,
-    RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult, ResolvedRoot,
-    RootLocator, ScanRunId, ScanRunRepository, ScanRunStatus, SourceAccessError,
-    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryId, SourceEntryRecord,
-    SourceEntryRepository, SourceLocatorKey, SourceObservation, StartLibraryScanCommand,
-    StartLibraryScanHandler, StartLibraryScanResult, SubsystemName, TraceId, UnitOfWork,
-    UnitOfWorkFactory,
+    LibraryRootScanConfiguration, LibraryScanAdmissionContext,
+    LibraryScanAdmissionContextRepository, LibraryScanExecutionPlan, LibraryScanInvocationKind,
+    LibraryScanOperationHandler, LibraryScanTargetRepository, LibrarySourceAccess,
+    NativeIdentityMatch, NewJobRun, NewLibraryScanAdmissionContext, NewLibraryScanTarget,
+    NewScanRun, NewSourceEntry, ObservedEntryKind, OperationCompletion, OperationContext,
+    OperationName, PersistenceError, RelativeSourceLocator, RemoveLibraryRootCommand,
+    RemoveLibraryRootHandler, RemoveLibraryRootResult, ResolvedRoot, RootLocator, ScanRunId,
+    ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntriesChangeScope,
+    SourceEntriesChanged, SourceEntryId, SourceEntryRecord, SourceEntryRepository,
+    SourceLocatorKey, SourceObservation, StartLibraryScanCommand, StartLibraryScanHandler,
+    StartLibraryScanResult, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
 };
 
 const ROOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -107,6 +108,7 @@ struct FakeStore {
     job_runs: Vec<JobRunId>,
     scan_runs: Vec<ScanRunId>,
     targets: usize,
+    admission_contexts: Vec<(JobRunId, LibraryScanInvocationKind)>,
     entries: usize,
     deleted_roots: Vec<LibraryRootId>,
     deleted_entries: Vec<LibraryRootId>,
@@ -438,6 +440,29 @@ impl LibraryRootRepository for FakeLibraryRootRepository<'_> {
     }
 }
 
+struct FakeLibraryScanAdmissionContextRepository<'scope> {
+    store: Arc<Mutex<FakeStore>>,
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibraryScanAdmissionContextRepository for FakeLibraryScanAdmissionContextRepository<'_> {
+    fn insert(&mut self, new: NewLibraryScanAdmissionContext) -> Result<(), PersistenceError> {
+        self.store
+            .lock()
+            .unwrap()
+            .admission_contexts
+            .push((new.job_run_id(), new.invocation_kind()));
+        Ok(())
+    }
+
+    fn get_by_job(
+        &mut self,
+        _job_run_id: JobRunId,
+    ) -> Result<Option<LibraryScanAdmissionContext>, PersistenceError> {
+        Ok(None)
+    }
+}
+
 struct FakeUnitOfWork<'scope> {
     store: Arc<Mutex<FakeStore>>,
     marker: PhantomData<&'scope mut ()>,
@@ -473,7 +498,7 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
     where
         Self: 'scope;
     type LibraryScanAdmissionContextRepository<'scope>
-        = common::NoopLibraryScanAdmissionContextRepository<'scope>
+        = FakeLibraryScanAdmissionContextRepository<'scope>
     where
         Self: 'scope;
 
@@ -527,7 +552,8 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
     fn library_scan_admission_context(
         &mut self,
     ) -> Self::LibraryScanAdmissionContextRepository<'_> {
-        common::NoopLibraryScanAdmissionContextRepository {
+        FakeLibraryScanAdmissionContextRepository {
+            store: Arc::clone(&self.store),
             marker: PhantomData,
         }
     }
@@ -618,6 +644,16 @@ fn scan_admission_creates_job_scan_and_targets_atomically() {
     assert_eq!(store.lock().unwrap().job_runs.len(), 1);
     assert_eq!(store.lock().unwrap().scan_runs.len(), 1);
     assert_eq!(store.lock().unwrap().targets, 2);
+    assert_eq!(
+        store.lock().unwrap().admission_contexts,
+        vec![(
+            result
+                .admitted_scan()
+                .expect("admitted payload")
+                .job_run_id(),
+            LibraryScanInvocationKind::InitialSingleRoot
+        )]
+    );
 }
 
 #[test]

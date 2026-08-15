@@ -206,6 +206,12 @@ final class _HierarchyFakeGateway
       throw const TransportFailure('hierarchy fake is not focused on roots');
 
   @override
+  Future<StartLibraryScanAllResult> startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  ) async =>
+      throw const TransportFailure('hierarchy fake is not focused on roots');
+
+  @override
   Future<void> closeEventConnection() async {}
 
   @override

@@ -435,6 +435,81 @@ void main() {
     );
   });
 
+  test('start library scan all DTO maps admitted roots and exclusions', () {
+    const errorDto = dto.ApplicationErrorDto(
+      code: 'ARGUS.V1.CONFIGURATION.INVALID',
+      category: 'configuration',
+      severity: 'Error',
+      recoverability: 'UserAction',
+      retryPolicy: 'Never',
+      messageKey: 'errors.configuration.invalid',
+      traceId: '09090909090909090909090909090909',
+      safeContext: [],
+    );
+    final admitted = startLibraryScanAllResultFromDto(
+      const dto.StartLibraryScanAllResultDto_Admitted(
+        operationHandle: dto.OperationHandleDto(
+          jobRunId: '01010101010101010101010101010101',
+          operationType: 'library_scan',
+        ),
+        admittedRoots: ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+        exclusions: [
+          dto.LibraryScanAdmissionExclusionDto(
+            libraryRootId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            reason: 'invalid_configuration',
+            applicationError: errorDto,
+          ),
+        ],
+      ),
+    );
+    expect(admitted, isA<StartLibraryScanAllResultAdmitted>());
+    final value = admitted as StartLibraryScanAllResultAdmitted;
+    expect(value.handle.jobRunId.value, '01010101010101010101010101010101');
+    expect(
+      value.admittedRoots.single.value,
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    final exclusion = value.exclusions.single;
+    expect(exclusion.reason, 'invalid_configuration');
+    expect(
+      exclusion.applicationError?.code.value,
+      'ARGUS.V1.CONFIGURATION.INVALID',
+    );
+
+    final nothing = startLibraryScanAllResultFromDto(
+      const dto.StartLibraryScanAllResultDto_NothingEligible(exclusions: []),
+    );
+    expect(nothing, isA<StartLibraryScanAllResultNothingEligible>());
+  });
+
+  test('scan all request resolution DTO maps admission and no-admission', () {
+    final admitted = libraryScanAllRequestResolutionFromDto(
+      const dto.LibraryScanAllRequestResolutionDto_Admitted(
+        operationHandle: dto.OperationHandleDto(
+          jobRunId: '02020202020202020202020202020202',
+          operationType: 'library_scan',
+        ),
+        admittedRoots: ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+        exclusions: [],
+      ),
+    );
+    expect(admitted, isA<LibraryScanAllRequestResolutionAdmitted>());
+    expect(
+      libraryScanAllRequestResolutionFromDto(
+        const dto.LibraryScanAllRequestResolutionDto_NothingAdmitted(),
+      ),
+      isA<LibraryScanAllRequestResolutionNothingAdmitted>(),
+    );
+  });
+
+  test('scan all request identity validates the canonical alphabet', () {
+    expect(ScanAllRequestIdentity.tryParse('request-1.ab_c'), isNotNull);
+    expect(ScanAllRequestIdentity.tryParse(''), isNull);
+    expect(ScanAllRequestIdentity.tryParse('has spaces'), isNull);
+    expect(ScanAllRequestIdentity.tryParse('x' * 257), isNull);
+    expect(ScanAllRequestIdentity.tryParse('x' * 256), isNotNull);
+  });
+
   test('job detail and progress map with lifecycle and scan facts', () {
     final detail = jobDetailFromDto(
       dto.JobDetailDto(

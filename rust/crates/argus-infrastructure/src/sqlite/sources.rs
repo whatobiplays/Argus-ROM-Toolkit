@@ -27,6 +27,7 @@ type RootProjectionRaw = (
     Option<i64>,
     Option<String>,
     Option<String>,
+    i64,
 );
 
 /// Independent authoritative library-root query adapter.
@@ -182,7 +183,13 @@ fn read_root_page(
                         AND status = 'running' LIMIT 1),
                     (SELECT job_run_id FROM scan_run
                       WHERE historical_library_root_id = library_root.library_root_id
-                        AND status = 'running' LIMIT 1)
+                        AND status = 'running' LIMIT 1),
+                    (SELECT COUNT(*) FROM scan_run s2
+                      WHERE s2.job_run_id = (
+                        SELECT job_run_id FROM scan_run
+                        WHERE historical_library_root_id = library_root.library_root_id
+                          AND status = 'running' LIMIT 1)
+                        AND s2.status = 'running')
              FROM library_root
              ORDER BY created_at ASC, library_root_id ASC
              LIMIT ?1 OFFSET ?2",
@@ -204,6 +211,7 @@ fn read_root_page(
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, Option<String>>(9)?,
                     row.get::<_, Option<String>>(10)?,
+                    row.get::<_, i64>(11)?,
                 ))
             },
         )
@@ -229,7 +237,13 @@ fn read_root(
                         AND status = 'running' LIMIT 1),
                     (SELECT job_run_id FROM scan_run
                       WHERE historical_library_root_id = library_root.library_root_id
-                        AND status = 'running' LIMIT 1)
+                        AND status = 'running' LIMIT 1),
+                    (SELECT COUNT(*) FROM scan_run s2
+                      WHERE s2.job_run_id = (
+                        SELECT job_run_id FROM scan_run
+                        WHERE historical_library_root_id = library_root.library_root_id
+                          AND status = 'running' LIMIT 1)
+                        AND s2.status = 'running')
              FROM library_root
              WHERE library_root_id = ?1",
             [root_id],
@@ -246,6 +260,7 @@ fn read_root(
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, Option<String>>(9)?,
                     row.get::<_, Option<String>>(10)?,
+                    row.get::<_, i64>(11)?,
                 ))
             },
         )
@@ -267,6 +282,7 @@ fn root_projection_from_raw(
         last_scan_completed_at,
         active_scan_run_id,
         active_job_run_id,
+        owning_job_root_count,
     ): RootProjectionRaw,
 ) -> Result<LibraryRootProjection, SqliteOperationError> {
     let root_id = LibraryRootId::try_from(id.as_str()).map_err(|_| corrupt_persistence())?;
@@ -302,8 +318,11 @@ fn root_projection_from_raw(
         ));
     }
     if let (Some(scan_run_id), Some(job_run_id)) = (active_scan_run_id, active_job_run_id) {
-        projection =
-            projection.with_active_scan(LibraryRootActiveScanSummary::new(scan_run_id, job_run_id));
+        projection = projection.with_active_scan(LibraryRootActiveScanSummary::new(
+            scan_run_id,
+            job_run_id,
+            owning_job_root_count as u32,
+        ));
     }
     Ok(projection)
 }

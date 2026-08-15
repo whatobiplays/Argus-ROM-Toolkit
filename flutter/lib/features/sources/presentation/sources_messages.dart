@@ -10,6 +10,7 @@ abstract final class SourcesMessages {
       'Library Folders are folders Argus indexes as configured sources. '
       'Adding one lets Argus read it later — it does not modify your files.';
   static const String addLibraryFolder = 'Add Library Folder';
+  static const String scanAll = 'Scan All';
   static const String addAndScan = 'Add & Scan';
   static const String addWithoutScanning = 'Add Without Scanning';
   static const String addAndScanExplainsNewFolder =
@@ -31,6 +32,26 @@ abstract final class SourcesMessages {
   static const String scan = 'Scan';
   static const String scanAgain = 'Scan Again';
   static const String viewJob = 'View Job';
+  static String scanAllAdmitted(int admittedCount) =>
+      'Scan started for $admittedCount folder${admittedCount == 1 ? '' : 's'}.';
+  static String scanAllAdmittedWithExclusions(int admittedCount) =>
+      'Scan started for $admittedCount folder${admittedCount == 1 ? '' : 's'}. '
+      'Some folders were skipped — open the job for details.';
+  static const String scanAllNothingEligible =
+      'No folders could be scanned right now.';
+  static String scanAllNothingEligibleReasons(List<String> reasons) =>
+      'No folders could be scanned right now: ${reasons.join(', ')}.';
+  static String scanAllExclusionLabel(
+    LibraryScanAdmissionExclusion exclusion,
+  ) => switch (exclusion.reason) {
+    'already_scanning' => 'one folder is already being scanned',
+    'invalid_configuration' => 'one folder has an invalid configuration',
+    'no_longer_configured' => 'one folder is no longer configured',
+    _ => 'one folder is not eligible',
+  };
+  static const String scanAllUncertain =
+      'Scan not confirmed. Refreshing authoritative state — please wait '
+      'before scanning again.';
   static const String rootHasActiveScan =
       'This folder is currently being scanned, so it cannot be removed yet. '
       'Open the job to follow or cancel the scan.';
@@ -45,10 +66,25 @@ abstract final class SourcesMessages {
       };
   static const String availabilityLabel = 'Availability';
   static const String removeLibraryFolder = 'Remove Library Folder';
+  static const String cancelScanAndRemove = 'Cancel Scan & Remove';
   static const String removeConfirmationTitle = 'Remove Library Folder?';
   static const String removeConfirmationBody =
       'Removes this folder and its indexed data from Argus. '
       'Files on disk are not changed.';
+  static const String cancelAndRemoveConfirmationTitle =
+      'Cancel Scan & Remove Library Folder?';
+  static const String cancelAndRemoveConfirmationBody =
+      'Stops the scan for this folder, then removes the folder and its '
+      'indexed data from Argus. Files on disk are not changed.';
+  static const String cancelAndRemovePending =
+      'Stopping the scan, then removing this folder…';
+  static const String cancelAndRemoveUncertain =
+      'Cancellation could not be confirmed. Removal will continue only if '
+      'the authoritative state shows the scan has stopped.';
+  static String cancelAndRemoveStopsOtherRoots(int otherRootCount) =>
+      'Cancelling this job also stops scanning for the other '
+      '$otherRootCount folder${otherRootCount == 1 ? '' : 's'} in the same '
+      'job.';
   static const String remove = 'Remove';
   static const String cancel = 'Cancel';
   static const String openExistingFolder = 'Open existing folder';

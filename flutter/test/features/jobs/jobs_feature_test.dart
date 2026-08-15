@@ -329,6 +329,208 @@ void main() {
     expect(find.byKey(const ValueKey<String>('jobs-retry-job')), findsNothing);
     expect(find.byKey(const ValueKey<String>('jobs-cancel-job')), findsNothing);
   });
+
+  testWidgets('job detail renders independent multi-root outcomes', (
+    tester,
+  ) async {
+    final jobId = JobRunId('a' * 32);
+    final rootA = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    final rootB = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    final api = FakeJobsApi(
+      details: {
+        jobId: jobDetail(
+          id: 'a' * 32,
+          state: JobLifecycleState.completedWithIssues,
+          rootsRequested: 2,
+          rootsAdmitted: 2,
+          rootsTerminal: 2,
+          requestedRoots: const [
+            LibraryScanRootSummary(
+              libraryRootId: LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+              displayName: 'Games',
+              safeLocationDisplay: '/library/Games',
+            ),
+            LibraryScanRootSummary(
+              libraryRootId: LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+              displayName: 'ROMs',
+              safeLocationDisplay: '/library/ROMs',
+            ),
+          ],
+          scanRuns: [
+            ScanRunSummary(
+              scanRunId: const ScanRunId('11111111111111111111111111111111'),
+              jobRunId: jobId,
+              libraryRootId: rootA,
+              displayName: 'Games',
+              safeLocationDisplay: '/library/Games',
+              status: JobScanStatus.complete,
+              startedAtMs: 1,
+            ),
+            ScanRunSummary(
+              scanRunId: const ScanRunId('22222222222222222222222222222222'),
+              jobRunId: jobId,
+              libraryRootId: rootB,
+              displayName: 'ROMs',
+              safeLocationDisplay: '/library/ROMs',
+              status: JobScanStatus.failed,
+              startedAtMs: 1,
+            ),
+          ],
+        ),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Completed with issues'), findsOneWidget);
+    expect(find.text('Roots requested: 2'), findsOneWidget);
+    expect(find.text('Roots admitted: 2'), findsOneWidget);
+    expect(find.text('Roots terminal: 2'), findsOneWidget);
+    expect(find.text('Games'), findsWidgets);
+    expect(find.text('ROMs'), findsWidgets);
+    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Failed'), findsOneWidget);
+  });
+
+  testWidgets('job detail labels typed exclusions including bounded errors', (
+    tester,
+  ) async {
+    final jobId = JobRunId('a' * 32);
+    final api = FakeJobsApi(
+      details: {
+        jobId: jobDetail(
+          id: 'a' * 32,
+          state: JobLifecycleState.completedWithIssues,
+          rootsRequested: 2,
+          rootsAdmitted: 1,
+          rootsTerminal: 1,
+          exclusions: const [
+            LibraryScanAdmissionExclusion(
+              libraryRootId: LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+              reason: 'already_scanning',
+            ),
+            LibraryScanAdmissionExclusion(
+              libraryRootId: LibraryRootId('cccccccccccccccccccccccccccccccc'),
+              reason: 'invalid_configuration',
+              applicationError: ClientApplicationError(
+                code: ErrorCode('ARGUS.V1.CONFIGURATION.INVALID'),
+                category: ErrorCategory.configuration,
+                severity: ApplicationSeverity.error,
+                recoverability: Recoverability.userAction,
+                retryPolicy: RetryPolicy.never,
+                messageKey: MessageKey('errors.configuration.invalid'),
+                traceId: TraceId('33333333333333333333333333333333'),
+                safeContext: [],
+              ),
+            ),
+          ],
+        ),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Already being scanned'), findsOneWidget);
+    expect(find.text('Invalid configuration'), findsOneWidget);
+    expect(find.text('ARGUS.V1.CONFIGURATION.INVALID'), findsOneWidget);
+  });
+
+  testWidgets('removed-root history renders durable display snapshots', (
+    tester,
+  ) async {
+    final jobId = JobRunId('a' * 32);
+    final api = FakeJobsApi(
+      details: {
+        jobId: jobDetail(
+          id: 'a' * 32,
+          state: JobLifecycleState.completed,
+          requestedRoots: const [
+            LibraryScanRootSummary(
+              libraryRootId: LibraryRootId('dddddddddddddddddddddddddddddddd'),
+              displayName: 'Removed Games',
+              safeLocationDisplay: '/library/RemovedGames',
+            ),
+          ],
+        ),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Removed Games'), findsOneWidget);
+    expect(find.text('/library/RemovedGames'), findsOneWidget);
+  });
+
+  testWidgets('Scan All retry relationship navigates to the successor', (
+    tester,
+  ) async {
+    final jobId = JobRunId('a' * 32);
+    final successorId = JobRunId('b' * 32);
+    JobRunId? openedJob;
+    final api = FakeJobsApi(
+      details: {
+        jobId: jobDetail(
+          id: 'a' * 32,
+          state: JobLifecycleState.failed,
+          retrySourceJobRunId: JobRunId('c' * 32),
+          retrySuccessorJobRunId: successorId,
+        ),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (jobRunId) => openedJob = jobRunId,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Retried as'));
+    expect(openedJob, successorId);
+  });
 }
 
 void _noop(JobRunId _) {}

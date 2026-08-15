@@ -33,4 +33,9 @@ mixin JobsGatewayStub implements JobsGateway {
   Future<LibraryRootScanAdmission?> getRootScanAdmission(
     LibraryRootId libraryRootId,
   ) async => throw const TransportFailure('Jobs stub is not focused');
+
+  @override
+  Future<LibraryScanAllRequestResolution> resolveScanAllRequest(
+    ScanAllRequestIdentity requestIdentity,
+  ) async => throw const TransportFailure('Jobs stub is not focused');
 }

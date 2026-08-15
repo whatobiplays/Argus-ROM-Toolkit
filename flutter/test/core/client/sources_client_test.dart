@@ -177,6 +177,11 @@ final class _SourcesFakeGateway
   ) async => throw const TransportFailure('Sources stub is not focused');
 
   @override
+  Future<StartLibraryScanAllResult> startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  ) async => throw const TransportFailure('Sources stub is not focused');
+
+  @override
   Future<SourceEntryChildrenPage> listSourceEntryChildren({
     required LibraryRootId libraryRootId,
     SourceEntryId? parentSourceEntryId,

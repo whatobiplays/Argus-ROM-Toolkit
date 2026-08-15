@@ -10,8 +10,8 @@ part 'lib.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_result_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -103,6 +103,21 @@ Future<RemoveLibraryRootResultDto> removeLibraryRoot({
 Future<StartLibraryScanResultDto> startLibraryScan({
   required String libraryRootId,
 }) => RustLib.instance.api.crateStartLibraryScan(libraryRootId: libraryRootId);
+
+/// Admits one durable multi-root Scan All over all configured roots.
+Future<StartLibraryScanAllResultDto> startLibraryScanAll({
+  required String requestIdentity,
+}) => RustLib.instance.api.crateStartLibraryScanAll(
+  requestIdentity: requestIdentity,
+);
+
+/// Resolves one Scan All request identity to its accepted admission or
+/// authoritative no-admission proof after transport ambiguity.
+Future<LibraryScanAllRequestResolutionDto> resolveScanAllRequest({
+  required String requestIdentity,
+}) => RustLib.instance.api.crateResolveScanAllRequest(
+  requestIdentity: requestIdentity,
+);
 
 /// Lists one bounded authoritative direct-child page.
 Future<SourceEntryChildrenPageDto> listSourceEntryChildren({
@@ -553,14 +568,17 @@ class JobSummaryPageDto {
 class LibraryRootActiveScanDto {
   final String scanRunId;
   final String jobRunId;
+  final int owningJobRootCount;
 
   const LibraryRootActiveScanDto({
     required this.scanRunId,
     required this.jobRunId,
+    required this.owningJobRootCount,
   });
 
   @override
-  int get hashCode => scanRunId.hashCode ^ jobRunId.hashCode;
+  int get hashCode =>
+      scanRunId.hashCode ^ jobRunId.hashCode ^ owningJobRootCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -568,7 +586,8 @@ class LibraryRootActiveScanDto {
       other is LibraryRootActiveScanDto &&
           runtimeType == other.runtimeType &&
           scanRunId == other.scanRunId &&
-          jobRunId == other.jobRunId;
+          jobRunId == other.jobRunId &&
+          owningJobRootCount == other.owningJobRootCount;
 }
 
 /// Application-owned root availability vocabulary.
@@ -720,12 +739,14 @@ class LibraryScanAdmissionExclusionDto {
   final String reason;
   final String? activeJobRunId;
   final String? activeScanRunId;
+  final ApplicationErrorDto? applicationError;
 
   const LibraryScanAdmissionExclusionDto({
     required this.libraryRootId,
     required this.reason,
     this.activeJobRunId,
     this.activeScanRunId,
+    this.applicationError,
   });
 
   @override
@@ -733,7 +754,8 @@ class LibraryScanAdmissionExclusionDto {
       libraryRootId.hashCode ^
       reason.hashCode ^
       activeJobRunId.hashCode ^
-      activeScanRunId.hashCode;
+      activeScanRunId.hashCode ^
+      applicationError.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -743,7 +765,25 @@ class LibraryScanAdmissionExclusionDto {
           libraryRootId == other.libraryRootId &&
           reason == other.reason &&
           activeJobRunId == other.activeJobRunId &&
-          activeScanRunId == other.activeScanRunId;
+          activeScanRunId == other.activeScanRunId &&
+          applicationError == other.applicationError;
+}
+
+@freezed
+sealed class LibraryScanAllRequestResolutionDto
+    with _$LibraryScanAllRequestResolutionDto {
+  const LibraryScanAllRequestResolutionDto._();
+
+  /// The request identity was durably accepted for one Scan All job.
+  const factory LibraryScanAllRequestResolutionDto.admitted({
+    required OperationHandleDto operationHandle,
+    required List<String> admittedRoots,
+    required List<LibraryScanAdmissionExclusionDto> exclusions,
+  }) = LibraryScanAllRequestResolutionDto_Admitted;
+
+  /// The request identity has no durable admission.
+  const factory LibraryScanAllRequestResolutionDto.nothingAdmitted() =
+      LibraryScanAllRequestResolutionDto_NothingAdmitted;
 }
 
 @freezed
@@ -1419,6 +1459,23 @@ class SourceEntryDto {
 
 /// Application-owned source-entry kind vocabulary.
 enum SourceEntryKindDto { directory, file, linkLike, unknown }
+
+@freezed
+sealed class StartLibraryScanAllResultDto with _$StartLibraryScanAllResultDto {
+  const StartLibraryScanAllResultDto._();
+
+  /// One durable job was admitted for all eligible roots.
+  const factory StartLibraryScanAllResultDto.admitted({
+    required OperationHandleDto operationHandle,
+    required List<String> admittedRoots,
+    required List<LibraryScanAdmissionExclusionDto> exclusions,
+  }) = StartLibraryScanAllResultDto_Admitted;
+
+  /// No configured root was eligible, so no job was created.
+  const factory StartLibraryScanAllResultDto.nothingEligible({
+    required List<LibraryScanAdmissionExclusionDto> exclusions,
+  }) = StartLibraryScanAllResultDto_NothingEligible;
+}
 
 @freezed
 sealed class StartLibraryScanResultDto with _$StartLibraryScanResultDto {

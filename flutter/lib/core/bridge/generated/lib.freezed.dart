@@ -829,6 +829,280 @@ as RootRelationshipDto,
 }
 
 /// @nodoc
+mixin _$LibraryScanAllRequestResolutionDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAllRequestResolutionDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LibraryScanAllRequestResolutionDto()';
+}
+
+
+}
+
+/// @nodoc
+class $LibraryScanAllRequestResolutionDtoCopyWith<$Res>  {
+$LibraryScanAllRequestResolutionDtoCopyWith(LibraryScanAllRequestResolutionDto _, $Res Function(LibraryScanAllRequestResolutionDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [LibraryScanAllRequestResolutionDto].
+extension LibraryScanAllRequestResolutionDtoPatterns on LibraryScanAllRequestResolutionDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LibraryScanAllRequestResolutionDto_Admitted value)?  admitted,TResult Function( LibraryScanAllRequestResolutionDto_NothingAdmitted value)?  nothingAdmitted,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionDto_Admitted() when admitted != null:
+return admitted(_that);case LibraryScanAllRequestResolutionDto_NothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LibraryScanAllRequestResolutionDto_Admitted value)  admitted,required TResult Function( LibraryScanAllRequestResolutionDto_NothingAdmitted value)  nothingAdmitted,}){
+final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionDto_Admitted():
+return admitted(_that);case LibraryScanAllRequestResolutionDto_NothingAdmitted():
+return nothingAdmitted(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LibraryScanAllRequestResolutionDto_Admitted value)?  admitted,TResult? Function( LibraryScanAllRequestResolutionDto_NothingAdmitted value)?  nothingAdmitted,}){
+final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionDto_Admitted() when admitted != null:
+return admitted(_that);case LibraryScanAllRequestResolutionDto_NothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( OperationHandleDto operationHandle,  List<String> admittedRoots,  List<LibraryScanAdmissionExclusionDto> exclusions)?  admitted,TResult Function()?  nothingAdmitted,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionDto_Admitted() when admitted != null:
+return admitted(_that.operationHandle,_that.admittedRoots,_that.exclusions);case LibraryScanAllRequestResolutionDto_NothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( OperationHandleDto operationHandle,  List<String> admittedRoots,  List<LibraryScanAdmissionExclusionDto> exclusions)  admitted,required TResult Function()  nothingAdmitted,}) {final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionDto_Admitted():
+return admitted(_that.operationHandle,_that.admittedRoots,_that.exclusions);case LibraryScanAllRequestResolutionDto_NothingAdmitted():
+return nothingAdmitted();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( OperationHandleDto operationHandle,  List<String> admittedRoots,  List<LibraryScanAdmissionExclusionDto> exclusions)?  admitted,TResult? Function()?  nothingAdmitted,}) {final _that = this;
+switch (_that) {
+case LibraryScanAllRequestResolutionDto_Admitted() when admitted != null:
+return admitted(_that.operationHandle,_that.admittedRoots,_that.exclusions);case LibraryScanAllRequestResolutionDto_NothingAdmitted() when nothingAdmitted != null:
+return nothingAdmitted();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class LibraryScanAllRequestResolutionDto_Admitted extends LibraryScanAllRequestResolutionDto {
+  const LibraryScanAllRequestResolutionDto_Admitted({required this.operationHandle, required final  List<String> admittedRoots, required final  List<LibraryScanAdmissionExclusionDto> exclusions}): _admittedRoots = admittedRoots,_exclusions = exclusions,super._();
+
+
+ final  OperationHandleDto operationHandle;
+ final  List<String> _admittedRoots;
+ List<String> get admittedRoots {
+  if (_admittedRoots is EqualUnmodifiableListView) return _admittedRoots;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_admittedRoots);
+}
+
+ final  List<LibraryScanAdmissionExclusionDto> _exclusions;
+ List<LibraryScanAdmissionExclusionDto> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+
+/// Create a copy of LibraryScanAllRequestResolutionDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryScanAllRequestResolutionDto_AdmittedCopyWith<LibraryScanAllRequestResolutionDto_Admitted> get copyWith => _$LibraryScanAllRequestResolutionDto_AdmittedCopyWithImpl<LibraryScanAllRequestResolutionDto_Admitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAllRequestResolutionDto_Admitted&&(identical(other.operationHandle, operationHandle) || other.operationHandle == operationHandle)&&const DeepCollectionEquality().equals(other._admittedRoots, _admittedRoots)&&const DeepCollectionEquality().equals(other._exclusions, _exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,operationHandle,const DeepCollectionEquality().hash(_admittedRoots),const DeepCollectionEquality().hash(_exclusions));
+
+@override
+String toString() {
+  return 'LibraryScanAllRequestResolutionDto.admitted(operationHandle: $operationHandle, admittedRoots: $admittedRoots, exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryScanAllRequestResolutionDto_AdmittedCopyWith<$Res> implements $LibraryScanAllRequestResolutionDtoCopyWith<$Res> {
+  factory $LibraryScanAllRequestResolutionDto_AdmittedCopyWith(LibraryScanAllRequestResolutionDto_Admitted value, $Res Function(LibraryScanAllRequestResolutionDto_Admitted) _then) = _$LibraryScanAllRequestResolutionDto_AdmittedCopyWithImpl;
+@useResult
+$Res call({
+ OperationHandleDto operationHandle, List<String> admittedRoots, List<LibraryScanAdmissionExclusionDto> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$LibraryScanAllRequestResolutionDto_AdmittedCopyWithImpl<$Res>
+    implements $LibraryScanAllRequestResolutionDto_AdmittedCopyWith<$Res> {
+  _$LibraryScanAllRequestResolutionDto_AdmittedCopyWithImpl(this._self, this._then);
+
+  final LibraryScanAllRequestResolutionDto_Admitted _self;
+  final $Res Function(LibraryScanAllRequestResolutionDto_Admitted) _then;
+
+/// Create a copy of LibraryScanAllRequestResolutionDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? operationHandle = null,Object? admittedRoots = null,Object? exclusions = null,}) {
+  return _then(LibraryScanAllRequestResolutionDto_Admitted(
+operationHandle: null == operationHandle ? _self.operationHandle : operationHandle // ignore: cast_nullable_to_non_nullable
+as OperationHandleDto,admittedRoots: null == admittedRoots ? _self._admittedRoots : admittedRoots // ignore: cast_nullable_to_non_nullable
+as List<String>,exclusions: null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusionDto>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LibraryScanAllRequestResolutionDto_NothingAdmitted extends LibraryScanAllRequestResolutionDto {
+  const LibraryScanAllRequestResolutionDto_NothingAdmitted(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanAllRequestResolutionDto_NothingAdmitted);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LibraryScanAllRequestResolutionDto.nothingAdmitted()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$LibraryScanChildAdmissionIssueDto {
 
 
@@ -3544,6 +3818,351 @@ String toString() {
 
 
 
+
+/// @nodoc
+mixin _$StartLibraryScanAllResultDto {
+
+ List<LibraryScanAdmissionExclusionDto> get exclusions;
+/// Create a copy of StartLibraryScanAllResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanAllResultDtoCopyWith<StartLibraryScanAllResultDto> get copyWith => _$StartLibraryScanAllResultDtoCopyWithImpl<StartLibraryScanAllResultDto>(this as StartLibraryScanAllResultDto, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanAllResultDto&&const DeepCollectionEquality().equals(other.exclusions, exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(exclusions));
+
+@override
+String toString() {
+  return 'StartLibraryScanAllResultDto(exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanAllResultDtoCopyWith<$Res>  {
+  factory $StartLibraryScanAllResultDtoCopyWith(StartLibraryScanAllResultDto value, $Res Function(StartLibraryScanAllResultDto) _then) = _$StartLibraryScanAllResultDtoCopyWithImpl;
+@useResult
+$Res call({
+ List<LibraryScanAdmissionExclusionDto> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanAllResultDtoCopyWithImpl<$Res>
+    implements $StartLibraryScanAllResultDtoCopyWith<$Res> {
+  _$StartLibraryScanAllResultDtoCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanAllResultDto _self;
+  final $Res Function(StartLibraryScanAllResultDto) _then;
+
+/// Create a copy of StartLibraryScanAllResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? exclusions = null,}) {
+  return _then(_self.copyWith(
+exclusions: null == exclusions ? _self.exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusionDto>,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [StartLibraryScanAllResultDto].
+extension StartLibraryScanAllResultDtoPatterns on StartLibraryScanAllResultDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( StartLibraryScanAllResultDto_Admitted value)?  admitted,TResult Function( StartLibraryScanAllResultDto_NothingEligible value)?  nothingEligible,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultDto_Admitted() when admitted != null:
+return admitted(_that);case StartLibraryScanAllResultDto_NothingEligible() when nothingEligible != null:
+return nothingEligible(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( StartLibraryScanAllResultDto_Admitted value)  admitted,required TResult Function( StartLibraryScanAllResultDto_NothingEligible value)  nothingEligible,}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultDto_Admitted():
+return admitted(_that);case StartLibraryScanAllResultDto_NothingEligible():
+return nothingEligible(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( StartLibraryScanAllResultDto_Admitted value)?  admitted,TResult? Function( StartLibraryScanAllResultDto_NothingEligible value)?  nothingEligible,}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultDto_Admitted() when admitted != null:
+return admitted(_that);case StartLibraryScanAllResultDto_NothingEligible() when nothingEligible != null:
+return nothingEligible(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( OperationHandleDto operationHandle,  List<String> admittedRoots,  List<LibraryScanAdmissionExclusionDto> exclusions)?  admitted,TResult Function( List<LibraryScanAdmissionExclusionDto> exclusions)?  nothingEligible,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultDto_Admitted() when admitted != null:
+return admitted(_that.operationHandle,_that.admittedRoots,_that.exclusions);case StartLibraryScanAllResultDto_NothingEligible() when nothingEligible != null:
+return nothingEligible(_that.exclusions);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( OperationHandleDto operationHandle,  List<String> admittedRoots,  List<LibraryScanAdmissionExclusionDto> exclusions)  admitted,required TResult Function( List<LibraryScanAdmissionExclusionDto> exclusions)  nothingEligible,}) {final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultDto_Admitted():
+return admitted(_that.operationHandle,_that.admittedRoots,_that.exclusions);case StartLibraryScanAllResultDto_NothingEligible():
+return nothingEligible(_that.exclusions);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( OperationHandleDto operationHandle,  List<String> admittedRoots,  List<LibraryScanAdmissionExclusionDto> exclusions)?  admitted,TResult? Function( List<LibraryScanAdmissionExclusionDto> exclusions)?  nothingEligible,}) {final _that = this;
+switch (_that) {
+case StartLibraryScanAllResultDto_Admitted() when admitted != null:
+return admitted(_that.operationHandle,_that.admittedRoots,_that.exclusions);case StartLibraryScanAllResultDto_NothingEligible() when nothingEligible != null:
+return nothingEligible(_that.exclusions);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class StartLibraryScanAllResultDto_Admitted extends StartLibraryScanAllResultDto {
+  const StartLibraryScanAllResultDto_Admitted({required this.operationHandle, required final  List<String> admittedRoots, required final  List<LibraryScanAdmissionExclusionDto> exclusions}): _admittedRoots = admittedRoots,_exclusions = exclusions,super._();
+
+
+ final  OperationHandleDto operationHandle;
+ final  List<String> _admittedRoots;
+ List<String> get admittedRoots {
+  if (_admittedRoots is EqualUnmodifiableListView) return _admittedRoots;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_admittedRoots);
+}
+
+ final  List<LibraryScanAdmissionExclusionDto> _exclusions;
+@override List<LibraryScanAdmissionExclusionDto> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+
+/// Create a copy of StartLibraryScanAllResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanAllResultDto_AdmittedCopyWith<StartLibraryScanAllResultDto_Admitted> get copyWith => _$StartLibraryScanAllResultDto_AdmittedCopyWithImpl<StartLibraryScanAllResultDto_Admitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanAllResultDto_Admitted&&(identical(other.operationHandle, operationHandle) || other.operationHandle == operationHandle)&&const DeepCollectionEquality().equals(other._admittedRoots, _admittedRoots)&&const DeepCollectionEquality().equals(other._exclusions, _exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,operationHandle,const DeepCollectionEquality().hash(_admittedRoots),const DeepCollectionEquality().hash(_exclusions));
+
+@override
+String toString() {
+  return 'StartLibraryScanAllResultDto.admitted(operationHandle: $operationHandle, admittedRoots: $admittedRoots, exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanAllResultDto_AdmittedCopyWith<$Res> implements $StartLibraryScanAllResultDtoCopyWith<$Res> {
+  factory $StartLibraryScanAllResultDto_AdmittedCopyWith(StartLibraryScanAllResultDto_Admitted value, $Res Function(StartLibraryScanAllResultDto_Admitted) _then) = _$StartLibraryScanAllResultDto_AdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ OperationHandleDto operationHandle, List<String> admittedRoots, List<LibraryScanAdmissionExclusionDto> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanAllResultDto_AdmittedCopyWithImpl<$Res>
+    implements $StartLibraryScanAllResultDto_AdmittedCopyWith<$Res> {
+  _$StartLibraryScanAllResultDto_AdmittedCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanAllResultDto_Admitted _self;
+  final $Res Function(StartLibraryScanAllResultDto_Admitted) _then;
+
+/// Create a copy of StartLibraryScanAllResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? operationHandle = null,Object? admittedRoots = null,Object? exclusions = null,}) {
+  return _then(StartLibraryScanAllResultDto_Admitted(
+operationHandle: null == operationHandle ? _self.operationHandle : operationHandle // ignore: cast_nullable_to_non_nullable
+as OperationHandleDto,admittedRoots: null == admittedRoots ? _self._admittedRoots : admittedRoots // ignore: cast_nullable_to_non_nullable
+as List<String>,exclusions: null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusionDto>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class StartLibraryScanAllResultDto_NothingEligible extends StartLibraryScanAllResultDto {
+  const StartLibraryScanAllResultDto_NothingEligible({required final  List<LibraryScanAdmissionExclusionDto> exclusions}): _exclusions = exclusions,super._();
+
+
+ final  List<LibraryScanAdmissionExclusionDto> _exclusions;
+@override List<LibraryScanAdmissionExclusionDto> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+
+/// Create a copy of StartLibraryScanAllResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanAllResultDto_NothingEligibleCopyWith<StartLibraryScanAllResultDto_NothingEligible> get copyWith => _$StartLibraryScanAllResultDto_NothingEligibleCopyWithImpl<StartLibraryScanAllResultDto_NothingEligible>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanAllResultDto_NothingEligible&&const DeepCollectionEquality().equals(other._exclusions, _exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_exclusions));
+
+@override
+String toString() {
+  return 'StartLibraryScanAllResultDto.nothingEligible(exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanAllResultDto_NothingEligibleCopyWith<$Res> implements $StartLibraryScanAllResultDtoCopyWith<$Res> {
+  factory $StartLibraryScanAllResultDto_NothingEligibleCopyWith(StartLibraryScanAllResultDto_NothingEligible value, $Res Function(StartLibraryScanAllResultDto_NothingEligible) _then) = _$StartLibraryScanAllResultDto_NothingEligibleCopyWithImpl;
+@override @useResult
+$Res call({
+ List<LibraryScanAdmissionExclusionDto> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanAllResultDto_NothingEligibleCopyWithImpl<$Res>
+    implements $StartLibraryScanAllResultDto_NothingEligibleCopyWith<$Res> {
+  _$StartLibraryScanAllResultDto_NothingEligibleCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanAllResultDto_NothingEligible _self;
+  final $Res Function(StartLibraryScanAllResultDto_NothingEligible) _then;
+
+/// Create a copy of StartLibraryScanAllResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? exclusions = null,}) {
+  return _then(StartLibraryScanAllResultDto_NothingEligible(
+exclusions: null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusionDto>,
+  ));
+}
+
+
+}
 
 /// @nodoc
 mixin _$StartLibraryScanResultDto {

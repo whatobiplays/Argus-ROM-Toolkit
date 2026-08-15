@@ -83,6 +83,10 @@ abstract interface class SourcesGateway {
 
   Future<StartLibraryScanResult> startLibraryScan(LibraryRootId libraryRootId);
 
+  Future<StartLibraryScanAllResult> startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  );
+
   Future<SourceEntryChildrenPage> listSourceEntryChildren({
     required LibraryRootId libraryRootId,
     SourceEntryId? parentSourceEntryId,
@@ -117,6 +121,10 @@ abstract interface class SourcesApi {
 
   Future<StartLibraryScanResult> startLibraryScan(LibraryRootId libraryRootId);
 
+  Future<StartLibraryScanAllResult> startLibraryScanAll(
+    ScanAllRequestIdentity requestIdentity,
+  );
+
   Future<SourceEntryChildrenPage> listSourceEntryChildren({
     required LibraryRootId libraryRootId,
     SourceEntryId? parentSourceEntryId,
@@ -149,6 +157,11 @@ abstract interface class JobsGateway {
   Future<LibraryRootScanAdmission?> getRootScanAdmission(
     LibraryRootId libraryRootId,
   );
+
+  /// Authoritative Scan All request-identity reconciliation.
+  Future<LibraryScanAllRequestResolution> resolveScanAllRequest(
+    ScanAllRequestIdentity requestIdentity,
+  );
 }
 
 /// Focused Jobs capability. Queries return immutable authoritative
@@ -169,6 +182,11 @@ abstract interface class JobsApi {
 
   Future<LibraryRootScanAdmission?> getRootScanAdmission(
     LibraryRootId libraryRootId,
+  );
+
+  /// Authoritative Scan All request-identity reconciliation.
+  Future<LibraryScanAllRequestResolution> resolveScanAllRequest(
+    ScanAllRequestIdentity requestIdentity,
   );
 
   /// Narrow active-job summary for the application shell.

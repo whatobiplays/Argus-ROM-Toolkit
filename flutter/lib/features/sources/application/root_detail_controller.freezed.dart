@@ -119,10 +119,10 @@ return missing(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryRoot root,  bool refreshing,  ClientFailure? lastFailure,  bool removing,  bool removalAmbiguous,  bool scanning,  JobRunId? admittedScanJobRunId,  bool removalBlockedByActiveScan)?  ready,TResult Function()?  missing,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryRoot root,  bool refreshing,  ClientFailure? lastFailure,  bool removing,  bool removalAmbiguous,  bool scanning,  JobRunId? admittedScanJobRunId,  bool removalBlockedByActiveScan,  LibraryRootActiveScan? removalBlockedOwner,  bool cancelAndRemovePending,  bool cancelAndRemoveAmbiguous)?  ready,TResult Function()?  missing,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case SourcesRootDetailStateReady() when ready != null:
-return ready(_that.root,_that.refreshing,_that.lastFailure,_that.removing,_that.removalAmbiguous,_that.scanning,_that.admittedScanJobRunId,_that.removalBlockedByActiveScan);case SourcesRootDetailStateMissing() when missing != null:
+return ready(_that.root,_that.refreshing,_that.lastFailure,_that.removing,_that.removalAmbiguous,_that.scanning,_that.admittedScanJobRunId,_that.removalBlockedByActiveScan,_that.removalBlockedOwner,_that.cancelAndRemovePending,_that.cancelAndRemoveAmbiguous);case SourcesRootDetailStateMissing() when missing != null:
 return missing();case _:
   return orElse();
 
@@ -141,10 +141,10 @@ return missing();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryRoot root,  bool refreshing,  ClientFailure? lastFailure,  bool removing,  bool removalAmbiguous,  bool scanning,  JobRunId? admittedScanJobRunId,  bool removalBlockedByActiveScan)  ready,required TResult Function()  missing,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryRoot root,  bool refreshing,  ClientFailure? lastFailure,  bool removing,  bool removalAmbiguous,  bool scanning,  JobRunId? admittedScanJobRunId,  bool removalBlockedByActiveScan,  LibraryRootActiveScan? removalBlockedOwner,  bool cancelAndRemovePending,  bool cancelAndRemoveAmbiguous)  ready,required TResult Function()  missing,}) {final _that = this;
 switch (_that) {
 case SourcesRootDetailStateReady():
-return ready(_that.root,_that.refreshing,_that.lastFailure,_that.removing,_that.removalAmbiguous,_that.scanning,_that.admittedScanJobRunId,_that.removalBlockedByActiveScan);case SourcesRootDetailStateMissing():
+return ready(_that.root,_that.refreshing,_that.lastFailure,_that.removing,_that.removalAmbiguous,_that.scanning,_that.admittedScanJobRunId,_that.removalBlockedByActiveScan,_that.removalBlockedOwner,_that.cancelAndRemovePending,_that.cancelAndRemoveAmbiguous);case SourcesRootDetailStateMissing():
 return missing();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -159,10 +159,10 @@ return missing();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryRoot root,  bool refreshing,  ClientFailure? lastFailure,  bool removing,  bool removalAmbiguous,  bool scanning,  JobRunId? admittedScanJobRunId,  bool removalBlockedByActiveScan)?  ready,TResult? Function()?  missing,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryRoot root,  bool refreshing,  ClientFailure? lastFailure,  bool removing,  bool removalAmbiguous,  bool scanning,  JobRunId? admittedScanJobRunId,  bool removalBlockedByActiveScan,  LibraryRootActiveScan? removalBlockedOwner,  bool cancelAndRemovePending,  bool cancelAndRemoveAmbiguous)?  ready,TResult? Function()?  missing,}) {final _that = this;
 switch (_that) {
 case SourcesRootDetailStateReady() when ready != null:
-return ready(_that.root,_that.refreshing,_that.lastFailure,_that.removing,_that.removalAmbiguous,_that.scanning,_that.admittedScanJobRunId,_that.removalBlockedByActiveScan);case SourcesRootDetailStateMissing() when missing != null:
+return ready(_that.root,_that.refreshing,_that.lastFailure,_that.removing,_that.removalAmbiguous,_that.scanning,_that.admittedScanJobRunId,_that.removalBlockedByActiveScan,_that.removalBlockedOwner,_that.cancelAndRemovePending,_that.cancelAndRemoveAmbiguous);case SourcesRootDetailStateMissing() when missing != null:
 return missing();case _:
   return null;
 
@@ -175,7 +175,7 @@ return missing();case _:
 
 
 class SourcesRootDetailStateReady implements SourcesRootDetailState {
-  const SourcesRootDetailStateReady({required this.root, required this.refreshing, this.lastFailure, required this.removing, required this.removalAmbiguous, required this.scanning, this.admittedScanJobRunId, required this.removalBlockedByActiveScan});
+  const SourcesRootDetailStateReady({required this.root, required this.refreshing, this.lastFailure, required this.removing, required this.removalAmbiguous, required this.scanning, this.admittedScanJobRunId, required this.removalBlockedByActiveScan, this.removalBlockedOwner, required this.cancelAndRemovePending, required this.cancelAndRemoveAmbiguous});
 
 
  final  LibraryRoot root;
@@ -186,6 +186,9 @@ class SourcesRootDetailStateReady implements SourcesRootDetailState {
  final  bool scanning;
  final  JobRunId? admittedScanJobRunId;
  final  bool removalBlockedByActiveScan;
+ final  LibraryRootActiveScan? removalBlockedOwner;
+ final  bool cancelAndRemovePending;
+ final  bool cancelAndRemoveAmbiguous;
 
 /// Create a copy of SourcesRootDetailState
 /// with the given fields replaced by the non-null parameter values.
@@ -197,16 +200,16 @@ $SourcesRootDetailStateReadyCopyWith<SourcesRootDetailStateReady> get copyWith =
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourcesRootDetailStateReady&&(identical(other.root, root) || other.root == root)&&(identical(other.refreshing, refreshing) || other.refreshing == refreshing)&&(identical(other.lastFailure, lastFailure) || other.lastFailure == lastFailure)&&(identical(other.removing, removing) || other.removing == removing)&&(identical(other.removalAmbiguous, removalAmbiguous) || other.removalAmbiguous == removalAmbiguous)&&(identical(other.scanning, scanning) || other.scanning == scanning)&&(identical(other.admittedScanJobRunId, admittedScanJobRunId) || other.admittedScanJobRunId == admittedScanJobRunId)&&(identical(other.removalBlockedByActiveScan, removalBlockedByActiveScan) || other.removalBlockedByActiveScan == removalBlockedByActiveScan));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourcesRootDetailStateReady&&(identical(other.root, root) || other.root == root)&&(identical(other.refreshing, refreshing) || other.refreshing == refreshing)&&(identical(other.lastFailure, lastFailure) || other.lastFailure == lastFailure)&&(identical(other.removing, removing) || other.removing == removing)&&(identical(other.removalAmbiguous, removalAmbiguous) || other.removalAmbiguous == removalAmbiguous)&&(identical(other.scanning, scanning) || other.scanning == scanning)&&(identical(other.admittedScanJobRunId, admittedScanJobRunId) || other.admittedScanJobRunId == admittedScanJobRunId)&&(identical(other.removalBlockedByActiveScan, removalBlockedByActiveScan) || other.removalBlockedByActiveScan == removalBlockedByActiveScan)&&(identical(other.removalBlockedOwner, removalBlockedOwner) || other.removalBlockedOwner == removalBlockedOwner)&&(identical(other.cancelAndRemovePending, cancelAndRemovePending) || other.cancelAndRemovePending == cancelAndRemovePending)&&(identical(other.cancelAndRemoveAmbiguous, cancelAndRemoveAmbiguous) || other.cancelAndRemoveAmbiguous == cancelAndRemoveAmbiguous));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,root,refreshing,lastFailure,removing,removalAmbiguous,scanning,admittedScanJobRunId,removalBlockedByActiveScan);
+int get hashCode => Object.hash(runtimeType,root,refreshing,lastFailure,removing,removalAmbiguous,scanning,admittedScanJobRunId,removalBlockedByActiveScan,removalBlockedOwner,cancelAndRemovePending,cancelAndRemoveAmbiguous);
 
 @override
 String toString() {
-  return 'SourcesRootDetailState.ready(root: $root, refreshing: $refreshing, lastFailure: $lastFailure, removing: $removing, removalAmbiguous: $removalAmbiguous, scanning: $scanning, admittedScanJobRunId: $admittedScanJobRunId, removalBlockedByActiveScan: $removalBlockedByActiveScan)';
+  return 'SourcesRootDetailState.ready(root: $root, refreshing: $refreshing, lastFailure: $lastFailure, removing: $removing, removalAmbiguous: $removalAmbiguous, scanning: $scanning, admittedScanJobRunId: $admittedScanJobRunId, removalBlockedByActiveScan: $removalBlockedByActiveScan, removalBlockedOwner: $removalBlockedOwner, cancelAndRemovePending: $cancelAndRemovePending, cancelAndRemoveAmbiguous: $cancelAndRemoveAmbiguous)';
 }
 
 
@@ -217,7 +220,7 @@ abstract mixin class $SourcesRootDetailStateReadyCopyWith<$Res> implements $Sour
   factory $SourcesRootDetailStateReadyCopyWith(SourcesRootDetailStateReady value, $Res Function(SourcesRootDetailStateReady) _then) = _$SourcesRootDetailStateReadyCopyWithImpl;
 @useResult
 $Res call({
- LibraryRoot root, bool refreshing, ClientFailure? lastFailure, bool removing, bool removalAmbiguous, bool scanning, JobRunId? admittedScanJobRunId, bool removalBlockedByActiveScan
+ LibraryRoot root, bool refreshing, ClientFailure? lastFailure, bool removing, bool removalAmbiguous, bool scanning, JobRunId? admittedScanJobRunId, bool removalBlockedByActiveScan, LibraryRootActiveScan? removalBlockedOwner, bool cancelAndRemovePending, bool cancelAndRemoveAmbiguous
 });
 
 
@@ -234,7 +237,7 @@ class _$SourcesRootDetailStateReadyCopyWithImpl<$Res>
 
 /// Create a copy of SourcesRootDetailState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? root = null,Object? refreshing = null,Object? lastFailure = freezed,Object? removing = null,Object? removalAmbiguous = null,Object? scanning = null,Object? admittedScanJobRunId = freezed,Object? removalBlockedByActiveScan = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? root = null,Object? refreshing = null,Object? lastFailure = freezed,Object? removing = null,Object? removalAmbiguous = null,Object? scanning = null,Object? admittedScanJobRunId = freezed,Object? removalBlockedByActiveScan = null,Object? removalBlockedOwner = freezed,Object? cancelAndRemovePending = null,Object? cancelAndRemoveAmbiguous = null,}) {
   return _then(SourcesRootDetailStateReady(
 root: null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
 as LibraryRoot,refreshing: null == refreshing ? _self.refreshing : refreshing // ignore: cast_nullable_to_non_nullable
@@ -244,6 +247,9 @@ as bool,removalAmbiguous: null == removalAmbiguous ? _self.removalAmbiguous : re
 as bool,scanning: null == scanning ? _self.scanning : scanning // ignore: cast_nullable_to_non_nullable
 as bool,admittedScanJobRunId: freezed == admittedScanJobRunId ? _self.admittedScanJobRunId : admittedScanJobRunId // ignore: cast_nullable_to_non_nullable
 as JobRunId?,removalBlockedByActiveScan: null == removalBlockedByActiveScan ? _self.removalBlockedByActiveScan : removalBlockedByActiveScan // ignore: cast_nullable_to_non_nullable
+as bool,removalBlockedOwner: freezed == removalBlockedOwner ? _self.removalBlockedOwner : removalBlockedOwner // ignore: cast_nullable_to_non_nullable
+as LibraryRootActiveScan?,cancelAndRemovePending: null == cancelAndRemovePending ? _self.cancelAndRemovePending : cancelAndRemovePending // ignore: cast_nullable_to_non_nullable
+as bool,cancelAndRemoveAmbiguous: null == cancelAndRemoveAmbiguous ? _self.cancelAndRemoveAmbiguous : cancelAndRemoveAmbiguous // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }

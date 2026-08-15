@@ -14,16 +14,17 @@ use argus_application::{
     ApplicationSeverity, ArchitectureClass, DiagnosticStage, ErrorCategory, ErrorCode, FailureRole,
     JobDetail, JobRunId, JobRunProjection, JobRunState, JobSummary, JobSummaryPage,
     LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage,
-    LibraryRootProjection, LibraryScanAdmissionExclusion, LibraryScanChildAdmissionIssue,
-    LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery, ListJobsScope,
-    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection,
-    MigrationOutcome, OperationDetail, PathClass, PersistedSettingsReason, PlatformClass,
-    Recoverability, RemoveLibraryRootResult, RetryJobResult, RetryNotAdmittedReason, RetryPolicy,
-    RootRelationship, SafeContext, SafeContextField, SafeContextValue, ScanProgressFacts,
-    ScanRunProjection, ScanRunStatus, SettingsDomain, SourceEntriesChangeScope,
-    SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor,
-    SourceEntryDetailProjection, SourceEntryId, SourceEntryKind, SourceEntryProjection,
-    StartLibraryScanResult, TechnicalClass, ThemeMode,
+    LibraryRootProjection, LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity,
+    LibraryScanChildAdmissionIssue, LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery,
+    ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemRootSelection, MigrationOutcome, OperationDetail, PathClass,
+    PersistedSettingsReason, PlatformClass, Recoverability, RemoveLibraryRootResult,
+    RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext,
+    SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus,
+    SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
+    SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
+    SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult, TechnicalClass,
+    ThemeMode,
 };
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
@@ -195,6 +196,7 @@ pub struct LibraryRootLastScanDto {
 pub struct LibraryRootActiveScanDto {
     pub scan_run_id: String,
     pub job_run_id: String,
+    pub owning_job_root_count: u32,
 }
 
 /// Authoritative immutable root projection.
@@ -421,6 +423,7 @@ pub struct LibraryScanAdmissionExclusionDto {
     pub reason: String,
     pub active_job_run_id: Option<String>,
     pub active_scan_run_id: Option<String>,
+    pub application_error: Option<ApplicationErrorDto>,
 }
 
 /// Scan-specific structured progress facts.
@@ -493,6 +496,35 @@ pub enum StartLibraryScanResultDto {
         active_job_run_id: String,
         active_scan_run_id: String,
     },
+}
+
+/// Typed outcome of one multi-root Scan All admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StartLibraryScanAllResultDto {
+    /// One durable job was admitted for all eligible roots.
+    Admitted {
+        operation_handle: OperationHandleDto,
+        admitted_roots: Vec<String>,
+        exclusions: Vec<LibraryScanAdmissionExclusionDto>,
+    },
+    /// No configured root was eligible, so no job was created.
+    NothingEligible {
+        exclusions: Vec<LibraryScanAdmissionExclusionDto>,
+    },
+}
+
+/// Authoritative resolution of one Scan All request identity after
+/// transport ambiguity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LibraryScanAllRequestResolutionDto {
+    /// The request identity was durably accepted for one Scan All job.
+    Admitted {
+        operation_handle: OperationHandleDto,
+        admitted_roots: Vec<String>,
+        exclusions: Vec<LibraryScanAdmissionExclusionDto>,
+    },
+    /// The request identity has no durable admission.
+    NothingAdmitted,
 }
 
 /// Typed outcome of one cancel request.
@@ -958,6 +990,37 @@ pub fn start_library_scan(
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Admits one durable multi-root Scan All over all configured roots.
+#[allow(clippy::result_large_err)]
+pub fn start_library_scan_all(
+    request_identity: String,
+) -> Result<StartLibraryScanAllResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "start_library_scan_all")
+        .map_err(|error| application_error_dto(&error))?;
+    let identity = parse_scan_all_request_identity(&request_identity, context.trace_id())?;
+    host()
+        .start_library_scan_all_with_context(identity, &context)
+        .map(|result| start_library_scan_all_result_dto(&result))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Resolves one Scan All request identity to its accepted admission or
+/// authoritative no-admission proof after transport ambiguity.
+#[allow(clippy::result_large_err)]
+pub fn resolve_scan_all_request(
+    request_identity: String,
+) -> Result<LibraryScanAllRequestResolutionDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("jobs", "resolve_scan_all_request")
+        .map_err(|error| application_error_dto(&error))?;
+    let identity = parse_scan_all_request_identity(&request_identity, context.trace_id())?;
+    host()
+        .resolve_scan_all_request_with_context(identity, &context)
+        .map(library_scan_all_request_resolution_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Lists one bounded authoritative direct-child page.
 #[allow(clippy::result_large_err)]
 pub fn list_source_entry_children(
@@ -1362,6 +1425,26 @@ pub fn parse_library_root_id(
     })
 }
 
+/// Parses one bridge-supplied Scan All request identity with typed
+/// validation.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn parse_scan_all_request_identity(
+    value: &str,
+    trace_id: argus_application::TraceId,
+) -> Result<LibraryScanAllRequestIdentity, ApplicationErrorDto> {
+    LibraryScanAllRequestIdentity::try_from(value).map_err(|_| {
+        application_error_dto(
+            &ApplicationError::from_code(
+                argus_application::ErrorCode::ValidationInvalidArgument,
+                trace_id,
+                SafeContext::new(),
+            )
+            .expect("validation error"),
+        )
+    })
+}
+
 /// Parses one bridge-supplied source-entry identity with typed validation.
 #[allow(unexpected_cfgs)]
 #[flutter_rust_bridge::frb(ignore)]
@@ -1452,6 +1535,7 @@ pub fn library_root_dto(root: &LibraryRootProjection) -> LibraryRootDto {
         active_scan: root.active_scan().map(|summary| LibraryRootActiveScanDto {
             scan_run_id: summary.scan_run_id().to_owned(),
             job_run_id: summary.job_run_id().to_owned(),
+            owning_job_root_count: summary.owning_job_root_count(),
         }),
     }
 }
@@ -1814,6 +1898,61 @@ fn exclusion_dto(exclusion: &LibraryScanAdmissionExclusion) -> LibraryScanAdmiss
         reason: exclusion.reason().as_str().to_owned(),
         active_job_run_id: exclusion.active_job_run_id().map(|id| id.to_string()),
         active_scan_run_id: exclusion.active_scan_run_id().map(|id| id.to_string()),
+        application_error: exclusion.application_error().map(application_error_dto),
+    }
+}
+
+/// Maps one multi-root Scan All admission outcome into its typed transport
+/// union.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn start_library_scan_all_result_dto(
+    result: &StartLibraryScanAllResult,
+) -> StartLibraryScanAllResultDto {
+    match result {
+        StartLibraryScanAllResult::Admitted {
+            operation_handle,
+            admitted_roots,
+            exclusions,
+        } => StartLibraryScanAllResultDto::Admitted {
+            operation_handle: OperationHandleDto {
+                job_run_id: operation_handle.job_run_id().to_string(),
+                operation_type: operation_handle.operation_type().to_owned(),
+            },
+            admitted_roots: admitted_roots.iter().map(ToString::to_string).collect(),
+            exclusions: exclusions.iter().map(exclusion_dto).collect(),
+        },
+        StartLibraryScanAllResult::NothingEligible { exclusions } => {
+            StartLibraryScanAllResultDto::NothingEligible {
+                exclusions: exclusions.iter().map(exclusion_dto).collect(),
+            }
+        }
+    }
+}
+
+/// Maps one authoritative Scan All request resolution into its transport
+/// union.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn library_scan_all_request_resolution_dto(
+    resolution: Option<StartLibraryScanAllResult>,
+) -> LibraryScanAllRequestResolutionDto {
+    match resolution {
+        Some(StartLibraryScanAllResult::Admitted {
+            operation_handle,
+            admitted_roots,
+            exclusions,
+        }) => LibraryScanAllRequestResolutionDto::Admitted {
+            operation_handle: OperationHandleDto {
+                job_run_id: operation_handle.job_run_id().to_string(),
+                operation_type: operation_handle.operation_type().to_owned(),
+            },
+            admitted_roots: admitted_roots.iter().map(ToString::to_string).collect(),
+            exclusions: exclusions.iter().map(exclusion_dto).collect(),
+        },
+        Some(StartLibraryScanAllResult::NothingEligible { .. }) | None => {
+            LibraryScanAllRequestResolutionDto::NothingAdmitted
+        }
     }
 }
 

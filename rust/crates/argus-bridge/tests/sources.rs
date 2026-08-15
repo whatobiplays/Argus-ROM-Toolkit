@@ -41,7 +41,7 @@ fn library_root_dto_preserves_independent_projection_dimensions() {
         10,
         Some(20),
     );
-    let active_scan = LibraryRootActiveScanSummary::new("scan".to_owned(), "job".to_owned());
+    let active_scan = LibraryRootActiveScanSummary::new("scan".to_owned(), "job".to_owned(), 1);
     let root = projection()
         .with_last_scan(last_scan)
         .with_active_scan(active_scan);

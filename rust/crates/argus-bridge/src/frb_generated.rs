@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1004593407;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1068524561;
 
 // Section: executor
 
@@ -810,6 +810,39 @@ fn wire__crate__reset_appearance_settings_impl(
         },
     )
 }
+fn wire__crate__resolve_scan_all_request_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "resolve_scan_all_request",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request_identity = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::resolve_scan_all_request(api_request_identity)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__retry_job_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -903,6 +936,39 @@ fn wire__crate__start_library_scan_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::start_library_scan(api_library_root_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__start_library_scan_all_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "start_library_scan_all",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request_identity = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::start_library_scan_all(api_request_identity)?;
                     Ok(output_ok)
                 })())
             }
@@ -1357,9 +1423,11 @@ impl SseDecode for crate::LibraryRootActiveScanDto {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_scanRunId = <String>::sse_decode(deserializer);
         let mut var_jobRunId = <String>::sse_decode(deserializer);
+        let mut var_owningJobRootCount = <u32>::sse_decode(deserializer);
         return crate::LibraryRootActiveScanDto {
             scan_run_id: var_scanRunId,
             job_run_id: var_jobRunId,
+            owning_job_root_count: var_owningJobRootCount,
         };
     }
 }
@@ -1470,12 +1538,41 @@ impl SseDecode for crate::LibraryScanAdmissionExclusionDto {
         let mut var_reason = <String>::sse_decode(deserializer);
         let mut var_activeJobRunId = <Option<String>>::sse_decode(deserializer);
         let mut var_activeScanRunId = <Option<String>>::sse_decode(deserializer);
+        let mut var_applicationError =
+            <Option<crate::ApplicationErrorDto>>::sse_decode(deserializer);
         return crate::LibraryScanAdmissionExclusionDto {
             library_root_id: var_libraryRootId,
             reason: var_reason,
             active_job_run_id: var_activeJobRunId,
             active_scan_run_id: var_activeScanRunId,
+            application_error: var_applicationError,
         };
+    }
+}
+
+impl SseDecode for crate::LibraryScanAllRequestResolutionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_operationHandle = <crate::OperationHandleDto>::sse_decode(deserializer);
+                let mut var_admittedRoots = <Vec<String>>::sse_decode(deserializer);
+                let mut var_exclusions =
+                    <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_decode(deserializer);
+                return crate::LibraryScanAllRequestResolutionDto::Admitted {
+                    operation_handle: var_operationHandle,
+                    admitted_roots: var_admittedRoots,
+                    exclusions: var_exclusions,
+                };
+            }
+            1 => {
+                return crate::LibraryScanAllRequestResolutionDto::NothingAdmitted;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -1541,6 +1638,18 @@ impl SseDecode for crate::LibraryScanRootSummaryDto {
             display_name: var_displayName,
             safe_location_display: var_safeLocationDisplay,
         };
+    }
+}
+
+impl SseDecode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
     }
 }
 
@@ -1756,6 +1865,17 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::ApplicationErrorDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::ApplicationErrorDto>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -2280,6 +2400,36 @@ impl SseDecode for crate::SourceEntryKindDto {
     }
 }
 
+impl SseDecode for crate::StartLibraryScanAllResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_operationHandle = <crate::OperationHandleDto>::sse_decode(deserializer);
+                let mut var_admittedRoots = <Vec<String>>::sse_decode(deserializer);
+                let mut var_exclusions =
+                    <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_decode(deserializer);
+                return crate::StartLibraryScanAllResultDto::Admitted {
+                    operation_handle: var_operationHandle,
+                    admitted_roots: var_admittedRoots,
+                    exclusions: var_exclusions,
+                };
+            }
+            1 => {
+                let mut var_exclusions =
+                    <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_decode(deserializer);
+                return crate::StartLibraryScanAllResultDto::NothingEligible {
+                    exclusions: var_exclusions,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseDecode for crate::StartLibraryScanResultDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2427,12 +2577,14 @@ fn pde_ffi_dispatcher_primary_impl(
         21 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
         22 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
         23 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2808,6 +2960,7 @@ impl flutter_rust_bridge::IntoDart for crate::LibraryRootActiveScanDto {
         [
             self.scan_run_id.into_into_dart().into_dart(),
             self.job_run_id.into_into_dart().into_dart(),
+            self.owning_job_root_count.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2958,6 +3111,7 @@ impl flutter_rust_bridge::IntoDart for crate::LibraryScanAdmissionExclusionDto {
             self.reason.into_into_dart().into_dart(),
             self.active_job_run_id.into_into_dart().into_dart(),
             self.active_scan_run_id.into_into_dart().into_dart(),
+            self.application_error.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2970,6 +3124,41 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryScanAdmissionExclusionDto>
     for crate::LibraryScanAdmissionExclusionDto
 {
     fn into_into_dart(self) -> crate::LibraryScanAdmissionExclusionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryScanAllRequestResolutionDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::LibraryScanAllRequestResolutionDto::Admitted {
+                operation_handle,
+                admitted_roots,
+                exclusions,
+            } => [
+                0.into_dart(),
+                operation_handle.into_into_dart().into_dart(),
+                admitted_roots.into_into_dart().into_dart(),
+                exclusions.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::LibraryScanAllRequestResolutionDto::NothingAdmitted => {
+                [1.into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryScanAllRequestResolutionDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryScanAllRequestResolutionDto>
+    for crate::LibraryScanAllRequestResolutionDto
+{
+    fn into_into_dart(self) -> crate::LibraryScanAllRequestResolutionDto {
         self
     }
 }
@@ -3659,6 +3848,41 @@ impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntryKindDto> for crate::Sou
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::StartLibraryScanAllResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::StartLibraryScanAllResultDto::Admitted {
+                operation_handle,
+                admitted_roots,
+                exclusions,
+            } => [
+                0.into_dart(),
+                operation_handle.into_into_dart().into_dart(),
+                admitted_roots.into_into_dart().into_dart(),
+                exclusions.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::StartLibraryScanAllResultDto::NothingEligible { exclusions } => {
+                [1.into_dart(), exclusions.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::StartLibraryScanAllResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::StartLibraryScanAllResultDto>
+    for crate::StartLibraryScanAllResultDto
+{
+    fn into_into_dart(self) -> crate::StartLibraryScanAllResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::StartLibraryScanResultDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -4059,6 +4283,7 @@ impl SseEncode for crate::LibraryRootActiveScanDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.scan_run_id, serializer);
         <String>::sse_encode(self.job_run_id, serializer);
+        <u32>::sse_encode(self.owning_job_root_count, serializer);
     }
 }
 
@@ -4147,6 +4372,31 @@ impl SseEncode for crate::LibraryScanAdmissionExclusionDto {
         <String>::sse_encode(self.reason, serializer);
         <Option<String>>::sse_encode(self.active_job_run_id, serializer);
         <Option<String>>::sse_encode(self.active_scan_run_id, serializer);
+        <Option<crate::ApplicationErrorDto>>::sse_encode(self.application_error, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryScanAllRequestResolutionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::LibraryScanAllRequestResolutionDto::Admitted {
+                operation_handle,
+                admitted_roots,
+                exclusions,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <crate::OperationHandleDto>::sse_encode(operation_handle, serializer);
+                <Vec<String>>::sse_encode(admitted_roots, serializer);
+                <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_encode(exclusions, serializer);
+            }
+            crate::LibraryScanAllRequestResolutionDto::NothingAdmitted => {
+                <i32>::sse_encode(1, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -4194,6 +4444,16 @@ impl SseEncode for crate::LibraryScanRootSummaryDto {
         <String>::sse_encode(self.library_root_id, serializer);
         <String>::sse_encode(self.display_name, serializer);
         <String>::sse_encode(self.safe_location_display, serializer);
+    }
+}
+
+impl SseEncode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <String>::sse_encode(item, serializer);
+        }
     }
 }
 
@@ -4367,6 +4627,16 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::ApplicationErrorDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::ApplicationErrorDto>::sse_encode(value, serializer);
         }
     }
 }
@@ -4820,6 +5090,31 @@ impl SseEncode for crate::SourceEntryKindDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::StartLibraryScanAllResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::StartLibraryScanAllResultDto::Admitted {
+                operation_handle,
+                admitted_roots,
+                exclusions,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <crate::OperationHandleDto>::sse_encode(operation_handle, serializer);
+                <Vec<String>>::sse_encode(admitted_roots, serializer);
+                <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_encode(exclusions, serializer);
+            }
+            crate::StartLibraryScanAllResultDto::NothingEligible { exclusions } => {
+                <i32>::sse_encode(1, serializer);
+                <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_encode(exclusions, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 

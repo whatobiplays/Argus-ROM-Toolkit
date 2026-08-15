@@ -29,6 +29,13 @@ class SourcesPage extends ConsumerWidget {
     final listState = ref.watch(sourcesRootListControllerProvider);
     final addState = ref.watch(sourcesAddLibraryFolderControllerProvider);
     final adding = addState is SourcesAddOperationSubmitting;
+    final ready = listState.value;
+    final canScanAll =
+        ready is SourcesRootListStateReady && ready.totalCount > 0;
+    final scanAllBlocked =
+        ready is SourcesRootListStateReady &&
+        (ready.scanAllStatus is SourcesScanAllStatusSubmitting ||
+            ready.scanAllStatus is SourcesScanAllStatusUncertain);
 
     return Scaffold(
       body: SafeArea(
@@ -37,14 +44,30 @@ class SourcesPage extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
-                    child: Text(
-                      'Sources',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
+                  Text(
+                    'Sources',
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
+                  if (canScanAll) ...[
+                    OutlinedButton.icon(
+                      key: const ValueKey<String>('sources-scan-all'),
+                      onPressed: scanAllBlocked
+                          ? null
+                          : () => ref
+                                .read(
+                                  sourcesRootListControllerProvider.notifier,
+                                )
+                                .startScanAll(),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text(SourcesMessages.scanAll),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   FilledButton.icon(
                     key: const ValueKey<String>('sources-add-library-folder'),
                     onPressed: adding
@@ -62,6 +85,11 @@ class SourcesPage extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 16),
+              if (ready is SourcesRootListStateReady)
+                _ScanAllFeedback(
+                  status: ready.scanAllStatus,
+                  onViewJob: (jobRunId) => onOpenJob(jobRunId),
+                ),
               Expanded(child: _buildList(context, ref, listState)),
             ],
           ),
@@ -128,6 +156,72 @@ class SourcesPage extends ConsumerWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _ScanAllFeedback extends StatelessWidget {
+  const _ScanAllFeedback({required this.status, required this.onViewJob});
+
+  final SourcesScanAllStatus status;
+  final void Function(JobRunId jobRunId) onViewJob;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget? content = switch (status) {
+      SourcesScanAllStatusIdle() || SourcesScanAllStatusSubmitting() => null,
+      SourcesScanAllStatusAdmitted(
+        :final admittedCount,
+        :final hasExclusions,
+        :final jobRunId,
+      ) =>
+        Row(
+          children: [
+            const Icon(Icons.check_circle_outline),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasExclusions
+                    ? SourcesMessages.scanAllAdmittedWithExclusions(
+                        admittedCount,
+                      )
+                    : SourcesMessages.scanAllAdmitted(admittedCount),
+              ),
+            ),
+            TextButton(
+              key: const ValueKey<String>('sources-scan-all-view-job'),
+              onPressed: () => onViewJob(jobRunId),
+              child: const Text(SourcesMessages.viewJob),
+            ),
+          ],
+        ),
+      SourcesScanAllStatusNothingEligible(:final exclusions) => Row(
+        children: [
+          const Icon(Icons.info_outline),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              exclusions.isEmpty
+                  ? SourcesMessages.scanAllNothingEligible
+                  : SourcesMessages.scanAllNothingEligibleReasons([
+                      for (final exclusion in exclusions)
+                        SourcesMessages.scanAllExclusionLabel(exclusion),
+                    ]),
+            ),
+          ),
+        ],
+      ),
+      SourcesScanAllStatusUncertain() => const Row(
+        children: [
+          Icon(Icons.sync_problem),
+          SizedBox(width: 8),
+          Expanded(child: Text(SourcesMessages.scanAllUncertain)),
+        ],
+      ),
+    };
+    if (content == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(padding: const EdgeInsets.only(bottom: 12), child: content);
   }
 }
 

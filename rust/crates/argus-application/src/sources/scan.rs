@@ -102,6 +102,43 @@ where
         }
     }
 
+    /// Terminalizes an admitted child as `Cancelled` without resolving or
+    /// enumerating its provider. This is used by job-level cancellation when
+    /// a not-yet-started child must still become durable before parent
+    /// termination.
+    pub fn cancel_without_execution(
+        &self,
+        context: &OperationContext,
+    ) -> Result<(), ApplicationError> {
+        self.terminalize(
+            context,
+            ScanRunStatus::Cancelled,
+            LibraryRootLastScanStatus::Cancelled,
+            None,
+            None,
+            None,
+        )
+    }
+
+    /// Terminalizes an admitted child as `Failed` without resolving or
+    /// enumerating its provider, used when registration of an
+    /// already-admitted execution fails so no orphan nonterminal ScanRun
+    /// survives. This mirrors the single-root `fail_unregistered_scan`
+    /// contract for every child of a multi-root Scan All job.
+    pub fn fail_without_execution(
+        &self,
+        context: &OperationContext,
+    ) -> Result<(), ApplicationError> {
+        self.terminalize(
+            context,
+            ScanRunStatus::Failed,
+            LibraryRootLastScanStatus::Failed,
+            Some("admission_registration_failed"),
+            None,
+            None,
+        )
+    }
+
     fn execute_inner(
         &self,
         context: &OperationContext,

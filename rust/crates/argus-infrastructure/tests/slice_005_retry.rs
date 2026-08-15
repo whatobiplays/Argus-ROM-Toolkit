@@ -1,15 +1,14 @@
 //! Slice 005 infrastructure tests: retry metadata, admission context,
 //! structured progress counters, and migration upgrade integrity.
 
-use argus_application::{JobRunId, JobsQueries};
+use argus_application::{JobRunId, JobsQueries, LibraryRootId};
 use argus_application::{
-    JobRunRepository, JobRunState, LibraryRootAvailability, LibraryRootLastScanStatus,
-    LibraryRootRepository, LibraryScanAdmissionContext, LibraryScanAdmissionContextRepository,
-    LibraryScanInvocationKind, LibraryScanTargetKind, LibraryScanTargetRepository,
-    LibrarySourceRepository, NewJobRun, NewLibraryRoot, NewLibraryScanAdmissionContext,
-    NewLibraryScanTarget, NewScanRun, OperationContext, OperationName, PersistenceError,
-    RootLocator, ScanRunRepository, ScanRunStatus, SubsystemName, TraceId, UnitOfWork,
-    UnitOfWorkFactory,
+    JobRunRepository, JobRunState, LibraryRootAvailability, LibraryRootRepository,
+    LibraryScanAdmissionContext, LibraryScanAdmissionContextRepository, LibraryScanInvocationKind,
+    LibraryScanTargetKind, LibraryScanTargetRepository, LibrarySourceRepository, NewJobRun,
+    NewLibraryRoot, NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun,
+    OperationContext, OperationName, PersistenceError, RootLocator, ScanRunRepository,
+    ScanRunStatus, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
 };
 use argus_infrastructure::sqlite::{
     Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteJobsQueries,
@@ -65,78 +64,61 @@ fn migration_0006_upgrades_a_slice_004_database_with_representative_history() {
     let old = SqliteDatabaseExecutor::open_with_registry(&database, old_registry())
         .expect("old schema open");
     assert_eq!(old.migration_summary().current_version, 5);
-
-    let (root, _source, job, scan) = old
-        .execute(&context(), move |mut scope| {
-            let source = scope.library_source().ensure_local_filesystem_source()?;
-            let root = scope.library_roots().insert(NewLibraryRoot::new(
-                source,
-                RootLocator::from_provider("/library/Games".to_owned()),
-                "Games".to_owned(),
-                "/library/Games".to_owned(),
-                LibraryRootAvailability::Available,
-                1,
-            ))?;
-            let job = scope
-                .job_runs()
-                .insert(NewJobRun::new("library_scan", 1_000))?;
-            let scan = scope.scan_runs().insert(NewScanRun::new(
-                job,
-                root,
-                RootLocator::from_provider("/library/Games".to_owned()),
-                "Games".to_owned(),
-                "/library/Games".to_owned(),
-                1,
-                1,
-                1_000,
-            ))?;
-            scope
-                .library_scan_targets()
-                .insert(NewLibraryScanTarget::new(
-                    job,
-                    LibraryScanTargetKind::Requested,
-                    root,
-                    "Games",
-                    "/library/Games",
-                    None,
-                    None,
-                ))?;
-            scope
-                .library_scan_targets()
-                .insert(NewLibraryScanTarget::new(
-                    job,
-                    LibraryScanTargetKind::Admitted,
-                    root,
-                    "Games",
-                    "/library/Games",
-                    Some(scan),
-                    None,
-                ))?;
-            scope
-                .job_runs()
-                .set_state(job, JobRunState::Completed, 2_000)?;
-            scope
-                .scan_runs()
-                .set_status(scan, ScanRunStatus::Complete, Some(2_000), None)?;
-            scope.library_roots().set_last_scan(
-                root,
-                Some(argus_application::LibraryRootLastScanSummary::new(
-                    scan.to_string(),
-                    job.to_string(),
-                    LibraryRootLastScanStatus::Complete,
-                    1_000,
-                    Some(2_000),
-                )),
-            )?;
-            scope.commit()?;
-            Ok::<_, argus_application::ApplicationPortError>((root, source, job, scan))
-        })
-        .expect("slice 004 representative rows");
-
     old.shutdown().expect("old shutdown");
+    let root = LibraryRootId::try_from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").expect("root id");
+    let job = JobRunId::try_from("11111111111111111111111111111111").expect("job id");
+    let scan = argus_application::ScanRunId::try_from("44444444444444444444444444444444")
+        .expect("scan id");
+    let connection = rusqlite::Connection::open(&database).expect("raw old database");
+    connection
+        .execute_batch(
+            "INSERT INTO library_source
+                (library_source_id, source_provider_type, display_name, provider_config,
+                 config_revision, created_at, updated_at)
+             VALUES
+                ('33333333333333333333333333333333', 'local_filesystem', 'Local Filesystem',
+                 '{\"schema_version\":1,\"config\":{}}', 1, 'now', 'now');
+             INSERT INTO library_root
+                (library_root_id, library_source_id, root_locator, display_name,
+                 safe_location_presentation, availability_status, config_revision,
+                 created_at, updated_at, last_scan_status, last_scan_scan_run_id,
+                 last_scan_job_run_id, last_scan_started_at, last_scan_completed_at)
+             VALUES
+                ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '33333333333333333333333333333333',
+                 '/library/Games', 'Games', '/library/Games', 'available', 1,
+                 'now', 'now', 'complete', '44444444444444444444444444444444',
+                 '11111111111111111111111111111111', 1000, 2000);
+             INSERT INTO job_run
+                (job_run_id, operation_type, state, created_at, started_at, completed_at,
+                 cancellation_requested)
+             VALUES
+                ('11111111111111111111111111111111', 'library_scan', 'completed',
+                 1000, 1000, 2000, 0);
+             INSERT INTO scan_run
+                (scan_run_id, job_run_id, historical_library_root_id, root_locator,
+                 root_display_name, safe_location_display, source_config_revision,
+                 root_config_revision, status, started_at, completed_at)
+             VALUES
+                ('44444444444444444444444444444444', '11111111111111111111111111111111',
+                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '/library/Games', 'Games', '/library/Games',
+                 1, 1, 'complete', 1000, 2000);
+             INSERT INTO library_scan_target
+                (job_run_id, target_kind, historical_library_root_id, display_name,
+                 safe_location_display, scan_run_id, exclusion_reason,
+                 related_job_run_id, related_scan_run_id)
+             VALUES
+                ('11111111111111111111111111111111', 'requested',
+                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'Games', '/library/Games', NULL, NULL, NULL, NULL),
+                ('11111111111111111111111111111111', 'admitted',
+                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'Games', '/library/Games',
+                 '44444444444444444444444444444444', NULL, NULL, NULL);",
+        )
+        .expect("seed old history");
+    drop(connection);
+
     let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 6);
-    assert_eq!(fresh.migration_summary().applied_count, 1);
+    assert_eq!(fresh.migration_summary().current_version, 7);
+    assert_eq!(fresh.migration_summary().applied_count, 2);
 
     fresh
         .execute(&context(), move |mut scope| {

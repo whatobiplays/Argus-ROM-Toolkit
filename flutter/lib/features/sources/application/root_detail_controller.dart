@@ -23,6 +23,9 @@ sealed class SourcesRootDetailState with _$SourcesRootDetailState {
     required bool scanning,
     JobRunId? admittedScanJobRunId,
     required bool removalBlockedByActiveScan,
+    LibraryRootActiveScan? removalBlockedOwner,
+    required bool cancelAndRemovePending,
+    required bool cancelAndRemoveAmbiguous,
   }) = SourcesRootDetailStateReady;
 
   /// The syntactically valid root is no longer configured.
@@ -43,6 +46,7 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
   int _readToken = 0;
   bool _readInFlight = false;
   bool _scanInFlight = false;
+  bool _cancelRemoveInFlight = false;
   int _demandToken = 0;
   StreamSubscription<SourcesReconciliationDemand>? _demandSubscription;
 
@@ -72,14 +76,18 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
   /// Issues one focused authoritative root-detail read.
   Future<void> refresh(LibraryRootId rootId) => _readAuthoritative(rootId);
 
-  /// Removes the configured root after presentation-level confirmation.
+  /// Removes the configured root after plain confirmation.
   ///
   /// A transport-ambiguous removal is never blindly repeated: the controller
-  /// reconciles through an authoritative read before the user may retry.
+  /// reconciles through an authoritative read before the user may retry. A
+  /// `RootHasActiveScan` race result enters the same guided cancel-and-remove
+  /// workflow surfaced through [removalBlockedOwner].
   Future<void> remove(LibraryRootId rootId) async {
     final current = state.value;
     if (current is! SourcesRootDetailStateReady ||
         current.removing ||
+        current.cancelAndRemovePending ||
+        current.cancelAndRemoveAmbiguous ||
         // A transport-ambiguous removal is never repeated: the destructive
         // repeat stays rejected until an authoritative read resolves it.
         current.removalAmbiguous ||
@@ -96,32 +104,16 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
         scanning: current.scanning,
         admittedScanJobRunId: current.admittedScanJobRunId,
         removalBlockedByActiveScan: false,
+        removalBlockedOwner: null,
+        cancelAndRemovePending: false,
+        cancelAndRemoveAmbiguous: false,
       ),
     );
     try {
       final result = await ref
           .read(sourcesApiProvider)
           .removeLibraryRoot(rootId);
-      if (result is! RemoveLibraryRootResultRemoved) {
-        final blocked = result;
-        final latest = state.value;
-        if (latest is! SourcesRootDetailStateReady || _readInFlight) return;
-        _publish(
-          SourcesRootDetailState.ready(
-            root: latest.root,
-            refreshing: false,
-            lastFailure: null,
-            removing: false,
-            removalAmbiguous: false,
-            scanning: false,
-            admittedScanJobRunId: latest.admittedScanJobRunId,
-            removalBlockedByActiveScan:
-                blocked is RemoveLibraryRootResultRootHasActiveScan,
-          ),
-        );
-        return;
-      }
-      _publish(SourcesRootDetailState.missing());
+      _applyRemovalResult(result);
     } on ClientFailure catch (failure) {
       final latest = state.value;
       if (latest is! SourcesRootDetailStateReady) return;
@@ -136,12 +128,189 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           scanning: latest.scanning,
           admittedScanJobRunId: latest.admittedScanJobRunId,
           removalBlockedByActiveScan: latest.removalBlockedByActiveScan,
+          removalBlockedOwner: latest.removalBlockedOwner,
+          cancelAndRemovePending: false,
+          cancelAndRemoveAmbiguous: false,
         ),
       );
       if (ambiguous) {
         // Reconcile authoritative ownership; never repeat the removal.
         await _readAuthoritative(rootId);
       }
+    }
+  }
+
+  /// Executes the guided Cancel Scan & Remove sequence:
+  /// cancelJob -> authoritative job/root reconciliation -> prove no active
+  /// owner -> removeLibraryRoot. Definite or transport-ambiguous cancellation
+  /// failure never proceeds destructively; only an authoritative read proving
+  /// ownership ended allows removal to continue.
+  Future<void> cancelAndRemove(LibraryRootId rootId, JobRunId jobRunId) async {
+    final current = state.value;
+    if (current is! SourcesRootDetailStateReady ||
+        current.removing ||
+        current.cancelAndRemovePending ||
+        current.cancelAndRemoveAmbiguous ||
+        current.removalAmbiguous ||
+        _readInFlight ||
+        _cancelRemoveInFlight) {
+      return;
+    }
+    _cancelRemoveInFlight = true;
+    _publish(
+      SourcesRootDetailState.ready(
+        root: current.root,
+        refreshing: false,
+        lastFailure: null,
+        removing: false,
+        removalAmbiguous: false,
+        scanning: current.scanning,
+        admittedScanJobRunId: current.admittedScanJobRunId,
+        removalBlockedByActiveScan: false,
+        removalBlockedOwner: null,
+        cancelAndRemovePending: true,
+        cancelAndRemoveAmbiguous: false,
+      ),
+    );
+    try {
+      final cancel = await ref.read(sourcesJobsApiProvider).cancelJob(jobRunId);
+      if (cancel == CancelJobResult.noLongerCancellable) {
+        // The job is already terminal; authoritative reconciliation decides
+        // whether the root still has an active owner.
+      }
+      await _removeAfterOwnershipProven(rootId);
+    } on ClientFailure catch (failure) {
+      final latest = state.value;
+      if (latest is! SourcesRootDetailStateReady) return;
+      if (failure is TransportFailure) {
+        _publish(
+          SourcesRootDetailState.ready(
+            root: latest.root,
+            refreshing: false,
+            lastFailure: failure,
+            removing: false,
+            removalAmbiguous: false,
+            scanning: latest.scanning,
+            admittedScanJobRunId: latest.admittedScanJobRunId,
+            removalBlockedByActiveScan: false,
+            removalBlockedOwner: null,
+            cancelAndRemovePending: false,
+            cancelAndRemoveAmbiguous: true,
+          ),
+        );
+        // Never repeat the cancel destructively. Reconcile authority; only a
+        // proven absence of ownership may continue to removal.
+        await _readAuthoritative(rootId);
+        final reconciled = state.value;
+        if (reconciled is SourcesRootDetailStateReady &&
+            reconciled.root.activeScan == null) {
+          await _removeAfterOwnershipProven(rootId);
+        }
+        return;
+      }
+      _publish(
+        SourcesRootDetailState.ready(
+          root: latest.root,
+          refreshing: false,
+          lastFailure: failure,
+          removing: false,
+          removalAmbiguous: false,
+          scanning: latest.scanning,
+          admittedScanJobRunId: latest.admittedScanJobRunId,
+          removalBlockedByActiveScan: false,
+          removalBlockedOwner: null,
+          cancelAndRemovePending: false,
+          cancelAndRemoveAmbiguous: false,
+        ),
+      );
+    } finally {
+      _cancelRemoveInFlight = false;
+    }
+  }
+
+  Future<void> _removeAfterOwnershipProven(LibraryRootId rootId) async {
+    await _readAuthoritative(rootId);
+    final current = state.value;
+    if (current is! SourcesRootDetailStateReady) return;
+    final owner = current.root.activeScan;
+    if (owner != null) {
+      _publish(
+        SourcesRootDetailState.ready(
+          root: current.root,
+          refreshing: false,
+          lastFailure: null,
+          removing: false,
+          removalAmbiguous: false,
+          scanning: current.scanning,
+          admittedScanJobRunId: current.admittedScanJobRunId,
+          removalBlockedByActiveScan: true,
+          removalBlockedOwner: owner,
+          cancelAndRemovePending: false,
+          cancelAndRemoveAmbiguous: false,
+        ),
+      );
+      return;
+    }
+    try {
+      final result = await ref
+          .read(sourcesApiProvider)
+          .removeLibraryRoot(rootId);
+      _applyRemovalResult(result);
+    } on ClientFailure catch (failure) {
+      final latest = state.value;
+      if (latest is! SourcesRootDetailStateReady) return;
+      final ambiguous = failure is TransportFailure;
+      _publish(
+        SourcesRootDetailState.ready(
+          root: latest.root,
+          refreshing: false,
+          lastFailure: failure,
+          removing: false,
+          removalAmbiguous: ambiguous,
+          scanning: latest.scanning,
+          admittedScanJobRunId: latest.admittedScanJobRunId,
+          removalBlockedByActiveScan: latest.removalBlockedByActiveScan,
+          removalBlockedOwner: latest.removalBlockedOwner,
+          cancelAndRemovePending: false,
+          cancelAndRemoveAmbiguous: false,
+        ),
+      );
+      if (ambiguous) {
+        await _readAuthoritative(rootId);
+      }
+    }
+  }
+
+  void _applyRemovalResult(RemoveLibraryRootResult result) {
+    switch (result) {
+      case RemoveLibraryRootResultRemoved():
+        _publish(const SourcesRootDetailState.missing());
+      case RemoveLibraryRootResultRootHasActiveScan(
+        :final jobRunId,
+        :final scanRunId,
+        :final owningJobRootCount,
+      ):
+        final latest = state.value;
+        if (latest is! SourcesRootDetailStateReady) return;
+        _publish(
+          SourcesRootDetailState.ready(
+            root: latest.root,
+            refreshing: false,
+            lastFailure: null,
+            removing: false,
+            removalAmbiguous: false,
+            scanning: false,
+            admittedScanJobRunId: latest.admittedScanJobRunId,
+            removalBlockedByActiveScan: true,
+            removalBlockedOwner: LibraryRootActiveScan(
+              scanRunId: scanRunId.value,
+              jobRunId: jobRunId.value,
+              owningJobRootCount: owningJobRootCount,
+            ),
+            cancelAndRemovePending: false,
+            cancelAndRemoveAmbiguous: false,
+          ),
+        );
     }
   }
 
@@ -157,6 +326,12 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
       final current = state.value;
       final removing =
           current is SourcesRootDetailStateReady && current.removing;
+      final cancelAndRemovePending =
+          current is SourcesRootDetailStateReady &&
+          current.cancelAndRemovePending;
+      final cancelAndRemoveAmbiguous =
+          current is SourcesRootDetailStateReady &&
+          current.cancelAndRemoveAmbiguous;
       _lastLoaded = root;
       _publish(
         SourcesRootDetailState.ready(
@@ -170,6 +345,11 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           removalBlockedByActiveScan:
               current is SourcesRootDetailStateReady &&
               current.removalBlockedByActiveScan,
+          removalBlockedOwner: current is SourcesRootDetailStateReady
+              ? current.removalBlockedOwner
+              : null,
+          cancelAndRemovePending: cancelAndRemovePending,
+          cancelAndRemoveAmbiguous: cancelAndRemoveAmbiguous,
           // A successful authoritative read proves the current root exists,
           // which resolves any prior transport-ambiguous removal uncertainty.
           removalAmbiguous: false,
@@ -197,6 +377,9 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           scanning: current.scanning,
           admittedScanJobRunId: current.admittedScanJobRunId,
           removalBlockedByActiveScan: current.removalBlockedByActiveScan,
+          removalBlockedOwner: current.removalBlockedOwner,
+          cancelAndRemovePending: current.cancelAndRemovePending,
+          cancelAndRemoveAmbiguous: current.cancelAndRemoveAmbiguous,
           removalAmbiguous: current.removalAmbiguous,
         ),
       );
@@ -255,7 +438,11 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
         removing: false,
         removalAmbiguous: false,
         scanning: true,
+        admittedScanJobRunId: null,
         removalBlockedByActiveScan: false,
+        removalBlockedOwner: null,
+        cancelAndRemovePending: false,
+        cancelAndRemoveAmbiguous: false,
       ),
     );
     try {
@@ -276,6 +463,9 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
               scanning: false,
               admittedScanJobRunId: handle.jobRunId,
               removalBlockedByActiveScan: false,
+              removalBlockedOwner: null,
+              cancelAndRemovePending: false,
+              cancelAndRemoveAmbiguous: false,
             ),
           );
           await _readAuthoritative(rootId);
@@ -297,6 +487,9 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           scanning: false,
           admittedScanJobRunId: null,
           removalBlockedByActiveScan: false,
+          removalBlockedOwner: null,
+          cancelAndRemovePending: false,
+          cancelAndRemoveAmbiguous: false,
         ),
       );
       return null;

@@ -10,6 +10,7 @@ final class FakeSourcesApi implements SourcesApi {
   Object? getFailure;
   Object? listFailure;
   RemoveLibraryRootResult Function(LibraryRootId libraryRootId)? onRemove;
+  StartLibraryScanResult Function(LibraryRootId libraryRootId)? onStartScan;
 
   int listCalls = 0;
   int getCalls = 0;
@@ -77,7 +78,21 @@ final class FakeSourcesApi implements SourcesApi {
       for (final root in roots)
         if (root.id != libraryRootId) root,
     ];
-    return RemoveLibraryRootResult.removed;
+    return const RemoveLibraryRootResult.removed();
+  }
+
+  @override
+  Future<StartLibraryScanResult> startLibraryScan(
+    LibraryRootId libraryRootId,
+  ) async {
+    final handler = onStartScan;
+    if (handler != null) return handler(libraryRootId);
+    return StartLibraryScanResult.admitted(
+      OperationHandle(
+        jobRunId: const JobRunId('11111111111111111111111111111111'),
+        operationType: 'library_scan',
+      ),
+    );
   }
 }
 

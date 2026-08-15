@@ -378,6 +378,781 @@ as RootRelationshipDto,
 }
 
 /// @nodoc
+mixin _$ListJobsScopeDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ListJobsScopeDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'ListJobsScopeDto()';
+}
+
+
+}
+
+/// @nodoc
+class $ListJobsScopeDtoCopyWith<$Res>  {
+$ListJobsScopeDtoCopyWith(ListJobsScopeDto _, $Res Function(ListJobsScopeDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [ListJobsScopeDto].
+extension ListJobsScopeDtoPatterns on ListJobsScopeDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ListJobsScopeDto_Active value)?  active,TResult Function( ListJobsScopeDto_RecentTerminal value)?  recentTerminal,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case ListJobsScopeDto_Active() when active != null:
+return active(_that);case ListJobsScopeDto_RecentTerminal() when recentTerminal != null:
+return recentTerminal(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ListJobsScopeDto_Active value)  active,required TResult Function( ListJobsScopeDto_RecentTerminal value)  recentTerminal,}){
+final _that = this;
+switch (_that) {
+case ListJobsScopeDto_Active():
+return active(_that);case ListJobsScopeDto_RecentTerminal():
+return recentTerminal(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ListJobsScopeDto_Active value)?  active,TResult? Function( ListJobsScopeDto_RecentTerminal value)?  recentTerminal,}){
+final _that = this;
+switch (_that) {
+case ListJobsScopeDto_Active() when active != null:
+return active(_that);case ListJobsScopeDto_RecentTerminal() when recentTerminal != null:
+return recentTerminal(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  active,TResult Function( int offset,  int pageSize)?  recentTerminal,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case ListJobsScopeDto_Active() when active != null:
+return active();case ListJobsScopeDto_RecentTerminal() when recentTerminal != null:
+return recentTerminal(_that.offset,_that.pageSize);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  active,required TResult Function( int offset,  int pageSize)  recentTerminal,}) {final _that = this;
+switch (_that) {
+case ListJobsScopeDto_Active():
+return active();case ListJobsScopeDto_RecentTerminal():
+return recentTerminal(_that.offset,_that.pageSize);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  active,TResult? Function( int offset,  int pageSize)?  recentTerminal,}) {final _that = this;
+switch (_that) {
+case ListJobsScopeDto_Active() when active != null:
+return active();case ListJobsScopeDto_RecentTerminal() when recentTerminal != null:
+return recentTerminal(_that.offset,_that.pageSize);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class ListJobsScopeDto_Active extends ListJobsScopeDto {
+  const ListJobsScopeDto_Active(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ListJobsScopeDto_Active);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'ListJobsScopeDto.active()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class ListJobsScopeDto_RecentTerminal extends ListJobsScopeDto {
+  const ListJobsScopeDto_RecentTerminal({required this.offset, required this.pageSize}): super._();
+
+
+ final  int offset;
+ final  int pageSize;
+
+/// Create a copy of ListJobsScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ListJobsScopeDto_RecentTerminalCopyWith<ListJobsScopeDto_RecentTerminal> get copyWith => _$ListJobsScopeDto_RecentTerminalCopyWithImpl<ListJobsScopeDto_RecentTerminal>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ListJobsScopeDto_RecentTerminal&&(identical(other.offset, offset) || other.offset == offset)&&(identical(other.pageSize, pageSize) || other.pageSize == pageSize));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,offset,pageSize);
+
+@override
+String toString() {
+  return 'ListJobsScopeDto.recentTerminal(offset: $offset, pageSize: $pageSize)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ListJobsScopeDto_RecentTerminalCopyWith<$Res> implements $ListJobsScopeDtoCopyWith<$Res> {
+  factory $ListJobsScopeDto_RecentTerminalCopyWith(ListJobsScopeDto_RecentTerminal value, $Res Function(ListJobsScopeDto_RecentTerminal) _then) = _$ListJobsScopeDto_RecentTerminalCopyWithImpl;
+@useResult
+$Res call({
+ int offset, int pageSize
+});
+
+
+
+
+}
+/// @nodoc
+class _$ListJobsScopeDto_RecentTerminalCopyWithImpl<$Res>
+    implements $ListJobsScopeDto_RecentTerminalCopyWith<$Res> {
+  _$ListJobsScopeDto_RecentTerminalCopyWithImpl(this._self, this._then);
+
+  final ListJobsScopeDto_RecentTerminal _self;
+  final $Res Function(ListJobsScopeDto_RecentTerminal) _then;
+
+/// Create a copy of ListJobsScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? offset = null,Object? pageSize = null,}) {
+  return _then(ListJobsScopeDto_RecentTerminal(
+offset: null == offset ? _self.offset : offset // ignore: cast_nullable_to_non_nullable
+as int,pageSize: null == pageSize ? _self.pageSize : pageSize // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$OperationDetailDto {
+
+ LibraryScanJobDetailDto get field0;
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$OperationDetailDtoCopyWith<OperationDetailDto> get copyWith => _$OperationDetailDtoCopyWithImpl<OperationDetailDto>(this as OperationDetailDto, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OperationDetailDto&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'OperationDetailDto(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $OperationDetailDtoCopyWith<$Res>  {
+  factory $OperationDetailDtoCopyWith(OperationDetailDto value, $Res Function(OperationDetailDto) _then) = _$OperationDetailDtoCopyWithImpl;
+@useResult
+$Res call({
+ LibraryScanJobDetailDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$OperationDetailDtoCopyWithImpl<$Res>
+    implements $OperationDetailDtoCopyWith<$Res> {
+  _$OperationDetailDtoCopyWithImpl(this._self, this._then);
+
+  final OperationDetailDto _self;
+  final $Res Function(OperationDetailDto) _then;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? field0 = null,}) {
+  return _then(_self.copyWith(
+field0: null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryScanJobDetailDto,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [OperationDetailDto].
+extension OperationDetailDtoPatterns on OperationDetailDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( OperationDetailDto_LibraryScan value)?  libraryScan,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan() when libraryScan != null:
+return libraryScan(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( OperationDetailDto_LibraryScan value)  libraryScan,}){
+final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan():
+return libraryScan(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( OperationDetailDto_LibraryScan value)?  libraryScan,}){
+final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan() when libraryScan != null:
+return libraryScan(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryScanJobDetailDto field0)?  libraryScan,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan() when libraryScan != null:
+return libraryScan(_that.field0);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryScanJobDetailDto field0)  libraryScan,}) {final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan():
+return libraryScan(_that.field0);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryScanJobDetailDto field0)?  libraryScan,}) {final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan() when libraryScan != null:
+return libraryScan(_that.field0);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class OperationDetailDto_LibraryScan extends OperationDetailDto {
+  const OperationDetailDto_LibraryScan(this.field0): super._();
+
+
+@override final  LibraryScanJobDetailDto field0;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$OperationDetailDto_LibraryScanCopyWith<OperationDetailDto_LibraryScan> get copyWith => _$OperationDetailDto_LibraryScanCopyWithImpl<OperationDetailDto_LibraryScan>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OperationDetailDto_LibraryScan&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'OperationDetailDto.libraryScan(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $OperationDetailDto_LibraryScanCopyWith<$Res> implements $OperationDetailDtoCopyWith<$Res> {
+  factory $OperationDetailDto_LibraryScanCopyWith(OperationDetailDto_LibraryScan value, $Res Function(OperationDetailDto_LibraryScan) _then) = _$OperationDetailDto_LibraryScanCopyWithImpl;
+@override @useResult
+$Res call({
+ LibraryScanJobDetailDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$OperationDetailDto_LibraryScanCopyWithImpl<$Res>
+    implements $OperationDetailDto_LibraryScanCopyWith<$Res> {
+  _$OperationDetailDto_LibraryScanCopyWithImpl(this._self, this._then);
+
+  final OperationDetailDto_LibraryScan _self;
+  final $Res Function(OperationDetailDto_LibraryScan) _then;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(OperationDetailDto_LibraryScan(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryScanJobDetailDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$RemoveLibraryRootResultDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RemoveLibraryRootResultDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RemoveLibraryRootResultDto()';
+}
+
+
+}
+
+/// @nodoc
+class $RemoveLibraryRootResultDtoCopyWith<$Res>  {
+$RemoveLibraryRootResultDtoCopyWith(RemoveLibraryRootResultDto _, $Res Function(RemoveLibraryRootResultDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [RemoveLibraryRootResultDto].
+extension RemoveLibraryRootResultDtoPatterns on RemoveLibraryRootResultDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RemoveLibraryRootResultDto_Removed value)?  removed,TResult Function( RemoveLibraryRootResultDto_RootHasActiveScan value)?  rootHasActiveScan,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case RemoveLibraryRootResultDto_Removed() when removed != null:
+return removed(_that);case RemoveLibraryRootResultDto_RootHasActiveScan() when rootHasActiveScan != null:
+return rootHasActiveScan(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RemoveLibraryRootResultDto_Removed value)  removed,required TResult Function( RemoveLibraryRootResultDto_RootHasActiveScan value)  rootHasActiveScan,}){
+final _that = this;
+switch (_that) {
+case RemoveLibraryRootResultDto_Removed():
+return removed(_that);case RemoveLibraryRootResultDto_RootHasActiveScan():
+return rootHasActiveScan(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RemoveLibraryRootResultDto_Removed value)?  removed,TResult? Function( RemoveLibraryRootResultDto_RootHasActiveScan value)?  rootHasActiveScan,}){
+final _that = this;
+switch (_that) {
+case RemoveLibraryRootResultDto_Removed() when removed != null:
+return removed(_that);case RemoveLibraryRootResultDto_RootHasActiveScan() when rootHasActiveScan != null:
+return rootHasActiveScan(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  removed,TResult Function( String libraryRootId,  String jobRunId,  String scanRunId,  int owningJobRootCount)?  rootHasActiveScan,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case RemoveLibraryRootResultDto_Removed() when removed != null:
+return removed();case RemoveLibraryRootResultDto_RootHasActiveScan() when rootHasActiveScan != null:
+return rootHasActiveScan(_that.libraryRootId,_that.jobRunId,_that.scanRunId,_that.owningJobRootCount);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  removed,required TResult Function( String libraryRootId,  String jobRunId,  String scanRunId,  int owningJobRootCount)  rootHasActiveScan,}) {final _that = this;
+switch (_that) {
+case RemoveLibraryRootResultDto_Removed():
+return removed();case RemoveLibraryRootResultDto_RootHasActiveScan():
+return rootHasActiveScan(_that.libraryRootId,_that.jobRunId,_that.scanRunId,_that.owningJobRootCount);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  removed,TResult? Function( String libraryRootId,  String jobRunId,  String scanRunId,  int owningJobRootCount)?  rootHasActiveScan,}) {final _that = this;
+switch (_that) {
+case RemoveLibraryRootResultDto_Removed() when removed != null:
+return removed();case RemoveLibraryRootResultDto_RootHasActiveScan() when rootHasActiveScan != null:
+return rootHasActiveScan(_that.libraryRootId,_that.jobRunId,_that.scanRunId,_that.owningJobRootCount);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class RemoveLibraryRootResultDto_Removed extends RemoveLibraryRootResultDto {
+  const RemoveLibraryRootResultDto_Removed(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RemoveLibraryRootResultDto_Removed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RemoveLibraryRootResultDto.removed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RemoveLibraryRootResultDto_RootHasActiveScan extends RemoveLibraryRootResultDto {
+  const RemoveLibraryRootResultDto_RootHasActiveScan({required this.libraryRootId, required this.jobRunId, required this.scanRunId, required this.owningJobRootCount}): super._();
+
+
+ final  String libraryRootId;
+ final  String jobRunId;
+ final  String scanRunId;
+ final  int owningJobRootCount;
+
+/// Create a copy of RemoveLibraryRootResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RemoveLibraryRootResultDto_RootHasActiveScanCopyWith<RemoveLibraryRootResultDto_RootHasActiveScan> get copyWith => _$RemoveLibraryRootResultDto_RootHasActiveScanCopyWithImpl<RemoveLibraryRootResultDto_RootHasActiveScan>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RemoveLibraryRootResultDto_RootHasActiveScan&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.jobRunId, jobRunId) || other.jobRunId == jobRunId)&&(identical(other.scanRunId, scanRunId) || other.scanRunId == scanRunId)&&(identical(other.owningJobRootCount, owningJobRootCount) || other.owningJobRootCount == owningJobRootCount));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,libraryRootId,jobRunId,scanRunId,owningJobRootCount);
+
+@override
+String toString() {
+  return 'RemoveLibraryRootResultDto.rootHasActiveScan(libraryRootId: $libraryRootId, jobRunId: $jobRunId, scanRunId: $scanRunId, owningJobRootCount: $owningJobRootCount)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RemoveLibraryRootResultDto_RootHasActiveScanCopyWith<$Res> implements $RemoveLibraryRootResultDtoCopyWith<$Res> {
+  factory $RemoveLibraryRootResultDto_RootHasActiveScanCopyWith(RemoveLibraryRootResultDto_RootHasActiveScan value, $Res Function(RemoveLibraryRootResultDto_RootHasActiveScan) _then) = _$RemoveLibraryRootResultDto_RootHasActiveScanCopyWithImpl;
+@useResult
+$Res call({
+ String libraryRootId, String jobRunId, String scanRunId, int owningJobRootCount
+});
+
+
+
+
+}
+/// @nodoc
+class _$RemoveLibraryRootResultDto_RootHasActiveScanCopyWithImpl<$Res>
+    implements $RemoveLibraryRootResultDto_RootHasActiveScanCopyWith<$Res> {
+  _$RemoveLibraryRootResultDto_RootHasActiveScanCopyWithImpl(this._self, this._then);
+
+  final RemoveLibraryRootResultDto_RootHasActiveScan _self;
+  final $Res Function(RemoveLibraryRootResultDto_RootHasActiveScan) _then;
+
+/// Create a copy of RemoveLibraryRootResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,Object? jobRunId = null,Object? scanRunId = null,Object? owningJobRootCount = null,}) {
+  return _then(RemoveLibraryRootResultDto_RootHasActiveScan(
+libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as String,jobRunId: null == jobRunId ? _self.jobRunId : jobRunId // ignore: cast_nullable_to_non_nullable
+as String,scanRunId: null == scanRunId ? _self.scanRunId : scanRunId // ignore: cast_nullable_to_non_nullable
+as String,owningJobRootCount: null == owningJobRootCount ? _self.owningJobRootCount : owningJobRootCount // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$RuntimeEventPayloadDto {
 
 
@@ -421,7 +1196,7 @@ extension RuntimeEventPayloadDtoPatterns on RuntimeEventPayloadDto {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RuntimeEventPayloadDto_RuntimeStateChanged value)?  runtimeStateChanged,TResult Function( RuntimeEventPayloadDto_StartupFailed value)?  startupFailed,TResult Function( RuntimeEventPayloadDto_AppearanceSettingsChanged value)?  appearanceSettingsChanged,TResult Function( RuntimeEventPayloadDto_LibraryRootsChanged value)?  libraryRootsChanged,TResult Function( RuntimeEventPayloadDto_LibraryRootChanged value)?  libraryRootChanged,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RuntimeEventPayloadDto_RuntimeStateChanged value)?  runtimeStateChanged,TResult Function( RuntimeEventPayloadDto_StartupFailed value)?  startupFailed,TResult Function( RuntimeEventPayloadDto_AppearanceSettingsChanged value)?  appearanceSettingsChanged,TResult Function( RuntimeEventPayloadDto_LibraryRootsChanged value)?  libraryRootsChanged,TResult Function( RuntimeEventPayloadDto_LibraryRootChanged value)?  libraryRootChanged,TResult Function( RuntimeEventPayloadDto_JobStateChanged value)?  jobStateChanged,TResult Function( RuntimeEventPayloadDto_JobProgress value)?  jobProgress,TResult Function( RuntimeEventPayloadDto_SourceEntriesChanged value)?  sourceEntriesChanged,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RuntimeEventPayloadDto_RuntimeStateChanged() when runtimeStateChanged != null:
@@ -429,7 +1204,10 @@ return runtimeStateChanged(_that);case RuntimeEventPayloadDto_StartupFailed() wh
 return startupFailed(_that);case RuntimeEventPayloadDto_AppearanceSettingsChanged() when appearanceSettingsChanged != null:
 return appearanceSettingsChanged(_that);case RuntimeEventPayloadDto_LibraryRootsChanged() when libraryRootsChanged != null:
 return libraryRootsChanged(_that);case RuntimeEventPayloadDto_LibraryRootChanged() when libraryRootChanged != null:
-return libraryRootChanged(_that);case _:
+return libraryRootChanged(_that);case RuntimeEventPayloadDto_JobStateChanged() when jobStateChanged != null:
+return jobStateChanged(_that);case RuntimeEventPayloadDto_JobProgress() when jobProgress != null:
+return jobProgress(_that);case RuntimeEventPayloadDto_SourceEntriesChanged() when sourceEntriesChanged != null:
+return sourceEntriesChanged(_that);case _:
   return orElse();
 
 }
@@ -447,7 +1225,7 @@ return libraryRootChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RuntimeEventPayloadDto_RuntimeStateChanged value)  runtimeStateChanged,required TResult Function( RuntimeEventPayloadDto_StartupFailed value)  startupFailed,required TResult Function( RuntimeEventPayloadDto_AppearanceSettingsChanged value)  appearanceSettingsChanged,required TResult Function( RuntimeEventPayloadDto_LibraryRootsChanged value)  libraryRootsChanged,required TResult Function( RuntimeEventPayloadDto_LibraryRootChanged value)  libraryRootChanged,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RuntimeEventPayloadDto_RuntimeStateChanged value)  runtimeStateChanged,required TResult Function( RuntimeEventPayloadDto_StartupFailed value)  startupFailed,required TResult Function( RuntimeEventPayloadDto_AppearanceSettingsChanged value)  appearanceSettingsChanged,required TResult Function( RuntimeEventPayloadDto_LibraryRootsChanged value)  libraryRootsChanged,required TResult Function( RuntimeEventPayloadDto_LibraryRootChanged value)  libraryRootChanged,required TResult Function( RuntimeEventPayloadDto_JobStateChanged value)  jobStateChanged,required TResult Function( RuntimeEventPayloadDto_JobProgress value)  jobProgress,required TResult Function( RuntimeEventPayloadDto_SourceEntriesChanged value)  sourceEntriesChanged,}){
 final _that = this;
 switch (_that) {
 case RuntimeEventPayloadDto_RuntimeStateChanged():
@@ -455,7 +1233,10 @@ return runtimeStateChanged(_that);case RuntimeEventPayloadDto_StartupFailed():
 return startupFailed(_that);case RuntimeEventPayloadDto_AppearanceSettingsChanged():
 return appearanceSettingsChanged(_that);case RuntimeEventPayloadDto_LibraryRootsChanged():
 return libraryRootsChanged(_that);case RuntimeEventPayloadDto_LibraryRootChanged():
-return libraryRootChanged(_that);}
+return libraryRootChanged(_that);case RuntimeEventPayloadDto_JobStateChanged():
+return jobStateChanged(_that);case RuntimeEventPayloadDto_JobProgress():
+return jobProgress(_that);case RuntimeEventPayloadDto_SourceEntriesChanged():
+return sourceEntriesChanged(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -469,7 +1250,7 @@ return libraryRootChanged(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RuntimeEventPayloadDto_RuntimeStateChanged value)?  runtimeStateChanged,TResult? Function( RuntimeEventPayloadDto_StartupFailed value)?  startupFailed,TResult? Function( RuntimeEventPayloadDto_AppearanceSettingsChanged value)?  appearanceSettingsChanged,TResult? Function( RuntimeEventPayloadDto_LibraryRootsChanged value)?  libraryRootsChanged,TResult? Function( RuntimeEventPayloadDto_LibraryRootChanged value)?  libraryRootChanged,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RuntimeEventPayloadDto_RuntimeStateChanged value)?  runtimeStateChanged,TResult? Function( RuntimeEventPayloadDto_StartupFailed value)?  startupFailed,TResult? Function( RuntimeEventPayloadDto_AppearanceSettingsChanged value)?  appearanceSettingsChanged,TResult? Function( RuntimeEventPayloadDto_LibraryRootsChanged value)?  libraryRootsChanged,TResult? Function( RuntimeEventPayloadDto_LibraryRootChanged value)?  libraryRootChanged,TResult? Function( RuntimeEventPayloadDto_JobStateChanged value)?  jobStateChanged,TResult? Function( RuntimeEventPayloadDto_JobProgress value)?  jobProgress,TResult? Function( RuntimeEventPayloadDto_SourceEntriesChanged value)?  sourceEntriesChanged,}){
 final _that = this;
 switch (_that) {
 case RuntimeEventPayloadDto_RuntimeStateChanged() when runtimeStateChanged != null:
@@ -477,7 +1258,10 @@ return runtimeStateChanged(_that);case RuntimeEventPayloadDto_StartupFailed() wh
 return startupFailed(_that);case RuntimeEventPayloadDto_AppearanceSettingsChanged() when appearanceSettingsChanged != null:
 return appearanceSettingsChanged(_that);case RuntimeEventPayloadDto_LibraryRootsChanged() when libraryRootsChanged != null:
 return libraryRootsChanged(_that);case RuntimeEventPayloadDto_LibraryRootChanged() when libraryRootChanged != null:
-return libraryRootChanged(_that);case _:
+return libraryRootChanged(_that);case RuntimeEventPayloadDto_JobStateChanged() when jobStateChanged != null:
+return jobStateChanged(_that);case RuntimeEventPayloadDto_JobProgress() when jobProgress != null:
+return jobProgress(_that);case RuntimeEventPayloadDto_SourceEntriesChanged() when sourceEntriesChanged != null:
+return sourceEntriesChanged(_that);case _:
   return null;
 
 }
@@ -494,14 +1278,17 @@ return libraryRootChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( RuntimeLifecycleDto lifecycle)?  runtimeStateChanged,TResult Function( StartupPhaseDto phase)?  startupFailed,TResult Function()?  appearanceSettingsChanged,TResult Function()?  libraryRootsChanged,TResult Function( String libraryRootId)?  libraryRootChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( RuntimeLifecycleDto lifecycle)?  runtimeStateChanged,TResult Function( StartupPhaseDto phase)?  startupFailed,TResult Function()?  appearanceSettingsChanged,TResult Function()?  libraryRootsChanged,TResult Function( String libraryRootId)?  libraryRootChanged,TResult Function( String jobRunId)?  jobStateChanged,TResult Function( String jobRunId,  String phase,  BigInt? completedUnits,  BigInt? totalUnits,  String? statusKey)?  jobProgress,TResult Function( String libraryRootId,  SourceEntriesChangeScopeDto scope)?  sourceEntriesChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RuntimeEventPayloadDto_RuntimeStateChanged() when runtimeStateChanged != null:
 return runtimeStateChanged(_that.lifecycle);case RuntimeEventPayloadDto_StartupFailed() when startupFailed != null:
 return startupFailed(_that.phase);case RuntimeEventPayloadDto_AppearanceSettingsChanged() when appearanceSettingsChanged != null:
 return appearanceSettingsChanged();case RuntimeEventPayloadDto_LibraryRootsChanged() when libraryRootsChanged != null:
 return libraryRootsChanged();case RuntimeEventPayloadDto_LibraryRootChanged() when libraryRootChanged != null:
-return libraryRootChanged(_that.libraryRootId);case _:
+return libraryRootChanged(_that.libraryRootId);case RuntimeEventPayloadDto_JobStateChanged() when jobStateChanged != null:
+return jobStateChanged(_that.jobRunId);case RuntimeEventPayloadDto_JobProgress() when jobProgress != null:
+return jobProgress(_that.jobRunId,_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey);case RuntimeEventPayloadDto_SourceEntriesChanged() when sourceEntriesChanged != null:
+return sourceEntriesChanged(_that.libraryRootId,_that.scope);case _:
   return orElse();
 
 }
@@ -519,14 +1306,17 @@ return libraryRootChanged(_that.libraryRootId);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( RuntimeLifecycleDto lifecycle)  runtimeStateChanged,required TResult Function( StartupPhaseDto phase)  startupFailed,required TResult Function()  appearanceSettingsChanged,required TResult Function()  libraryRootsChanged,required TResult Function( String libraryRootId)  libraryRootChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( RuntimeLifecycleDto lifecycle)  runtimeStateChanged,required TResult Function( StartupPhaseDto phase)  startupFailed,required TResult Function()  appearanceSettingsChanged,required TResult Function()  libraryRootsChanged,required TResult Function( String libraryRootId)  libraryRootChanged,required TResult Function( String jobRunId)  jobStateChanged,required TResult Function( String jobRunId,  String phase,  BigInt? completedUnits,  BigInt? totalUnits,  String? statusKey)  jobProgress,required TResult Function( String libraryRootId,  SourceEntriesChangeScopeDto scope)  sourceEntriesChanged,}) {final _that = this;
 switch (_that) {
 case RuntimeEventPayloadDto_RuntimeStateChanged():
 return runtimeStateChanged(_that.lifecycle);case RuntimeEventPayloadDto_StartupFailed():
 return startupFailed(_that.phase);case RuntimeEventPayloadDto_AppearanceSettingsChanged():
 return appearanceSettingsChanged();case RuntimeEventPayloadDto_LibraryRootsChanged():
 return libraryRootsChanged();case RuntimeEventPayloadDto_LibraryRootChanged():
-return libraryRootChanged(_that.libraryRootId);}
+return libraryRootChanged(_that.libraryRootId);case RuntimeEventPayloadDto_JobStateChanged():
+return jobStateChanged(_that.jobRunId);case RuntimeEventPayloadDto_JobProgress():
+return jobProgress(_that.jobRunId,_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey);case RuntimeEventPayloadDto_SourceEntriesChanged():
+return sourceEntriesChanged(_that.libraryRootId,_that.scope);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -540,14 +1330,17 @@ return libraryRootChanged(_that.libraryRootId);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( RuntimeLifecycleDto lifecycle)?  runtimeStateChanged,TResult? Function( StartupPhaseDto phase)?  startupFailed,TResult? Function()?  appearanceSettingsChanged,TResult? Function()?  libraryRootsChanged,TResult? Function( String libraryRootId)?  libraryRootChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( RuntimeLifecycleDto lifecycle)?  runtimeStateChanged,TResult? Function( StartupPhaseDto phase)?  startupFailed,TResult? Function()?  appearanceSettingsChanged,TResult? Function()?  libraryRootsChanged,TResult? Function( String libraryRootId)?  libraryRootChanged,TResult? Function( String jobRunId)?  jobStateChanged,TResult? Function( String jobRunId,  String phase,  BigInt? completedUnits,  BigInt? totalUnits,  String? statusKey)?  jobProgress,TResult? Function( String libraryRootId,  SourceEntriesChangeScopeDto scope)?  sourceEntriesChanged,}) {final _that = this;
 switch (_that) {
 case RuntimeEventPayloadDto_RuntimeStateChanged() when runtimeStateChanged != null:
 return runtimeStateChanged(_that.lifecycle);case RuntimeEventPayloadDto_StartupFailed() when startupFailed != null:
 return startupFailed(_that.phase);case RuntimeEventPayloadDto_AppearanceSettingsChanged() when appearanceSettingsChanged != null:
 return appearanceSettingsChanged();case RuntimeEventPayloadDto_LibraryRootsChanged() when libraryRootsChanged != null:
 return libraryRootsChanged();case RuntimeEventPayloadDto_LibraryRootChanged() when libraryRootChanged != null:
-return libraryRootChanged(_that.libraryRootId);case _:
+return libraryRootChanged(_that.libraryRootId);case RuntimeEventPayloadDto_JobStateChanged() when jobStateChanged != null:
+return jobStateChanged(_that.jobRunId);case RuntimeEventPayloadDto_JobProgress() when jobProgress != null:
+return jobProgress(_that.jobRunId,_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey);case RuntimeEventPayloadDto_SourceEntriesChanged() when sourceEntriesChanged != null:
+return sourceEntriesChanged(_that.libraryRootId,_that.scope);case _:
   return null;
 
 }
@@ -810,6 +1603,815 @@ class _$RuntimeEventPayloadDto_LibraryRootChangedCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,}) {
   return _then(RuntimeEventPayloadDto_LibraryRootChanged(
 libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RuntimeEventPayloadDto_JobStateChanged extends RuntimeEventPayloadDto {
+  const RuntimeEventPayloadDto_JobStateChanged({required this.jobRunId}): super._();
+
+
+ final  String jobRunId;
+
+/// Create a copy of RuntimeEventPayloadDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RuntimeEventPayloadDto_JobStateChangedCopyWith<RuntimeEventPayloadDto_JobStateChanged> get copyWith => _$RuntimeEventPayloadDto_JobStateChangedCopyWithImpl<RuntimeEventPayloadDto_JobStateChanged>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RuntimeEventPayloadDto_JobStateChanged&&(identical(other.jobRunId, jobRunId) || other.jobRunId == jobRunId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,jobRunId);
+
+@override
+String toString() {
+  return 'RuntimeEventPayloadDto.jobStateChanged(jobRunId: $jobRunId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RuntimeEventPayloadDto_JobStateChangedCopyWith<$Res> implements $RuntimeEventPayloadDtoCopyWith<$Res> {
+  factory $RuntimeEventPayloadDto_JobStateChangedCopyWith(RuntimeEventPayloadDto_JobStateChanged value, $Res Function(RuntimeEventPayloadDto_JobStateChanged) _then) = _$RuntimeEventPayloadDto_JobStateChangedCopyWithImpl;
+@useResult
+$Res call({
+ String jobRunId
+});
+
+
+
+
+}
+/// @nodoc
+class _$RuntimeEventPayloadDto_JobStateChangedCopyWithImpl<$Res>
+    implements $RuntimeEventPayloadDto_JobStateChangedCopyWith<$Res> {
+  _$RuntimeEventPayloadDto_JobStateChangedCopyWithImpl(this._self, this._then);
+
+  final RuntimeEventPayloadDto_JobStateChanged _self;
+  final $Res Function(RuntimeEventPayloadDto_JobStateChanged) _then;
+
+/// Create a copy of RuntimeEventPayloadDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? jobRunId = null,}) {
+  return _then(RuntimeEventPayloadDto_JobStateChanged(
+jobRunId: null == jobRunId ? _self.jobRunId : jobRunId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RuntimeEventPayloadDto_JobProgress extends RuntimeEventPayloadDto {
+  const RuntimeEventPayloadDto_JobProgress({required this.jobRunId, required this.phase, this.completedUnits, this.totalUnits, this.statusKey}): super._();
+
+
+ final  String jobRunId;
+ final  String phase;
+ final  BigInt? completedUnits;
+ final  BigInt? totalUnits;
+ final  String? statusKey;
+
+/// Create a copy of RuntimeEventPayloadDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RuntimeEventPayloadDto_JobProgressCopyWith<RuntimeEventPayloadDto_JobProgress> get copyWith => _$RuntimeEventPayloadDto_JobProgressCopyWithImpl<RuntimeEventPayloadDto_JobProgress>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RuntimeEventPayloadDto_JobProgress&&(identical(other.jobRunId, jobRunId) || other.jobRunId == jobRunId)&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,jobRunId,phase,completedUnits,totalUnits,statusKey);
+
+@override
+String toString() {
+  return 'RuntimeEventPayloadDto.jobProgress(jobRunId: $jobRunId, phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RuntimeEventPayloadDto_JobProgressCopyWith<$Res> implements $RuntimeEventPayloadDtoCopyWith<$Res> {
+  factory $RuntimeEventPayloadDto_JobProgressCopyWith(RuntimeEventPayloadDto_JobProgress value, $Res Function(RuntimeEventPayloadDto_JobProgress) _then) = _$RuntimeEventPayloadDto_JobProgressCopyWithImpl;
+@useResult
+$Res call({
+ String jobRunId, String phase, BigInt? completedUnits, BigInt? totalUnits, String? statusKey
+});
+
+
+
+
+}
+/// @nodoc
+class _$RuntimeEventPayloadDto_JobProgressCopyWithImpl<$Res>
+    implements $RuntimeEventPayloadDto_JobProgressCopyWith<$Res> {
+  _$RuntimeEventPayloadDto_JobProgressCopyWithImpl(this._self, this._then);
+
+  final RuntimeEventPayloadDto_JobProgress _self;
+  final $Res Function(RuntimeEventPayloadDto_JobProgress) _then;
+
+/// Create a copy of RuntimeEventPayloadDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? jobRunId = null,Object? phase = null,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,}) {
+  return _then(RuntimeEventPayloadDto_JobProgress(
+jobRunId: null == jobRunId ? _self.jobRunId : jobRunId // ignore: cast_nullable_to_non_nullable
+as String,phase: null == phase ? _self.phase : phase // ignore: cast_nullable_to_non_nullable
+as String,completedUnits: freezed == completedUnits ? _self.completedUnits : completedUnits // ignore: cast_nullable_to_non_nullable
+as BigInt?,totalUnits: freezed == totalUnits ? _self.totalUnits : totalUnits // ignore: cast_nullable_to_non_nullable
+as BigInt?,statusKey: freezed == statusKey ? _self.statusKey : statusKey // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RuntimeEventPayloadDto_SourceEntriesChanged extends RuntimeEventPayloadDto {
+  const RuntimeEventPayloadDto_SourceEntriesChanged({required this.libraryRootId, required this.scope}): super._();
+
+
+ final  String libraryRootId;
+ final  SourceEntriesChangeScopeDto scope;
+
+/// Create a copy of RuntimeEventPayloadDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RuntimeEventPayloadDto_SourceEntriesChangedCopyWith<RuntimeEventPayloadDto_SourceEntriesChanged> get copyWith => _$RuntimeEventPayloadDto_SourceEntriesChangedCopyWithImpl<RuntimeEventPayloadDto_SourceEntriesChanged>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RuntimeEventPayloadDto_SourceEntriesChanged&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.scope, scope) || other.scope == scope));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,libraryRootId,scope);
+
+@override
+String toString() {
+  return 'RuntimeEventPayloadDto.sourceEntriesChanged(libraryRootId: $libraryRootId, scope: $scope)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RuntimeEventPayloadDto_SourceEntriesChangedCopyWith<$Res> implements $RuntimeEventPayloadDtoCopyWith<$Res> {
+  factory $RuntimeEventPayloadDto_SourceEntriesChangedCopyWith(RuntimeEventPayloadDto_SourceEntriesChanged value, $Res Function(RuntimeEventPayloadDto_SourceEntriesChanged) _then) = _$RuntimeEventPayloadDto_SourceEntriesChangedCopyWithImpl;
+@useResult
+$Res call({
+ String libraryRootId, SourceEntriesChangeScopeDto scope
+});
+
+
+$SourceEntriesChangeScopeDtoCopyWith<$Res> get scope;
+
+}
+/// @nodoc
+class _$RuntimeEventPayloadDto_SourceEntriesChangedCopyWithImpl<$Res>
+    implements $RuntimeEventPayloadDto_SourceEntriesChangedCopyWith<$Res> {
+  _$RuntimeEventPayloadDto_SourceEntriesChangedCopyWithImpl(this._self, this._then);
+
+  final RuntimeEventPayloadDto_SourceEntriesChanged _self;
+  final $Res Function(RuntimeEventPayloadDto_SourceEntriesChanged) _then;
+
+/// Create a copy of RuntimeEventPayloadDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,Object? scope = null,}) {
+  return _then(RuntimeEventPayloadDto_SourceEntriesChanged(
+libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as String,scope: null == scope ? _self.scope : scope // ignore: cast_nullable_to_non_nullable
+as SourceEntriesChangeScopeDto,
+  ));
+}
+
+/// Create a copy of RuntimeEventPayloadDto
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$SourceEntriesChangeScopeDtoCopyWith<$Res> get scope {
+
+  return $SourceEntriesChangeScopeDtoCopyWith<$Res>(_self.scope, (value) {
+    return _then(_self.copyWith(scope: value));
+  });
+}
+}
+
+/// @nodoc
+mixin _$SourceEntriesChangeScopeDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScopeDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScopeDto()';
+}
+
+
+}
+
+/// @nodoc
+class $SourceEntriesChangeScopeDtoCopyWith<$Res>  {
+$SourceEntriesChangeScopeDtoCopyWith(SourceEntriesChangeScopeDto _, $Res Function(SourceEntriesChangeScopeDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [SourceEntriesChangeScopeDto].
+extension SourceEntriesChangeScopeDtoPatterns on SourceEntriesChangeScopeDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourceEntriesChangeScopeDto_RootChildren value)?  rootChildren,TResult Function( SourceEntriesChangeScopeDto_EntryChildren value)?  entryChildren,TResult Function( SourceEntriesChangeScopeDto_EntireRootHierarchy value)?  entireRootHierarchy,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeDto_RootChildren() when rootChildren != null:
+return rootChildren(_that);case SourceEntriesChangeScopeDto_EntryChildren() when entryChildren != null:
+return entryChildren(_that);case SourceEntriesChangeScopeDto_EntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourceEntriesChangeScopeDto_RootChildren value)  rootChildren,required TResult Function( SourceEntriesChangeScopeDto_EntryChildren value)  entryChildren,required TResult Function( SourceEntriesChangeScopeDto_EntireRootHierarchy value)  entireRootHierarchy,}){
+final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeDto_RootChildren():
+return rootChildren(_that);case SourceEntriesChangeScopeDto_EntryChildren():
+return entryChildren(_that);case SourceEntriesChangeScopeDto_EntireRootHierarchy():
+return entireRootHierarchy(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourceEntriesChangeScopeDto_RootChildren value)?  rootChildren,TResult? Function( SourceEntriesChangeScopeDto_EntryChildren value)?  entryChildren,TResult? Function( SourceEntriesChangeScopeDto_EntireRootHierarchy value)?  entireRootHierarchy,}){
+final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeDto_RootChildren() when rootChildren != null:
+return rootChildren(_that);case SourceEntriesChangeScopeDto_EntryChildren() when entryChildren != null:
+return entryChildren(_that);case SourceEntriesChangeScopeDto_EntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  rootChildren,TResult Function( String field0)?  entryChildren,TResult Function()?  entireRootHierarchy,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeDto_RootChildren() when rootChildren != null:
+return rootChildren();case SourceEntriesChangeScopeDto_EntryChildren() when entryChildren != null:
+return entryChildren(_that.field0);case SourceEntriesChangeScopeDto_EntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  rootChildren,required TResult Function( String field0)  entryChildren,required TResult Function()  entireRootHierarchy,}) {final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeDto_RootChildren():
+return rootChildren();case SourceEntriesChangeScopeDto_EntryChildren():
+return entryChildren(_that.field0);case SourceEntriesChangeScopeDto_EntireRootHierarchy():
+return entireRootHierarchy();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  rootChildren,TResult? Function( String field0)?  entryChildren,TResult? Function()?  entireRootHierarchy,}) {final _that = this;
+switch (_that) {
+case SourceEntriesChangeScopeDto_RootChildren() when rootChildren != null:
+return rootChildren();case SourceEntriesChangeScopeDto_EntryChildren() when entryChildren != null:
+return entryChildren(_that.field0);case SourceEntriesChangeScopeDto_EntireRootHierarchy() when entireRootHierarchy != null:
+return entireRootHierarchy();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class SourceEntriesChangeScopeDto_RootChildren extends SourceEntriesChangeScopeDto {
+  const SourceEntriesChangeScopeDto_RootChildren(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScopeDto_RootChildren);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScopeDto.rootChildren()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class SourceEntriesChangeScopeDto_EntryChildren extends SourceEntriesChangeScopeDto {
+  const SourceEntriesChangeScopeDto_EntryChildren(this.field0): super._();
+
+
+ final  String field0;
+
+/// Create a copy of SourceEntriesChangeScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourceEntriesChangeScopeDto_EntryChildrenCopyWith<SourceEntriesChangeScopeDto_EntryChildren> get copyWith => _$SourceEntriesChangeScopeDto_EntryChildrenCopyWithImpl<SourceEntriesChangeScopeDto_EntryChildren>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScopeDto_EntryChildren&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScopeDto.entryChildren(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourceEntriesChangeScopeDto_EntryChildrenCopyWith<$Res> implements $SourceEntriesChangeScopeDtoCopyWith<$Res> {
+  factory $SourceEntriesChangeScopeDto_EntryChildrenCopyWith(SourceEntriesChangeScopeDto_EntryChildren value, $Res Function(SourceEntriesChangeScopeDto_EntryChildren) _then) = _$SourceEntriesChangeScopeDto_EntryChildrenCopyWithImpl;
+@useResult
+$Res call({
+ String field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$SourceEntriesChangeScopeDto_EntryChildrenCopyWithImpl<$Res>
+    implements $SourceEntriesChangeScopeDto_EntryChildrenCopyWith<$Res> {
+  _$SourceEntriesChangeScopeDto_EntryChildrenCopyWithImpl(this._self, this._then);
+
+  final SourceEntriesChangeScopeDto_EntryChildren _self;
+  final $Res Function(SourceEntriesChangeScopeDto_EntryChildren) _then;
+
+/// Create a copy of SourceEntriesChangeScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(SourceEntriesChangeScopeDto_EntryChildren(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class SourceEntriesChangeScopeDto_EntireRootHierarchy extends SourceEntriesChangeScopeDto {
+  const SourceEntriesChangeScopeDto_EntireRootHierarchy(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourceEntriesChangeScopeDto_EntireRootHierarchy);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SourceEntriesChangeScopeDto.entireRootHierarchy()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+mixin _$StartLibraryScanResultDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanResultDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'StartLibraryScanResultDto()';
+}
+
+
+}
+
+/// @nodoc
+class $StartLibraryScanResultDtoCopyWith<$Res>  {
+$StartLibraryScanResultDtoCopyWith(StartLibraryScanResultDto _, $Res Function(StartLibraryScanResultDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [StartLibraryScanResultDto].
+extension StartLibraryScanResultDtoPatterns on StartLibraryScanResultDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( StartLibraryScanResultDto_Admitted value)?  admitted,TResult Function( StartLibraryScanResultDto_AlreadyScanning value)?  alreadyScanning,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanResultDto_Admitted() when admitted != null:
+return admitted(_that);case StartLibraryScanResultDto_AlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( StartLibraryScanResultDto_Admitted value)  admitted,required TResult Function( StartLibraryScanResultDto_AlreadyScanning value)  alreadyScanning,}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanResultDto_Admitted():
+return admitted(_that);case StartLibraryScanResultDto_AlreadyScanning():
+return alreadyScanning(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( StartLibraryScanResultDto_Admitted value)?  admitted,TResult? Function( StartLibraryScanResultDto_AlreadyScanning value)?  alreadyScanning,}){
+final _that = this;
+switch (_that) {
+case StartLibraryScanResultDto_Admitted() when admitted != null:
+return admitted(_that);case StartLibraryScanResultDto_AlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( OperationHandleDto field0)?  admitted,TResult Function( String libraryRootId,  String activeJobRunId,  String activeScanRunId)?  alreadyScanning,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case StartLibraryScanResultDto_Admitted() when admitted != null:
+return admitted(_that.field0);case StartLibraryScanResultDto_AlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that.libraryRootId,_that.activeJobRunId,_that.activeScanRunId);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( OperationHandleDto field0)  admitted,required TResult Function( String libraryRootId,  String activeJobRunId,  String activeScanRunId)  alreadyScanning,}) {final _that = this;
+switch (_that) {
+case StartLibraryScanResultDto_Admitted():
+return admitted(_that.field0);case StartLibraryScanResultDto_AlreadyScanning():
+return alreadyScanning(_that.libraryRootId,_that.activeJobRunId,_that.activeScanRunId);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( OperationHandleDto field0)?  admitted,TResult? Function( String libraryRootId,  String activeJobRunId,  String activeScanRunId)?  alreadyScanning,}) {final _that = this;
+switch (_that) {
+case StartLibraryScanResultDto_Admitted() when admitted != null:
+return admitted(_that.field0);case StartLibraryScanResultDto_AlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that.libraryRootId,_that.activeJobRunId,_that.activeScanRunId);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class StartLibraryScanResultDto_Admitted extends StartLibraryScanResultDto {
+  const StartLibraryScanResultDto_Admitted(this.field0): super._();
+
+
+ final  OperationHandleDto field0;
+
+/// Create a copy of StartLibraryScanResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanResultDto_AdmittedCopyWith<StartLibraryScanResultDto_Admitted> get copyWith => _$StartLibraryScanResultDto_AdmittedCopyWithImpl<StartLibraryScanResultDto_Admitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanResultDto_Admitted&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'StartLibraryScanResultDto.admitted(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanResultDto_AdmittedCopyWith<$Res> implements $StartLibraryScanResultDtoCopyWith<$Res> {
+  factory $StartLibraryScanResultDto_AdmittedCopyWith(StartLibraryScanResultDto_Admitted value, $Res Function(StartLibraryScanResultDto_Admitted) _then) = _$StartLibraryScanResultDto_AdmittedCopyWithImpl;
+@useResult
+$Res call({
+ OperationHandleDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanResultDto_AdmittedCopyWithImpl<$Res>
+    implements $StartLibraryScanResultDto_AdmittedCopyWith<$Res> {
+  _$StartLibraryScanResultDto_AdmittedCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanResultDto_Admitted _self;
+  final $Res Function(StartLibraryScanResultDto_Admitted) _then;
+
+/// Create a copy of StartLibraryScanResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(StartLibraryScanResultDto_Admitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as OperationHandleDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class StartLibraryScanResultDto_AlreadyScanning extends StartLibraryScanResultDto {
+  const StartLibraryScanResultDto_AlreadyScanning({required this.libraryRootId, required this.activeJobRunId, required this.activeScanRunId}): super._();
+
+
+ final  String libraryRootId;
+ final  String activeJobRunId;
+ final  String activeScanRunId;
+
+/// Create a copy of StartLibraryScanResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StartLibraryScanResultDto_AlreadyScanningCopyWith<StartLibraryScanResultDto_AlreadyScanning> get copyWith => _$StartLibraryScanResultDto_AlreadyScanningCopyWithImpl<StartLibraryScanResultDto_AlreadyScanning>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StartLibraryScanResultDto_AlreadyScanning&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.activeJobRunId, activeJobRunId) || other.activeJobRunId == activeJobRunId)&&(identical(other.activeScanRunId, activeScanRunId) || other.activeScanRunId == activeScanRunId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,libraryRootId,activeJobRunId,activeScanRunId);
+
+@override
+String toString() {
+  return 'StartLibraryScanResultDto.alreadyScanning(libraryRootId: $libraryRootId, activeJobRunId: $activeJobRunId, activeScanRunId: $activeScanRunId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StartLibraryScanResultDto_AlreadyScanningCopyWith<$Res> implements $StartLibraryScanResultDtoCopyWith<$Res> {
+  factory $StartLibraryScanResultDto_AlreadyScanningCopyWith(StartLibraryScanResultDto_AlreadyScanning value, $Res Function(StartLibraryScanResultDto_AlreadyScanning) _then) = _$StartLibraryScanResultDto_AlreadyScanningCopyWithImpl;
+@useResult
+$Res call({
+ String libraryRootId, String activeJobRunId, String activeScanRunId
+});
+
+
+
+
+}
+/// @nodoc
+class _$StartLibraryScanResultDto_AlreadyScanningCopyWithImpl<$Res>
+    implements $StartLibraryScanResultDto_AlreadyScanningCopyWith<$Res> {
+  _$StartLibraryScanResultDto_AlreadyScanningCopyWithImpl(this._self, this._then);
+
+  final StartLibraryScanResultDto_AlreadyScanning _self;
+  final $Res Function(StartLibraryScanResultDto_AlreadyScanning) _then;
+
+/// Create a copy of StartLibraryScanResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,Object? activeJobRunId = null,Object? activeScanRunId = null,}) {
+  return _then(StartLibraryScanResultDto_AlreadyScanning(
+libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as String,activeJobRunId: null == activeJobRunId ? _self.activeJobRunId : activeJobRunId // ignore: cast_nullable_to_non_nullable
+as String,activeScanRunId: null == activeScanRunId ? _self.activeScanRunId : activeScanRunId // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }

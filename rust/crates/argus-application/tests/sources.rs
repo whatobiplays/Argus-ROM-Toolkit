@@ -6,16 +6,20 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use argus_application::{
-    AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
+    ActiveScanOwnership, AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder,
-    EventRecordingError, GetLibraryRootQuery, LibraryRootActiveScanSummary,
-    LibraryRootAvailability, LibraryRootChanged, LibraryRootConfiguration, LibraryRootId,
-    LibraryRootLastScanSummary, LibraryRootPage, LibraryRootProjection, LibraryRootQueries,
-    LibraryRootRepository, LibraryRootsChanged, LibraryRootsSubscriber, LibraryService,
-    ListLibraryRootsQuery, LocalFilesystemProvider, LocalFilesystemRootSelection, NewLibraryRoot,
-    OperationContext, OperationName, PersistenceError, ProviderError, RemoveLibraryRootCommand,
-    RemoveLibraryRootResult, RootLocator, RootRelationship, SourceProviderType, SubsystemName,
-    TraceId, UnitOfWork, UnitOfWorkFactory, ValidatedLocalRoot,
+    EventRecordingError, GetLibraryRootQuery, JobProgress, JobRunId, JobRunRepository, JobRunState,
+    LibraryRootActiveScanSummary, LibraryRootAvailability, LibraryRootChanged,
+    LibraryRootConfiguration, LibraryRootId, LibraryRootLastScanSummary, LibraryRootPage,
+    LibraryRootProjection, LibraryRootQueries, LibraryRootRepository, LibraryRootScanConfiguration,
+    LibraryRootsChanged, LibraryRootsSubscriber, LibraryScanTarget, LibraryScanTargetRepository,
+    LibraryService, LibrarySourceAccess, ListLibraryRootsQuery, LocalFilesystemProvider,
+    LocalFilesystemRootSelection, NewJobRun, NewLibraryRoot, NewLibraryScanTarget, NewScanRun,
+    NewSourceEntry, OperationContext, OperationName, PersistenceError, ProviderError,
+    RemoveLibraryRootCommand, RemoveLibraryRootResult, RootLocator, RootRelationship, ScanRunId,
+    ScanRunProjection, ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntryId,
+    SourceEntryRepository, SourceProviderType, SubsystemName, TraceId, UnitOfWork,
+    UnitOfWorkFactory, ValidatedLocalRoot,
 };
 use argus_domain::LibrarySourceId;
 
@@ -106,6 +110,13 @@ impl LocalFilesystemProvider for FakeProvider {
             .pop()
             .unwrap_or(RootRelationship::Unknown)
     }
+
+    fn open_access(
+        &self,
+        _locator: &RootLocator,
+    ) -> Result<Box<dyn LibrarySourceAccess>, SourceAccessError> {
+        Err(SourceAccessError::UnsupportedOperation)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -159,6 +170,14 @@ impl LibraryRootQueries for FakeQueries {
     ) -> Result<Vec<LibraryRootConfiguration>, PersistenceError> {
         Ok(self.configs.borrow().clone())
     }
+
+    fn get_scan_configuration(
+        &self,
+        _context: &OperationContext,
+        _root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError> {
+        Ok(None)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -203,6 +222,26 @@ impl LibraryRootRepository for FakeRootRepository<'_> {
         self.store.borrow_mut().deleted.push(id);
         Ok(true)
     }
+
+    fn exists(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+        Ok(true)
+    }
+
+    fn set_availability(
+        &mut self,
+        _root_id: LibraryRootId,
+        _availability: LibraryRootAvailability,
+    ) -> Result<bool, PersistenceError> {
+        Ok(true)
+    }
+
+    fn set_last_scan(
+        &mut self,
+        _root_id: LibraryRootId,
+        _summary: Option<LibraryRootLastScanSummary>,
+    ) -> Result<bool, PersistenceError> {
+        Ok(true)
+    }
 }
 
 struct FakeAppearanceRepository<'scope> {
@@ -215,6 +254,123 @@ impl AppearanceSettingsRepository for FakeAppearanceRepository<'_> {
     }
 
     fn save(&mut self, _settings: &AppearanceSettings) -> Result<(), PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
+struct NoopJobRunRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl JobRunRepository for NoopJobRunRepository<'_> {
+    fn insert(&mut self, _new: NewJobRun) -> Result<JobRunId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn request_cancellation(
+        &mut self,
+        _job_run_id: JobRunId,
+    ) -> Result<Option<bool>, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn set_state(
+        &mut self,
+        _job_run_id: JobRunId,
+        _state: JobRunState,
+        _timestamp_ms: i64,
+    ) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn set_progress(
+        &mut self,
+        _job_run_id: JobRunId,
+        _progress: &JobProgress,
+    ) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn set_terminal_failure(
+        &mut self,
+        _job_run_id: JobRunId,
+        _state: JobRunState,
+        _terminal_error_code: Option<String>,
+        _terminal_safe_context: Option<String>,
+        _timestamp_ms: i64,
+    ) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
+struct NoopScanRunRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl ScanRunRepository for NoopScanRunRepository<'_> {
+    fn insert(&mut self, _new: NewScanRun) -> Result<ScanRunId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn set_status(
+        &mut self,
+        _scan_run_id: ScanRunId,
+        _status: ScanRunStatus,
+        _completed_at_ms: Option<i64>,
+        _failure_reason: Option<String>,
+    ) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn find_active_ownership(
+        &mut self,
+        _library_root_id: LibraryRootId,
+    ) -> Result<Option<ActiveScanOwnership>, PersistenceError> {
+        Ok(None)
+    }
+
+    fn find_last_scan(
+        &mut self,
+        _library_root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootLastScanSummary>, PersistenceError> {
+        Ok(None)
+    }
+
+    fn list_by_job(
+        &mut self,
+        _job_run_id: JobRunId,
+    ) -> Result<Vec<ScanRunProjection>, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
+struct NoopSourceEntryRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl SourceEntryRepository for NoopSourceEntryRepository<'_> {
+    fn upsert(&mut self, _entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn delete_for_root(&mut self, _library_root_id: LibraryRootId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+}
+
+struct NoopLibraryScanTargetRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibraryScanTargetRepository for NoopLibraryScanTargetRepository<'_> {
+    fn insert(&mut self, _target: NewLibraryScanTarget) -> Result<(), PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn list_by_job(
+        &mut self,
+        _job_run_id: JobRunId,
+    ) -> Result<Vec<LibraryScanTarget>, PersistenceError> {
         Err(PersistenceError::Unavailable)
     }
 }
@@ -238,6 +394,22 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
         = FakeRootRepository<'scope>
     where
         Self: 'scope;
+    type JobRunRepository<'scope>
+        = NoopJobRunRepository<'scope>
+    where
+        Self: 'scope;
+    type ScanRunRepository<'scope>
+        = NoopScanRunRepository<'scope>
+    where
+        Self: 'scope;
+    type SourceEntryRepository<'scope>
+        = NoopSourceEntryRepository<'scope>
+    where
+        Self: 'scope;
+    type LibraryScanTargetRepository<'scope>
+        = NoopLibraryScanTargetRepository<'scope>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         FakeAppearanceRepository {
@@ -255,6 +427,30 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
     fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
         FakeRootRepository {
             store: Rc::clone(&self.store),
+            marker: PhantomData,
+        }
+    }
+
+    fn job_runs(&mut self) -> Self::JobRunRepository<'_> {
+        NoopJobRunRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn scan_runs(&mut self) -> Self::ScanRunRepository<'_> {
+        NoopScanRunRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn source_entries(&mut self) -> Self::SourceEntryRepository<'_> {
+        NoopSourceEntryRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
+        NoopLibraryScanTargetRepository {
             marker: PhantomData,
         }
     }

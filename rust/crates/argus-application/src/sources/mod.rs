@@ -3,6 +3,7 @@
 mod events;
 mod library;
 mod provider;
+mod scan;
 
 pub use events::{LibraryRootChanged, LibraryRootsChanged, LibraryRootsSubscriber};
 pub use library::{
@@ -10,11 +11,16 @@ pub use library::{
     GetLibraryRootHandler, GetLibraryRootQuery, LibraryRootActiveScanSummary,
     LibraryRootAvailability, LibraryRootConfiguration, LibraryRootLastScanStatus,
     LibraryRootLastScanSummary, LibraryRootPage, LibraryRootProjection, LibraryRootQueries,
-    LibraryRootRepository, LibraryService, LibrarySourceRepository, ListLibraryRootsHandler,
-    ListLibraryRootsQuery, NewLibraryRoot, RemoveLibraryRootCommand, RemoveLibraryRootHandler,
-    RemoveLibraryRootResult,
+    LibraryRootRepository, LibraryRootScanConfiguration, LibraryService, LibrarySourceRepository,
+    ListLibraryRootsHandler, ListLibraryRootsQuery, NewLibraryRoot, RemoveLibraryRootCommand,
+    RemoveLibraryRootHandler, RemoveLibraryRootResult, StartLibraryScanCommand,
+    StartLibraryScanHandler,
 };
 pub use provider::{
-    LocalFilesystemProvider, LocalFilesystemRootSelection, ProviderError, RootLocator,
-    RootRelationship, SourceProviderType, SourceProviderTypeError, ValidatedLocalRoot,
+    DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, LibrarySourceAccess,
+    LocalFilesystemProvider, LocalFilesystemRootSelection, ObservedEntryKind, ProviderError,
+    RelativeSourceLocator, ResolvedRoot, RootLocator, RootRelationship, SourceAccessError,
+    SourceEntryClassification, SourceEntryKind, SourceLocatorKey, SourceObservation,
+    SourceProviderType, SourceProviderTypeError, ValidatedLocalRoot,
 };
+pub use scan::LibraryScanOperationHandler;

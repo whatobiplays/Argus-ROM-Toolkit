@@ -1,0 +1,951 @@
+//! Typed SQLite adapters for Slice 002 job, scan, admission-target, and
+//! source-entry state.
+
+use argus_application::{
+    ActiveScanOwnership, ApplicationPortError, JobControlAvailability, JobDetail, JobProgress,
+    JobRunId, JobRunProjection, JobRunRepository, JobRunState, JobSummary, JobSummaryPage,
+    JobsQueries, LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
+    LibraryScanAdmissionExclusion, LibraryScanJobDetail, LibraryScanRootSummary, LibraryScanTarget,
+    LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
+    NewJobRun, NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext,
+    PersistenceError, ScanProgressFacts, ScanRunId, ScanRunProjection, ScanRunRepository,
+    ScanRunStatus, SourceEntryId, SourceEntryRepository,
+};
+use rusqlite::OptionalExtension;
+
+use super::appearance::map_executor_error;
+use super::connection::SqliteConnection;
+use super::errors::SqliteOperationError;
+use super::executor::SqliteDatabaseExecutor;
+use super::unit_of_work::SqliteUnitOfWork;
+
+type RootLastScanRaw = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+);
+
+/// Transaction-scoped generic job-run repository.
+pub struct SqliteJobRunRepository<'scope, 'connection> {
+    work: &'scope mut SqliteUnitOfWork<'connection>,
+}
+
+impl<'scope, 'connection> SqliteJobRunRepository<'scope, 'connection> {
+    pub(crate) fn new(work: &'scope mut SqliteUnitOfWork<'connection>) -> Self {
+        Self { work }
+    }
+}
+
+impl JobRunRepository for SqliteJobRunRepository<'_, '_> {
+    fn insert(&mut self, new: NewJobRun) -> Result<JobRunId, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let created: String = transaction
+            .query_row(
+                "INSERT INTO job_run
+                    (job_run_id, operation_type, state, created_at, queued_at)
+                 VALUES (lower(hex(randomblob(16))), ?1, 'queued', ?2, ?2)
+                 RETURNING job_run_id",
+                rusqlite::params![new.operation_type(), new.created_at_ms()],
+                |row| row.get(0),
+            )
+            .map_err(map_persistence_operation_error)?;
+        parse_job_run_id(created)
+    }
+
+    fn request_cancellation(
+        &mut self,
+        job_run_id: JobRunId,
+    ) -> Result<Option<bool>, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let current: Option<(String, i64)> = transaction
+            .query_row(
+                "SELECT state, cancellation_requested
+                 FROM job_run WHERE job_run_id = ?1",
+                [job_run_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        let Some((state, cancellation_requested)) = current else {
+            return Ok(None);
+        };
+        let state = JobRunState::try_from(state.as_str())
+            .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+        if state.is_terminal() || cancellation_requested != 0 {
+            return Ok(Some(false));
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE job_run SET cancellation_requested = 1 WHERE job_run_id = ?1",
+                [job_run_id.to_string()],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(Some(changed == 1))
+    }
+
+    fn set_state(
+        &mut self,
+        job_run_id: JobRunId,
+        state: JobRunState,
+        timestamp_ms: i64,
+    ) -> Result<bool, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let changed = transaction
+            .execute(
+                "UPDATE job_run
+                 SET state = ?1,
+                     queued_at = COALESCE(queued_at, ?2),
+                     started_at = COALESCE(started_at, CASE WHEN ?3 = 1 THEN ?2 END),
+                     completed_at = CASE WHEN ?4 = 1 THEN ?2 ELSE completed_at END
+                 WHERE job_run_id = ?5",
+                rusqlite::params![
+                    state.as_str(),
+                    timestamp_ms,
+                    i64::from(state == JobRunState::Running || state == JobRunState::Preparing),
+                    i64::from(state.is_terminal()),
+                    job_run_id.to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(changed == 1)
+    }
+
+    fn set_progress(
+        &mut self,
+        _job_run_id: JobRunId,
+        progress: &JobProgress,
+    ) -> Result<bool, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let changed = transaction
+            .execute(
+                "UPDATE job_run
+                 SET current_phase = ?1,
+                     completed_units = ?2,
+                     total_units = ?3,
+                     status_key = ?4
+                 WHERE job_run_id = ?5",
+                rusqlite::params![
+                    progress.phase(),
+                    progress.completed_units().map(|value| value as i64),
+                    progress.total_units().map(|value| value as i64),
+                    progress.status_key(),
+                    progress.job_run_id().to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(changed == 1)
+    }
+
+    fn set_terminal_failure(
+        &mut self,
+        job_run_id: JobRunId,
+        state: JobRunState,
+        terminal_error_code: Option<String>,
+        terminal_safe_context: Option<String>,
+        timestamp_ms: i64,
+    ) -> Result<bool, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let changed = transaction
+            .execute(
+                "UPDATE job_run
+                 SET state = ?1,
+                     completed_at = ?2,
+                     terminal_error_code = ?3,
+                     terminal_safe_context = ?4
+                 WHERE job_run_id = ?5",
+                rusqlite::params![
+                    state.as_str(),
+                    timestamp_ms,
+                    terminal_error_code,
+                    terminal_safe_context,
+                    job_run_id.to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(changed == 1)
+    }
+}
+
+/// Transaction-scoped per-root scan-run repository.
+pub struct SqliteScanRunRepository<'scope, 'connection> {
+    work: &'scope mut SqliteUnitOfWork<'connection>,
+}
+
+impl<'scope, 'connection> SqliteScanRunRepository<'scope, 'connection> {
+    pub(crate) fn new(work: &'scope mut SqliteUnitOfWork<'connection>) -> Self {
+        Self { work }
+    }
+}
+
+impl ScanRunRepository for SqliteScanRunRepository<'_, '_> {
+    fn insert(&mut self, new: NewScanRun) -> Result<ScanRunId, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let created: String = transaction
+            .query_row(
+                "INSERT INTO scan_run
+                    (scan_run_id, job_run_id, historical_library_root_id, root_locator,
+                     root_display_name, safe_location_display, source_config_revision,
+                     root_config_revision, status, started_at)
+                 VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'running', ?8)
+                 RETURNING scan_run_id",
+                rusqlite::params![
+                    new.job_run_id().to_string(),
+                    new.library_root_id().to_string(),
+                    new.root_locator().as_provider_value(),
+                    new.display_name(),
+                    new.safe_location_display(),
+                    i64::from(new.source_config_revision()),
+                    i64::from(new.root_config_revision()),
+                    new.started_at_ms(),
+                ],
+                |row| row.get(0),
+            )
+            .map_err(map_persistence_operation_error)?;
+        parse_scan_run_id(created)
+    }
+
+    fn set_status(
+        &mut self,
+        scan_run_id: ScanRunId,
+        status: ScanRunStatus,
+        completed_at_ms: Option<i64>,
+        failure_reason: Option<String>,
+    ) -> Result<bool, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let changed = transaction
+            .execute(
+                "UPDATE scan_run
+                 SET status = ?1, completed_at = ?2, failure_reason = ?3
+                 WHERE scan_run_id = ?4",
+                rusqlite::params![
+                    status.as_str(),
+                    completed_at_ms,
+                    failure_reason,
+                    scan_run_id.to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(changed == 1)
+    }
+
+    fn find_active_ownership(
+        &mut self,
+        library_root_id: LibraryRootId,
+    ) -> Result<Option<ActiveScanOwnership>, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let row: Option<(String, String, i64)> = transaction
+            .query_row(
+                "SELECT s.job_run_id, s.scan_run_id,
+                        (SELECT COUNT(*) FROM scan_run s2
+                          WHERE s2.job_run_id = s.job_run_id AND s2.status = 'running')
+                 FROM scan_run s
+                 WHERE s.historical_library_root_id = ?1 AND s.status = 'running'
+                 ORDER BY s.started_at ASC, s.scan_run_id ASC
+                 LIMIT 1",
+                [library_root_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        row.map(|(job_run_id, scan_run_id, count)| {
+            Ok(ActiveScanOwnership::new(
+                parse_job_run_id(job_run_id)?,
+                parse_scan_run_id(scan_run_id)?,
+                count as u32,
+            ))
+        })
+        .transpose()
+    }
+
+    fn find_last_scan(
+        &mut self,
+        library_root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootLastScanSummary>, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let raw: Option<RootLastScanRaw> = transaction
+            .query_row(
+                "SELECT last_scan_scan_run_id, last_scan_job_run_id, last_scan_status,
+                        last_scan_started_at, last_scan_completed_at
+                 FROM library_root WHERE library_root_id = ?1",
+                [library_root_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        let Some((scan_run_id, job_run_id, status, started_at, completed_at)) = raw else {
+            return Ok(None);
+        };
+        let (Some(scan_run_id), Some(job_run_id), Some(status), Some(started_at)) =
+            (scan_run_id, job_run_id, status, started_at)
+        else {
+            return Ok(None);
+        };
+        let status = match status.as_str() {
+            "complete" => LibraryRootLastScanStatus::Complete,
+            "partial" => LibraryRootLastScanStatus::Partial,
+            "unavailable" => LibraryRootLastScanStatus::Unavailable,
+            "cancelled" => LibraryRootLastScanStatus::Cancelled,
+            "failed" => LibraryRootLastScanStatus::Failed,
+            "abandoned" => LibraryRootLastScanStatus::Abandoned,
+            _ => return Err(PersistenceError::CorruptOrIncompatible),
+        };
+        Ok(Some(LibraryRootLastScanSummary::new(
+            scan_run_id,
+            job_run_id,
+            status,
+            started_at,
+            completed_at,
+        )))
+    }
+
+    fn list_by_job(
+        &mut self,
+        job_run_id: JobRunId,
+    ) -> Result<Vec<ScanRunProjection>, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let mut statement = transaction
+            .prepare(
+                "SELECT scan_run_id, job_run_id, historical_library_root_id,
+                        root_display_name, safe_location_display, status,
+                        started_at, completed_at
+                 FROM scan_run WHERE job_run_id = ?1
+                 ORDER BY started_at ASC, scan_run_id ASC",
+            )
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map([job_run_id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                ))
+            })
+            .map_err(map_persistence_operation_error)?;
+        let raw = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?;
+        raw.into_iter()
+            .map(
+                |(scan_run_id, job, root, display, safe, status, started, completed)| {
+                    Ok(ScanRunProjection::new(
+                        parse_scan_run_id(scan_run_id)?,
+                        parse_job_run_id(job)?,
+                        parse_root_id(root)?,
+                        display,
+                        safe,
+                        parse_scan_status(&status)?,
+                        started,
+                        completed,
+                    ))
+                },
+            )
+            .collect()
+    }
+}
+
+/// Transaction-scoped source-entry repository.
+pub struct SqliteSourceEntryRepository<'scope, 'connection> {
+    work: &'scope mut SqliteUnitOfWork<'connection>,
+}
+
+impl<'scope, 'connection> SqliteSourceEntryRepository<'scope, 'connection> {
+    pub(crate) fn new(work: &'scope mut SqliteUnitOfWork<'connection>) -> Self {
+        Self { work }
+    }
+}
+
+impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
+    fn upsert(&mut self, entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let created: String = transaction
+            .query_row(
+                "INSERT INTO source_entry
+                    (source_entry_id, library_root_id, parent_source_entry_id,
+                     relative_locator, locator_key, display_name, display_location,
+                     kind, classification, provider_native_identity, source_fingerprint,
+                     last_observed_scan_id, created_at, updated_at)
+                 VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                         ?11, ?12, ?12)
+                 ON CONFLICT(library_root_id, locator_key) DO UPDATE SET
+                     parent_source_entry_id = excluded.parent_source_entry_id,
+                     display_name = excluded.display_name,
+                     display_location = excluded.display_location,
+                     kind = excluded.kind,
+                     classification = excluded.classification,
+                     provider_native_identity = excluded.provider_native_identity,
+                     source_fingerprint = excluded.source_fingerprint,
+                     last_observed_scan_id = excluded.last_observed_scan_id,
+                     updated_at = excluded.updated_at
+                 RETURNING source_entry_id",
+                rusqlite::params![
+                    entry.library_root_id().to_string(),
+                    entry.parent_source_entry_id().map(|id| id.to_string()),
+                    entry.relative_locator().as_provider_value(),
+                    entry.locator_key().as_provider_value(),
+                    entry.display_name(),
+                    entry.display_location(),
+                    entry.kind().as_str(),
+                    entry.classification().as_str(),
+                    entry.provider_native_identity(),
+                    entry.source_fingerprint(),
+                    entry.last_observed_scan_id().to_string(),
+                    crate::sqlite::migrations::timestamp(),
+                ],
+                |row| row.get(0),
+            )
+            .map_err(map_persistence_operation_error)?;
+        parse_source_entry_id(created)
+    }
+
+    fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError> {
+        self.work
+            .transaction_mut()?
+            .execute(
+                "DELETE FROM source_entry WHERE library_root_id = ?1",
+                [library_root_id.to_string()],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(())
+    }
+}
+
+/// Transaction-scoped library-scan admission-target repository.
+pub struct SqliteLibraryScanTargetRepository<'scope, 'connection> {
+    work: &'scope mut SqliteUnitOfWork<'connection>,
+}
+
+impl<'scope, 'connection> SqliteLibraryScanTargetRepository<'scope, 'connection> {
+    pub(crate) fn new(work: &'scope mut SqliteUnitOfWork<'connection>) -> Self {
+        Self { work }
+    }
+}
+
+impl LibraryScanTargetRepository for SqliteLibraryScanTargetRepository<'_, '_> {
+    fn insert(&mut self, target: NewLibraryScanTarget) -> Result<(), PersistenceError> {
+        let exclusion = target.exclusion();
+        self.work
+            .transaction_mut()?
+            .execute(
+                "INSERT INTO library_scan_target
+                    (job_run_id, target_kind, historical_library_root_id, display_name,
+                     safe_location_display, scan_run_id, exclusion_reason,
+                     related_job_run_id, related_scan_run_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![
+                    target.job_run_id().to_string(),
+                    target.kind().as_str(),
+                    target.library_root_id().to_string(),
+                    target.display_name(),
+                    target.safe_location_display(),
+                    target.scan_run_id().map(|id| id.to_string()),
+                    exclusion.map(|exclusion| exclusion.reason().as_str()),
+                    exclusion.and_then(|exclusion| exclusion
+                        .active_job_run_id()
+                        .map(|id| id.to_string())),
+                    exclusion.and_then(|exclusion| exclusion
+                        .active_scan_run_id()
+                        .map(|id| id.to_string())),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(())
+    }
+
+    fn list_by_job(
+        &mut self,
+        job_run_id: JobRunId,
+    ) -> Result<Vec<LibraryScanTarget>, PersistenceError> {
+        let transaction = self.work.transaction_mut()?;
+        let mut statement = transaction
+            .prepare(
+                "SELECT target_kind, historical_library_root_id, display_name,
+                        safe_location_display, scan_run_id, exclusion_reason,
+                        related_job_run_id, related_scan_run_id
+                 FROM library_scan_target WHERE job_run_id = ?1
+                 ORDER BY target_kind ASC, historical_library_root_id ASC",
+            )
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map([job_run_id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                ))
+            })
+            .map_err(map_persistence_operation_error)?;
+        let raw = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?;
+        raw.into_iter()
+            .map(
+                |(
+                    kind,
+                    root,
+                    display,
+                    safe,
+                    scan_run_id,
+                    exclusion_reason,
+                    related_job_run_id,
+                    related_scan_run_id,
+                )| {
+                    let kind = match kind.as_str() {
+                        "requested" => LibraryScanTargetKind::Requested,
+                        "admitted" => LibraryScanTargetKind::Admitted,
+                        "excluded" => LibraryScanTargetKind::Excluded,
+                        _ => return Err(PersistenceError::CorruptOrIncompatible),
+                    };
+                    let exclusion =
+                        match (exclusion_reason, related_job_run_id, related_scan_run_id) {
+                            (Some(reason), job, scan) => {
+                                let reason = match reason.as_str() {
+                                    "already_scanning" => {
+                                        LibraryScanTargetExclusionReason::AlreadyScanning
+                                    }
+                                    "no_longer_configured" => {
+                                        LibraryScanTargetExclusionReason::NoLongerConfigured
+                                    }
+                                    "invalid_configuration" => {
+                                        LibraryScanTargetExclusionReason::InvalidConfiguration
+                                    }
+                                    _ => return Err(PersistenceError::CorruptOrIncompatible),
+                                };
+                                Some(LibraryScanAdmissionExclusion::new(
+                                    parse_root_id(root.clone())?,
+                                    reason,
+                                    job.map(parse_job_run_id).transpose()?,
+                                    scan.map(parse_scan_run_id).transpose()?,
+                                ))
+                            }
+                            (None, None, None) => None,
+                            _ => return Err(PersistenceError::CorruptOrIncompatible),
+                        };
+                    Ok(LibraryScanTarget::new(
+                        kind,
+                        parse_root_id(root)?,
+                        display,
+                        safe,
+                        scan_run_id.map(parse_scan_run_id).transpose()?,
+                        exclusion,
+                    ))
+                },
+            )
+            .collect()
+    }
+}
+
+/// Independent authoritative jobs query adapter.
+#[derive(Clone)]
+pub struct SqliteJobsQueries {
+    executor: SqliteDatabaseExecutor,
+}
+
+impl SqliteJobsQueries {
+    /// Creates a query adapter over an existing shared SQLite executor.
+    pub const fn new(executor: SqliteDatabaseExecutor) -> Self {
+        Self { executor }
+    }
+}
+
+impl JobsQueries for SqliteJobsQueries {
+    fn get_job(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<JobDetail>, PersistenceError> {
+        self.executor
+            .with_connection(context.clone(), move |connection| {
+                read_job_detail(connection, &job_run_id.to_string())
+            })
+            .map_err(map_executor_error)
+    }
+
+    fn list_active(&self, context: &OperationContext) -> Result<Vec<JobSummary>, PersistenceError> {
+        self.executor
+            .with_connection(context.clone(), |connection| {
+                read_job_summaries(
+                    connection,
+                    "SELECT job_run_id, operation_type, state, current_phase, created_at,
+                            started_at, completed_at, cancellation_requested
+                     FROM job_run
+                     WHERE state IN ('queued', 'preparing', 'running')
+                     ORDER BY created_at ASC, job_run_id ASC",
+                    Vec::new(),
+                )
+            })
+            .map_err(map_executor_error)
+    }
+
+    fn list_recent_terminal(
+        &self,
+        context: &OperationContext,
+        offset: u32,
+        page_size: u32,
+    ) -> Result<JobSummaryPage, PersistenceError> {
+        self.executor
+            .with_connection(context.clone(), move |connection| {
+                let total = connection.scalar_i64(
+                    "SELECT COUNT(*) FROM job_run
+                     WHERE state IN ('completed', 'completed_with_issues', 'failed',
+                                     'cancelled', 'interrupted', 'abandoned')",
+                )?;
+                let items = read_job_summaries(
+                    connection,
+                    "SELECT job_run_id, operation_type, state, current_phase, created_at,
+                            started_at, completed_at, cancellation_requested
+                     FROM job_run
+                     WHERE state IN ('completed', 'completed_with_issues', 'failed',
+                                     'cancelled', 'interrupted', 'abandoned')
+                     ORDER BY completed_at DESC, job_run_id DESC
+                     LIMIT ?1 OFFSET ?2",
+                    vec![
+                        rusqlite::types::Value::Integer(i64::from(page_size)),
+                        rusqlite::types::Value::Integer(i64::from(offset)),
+                    ],
+                )?;
+                let next_offset = ((offset as u64 + items.len() as u64) < total as u64)
+                    .then_some(offset + items.len() as u32);
+                Ok(JobSummaryPage::new(items, total as u32, next_offset))
+            })
+            .map_err(map_executor_error)
+    }
+}
+
+fn read_job_summaries(
+    connection: &mut SqliteConnection<'_>,
+    sql: &str,
+    values: Vec<rusqlite::types::Value>,
+) -> Result<Vec<JobSummary>, SqliteOperationError> {
+    let mut statement = connection
+        .connection
+        .prepare(sql)
+        .map_err(|error| super::errors::operation_error(&error))?;
+    let params: Vec<&dyn rusqlite::ToSql> = values
+        .iter()
+        .map(|value| value as &dyn rusqlite::ToSql)
+        .collect();
+    let rows = statement
+        .query_map(params.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, Option<i64>>(5)?,
+                row.get::<_, Option<i64>>(6)?,
+                row.get::<_, i64>(7)?,
+            ))
+        })
+        .map_err(|error| super::errors::operation_error(&error))?;
+    let raw = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| super::errors::operation_error(&error))?;
+    raw.into_iter()
+        .map(
+            |(job, operation, state, phase, created, started, terminal, cancellation)| {
+                Ok(JobSummary::new(
+                    parse_job_run_id(job).map_err(corrupt_sqlite)?,
+                    operation,
+                    parse_job_state(&state).map_err(corrupt_sqlite)?,
+                    phase,
+                    created,
+                    started,
+                    terminal,
+                    cancellation != 0,
+                    None,
+                ))
+            },
+        )
+        .collect()
+}
+
+fn read_job_detail(
+    connection: &mut SqliteConnection<'_>,
+    job_run_id: &str,
+) -> Result<Option<JobDetail>, SqliteOperationError> {
+    let raw = connection
+        .connection
+        .query_row(
+            "SELECT job_run_id, operation_type, state, current_phase, completed_units,
+                    total_units, status_key, created_at, queued_at, started_at, completed_at,
+                    cancellation_requested, terminal_error_code, terminal_safe_context
+             FROM job_run WHERE job_run_id = ?1",
+            [job_run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
+                    row.get::<_, Option<i64>>(10)?,
+                    row.get::<_, i64>(11)?,
+                    row.get::<_, Option<String>>(12)?,
+                    row.get::<_, Option<String>>(13)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| super::errors::operation_error(&error))?;
+    let Some((
+        job,
+        operation,
+        state,
+        phase,
+        completed,
+        total,
+        status_key,
+        created,
+        queued,
+        started,
+        terminal,
+        cancellation,
+        error_code,
+        safe_context,
+    )) = raw
+    else {
+        return Ok(None);
+    };
+    let job_run_id = parse_job_run_id(job).map_err(corrupt_sqlite)?;
+    let state = parse_job_state(&state).map_err(corrupt_sqlite)?;
+    let cancellation_requested = cancellation != 0;
+    let controls = JobControlAvailability::new(state.is_active() && !cancellation_requested);
+    let job_projection = JobRunProjection::new(
+        job_run_id,
+        operation.clone(),
+        state,
+        phase.clone(),
+        completed.map(|value| value as u64),
+        total.map(|value| value as u64),
+        status_key,
+        created,
+        queued,
+        started,
+        terminal,
+        cancellation_requested,
+        controls,
+        error_code,
+        safe_context,
+    );
+    if operation != "library_scan" {
+        return Ok(None);
+    }
+    let mut scan_runs = Vec::new();
+    {
+        let mut statement = connection
+            .connection
+            .prepare(
+                "SELECT scan_run_id, job_run_id, historical_library_root_id,
+                        root_display_name, safe_location_display, status,
+                        started_at, completed_at
+                 FROM scan_run WHERE job_run_id = ?1
+                 ORDER BY started_at ASC, scan_run_id ASC",
+            )
+            .map_err(|error| super::errors::operation_error(&error))?;
+        let rows = statement
+            .query_map([job_run_id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                ))
+            })
+            .map_err(|error| super::errors::operation_error(&error))?;
+        for row in rows {
+            let (scan_run_id, job, root, display, safe, status, started_at, completed_at) =
+                row.map_err(|error| super::errors::operation_error(&error))?;
+            scan_runs.push(ScanRunProjection::new(
+                parse_scan_run_id(scan_run_id).map_err(corrupt_sqlite)?,
+                parse_job_run_id(job).map_err(corrupt_sqlite)?,
+                parse_root_id(root).map_err(corrupt_sqlite)?,
+                display,
+                safe,
+                parse_scan_status(&status).map_err(corrupt_sqlite)?,
+                started_at,
+                completed_at,
+            ));
+        }
+    }
+    let mut requested_roots = Vec::new();
+    let mut admitted_roots = Vec::new();
+    let mut exclusions = Vec::new();
+    {
+        let mut statement = connection
+            .connection
+            .prepare(
+                "SELECT target_kind, historical_library_root_id, display_name,
+                        safe_location_display, scan_run_id, exclusion_reason,
+                        related_job_run_id, related_scan_run_id
+                 FROM library_scan_target WHERE job_run_id = ?1
+                 ORDER BY target_kind ASC, historical_library_root_id ASC",
+            )
+            .map_err(|error| super::errors::operation_error(&error))?;
+        let rows = statement
+            .query_map([job_run_id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                ))
+            })
+            .map_err(|error| super::errors::operation_error(&error))?;
+        for row in rows {
+            let (
+                kind,
+                root,
+                display,
+                safe,
+                _scan_run_id,
+                exclusion_reason,
+                related_job_run_id,
+                related_scan_run_id,
+            ) = row.map_err(|error| super::errors::operation_error(&error))?;
+            let root = parse_root_id(root).map_err(corrupt_sqlite)?;
+            let summary = LibraryScanRootSummary::new(root, display, safe);
+            match kind.as_str() {
+                "requested" => requested_roots.push(summary),
+                "admitted" => admitted_roots.push(summary),
+                "excluded" => {
+                    let reason =
+                        exclusion_reason
+                            .as_deref()
+                            .ok_or(SqliteOperationError::Application(
+                                ApplicationPortError::Persistence(
+                                    PersistenceError::CorruptOrIncompatible,
+                                ),
+                            ))?;
+                    let reason = match reason {
+                        "already_scanning" => LibraryScanTargetExclusionReason::AlreadyScanning,
+                        "no_longer_configured" => {
+                            LibraryScanTargetExclusionReason::NoLongerConfigured
+                        }
+                        "invalid_configuration" => {
+                            LibraryScanTargetExclusionReason::InvalidConfiguration
+                        }
+                        _ => {
+                            return Err(SqliteOperationError::Application(
+                                ApplicationPortError::Persistence(
+                                    PersistenceError::CorruptOrIncompatible,
+                                ),
+                            ));
+                        }
+                    };
+                    exclusions.push(LibraryScanAdmissionExclusion::new(
+                        root,
+                        reason,
+                        related_job_run_id
+                            .map(|id| parse_job_run_id(id).map_err(corrupt_sqlite))
+                            .transpose()?,
+                        related_scan_run_id
+                            .map(|id| parse_scan_run_id(id).map_err(corrupt_sqlite))
+                            .transpose()?,
+                    ));
+                }
+                _ => {
+                    return Err(SqliteOperationError::Application(
+                        ApplicationPortError::Persistence(PersistenceError::CorruptOrIncompatible),
+                    ));
+                }
+            }
+        }
+    }
+    let progress = ScanProgressFacts::new(
+        phase,
+        completed.map(|value| value as u64),
+        total.map(|value| value as u64),
+        job_projection.status_key().map(str::to_owned),
+        requested_roots.len() as u32,
+        admitted_roots.len() as u32,
+        scan_runs
+            .iter()
+            .filter(|run| run.status().is_terminal())
+            .count() as u32,
+        completed.unwrap_or(0) as u64,
+    );
+    let detail = LibraryScanJobDetail::new(
+        requested_roots,
+        admitted_roots,
+        exclusions,
+        scan_runs,
+        progress,
+        None,
+        None,
+    );
+    Ok(Some(JobDetail::new(
+        job_projection,
+        argus_application::OperationDetail::LibraryScan(detail),
+    )))
+}
+
+fn parse_job_state(value: &str) -> Result<JobRunState, PersistenceError> {
+    JobRunState::try_from(value).map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+fn parse_scan_status(value: &str) -> Result<ScanRunStatus, PersistenceError> {
+    ScanRunStatus::try_from(value).map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+fn parse_job_run_id(value: String) -> Result<JobRunId, PersistenceError> {
+    JobRunId::try_from(value.as_str()).map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+fn parse_scan_run_id(value: String) -> Result<ScanRunId, PersistenceError> {
+    ScanRunId::try_from(value.as_str()).map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+fn parse_source_entry_id(value: String) -> Result<SourceEntryId, PersistenceError> {
+    SourceEntryId::try_from(value.as_str()).map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+fn parse_root_id(value: String) -> Result<LibraryRootId, PersistenceError> {
+    LibraryRootId::try_from(value.as_str()).map_err(|_| PersistenceError::CorruptOrIncompatible)
+}
+
+pub(crate) fn map_persistence_operation_error(error: rusqlite::Error) -> PersistenceError {
+    match super::errors::operation_error(&error) {
+        SqliteOperationError::Constraint => PersistenceError::ConstraintViolation,
+        SqliteOperationError::Locked => PersistenceError::DatabaseLocked,
+        SqliteOperationError::Failed => PersistenceError::Internal,
+        SqliteOperationError::Application(_) => PersistenceError::Internal,
+    }
+}
+
+fn corrupt_sqlite(error: PersistenceError) -> SqliteOperationError {
+    SqliteOperationError::Application(ApplicationPortError::Persistence(error))
+}

@@ -17,6 +17,7 @@ class SourcesRootDetailPage extends ConsumerWidget {
     required this.onMissingRoot,
     required this.onRemoved,
     required this.onOpenRoot,
+    required this.onOpenJob,
     super.key,
   });
 
@@ -30,6 +31,9 @@ class SourcesRootDetailPage extends ConsumerWidget {
 
   /// Opens another configured root through the typed route.
   final void Function(LibraryRootId rootId) onOpenRoot;
+
+  /// Opens one durable job detail through the typed Jobs route.
+  final void Function(JobRunId jobRunId) onOpenJob;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -67,11 +71,26 @@ class SourcesRootDetailPage extends ConsumerWidget {
           :final root,
           :final removing,
           :final removalAmbiguous,
+          :final scanning,
+          :final admittedScanJobRunId,
+          :final removalBlockedByActiveScan,
         ) =>
           _RootDetailContent(
             root: root,
             removing: removing,
             removalAmbiguous: removalAmbiguous,
+            scanning: scanning,
+            admittedScanJobRunId: admittedScanJobRunId,
+            removalBlockedByActiveScan: removalBlockedByActiveScan,
+            onOpenJob: onOpenJob,
+            onScan: () async {
+              final jobRunId = await ref
+                  .read(sourcesRootDetailControllerProvider(rootId).notifier)
+                  .startScan(rootId);
+              if (jobRunId != null && context.mounted) {
+                onOpenJob(jobRunId);
+              }
+            },
             onRemove: () async {
               final confirmed = await showRemoveRootConfirmation(
                 context,
@@ -111,12 +130,22 @@ class _RootDetailContent extends StatelessWidget {
     required this.root,
     required this.removing,
     required this.removalAmbiguous,
+    required this.scanning,
+    required this.admittedScanJobRunId,
+    required this.removalBlockedByActiveScan,
+    required this.onOpenJob,
+    required this.onScan,
     required this.onRemove,
   });
 
   final LibraryRoot root;
   final bool removing;
   final bool removalAmbiguous;
+  final bool scanning;
+  final JobRunId? admittedScanJobRunId;
+  final bool removalBlockedByActiveScan;
+  final void Function(JobRunId jobRunId) onOpenJob;
+  final VoidCallback onScan;
   final VoidCallback onRemove;
 
   @override
@@ -124,6 +153,14 @@ class _RootDetailContent extends StatelessWidget {
     final lastFailureMessage = removalAmbiguous
         ? SourcesMessages.removeAmbiguous
         : null;
+    final activeScan = root.activeScan;
+    final lastScan = root.lastScan;
+    final canScan = lastScan == null && activeScan == null;
+    final statusLabel = activeScan != null
+        ? SourcesMessages.scanningInProgress
+        : lastScan != null
+        ? SourcesMessages.lastScanStatus(lastScan.status)
+        : SourcesMessages.neverScanned;
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -138,7 +175,30 @@ class _RootDetailContent extends StatelessWidget {
               const SizedBox(height: 4),
               Text(root.safeLocationPresentation),
               const SizedBox(height: 12),
-              Chip(label: const Text(SourcesMessages.neverScanned)),
+              Chip(label: Text(statusLabel)),
+              if (activeScan != null || admittedScanJobRunId != null) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey<String>('sources-view-job'),
+                  onPressed: () {
+                    final JobRunId? jobRunId = activeScan != null
+                        ? JobRunId(activeScan.jobRunId)
+                        : admittedScanJobRunId;
+                    if (jobRunId != null) {
+                      onOpenJob(jobRunId);
+                    }
+                  },
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text(SourcesMessages.viewJob),
+                ),
+              ],
+              if (removalBlockedByActiveScan) ...[
+                const SizedBox(height: 12),
+                Text(
+                  SourcesMessages.rootHasActiveScan,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
               if (lastFailureMessage != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -147,6 +207,15 @@ class _RootDetailContent extends StatelessWidget {
                 ),
               ],
               const Spacer(),
+              if (canScan) ...[
+                FilledButton.icon(
+                  key: const ValueKey<String>('sources-start-scan'),
+                  onPressed: scanning ? null : onScan,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text(SourcesMessages.scan),
+                ),
+                const SizedBox(height: 12),
+              ],
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(

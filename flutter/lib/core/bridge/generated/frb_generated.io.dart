@@ -44,6 +44,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  BoundedTerminalFailureDto dco_decode_bounded_terminal_failure_dto(
+    dynamic raw,
+  );
+
+  @protected
+  BoundedTerminalFailureDto dco_decode_box_autoadd_bounded_terminal_failure_dto(
+    dynamic raw,
+  );
+
+  @protected
   DiagnosticsExportRequestDto
   dco_decode_box_autoadd_diagnostics_export_request_dto(dynamic raw);
 
@@ -64,6 +74,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryScanJobDetailDto dco_decode_box_autoadd_library_scan_job_detail_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ListJobsRequestDto dco_decode_box_autoadd_list_jobs_request_dto(dynamic raw);
+
+  @protected
   ListLibraryRootsRequestDto
   dco_decode_box_autoadd_list_library_roots_request_dto(dynamic raw);
 
@@ -72,10 +90,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_local_filesystem_root_selection_dto(dynamic raw);
 
   @protected
+  OperationHandleDto dco_decode_box_autoadd_operation_handle_dto(dynamic raw);
+
+  @protected
+  SourceEntriesChangeScopeDto
+  dco_decode_box_autoadd_source_entries_change_scope_dto(dynamic raw);
+
+  @protected
   StartupFailureDto dco_decode_box_autoadd_startup_failure_dto(dynamic raw);
 
   @protected
   StartupPhaseDto dco_decode_box_autoadd_startup_phase_dto(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
   UpdateAppearanceSettingsRequestDto
@@ -83,6 +114,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeTransportError dco_decode_bridge_transport_error(dynamic raw);
+
+  @protected
+  CancelJobResultDto dco_decode_cancel_job_result_dto(dynamic raw);
 
   @protected
   DiagnosticsExportDto dco_decode_diagnostics_export_dto(dynamic raw);
@@ -102,6 +136,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  JobControlAvailabilityDto dco_decode_job_control_availability_dto(
+    dynamic raw,
+  );
+
+  @protected
+  JobDetailDto dco_decode_job_detail_dto(dynamic raw);
+
+  @protected
+  JobRunDto dco_decode_job_run_dto(dynamic raw);
+
+  @protected
+  JobRunStateDto dco_decode_job_run_state_dto(dynamic raw);
+
+  @protected
+  JobSummaryDto dco_decode_job_summary_dto(dynamic raw);
+
+  @protected
+  JobSummaryPageDto dco_decode_job_summary_page_dto(dynamic raw);
 
   @protected
   LibraryRootActiveScanDto dco_decode_library_root_active_scan_dto(dynamic raw);
@@ -126,10 +180,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryRootPageDto dco_decode_library_root_page_dto(dynamic raw);
 
   @protected
+  LibraryScanAdmissionExclusionDto
+  dco_decode_library_scan_admission_exclusion_dto(dynamic raw);
+
+  @protected
+  LibraryScanJobDetailDto dco_decode_library_scan_job_detail_dto(dynamic raw);
+
+  @protected
+  LibraryScanRootSummaryDto dco_decode_library_scan_root_summary_dto(
+    dynamic raw,
+  );
+
+  @protected
+  List<JobSummaryDto> dco_decode_list_job_summary_dto(dynamic raw);
+
+  @protected
+  ListJobsRequestDto dco_decode_list_jobs_request_dto(dynamic raw);
+
+  @protected
+  ListJobsScopeDto dco_decode_list_jobs_scope_dto(dynamic raw);
+
+  @protected
   List<LibraryRootDto> dco_decode_list_library_root_dto(dynamic raw);
 
   @protected
   ListLibraryRootsRequestDto dco_decode_list_library_roots_request_dto(
+    dynamic raw,
+  );
+
+  @protected
+  List<LibraryScanAdmissionExclusionDto>
+  dco_decode_list_library_scan_admission_exclusion_dto(dynamic raw);
+
+  @protected
+  List<LibraryScanRootSummaryDto> dco_decode_list_library_scan_root_summary_dto(
     dynamic raw,
   );
 
@@ -143,8 +227,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SafeContextEntryDto> dco_decode_list_safe_context_entry_dto(dynamic raw);
 
   @protected
+  List<ScanRunDto> dco_decode_list_scan_run_dto(dynamic raw);
+
+  @protected
   LocalFilesystemRootSelectionDto
   dco_decode_local_filesystem_root_selection_dto(dynamic raw);
+
+  @protected
+  OperationDetailDto dco_decode_operation_detail_dto(dynamic raw);
+
+  @protected
+  OperationHandleDto dco_decode_operation_handle_dto(dynamic raw);
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  BoundedTerminalFailureDto?
+  dco_decode_opt_box_autoadd_bounded_terminal_failure_dto(dynamic raw);
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
@@ -165,6 +265,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StartupPhaseDto? dco_decode_opt_box_autoadd_startup_phase_dto(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
   RecoveryActionDto dco_decode_recovery_action_dto(dynamic raw);
@@ -194,6 +300,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SafeContextEntryDto dco_decode_safe_context_entry_dto(dynamic raw);
+
+  @protected
+  ScanProgressFactsDto dco_decode_scan_progress_facts_dto(dynamic raw);
+
+  @protected
+  ScanRunDto dco_decode_scan_run_dto(dynamic raw);
+
+  @protected
+  ScanRunStatusDto dco_decode_scan_run_status_dto(dynamic raw);
+
+  @protected
+  SourceEntriesChangeScopeDto dco_decode_source_entries_change_scope_dto(
+    dynamic raw,
+  );
+
+  @protected
+  StartLibraryScanResultDto dco_decode_start_library_scan_result_dto(
+    dynamic raw,
+  );
 
   @protected
   StartupFailureDto dco_decode_startup_failure_dto(dynamic raw);
@@ -253,6 +378,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  BoundedTerminalFailureDto sse_decode_bounded_terminal_failure_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  BoundedTerminalFailureDto sse_decode_box_autoadd_bounded_terminal_failure_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DiagnosticsExportRequestDto
   sse_decode_box_autoadd_diagnostics_export_request_dto(
     SseDeserializer deserializer,
@@ -277,6 +412,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryScanJobDetailDto sse_decode_box_autoadd_library_scan_job_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListJobsRequestDto sse_decode_box_autoadd_list_jobs_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ListLibraryRootsRequestDto
   sse_decode_box_autoadd_list_library_roots_request_dto(
     SseDeserializer deserializer,
@@ -285,6 +430,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   LocalFilesystemRootSelectionDto
   sse_decode_box_autoadd_local_filesystem_root_selection_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OperationHandleDto sse_decode_box_autoadd_operation_handle_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SourceEntriesChangeScopeDto
+  sse_decode_box_autoadd_source_entries_change_scope_dto(
     SseDeserializer deserializer,
   );
 
@@ -299,6 +455,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
   UpdateAppearanceSettingsRequestDto
   sse_decode_box_autoadd_update_appearance_settings_request_dto(
     SseDeserializer deserializer,
@@ -306,6 +468,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BridgeTransportError sse_decode_bridge_transport_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  CancelJobResultDto sse_decode_cancel_job_result_dto(
     SseDeserializer deserializer,
   );
 
@@ -329,6 +496,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  JobControlAvailabilityDto sse_decode_job_control_availability_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  JobDetailDto sse_decode_job_detail_dto(SseDeserializer deserializer);
+
+  @protected
+  JobRunDto sse_decode_job_run_dto(SseDeserializer deserializer);
+
+  @protected
+  JobRunStateDto sse_decode_job_run_state_dto(SseDeserializer deserializer);
+
+  @protected
+  JobSummaryDto sse_decode_job_summary_dto(SseDeserializer deserializer);
+
+  @protected
+  JobSummaryPageDto sse_decode_job_summary_page_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   LibraryRootActiveScanDto sse_decode_library_root_active_scan_dto(
@@ -359,12 +548,50 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryScanAdmissionExclusionDto
+  sse_decode_library_scan_admission_exclusion_dto(SseDeserializer deserializer);
+
+  @protected
+  LibraryScanJobDetailDto sse_decode_library_scan_job_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryScanRootSummaryDto sse_decode_library_scan_root_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<JobSummaryDto> sse_decode_list_job_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListJobsRequestDto sse_decode_list_jobs_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListJobsScopeDto sse_decode_list_jobs_scope_dto(SseDeserializer deserializer);
+
+  @protected
   List<LibraryRootDto> sse_decode_list_library_root_dto(
     SseDeserializer deserializer,
   );
 
   @protected
   ListLibraryRootsRequestDto sse_decode_list_library_roots_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LibraryScanAdmissionExclusionDto>
+  sse_decode_list_library_scan_admission_exclusion_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LibraryScanRootSummaryDto> sse_decode_list_library_scan_root_summary_dto(
     SseDeserializer deserializer,
   );
 
@@ -382,8 +609,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ScanRunDto> sse_decode_list_scan_run_dto(SseDeserializer deserializer);
+
+  @protected
   LocalFilesystemRootSelectionDto
   sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer);
+
+  @protected
+  OperationDetailDto sse_decode_operation_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OperationHandleDto sse_decode_operation_handle_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  BoundedTerminalFailureDto?
+  sse_decode_opt_box_autoadd_bounded_terminal_failure_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
@@ -408,6 +657,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   StartupPhaseDto? sse_decode_opt_box_autoadd_startup_phase_dto(
     SseDeserializer deserializer,
   );
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
   RecoveryActionDto sse_decode_recovery_action_dto(
@@ -447,6 +702,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SafeContextEntryDto sse_decode_safe_context_entry_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ScanProgressFactsDto sse_decode_scan_progress_facts_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ScanRunDto sse_decode_scan_run_dto(SseDeserializer deserializer);
+
+  @protected
+  ScanRunStatusDto sse_decode_scan_run_status_dto(SseDeserializer deserializer);
+
+  @protected
+  SourceEntriesChangeScopeDto sse_decode_source_entries_change_scope_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  StartLibraryScanResultDto sse_decode_start_library_scan_result_dto(
     SseDeserializer deserializer,
   );
 
@@ -521,6 +797,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bounded_terminal_failure_dto(
+    BoundedTerminalFailureDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_bounded_terminal_failure_dto(
+    BoundedTerminalFailureDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_diagnostics_export_request_dto(
     DiagnosticsExportRequestDto self,
     SseSerializer serializer,
@@ -551,6 +839,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_library_scan_job_detail_dto(
+    LibraryScanJobDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_list_jobs_request_dto(
+    ListJobsRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_list_library_roots_request_dto(
     ListLibraryRootsRequestDto self,
     SseSerializer serializer,
@@ -559,6 +859,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_local_filesystem_root_selection_dto(
     LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_operation_handle_dto(
+    OperationHandleDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_source_entries_change_scope_dto(
+    SourceEntriesChangeScopeDto self,
     SseSerializer serializer,
   );
 
@@ -575,6 +887,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_update_appearance_settings_request_dto(
     UpdateAppearanceSettingsRequestDto self,
     SseSerializer serializer,
@@ -583,6 +901,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_bridge_transport_error(
     BridgeTransportError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_cancel_job_result_dto(
+    CancelJobResultDto self,
     SseSerializer serializer,
   );
 
@@ -609,6 +933,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_job_control_availability_dto(
+    JobControlAvailabilityDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_job_detail_dto(JobDetailDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_job_run_dto(JobRunDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_job_run_state_dto(
+    JobRunStateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_job_summary_dto(JobSummaryDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_job_summary_page_dto(
+    JobSummaryPageDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_library_root_active_scan_dto(
@@ -647,6 +998,42 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_library_scan_admission_exclusion_dto(
+    LibraryScanAdmissionExclusionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_scan_job_detail_dto(
+    LibraryScanJobDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_scan_root_summary_dto(
+    LibraryScanRootSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_job_summary_dto(
+    List<JobSummaryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_jobs_request_dto(
+    ListJobsRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_jobs_scope_dto(
+    ListJobsScopeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_library_root_dto(
     List<LibraryRootDto> self,
     SseSerializer serializer,
@@ -655,6 +1042,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_library_roots_request_dto(
     ListLibraryRootsRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_library_scan_admission_exclusion_dto(
+    List<LibraryScanAdmissionExclusionDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_library_scan_root_summary_dto(
+    List<LibraryScanRootSummaryDto> self,
     SseSerializer serializer,
   );
 
@@ -677,8 +1076,35 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_scan_run_dto(
+    List<ScanRunDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_local_filesystem_root_selection_dto(
     LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_operation_detail_dto(
+    OperationDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_operation_handle_dto(
+    OperationHandleDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_bounded_terminal_failure_dto(
+    BoundedTerminalFailureDto? self,
     SseSerializer serializer,
   );
 
@@ -711,6 +1137,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     StartupPhaseDto? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
   void sse_encode_recovery_action_dto(
@@ -763,6 +1195,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_safe_context_entry_dto(
     SafeContextEntryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_scan_progress_facts_dto(
+    ScanProgressFactsDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_scan_run_dto(ScanRunDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_scan_run_status_dto(
+    ScanRunStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_source_entries_change_scope_dto(
+    SourceEntriesChangeScopeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_start_library_scan_result_dto(
+    StartLibraryScanResultDto self,
     SseSerializer serializer,
   );
 

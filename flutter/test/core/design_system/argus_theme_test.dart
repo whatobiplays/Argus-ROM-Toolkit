@@ -45,6 +45,7 @@ void main() {
               currentDestination: AppDestination.settings,
               onSettingsSelected: () {},
               onSourcesSelected: () {},
+              onJobsSelected: () {},
               child: const SettingsPage(),
             ),
           ),

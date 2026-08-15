@@ -2,15 +2,20 @@ use std::cell::Cell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+mod common;
+
 use argus_application::{
     AppearanceSettings, AppearanceSettingsRepository, ApplicationError, ApplicationPortError,
-    ApplicationSeverity, ArchitectureClass, ErrorCategory, ErrorCode, FailureRole, LibraryRootId,
-    LibraryRootRepository, LibrarySourceId, LibrarySourceRepository, LogEvent, LogLevel,
-    MigrationOutcome, NewLibraryRoot, ObservabilitySink, OperationContext, OperationName,
-    PathClass, PersistenceError, PlatformClass, Recoverability, RetryPolicy, SafeContext,
-    SafeContextError, SafeContextField, SafeContextValue, StartupCollector, TechnicalClass,
-    ThemeMode, TraceEvent, TraceEventPhase, TraceId, TraceIdError, UnitOfWork, UnitOfWorkFactory,
-    Version,
+    ApplicationSeverity, ArchitectureClass, ErrorCategory, ErrorCode, FailureRole, LibrarySourceId,
+    LibrarySourceRepository, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
+    OperationContext, OperationName, PathClass, PersistenceError, PlatformClass, Recoverability,
+    RetryPolicy, SafeContext, SafeContextError, SafeContextField, SafeContextValue,
+    StartupCollector, TechnicalClass, ThemeMode, TraceEvent, TraceEventPhase, TraceId,
+    TraceIdError, UnitOfWork, UnitOfWorkFactory, Version,
+};
+use common::{
+    NoopJobRunRepository, NoopLibraryRootRepository, NoopLibraryScanTargetRepository,
+    NoopScanRunRepository, NoopSourceEntryRepository,
 };
 
 fn context() -> OperationContext {
@@ -366,20 +371,6 @@ impl LibrarySourceRepository for NoopLibrarySourceRepository<'_> {
     }
 }
 
-struct NoopLibraryRootRepository<'scope> {
-    marker: PhantomData<&'scope mut ()>,
-}
-
-impl LibraryRootRepository for NoopLibraryRootRepository<'_> {
-    fn insert(&mut self, _root: NewLibraryRoot) -> Result<LibraryRootId, PersistenceError> {
-        Err(PersistenceError::Unavailable)
-    }
-
-    fn delete(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
-        Err(PersistenceError::Unavailable)
-    }
-}
-
 impl UnitOfWork for RecordingUnitOfWork<'_> {
     type AppearanceSettingsRepository<'scope>
         = NoopAppearanceRepository<'scope>
@@ -391,6 +382,22 @@ impl UnitOfWork for RecordingUnitOfWork<'_> {
         Self: 'scope;
     type LibraryRootRepository<'scope>
         = NoopLibraryRootRepository<'scope>
+    where
+        Self: 'scope;
+    type JobRunRepository<'scope>
+        = NoopJobRunRepository<'scope>
+    where
+        Self: 'scope;
+    type ScanRunRepository<'scope>
+        = NoopScanRunRepository<'scope>
+    where
+        Self: 'scope;
+    type SourceEntryRepository<'scope>
+        = NoopSourceEntryRepository<'scope>
+    where
+        Self: 'scope;
+    type LibraryScanTargetRepository<'scope>
+        = NoopLibraryScanTargetRepository<'scope>
     where
         Self: 'scope;
 
@@ -408,6 +415,30 @@ impl UnitOfWork for RecordingUnitOfWork<'_> {
 
     fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
         NoopLibraryRootRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn job_runs(&mut self) -> Self::JobRunRepository<'_> {
+        NoopJobRunRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn scan_runs(&mut self) -> Self::ScanRunRepository<'_> {
+        NoopScanRunRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn source_entries(&mut self) -> Self::SourceEntryRepository<'_> {
+        NoopSourceEntryRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
+        NoopLibraryScanTargetRepository {
             marker: PhantomData,
         }
     }

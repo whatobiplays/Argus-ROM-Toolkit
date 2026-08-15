@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:argus/core/client/client.dart';
+import 'jobs_gateway_stub.dart';
 import 'sources_gateway_stub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -466,7 +467,7 @@ ApplicationFailure _applicationFailure() => ApplicationFailure(
 );
 
 final class _ControlledGateway
-    with SourcesGatewayStub
+    with SourcesGatewayStub, JobsGatewayStub
     implements ArgusClientGateway {
   RuntimeState state = RuntimeState.ready(runtimeInstanceId: _idA);
   final List<_NativeTask> tasks = <_NativeTask>[];

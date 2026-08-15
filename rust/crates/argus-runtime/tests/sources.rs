@@ -189,6 +189,8 @@ fn duplicate_add_is_idempotent_and_emits_no_second_creation() {
         vec![Box::new(CountingSourcesSubscriber {
             calls: Arc::clone(&calls),
         })],
+        Vec::new(),
+        Vec::new(),
     );
     let kernel = bootstrap_kernel_with_event_bus(
         KernelBootstrapOptions::with_data_directory(directory.path()),
@@ -247,6 +249,8 @@ fn removing_a_missing_root_is_idempotent_without_events() {
         vec![Box::new(CountingSourcesSubscriber {
             calls: Arc::clone(&calls),
         })],
+        Vec::new(),
+        Vec::new(),
     );
     let kernel = bootstrap_kernel_with_event_bus(
         KernelBootstrapOptions::with_data_directory(directory.path()),

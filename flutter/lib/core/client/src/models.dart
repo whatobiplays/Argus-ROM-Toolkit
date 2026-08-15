@@ -54,6 +54,324 @@ final class LibraryRootId {
   int get hashCode => value.hashCode;
 }
 
+/// Opaque identity for one background execution attempt.
+final class JobRunId {
+  const JobRunId(this.value);
+
+  final String value;
+
+  /// Parses one canonical lowercase hex identity, or returns null when the
+  /// value is malformed.
+  static JobRunId? tryParse(String value) {
+    final id = JobRunId(value);
+    return id.isValid ? id : null;
+  }
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) => other is JobRunId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+/// Opaque identity for one root-specific scan run.
+final class ScanRunId {
+  const ScanRunId(this.value);
+
+  final String value;
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) => other is ScanRunId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+/// Minimal identity-only handle returned by successful background admission.
+final class OperationHandle {
+  const OperationHandle({required this.jobRunId, required this.operationType});
+
+  final JobRunId jobRunId;
+  final String operationType;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OperationHandle &&
+      other.jobRunId == jobRunId &&
+      other.operationType == operationType;
+
+  @override
+  int get hashCode => Object.hash(jobRunId, operationType);
+}
+
+/// Canonical persisted job lifecycle vocabulary.
+enum JobLifecycleState {
+  queued,
+  preparing,
+  running,
+  completed,
+  completedWithIssues,
+  failed,
+  cancelled,
+  interrupted,
+  abandoned;
+
+  static JobLifecycleState fromWire(String value) => switch (value) {
+    'queued' => JobLifecycleState.queued,
+    'preparing' => JobLifecycleState.preparing,
+    'running' => JobLifecycleState.running,
+    'completed' => JobLifecycleState.completed,
+    'completed_with_issues' => JobLifecycleState.completedWithIssues,
+    'failed' => JobLifecycleState.failed,
+    'cancelled' => JobLifecycleState.cancelled,
+    'interrupted' => JobLifecycleState.interrupted,
+    'abandoned' => JobLifecycleState.abandoned,
+    _ => throw const TransportFailure(
+      'Unknown job lifecycle state',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+
+  bool get isTerminal => switch (this) {
+    JobLifecycleState.completed ||
+    JobLifecycleState.completedWithIssues ||
+    JobLifecycleState.failed ||
+    JobLifecycleState.cancelled ||
+    JobLifecycleState.interrupted ||
+    JobLifecycleState.abandoned => true,
+    _ => false,
+  };
+}
+
+/// Canonical per-root scan status.
+enum JobScanStatus {
+  running,
+  complete,
+  partial,
+  failed,
+  cancelled,
+  abandoned;
+
+  static JobScanStatus fromWire(String value) => switch (value) {
+    'running' => JobScanStatus.running,
+    'complete' => JobScanStatus.complete,
+    'partial' => JobScanStatus.partial,
+    'failed' => JobScanStatus.failed,
+    'cancelled' => JobScanStatus.cancelled,
+    'abandoned' => JobScanStatus.abandoned,
+    _ => throw const TransportFailure(
+      'Unknown scan status',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Bounded list-row projection for Jobs landing and shell summaries.
+@freezed
+sealed class JobListItem with _$JobListItem {
+  const factory JobListItem({
+    required JobRunId jobRunId,
+    required String operationType,
+    required JobLifecycleState lifecycleState,
+    String? phase,
+    required int createdAtMs,
+    int? startedAtMs,
+    int? terminalAtMs,
+    required bool cancellationRequested,
+    String? safeContextSummary,
+  }) = _JobListItem;
+}
+
+/// Backend-authoritative control availability.
+@freezed
+sealed class JobControlAvailability with _$JobControlAvailability {
+  const factory JobControlAvailability({
+    required bool canCancel,
+    required bool canRetry,
+  }) = _JobControlAvailability;
+}
+
+/// Bounded terminal failure projection.
+@freezed
+sealed class BoundedTerminalFailure with _$BoundedTerminalFailure {
+  const factory BoundedTerminalFailure({
+    String? errorCode,
+    String? safeContext,
+  }) = _BoundedTerminalFailure;
+}
+
+/// Capability-neutral generic execution projection.
+@freezed
+sealed class JobRunProjection with _$JobRunProjection {
+  const factory JobRunProjection({
+    required JobRunId jobRunId,
+    required String operationType,
+    required JobLifecycleState lifecycleState,
+    String? phase,
+    int? completedUnits,
+    int? totalUnits,
+    String? statusKey,
+    required int createdAtMs,
+    int? queuedAtMs,
+    int? startedAtMs,
+    int? terminalAtMs,
+    required bool cancellationRequested,
+    required JobControlAvailability controls,
+    BoundedTerminalFailure? boundedTerminalFailure,
+  }) = _JobRunProjection;
+}
+
+/// One per-root scan projection with its historical display snapshot.
+@freezed
+sealed class ScanRunSummary with _$ScanRunSummary {
+  const factory ScanRunSummary({
+    required ScanRunId scanRunId,
+    required JobRunId jobRunId,
+    required LibraryRootId libraryRootId,
+    required String displayName,
+    required String safeLocationDisplay,
+    required JobScanStatus status,
+    required int startedAtMs,
+    int? completedAtMs,
+  }) = _ScanRunSummary;
+}
+
+/// Bounded historical root display summary.
+@freezed
+sealed class LibraryScanRootSummary with _$LibraryScanRootSummary {
+  const factory LibraryScanRootSummary({
+    required LibraryRootId libraryRootId,
+    required String displayName,
+    required String safeLocationDisplay,
+  }) = _LibraryScanRootSummary;
+}
+
+/// One durable typed admission exclusion.
+@freezed
+sealed class LibraryScanAdmissionExclusion
+    with _$LibraryScanAdmissionExclusion {
+  const factory LibraryScanAdmissionExclusion({
+    required LibraryRootId libraryRootId,
+    required String reason,
+    JobRunId? activeJobRunId,
+    ScanRunId? activeScanRunId,
+  }) = _LibraryScanAdmissionExclusion;
+}
+
+/// Scan-specific structured progress facts.
+@freezed
+sealed class ScanProgressFacts with _$ScanProgressFacts {
+  const factory ScanProgressFacts({
+    String? phase,
+    int? completedUnits,
+    int? totalUnits,
+    String? statusKey,
+    required int rootsRequested,
+    required int rootsAdmitted,
+    required int rootsTerminal,
+    required int entriesCommitted,
+  }) = _ScanProgressFacts;
+}
+
+/// Typed LibraryScan operation detail.
+@freezed
+sealed class LibraryScanJobDetail with _$LibraryScanJobDetail {
+  const factory LibraryScanJobDetail({
+    required List<LibraryScanRootSummary> requestedRoots,
+    required List<LibraryScanRootSummary> admittedRoots,
+    required List<LibraryScanAdmissionExclusion> exclusions,
+    required List<ScanRunSummary> scanRuns,
+    required ScanProgressFacts progress,
+    JobRunId? retrySourceJobRunId,
+    JobRunId? retrySuccessorJobRunId,
+  }) = _LibraryScanJobDetail;
+}
+
+/// Closed typed operation-detail union.
+@freezed
+sealed class OperationDetail with _$OperationDetail {
+  const factory OperationDetail.libraryScan(LibraryScanJobDetail detail) =
+      OperationDetailLibraryScan;
+}
+
+/// Authoritative job detail with typed operation detail.
+@freezed
+sealed class JobDetail with _$JobDetail {
+  const factory JobDetail({
+    required JobRunProjection job,
+    required OperationDetail operationDetail,
+  }) = _JobDetail;
+}
+
+/// Bounded authoritative job-row page.
+final class JobSummaryPage {
+  const JobSummaryPage({
+    required this.items,
+    required this.totalCount,
+    this.nextOffset,
+  });
+
+  final List<JobListItem> items;
+  final int totalCount;
+  final int? nextOffset;
+}
+
+/// Narrow active-job facts needed by the shell indicator.
+@freezed
+sealed class ActiveJobSummary with _$ActiveJobSummary {
+  const factory ActiveJobSummary({
+    required int activeCount,
+    JobRunId? soleActiveJobRunId,
+  }) = _ActiveJobSummary;
+}
+
+/// Typed outcome of one single-root scan admission.
+@freezed
+sealed class StartLibraryScanResult with _$StartLibraryScanResult {
+  const factory StartLibraryScanResult.admitted(OperationHandle handle) =
+      StartLibraryScanResultAdmitted;
+
+  const factory StartLibraryScanResult.alreadyScanning({
+    required LibraryRootId libraryRootId,
+    required JobRunId activeJobRunId,
+    required ScanRunId activeScanRunId,
+  }) = StartLibraryScanResultAlreadyScanning;
+}
+
+/// Typed outcome of one cancel request.
+enum CancelJobResult { cancellationRequested, noLongerCancellable }
+
+/// Explicit source-graph invalidation scope union.
+enum SourceEntriesChangeScope {
+  rootChildren,
+  entryChildren,
+  entireRootHierarchy;
+
+  static SourceEntriesChangeScope fromWire(String value) => switch (value) {
+    'root_children' => SourceEntriesChangeScope.rootChildren,
+    'entry_children' => SourceEntriesChangeScope.entryChildren,
+    'entire_root_hierarchy' => SourceEntriesChangeScope.entireRootHierarchy,
+    _ => throw const TransportFailure(
+      'Unknown source-entries scope',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
 /// Stable machine-readable application error code.
 final class ErrorCode {
   const ErrorCode(this.value);
@@ -532,7 +850,18 @@ sealed class AddLocalLibraryRootResult with _$AddLocalLibraryRootResult {
 }
 
 /// Typed outcome of one root-removal operation for the active slice.
-enum RemoveLibraryRootResult { removed }
+@freezed
+sealed class RemoveLibraryRootResult with _$RemoveLibraryRootResult {
+  const factory RemoveLibraryRootResult.removed() =
+      RemoveLibraryRootResultRemoved;
+
+  const factory RemoveLibraryRootResult.rootHasActiveScan({
+    required LibraryRootId libraryRootId,
+    required JobRunId jobRunId,
+    required ScanRunId scanRunId,
+    required int owningJobRootCount,
+  }) = RemoveLibraryRootResultRootHasActiveScan;
+}
 
 /// Typed outward runtime notifications. The sequence remains visible so a
 /// reconnect cannot silently claim that notifications were reconciled.
@@ -555,6 +884,23 @@ sealed class RuntimeEventPayload with _$RuntimeEventPayload {
   const factory RuntimeEventPayload.libraryRootChanged({
     required LibraryRootId libraryRootId,
   }) = RuntimeEventPayloadLibraryRootChanged;
+
+  const factory RuntimeEventPayload.jobStateChanged({
+    required JobRunId jobRunId,
+  }) = RuntimeEventPayloadJobStateChanged;
+
+  const factory RuntimeEventPayload.jobProgress({
+    required JobRunId jobRunId,
+    required String phase,
+    int? completedUnits,
+    int? totalUnits,
+    String? statusKey,
+  }) = RuntimeEventPayloadJobProgress;
+
+  const factory RuntimeEventPayload.sourceEntriesChanged({
+    required LibraryRootId libraryRootId,
+    required SourceEntriesChangeScope scope,
+  }) = RuntimeEventPayloadSourceEntriesChanged;
 }
 
 @freezed

@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 108486862;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1218822094;
 
 // Section: executor
 
@@ -109,6 +109,39 @@ fn wire__crate__attach_event_subscription_impl(
             move |context| {
                 transform_result_sse::<_, crate::BridgeTransportError>((move || {
                     let output_ok = crate::attach_event_subscription(api_attach_epoch)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__cancel_job_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "cancel_job",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_job_run_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::cancel_job(api_job_run_id)?;
                     Ok(output_ok)
                 })())
             }
@@ -313,6 +346,39 @@ fn wire__crate__get_event_attach_epoch_impl(
         },
     )
 }
+fn wire__crate__get_job_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_job",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_job_run_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_job(api_job_run_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__get_library_root_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -437,6 +503,39 @@ fn wire__crate__initialize_with_data_directory_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::initialize_with_data_directory(api_data_directory)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__list_jobs_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_jobs",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::ListJobsRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::list_jobs(api_request)?;
                     Ok(output_ok)
                 })())
             }
@@ -604,6 +703,39 @@ fn wire__crate__retry_startup_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::retry_startup(api_expected_runtime_instance_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__start_library_scan_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "start_library_scan",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_library_root_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::start_library_scan(api_library_root_id)?;
                     Ok(output_ok)
                 })())
             }
@@ -812,6 +944,18 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for crate::BoundedTerminalFailureDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_errorCode = <Option<String>>::sse_decode(deserializer);
+        let mut var_safeContext = <Option<String>>::sse_decode(deserializer);
+        return crate::BoundedTerminalFailureDto {
+            error_code: var_errorCode,
+            safe_context: var_safeContext,
+        };
+    }
+}
+
 impl SseDecode for crate::BridgeTransportError {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -819,6 +963,18 @@ impl SseDecode for crate::BridgeTransportError {
         return match inner {
             0 => crate::BridgeTransportError::EventStreamClosed,
             _ => unreachable!("Invalid variant for BridgeTransportError: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::CancelJobResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::CancelJobResultDto::CancellationRequested,
+            1 => crate::CancelJobResultDto::NoLongerCancellable,
+            _ => unreachable!("Invalid variant for CancelJobResultDto: {}", inner),
         };
     }
 }
@@ -868,6 +1024,126 @@ impl SseDecode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for crate::JobControlAvailabilityDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_canCancel = <bool>::sse_decode(deserializer);
+        let mut var_canRetry = <bool>::sse_decode(deserializer);
+        return crate::JobControlAvailabilityDto {
+            can_cancel: var_canCancel,
+            can_retry: var_canRetry,
+        };
+    }
+}
+
+impl SseDecode for crate::JobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_job = <crate::JobRunDto>::sse_decode(deserializer);
+        let mut var_operationDetail = <crate::OperationDetailDto>::sse_decode(deserializer);
+        return crate::JobDetailDto {
+            job: var_job,
+            operation_detail: var_operationDetail,
+        };
+    }
+}
+
+impl SseDecode for crate::JobRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_jobRunId = <String>::sse_decode(deserializer);
+        let mut var_operationType = <String>::sse_decode(deserializer);
+        let mut var_state = <crate::JobRunStateDto>::sse_decode(deserializer);
+        let mut var_phase = <Option<String>>::sse_decode(deserializer);
+        let mut var_completedUnits = <Option<u64>>::sse_decode(deserializer);
+        let mut var_totalUnits = <Option<u64>>::sse_decode(deserializer);
+        let mut var_statusKey = <Option<String>>::sse_decode(deserializer);
+        let mut var_createdAtMs = <i64>::sse_decode(deserializer);
+        let mut var_queuedAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_startedAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_terminalAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_cancellationRequested = <bool>::sse_decode(deserializer);
+        let mut var_controls = <crate::JobControlAvailabilityDto>::sse_decode(deserializer);
+        let mut var_boundedTerminalFailure =
+            <Option<crate::BoundedTerminalFailureDto>>::sse_decode(deserializer);
+        return crate::JobRunDto {
+            job_run_id: var_jobRunId,
+            operation_type: var_operationType,
+            state: var_state,
+            phase: var_phase,
+            completed_units: var_completedUnits,
+            total_units: var_totalUnits,
+            status_key: var_statusKey,
+            created_at_ms: var_createdAtMs,
+            queued_at_ms: var_queuedAtMs,
+            started_at_ms: var_startedAtMs,
+            terminal_at_ms: var_terminalAtMs,
+            cancellation_requested: var_cancellationRequested,
+            controls: var_controls,
+            bounded_terminal_failure: var_boundedTerminalFailure,
+        };
+    }
+}
+
+impl SseDecode for crate::JobRunStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::JobRunStateDto::Queued,
+            1 => crate::JobRunStateDto::Preparing,
+            2 => crate::JobRunStateDto::Running,
+            3 => crate::JobRunStateDto::Completed,
+            4 => crate::JobRunStateDto::CompletedWithIssues,
+            5 => crate::JobRunStateDto::Failed,
+            6 => crate::JobRunStateDto::Cancelled,
+            7 => crate::JobRunStateDto::Interrupted,
+            8 => crate::JobRunStateDto::Abandoned,
+            _ => unreachable!("Invalid variant for JobRunStateDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::JobSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_jobRunId = <String>::sse_decode(deserializer);
+        let mut var_operationType = <String>::sse_decode(deserializer);
+        let mut var_state = <crate::JobRunStateDto>::sse_decode(deserializer);
+        let mut var_phase = <Option<String>>::sse_decode(deserializer);
+        let mut var_createdAtMs = <i64>::sse_decode(deserializer);
+        let mut var_startedAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_terminalAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_cancellationRequested = <bool>::sse_decode(deserializer);
+        let mut var_safeContextSummary = <Option<String>>::sse_decode(deserializer);
+        return crate::JobSummaryDto {
+            job_run_id: var_jobRunId,
+            operation_type: var_operationType,
+            state: var_state,
+            phase: var_phase,
+            created_at_ms: var_createdAtMs,
+            started_at_ms: var_startedAtMs,
+            terminal_at_ms: var_terminalAtMs,
+            cancellation_requested: var_cancellationRequested,
+            safe_context_summary: var_safeContextSummary,
+        };
+    }
+}
+
+impl SseDecode for crate::JobSummaryPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_items = <Vec<crate::JobSummaryDto>>::sse_decode(deserializer);
+        let mut var_totalCount = <u32>::sse_decode(deserializer);
+        let mut var_nextOffset = <Option<u32>>::sse_decode(deserializer);
+        return crate::JobSummaryPageDto {
+            items: var_items,
+            total_count: var_totalCount,
+            next_offset: var_nextOffset,
+        };
     }
 }
 
@@ -970,6 +1246,104 @@ impl SseDecode for crate::LibraryRootPageDto {
     }
 }
 
+impl SseDecode for crate::LibraryScanAdmissionExclusionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_libraryRootId = <String>::sse_decode(deserializer);
+        let mut var_reason = <String>::sse_decode(deserializer);
+        let mut var_activeJobRunId = <Option<String>>::sse_decode(deserializer);
+        let mut var_activeScanRunId = <Option<String>>::sse_decode(deserializer);
+        return crate::LibraryScanAdmissionExclusionDto {
+            library_root_id: var_libraryRootId,
+            reason: var_reason,
+            active_job_run_id: var_activeJobRunId,
+            active_scan_run_id: var_activeScanRunId,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryScanJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_requestedRoots =
+            <Vec<crate::LibraryScanRootSummaryDto>>::sse_decode(deserializer);
+        let mut var_admittedRoots =
+            <Vec<crate::LibraryScanRootSummaryDto>>::sse_decode(deserializer);
+        let mut var_exclusions =
+            <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_decode(deserializer);
+        let mut var_scanRuns = <Vec<crate::ScanRunDto>>::sse_decode(deserializer);
+        let mut var_progress = <crate::ScanProgressFactsDto>::sse_decode(deserializer);
+        let mut var_retrySourceJobRunId = <Option<String>>::sse_decode(deserializer);
+        let mut var_retrySuccessorJobRunId = <Option<String>>::sse_decode(deserializer);
+        return crate::LibraryScanJobDetailDto {
+            requested_roots: var_requestedRoots,
+            admitted_roots: var_admittedRoots,
+            exclusions: var_exclusions,
+            scan_runs: var_scanRuns,
+            progress: var_progress,
+            retry_source_job_run_id: var_retrySourceJobRunId,
+            retry_successor_job_run_id: var_retrySuccessorJobRunId,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryScanRootSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_libraryRootId = <String>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        let mut var_safeLocationDisplay = <String>::sse_decode(deserializer);
+        return crate::LibraryScanRootSummaryDto {
+            library_root_id: var_libraryRootId,
+            display_name: var_displayName,
+            safe_location_display: var_safeLocationDisplay,
+        };
+    }
+}
+
+impl SseDecode for Vec<crate::JobSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::JobSummaryDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for crate::ListJobsRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_scope = <crate::ListJobsScopeDto>::sse_decode(deserializer);
+        return crate::ListJobsRequestDto { scope: var_scope };
+    }
+}
+
+impl SseDecode for crate::ListJobsScopeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::ListJobsScopeDto::Active;
+            }
+            1 => {
+                let mut var_offset = <u32>::sse_decode(deserializer);
+                let mut var_pageSize = <u32>::sse_decode(deserializer);
+                return crate::ListJobsScopeDto::RecentTerminal {
+                    offset: var_offset,
+                    page_size: var_pageSize,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseDecode for Vec<crate::LibraryRootDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -991,6 +1365,32 @@ impl SseDecode for crate::ListLibraryRootsRequestDto {
             offset: var_offset,
             page_size: var_pageSize,
         };
+    }
+}
+
+impl SseDecode for Vec<crate::LibraryScanAdmissionExclusionDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::LibraryScanAdmissionExclusionDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::LibraryScanRootSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::LibraryScanRootSummaryDto>::sse_decode(deserializer));
+        }
+        return ans_;
     }
 }
 
@@ -1030,6 +1430,18 @@ impl SseDecode for Vec<crate::SafeContextEntryDto> {
     }
 }
 
+impl SseDecode for Vec<crate::ScanRunDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::ScanRunDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for crate::LocalFilesystemRootSelectionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1037,6 +1449,56 @@ impl SseDecode for crate::LocalFilesystemRootSelectionDto {
         return crate::LocalFilesystemRootSelectionDto {
             selected_folder_path: var_selectedFolderPath,
         };
+    }
+}
+
+impl SseDecode for crate::OperationDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 = <crate::LibraryScanJobDetailDto>::sse_decode(deserializer);
+                return crate::OperationDetailDto::LibraryScan(var_field0);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::OperationHandleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_jobRunId = <String>::sse_decode(deserializer);
+        let mut var_operationType = <String>::sse_decode(deserializer);
+        return crate::OperationHandleDto {
+            job_run_id: var_jobRunId,
+            operation_type: var_operationType,
+        };
+    }
+}
+
+impl SseDecode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::BoundedTerminalFailureDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::BoundedTerminalFailureDto>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
     }
 }
 
@@ -1095,6 +1557,28 @@ impl SseDecode for Option<crate::StartupPhaseDto> {
     }
 }
 
+impl SseDecode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for crate::RecoveryActionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1122,11 +1606,27 @@ impl SseDecode for crate::RecoveryActionKindDto {
 impl SseDecode for crate::RemoveLibraryRootResultDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::RemoveLibraryRootResultDto::Removed,
-            _ => unreachable!("Invalid variant for RemoveLibraryRootResultDto: {}", inner),
-        };
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::RemoveLibraryRootResultDto::Removed;
+            }
+            1 => {
+                let mut var_libraryRootId = <String>::sse_decode(deserializer);
+                let mut var_jobRunId = <String>::sse_decode(deserializer);
+                let mut var_scanRunId = <String>::sse_decode(deserializer);
+                let mut var_owningJobRootCount = <u32>::sse_decode(deserializer);
+                return crate::RemoveLibraryRootResultDto::RootHasActiveScan {
+                    library_root_id: var_libraryRootId,
+                    job_run_id: var_jobRunId,
+                    scan_run_id: var_scanRunId,
+                    owning_job_root_count: var_owningJobRootCount,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -1188,6 +1688,34 @@ impl SseDecode for crate::RuntimeEventPayloadDto {
                     library_root_id: var_libraryRootId,
                 };
             }
+            5 => {
+                let mut var_jobRunId = <String>::sse_decode(deserializer);
+                return crate::RuntimeEventPayloadDto::JobStateChanged {
+                    job_run_id: var_jobRunId,
+                };
+            }
+            6 => {
+                let mut var_jobRunId = <String>::sse_decode(deserializer);
+                let mut var_phase = <String>::sse_decode(deserializer);
+                let mut var_completedUnits = <Option<u64>>::sse_decode(deserializer);
+                let mut var_totalUnits = <Option<u64>>::sse_decode(deserializer);
+                let mut var_statusKey = <Option<String>>::sse_decode(deserializer);
+                return crate::RuntimeEventPayloadDto::JobProgress {
+                    job_run_id: var_jobRunId,
+                    phase: var_phase,
+                    completed_units: var_completedUnits,
+                    total_units: var_totalUnits,
+                    status_key: var_statusKey,
+                };
+            }
+            7 => {
+                let mut var_libraryRootId = <String>::sse_decode(deserializer);
+                let mut var_scope = <crate::SourceEntriesChangeScopeDto>::sse_decode(deserializer);
+                return crate::RuntimeEventPayloadDto::SourceEntriesChanged {
+                    library_root_id: var_libraryRootId,
+                    scope: var_scope,
+                };
+            }
             _ => {
                 unimplemented!("");
             }
@@ -1236,6 +1764,118 @@ impl SseDecode for crate::SafeContextEntryDto {
             field: var_field,
             value: var_value,
         };
+    }
+}
+
+impl SseDecode for crate::ScanProgressFactsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_phase = <Option<String>>::sse_decode(deserializer);
+        let mut var_completedUnits = <Option<u64>>::sse_decode(deserializer);
+        let mut var_totalUnits = <Option<u64>>::sse_decode(deserializer);
+        let mut var_statusKey = <Option<String>>::sse_decode(deserializer);
+        let mut var_rootsRequested = <u32>::sse_decode(deserializer);
+        let mut var_rootsAdmitted = <u32>::sse_decode(deserializer);
+        let mut var_rootsTerminal = <u32>::sse_decode(deserializer);
+        let mut var_entriesCommitted = <u64>::sse_decode(deserializer);
+        return crate::ScanProgressFactsDto {
+            phase: var_phase,
+            completed_units: var_completedUnits,
+            total_units: var_totalUnits,
+            status_key: var_statusKey,
+            roots_requested: var_rootsRequested,
+            roots_admitted: var_rootsAdmitted,
+            roots_terminal: var_rootsTerminal,
+            entries_committed: var_entriesCommitted,
+        };
+    }
+}
+
+impl SseDecode for crate::ScanRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_scanRunId = <String>::sse_decode(deserializer);
+        let mut var_jobRunId = <String>::sse_decode(deserializer);
+        let mut var_libraryRootId = <String>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        let mut var_safeLocationDisplay = <String>::sse_decode(deserializer);
+        let mut var_status = <crate::ScanRunStatusDto>::sse_decode(deserializer);
+        let mut var_startedAtMs = <i64>::sse_decode(deserializer);
+        let mut var_completedAtMs = <Option<i64>>::sse_decode(deserializer);
+        return crate::ScanRunDto {
+            scan_run_id: var_scanRunId,
+            job_run_id: var_jobRunId,
+            library_root_id: var_libraryRootId,
+            display_name: var_displayName,
+            safe_location_display: var_safeLocationDisplay,
+            status: var_status,
+            started_at_ms: var_startedAtMs,
+            completed_at_ms: var_completedAtMs,
+        };
+    }
+}
+
+impl SseDecode for crate::ScanRunStatusDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::ScanRunStatusDto::Running,
+            1 => crate::ScanRunStatusDto::Complete,
+            2 => crate::ScanRunStatusDto::Partial,
+            3 => crate::ScanRunStatusDto::Failed,
+            4 => crate::ScanRunStatusDto::Cancelled,
+            5 => crate::ScanRunStatusDto::Abandoned,
+            _ => unreachable!("Invalid variant for ScanRunStatusDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::SourceEntriesChangeScopeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::SourceEntriesChangeScopeDto::RootChildren;
+            }
+            1 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                return crate::SourceEntriesChangeScopeDto::EntryChildren(var_field0);
+            }
+            2 => {
+                return crate::SourceEntriesChangeScopeDto::EntireRootHierarchy;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::StartLibraryScanResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 = <crate::OperationHandleDto>::sse_decode(deserializer);
+                return crate::StartLibraryScanResultDto::Admitted(var_field0);
+            }
+            1 => {
+                let mut var_libraryRootId = <String>::sse_decode(deserializer);
+                let mut var_activeJobRunId = <String>::sse_decode(deserializer);
+                let mut var_activeScanRunId = <String>::sse_decode(deserializer);
+                return crate::StartLibraryScanResultDto::AlreadyScanning {
+                    library_root_id: var_libraryRootId,
+                    active_job_run_id: var_activeJobRunId,
+                    active_scan_run_id: var_activeScanRunId,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -1339,24 +1979,28 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         1 => wire__crate__add_local_library_root_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__attach_event_subscription_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__close_event_connection_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__exit_failed_runtime_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__export_startup_diagnostics_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__cancel_job_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__close_event_connection_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__exit_failed_runtime_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__export_startup_diagnostics_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1445,6 +2089,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ApplicationErrorDto> for crate::Ap
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::BoundedTerminalFailureDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.error_code.into_into_dart().into_dart(),
+            self.safe_context.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::BoundedTerminalFailureDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::BoundedTerminalFailureDto>
+    for crate::BoundedTerminalFailureDto
+{
+    fn into_into_dart(self) -> crate::BoundedTerminalFailureDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::BridgeTransportError {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -1458,6 +2123,22 @@ impl flutter_rust_bridge::IntoIntoDart<crate::BridgeTransportError>
     for crate::BridgeTransportError
 {
     fn into_into_dart(self) -> crate::BridgeTransportError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::CancelJobResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::CancellationRequested => 0.into_dart(),
+            Self::NoLongerCancellable => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::CancelJobResultDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::CancelJobResultDto> for crate::CancelJobResultDto {
+    fn into_into_dart(self) -> crate::CancelJobResultDto {
         self
     }
 }
@@ -1514,6 +2195,134 @@ impl flutter_rust_bridge::IntoIntoDart<crate::DiagnosticsExportRequestDto>
     for crate::DiagnosticsExportRequestDto
 {
     fn into_into_dart(self) -> crate::DiagnosticsExportRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::JobControlAvailabilityDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.can_cancel.into_into_dart().into_dart(),
+            self.can_retry.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::JobControlAvailabilityDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::JobControlAvailabilityDto>
+    for crate::JobControlAvailabilityDto
+{
+    fn into_into_dart(self) -> crate::JobControlAvailabilityDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::JobDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.job.into_into_dart().into_dart(),
+            self.operation_detail.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::JobDetailDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::JobDetailDto> for crate::JobDetailDto {
+    fn into_into_dart(self) -> crate::JobDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::JobRunDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.job_run_id.into_into_dart().into_dart(),
+            self.operation_type.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+            self.phase.into_into_dart().into_dart(),
+            self.completed_units.into_into_dart().into_dart(),
+            self.total_units.into_into_dart().into_dart(),
+            self.status_key.into_into_dart().into_dart(),
+            self.created_at_ms.into_into_dart().into_dart(),
+            self.queued_at_ms.into_into_dart().into_dart(),
+            self.started_at_ms.into_into_dart().into_dart(),
+            self.terminal_at_ms.into_into_dart().into_dart(),
+            self.cancellation_requested.into_into_dart().into_dart(),
+            self.controls.into_into_dart().into_dart(),
+            self.bounded_terminal_failure.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::JobRunDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::JobRunDto> for crate::JobRunDto {
+    fn into_into_dart(self) -> crate::JobRunDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::JobRunStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Queued => 0.into_dart(),
+            Self::Preparing => 1.into_dart(),
+            Self::Running => 2.into_dart(),
+            Self::Completed => 3.into_dart(),
+            Self::CompletedWithIssues => 4.into_dart(),
+            Self::Failed => 5.into_dart(),
+            Self::Cancelled => 6.into_dart(),
+            Self::Interrupted => 7.into_dart(),
+            Self::Abandoned => 8.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::JobRunStateDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::JobRunStateDto> for crate::JobRunStateDto {
+    fn into_into_dart(self) -> crate::JobRunStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::JobSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.job_run_id.into_into_dart().into_dart(),
+            self.operation_type.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+            self.phase.into_into_dart().into_dart(),
+            self.created_at_ms.into_into_dart().into_dart(),
+            self.started_at_ms.into_into_dart().into_dart(),
+            self.terminal_at_ms.into_into_dart().into_dart(),
+            self.cancellation_requested.into_into_dart().into_dart(),
+            self.safe_context_summary.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::JobSummaryDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::JobSummaryDto> for crate::JobSummaryDto {
+    fn into_into_dart(self) -> crate::JobSummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::JobSummaryPageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.items.into_into_dart().into_dart(),
+            self.total_count.into_into_dart().into_dart(),
+            self.next_offset.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::JobSummaryPageDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::JobSummaryPageDto> for crate::JobSummaryPageDto {
+    fn into_into_dart(self) -> crate::JobSummaryPageDto {
         self
     }
 }
@@ -1645,6 +2454,112 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryRootPageDto> for crate::Lib
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryScanAdmissionExclusionDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.library_root_id.into_into_dart().into_dart(),
+            self.reason.into_into_dart().into_dart(),
+            self.active_job_run_id.into_into_dart().into_dart(),
+            self.active_scan_run_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryScanAdmissionExclusionDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryScanAdmissionExclusionDto>
+    for crate::LibraryScanAdmissionExclusionDto
+{
+    fn into_into_dart(self) -> crate::LibraryScanAdmissionExclusionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryScanJobDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.requested_roots.into_into_dart().into_dart(),
+            self.admitted_roots.into_into_dart().into_dart(),
+            self.exclusions.into_into_dart().into_dart(),
+            self.scan_runs.into_into_dart().into_dart(),
+            self.progress.into_into_dart().into_dart(),
+            self.retry_source_job_run_id.into_into_dart().into_dart(),
+            self.retry_successor_job_run_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryScanJobDetailDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryScanJobDetailDto>
+    for crate::LibraryScanJobDetailDto
+{
+    fn into_into_dart(self) -> crate::LibraryScanJobDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryScanRootSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.library_root_id.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+            self.safe_location_display.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryScanRootSummaryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryScanRootSummaryDto>
+    for crate::LibraryScanRootSummaryDto
+{
+    fn into_into_dart(self) -> crate::LibraryScanRootSummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ListJobsRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.scope.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ListJobsRequestDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ListJobsRequestDto> for crate::ListJobsRequestDto {
+    fn into_into_dart(self) -> crate::ListJobsRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ListJobsScopeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::ListJobsScopeDto::Active => [0.into_dart()].into_dart(),
+            crate::ListJobsScopeDto::RecentTerminal { offset, page_size } => [
+                1.into_dart(),
+                offset.into_into_dart().into_dart(),
+                page_size.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ListJobsScopeDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ListJobsScopeDto> for crate::ListJobsScopeDto {
+    fn into_into_dart(self) -> crate::ListJobsScopeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ListLibraryRootsRequestDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1679,6 +2594,41 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemRootSelectionDto>
     for crate::LocalFilesystemRootSelectionDto
 {
     fn into_into_dart(self) -> crate::LocalFilesystemRootSelectionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::OperationDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::OperationDetailDto::LibraryScan(field0) => {
+                [0.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::OperationDetailDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::OperationDetailDto> for crate::OperationDetailDto {
+    fn into_into_dart(self) -> crate::OperationDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::OperationHandleDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.job_run_id.into_into_dart().into_dart(),
+            self.operation_type.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::OperationHandleDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::OperationHandleDto> for crate::OperationHandleDto {
+    fn into_into_dart(self) -> crate::OperationHandleDto {
         self
     }
 }
@@ -1720,8 +2670,23 @@ impl flutter_rust_bridge::IntoIntoDart<crate::RecoveryActionKindDto>
 impl flutter_rust_bridge::IntoDart for crate::RemoveLibraryRootResultDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
-            Self::Removed => 0.into_dart(),
-            _ => unreachable!(),
+            crate::RemoveLibraryRootResultDto::Removed => [0.into_dart()].into_dart(),
+            crate::RemoveLibraryRootResultDto::RootHasActiveScan {
+                library_root_id,
+                job_run_id,
+                scan_run_id,
+                owning_job_root_count,
+            } => [
+                1.into_dart(),
+                library_root_id.into_into_dart().into_dart(),
+                job_run_id.into_into_dart().into_dart(),
+                scan_run_id.into_into_dart().into_dart(),
+                owning_job_root_count.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
         }
     }
 }
@@ -1788,6 +2753,33 @@ impl flutter_rust_bridge::IntoDart for crate::RuntimeEventPayloadDto {
             crate::RuntimeEventPayloadDto::LibraryRootChanged { library_root_id } => {
                 [4.into_dart(), library_root_id.into_into_dart().into_dart()].into_dart()
             }
+            crate::RuntimeEventPayloadDto::JobStateChanged { job_run_id } => {
+                [5.into_dart(), job_run_id.into_into_dart().into_dart()].into_dart()
+            }
+            crate::RuntimeEventPayloadDto::JobProgress {
+                job_run_id,
+                phase,
+                completed_units,
+                total_units,
+                status_key,
+            } => [
+                6.into_dart(),
+                job_run_id.into_into_dart().into_dart(),
+                phase.into_into_dart().into_dart(),
+                completed_units.into_into_dart().into_dart(),
+                total_units.into_into_dart().into_dart(),
+                status_key.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::RuntimeEventPayloadDto::SourceEntriesChanged {
+                library_root_id,
+                scope,
+            } => [
+                7.into_dart(),
+                library_root_id.into_into_dart().into_dart(),
+                scope.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -1853,6 +2845,133 @@ impl flutter_rust_bridge::IntoDart for crate::SafeContextEntryDto {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::SafeContextEntryDto {}
 impl flutter_rust_bridge::IntoIntoDart<crate::SafeContextEntryDto> for crate::SafeContextEntryDto {
     fn into_into_dart(self) -> crate::SafeContextEntryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ScanProgressFactsDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.phase.into_into_dart().into_dart(),
+            self.completed_units.into_into_dart().into_dart(),
+            self.total_units.into_into_dart().into_dart(),
+            self.status_key.into_into_dart().into_dart(),
+            self.roots_requested.into_into_dart().into_dart(),
+            self.roots_admitted.into_into_dart().into_dart(),
+            self.roots_terminal.into_into_dart().into_dart(),
+            self.entries_committed.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ScanProgressFactsDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ScanProgressFactsDto>
+    for crate::ScanProgressFactsDto
+{
+    fn into_into_dart(self) -> crate::ScanProgressFactsDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ScanRunDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.scan_run_id.into_into_dart().into_dart(),
+            self.job_run_id.into_into_dart().into_dart(),
+            self.library_root_id.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+            self.safe_location_display.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+            self.started_at_ms.into_into_dart().into_dart(),
+            self.completed_at_ms.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ScanRunDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ScanRunDto> for crate::ScanRunDto {
+    fn into_into_dart(self) -> crate::ScanRunDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ScanRunStatusDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Running => 0.into_dart(),
+            Self::Complete => 1.into_dart(),
+            Self::Partial => 2.into_dart(),
+            Self::Failed => 3.into_dart(),
+            Self::Cancelled => 4.into_dart(),
+            Self::Abandoned => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ScanRunStatusDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ScanRunStatusDto> for crate::ScanRunStatusDto {
+    fn into_into_dart(self) -> crate::ScanRunStatusDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::SourceEntriesChangeScopeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::SourceEntriesChangeScopeDto::RootChildren => [0.into_dart()].into_dart(),
+            crate::SourceEntriesChangeScopeDto::EntryChildren(field0) => {
+                [1.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::SourceEntriesChangeScopeDto::EntireRootHierarchy => [2.into_dart()].into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::SourceEntriesChangeScopeDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntriesChangeScopeDto>
+    for crate::SourceEntriesChangeScopeDto
+{
+    fn into_into_dart(self) -> crate::SourceEntriesChangeScopeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::StartLibraryScanResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::StartLibraryScanResultDto::Admitted(field0) => {
+                [0.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::StartLibraryScanResultDto::AlreadyScanning {
+                library_root_id,
+                active_job_run_id,
+                active_scan_run_id,
+            } => [
+                1.into_dart(),
+                library_root_id.into_into_dart().into_dart(),
+                active_job_run_id.into_into_dart().into_dart(),
+                active_scan_run_id.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::StartLibraryScanResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::StartLibraryScanResultDto>
+    for crate::StartLibraryScanResultDto
+{
+    fn into_into_dart(self) -> crate::StartLibraryScanResultDto {
         self
     }
 }
@@ -2017,12 +3136,36 @@ impl SseEncode for bool {
     }
 }
 
+impl SseEncode for crate::BoundedTerminalFailureDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.error_code, serializer);
+        <Option<String>>::sse_encode(self.safe_context, serializer);
+    }
+}
+
 impl SseEncode for crate::BridgeTransportError {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(
             match self {
                 crate::BridgeTransportError::EventStreamClosed => 0,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::CancelJobResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::CancelJobResultDto::CancellationRequested => 0,
+                crate::CancelJobResultDto::NoLongerCancellable => 1,
                 _ => {
                     unimplemented!("");
                 }
@@ -2074,6 +3217,92 @@ impl SseEncode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::JobControlAvailabilityDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.can_cancel, serializer);
+        <bool>::sse_encode(self.can_retry, serializer);
+    }
+}
+
+impl SseEncode for crate::JobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::JobRunDto>::sse_encode(self.job, serializer);
+        <crate::OperationDetailDto>::sse_encode(self.operation_detail, serializer);
+    }
+}
+
+impl SseEncode for crate::JobRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.job_run_id, serializer);
+        <String>::sse_encode(self.operation_type, serializer);
+        <crate::JobRunStateDto>::sse_encode(self.state, serializer);
+        <Option<String>>::sse_encode(self.phase, serializer);
+        <Option<u64>>::sse_encode(self.completed_units, serializer);
+        <Option<u64>>::sse_encode(self.total_units, serializer);
+        <Option<String>>::sse_encode(self.status_key, serializer);
+        <i64>::sse_encode(self.created_at_ms, serializer);
+        <Option<i64>>::sse_encode(self.queued_at_ms, serializer);
+        <Option<i64>>::sse_encode(self.started_at_ms, serializer);
+        <Option<i64>>::sse_encode(self.terminal_at_ms, serializer);
+        <bool>::sse_encode(self.cancellation_requested, serializer);
+        <crate::JobControlAvailabilityDto>::sse_encode(self.controls, serializer);
+        <Option<crate::BoundedTerminalFailureDto>>::sse_encode(
+            self.bounded_terminal_failure,
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::JobRunStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::JobRunStateDto::Queued => 0,
+                crate::JobRunStateDto::Preparing => 1,
+                crate::JobRunStateDto::Running => 2,
+                crate::JobRunStateDto::Completed => 3,
+                crate::JobRunStateDto::CompletedWithIssues => 4,
+                crate::JobRunStateDto::Failed => 5,
+                crate::JobRunStateDto::Cancelled => 6,
+                crate::JobRunStateDto::Interrupted => 7,
+                crate::JobRunStateDto::Abandoned => 8,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::JobSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.job_run_id, serializer);
+        <String>::sse_encode(self.operation_type, serializer);
+        <crate::JobRunStateDto>::sse_encode(self.state, serializer);
+        <Option<String>>::sse_encode(self.phase, serializer);
+        <i64>::sse_encode(self.created_at_ms, serializer);
+        <Option<i64>>::sse_encode(self.started_at_ms, serializer);
+        <Option<i64>>::sse_encode(self.terminal_at_ms, serializer);
+        <bool>::sse_encode(self.cancellation_requested, serializer);
+        <Option<String>>::sse_encode(self.safe_context_summary, serializer);
+    }
+}
+
+impl SseEncode for crate::JobSummaryPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::JobSummaryDto>>::sse_encode(self.items, serializer);
+        <u32>::sse_encode(self.total_count, serializer);
+        <Option<u32>>::sse_encode(self.next_offset, serializer);
     }
 }
 
@@ -2155,6 +3384,74 @@ impl SseEncode for crate::LibraryRootPageDto {
     }
 }
 
+impl SseEncode for crate::LibraryScanAdmissionExclusionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.library_root_id, serializer);
+        <String>::sse_encode(self.reason, serializer);
+        <Option<String>>::sse_encode(self.active_job_run_id, serializer);
+        <Option<String>>::sse_encode(self.active_scan_run_id, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryScanJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::LibraryScanRootSummaryDto>>::sse_encode(self.requested_roots, serializer);
+        <Vec<crate::LibraryScanRootSummaryDto>>::sse_encode(self.admitted_roots, serializer);
+        <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_encode(self.exclusions, serializer);
+        <Vec<crate::ScanRunDto>>::sse_encode(self.scan_runs, serializer);
+        <crate::ScanProgressFactsDto>::sse_encode(self.progress, serializer);
+        <Option<String>>::sse_encode(self.retry_source_job_run_id, serializer);
+        <Option<String>>::sse_encode(self.retry_successor_job_run_id, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryScanRootSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.library_root_id, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+        <String>::sse_encode(self.safe_location_display, serializer);
+    }
+}
+
+impl SseEncode for Vec<crate::JobSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::JobSummaryDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::ListJobsRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::ListJobsScopeDto>::sse_encode(self.scope, serializer);
+    }
+}
+
+impl SseEncode for crate::ListJobsScopeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::ListJobsScopeDto::Active => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::ListJobsScopeDto::RecentTerminal { offset, page_size } => {
+                <i32>::sse_encode(1, serializer);
+                <u32>::sse_encode(offset, serializer);
+                <u32>::sse_encode(page_size, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::LibraryRootDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2170,6 +3467,26 @@ impl SseEncode for crate::ListLibraryRootsRequestDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.offset, serializer);
         <u32>::sse_encode(self.page_size, serializer);
+    }
+}
+
+impl SseEncode for Vec<crate::LibraryScanAdmissionExclusionDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::LibraryScanAdmissionExclusionDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::LibraryScanRootSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::LibraryScanRootSummaryDto>::sse_encode(item, serializer);
+        }
     }
 }
 
@@ -2203,10 +3520,63 @@ impl SseEncode for Vec<crate::SafeContextEntryDto> {
     }
 }
 
+impl SseEncode for Vec<crate::ScanRunDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::ScanRunDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::LocalFilesystemRootSelectionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.selected_folder_path, serializer);
+    }
+}
+
+impl SseEncode for crate::OperationDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::OperationDetailDto::LibraryScan(field0) => {
+                <i32>::sse_encode(0, serializer);
+                <crate::LibraryScanJobDetailDto>::sse_encode(field0, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::OperationHandleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.job_run_id, serializer);
+        <String>::sse_encode(self.operation_type, serializer);
+    }
+}
+
+impl SseEncode for Option<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::BoundedTerminalFailureDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::BoundedTerminalFailureDto>::sse_encode(value, serializer);
+        }
     }
 }
 
@@ -2260,6 +3630,26 @@ impl SseEncode for Option<crate::StartupPhaseDto> {
     }
 }
 
+impl SseEncode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u32>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u64>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::RecoveryActionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2290,15 +3680,26 @@ impl SseEncode for crate::RecoveryActionKindDto {
 impl SseEncode for crate::RemoveLibraryRootResultDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::RemoveLibraryRootResultDto::Removed => 0,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
+        match self {
+            crate::RemoveLibraryRootResultDto::Removed => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::RemoveLibraryRootResultDto::RootHasActiveScan {
+                library_root_id,
+                job_run_id,
+                scan_run_id,
+                owning_job_root_count,
+            } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(library_root_id, serializer);
+                <String>::sse_encode(job_run_id, serializer);
+                <String>::sse_encode(scan_run_id, serializer);
+                <u32>::sse_encode(owning_job_root_count, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -2353,6 +3754,32 @@ impl SseEncode for crate::RuntimeEventPayloadDto {
                 <i32>::sse_encode(4, serializer);
                 <String>::sse_encode(library_root_id, serializer);
             }
+            crate::RuntimeEventPayloadDto::JobStateChanged { job_run_id } => {
+                <i32>::sse_encode(5, serializer);
+                <String>::sse_encode(job_run_id, serializer);
+            }
+            crate::RuntimeEventPayloadDto::JobProgress {
+                job_run_id,
+                phase,
+                completed_units,
+                total_units,
+                status_key,
+            } => {
+                <i32>::sse_encode(6, serializer);
+                <String>::sse_encode(job_run_id, serializer);
+                <String>::sse_encode(phase, serializer);
+                <Option<u64>>::sse_encode(completed_units, serializer);
+                <Option<u64>>::sse_encode(total_units, serializer);
+                <Option<String>>::sse_encode(status_key, serializer);
+            }
+            crate::RuntimeEventPayloadDto::SourceEntriesChanged {
+                library_root_id,
+                scope,
+            } => {
+                <i32>::sse_encode(7, serializer);
+                <String>::sse_encode(library_root_id, serializer);
+                <crate::SourceEntriesChangeScopeDto>::sse_encode(scope, serializer);
+            }
             _ => {
                 unimplemented!("");
             }
@@ -2395,6 +3822,100 @@ impl SseEncode for crate::SafeContextEntryDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.field, serializer);
         <String>::sse_encode(self.value, serializer);
+    }
+}
+
+impl SseEncode for crate::ScanProgressFactsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.phase, serializer);
+        <Option<u64>>::sse_encode(self.completed_units, serializer);
+        <Option<u64>>::sse_encode(self.total_units, serializer);
+        <Option<String>>::sse_encode(self.status_key, serializer);
+        <u32>::sse_encode(self.roots_requested, serializer);
+        <u32>::sse_encode(self.roots_admitted, serializer);
+        <u32>::sse_encode(self.roots_terminal, serializer);
+        <u64>::sse_encode(self.entries_committed, serializer);
+    }
+}
+
+impl SseEncode for crate::ScanRunDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.scan_run_id, serializer);
+        <String>::sse_encode(self.job_run_id, serializer);
+        <String>::sse_encode(self.library_root_id, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+        <String>::sse_encode(self.safe_location_display, serializer);
+        <crate::ScanRunStatusDto>::sse_encode(self.status, serializer);
+        <i64>::sse_encode(self.started_at_ms, serializer);
+        <Option<i64>>::sse_encode(self.completed_at_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::ScanRunStatusDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::ScanRunStatusDto::Running => 0,
+                crate::ScanRunStatusDto::Complete => 1,
+                crate::ScanRunStatusDto::Partial => 2,
+                crate::ScanRunStatusDto::Failed => 3,
+                crate::ScanRunStatusDto::Cancelled => 4,
+                crate::ScanRunStatusDto::Abandoned => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::SourceEntriesChangeScopeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::SourceEntriesChangeScopeDto::RootChildren => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::SourceEntriesChangeScopeDto::EntryChildren(field0) => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(field0, serializer);
+            }
+            crate::SourceEntriesChangeScopeDto::EntireRootHierarchy => {
+                <i32>::sse_encode(2, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::StartLibraryScanResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::StartLibraryScanResultDto::Admitted(field0) => {
+                <i32>::sse_encode(0, serializer);
+                <crate::OperationHandleDto>::sse_encode(field0, serializer);
+            }
+            crate::StartLibraryScanResultDto::AlreadyScanning {
+                library_root_id,
+                active_job_run_id,
+                active_scan_run_id,
+            } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(library_root_id, serializer);
+                <String>::sse_encode(active_job_run_id, serializer);
+                <String>::sse_encode(active_scan_run_id, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 

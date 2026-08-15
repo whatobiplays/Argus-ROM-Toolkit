@@ -13,6 +13,30 @@ pub enum OperationClass {
     Query,
     /// Direct immediate command executed inside the initiating operation.
     ImmediateCommand,
+    /// Independently managed execution after admission.
+    BackgroundOperation,
+}
+
+/// Logical resource classes for background-operation admission.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ResourceClass {
+    PersistenceRead,
+    PersistenceWrite,
+    FilesystemRead,
+    FilesystemWrite,
+    MetadataProviderNetwork,
+    CpuIntensive,
+}
+
+/// Declared operation policy consumed by the background manager.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OperationPolicy {
+    /// Required logical resource classes for the operation.
+    pub required_resources: &'static [ResourceClass],
+    /// Whether cooperative cancellation is supported.
+    pub cancellable: bool,
+    /// Whether the operation may be resumed from durable checkpoints.
+    pub resumable: bool,
 }
 
 /// Cooperative cancellation primitive for one admitted bridge operation.

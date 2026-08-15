@@ -8,10 +8,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `host_with_options`, `host`, `initialize_with_options`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `severity_name`, `startup_failure_dto`, `startup_phase_dto`
+// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `startup_failure_dto`, `startup_phase_dto`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_dto`, `application_error_dto`, `library_root_dto`, `library_root_page_dto`, `parse_library_root_id`, `remove_library_root_dto`, `runtime_event_dto`, `runtime_state_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `parse_job_run_id`, `parse_library_root_id`, `remove_library_root_dto`, `runtime_event_dto`, `runtime_state_dto`, `start_library_scan_result_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -91,6 +91,23 @@ Future<AddLocalLibraryRootResultDto> addLocalLibraryRoot({
 Future<RemoveLibraryRootResultDto> removeLibraryRoot({
   required String libraryRootId,
 }) => RustLib.instance.api.crateRemoveLibraryRoot(libraryRootId: libraryRootId);
+
+/// Admits one durable single-root library scan.
+Future<StartLibraryScanResultDto> startLibraryScan({
+  required String libraryRootId,
+}) => RustLib.instance.api.crateStartLibraryScan(libraryRootId: libraryRootId);
+
+/// Lists one closed authoritative Jobs scope.
+Future<JobSummaryPageDto> listJobs({required ListJobsRequestDto request}) =>
+    RustLib.instance.api.crateListJobs(request: request);
+
+/// Reads one authoritative job detail.
+Future<JobDetailDto> getJob({required String jobRunId}) =>
+    RustLib.instance.api.crateGetJob(jobRunId: jobRunId);
+
+/// Requests durable cancellation for one job.
+Future<CancelJobResultDto> cancelJob({required String jobRunId}) =>
+    RustLib.instance.api.crateCancelJob(jobRunId: jobRunId);
 
 /// Writes sanitized startup diagnostics to the embedding-selected path.
 Future<DiagnosticsExportDto> exportStartupDiagnostics({
@@ -209,8 +226,30 @@ class ApplicationErrorDto implements FrbException {
           safeContext == other.safeContext;
 }
 
+/// Bounded terminal failure projection.
+class BoundedTerminalFailureDto {
+  final String? errorCode;
+  final String? safeContext;
+
+  const BoundedTerminalFailureDto({this.errorCode, this.safeContext});
+
+  @override
+  int get hashCode => errorCode.hashCode ^ safeContext.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BoundedTerminalFailureDto &&
+          runtimeType == other.runtimeType &&
+          errorCode == other.errorCode &&
+          safeContext == other.safeContext;
+}
+
 /// Transport failure for a native event stream.
 enum BridgeTransportError { eventStreamClosed }
+
+/// Typed outcome of one cancel request.
+enum CancelJobResultDto { cancellationRequested, noLongerCancellable }
 
 /// Safe terminal export summary; archive bytes never cross the bridge.
 class DiagnosticsExportDto {
@@ -252,6 +291,210 @@ class DiagnosticsExportRequestDto {
       other is DiagnosticsExportRequestDto &&
           runtimeType == other.runtimeType &&
           destination == other.destination;
+}
+
+/// Backend-authoritative control availability.
+class JobControlAvailabilityDto {
+  final bool canCancel;
+  final bool canRetry;
+
+  const JobControlAvailabilityDto({
+    required this.canCancel,
+    required this.canRetry,
+  });
+
+  @override
+  int get hashCode => canCancel.hashCode ^ canRetry.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is JobControlAvailabilityDto &&
+          runtimeType == other.runtimeType &&
+          canCancel == other.canCancel &&
+          canRetry == other.canRetry;
+}
+
+/// Authoritative job detail with typed operation detail.
+class JobDetailDto {
+  final JobRunDto job;
+  final OperationDetailDto operationDetail;
+
+  const JobDetailDto({required this.job, required this.operationDetail});
+
+  @override
+  int get hashCode => job.hashCode ^ operationDetail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is JobDetailDto &&
+          runtimeType == other.runtimeType &&
+          job == other.job &&
+          operationDetail == other.operationDetail;
+}
+
+/// Capability-neutral generic execution projection.
+class JobRunDto {
+  final String jobRunId;
+  final String operationType;
+  final JobRunStateDto state;
+  final String? phase;
+  final BigInt? completedUnits;
+  final BigInt? totalUnits;
+  final String? statusKey;
+  final PlatformInt64 createdAtMs;
+  final PlatformInt64? queuedAtMs;
+  final PlatformInt64? startedAtMs;
+  final PlatformInt64? terminalAtMs;
+  final bool cancellationRequested;
+  final JobControlAvailabilityDto controls;
+  final BoundedTerminalFailureDto? boundedTerminalFailure;
+
+  const JobRunDto({
+    required this.jobRunId,
+    required this.operationType,
+    required this.state,
+    this.phase,
+    this.completedUnits,
+    this.totalUnits,
+    this.statusKey,
+    required this.createdAtMs,
+    this.queuedAtMs,
+    this.startedAtMs,
+    this.terminalAtMs,
+    required this.cancellationRequested,
+    required this.controls,
+    this.boundedTerminalFailure,
+  });
+
+  @override
+  int get hashCode =>
+      jobRunId.hashCode ^
+      operationType.hashCode ^
+      state.hashCode ^
+      phase.hashCode ^
+      completedUnits.hashCode ^
+      totalUnits.hashCode ^
+      statusKey.hashCode ^
+      createdAtMs.hashCode ^
+      queuedAtMs.hashCode ^
+      startedAtMs.hashCode ^
+      terminalAtMs.hashCode ^
+      cancellationRequested.hashCode ^
+      controls.hashCode ^
+      boundedTerminalFailure.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is JobRunDto &&
+          runtimeType == other.runtimeType &&
+          jobRunId == other.jobRunId &&
+          operationType == other.operationType &&
+          state == other.state &&
+          phase == other.phase &&
+          completedUnits == other.completedUnits &&
+          totalUnits == other.totalUnits &&
+          statusKey == other.statusKey &&
+          createdAtMs == other.createdAtMs &&
+          queuedAtMs == other.queuedAtMs &&
+          startedAtMs == other.startedAtMs &&
+          terminalAtMs == other.terminalAtMs &&
+          cancellationRequested == other.cancellationRequested &&
+          controls == other.controls &&
+          boundedTerminalFailure == other.boundedTerminalFailure;
+}
+
+/// Canonical persisted job lifecycle vocabulary.
+enum JobRunStateDto {
+  queued,
+  preparing,
+  running,
+  completed,
+  completedWithIssues,
+  failed,
+  cancelled,
+  interrupted,
+  abandoned,
+}
+
+/// Bounded list-row projection for Jobs landing and shell summaries.
+class JobSummaryDto {
+  final String jobRunId;
+  final String operationType;
+  final JobRunStateDto state;
+  final String? phase;
+  final PlatformInt64 createdAtMs;
+  final PlatformInt64? startedAtMs;
+  final PlatformInt64? terminalAtMs;
+  final bool cancellationRequested;
+  final String? safeContextSummary;
+
+  const JobSummaryDto({
+    required this.jobRunId,
+    required this.operationType,
+    required this.state,
+    this.phase,
+    required this.createdAtMs,
+    this.startedAtMs,
+    this.terminalAtMs,
+    required this.cancellationRequested,
+    this.safeContextSummary,
+  });
+
+  @override
+  int get hashCode =>
+      jobRunId.hashCode ^
+      operationType.hashCode ^
+      state.hashCode ^
+      phase.hashCode ^
+      createdAtMs.hashCode ^
+      startedAtMs.hashCode ^
+      terminalAtMs.hashCode ^
+      cancellationRequested.hashCode ^
+      safeContextSummary.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is JobSummaryDto &&
+          runtimeType == other.runtimeType &&
+          jobRunId == other.jobRunId &&
+          operationType == other.operationType &&
+          state == other.state &&
+          phase == other.phase &&
+          createdAtMs == other.createdAtMs &&
+          startedAtMs == other.startedAtMs &&
+          terminalAtMs == other.terminalAtMs &&
+          cancellationRequested == other.cancellationRequested &&
+          safeContextSummary == other.safeContextSummary;
+}
+
+/// Bounded authoritative job-row page.
+class JobSummaryPageDto {
+  final List<JobSummaryDto> items;
+  final int totalCount;
+  final int? nextOffset;
+
+  const JobSummaryPageDto({
+    required this.items,
+    required this.totalCount,
+    this.nextOffset,
+  });
+
+  @override
+  int get hashCode =>
+      items.hashCode ^ totalCount.hashCode ^ nextOffset.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is JobSummaryPageDto &&
+          runtimeType == other.runtimeType &&
+          items == other.items &&
+          totalCount == other.totalCount &&
+          nextOffset == other.nextOffset;
 }
 
 /// Bounded active scan-ownership summary carried by a root projection.
@@ -397,6 +640,138 @@ class LibraryRootPageDto {
           totalCount == other.totalCount;
 }
 
+/// One durable typed admission exclusion.
+class LibraryScanAdmissionExclusionDto {
+  final String libraryRootId;
+  final String reason;
+  final String? activeJobRunId;
+  final String? activeScanRunId;
+
+  const LibraryScanAdmissionExclusionDto({
+    required this.libraryRootId,
+    required this.reason,
+    this.activeJobRunId,
+    this.activeScanRunId,
+  });
+
+  @override
+  int get hashCode =>
+      libraryRootId.hashCode ^
+      reason.hashCode ^
+      activeJobRunId.hashCode ^
+      activeScanRunId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryScanAdmissionExclusionDto &&
+          runtimeType == other.runtimeType &&
+          libraryRootId == other.libraryRootId &&
+          reason == other.reason &&
+          activeJobRunId == other.activeJobRunId &&
+          activeScanRunId == other.activeScanRunId;
+}
+
+/// Typed LibraryScan operation detail.
+class LibraryScanJobDetailDto {
+  final List<LibraryScanRootSummaryDto> requestedRoots;
+  final List<LibraryScanRootSummaryDto> admittedRoots;
+  final List<LibraryScanAdmissionExclusionDto> exclusions;
+  final List<ScanRunDto> scanRuns;
+  final ScanProgressFactsDto progress;
+  final String? retrySourceJobRunId;
+  final String? retrySuccessorJobRunId;
+
+  const LibraryScanJobDetailDto({
+    required this.requestedRoots,
+    required this.admittedRoots,
+    required this.exclusions,
+    required this.scanRuns,
+    required this.progress,
+    this.retrySourceJobRunId,
+    this.retrySuccessorJobRunId,
+  });
+
+  @override
+  int get hashCode =>
+      requestedRoots.hashCode ^
+      admittedRoots.hashCode ^
+      exclusions.hashCode ^
+      scanRuns.hashCode ^
+      progress.hashCode ^
+      retrySourceJobRunId.hashCode ^
+      retrySuccessorJobRunId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryScanJobDetailDto &&
+          runtimeType == other.runtimeType &&
+          requestedRoots == other.requestedRoots &&
+          admittedRoots == other.admittedRoots &&
+          exclusions == other.exclusions &&
+          scanRuns == other.scanRuns &&
+          progress == other.progress &&
+          retrySourceJobRunId == other.retrySourceJobRunId &&
+          retrySuccessorJobRunId == other.retrySuccessorJobRunId;
+}
+
+/// Bounded historical root display summary.
+class LibraryScanRootSummaryDto {
+  final String libraryRootId;
+  final String displayName;
+  final String safeLocationDisplay;
+
+  const LibraryScanRootSummaryDto({
+    required this.libraryRootId,
+    required this.displayName,
+    required this.safeLocationDisplay,
+  });
+
+  @override
+  int get hashCode =>
+      libraryRootId.hashCode ^
+      displayName.hashCode ^
+      safeLocationDisplay.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryScanRootSummaryDto &&
+          runtimeType == other.runtimeType &&
+          libraryRootId == other.libraryRootId &&
+          displayName == other.displayName &&
+          safeLocationDisplay == other.safeLocationDisplay;
+}
+
+/// One bounded Jobs list request.
+class ListJobsRequestDto {
+  final ListJobsScopeDto scope;
+
+  const ListJobsRequestDto({required this.scope});
+
+  @override
+  int get hashCode => scope.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ListJobsRequestDto &&
+          runtimeType == other.runtimeType &&
+          scope == other.scope;
+}
+
+@freezed
+sealed class ListJobsScopeDto with _$ListJobsScopeDto {
+  const ListJobsScopeDto._();
+
+  const factory ListJobsScopeDto.active() = ListJobsScopeDto_Active;
+  const factory ListJobsScopeDto.recentTerminal({
+    required int offset,
+    required int pageSize,
+  }) = ListJobsScopeDto_RecentTerminal;
+}
+
 /// Bounded root-list request.
 class ListLibraryRootsRequestDto {
   final int offset;
@@ -436,6 +811,36 @@ class LocalFilesystemRootSelectionDto {
           selectedFolderPath == other.selectedFolderPath;
 }
 
+@freezed
+sealed class OperationDetailDto with _$OperationDetailDto {
+  const OperationDetailDto._();
+
+  const factory OperationDetailDto.libraryScan(LibraryScanJobDetailDto field0) =
+      OperationDetailDto_LibraryScan;
+}
+
+/// Minimal identity-only handle returned by successful background admission.
+class OperationHandleDto {
+  final String jobRunId;
+  final String operationType;
+
+  const OperationHandleDto({
+    required this.jobRunId,
+    required this.operationType,
+  });
+
+  @override
+  int get hashCode => jobRunId.hashCode ^ operationType.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OperationHandleDto &&
+          runtimeType == other.runtimeType &&
+          jobRunId == other.jobRunId &&
+          operationType == other.operationType;
+}
+
 /// One declarative failed-startup action.
 class RecoveryActionDto {
   final RecoveryActionKindDto kind;
@@ -463,8 +868,19 @@ enum RecoveryActionKindDto {
   exit,
 }
 
-/// Typed outcome of one root-removal operation for the active slice.
-enum RemoveLibraryRootResultDto { removed }
+@freezed
+sealed class RemoveLibraryRootResultDto with _$RemoveLibraryRootResultDto {
+  const RemoveLibraryRootResultDto._();
+
+  const factory RemoveLibraryRootResultDto.removed() =
+      RemoveLibraryRootResultDto_Removed;
+  const factory RemoveLibraryRootResultDto.rootHasActiveScan({
+    required String libraryRootId,
+    required String jobRunId,
+    required String scanRunId,
+    required int owningJobRootCount,
+  }) = RemoveLibraryRootResultDto_RootHasActiveScan;
+}
 
 /// Provider-owned overlap vocabulary.
 enum RootRelationshipDto { same, ancestor, descendant, disjoint, unknown }
@@ -518,6 +934,20 @@ sealed class RuntimeEventPayloadDto with _$RuntimeEventPayloadDto {
   const factory RuntimeEventPayloadDto.libraryRootChanged({
     required String libraryRootId,
   }) = RuntimeEventPayloadDto_LibraryRootChanged;
+  const factory RuntimeEventPayloadDto.jobStateChanged({
+    required String jobRunId,
+  }) = RuntimeEventPayloadDto_JobStateChanged;
+  const factory RuntimeEventPayloadDto.jobProgress({
+    required String jobRunId,
+    required String phase,
+    BigInt? completedUnits,
+    BigInt? totalUnits,
+    String? statusKey,
+  }) = RuntimeEventPayloadDto_JobProgress;
+  const factory RuntimeEventPayloadDto.sourceEntriesChanged({
+    required String libraryRootId,
+    required SourceEntriesChangeScopeDto scope,
+  }) = RuntimeEventPayloadDto_SourceEntriesChanged;
 }
 
 /// Wire lifecycle projection.
@@ -579,6 +1009,137 @@ class SafeContextEntryDto {
           runtimeType == other.runtimeType &&
           field == other.field &&
           value == other.value;
+}
+
+/// Scan-specific structured progress facts.
+class ScanProgressFactsDto {
+  final String? phase;
+  final BigInt? completedUnits;
+  final BigInt? totalUnits;
+  final String? statusKey;
+  final int rootsRequested;
+  final int rootsAdmitted;
+  final int rootsTerminal;
+  final BigInt entriesCommitted;
+
+  const ScanProgressFactsDto({
+    this.phase,
+    this.completedUnits,
+    this.totalUnits,
+    this.statusKey,
+    required this.rootsRequested,
+    required this.rootsAdmitted,
+    required this.rootsTerminal,
+    required this.entriesCommitted,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      completedUnits.hashCode ^
+      totalUnits.hashCode ^
+      statusKey.hashCode ^
+      rootsRequested.hashCode ^
+      rootsAdmitted.hashCode ^
+      rootsTerminal.hashCode ^
+      entriesCommitted.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScanProgressFactsDto &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          completedUnits == other.completedUnits &&
+          totalUnits == other.totalUnits &&
+          statusKey == other.statusKey &&
+          rootsRequested == other.rootsRequested &&
+          rootsAdmitted == other.rootsAdmitted &&
+          rootsTerminal == other.rootsTerminal &&
+          entriesCommitted == other.entriesCommitted;
+}
+
+/// One per-root scan projection with its historical display snapshot.
+class ScanRunDto {
+  final String scanRunId;
+  final String jobRunId;
+  final String libraryRootId;
+  final String displayName;
+  final String safeLocationDisplay;
+  final ScanRunStatusDto status;
+  final PlatformInt64 startedAtMs;
+  final PlatformInt64? completedAtMs;
+
+  const ScanRunDto({
+    required this.scanRunId,
+    required this.jobRunId,
+    required this.libraryRootId,
+    required this.displayName,
+    required this.safeLocationDisplay,
+    required this.status,
+    required this.startedAtMs,
+    this.completedAtMs,
+  });
+
+  @override
+  int get hashCode =>
+      scanRunId.hashCode ^
+      jobRunId.hashCode ^
+      libraryRootId.hashCode ^
+      displayName.hashCode ^
+      safeLocationDisplay.hashCode ^
+      status.hashCode ^
+      startedAtMs.hashCode ^
+      completedAtMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScanRunDto &&
+          runtimeType == other.runtimeType &&
+          scanRunId == other.scanRunId &&
+          jobRunId == other.jobRunId &&
+          libraryRootId == other.libraryRootId &&
+          displayName == other.displayName &&
+          safeLocationDisplay == other.safeLocationDisplay &&
+          status == other.status &&
+          startedAtMs == other.startedAtMs &&
+          completedAtMs == other.completedAtMs;
+}
+
+/// Canonical per-root scan status.
+enum ScanRunStatusDto {
+  running,
+  complete,
+  partial,
+  failed,
+  cancelled,
+  abandoned,
+}
+
+@freezed
+sealed class SourceEntriesChangeScopeDto with _$SourceEntriesChangeScopeDto {
+  const SourceEntriesChangeScopeDto._();
+
+  const factory SourceEntriesChangeScopeDto.rootChildren() =
+      SourceEntriesChangeScopeDto_RootChildren;
+  const factory SourceEntriesChangeScopeDto.entryChildren(String field0) =
+      SourceEntriesChangeScopeDto_EntryChildren;
+  const factory SourceEntriesChangeScopeDto.entireRootHierarchy() =
+      SourceEntriesChangeScopeDto_EntireRootHierarchy;
+}
+
+@freezed
+sealed class StartLibraryScanResultDto with _$StartLibraryScanResultDto {
+  const StartLibraryScanResultDto._();
+
+  const factory StartLibraryScanResultDto.admitted(OperationHandleDto field0) =
+      StartLibraryScanResultDto_Admitted;
+  const factory StartLibraryScanResultDto.alreadyScanning({
+    required String libraryRootId,
+    required String activeJobRunId,
+    required String activeScanRunId,
+  }) = StartLibraryScanResultDto_AlreadyScanning;
 }
 
 /// Canonical startup failure projection.

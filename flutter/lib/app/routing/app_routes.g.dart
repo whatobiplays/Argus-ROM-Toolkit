@@ -54,6 +54,18 @@ RouteBase get $applicationShellRoute => ShellRouteData.$route(
         ),
       ],
     ),
+    GoRouteData.$route(
+      path: '/jobs',
+      hasOverriddenOnExit: false,
+      factory: $JobsRoute._fromState,
+      routes: [
+        GoRouteData.$route(
+          path: ':jobRunId',
+          hasOverriddenOnExit: false,
+          factory: $JobsDetailRoute._fromState,
+        ),
+      ],
+    ),
   ],
 );
 
@@ -112,6 +124,50 @@ mixin $SourcesRootRoute on GoRouteData {
   String get location => GoRouteData.$location(
     '/sources/roots/${Uri.encodeComponent(_self.rootId)}',
   );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $JobsRoute on GoRouteData {
+  static JobsRoute _fromState(GoRouterState state) => const JobsRoute();
+
+  @override
+  String get location => GoRouteData.$location('/jobs');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $JobsDetailRoute on GoRouteData {
+  static JobsDetailRoute _fromState(GoRouterState state) =>
+      JobsDetailRoute(jobRunId: state.pathParameters['jobRunId']!);
+
+  JobsDetailRoute get _self => this as JobsDetailRoute;
+
+  @override
+  String get location =>
+      GoRouteData.$location('/jobs/${Uri.encodeComponent(_self.jobRunId)}');
 
   @override
   void go(BuildContext context) => context.go(location);

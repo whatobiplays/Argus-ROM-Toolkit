@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:argus/core/client/client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'jobs_gateway_stub.dart';
+
 const String _rootIdHex = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const String _traceIdHex = '11111111111111111111111111111111';
 
@@ -77,7 +79,7 @@ void main() {
     final removed = await client.sources.removeLibraryRoot(
       const LibraryRootId(_rootIdHex),
     );
-    expect(removed, RemoveLibraryRootResult.removed);
+    expect(removed, isA<RemoveLibraryRootResultRemoved>());
     await client.dispose();
   });
 
@@ -115,7 +117,9 @@ void main() {
   });
 }
 
-final class _SourcesFakeGateway implements ArgusClientGateway {
+final class _SourcesFakeGateway
+    with JobsGatewayStub
+    implements ArgusClientGateway {
   ApplicationFailure? failNextGet;
 
   @override
@@ -159,8 +163,13 @@ final class _SourcesFakeGateway implements ArgusClientGateway {
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) async {
-    return RemoveLibraryRootResult.removed;
+    return const RemoveLibraryRootResult.removed();
   }
+
+  @override
+  Future<StartLibraryScanResult> startLibraryScan(
+    LibraryRootId libraryRootId,
+  ) async => throw const TransportFailure('Sources stub is not focused');
 
   LibraryRoot _root() => LibraryRoot(
     id: const LibraryRootId(_rootIdHex),

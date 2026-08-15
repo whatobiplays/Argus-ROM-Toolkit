@@ -82,6 +82,8 @@ pub enum ErrorCode {
     RuntimeCoreServiceInitializationFailed,
     OperationCancelled,
     InternalInvariantViolation,
+    JobRunNotFound,
+    OperationCapacityUnavailable,
 }
 
 /// Central policy metadata for one published code.
@@ -198,7 +200,7 @@ impl ErrorCode {
     /// `all` and `phase_000_all` retain their original shapes for source
     /// compatibility; this additive accessor includes every Phase 000 entry
     /// plus the codes introduced by Phase 001 slices.
-    pub const fn phase_001_all() -> &'static [Self; 20] {
+    pub const fn phase_001_all() -> &'static [Self; 22] {
         &[
             Self::ValidationInvalidArgument,
             Self::ConfigurationInvalid,
@@ -220,6 +222,8 @@ impl ErrorCode {
             Self::InternalInvariantViolation,
             Self::ConfigurationLibraryRootNotFound,
             Self::FilesystemInvalidRootSelection,
+            Self::JobRunNotFound,
+            Self::OperationCapacityUnavailable,
         ]
     }
 
@@ -254,6 +258,8 @@ impl ErrorCode {
             }
             Self::OperationCancelled => "ARGUS.V1.OPERATION.CANCELLED",
             Self::InternalInvariantViolation => "ARGUS.V1.INTERNAL.INVARIANT_VIOLATION",
+            Self::JobRunNotFound => "ARGUS.V1.JOBS.JOB_RUN_NOT_FOUND",
+            Self::OperationCapacityUnavailable => "ARGUS.V1.OPERATION.CAPACITY_UNAVAILABLE",
         }
     }
 
@@ -418,6 +424,22 @@ impl ErrorCode {
                 Recoverability::RestartRequired,
                 RetryPolicy::Never,
                 "errors.internal.invariant_violation",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::JobRunNotFound => policy(
+                ErrorCategory::Operation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.jobs.job_run_not_found",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::OperationCapacityUnavailable => policy(
+                ErrorCategory::Operation,
+                ApplicationSeverity::Warning,
+                Recoverability::Retry,
+                RetryPolicy::UserInitiated,
+                "errors.operation.capacity_unavailable",
                 COMMON_FAILURE_FIELDS,
             ),
         }

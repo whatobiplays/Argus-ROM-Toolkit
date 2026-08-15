@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/startup/startup.dart';
+import '../../core/client/jobs_gateway_stub.dart';
 import '../../core/client/sources_gateway_stub.dart';
 
 /// Deterministic [ClientBootstrap] fake with completers for every attempt.
@@ -266,7 +267,7 @@ StartupStateRuntimeUnavailable unavailableState({
 
 /// Gateway fake whose native stream bind count is observable.
 final class CountingGateway
-    with SourcesGatewayStub
+    with SourcesGatewayStub, JobsGatewayStub
     implements ArgusClientGateway {
   CountingGateway(this.id) : state = RuntimeState.ready(runtimeInstanceId: id);
 

@@ -6,24 +6,25 @@ use std::sync::Arc;
 
 use argus_application::{
     ApplicationError, ArchitectureClass, DiagnosticStage, ErrorCode, FailureRole,
-    GetAppearanceSettingsQuery, LibraryService, LogLevel, OperationContext, PathClass,
+    GetAppearanceSettingsQuery, JobsService, LibraryService, LogLevel, OperationContext, PathClass,
     PlatformClass, RetryPolicy, SafeContext, SafeContextField, SafeContextValue, SettingsService,
     StartupCollector, TraceEventPhase, TraceId,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     DEFAULT_QUEUE_CAPACITY, SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor,
-    SqliteLibraryRootQueries,
+    SqliteJobsQueries, SqliteLibraryRootQueries,
 };
 
+use crate::background::{BackgroundManagerConfig, BackgroundOperationManager};
 use crate::{
     AppearanceResetCapability, EventBoundary, EventBus, FailedRuntimeRecoveryContext,
     FailedStartupDiagnostics, KernelBootstrap, KernelBootstrapOptions, KernelMigrationSummary,
-    RecoveryAction, RecoveryActionKind, RuntimeEventPublisher, RuntimeEventSubscriber,
-    RuntimeInstanceId, RuntimeNotificationSink, RuntimeState, StartupFailure, StartupPhase,
-    StartupPhaseOutcome, StartupPhaseRecord, architecture_class, emit, env_path, insert,
-    new_trace_id, platform_class, resolve_data_directory, settings_operation_context,
-    startup_context,
+    KernelUnitOfWorkFactory, RecoveryAction, RecoveryActionKind, RuntimeEventPublisher,
+    RuntimeEventSubscriber, RuntimeInstanceId, RuntimeNotificationSink, RuntimeState,
+    StartupFailure, StartupPhase, StartupPhaseOutcome, StartupPhaseRecord, architecture_class,
+    emit, env_path, insert, new_trace_id, platform_class, resolve_data_directory,
+    settings_operation_context, startup_context,
 };
 
 /// Deterministic clock seam for startup phase timing.
@@ -91,6 +92,8 @@ pub struct StartupResult {
     pub failure: Option<StartupFailure>,
     /// Bounded capabilities retained for failed-runtime recovery.
     pub(crate) recovery_context: Option<FailedRuntimeRecoveryContext>,
+    /// The runtime-owned background manager for the ready generation.
+    pub background: Option<Arc<BackgroundOperationManager<KernelUnitOfWorkFactory>>>,
 }
 
 #[derive(Default)]
@@ -110,7 +113,9 @@ struct StartupResources {
             InfraLocalFilesystemProvider,
         >,
     >,
-    event_bus: Option<EventBus>,
+    jobs_service: Option<JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>>,
+    unit_of_work: Option<KernelUnitOfWorkFactory>,
+    event_bus: Option<Arc<EventBus>>,
     diagnostics_ready: bool,
     data_directory_ready: bool,
     core_services_ready: bool,
@@ -429,11 +434,18 @@ impl StartupCoordinator {
             return Err(core_service_error(self.trace_id));
         }
         if let Some(executor) = &self.resources.executor {
+            let unit_of_work = KernelUnitOfWorkFactory::new(executor.clone());
+            let jobs_service = JobsService::new(
+                SqliteJobsQueries::new(executor.clone()),
+                unit_of_work.clone(),
+            );
             let library_service = LibraryService::new(
                 SqliteLibraryRootQueries::new(executor.clone()),
                 executor.clone(),
                 InfraLocalFilesystemProvider,
             );
+            self.resources.unit_of_work = Some(unit_of_work);
+            self.resources.jobs_service = Some(jobs_service);
             self.resources.library_service = Some(library_service);
         }
         self.resources.core_services_ready = true;
@@ -457,10 +469,12 @@ impl StartupCoordinator {
         let subscriber = RuntimeEventSubscriber {
             outward: outward_sink,
         };
-        let bus = EventBus::new(
+        let bus = Arc::new(EventBus::new(
+            vec![Box::new(subscriber.clone())],
+            vec![Box::new(subscriber.clone())],
             vec![Box::new(subscriber.clone())],
             vec![Box::new(subscriber)],
-        );
+        ));
         if bus.subscriber_count() == 0 {
             return Err(core_service_error(self.trace_id));
         }
@@ -473,6 +487,8 @@ impl StartupCoordinator {
             || self.resources.executor.is_none()
             || self.resources.settings_service.is_none()
             || self.resources.library_service.is_none()
+            || self.resources.jobs_service.is_none()
+            || self.resources.unit_of_work.is_none()
             || self.resources.event_bus.is_none()
             || !self.resources.core_services_ready
         {
@@ -495,11 +511,6 @@ impl StartupCoordinator {
     }
 
     fn finish_ready(mut self) -> StartupResult {
-        let executor = self
-            .resources
-            .executor
-            .take()
-            .expect("readiness validated executor");
         let settings_service = self
             .resources
             .settings_service
@@ -510,11 +521,26 @@ impl StartupCoordinator {
             .library_service
             .take()
             .expect("readiness validated library service");
+        let jobs_service = self
+            .resources
+            .jobs_service
+            .take()
+            .expect("readiness validated jobs service");
+        let unit_of_work = self
+            .resources
+            .unit_of_work
+            .take()
+            .expect("readiness validated unit of work");
         let event_bus = self
             .resources
             .event_bus
             .take()
             .expect("readiness validated event bus");
+        let background = Some(Arc::new(BackgroundOperationManager::new(
+            unit_of_work.clone(),
+            Arc::clone(&event_bus),
+            BackgroundManagerConfig::default(),
+        )));
         let migration_summary = self
             .resources
             .migration_summary
@@ -528,9 +554,10 @@ impl StartupCoordinator {
             self.trace_id,
             path_class,
             migration_summary,
-            executor,
+            unit_of_work,
             settings_service,
             library_service,
+            jobs_service,
             event_bus,
             self.collector,
         );
@@ -540,6 +567,7 @@ impl StartupCoordinator {
                 runtime_instance_id: self.generation,
             },
             kernel: Some(kernel),
+            background,
             history: self.history,
             failure: None,
             recovery_context: None,
@@ -616,6 +644,7 @@ impl StartupCoordinator {
                 failure: failure.clone(),
             },
             kernel: None,
+            background: None,
             history: self.history,
             failure: Some(failure),
             recovery_context: Some(FailedRuntimeRecoveryContext {

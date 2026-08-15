@@ -38,8 +38,13 @@ void main() {
       'app/bootstrap/appearance_event_coordinator.dart',
       'app/bootstrap/application_presentation.dart',
       'app/bootstrap/client_bootstrap.dart',
+      'app/bootstrap/jobs_event_coordinator.dart',
       'app/bootstrap/sources_event_coordinator.dart',
       'app/routing/app_router.dart',
+      'features/jobs/application/active_job_summary_controller.dart',
+      'features/jobs/application/job_detail_controller.dart',
+      'features/jobs/application/jobs_list_controller.dart',
+      'features/jobs/jobs_composition.dart',
       'features/settings/application/appearance_settings_controller.dart',
       'features/settings/application/appearance_settings_dependencies.dart',
       'features/sources/application/add_library_folder_controller.dart',
@@ -108,7 +113,8 @@ void main() {
 
   test('production route construction remains sparse and centralized', () {
     for (final entry in sources.entries) {
-      if (entry.key != 'app/routing/app_routes.dart') {
+      if (entry.key != 'app/routing/app_routes.dart' &&
+          entry.key != 'app/shell/application_shell.dart') {
         expect(entry.value, isNot(contains("'/settings'")), reason: entry.key);
         expect(entry.value, isNot(contains('"/settings"')), reason: entry.key);
       }
@@ -131,7 +137,6 @@ void main() {
         'isPhone',
         'LibraryRoute',
         'CollectionsRoute',
-        'JobsRoute',
         'GameDetailRoute',
         'DiagnosticsRoute',
       ];
@@ -177,6 +182,15 @@ void main() {
       expect(
         sources.keys.where((path) => path.startsWith('features/')).toList(),
         <String>[
+          'features/jobs/application/active_job_summary_controller.dart',
+          'features/jobs/application/job_detail_controller.dart',
+          'features/jobs/application/jobs_list_controller.dart',
+          'features/jobs/application/jobs_state.dart',
+          'features/jobs/jobs.dart',
+          'features/jobs/jobs_composition.dart',
+          'features/jobs/presentation/job_detail_page.dart',
+          'features/jobs/presentation/jobs_messages.dart',
+          'features/jobs/presentation/jobs_page.dart',
           'features/settings/application/appearance_settings_controller.dart',
           'features/settings/application/appearance_settings_dependencies.dart',
           'features/settings/application/appearance_settings_state.dart',
@@ -605,7 +619,6 @@ void main() {
   test('no capability bag or speculative future API family exists', () {
     const forbiddenConcepts = <String>[
       'RuntimeCapabilitiesDto',
-      'JobsApi',
       'LibraryApi',
       'CollectionsApi',
       'GameApi',

@@ -99,6 +99,11 @@ impl MigrationRegistry {
         Self::new(vec![
             Migration::sql(1, "0001_initial", include_bytes!("sql/0001_initial.sql")),
             Migration::sql(2, "0002_sources", include_bytes!("sql/0002_sources.sql")),
+            Migration::sql(
+                3,
+                "0003_jobs_scans",
+                include_bytes!("sql/0003_jobs_scans.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

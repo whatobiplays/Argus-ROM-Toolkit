@@ -31,4 +31,9 @@ mixin SourcesGatewayStub implements SourcesGateway {
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) async => throw const TransportFailure('Sources stub is not focused');
+
+  @override
+  Future<StartLibraryScanResult> startLibraryScan(
+    LibraryRootId libraryRootId,
+  ) async => throw const TransportFailure('Sources stub is not focused');
 }

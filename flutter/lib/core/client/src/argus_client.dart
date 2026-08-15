@@ -15,6 +15,7 @@ final class ArgusClient implements ClientBootstrap {
     runtime = _RuntimeApi(this);
     settings = _SettingsApi(this);
     sources = _SourcesApi(this);
+    jobs = _JobsApi(this);
     diagnostics = _DiagnosticsApi(this);
     events = _EventsApi(this);
   }
@@ -31,6 +32,9 @@ final class ArgusClient implements ClientBootstrap {
 
   /// Configured library-root operations owned by this root client.
   late final SourcesApi sources;
+
+  /// Durable job observation and control operations owned by this root client.
+  late final JobsApi jobs;
 
   /// Failed-startup diagnostics operations owned by this root client.
   late final DiagnosticsApi diagnostics;
@@ -193,6 +197,25 @@ final class ArgusClient implements ClientBootstrap {
   Future<RemoveLibraryRootResult> _removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) => _request(() => _gateway.removeLibraryRoot(libraryRootId));
+
+  Future<StartLibraryScanResult> _startLibraryScan(
+    LibraryRootId libraryRootId,
+  ) => _request(() => _gateway.startLibraryScan(libraryRootId));
+
+  Future<JobSummaryPage> _listActiveJobs() => _request(_gateway.listActiveJobs);
+
+  Future<JobSummaryPage> _listRecentTerminalJobs({
+    required int offset,
+    required int pageSize,
+  }) => _request(
+    () => _gateway.listRecentTerminalJobs(offset: offset, pageSize: pageSize),
+  );
+
+  Future<JobDetail> _getJob(JobRunId jobRunId) =>
+      _request(() => _gateway.getJob(jobRunId));
+
+  Future<CancelJobResult> _cancelJob(JobRunId jobRunId) =>
+      _request(() => _gateway.cancelJob(jobRunId));
 
   Future<DiagnosticsExport> _exportStartupDiagnostics(
     RuntimeInstanceId expected,
@@ -548,6 +571,44 @@ final class _SourcesApi implements SourcesApi {
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) => _client._removeLibraryRoot(libraryRootId);
+
+  @override
+  Future<StartLibraryScanResult> startLibraryScan(
+    LibraryRootId libraryRootId,
+  ) => _client._startLibraryScan(libraryRootId);
+}
+
+final class _JobsApi implements JobsApi {
+  _JobsApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<JobSummaryPage> listActiveJobs() => _client._listActiveJobs();
+
+  @override
+  Future<JobSummaryPage> listRecentTerminalJobs({
+    required int offset,
+    required int pageSize,
+  }) => _client._listRecentTerminalJobs(offset: offset, pageSize: pageSize);
+
+  @override
+  Future<JobDetail> getJob(JobRunId jobRunId) => _client._getJob(jobRunId);
+
+  @override
+  Future<CancelJobResult> cancelJob(JobRunId jobRunId) =>
+      _client._cancelJob(jobRunId);
+
+  @override
+  Future<ActiveJobSummary> getActiveJobSummary() async {
+    final active = await _client._listActiveJobs();
+    return ActiveJobSummary(
+      activeCount: active.items.length,
+      soleActiveJobRunId: active.items.length == 1
+          ? active.items.single.jobRunId
+          : null,
+    );
+  }
 }
 
 final class _DiagnosticsApi implements DiagnosticsApi {

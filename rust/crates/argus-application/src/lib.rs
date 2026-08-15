@@ -7,14 +7,16 @@
 mod diagnostics;
 mod errors;
 mod events;
+mod jobs;
 mod observability;
 mod settings;
 mod sources;
 mod unit_of_work;
 
 pub use argus_domain::{
-    AppearanceSettings, LibraryRootId, LibraryRootIdError, LibrarySourceId, LibrarySourceIdError,
-    ThemeMode, ThemeModeParseError,
+    AppearanceSettings, JobRunId, JobRunIdError, LibraryRootId, LibraryRootIdError,
+    LibrarySourceId, LibrarySourceIdError, ScanRunId, ScanRunIdError, SourceEntryId,
+    SourceEntryIdError, ThemeMode, ThemeModeParseError,
 };
 pub use diagnostics::{
     DiagnosticArtifact, DiagnosticContributor, DiagnosticContributorError, HealthSnapshot,
@@ -27,7 +29,21 @@ pub use errors::{
 };
 pub use events::{
     AppearanceSettingsChanged, AppearanceSettingsSubscriber, ApplicationEvent, EventRecorder,
-    EventRecordingError, EventSubscriberError,
+    EventRecordingError, EventSubscriberError, JobProgressChanged, JobStateChanged, JobsSubscriber,
+    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntriesSubscriber,
+};
+pub use jobs::{
+    ActiveScanOwnership, AdmittedScan, ApplicationEventSink, BackgroundOperationHandler,
+    CancelJobResult, JobControlAvailability, JobDetail, JobProgress, JobProgressError,
+    JobProgressReporter, JobRunProjection, JobRunRepository, JobRunState, JobRunStateParseError,
+    JobSummary, JobSummaryPage, JobsQueries, JobsService, LibraryScanAdmissionExclusion,
+    LibraryScanAdmissionResult, LibraryScanExecutionPlan, LibraryScanJobDetail,
+    LibraryScanRootSummary, LibraryScanTarget, LibraryScanTargetExclusionReason,
+    LibraryScanTargetKind, LibraryScanTargetRepository, ListJobsQuery, ListJobsScope, NewJobRun,
+    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OPERATION_TYPE_LIBRARY_SCAN,
+    OperationCompletion, OperationDetail, OperationHandle, ScanProgressFacts, ScanRunProjection,
+    ScanRunRepository, ScanRunStatus, ScanRunStatusParseError, SourceEntryRepository,
+    StartLibraryScanResult,
 };
 pub use observability::{
     ArchitectureClass, DiagnosticStage, EventName, FailureRole, LogEvent, LogLevel,
@@ -43,13 +59,18 @@ pub use settings::{
 };
 pub use sources::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootHandler, AddLocalLibraryRootResult,
-    GetLibraryRootHandler, GetLibraryRootQuery, LibraryRootActiveScanSummary,
-    LibraryRootAvailability, LibraryRootChanged, LibraryRootConfiguration,
-    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootPage, LibraryRootProjection,
-    LibraryRootQueries, LibraryRootRepository, LibraryRootsChanged, LibraryRootsSubscriber,
-    LibraryService, LibrarySourceRepository, ListLibraryRootsHandler, ListLibraryRootsQuery,
-    LocalFilesystemProvider, LocalFilesystemRootSelection, NewLibraryRoot, ProviderError,
-    RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult, RootLocator,
-    RootRelationship, SourceProviderType, SourceProviderTypeError, ValidatedLocalRoot,
+    DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, GetLibraryRootHandler,
+    GetLibraryRootQuery, LibraryRootActiveScanSummary, LibraryRootAvailability, LibraryRootChanged,
+    LibraryRootConfiguration, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
+    LibraryRootPage, LibraryRootProjection, LibraryRootQueries, LibraryRootRepository,
+    LibraryRootScanConfiguration, LibraryRootsChanged, LibraryRootsSubscriber,
+    LibraryScanOperationHandler, LibraryService, LibrarySourceAccess, LibrarySourceRepository,
+    ListLibraryRootsHandler, ListLibraryRootsQuery, LocalFilesystemProvider,
+    LocalFilesystemRootSelection, NewLibraryRoot, ObservedEntryKind, ProviderError,
+    RelativeSourceLocator, RemoveLibraryRootCommand, RemoveLibraryRootHandler,
+    RemoveLibraryRootResult, ResolvedRoot, RootLocator, RootRelationship, SourceAccessError,
+    SourceEntryClassification, SourceEntryKind, SourceLocatorKey, SourceObservation,
+    SourceProviderType, SourceProviderTypeError, StartLibraryScanCommand, StartLibraryScanHandler,
+    ValidatedLocalRoot,
 };
 pub use unit_of_work::{UnitOfWork, UnitOfWorkFactory};

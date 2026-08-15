@@ -70,7 +70,7 @@ final class SourcesRootDetailControllerProvider
 }
 
 String _$sourcesRootDetailControllerHash() =>
-    r'13e6f5afd61d3c16d5ebf60fc1b6492b97e3cf26';
+    r'6ecf68d1771d99f6a88e222f1dd61db94f193191';
 
 /// One application-lifetime owner of authoritative root-detail state.
 

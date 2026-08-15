@@ -68,6 +68,7 @@ Future<void> pumpDetail(
           onMissingRoot: onMissingRoot ?? () {},
           onRemoved: onRemoved ?? () {},
           onOpenRoot: (_) {},
+          onOpenJob: (_) {},
         ),
       ),
     ),
@@ -617,6 +618,7 @@ void main() {
       WidgetTester tester,
       ProviderContainer container, {
       void Function(LibraryRootId rootId)? onOpenRoot,
+      void Function(JobRunId jobRunId)? onOpenJob,
       ThemeData? theme,
     }) async {
       await tester.pumpWidget(
@@ -624,7 +626,10 @@ void main() {
           container: container,
           child: MaterialApp(
             theme: theme ?? ArgusTheme.light,
-            home: SourcesPage(onOpenRoot: onOpenRoot ?? (_) {}),
+            home: SourcesPage(
+              onOpenRoot: onOpenRoot ?? (_) {},
+              onOpenJob: onOpenJob ?? (_) {},
+            ),
           ),
         ),
       );
@@ -742,6 +747,7 @@ void main() {
               onMissingRoot: () {},
               onRemoved: () {},
               onOpenRoot: (_) {},
+              onOpenJob: (_) {},
             ),
           ),
         ),
@@ -775,6 +781,7 @@ void main() {
               onMissingRoot: () {},
               onRemoved: () => removed = true,
               onOpenRoot: (_) {},
+              onOpenJob: (_) {},
             ),
           ),
         ),
@@ -810,6 +817,7 @@ void main() {
               onMissingRoot: () {},
               onRemoved: () => removed = true,
               onOpenRoot: (_) {},
+              onOpenJob: (_) {},
             ),
           ),
         ),
@@ -957,6 +965,7 @@ void main() {
               onMissingRoot: () => canonicalized = true,
               onRemoved: () {},
               onOpenRoot: (_) {},
+              onOpenJob: (_) {},
             ),
           ),
         ),
@@ -994,6 +1003,7 @@ void main() {
               onMissingRoot: () {},
               onRemoved: () {},
               onOpenRoot: (_) {},
+              onOpenJob: (_) {},
             ),
           ),
         ),
@@ -1038,6 +1048,7 @@ void main() {
                 onMissingRoot: () {},
                 onRemoved: () {},
                 onOpenRoot: (_) {},
+                onOpenJob: (_) {},
               ),
             ),
           ),

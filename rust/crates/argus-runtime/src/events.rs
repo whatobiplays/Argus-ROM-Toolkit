@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use argus_application::{
     AppearanceSettingsChanged, AppearanceSettingsSubscriber, ApplicationError, ApplicationEvent,
-    EventName, EventRecorder, EventRecordingError, EventSubscriberError, LibraryRootChanged,
-    LibraryRootsChanged, LibraryRootsSubscriber, LogEvent, LogLevel, ObservabilitySink,
-    ObservabilitySinkError, OperationContext, SafeContext, TraceEvent,
+    ApplicationEventSink, EventName, EventRecorder, EventRecordingError, EventSubscriberError,
+    JobProgressChanged, JobStateChanged, JobsSubscriber, LibraryRootChanged, LibraryRootsChanged,
+    LibraryRootsSubscriber, LogEvent, LogLevel, ObservabilitySink, ObservabilitySinkError,
+    OperationContext, SafeContext, SourceEntriesChanged, SourceEntriesSubscriber, TraceEvent,
 };
 
 const MAX_PENDING_EVENTS: usize = 64;
@@ -68,6 +69,8 @@ pub(crate) struct EventPublicationReport {
 pub struct EventBus {
     appearance_subscribers: Vec<Box<dyn AppearanceSettingsSubscriber>>,
     library_roots_subscribers: Vec<Box<dyn LibraryRootsSubscriber>>,
+    jobs_subscribers: Vec<Box<dyn JobsSubscriber>>,
+    source_entries_subscribers: Vec<Box<dyn SourceEntriesSubscriber>>,
 }
 
 impl EventBus {
@@ -75,16 +78,23 @@ impl EventBus {
     pub fn new(
         appearance_subscribers: Vec<Box<dyn AppearanceSettingsSubscriber>>,
         library_roots_subscribers: Vec<Box<dyn LibraryRootsSubscriber>>,
+        jobs_subscribers: Vec<Box<dyn JobsSubscriber>>,
+        source_entries_subscribers: Vec<Box<dyn SourceEntriesSubscriber>>,
     ) -> Self {
         Self {
             appearance_subscribers,
             library_roots_subscribers,
+            jobs_subscribers,
+            source_entries_subscribers,
         }
     }
 
     /// Returns the number of registered appearance subscribers.
     pub(crate) fn subscriber_count(&self) -> usize {
-        self.appearance_subscribers.len() + self.library_roots_subscribers.len()
+        self.appearance_subscribers.len()
+            + self.library_roots_subscribers.len()
+            + self.jobs_subscribers.len()
+            + self.source_entries_subscribers.len()
     }
 
     /// Publishes one committed event, isolating each subscriber failure.
@@ -115,6 +125,43 @@ impl EventBus {
                 for subscriber in &self.library_roots_subscribers {
                     match subscriber.library_root_changed(LibraryRootChanged {
                         library_root_id: event.library_root_id,
+                    }) {
+                        Ok(()) => report.delivered += 1,
+                        Err(EventSubscriberError::Failed) => report.failed += 1,
+                    }
+                }
+                report
+            }
+            ApplicationEvent::JobStateChanged(event) => {
+                let mut report = EventPublicationReport::default();
+                for subscriber in &self.jobs_subscribers {
+                    match subscriber.job_state_changed(JobStateChanged {
+                        job_run_id: event.job_run_id,
+                    }) {
+                        Ok(()) => report.delivered += 1,
+                        Err(EventSubscriberError::Failed) => report.failed += 1,
+                    }
+                }
+                report
+            }
+            ApplicationEvent::JobProgressChanged(event) => {
+                let mut report = EventPublicationReport::default();
+                for subscriber in &self.jobs_subscribers {
+                    match subscriber.job_progress_changed(JobProgressChanged {
+                        progress: event.progress.clone(),
+                    }) {
+                        Ok(()) => report.delivered += 1,
+                        Err(EventSubscriberError::Failed) => report.failed += 1,
+                    }
+                }
+                report
+            }
+            ApplicationEvent::SourceEntriesChanged(event) => {
+                let mut report = EventPublicationReport::default();
+                for subscriber in &self.source_entries_subscribers {
+                    match subscriber.source_entries_changed(SourceEntriesChanged {
+                        library_root_id: event.library_root_id,
+                        scope: event.scope,
                     }) {
                         Ok(()) => report.delivered += 1,
                         Err(EventSubscriberError::Failed) => report.failed += 1,
@@ -214,7 +261,26 @@ fn now_millis() -> i64 {
 
 impl Default for EventBus {
     fn default() -> Self {
-        Self::new(Vec::new(), Vec::new())
+        Self::new(Vec::new(), Vec::new(), Vec::new(), Vec::new())
+    }
+}
+
+/// Best-effort post-commit event sink shared with background workers.
+#[derive(Clone)]
+pub struct EventBusSink {
+    bus: Arc<EventBus>,
+}
+
+impl EventBusSink {
+    /// Creates a sink over the shared runtime event bus.
+    pub fn new(bus: Arc<EventBus>) -> Self {
+        Self { bus }
+    }
+}
+
+impl ApplicationEventSink for EventBusSink {
+    fn publish(&self, event: ApplicationEvent) {
+        self.bus.publish(event);
     }
 }
 
@@ -277,11 +343,15 @@ impl EventRecorder for PendingEventRecorder {
 mod tests {
     use super::*;
     use argus_application::{
-        AppearanceSettings, AppearanceSettingsQueries, AppearanceSettingsRepository,
-        ApplicationPortError, LibraryRootId, LibraryRootRepository, LibrarySourceId,
-        LibrarySourceRepository, NewLibraryRoot, OperationContext, OperationName, PersistenceError,
-        SettingsService, SubsystemName, ThemeMode, TraceId, UnitOfWork, UnitOfWorkFactory,
-        UpdateAppearanceSettingsCommand,
+        ActiveScanOwnership, AppearanceSettings, AppearanceSettingsQueries,
+        AppearanceSettingsRepository, ApplicationPortError, JobProgress, JobRunId,
+        JobRunRepository, JobRunState, LibraryRootAvailability, LibraryRootId,
+        LibraryRootLastScanSummary, LibraryRootRepository, LibraryScanTarget,
+        LibraryScanTargetRepository, LibrarySourceId, LibrarySourceRepository, NewJobRun,
+        NewLibraryRoot, NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext,
+        OperationName, PersistenceError, ScanRunId, ScanRunProjection, ScanRunRepository,
+        ScanRunStatus, SettingsService, SourceEntryId, SourceEntryRepository, SubsystemName,
+        ThemeMode, TraceId, UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand,
     };
     use std::marker::PhantomData;
 
@@ -319,6 +389,146 @@ mod tests {
         }
 
         fn delete(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn exists(&mut self, _root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn set_availability(
+            &mut self,
+            _root_id: LibraryRootId,
+            _availability: LibraryRootAvailability,
+        ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn set_last_scan(
+            &mut self,
+            _root_id: LibraryRootId,
+            _summary: Option<LibraryRootLastScanSummary>,
+        ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+    }
+
+    struct NoopJobRunRepository<'scope> {
+        marker: PhantomData<&'scope mut ()>,
+    }
+
+    impl JobRunRepository for NoopJobRunRepository<'_> {
+        fn insert(&mut self, _new: NewJobRun) -> Result<JobRunId, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn request_cancellation(
+            &mut self,
+            _job_run_id: JobRunId,
+        ) -> Result<Option<bool>, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn set_state(
+            &mut self,
+            _job_run_id: JobRunId,
+            _state: JobRunState,
+            _timestamp_ms: i64,
+        ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn set_progress(
+            &mut self,
+            _job_run_id: JobRunId,
+            _progress: &JobProgress,
+        ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn set_terminal_failure(
+            &mut self,
+            _job_run_id: JobRunId,
+            _state: JobRunState,
+            _terminal_error_code: Option<String>,
+            _terminal_safe_context: Option<String>,
+            _timestamp_ms: i64,
+        ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+    }
+
+    struct NoopScanRunRepository<'scope> {
+        marker: PhantomData<&'scope mut ()>,
+    }
+
+    impl ScanRunRepository for NoopScanRunRepository<'_> {
+        fn insert(&mut self, _new: NewScanRun) -> Result<ScanRunId, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn set_status(
+            &mut self,
+            _scan_run_id: ScanRunId,
+            _status: ScanRunStatus,
+            _completed_at_ms: Option<i64>,
+            _failure_reason: Option<String>,
+        ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn find_active_ownership(
+            &mut self,
+            _library_root_id: LibraryRootId,
+        ) -> Result<Option<ActiveScanOwnership>, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn find_last_scan(
+            &mut self,
+            _library_root_id: LibraryRootId,
+        ) -> Result<Option<LibraryRootLastScanSummary>, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn list_by_job(
+            &mut self,
+            _job_run_id: JobRunId,
+        ) -> Result<Vec<ScanRunProjection>, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+    }
+
+    struct NoopSourceEntryRepository<'scope> {
+        marker: PhantomData<&'scope mut ()>,
+    }
+
+    impl SourceEntryRepository for NoopSourceEntryRepository<'_> {
+        fn upsert(&mut self, _entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn delete_for_root(
+            &mut self,
+            _library_root_id: LibraryRootId,
+        ) -> Result<(), PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+    }
+
+    struct NoopLibraryScanTargetRepository<'scope> {
+        marker: PhantomData<&'scope mut ()>,
+    }
+
+    impl LibraryScanTargetRepository for NoopLibraryScanTargetRepository<'_> {
+        fn insert(&mut self, _target: NewLibraryScanTarget) -> Result<(), PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn list_by_job(
+            &mut self,
+            _job_run_id: JobRunId,
+        ) -> Result<Vec<LibraryScanTarget>, PersistenceError> {
             Err(PersistenceError::Unavailable)
         }
     }
@@ -359,6 +569,22 @@ mod tests {
             = NoopLibraryRootRepository<'scope>
         where
             Self: 'scope;
+        type JobRunRepository<'scope>
+            = NoopJobRunRepository<'scope>
+        where
+            Self: 'scope;
+        type ScanRunRepository<'scope>
+            = NoopScanRunRepository<'scope>
+        where
+            Self: 'scope;
+        type SourceEntryRepository<'scope>
+            = NoopSourceEntryRepository<'scope>
+        where
+            Self: 'scope;
+        type LibraryScanTargetRepository<'scope>
+            = NoopLibraryScanTargetRepository<'scope>
+        where
+            Self: 'scope;
 
         fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
             FailingCommitRepository {
@@ -375,6 +601,30 @@ mod tests {
 
         fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
             NoopLibraryRootRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn job_runs(&mut self) -> Self::JobRunRepository<'_> {
+            NoopJobRunRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn scan_runs(&mut self) -> Self::ScanRunRepository<'_> {
+            NoopScanRunRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn source_entries(&mut self) -> Self::SourceEntryRepository<'_> {
+            NoopSourceEntryRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
+            NoopLibraryScanTargetRepository {
                 marker: PhantomData,
             }
         }
@@ -469,6 +719,22 @@ mod tests {
             = NoopLibraryRootRepository<'scope>
         where
             Self: 'scope;
+        type JobRunRepository<'scope>
+            = NoopJobRunRepository<'scope>
+        where
+            Self: 'scope;
+        type ScanRunRepository<'scope>
+            = NoopScanRunRepository<'scope>
+        where
+            Self: 'scope;
+        type SourceEntryRepository<'scope>
+            = NoopSourceEntryRepository<'scope>
+        where
+            Self: 'scope;
+        type LibraryScanTargetRepository<'scope>
+            = NoopLibraryScanTargetRepository<'scope>
+        where
+            Self: 'scope;
 
         fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
             SaveFailureRepository {
@@ -485,6 +751,30 @@ mod tests {
 
         fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
             NoopLibraryRootRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn job_runs(&mut self) -> Self::JobRunRepository<'_> {
+            NoopJobRunRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn scan_runs(&mut self) -> Self::ScanRunRepository<'_> {
+            NoopScanRunRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn source_entries(&mut self) -> Self::SourceEntryRepository<'_> {
+            NoopSourceEntryRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
+            NoopLibraryScanTargetRepository {
                 marker: PhantomData,
             }
         }
@@ -613,6 +903,22 @@ mod tests {
             = NoopLibraryRootRepository<'scope>
         where
             Self: 'scope;
+        type JobRunRepository<'scope>
+            = NoopJobRunRepository<'scope>
+        where
+            Self: 'scope;
+        type ScanRunRepository<'scope>
+            = NoopScanRunRepository<'scope>
+        where
+            Self: 'scope;
+        type SourceEntryRepository<'scope>
+            = NoopSourceEntryRepository<'scope>
+        where
+            Self: 'scope;
+        type LibraryScanTargetRepository<'scope>
+            = NoopLibraryScanTargetRepository<'scope>
+        where
+            Self: 'scope;
 
         fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
             OrderedRepository {
@@ -629,6 +935,30 @@ mod tests {
 
         fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
             NoopLibraryRootRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn job_runs(&mut self) -> Self::JobRunRepository<'_> {
+            NoopJobRunRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn scan_runs(&mut self) -> Self::ScanRunRepository<'_> {
+            NoopScanRunRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn source_entries(&mut self) -> Self::SourceEntryRepository<'_> {
+            NoopSourceEntryRepository {
+                marker: PhantomData,
+            }
+        }
+
+        fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
+            NoopLibraryScanTargetRepository {
                 marker: PhantomData,
             }
         }
@@ -751,6 +1081,8 @@ mod tests {
                 calls: std::sync::Arc::clone(&calls),
             })],
             Vec::new(),
+            Vec::new(),
+            Vec::new(),
         );
         for event in collector.take_all() {
             let _ = bus.publish(event);
@@ -790,6 +1122,8 @@ mod tests {
                 calls: std::sync::Arc::clone(&calls),
             })],
             Vec::new(),
+            Vec::new(),
+            Vec::new(),
         );
         for event in events {
             let _ = bus.publish(event);
@@ -822,6 +1156,8 @@ mod tests {
             vec![Box::new(OrderedSubscriber {
                 order: std::sync::Arc::clone(&order),
             })],
+            Vec::new(),
+            Vec::new(),
             Vec::new(),
         );
         let diagnostics = std::sync::Mutex::new(PublicationDiagnostics::new());
@@ -868,6 +1204,8 @@ mod tests {
                     calls: std::sync::Arc::clone(&later_calls),
                 }),
             ],
+            Vec::new(),
+            Vec::new(),
             Vec::new(),
         );
         let diagnostics = std::sync::Mutex::new(PublicationDiagnostics::new());

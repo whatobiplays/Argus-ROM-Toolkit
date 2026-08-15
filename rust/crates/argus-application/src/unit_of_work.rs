@@ -1,5 +1,8 @@
 //! Consuming callback-scope transaction contracts owned by the application.
 
+use crate::jobs::{
+    JobRunRepository, LibraryScanTargetRepository, ScanRunRepository, SourceEntryRepository,
+};
 use crate::settings::AppearanceSettingsRepository;
 use crate::sources::{LibraryRootRepository, LibrarySourceRepository};
 use crate::{ApplicationPortError, OperationContext};
@@ -21,6 +24,26 @@ pub trait UnitOfWork: Sized {
     where
         Self: 'scope;
 
+    /// The short-lived generic job-run repository view.
+    type JobRunRepository<'scope>: JobRunRepository + 'scope
+    where
+        Self: 'scope;
+
+    /// The short-lived per-root scan-run repository view.
+    type ScanRunRepository<'scope>: ScanRunRepository + 'scope
+    where
+        Self: 'scope;
+
+    /// The short-lived source-entry repository view.
+    type SourceEntryRepository<'scope>: SourceEntryRepository + 'scope
+    where
+        Self: 'scope;
+
+    /// The short-lived library-scan admission-target repository view.
+    type LibraryScanTargetRepository<'scope>: LibraryScanTargetRepository + 'scope
+    where
+        Self: 'scope;
+
     /// Borrows a typed appearance repository from the active transaction.
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_>;
 
@@ -29,6 +52,18 @@ pub trait UnitOfWork: Sized {
 
     /// Borrows a typed configured-root repository.
     fn library_roots(&mut self) -> Self::LibraryRootRepository<'_>;
+
+    /// Borrows a typed generic job-run repository.
+    fn job_runs(&mut self) -> Self::JobRunRepository<'_>;
+
+    /// Borrows a typed per-root scan-run repository.
+    fn scan_runs(&mut self) -> Self::ScanRunRepository<'_>;
+
+    /// Borrows a typed source-entry repository.
+    fn source_entries(&mut self) -> Self::SourceEntryRepository<'_>;
+
+    /// Borrows a typed library-scan admission-target repository.
+    fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_>;
 
     /// Explicitly commits and consumes this scope.
     fn commit(self) -> Result<(), ApplicationPortError>;

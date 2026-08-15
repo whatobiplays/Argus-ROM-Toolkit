@@ -24,24 +24,27 @@ use std::sync::{Arc, Mutex};
 use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
-    DiagnosticStage, ErrorCode, EventName, FailureRole, GetAppearanceSettingsQuery,
-    GetLibraryRootQuery, LibraryRootId, LibraryRootPage, LibraryRootProjection,
-    LibraryRootRepository, LibraryService, LibrarySourceRepository, ListLibraryRootsQuery,
-    LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
-    OperationContext, OperationName, PathClass, PersistenceError, PlatformClass,
+    CancelJobResult, DiagnosticStage, ErrorCode, EventName, FailureRole,
+    GetAppearanceSettingsQuery, GetLibraryRootQuery, JobDetail, JobRunId, JobSummaryPage,
+    JobsService, LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryRootRepository,
+    LibraryScanAdmissionResult, LibraryService, LibrarySourceRepository, ListJobsQuery,
+    ListLibraryRootsQuery, LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome,
+    ObservabilitySink, OperationContext, OperationName, PathClass, PersistenceError, PlatformClass,
     RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
-    SafeContextValue, SettingsService, StartupCollector, SubsystemName, TechnicalClass, TraceEvent,
-    TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand,
-    Version,
+    SafeContextValue, SettingsService, StartLibraryScanCommand, StartupCollector, SubsystemName,
+    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
+    UpdateAppearanceSettingsCommand, Version,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     MigrationOutcome as InfrastructureMigrationOutcome, MigrationSummary,
     SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteDatabaseExecutor,
-    SqliteExecutorError, SqliteLibraryRootQueries, SqliteLibraryRootRepository,
-    SqliteLibrarySourceRepository, SqliteUnitOfWork,
+    SqliteExecutorError, SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryRootQueries,
+    SqliteLibraryRootRepository, SqliteLibraryScanTargetRepository, SqliteLibrarySourceRepository,
+    SqliteScanRunRepository, SqliteSourceEntryRepository, SqliteUnitOfWork,
 };
 
+pub mod background;
 pub use events::EventBus;
 use events::{
     PendingEventCollector, PublicationDiagnostics, finalize_appearance_update,
@@ -319,7 +322,9 @@ pub struct KernelBootstrap {
         SqliteDatabaseExecutor,
         InfraLocalFilesystemProvider,
     >,
-    event_bus: EventBus,
+    jobs_service: JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>,
+    unit_of_work: KernelUnitOfWorkFactory,
+    event_bus: Arc<EventBus>,
     publication_diagnostics: Mutex<PublicationDiagnostics>,
     collector: StartupCollector,
     #[cfg(test)]
@@ -333,6 +338,44 @@ pub struct KernelBootstrap {
 /// contract so callers cannot depend on SQLite statements or value types.
 pub struct KernelUnitOfWork<'scope> {
     inner: SqliteUnitOfWork<'scope>,
+}
+
+/// Cloneable technology-neutral transaction factory over the shared SQLite
+/// executor. Used by the kernel, background workers, and operation handlers;
+/// the SQLite worker remains the single database authority.
+#[derive(Clone)]
+pub struct KernelUnitOfWorkFactory {
+    executor: SqliteDatabaseExecutor,
+}
+
+impl KernelUnitOfWorkFactory {
+    /// Creates a factory over the existing shared executor.
+    pub const fn new(executor: SqliteDatabaseExecutor) -> Self {
+        Self { executor }
+    }
+}
+
+impl UnitOfWorkFactory for KernelUnitOfWorkFactory {
+    type Scope<'scope>
+        = KernelUnitOfWork<'scope>
+    where
+        Self: 'scope;
+
+    fn execute<T, F>(
+        &self,
+        context: &OperationContext,
+        operation: F,
+    ) -> Result<T, ApplicationPortError>
+    where
+        T: Send + 'static,
+        F: for<'scope> FnOnce(Self::Scope<'scope>) -> Result<T, ApplicationPortError>
+            + Send
+            + 'static,
+    {
+        self.executor.execute(context, move |scope| {
+            operation(KernelUnitOfWork::new(scope))
+        })
+    }
 }
 
 impl<'scope> KernelUnitOfWork<'scope> {
@@ -371,6 +414,149 @@ pub struct KernelLibraryRootRepository<'scope, 'connection> {
     inner: SqliteLibraryRootRepository<'scope, 'connection>,
 }
 
+/// Technology-neutral transaction-scoped generic job-run repository wrapper.
+pub struct KernelJobRunRepository<'scope, 'connection> {
+    inner: SqliteJobRunRepository<'scope, 'connection>,
+}
+
+impl argus_application::JobRunRepository for KernelJobRunRepository<'_, '_> {
+    fn insert(
+        &mut self,
+        new: argus_application::NewJobRun,
+    ) -> Result<argus_application::JobRunId, PersistenceError> {
+        self.inner.insert(new)
+    }
+
+    fn request_cancellation(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+    ) -> Result<Option<bool>, PersistenceError> {
+        self.inner.request_cancellation(job_run_id)
+    }
+
+    fn set_state(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+        state: argus_application::JobRunState,
+        timestamp_ms: i64,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.set_state(job_run_id, state, timestamp_ms)
+    }
+
+    fn set_progress(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+        progress: &argus_application::JobProgress,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.set_progress(job_run_id, progress)
+    }
+
+    fn set_terminal_failure(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+        state: argus_application::JobRunState,
+        terminal_error_code: Option<String>,
+        terminal_safe_context: Option<String>,
+        timestamp_ms: i64,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.set_terminal_failure(
+            job_run_id,
+            state,
+            terminal_error_code,
+            terminal_safe_context,
+            timestamp_ms,
+        )
+    }
+}
+
+/// Technology-neutral transaction-scoped scan-run repository wrapper.
+pub struct KernelScanRunRepository<'scope, 'connection> {
+    inner: SqliteScanRunRepository<'scope, 'connection>,
+}
+
+impl argus_application::ScanRunRepository for KernelScanRunRepository<'_, '_> {
+    fn insert(
+        &mut self,
+        new: argus_application::NewScanRun,
+    ) -> Result<argus_application::ScanRunId, PersistenceError> {
+        self.inner.insert(new)
+    }
+
+    fn set_status(
+        &mut self,
+        scan_run_id: argus_application::ScanRunId,
+        status: argus_application::ScanRunStatus,
+        completed_at_ms: Option<i64>,
+        failure_reason: Option<String>,
+    ) -> Result<bool, PersistenceError> {
+        self.inner
+            .set_status(scan_run_id, status, completed_at_ms, failure_reason)
+    }
+
+    fn find_active_ownership(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+    ) -> Result<Option<argus_application::ActiveScanOwnership>, PersistenceError> {
+        self.inner.find_active_ownership(library_root_id)
+    }
+
+    fn find_last_scan(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+    ) -> Result<Option<argus_application::LibraryRootLastScanSummary>, PersistenceError> {
+        self.inner.find_last_scan(library_root_id)
+    }
+
+    fn list_by_job(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+    ) -> Result<Vec<argus_application::ScanRunProjection>, PersistenceError> {
+        self.inner.list_by_job(job_run_id)
+    }
+}
+
+/// Technology-neutral transaction-scoped source-entry repository wrapper.
+pub struct KernelSourceEntryRepository<'scope, 'connection> {
+    inner: SqliteSourceEntryRepository<'scope, 'connection>,
+}
+
+impl argus_application::SourceEntryRepository for KernelSourceEntryRepository<'_, '_> {
+    fn upsert(
+        &mut self,
+        entry: argus_application::NewSourceEntry,
+    ) -> Result<argus_application::SourceEntryId, PersistenceError> {
+        self.inner.upsert(entry)
+    }
+
+    fn delete_for_root(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+    ) -> Result<(), PersistenceError> {
+        self.inner.delete_for_root(library_root_id)
+    }
+}
+
+/// Technology-neutral transaction-scoped admission-target repository wrapper.
+pub struct KernelLibraryScanTargetRepository<'scope, 'connection> {
+    inner: SqliteLibraryScanTargetRepository<'scope, 'connection>,
+}
+
+impl argus_application::LibraryScanTargetRepository for KernelLibraryScanTargetRepository<'_, '_> {
+    fn insert(
+        &mut self,
+        target: argus_application::NewLibraryScanTarget,
+    ) -> Result<(), PersistenceError> {
+        self.inner.insert(target)
+    }
+
+    fn list_by_job(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+    ) -> Result<Vec<argus_application::LibraryScanTarget>, PersistenceError> {
+        self.inner.list_by_job(job_run_id)
+    }
+}
+
 impl LibraryRootRepository for KernelLibraryRootRepository<'_, '_> {
     fn insert(
         &mut self,
@@ -381,6 +567,26 @@ impl LibraryRootRepository for KernelLibraryRootRepository<'_, '_> {
 
     fn delete(&mut self, root_id: LibraryRootId) -> Result<bool, PersistenceError> {
         self.inner.delete(root_id)
+    }
+
+    fn exists(&mut self, root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+        self.inner.exists(root_id)
+    }
+
+    fn set_availability(
+        &mut self,
+        root_id: LibraryRootId,
+        availability: argus_application::LibraryRootAvailability,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.set_availability(root_id, availability)
+    }
+
+    fn set_last_scan(
+        &mut self,
+        root_id: LibraryRootId,
+        summary: Option<argus_application::LibraryRootLastScanSummary>,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.set_last_scan(root_id, summary)
     }
 }
 
@@ -410,6 +616,22 @@ impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection
         = KernelLibraryRootRepository<'scope, 'connection>
     where
         Self: 'scope;
+    type JobRunRepository<'scope>
+        = KernelJobRunRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type ScanRunRepository<'scope>
+        = KernelScanRunRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type SourceEntryRepository<'scope>
+        = KernelSourceEntryRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type LibraryScanTargetRepository<'scope>
+        = KernelLibraryScanTargetRepository<'scope, 'connection>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         KernelAppearanceSettingsRepository {
@@ -429,6 +651,30 @@ impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection
         }
     }
 
+    fn job_runs(&mut self) -> Self::JobRunRepository<'_> {
+        KernelJobRunRepository {
+            inner: self.inner.job_runs(),
+        }
+    }
+
+    fn scan_runs(&mut self) -> Self::ScanRunRepository<'_> {
+        KernelScanRunRepository {
+            inner: self.inner.scan_runs(),
+        }
+    }
+
+    fn source_entries(&mut self) -> Self::SourceEntryRepository<'_> {
+        KernelSourceEntryRepository {
+            inner: self.inner.source_entries(),
+        }
+    }
+
+    fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
+        KernelLibraryScanTargetRepository {
+            inner: self.inner.library_scan_targets(),
+        }
+    }
+
     fn commit(self) -> Result<(), ApplicationPortError> {
         self.inner.commit()
     }
@@ -445,23 +691,26 @@ impl KernelBootstrap {
         trace_id: TraceId,
         path_class: PathClass,
         migration_summary: KernelMigrationSummary,
-        executor: SqliteDatabaseExecutor,
+        unit_of_work: KernelUnitOfWorkFactory,
         settings_service: SettingsService<SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor>,
         library_service: LibraryService<
             SqliteLibraryRootQueries,
             SqliteDatabaseExecutor,
             InfraLocalFilesystemProvider,
         >,
-        event_bus: EventBus,
+        jobs_service: JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>,
+        event_bus: Arc<EventBus>,
         collector: StartupCollector,
     ) -> Self {
         Self {
             trace_id,
             path_class,
             migration_summary,
-            executor: Some(executor),
+            executor: Some(unit_of_work.executor.clone()),
             settings_service,
             library_service,
+            jobs_service,
+            unit_of_work,
             event_bus,
             publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
             collector,
@@ -487,6 +736,11 @@ impl KernelBootstrap {
             executor.clone(),
             InfraLocalFilesystemProvider,
         );
+        let unit_of_work = KernelUnitOfWorkFactory::new(executor.clone());
+        let jobs_service = JobsService::new(
+            SqliteJobsQueries::new(executor.clone()),
+            unit_of_work.clone(),
+        );
         let mut kernel = KernelBootstrap::from_parts(
             new_trace_id(),
             PathClass::ExplicitOverride,
@@ -495,10 +749,16 @@ impl KernelBootstrap {
                 current_version: 1,
                 outcome: KernelMigrationOutcome::AlreadyCurrent,
             },
-            executor,
+            unit_of_work,
             settings_service,
             library_service,
-            EventBus::new(Vec::new(), Vec::new()),
+            jobs_service,
+            Arc::new(EventBus::new(
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )),
             StartupCollector::new(),
         );
         kernel.fail_next_shutdown_for_tests();
@@ -708,6 +968,104 @@ impl KernelBootstrap {
         )
     }
 
+    /// Admits one durable single-root library scan under an admitted context.
+    pub fn start_library_scan_with_context(
+        &self,
+        context: &OperationContext,
+        root_id: LibraryRootId,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<LibraryScanAdmissionResult, ApplicationError> {
+        if is_cancelled() {
+            return Err(cancelled_sources_error(context.trace_id()));
+        }
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let result = self.library_service.start_library_scan(
+            StartLibraryScanCommand::new(root_id),
+            context.clone(),
+            recorder,
+        );
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
+    /// Terminalizes an admitted run whose manager registration failed.
+    pub fn fail_unregistered_scan_with_context(
+        &self,
+        context: &OperationContext,
+        root_id: LibraryRootId,
+        job_run_id: JobRunId,
+    ) -> Result<(), ApplicationError> {
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let result = self.library_service.fail_unregistered_scan(
+            root_id,
+            job_run_id,
+            context.clone(),
+            recorder,
+        );
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
+    /// Reads one authoritative job detail under an admitted context.
+    pub fn get_job_with_context(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<JobDetail, ApplicationError> {
+        self.jobs_service.get_job(job_run_id, context.clone())
+    }
+
+    /// Lists one closed Jobs scope under an admitted context.
+    pub fn list_jobs_with_context(
+        &self,
+        context: &OperationContext,
+        query: ListJobsQuery,
+    ) -> Result<JobSummaryPage, ApplicationError> {
+        self.jobs_service.list_jobs(query, context.clone())
+    }
+
+    /// Persists durable cancellation intent under an admitted context.
+    pub fn cancel_job_with_context(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<CancelJobResult, ApplicationError> {
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let result = self
+            .jobs_service
+            .cancel_job(job_run_id, context.clone(), recorder);
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
+    /// Returns the shared transaction factory used by background workers.
+    pub fn unit_of_work_factory(&self) -> &KernelUnitOfWorkFactory {
+        &self.unit_of_work
+    }
+
+    /// Returns the shared event bus used for post-commit publication.
+    pub fn event_bus(&self) -> &Arc<EventBus> {
+        &self.event_bus
+    }
+
     /// Replaces only the appearance aggregate with its canonical recovery
     /// value. This deliberately bypasses the normal read-before-write path so
     /// a missing or malformed persisted value can be repaired only after an
@@ -769,14 +1127,7 @@ impl UnitOfWorkFactory for KernelBootstrap {
             + Send
             + 'static,
     {
-        self.executor
-            .as_ref()
-            .ok_or(ApplicationPortError::Persistence(
-                argus_application::PersistenceError::Unavailable,
-            ))?
-            .execute(context, move |scope| {
-                operation(KernelUnitOfWork::new(scope))
-            })
+        self.unit_of_work.execute(context, operation)
     }
 }
 
@@ -909,6 +1260,11 @@ pub fn bootstrap_kernel_with_event_bus(
         executor.clone(),
         InfraLocalFilesystemProvider,
     );
+    let unit_of_work = KernelUnitOfWorkFactory::new(executor.clone());
+    let jobs_service = JobsService::new(
+        SqliteJobsQueries::new(executor.clone()),
+        unit_of_work.clone(),
+    );
     let mut migration_fields = environment_fields(path_class, platform_class, architecture);
     insert(
         &mut migration_fields,
@@ -955,7 +1311,9 @@ pub fn bootstrap_kernel_with_event_bus(
         executor: Some(executor),
         settings_service,
         library_service,
-        event_bus,
+        jobs_service,
+        unit_of_work,
+        event_bus: Arc::new(event_bus),
         publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
         collector,
         #[cfg(test)]

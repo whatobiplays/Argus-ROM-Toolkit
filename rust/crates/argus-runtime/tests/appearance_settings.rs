@@ -60,6 +60,8 @@ fn no_op_update_does_not_publish_and_change_publishes_once() {
             fail: false,
         })],
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
     );
     let kernel = bootstrap_kernel_with_event_bus(
         KernelBootstrapOptions::with_data_directory(directory.path()),
@@ -94,6 +96,8 @@ fn subscriber_failure_isolated_after_commit_and_is_not_retried() {
                 fail: false,
             }),
         ],
+        Vec::new(),
+        Vec::new(),
         Vec::new(),
     );
     let kernel = bootstrap_kernel_with_event_bus(

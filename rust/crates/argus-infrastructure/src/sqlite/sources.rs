@@ -1,9 +1,11 @@
 //! Typed SQLite adapters for Slice 001 library-source/root state.
 
 use argus_application::{
-    ApplicationPortError, LibraryRootAvailability, LibraryRootConfiguration, LibraryRootId,
+    ApplicationPortError, LibraryRootActiveScanSummary, LibraryRootAvailability,
+    LibraryRootConfiguration, LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
     LibraryRootPage, LibraryRootProjection, LibraryRootQueries, LibraryRootRepository,
-    LibrarySourceId, LibrarySourceRepository, NewLibraryRoot, OperationContext, PersistenceError,
+    LibraryRootScanConfiguration, LibrarySourceId, LibrarySourceRepository, NewLibraryRoot,
+    OperationContext, PersistenceError,
 };
 use rusqlite::OptionalExtension;
 
@@ -12,6 +14,20 @@ use super::connection::SqliteConnection;
 use super::errors::{SqliteOperationError, operation_error};
 use super::executor::SqliteDatabaseExecutor;
 use super::unit_of_work::SqliteUnitOfWork;
+
+type RootProjectionRaw = (
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+);
 
 /// Independent authoritative library-root query adapter.
 #[derive(Clone)]
@@ -89,6 +105,48 @@ impl LibraryRootQueries for SqliteLibraryRootQueries {
             })
             .map_err(map_executor_error)
     }
+
+    fn get_scan_configuration(
+        &self,
+        context: &OperationContext,
+        root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError> {
+        self.executor
+            .with_connection(context.clone(), move |connection| {
+                let raw = connection
+                    .connection
+                    .query_row(
+                        "SELECT library_root_id, root_locator, display_name,
+                                safe_location_presentation, config_revision
+                         FROM library_root WHERE library_root_id = ?1",
+                        [root_id.to_string()],
+                        |row| {
+                            Ok((
+                                row.get::<_, String>(0)?,
+                                row.get::<_, String>(1)?,
+                                row.get::<_, String>(2)?,
+                                row.get::<_, String>(3)?,
+                                row.get::<_, i64>(4)?,
+                            ))
+                        },
+                    )
+                    .optional()
+                    .map_err(|error| operation_error(&error))?;
+                raw.map(|(id, locator, display, safe, revision)| {
+                    let root_id =
+                        LibraryRootId::try_from(id.as_str()).map_err(|_| corrupt_persistence())?;
+                    Ok(LibraryRootScanConfiguration::new(
+                        root_id,
+                        argus_application::RootLocator::from_provider(locator),
+                        display,
+                        safe,
+                        revision as u32,
+                    ))
+                })
+                .transpose()
+            })
+            .map_err(map_executor_error)
+    }
 }
 
 fn read_root_page(
@@ -99,7 +157,15 @@ fn read_root_page(
     let mut statement = connection
         .connection
         .prepare(
-            "SELECT library_root_id, display_name, safe_location_presentation, availability_status
+            "SELECT library_root_id, display_name, safe_location_presentation, availability_status,
+                    last_scan_status, last_scan_scan_run_id, last_scan_job_run_id,
+                    last_scan_started_at, last_scan_completed_at,
+                    (SELECT scan_run_id FROM scan_run
+                      WHERE historical_library_root_id = library_root.library_root_id
+                        AND status = 'running' LIMIT 1),
+                    (SELECT job_run_id FROM scan_run
+                      WHERE historical_library_root_id = library_root.library_root_id
+                        AND status = 'running' LIMIT 1)
              FROM library_root
              ORDER BY created_at ASC, library_root_id ASC
              LIMIT ?1 OFFSET ?2",
@@ -114,6 +180,13 @@ fn read_root_page(
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             },
         )
@@ -131,7 +204,15 @@ fn read_root(
     let raw = connection
         .connection
         .query_row(
-            "SELECT library_root_id, display_name, safe_location_presentation, availability_status
+            "SELECT library_root_id, display_name, safe_location_presentation, availability_status,
+                    last_scan_status, last_scan_scan_run_id, last_scan_job_run_id,
+                    last_scan_started_at, last_scan_completed_at,
+                    (SELECT scan_run_id FROM scan_run
+                      WHERE historical_library_root_id = library_root.library_root_id
+                        AND status = 'running' LIMIT 1),
+                    (SELECT job_run_id FROM scan_run
+                      WHERE historical_library_root_id = library_root.library_root_id
+                        AND status = 'running' LIMIT 1)
              FROM library_root
              WHERE library_root_id = ?1",
             [root_id],
@@ -141,6 +222,13 @@ fn read_root(
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             },
         )
@@ -150,7 +238,19 @@ fn read_root(
 }
 
 fn root_projection_from_raw(
-    (id, display, safe_location, availability): (String, String, String, String),
+    (
+        id,
+        display,
+        safe_location,
+        availability,
+        last_scan_status,
+        last_scan_scan_run_id,
+        last_scan_job_run_id,
+        last_scan_started_at,
+        last_scan_completed_at,
+        active_scan_run_id,
+        active_job_run_id,
+    ): RootProjectionRaw,
 ) -> Result<LibraryRootProjection, SqliteOperationError> {
     let root_id = LibraryRootId::try_from(id.as_str()).map_err(|_| corrupt_persistence())?;
     let availability = match availability.as_str() {
@@ -159,14 +259,36 @@ fn root_projection_from_raw(
         "unknown" => LibraryRootAvailability::Unknown,
         _ => return Err(corrupt_persistence()),
     };
-    Ok(LibraryRootProjection::new(
-        root_id,
-        display,
-        safe_location,
-        availability,
-        None,
-        None,
-    ))
+    let mut projection =
+        LibraryRootProjection::new(root_id, display, safe_location, availability, None, None);
+    if let (Some(scan_run_id), Some(job_run_id), Some(status), Some(started_at)) = (
+        last_scan_scan_run_id,
+        last_scan_job_run_id,
+        last_scan_status,
+        last_scan_started_at,
+    ) {
+        let status = match status.as_str() {
+            "complete" => LibraryRootLastScanStatus::Complete,
+            "partial" => LibraryRootLastScanStatus::Partial,
+            "unavailable" => LibraryRootLastScanStatus::Unavailable,
+            "cancelled" => LibraryRootLastScanStatus::Cancelled,
+            "failed" => LibraryRootLastScanStatus::Failed,
+            "abandoned" => LibraryRootLastScanStatus::Abandoned,
+            _ => return Err(corrupt_persistence()),
+        };
+        projection = projection.with_last_scan(LibraryRootLastScanSummary::new(
+            scan_run_id,
+            job_run_id,
+            status,
+            started_at,
+            last_scan_completed_at,
+        ));
+    }
+    if let (Some(scan_run_id), Some(job_run_id)) = (active_scan_run_id, active_job_run_id) {
+        projection =
+            projection.with_active_scan(LibraryRootActiveScanSummary::new(scan_run_id, job_run_id));
+    }
+    Ok(projection)
 }
 
 fn corrupt_persistence() -> SqliteOperationError {
@@ -210,5 +332,78 @@ impl LibraryRootRepository for SqliteLibraryRootRepository<'_, '_> {
 
     fn delete(&mut self, root_id: LibraryRootId) -> Result<bool, PersistenceError> {
         self.work.delete_library_root(root_id)
+    }
+
+    fn exists(&mut self, root_id: LibraryRootId) -> Result<bool, PersistenceError> {
+        self.work
+            .transaction_mut()?
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM library_root WHERE library_root_id = ?1)",
+                [root_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(super::jobs::map_persistence_operation_error)
+    }
+
+    fn set_availability(
+        &mut self,
+        root_id: LibraryRootId,
+        availability: LibraryRootAvailability,
+    ) -> Result<bool, PersistenceError> {
+        let changed = self
+            .work
+            .transaction_mut()?
+            .execute(
+                "UPDATE library_root SET availability_status = ?1
+                 WHERE library_root_id = ?2",
+                rusqlite::params![availability.as_str(), root_id.to_string()],
+            )
+            .map_err(super::jobs::map_persistence_operation_error)?;
+        Ok(changed == 1)
+    }
+
+    fn set_last_scan(
+        &mut self,
+        root_id: LibraryRootId,
+        summary: Option<LibraryRootLastScanSummary>,
+    ) -> Result<bool, PersistenceError> {
+        let changed = match summary {
+            Some(summary) => self
+                .work
+                .transaction_mut()?
+                .execute(
+                    "UPDATE library_root
+                     SET last_scan_status = ?1,
+                         last_scan_scan_run_id = ?2,
+                         last_scan_job_run_id = ?3,
+                         last_scan_started_at = ?4,
+                         last_scan_completed_at = ?5
+                     WHERE library_root_id = ?6",
+                    rusqlite::params![
+                        summary.status().as_str(),
+                        summary.scan_run_id(),
+                        summary.job_run_id(),
+                        summary.started_at_ms(),
+                        summary.completed_at_ms(),
+                        root_id.to_string(),
+                    ],
+                )
+                .map_err(super::jobs::map_persistence_operation_error)?,
+            None => self
+                .work
+                .transaction_mut()?
+                .execute(
+                    "UPDATE library_root
+                     SET last_scan_status = NULL,
+                         last_scan_scan_run_id = NULL,
+                         last_scan_job_run_id = NULL,
+                         last_scan_started_at = NULL,
+                         last_scan_completed_at = NULL
+                     WHERE library_root_id = ?1",
+                    [root_id.to_string()],
+                )
+                .map_err(super::jobs::map_persistence_operation_error)?,
+        };
+        Ok(changed == 1)
     }
 }

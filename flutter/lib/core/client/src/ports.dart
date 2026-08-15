@@ -76,6 +76,8 @@ abstract interface class SourcesGateway {
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   );
+
+  Future<StartLibraryScanResult> startLibraryScan(LibraryRootId libraryRootId);
 }
 
 /// Focused Sources capability. Queries return immutable authoritative
@@ -95,6 +97,40 @@ abstract interface class SourcesApi {
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   );
+
+  Future<StartLibraryScanResult> startLibraryScan(LibraryRootId libraryRootId);
+}
+
+/// Framework-neutral durable job observation and control operations.
+abstract interface class JobsGateway {
+  Future<JobSummaryPage> listActiveJobs();
+
+  Future<JobSummaryPage> listRecentTerminalJobs({
+    required int offset,
+    required int pageSize,
+  });
+
+  Future<JobDetail> getJob(JobRunId jobRunId);
+
+  Future<CancelJobResult> cancelJob(JobRunId jobRunId);
+}
+
+/// Focused Jobs capability. Queries return immutable authoritative
+/// snapshots; controls never fabricate lifecycle state.
+abstract interface class JobsApi {
+  Future<JobSummaryPage> listActiveJobs();
+
+  Future<JobSummaryPage> listRecentTerminalJobs({
+    required int offset,
+    required int pageSize,
+  });
+
+  Future<JobDetail> getJob(JobRunId jobRunId);
+
+  Future<CancelJobResult> cancelJob(JobRunId jobRunId);
+
+  /// Narrow active-job summary for the application shell.
+  Future<ActiveJobSummary> getActiveJobSummary();
 }
 
 /// Framework-neutral diagnostics operations.
@@ -170,5 +206,6 @@ abstract interface class ArgusClientGateway
         RuntimeGateway,
         AppearanceGateway,
         DiagnosticsGateway,
+        JobsGateway,
         SourcesGateway,
         EventGateway {}

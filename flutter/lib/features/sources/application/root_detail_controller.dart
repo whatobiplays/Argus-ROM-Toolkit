@@ -20,6 +20,9 @@ sealed class SourcesRootDetailState with _$SourcesRootDetailState {
     ClientFailure? lastFailure,
     required bool removing,
     required bool removalAmbiguous,
+    required bool scanning,
+    JobRunId? admittedScanJobRunId,
+    required bool removalBlockedByActiveScan,
   }) = SourcesRootDetailStateReady;
 
   /// The syntactically valid root is no longer configured.
@@ -39,6 +42,7 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
   RuntimeInstanceId? _activeRuntimeInstanceId;
   int _readToken = 0;
   bool _readInFlight = false;
+  bool _scanInFlight = false;
   int _demandToken = 0;
   StreamSubscription<SourcesReconciliationDemand>? _demandSubscription;
 
@@ -89,13 +93,34 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
         lastFailure: current.lastFailure,
         removing: true,
         removalAmbiguous: false,
+        scanning: current.scanning,
+        admittedScanJobRunId: current.admittedScanJobRunId,
+        removalBlockedByActiveScan: false,
       ),
     );
     try {
       final result = await ref
           .read(sourcesApiProvider)
           .removeLibraryRoot(rootId);
-      if (result != RemoveLibraryRootResult.removed) return;
+      if (result is! RemoveLibraryRootResultRemoved) {
+        final blocked = result;
+        final latest = state.value;
+        if (latest is! SourcesRootDetailStateReady || _readInFlight) return;
+        _publish(
+          SourcesRootDetailState.ready(
+            root: latest.root,
+            refreshing: false,
+            lastFailure: null,
+            removing: false,
+            removalAmbiguous: false,
+            scanning: false,
+            admittedScanJobRunId: latest.admittedScanJobRunId,
+            removalBlockedByActiveScan:
+                blocked is RemoveLibraryRootResultRootHasActiveScan,
+          ),
+        );
+        return;
+      }
       _publish(SourcesRootDetailState.missing());
     } on ClientFailure catch (failure) {
       final latest = state.value;
@@ -108,6 +133,9 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           lastFailure: failure,
           removing: false,
           removalAmbiguous: ambiguous,
+          scanning: latest.scanning,
+          admittedScanJobRunId: latest.admittedScanJobRunId,
+          removalBlockedByActiveScan: latest.removalBlockedByActiveScan,
         ),
       );
       if (ambiguous) {
@@ -135,6 +163,13 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           root: root,
           refreshing: false,
           removing: removing,
+          scanning: current is SourcesRootDetailStateReady && current.scanning,
+          admittedScanJobRunId: current is SourcesRootDetailStateReady
+              ? current.admittedScanJobRunId
+              : null,
+          removalBlockedByActiveScan:
+              current is SourcesRootDetailStateReady &&
+              current.removalBlockedByActiveScan,
           // A successful authoritative read proves the current root exists,
           // which resolves any prior transport-ambiguous removal uncertainty.
           removalAmbiguous: false,
@@ -159,6 +194,9 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
           refreshing: false,
           lastFailure: failure,
           removing: current.removing,
+          scanning: current.scanning,
+          admittedScanJobRunId: current.admittedScanJobRunId,
+          removalBlockedByActiveScan: current.removalBlockedByActiveScan,
           removalAmbiguous: current.removalAmbiguous,
         ),
       );
@@ -194,6 +232,76 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
   bool _isRootNotFound(ClientFailure failure) =>
       failure is ApplicationFailure &&
       failure.error.code.value == _rootNotFoundCode;
+
+  /// Starts one single-root scan when the root is eligible. Returns the
+  /// authoritative job identity on admission or an already-active owner.
+  Future<JobRunId?> startScan(LibraryRootId rootId) async {
+    final current = state.value;
+    if (current is! SourcesRootDetailStateReady ||
+        current.scanning ||
+        _scanInFlight ||
+        current.root.activeScan != null ||
+        current.root.lastScan != null) {
+      return null;
+    }
+    _scanInFlight = true;
+    _publish(
+      SourcesRootDetailState.ready(
+        root: current.root,
+        refreshing: false,
+        lastFailure: null,
+        removing: false,
+        removalAmbiguous: false,
+        scanning: true,
+        removalBlockedByActiveScan: false,
+      ),
+    );
+    try {
+      final result = await ref
+          .read(sourcesApiProvider)
+          .startLibraryScan(rootId);
+      switch (result) {
+        case StartLibraryScanResultAdmitted(:final handle):
+          final latest = state.value;
+          if (latest is! SourcesRootDetailStateReady) return null;
+          _publish(
+            SourcesRootDetailState.ready(
+              root: latest.root,
+              refreshing: false,
+              lastFailure: null,
+              removing: false,
+              removalAmbiguous: false,
+              scanning: false,
+              admittedScanJobRunId: handle.jobRunId,
+              removalBlockedByActiveScan: false,
+            ),
+          );
+          await _readAuthoritative(rootId);
+          return handle.jobRunId;
+        case StartLibraryScanResultAlreadyScanning(:final activeJobRunId):
+          await _readAuthoritative(rootId);
+          return activeJobRunId;
+      }
+    } on ClientFailure catch (failure) {
+      final latest = state.value;
+      if (latest is! SourcesRootDetailStateReady) return null;
+      _publish(
+        SourcesRootDetailState.ready(
+          root: latest.root,
+          refreshing: false,
+          lastFailure: failure,
+          removing: false,
+          removalAmbiguous: false,
+          scanning: false,
+          admittedScanJobRunId: null,
+          removalBlockedByActiveScan: false,
+        ),
+      );
+      return null;
+    } finally {
+      _scanInFlight = false;
+    }
+  }
 
   void _publish(SourcesRootDetailState next) {
     _setState(AsyncData(next));

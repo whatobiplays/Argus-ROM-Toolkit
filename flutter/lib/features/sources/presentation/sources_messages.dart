@@ -1,3 +1,5 @@
+import 'package:argus/core/client/client.dart';
+
 /// User-facing copy for the Sources feature.
 ///
 /// Copy deliberately avoids provider, persistence, and scan terminology and
@@ -12,6 +14,21 @@ abstract final class SourcesMessages {
       'Scanning is not available yet. The folder will be configured and '
       'ready to scan in a future update.';
   static const String neverScanned = 'Never scanned';
+  static const String scanningInProgress = 'Scanning in progress';
+  static const String scan = 'Scan';
+  static const String viewJob = 'View Job';
+  static const String rootHasActiveScan =
+      'This folder is currently being scanned, so it cannot be removed yet. '
+      'Open the job to follow or cancel the scan.';
+  static String lastScanStatus(LibraryRootLastScanStatus status) =>
+      switch (status) {
+        LibraryRootLastScanStatus.complete => 'Last scan: complete',
+        LibraryRootLastScanStatus.partial => 'Last scan: partial',
+        LibraryRootLastScanStatus.unavailable => 'Last scan: unavailable',
+        LibraryRootLastScanStatus.cancelled => 'Last scan: cancelled',
+        LibraryRootLastScanStatus.failed => 'Last scan: failed',
+        LibraryRootLastScanStatus.abandoned => 'Last scan: abandoned',
+      };
   static const String availabilityLabel = 'Availability';
   static const String removeLibraryFolder = 'Remove Library Folder';
   static const String removeConfirmationTitle = 'Remove Library Folder?';

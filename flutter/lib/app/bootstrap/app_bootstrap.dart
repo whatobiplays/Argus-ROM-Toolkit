@@ -2,12 +2,14 @@ import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/settings/settings_composition.dart';
+import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/sources/sources.dart';
 import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'appearance_event_coordinator.dart';
+import 'jobs_event_coordinator.dart';
 import 'sources_event_coordinator.dart';
 
 /// Owns the single application-level Riverpod scope.
@@ -57,6 +59,18 @@ class ArgusBootstrap extends StatelessWidget {
         }),
         sourcesReconciliationDemandProvider.overrideWith(
           (ref) => ref.watch(sourcesEventCoordinatorProvider),
+        ),
+        jobsApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).jobs,
+        ),
+        jobsRuntimeContextProvider.overrideWith((ref) {
+          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+          return runtimeInstanceId == null
+              ? const JobsRuntimeContext.preReady()
+              : JobsRuntimeContext.ready(runtimeInstanceId: runtimeInstanceId);
+        }),
+        jobsReconciliationDemandProvider.overrideWith(
+          (ref) => ref.watch(jobsEventCoordinatorProvider),
         ),
       ],
       child: const ArgusApp(),

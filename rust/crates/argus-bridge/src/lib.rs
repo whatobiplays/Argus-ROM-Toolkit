@@ -11,11 +11,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
     AddLocalLibraryRootResult, ApplicationError, ApplicationSeverity, ArchitectureClass,
-    DiagnosticStage, ErrorCategory, ErrorCode, FailureRole, LibraryRootAvailability, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection, ListLibraryRootsQuery,
-    LocalFilesystemRootSelection, MigrationOutcome, PathClass, PersistedSettingsReason,
-    PlatformClass, Recoverability, RemoveLibraryRootResult, RetryPolicy, RootRelationship,
-    SafeContext, SafeContextField, SafeContextValue, SettingsDomain, TechnicalClass, ThemeMode,
+    DiagnosticStage, ErrorCategory, ErrorCode, FailureRole, JobDetail, JobRunId, JobRunProjection,
+    JobRunState, JobSummary, JobSummaryPage, LibraryRootAvailability, LibraryRootId,
+    LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
+    LibraryScanAdmissionExclusion, LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery,
+    ListJobsScope, ListLibraryRootsQuery, LocalFilesystemRootSelection, MigrationOutcome,
+    OperationDetail, PathClass, PersistedSettingsReason, PlatformClass, Recoverability,
+    RemoveLibraryRootResult, RetryPolicy, RootRelationship, SafeContext, SafeContextField,
+    SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus, SettingsDomain,
+    SourceEntriesChangeScope, StartLibraryScanResult, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
@@ -228,9 +232,209 @@ pub enum AddLocalLibraryRootResultDto {
 }
 
 /// Typed outcome of one root-removal operation for the active slice.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RemoveLibraryRootResultDto {
     Removed,
+    RootHasActiveScan {
+        library_root_id: String,
+        job_run_id: String,
+        scan_run_id: String,
+        owning_job_root_count: u32,
+    },
+}
+
+/// Minimal identity-only handle returned by successful background admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationHandleDto {
+    pub job_run_id: String,
+    pub operation_type: String,
+}
+
+/// Canonical persisted job lifecycle vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JobRunStateDto {
+    Queued,
+    Preparing,
+    Running,
+    Completed,
+    CompletedWithIssues,
+    Failed,
+    Cancelled,
+    Interrupted,
+    Abandoned,
+}
+
+/// Canonical per-root scan status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScanRunStatusDto {
+    Running,
+    Complete,
+    Partial,
+    Failed,
+    Cancelled,
+    Abandoned,
+}
+
+/// Backend-authoritative control availability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JobControlAvailabilityDto {
+    pub can_cancel: bool,
+    pub can_retry: bool,
+}
+
+/// Bounded list-row projection for Jobs landing and shell summaries.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JobSummaryDto {
+    pub job_run_id: String,
+    pub operation_type: String,
+    pub state: JobRunStateDto,
+    pub phase: Option<String>,
+    pub created_at_ms: i64,
+    pub started_at_ms: Option<i64>,
+    pub terminal_at_ms: Option<i64>,
+    pub cancellation_requested: bool,
+    pub safe_context_summary: Option<String>,
+}
+
+/// Bounded terminal failure projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoundedTerminalFailureDto {
+    pub error_code: Option<String>,
+    pub safe_context: Option<String>,
+}
+
+/// Capability-neutral generic execution projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JobRunDto {
+    pub job_run_id: String,
+    pub operation_type: String,
+    pub state: JobRunStateDto,
+    pub phase: Option<String>,
+    pub completed_units: Option<u64>,
+    pub total_units: Option<u64>,
+    pub status_key: Option<String>,
+    pub created_at_ms: i64,
+    pub queued_at_ms: Option<i64>,
+    pub started_at_ms: Option<i64>,
+    pub terminal_at_ms: Option<i64>,
+    pub cancellation_requested: bool,
+    pub controls: JobControlAvailabilityDto,
+    pub bounded_terminal_failure: Option<BoundedTerminalFailureDto>,
+}
+
+/// One per-root scan projection with its historical display snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScanRunDto {
+    pub scan_run_id: String,
+    pub job_run_id: String,
+    pub library_root_id: String,
+    pub display_name: String,
+    pub safe_location_display: String,
+    pub status: ScanRunStatusDto,
+    pub started_at_ms: i64,
+    pub completed_at_ms: Option<i64>,
+}
+
+/// Bounded historical root display summary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryScanRootSummaryDto {
+    pub library_root_id: String,
+    pub display_name: String,
+    pub safe_location_display: String,
+}
+
+/// One durable typed admission exclusion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryScanAdmissionExclusionDto {
+    pub library_root_id: String,
+    pub reason: String,
+    pub active_job_run_id: Option<String>,
+    pub active_scan_run_id: Option<String>,
+}
+
+/// Scan-specific structured progress facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScanProgressFactsDto {
+    pub phase: Option<String>,
+    pub completed_units: Option<u64>,
+    pub total_units: Option<u64>,
+    pub status_key: Option<String>,
+    pub roots_requested: u32,
+    pub roots_admitted: u32,
+    pub roots_terminal: u32,
+    pub entries_committed: u64,
+}
+
+/// Typed LibraryScan operation detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryScanJobDetailDto {
+    pub requested_roots: Vec<LibraryScanRootSummaryDto>,
+    pub admitted_roots: Vec<LibraryScanRootSummaryDto>,
+    pub exclusions: Vec<LibraryScanAdmissionExclusionDto>,
+    pub scan_runs: Vec<ScanRunDto>,
+    pub progress: ScanProgressFactsDto,
+    pub retry_source_job_run_id: Option<String>,
+    pub retry_successor_job_run_id: Option<String>,
+}
+
+/// Closed typed operation-detail union.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OperationDetailDto {
+    LibraryScan(LibraryScanJobDetailDto),
+}
+
+/// Authoritative job detail with typed operation detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JobDetailDto {
+    pub job: JobRunDto,
+    pub operation_detail: OperationDetailDto,
+}
+
+/// Closed Jobs list scope union.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ListJobsScopeDto {
+    Active,
+    RecentTerminal { offset: u32, page_size: u32 },
+}
+
+/// One bounded Jobs list request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ListJobsRequestDto {
+    pub scope: ListJobsScopeDto,
+}
+
+/// Bounded authoritative job-row page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JobSummaryPageDto {
+    pub items: Vec<JobSummaryDto>,
+    pub total_count: u32,
+    pub next_offset: Option<u32>,
+}
+
+/// Typed outcome of one single-root scan admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StartLibraryScanResultDto {
+    Admitted(OperationHandleDto),
+    AlreadyScanning {
+        library_root_id: String,
+        active_job_run_id: String,
+        active_scan_run_id: String,
+    },
+}
+
+/// Typed outcome of one cancel request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CancelJobResultDto {
+    CancellationRequested,
+    NoLongerCancellable,
+}
+
+/// Explicit source-graph invalidation scope union.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceEntriesChangeScopeDto {
+    RootChildren,
+    EntryChildren(String),
+    EntireRootHierarchy,
 }
 
 /// User-selected diagnostic export destination.
@@ -265,11 +469,31 @@ pub struct TechnicalDetailsDto {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeEventPayloadDto {
-    RuntimeStateChanged { lifecycle: RuntimeLifecycleDto },
-    StartupFailed { phase: StartupPhaseDto },
+    RuntimeStateChanged {
+        lifecycle: RuntimeLifecycleDto,
+    },
+    StartupFailed {
+        phase: StartupPhaseDto,
+    },
     AppearanceSettingsChanged,
     LibraryRootsChanged,
-    LibraryRootChanged { library_root_id: String },
+    LibraryRootChanged {
+        library_root_id: String,
+    },
+    JobStateChanged {
+        job_run_id: String,
+    },
+    JobProgress {
+        job_run_id: String,
+        phase: String,
+        completed_units: Option<u64>,
+        total_units: Option<u64>,
+        status_key: Option<String>,
+    },
+    SourceEntriesChanged {
+        library_root_id: String,
+        scope: SourceEntriesChangeScopeDto,
+    },
 }
 
 /// Unified runtime event envelope.
@@ -351,6 +575,31 @@ pub fn runtime_event_dto(event: &RuntimeEvent) -> RuntimeEventDto {
                     library_root_id: library_root_id.to_string(),
                 }
             }
+            RuntimeEventPayload::JobStateChanged { job_run_id } => {
+                RuntimeEventPayloadDto::JobStateChanged {
+                    job_run_id: job_run_id.to_string(),
+                }
+            }
+            RuntimeEventPayload::JobProgress {
+                job_run_id,
+                phase,
+                completed_units,
+                total_units,
+                status_key,
+            } => RuntimeEventPayloadDto::JobProgress {
+                job_run_id: job_run_id.to_string(),
+                phase: phase.clone(),
+                completed_units: *completed_units,
+                total_units: *total_units,
+                status_key: status_key.clone(),
+            },
+            RuntimeEventPayload::SourceEntriesChanged {
+                library_root_id,
+                scope,
+            } => RuntimeEventPayloadDto::SourceEntriesChanged {
+                library_root_id: library_root_id.to_string(),
+                scope: source_entries_scope_dto(*scope),
+            },
         },
     }
 }
@@ -557,6 +806,72 @@ pub fn remove_library_root(
     host()
         .remove_library_root_with_context(&context, id)
         .map(|result| remove_library_root_dto(&result))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Admits one durable single-root library scan.
+#[allow(clippy::result_large_err)]
+pub fn start_library_scan(
+    library_root_id: String,
+) -> Result<StartLibraryScanResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "start_library_scan")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_library_root_id(&library_root_id, context.trace_id())?;
+    host()
+        .start_library_scan_with_context(id, &context)
+        .map(|result| start_library_scan_result_dto(&result))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Lists one closed authoritative Jobs scope.
+#[allow(clippy::result_large_err)]
+pub fn list_jobs(request: ListJobsRequestDto) -> Result<JobSummaryPageDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("jobs", "list_jobs")
+        .map_err(|error| application_error_dto(&error))?;
+    let scope = match request.scope {
+        ListJobsScopeDto::Active => ListJobsScope::Active,
+        ListJobsScopeDto::RecentTerminal { offset, page_size } => {
+            ListJobsScope::RecentTerminal { offset, page_size }
+        }
+    };
+    host()
+        .list_jobs_with_context(ListJobsQuery::new(scope), &context)
+        .map(|page| job_summary_page_dto(&page))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads one authoritative job detail.
+#[allow(clippy::result_large_err)]
+pub fn get_job(job_run_id: String) -> Result<JobDetailDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("jobs", "get_job")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_job_run_id(&job_run_id, context.trace_id())?;
+    host()
+        .get_job_with_context(id, &context)
+        .map(|detail| job_detail_dto(&detail))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Requests durable cancellation for one job.
+#[allow(clippy::result_large_err)]
+pub fn cancel_job(job_run_id: String) -> Result<CancelJobResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("jobs", "cancel_job")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_job_run_id(&job_run_id, context.trace_id())?;
+    host()
+        .cancel_job_with_context(id, &context)
+        .map(|result| match result {
+            argus_application::CancelJobResult::CancellationRequested => {
+                CancelJobResultDto::CancellationRequested
+            }
+            argus_application::CancelJobResult::NoLongerCancellable => {
+                CancelJobResultDto::NoLongerCancellable
+            }
+        })
         .map_err(|error| application_error_dto(&error))
 }
 
@@ -939,6 +1254,222 @@ pub fn add_local_library_root_dto(
 pub fn remove_library_root_dto(result: &RemoveLibraryRootResult) -> RemoveLibraryRootResultDto {
     match result {
         RemoveLibraryRootResult::Removed => RemoveLibraryRootResultDto::Removed,
+        RemoveLibraryRootResult::RootHasActiveScan {
+            library_root_id,
+            job_run_id,
+            scan_run_id,
+            owning_job_root_count,
+        } => RemoveLibraryRootResultDto::RootHasActiveScan {
+            library_root_id: library_root_id.to_string(),
+            job_run_id: job_run_id.to_string(),
+            scan_run_id: scan_run_id.to_string(),
+            owning_job_root_count: *owning_job_root_count,
+        },
+    }
+}
+
+/// Parses one bridge-supplied job-run identity with typed validation.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn parse_job_run_id(
+    value: &str,
+    trace_id: argus_application::TraceId,
+) -> Result<JobRunId, ApplicationErrorDto> {
+    JobRunId::try_from(value).map_err(|_| {
+        application_error_dto(
+            &ApplicationError::from_code(
+                argus_application::ErrorCode::ValidationInvalidArgument,
+                trace_id,
+                SafeContext::new(),
+            )
+            .expect("validation error"),
+        )
+    })
+}
+
+/// Maps one scan admission outcome into its typed transport union.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn start_library_scan_result_dto(result: &StartLibraryScanResult) -> StartLibraryScanResultDto {
+    match result {
+        StartLibraryScanResult::Admitted(handle) => {
+            StartLibraryScanResultDto::Admitted(OperationHandleDto {
+                job_run_id: handle.job_run_id().to_string(),
+                operation_type: handle.operation_type().to_owned(),
+            })
+        }
+        StartLibraryScanResult::AlreadyScanning {
+            library_root_id,
+            active_job_run_id,
+            active_scan_run_id,
+        } => StartLibraryScanResultDto::AlreadyScanning {
+            library_root_id: library_root_id.to_string(),
+            active_job_run_id: active_job_run_id.to_string(),
+            active_scan_run_id: active_scan_run_id.to_string(),
+        },
+    }
+}
+
+/// Maps one authoritative job-row page into its transport projection.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn job_summary_page_dto(page: &JobSummaryPage) -> JobSummaryPageDto {
+    JobSummaryPageDto {
+        items: page.items().iter().map(job_summary_dto).collect(),
+        total_count: page.total_count(),
+        next_offset: page.next_offset(),
+    }
+}
+
+/// Maps one authoritative job detail into its transport projection.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn job_detail_dto(detail: &JobDetail) -> JobDetailDto {
+    JobDetailDto {
+        job: job_run_dto(detail.job()),
+        operation_detail: match detail.operation_detail() {
+            OperationDetail::LibraryScan(scan_detail) => {
+                OperationDetailDto::LibraryScan(library_scan_job_detail_dto(scan_detail))
+            }
+        },
+    }
+}
+
+fn job_summary_dto(summary: &JobSummary) -> JobSummaryDto {
+    JobSummaryDto {
+        job_run_id: summary.job_run_id().to_string(),
+        operation_type: summary.operation_type().to_owned(),
+        state: job_state_dto(summary.state()),
+        phase: summary.phase().map(str::to_owned),
+        created_at_ms: summary.created_at_ms(),
+        started_at_ms: summary.started_at_ms(),
+        terminal_at_ms: summary.terminal_at_ms(),
+        cancellation_requested: summary.cancellation_requested(),
+        safe_context_summary: summary.safe_context_summary().map(str::to_owned),
+    }
+}
+
+fn job_run_dto(job: &JobRunProjection) -> JobRunDto {
+    JobRunDto {
+        job_run_id: job.job_run_id().to_string(),
+        operation_type: job.operation_type().to_owned(),
+        state: job_state_dto(job.state()),
+        phase: job.phase().map(str::to_owned),
+        completed_units: job.completed_units(),
+        total_units: job.total_units(),
+        status_key: job.status_key().map(str::to_owned),
+        created_at_ms: job.created_at_ms(),
+        queued_at_ms: job.queued_at_ms(),
+        started_at_ms: job.started_at_ms(),
+        terminal_at_ms: job.terminal_at_ms(),
+        cancellation_requested: job.cancellation_requested(),
+        controls: JobControlAvailabilityDto {
+            can_cancel: job.controls().can_cancel(),
+            can_retry: job.controls().can_retry(),
+        },
+        bounded_terminal_failure: match (job.terminal_error_code(), job.terminal_safe_context()) {
+            (None, None) => None,
+            (code, context) => Some(BoundedTerminalFailureDto {
+                error_code: code.map(str::to_owned),
+                safe_context: context.map(str::to_owned),
+            }),
+        },
+    }
+}
+
+fn library_scan_job_detail_dto(detail: &LibraryScanJobDetail) -> LibraryScanJobDetailDto {
+    LibraryScanJobDetailDto {
+        requested_roots: detail
+            .requested_roots()
+            .iter()
+            .map(root_summary_dto)
+            .collect(),
+        admitted_roots: detail
+            .admitted_roots()
+            .iter()
+            .map(root_summary_dto)
+            .collect(),
+        exclusions: detail.exclusions().iter().map(exclusion_dto).collect(),
+        scan_runs: detail.scan_runs().iter().map(scan_run_dto).collect(),
+        progress: scan_progress_dto(detail.progress()),
+        retry_source_job_run_id: detail.retry_source_job_run_id().map(|id| id.to_string()),
+        retry_successor_job_run_id: detail.retry_successor_job_run_id().map(|id| id.to_string()),
+    }
+}
+
+fn root_summary_dto(summary: &LibraryScanRootSummary) -> LibraryScanRootSummaryDto {
+    LibraryScanRootSummaryDto {
+        library_root_id: summary.library_root_id().to_string(),
+        display_name: summary.display_name().to_owned(),
+        safe_location_display: summary.safe_location_display().to_owned(),
+    }
+}
+
+fn exclusion_dto(exclusion: &LibraryScanAdmissionExclusion) -> LibraryScanAdmissionExclusionDto {
+    LibraryScanAdmissionExclusionDto {
+        library_root_id: exclusion.library_root_id().to_string(),
+        reason: exclusion.reason().as_str().to_owned(),
+        active_job_run_id: exclusion.active_job_run_id().map(|id| id.to_string()),
+        active_scan_run_id: exclusion.active_scan_run_id().map(|id| id.to_string()),
+    }
+}
+
+fn scan_run_dto(scan: &ScanRunProjection) -> ScanRunDto {
+    ScanRunDto {
+        scan_run_id: scan.scan_run_id().to_string(),
+        job_run_id: scan.job_run_id().to_string(),
+        library_root_id: scan.library_root_id().to_string(),
+        display_name: scan.display_name().to_owned(),
+        safe_location_display: scan.safe_location_display().to_owned(),
+        status: match scan.status() {
+            ScanRunStatus::Running => ScanRunStatusDto::Running,
+            ScanRunStatus::Complete => ScanRunStatusDto::Complete,
+            ScanRunStatus::Partial => ScanRunStatusDto::Partial,
+            ScanRunStatus::Failed => ScanRunStatusDto::Failed,
+            ScanRunStatus::Cancelled => ScanRunStatusDto::Cancelled,
+            ScanRunStatus::Abandoned => ScanRunStatusDto::Abandoned,
+        },
+        started_at_ms: scan.started_at_ms(),
+        completed_at_ms: scan.completed_at_ms(),
+    }
+}
+
+fn scan_progress_dto(progress: &ScanProgressFacts) -> ScanProgressFactsDto {
+    ScanProgressFactsDto {
+        phase: progress.phase().map(str::to_owned),
+        completed_units: progress.completed_units(),
+        total_units: progress.total_units(),
+        status_key: progress.status_key().map(str::to_owned),
+        roots_requested: progress.roots_requested(),
+        roots_admitted: progress.roots_admitted(),
+        roots_terminal: progress.roots_terminal(),
+        entries_committed: progress.entries_committed(),
+    }
+}
+
+fn job_state_dto(state: JobRunState) -> JobRunStateDto {
+    match state {
+        JobRunState::Queued => JobRunStateDto::Queued,
+        JobRunState::Preparing => JobRunStateDto::Preparing,
+        JobRunState::Running => JobRunStateDto::Running,
+        JobRunState::Completed => JobRunStateDto::Completed,
+        JobRunState::CompletedWithIssues => JobRunStateDto::CompletedWithIssues,
+        JobRunState::Failed => JobRunStateDto::Failed,
+        JobRunState::Cancelled => JobRunStateDto::Cancelled,
+        JobRunState::Interrupted => JobRunStateDto::Interrupted,
+        JobRunState::Abandoned => JobRunStateDto::Abandoned,
+    }
+}
+
+fn source_entries_scope_dto(scope: SourceEntriesChangeScope) -> SourceEntriesChangeScopeDto {
+    match scope {
+        SourceEntriesChangeScope::RootChildren => SourceEntriesChangeScopeDto::RootChildren,
+        SourceEntriesChangeScope::EntryChildren(id) => {
+            SourceEntriesChangeScopeDto::EntryChildren(id.to_string())
+        }
+        SourceEntriesChangeScope::EntireRootHierarchy => {
+            SourceEntriesChangeScopeDto::EntireRootHierarchy
+        }
     }
 }
 

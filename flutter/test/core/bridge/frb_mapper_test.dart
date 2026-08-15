@@ -111,8 +111,8 @@ void main() {
 
   test('remove result DTO maps the slice outcome', () {
     expect(
-      removeLibraryRootResultFromDto(dto.RemoveLibraryRootResultDto.removed),
-      RemoveLibraryRootResult.removed,
+      removeLibraryRootResultFromDto(dto.RemoveLibraryRootResultDto.removed()),
+      const RemoveLibraryRootResult.removed(),
     );
   });
 
@@ -400,5 +400,110 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('scan admission and cancel results map with typed identities', () {
+    final admitted = startLibraryScanResultFromDto(
+      dto.StartLibraryScanResultDto_Admitted(
+        dto.OperationHandleDto(
+          jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          operationType: 'library_scan',
+        ),
+      ),
+    );
+    expect(
+      admitted,
+      isA<StartLibraryScanResultAdmitted>().having(
+        (result) => result.handle.jobRunId,
+        'jobRunId',
+        const JobRunId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      ),
+    );
+
+    final already = startLibraryScanResultFromDto(
+      dto.StartLibraryScanResultDto_AlreadyScanning(
+        libraryRootId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        activeJobRunId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        activeScanRunId: 'cccccccccccccccccccccccccccccccc',
+      ),
+    );
+    expect(already, isA<StartLibraryScanResultAlreadyScanning>());
+
+    expect(
+      cancelJobResultFromDto(dto.CancelJobResultDto.cancellationRequested),
+      CancelJobResult.cancellationRequested,
+    );
+  });
+
+  test('job detail and progress map with lifecycle and scan facts', () {
+    final detail = jobDetailFromDto(
+      dto.JobDetailDto(
+        job: dto.JobRunDto(
+          jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          operationType: 'library_scan',
+          state: dto.JobRunStateDto.running,
+          phase: 'discovering',
+          completedUnits: BigInt.from(3),
+          totalUnits: null,
+          statusKey: 'library_scan.discovering',
+          createdAtMs: 1,
+          cancellationRequested: false,
+          controls: const dto.JobControlAvailabilityDto(
+            canCancel: true,
+            canRetry: false,
+          ),
+          boundedTerminalFailure: null,
+        ),
+        operationDetail: dto.OperationDetailDto_LibraryScan(
+          dto.LibraryScanJobDetailDto(
+            requestedRoots: const [],
+            admittedRoots: const [],
+            exclusions: const [],
+            scanRuns: const [],
+            progress: dto.ScanProgressFactsDto(
+              rootsRequested: 1,
+              rootsAdmitted: 1,
+              rootsTerminal: 0,
+              entriesCommitted: BigInt.from(3),
+            ),
+            retrySourceJobRunId: null,
+            retrySuccessorJobRunId: null,
+          ),
+        ),
+      ),
+    );
+
+    expect(detail.job.lifecycleState, JobLifecycleState.running);
+    expect(detail.job.completedUnits, 3);
+    expect(detail.job.controls.canCancel, isTrue);
+    final scanDetail = detail.operationDetail as OperationDetailLibraryScan;
+    expect(scanDetail.detail.progress.entriesCommitted, 3);
+  });
+
+  test('job and source-entry event payloads map with bounded identity', () {
+    final jobState = runtimeEventFromDto(
+      dto.RuntimeEventDto(
+        runtimeInstanceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sequence: BigInt.from(1),
+        occurredAtMs: BigInt.from(1),
+        payload: const dto.RuntimeEventPayloadDto.jobStateChanged(
+          jobRunId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        ),
+      ),
+    );
+    expect(jobState.payload, isA<RuntimeEventPayloadJobStateChanged>());
+
+    final entries = runtimeEventFromDto(
+      dto.RuntimeEventDto(
+        runtimeInstanceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        sequence: BigInt.from(2),
+        occurredAtMs: BigInt.from(2),
+        payload: dto.RuntimeEventPayloadDto.sourceEntriesChanged(
+          libraryRootId: 'cccccccccccccccccccccccccccccccc',
+          scope: dto.SourceEntriesChangeScopeDto.entireRootHierarchy(),
+        ),
+      ),
+    );
+    expect(entries.payload, isA<RuntimeEventPayloadSourceEntriesChanged>());
   });
 }

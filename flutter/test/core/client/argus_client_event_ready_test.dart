@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:argus/core/client/client.dart';
+import 'jobs_gateway_stub.dart';
 import 'sources_gateway_stub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -35,7 +36,7 @@ void main() {
 }
 
 final class _AttachControlledGateway
-    with SourcesGatewayStub
+    with SourcesGatewayStub, JobsGatewayStub
     implements ArgusClientGateway {
   final RuntimeInstanceId id = RuntimeInstanceId('a' * 32);
   final Completer<void> attach = Completer<void>();

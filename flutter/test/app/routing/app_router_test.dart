@@ -156,7 +156,7 @@ void main() {
       '/startup',
       '/library',
       '/collections',
-      '/jobs',
+      '/games',
       '/game-detail',
       '/diagnostics',
     ]) {
@@ -164,6 +164,76 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Page not found'), findsOneWidget, reason: path);
     }
+  });
+
+  testWidgets('stateful branches restore prior locations and canonicalize '
+      'on active reselection', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.reset);
+    final host = createHost(
+      sources: FakeSourcesApi(
+        roots: [
+          fakeRoot(
+            id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            displayName: 'Games',
+          ),
+        ],
+      ),
+    );
+    final router = host.container.read(appRouterProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: host.container,
+        child: const _RouterHost(),
+      ),
+    );
+    await loadAppearance(tester, host.api);
+
+    const rootPath = '/sources/roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    router.go(rootPath);
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, rootPath);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/settings');
+
+    // Switching back to Sources restores that branch's prior location.
+    await tester.tap(find.text('Sources'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(router.routeInformationProvider.value.uri.path, rootPath);
+
+    // Reselecting the active Sources destination canonicalizes to /sources.
+    await tester.tap(find.text('Sources'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(router.routeInformationProvider.value.uri.path, '/sources');
+
+    // Jobs keeps an independent branch.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Jobs'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(router.routeInformationProvider.value.uri.path, '/jobs');
+    await tester.tap(find.text('Settings'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Jobs'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(router.routeInformationProvider.value.uri.path, '/jobs');
   });
 
   testWidgets('Sources renders the configured-root landing and opens detail', (

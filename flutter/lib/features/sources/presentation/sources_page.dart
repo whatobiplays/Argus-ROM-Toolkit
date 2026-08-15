@@ -12,10 +12,17 @@ import 'sources_messages.dart';
 /// Presentation only: navigation is callback-driven and all displayed state
 /// comes from focused authoritative reads.
 class SourcesPage extends ConsumerWidget {
-  const SourcesPage({required this.onOpenRoot, super.key});
+  const SourcesPage({
+    required this.onOpenRoot,
+    required this.onOpenJob,
+    super.key,
+  });
 
   /// Opens one configured root's detail location.
   final void Function(LibraryRootId rootId) onOpenRoot;
+
+  /// Opens one durable job detail through the typed Jobs route.
+  final void Function(JobRunId jobRunId) onOpenJob;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -102,7 +109,13 @@ class SourcesPage extends ConsumerWidget {
               leading: const Icon(Icons.folder_outlined),
               title: Text(root.displayName),
               subtitle: Text(root.safeLocationPresentation),
-              trailing: Text(SourcesMessages.neverScanned),
+              trailing: Text(
+                root.activeScan != null
+                    ? SourcesMessages.scanningInProgress
+                    : root.lastScan != null
+                    ? SourcesMessages.lastScanStatus(root.lastScan!.status)
+                    : SourcesMessages.neverScanned,
+              ),
               onTap: () => onOpenRoot(root.id),
             );
           },

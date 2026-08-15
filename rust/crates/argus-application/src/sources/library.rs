@@ -1,9 +1,16 @@
 //! Focused library-root configuration capabilities for Slice 001.
 
+use crate::jobs::{
+    AdmittedScan, JobRunRepository, LibraryScanExecutionPlan, LibraryScanTargetKind,
+    LibraryScanTargetRepository, OPERATION_TYPE_LIBRARY_SCAN, OperationHandle, ScanRunRepository,
+    SourceEntryRepository,
+};
 use crate::{
-    ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder,
-    LibraryRootChanged, LibraryRootId, LibraryRootsChanged, OperationContext, PersistenceError,
-    SafeContext, UnitOfWork, UnitOfWorkFactory,
+    ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder, JobRunId,
+    JobRunState, LibraryRootChanged, LibraryRootId, LibraryRootsChanged,
+    LibraryScanAdmissionResult, NewJobRun, NewLibraryScanTarget, NewScanRun, OperationContext,
+    PersistenceError, SafeContext, ScanRunId, StartLibraryScanResult, UnitOfWork,
+    UnitOfWorkFactory,
 };
 
 use super::provider::{
@@ -297,6 +304,61 @@ pub struct NewLibraryRoot {
     config_revision: u32,
 }
 
+/// Frozen root configuration facts required to build one scan plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRootScanConfiguration {
+    root_id: LibraryRootId,
+    locator: RootLocator,
+    display_name: String,
+    safe_location_presentation: String,
+    config_revision: u32,
+}
+
+impl LibraryRootScanConfiguration {
+    /// Creates one scan configuration view.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        root_id: LibraryRootId,
+        locator: RootLocator,
+        display_name: impl Into<String>,
+        safe_location_presentation: impl Into<String>,
+        config_revision: u32,
+    ) -> Self {
+        Self {
+            root_id,
+            locator,
+            display_name: display_name.into(),
+            safe_location_presentation: safe_location_presentation.into(),
+            config_revision,
+        }
+    }
+
+    /// Returns the configured root identity.
+    pub fn root_id(&self) -> LibraryRootId {
+        self.root_id
+    }
+
+    /// Returns the opaque provider-owned locator.
+    pub fn locator(&self) -> &RootLocator {
+        &self.locator
+    }
+
+    /// Returns the application-owned display name.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    /// Returns the safe location presentation.
+    pub fn safe_location_presentation(&self) -> &str {
+        &self.safe_location_presentation
+    }
+
+    /// Returns the root configuration revision.
+    pub fn config_revision(&self) -> u32 {
+        self.config_revision
+    }
+}
+
 impl NewLibraryRoot {
     /// Creates one root configuration for insertion.
     pub fn new(
@@ -370,6 +432,13 @@ pub trait LibraryRootQueries {
         &self,
         context: &OperationContext,
     ) -> Result<Vec<LibraryRootConfiguration>, PersistenceError>;
+
+    /// Reads the frozen root configuration facts for one scan plan.
+    fn get_scan_configuration(
+        &self,
+        context: &OperationContext,
+        root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError>;
 }
 
 impl<Q> LibraryRootQueries for &Q
@@ -399,6 +468,14 @@ where
     ) -> Result<Vec<LibraryRootConfiguration>, PersistenceError> {
         (*self).list_root_configurations(context)
     }
+
+    fn get_scan_configuration(
+        &self,
+        context: &OperationContext,
+        root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError> {
+        (*self).get_scan_configuration(context, root_id)
+    }
 }
 
 /// Transaction-scoped internal library-source repository.
@@ -417,6 +494,23 @@ pub trait LibraryRootRepository {
 
     /// Deletes one current root and reports whether a row was removed.
     fn delete(&mut self, root_id: LibraryRootId) -> Result<bool, PersistenceError>;
+
+    /// Reports whether one current root is configured.
+    fn exists(&mut self, root_id: LibraryRootId) -> Result<bool, PersistenceError>;
+
+    /// Updates application-owned root availability evidence.
+    fn set_availability(
+        &mut self,
+        root_id: LibraryRootId,
+        availability: LibraryRootAvailability,
+    ) -> Result<bool, PersistenceError>;
+
+    /// Updates the authoritative root last-scan summary; `None` clears it.
+    fn set_last_scan(
+        &mut self,
+        root_id: LibraryRootId,
+        summary: Option<LibraryRootLastScanSummary>,
+    ) -> Result<bool, PersistenceError>;
 }
 
 /// Parameterized bounded root-list request.
@@ -497,6 +591,24 @@ impl RemoveLibraryRootCommand {
     }
 }
 
+/// One single-root scan admission request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StartLibraryScanCommand {
+    root_id: LibraryRootId,
+}
+
+impl StartLibraryScanCommand {
+    /// Creates a scan request for one configured root.
+    pub const fn new(root_id: LibraryRootId) -> Self {
+        Self { root_id }
+    }
+
+    /// Returns the requested root identity.
+    pub const fn root_id(self) -> LibraryRootId {
+        self.root_id
+    }
+}
+
 /// Typed outcome of one root-only add operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AddLocalLibraryRootResult {
@@ -513,6 +625,13 @@ pub enum AddLocalLibraryRootResult {
 pub enum RemoveLibraryRootResult {
     /// The current Argus root configuration was removed.
     Removed,
+    /// The root is owned by an active scan and was not removed.
+    RootHasActiveScan {
+        library_root_id: LibraryRootId,
+        job_run_id: JobRunId,
+        scan_run_id: ScanRunId,
+        owning_job_root_count: u32,
+    },
 }
 
 /// Handles the bounded authoritative root-list query.
@@ -707,11 +826,36 @@ where
     where
         R: EventRecorder + Clone + Send + Sync + 'static,
     {
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        enum RemoveWork {
+            Removed,
+            RootHasActiveScan {
+                job_run_id: JobRunId,
+                scan_run_id: ScanRunId,
+                owning_job_root_count: u32,
+            },
+        }
         let root_id = command.root_id();
-        self.unit_of_work
+        let work = self
+            .unit_of_work
             .clone()
             .execute(&context, move |mut scope| {
+                let ownership = {
+                    let mut scan_runs = scope.scan_runs();
+                    scan_runs.find_active_ownership(root_id)?
+                };
+                if let Some(ownership) = ownership {
+                    scope.commit()?;
+                    return Ok::<_, ApplicationPortError>(RemoveWork::RootHasActiveScan {
+                        job_run_id: ownership.job_run_id(),
+                        scan_run_id: ownership.scan_run_id(),
+                        owning_job_root_count: ownership.owning_job_root_count(),
+                    });
+                }
                 let deleted = scope.library_roots().delete(root_id)?;
+                if deleted {
+                    scope.source_entries().delete_for_root(root_id)?;
+                }
                 if deleted {
                     recorder.record(ApplicationEvent::LibraryRootsChanged(LibraryRootsChanged))?;
                     recorder.record(ApplicationEvent::LibraryRootChanged(LibraryRootChanged {
@@ -719,11 +863,193 @@ where
                     }))?;
                 }
                 scope.commit()?;
-                Ok::<_, ApplicationPortError>(deleted)
+                Ok::<_, ApplicationPortError>(RemoveWork::Removed)
             })
             .map_err(|error| map_port_error(context.trace_id(), error))?;
-        Ok(RemoveLibraryRootResult::Removed)
+        match work {
+            RemoveWork::Removed => Ok(RemoveLibraryRootResult::Removed),
+            RemoveWork::RootHasActiveScan {
+                job_run_id,
+                scan_run_id,
+                owning_job_root_count,
+            } => Ok(RemoveLibraryRootResult::RootHasActiveScan {
+                library_root_id: root_id,
+                job_run_id,
+                scan_run_id,
+                owning_job_root_count,
+            }),
+        }
     }
+}
+
+/// Handles one durable single-root scan admission.
+pub struct StartLibraryScanHandler<Q, U> {
+    queries: Q,
+    unit_of_work: U,
+}
+
+impl<Q, U> StartLibraryScanHandler<Q, U> {
+    /// Composes the root query and Unit of Work capabilities.
+    pub const fn new(queries: Q, unit_of_work: U) -> Self {
+        Self {
+            queries,
+            unit_of_work,
+        }
+    }
+}
+
+impl<Q, U> StartLibraryScanHandler<Q, U>
+where
+    Q: LibraryRootQueries,
+    U: UnitOfWorkFactory + Clone,
+{
+    /// Validates the configured root, freezes the scan plan, enforces one
+    /// active scan per root, and atomically establishes the durable
+    /// JobRun/ScanRun admission state.
+    pub fn handle<R>(
+        &self,
+        command: StartLibraryScanCommand,
+        context: OperationContext,
+        recorder: R,
+    ) -> Result<LibraryScanAdmissionResult, ApplicationError>
+    where
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        let root_id = command.root_id();
+        let configuration = self
+            .queries
+            .get_scan_configuration(&context, root_id)
+            .map_err(|error| map_persistence_error(context.trace_id(), error))?
+            .ok_or_else(|| {
+                application_error(
+                    context.trace_id(),
+                    ErrorCode::ConfigurationLibraryRootNotFound,
+                )
+            })?;
+        let locator = configuration.locator().clone();
+        let display_name = configuration.display_name().to_owned();
+        let safe_location = configuration.safe_location_presentation().to_owned();
+        let config_revision = configuration.config_revision();
+        let created_at_ms = now_millis();
+        let closure_locator = locator.clone();
+        let closure_display_name = display_name.clone();
+        let closure_safe_location = safe_location.clone();
+        let admitted = self
+            .unit_of_work
+            .clone()
+            .execute(&context, move |mut scope| {
+                if !scope.library_roots().exists(root_id)? {
+                    return Ok::<_, ApplicationPortError>(AdmissionWork::MissingRoot);
+                }
+                let ownership = {
+                    let mut scan_runs = scope.scan_runs();
+                    scan_runs.find_active_ownership(root_id)?
+                };
+                if let Some(ownership) = ownership {
+                    return Ok::<_, ApplicationPortError>(AdmissionWork::AlreadyScanning {
+                        active_job_run_id: ownership.job_run_id(),
+                        active_scan_run_id: ownership.scan_run_id(),
+                    });
+                }
+                let job_run_id = scope
+                    .job_runs()
+                    .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
+                let scan_run_id = scope.scan_runs().insert(NewScanRun::new(
+                    job_run_id,
+                    root_id,
+                    closure_locator,
+                    &closure_display_name,
+                    &closure_safe_location,
+                    1,
+                    config_revision,
+                    created_at_ms,
+                ))?;
+                scope
+                    .library_scan_targets()
+                    .insert(NewLibraryScanTarget::new(
+                        job_run_id,
+                        LibraryScanTargetKind::Requested,
+                        root_id,
+                        &closure_display_name,
+                        &closure_safe_location,
+                        None,
+                        None,
+                    ))?;
+                scope
+                    .library_scan_targets()
+                    .insert(NewLibraryScanTarget::new(
+                        job_run_id,
+                        LibraryScanTargetKind::Admitted,
+                        root_id,
+                        &closure_display_name,
+                        &closure_safe_location,
+                        Some(scan_run_id),
+                        None,
+                    ))?;
+                recorder.record(ApplicationEvent::LibraryRootChanged(LibraryRootChanged {
+                    library_root_id: root_id,
+                }))?;
+                recorder.record(ApplicationEvent::JobStateChanged(crate::JobStateChanged {
+                    job_run_id,
+                }))?;
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(AdmissionWork::Admitted {
+                    job_run_id,
+                    scan_run_id,
+                })
+            })
+            .map_err(|error| map_port_error(context.trace_id(), error))?;
+
+        match admitted {
+            AdmissionWork::MissingRoot => Err(application_error(
+                context.trace_id(),
+                ErrorCode::ConfigurationLibraryRootNotFound,
+            )),
+            AdmissionWork::AlreadyScanning {
+                active_job_run_id,
+                active_scan_run_id,
+            } => Ok(LibraryScanAdmissionResult::not_admitted(
+                StartLibraryScanResult::AlreadyScanning {
+                    library_root_id: root_id,
+                    active_job_run_id,
+                    active_scan_run_id,
+                },
+            )),
+            AdmissionWork::Admitted {
+                job_run_id,
+                scan_run_id,
+            } => {
+                let plan = LibraryScanExecutionPlan::new(
+                    root_id,
+                    job_run_id,
+                    scan_run_id,
+                    locator,
+                    display_name,
+                    safe_location,
+                    1,
+                    config_revision,
+                    1,
+                    created_at_ms,
+                );
+                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                let admitted = AdmittedScan::new(job_run_id, scan_run_id, plan);
+                Ok(LibraryScanAdmissionResult::admitted(handle, admitted))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AdmissionWork {
+    MissingRoot,
+    AlreadyScanning {
+        active_job_run_id: JobRunId,
+        active_scan_run_id: ScanRunId,
+    },
+    Admitted {
+        job_run_id: JobRunId,
+        scan_run_id: ScanRunId,
+    },
 }
 
 /// Thin application capability façade for library-root configuration.
@@ -809,6 +1135,75 @@ where
         RemoveLibraryRootHandler::new(self.unit_of_work.clone()).handle(command, context, recorder)
     }
 
+    /// Admit one durable single-root library scan.
+    pub fn start_library_scan<R>(
+        &self,
+        command: StartLibraryScanCommand,
+        context: OperationContext,
+        recorder: R,
+    ) -> Result<LibraryScanAdmissionResult, ApplicationError>
+    where
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        StartLibraryScanHandler::new(self.queries.clone(), self.unit_of_work.clone())
+            .handle(command, context, recorder)
+    }
+
+    /// Terminalizes an admitted run whose manager registration failed so no
+    /// orphan nonterminal JobRun/ScanRun survives.
+    pub fn fail_unregistered_scan<R>(
+        &self,
+        root_id: LibraryRootId,
+        job_run_id: JobRunId,
+        context: OperationContext,
+        recorder: R,
+    ) -> Result<(), ApplicationError>
+    where
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        self.unit_of_work
+            .clone()
+            .execute(&context, move |mut scope| {
+                let Some(ownership) = scope.scan_runs().find_active_ownership(root_id)? else {
+                    scope.commit()?;
+                    return Ok::<_, ApplicationPortError>(());
+                };
+                if ownership.job_run_id() != job_run_id {
+                    scope.commit()?;
+                    return Ok::<_, ApplicationPortError>(());
+                }
+                let timestamp_ms = now_millis();
+                scope.scan_runs().set_status(
+                    ownership.scan_run_id(),
+                    crate::jobs::ScanRunStatus::Failed,
+                    Some(timestamp_ms),
+                    Some("admission_registration_failed".to_owned()),
+                )?;
+                scope
+                    .job_runs()
+                    .set_state(job_run_id, JobRunState::Failed, timestamp_ms)?;
+                let summary = LibraryRootLastScanSummary::new(
+                    ownership.scan_run_id().to_string(),
+                    job_run_id.to_string(),
+                    LibraryRootLastScanStatus::Failed,
+                    timestamp_ms,
+                    Some(timestamp_ms),
+                );
+                scope
+                    .library_roots()
+                    .set_last_scan(root_id, Some(summary))?;
+                recorder.record(ApplicationEvent::LibraryRootChanged(LibraryRootChanged {
+                    library_root_id: root_id,
+                }))?;
+                recorder.record(ApplicationEvent::JobStateChanged(crate::JobStateChanged {
+                    job_run_id,
+                }))?;
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(())
+            })
+            .map_err(|error| map_port_error(context.trace_id(), error))
+    }
+
     fn add_handler(&self) -> AddLocalLibraryRootHandler<P, Q, U> {
         AddLocalLibraryRootHandler::new(
             self.provider.clone(),
@@ -842,6 +1237,13 @@ fn map_provider_error(trace_id: crate::TraceId, error: ProviderError) -> Applica
 fn application_error(trace_id: crate::TraceId, code: ErrorCode) -> ApplicationError {
     ApplicationError::from_code(code, trace_id, SafeContext::new())
         .expect("sources error context follows the published catalog")
+}
+
+pub(crate) fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
 }
 
 pub(crate) fn map_persistence_error(

@@ -183,6 +183,54 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   );
 
   @override
+  Future<StartLibraryScanResult> startLibraryScan(
+    LibraryRootId libraryRootId,
+  ) => _call(
+    () async => startLibraryScanResultFromDto(
+      await _rustApi.crateStartLibraryScan(libraryRootId: libraryRootId.value),
+    ),
+  );
+
+  @override
+  Future<JobSummaryPage> listActiveJobs() => _call(
+    () async => jobSummaryPageFromDto(
+      await _rustApi.crateListJobs(
+        request: dto.ListJobsRequestDto(scope: dto.ListJobsScopeDto.active()),
+      ),
+    ),
+  );
+
+  @override
+  Future<JobSummaryPage> listRecentTerminalJobs({
+    required int offset,
+    required int pageSize,
+  }) => _call(
+    () async => jobSummaryPageFromDto(
+      await _rustApi.crateListJobs(
+        request: dto.ListJobsRequestDto(
+          scope: dto.ListJobsScopeDto.recentTerminal(
+            offset: offset,
+            pageSize: pageSize,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Future<JobDetail> getJob(JobRunId jobRunId) => _call(
+    () async =>
+        jobDetailFromDto(await _rustApi.crateGetJob(jobRunId: jobRunId.value)),
+  );
+
+  @override
+  Future<CancelJobResult> cancelJob(JobRunId jobRunId) => _call(
+    () async => cancelJobResultFromDto(
+      await _rustApi.crateCancelJob(jobRunId: jobRunId.value),
+    ),
+  );
+
+  @override
   Future<DiagnosticsExport> exportStartupDiagnostics(
     RuntimeInstanceId expected,
     String destination,
@@ -506,6 +554,20 @@ RuntimeEvent runtimeEventFromDto(dto.RuntimeEventDto value) {
     libraryRootChanged: (event) => RuntimeEventPayload.libraryRootChanged(
       libraryRootId: libraryRootIdFromDto(event.libraryRootId),
     ),
+    jobStateChanged: (event) => RuntimeEventPayload.jobStateChanged(
+      jobRunId: jobRunIdFromDto(event.jobRunId),
+    ),
+    jobProgress: (event) => RuntimeEventPayload.jobProgress(
+      jobRunId: jobRunIdFromDto(event.jobRunId),
+      phase: event.phase,
+      completedUnits: event.completedUnits?.toInt(),
+      totalUnits: event.totalUnits?.toInt(),
+      statusKey: event.statusKey,
+    ),
+    sourceEntriesChanged: (event) => RuntimeEventPayload.sourceEntriesChanged(
+      libraryRootId: libraryRootIdFromDto(event.libraryRootId),
+      scope: sourceEntriesChangeScopeFromDto(event.scope),
+    ),
   );
   return RuntimeEvent(
     runtimeInstanceId: generation,
@@ -576,7 +638,19 @@ AddLocalLibraryRootResult addLocalLibraryRootResultFromDto(
 RemoveLibraryRootResult removeLibraryRootResultFromDto(
   dto.RemoveLibraryRootResultDto value,
 ) => switch (value) {
-  dto.RemoveLibraryRootResultDto.removed => RemoveLibraryRootResult.removed,
+  dto.RemoveLibraryRootResultDto_Removed() => RemoveLibraryRootResult.removed(),
+  dto.RemoveLibraryRootResultDto_RootHasActiveScan(
+    :final libraryRootId,
+    :final jobRunId,
+    :final scanRunId,
+    :final owningJobRootCount,
+  ) =>
+    RemoveLibraryRootResult.rootHasActiveScan(
+      libraryRootId: libraryRootIdFromDto(libraryRootId),
+      jobRunId: jobRunIdFromDto(jobRunId),
+      scanRunId: scanRunIdFromDto(scanRunId),
+      owningJobRootCount: owningJobRootCount,
+    ),
 };
 
 dto.LocalFilesystemRootSelectionDto selectionToDto(
@@ -627,3 +701,209 @@ RuntimeLifecycle runtimeLifecycleFromDto(dto.RuntimeLifecycleDto value) =>
       dto.RuntimeLifecycleDto.shuttingDown => RuntimeLifecycle.shuttingDown,
       dto.RuntimeLifecycleDto.stopped => RuntimeLifecycle.stopped,
     };
+
+JobRunId jobRunIdFromDto(String value) {
+  final id = JobRunId(value);
+  if (!id.isValid) {
+    throw const TransportFailure(
+      'Native job-run identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return id;
+}
+
+ScanRunId scanRunIdFromDto(String value) {
+  final id = ScanRunId(value);
+  if (!id.isValid) {
+    throw const TransportFailure(
+      'Native scan-run identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return id;
+}
+
+JobLifecycleState jobLifecycleStateFromDto(dto.JobRunStateDto value) =>
+    switch (value) {
+      dto.JobRunStateDto.queued => JobLifecycleState.queued,
+      dto.JobRunStateDto.preparing => JobLifecycleState.preparing,
+      dto.JobRunStateDto.running => JobLifecycleState.running,
+      dto.JobRunStateDto.completed => JobLifecycleState.completed,
+      dto.JobRunStateDto.completedWithIssues =>
+        JobLifecycleState.completedWithIssues,
+      dto.JobRunStateDto.failed => JobLifecycleState.failed,
+      dto.JobRunStateDto.cancelled => JobLifecycleState.cancelled,
+      dto.JobRunStateDto.interrupted => JobLifecycleState.interrupted,
+      dto.JobRunStateDto.abandoned => JobLifecycleState.abandoned,
+    };
+
+JobScanStatus jobScanStatusFromDto(dto.ScanRunStatusDto value) =>
+    switch (value) {
+      dto.ScanRunStatusDto.running => JobScanStatus.running,
+      dto.ScanRunStatusDto.complete => JobScanStatus.complete,
+      dto.ScanRunStatusDto.partial => JobScanStatus.partial,
+      dto.ScanRunStatusDto.failed => JobScanStatus.failed,
+      dto.ScanRunStatusDto.cancelled => JobScanStatus.cancelled,
+      dto.ScanRunStatusDto.abandoned => JobScanStatus.abandoned,
+    };
+
+SourceEntriesChangeScope sourceEntriesChangeScopeFromDto(
+  dto.SourceEntriesChangeScopeDto value,
+) => switch (value) {
+  dto.SourceEntriesChangeScopeDto_RootChildren() =>
+    SourceEntriesChangeScope.rootChildren,
+  dto.SourceEntriesChangeScopeDto_EntryChildren() =>
+    SourceEntriesChangeScope.entryChildren,
+  dto.SourceEntriesChangeScopeDto_EntireRootHierarchy() =>
+    SourceEntriesChangeScope.entireRootHierarchy,
+};
+
+StartLibraryScanResult startLibraryScanResultFromDto(
+  dto.StartLibraryScanResultDto value,
+) => switch (value) {
+  dto.StartLibraryScanResultDto_Admitted(:final field0) =>
+    StartLibraryScanResult.admitted(
+      OperationHandle(
+        jobRunId: jobRunIdFromDto(field0.jobRunId),
+        operationType: field0.operationType,
+      ),
+    ),
+  dto.StartLibraryScanResultDto_AlreadyScanning(
+    :final libraryRootId,
+    :final activeJobRunId,
+    :final activeScanRunId,
+  ) =>
+    StartLibraryScanResult.alreadyScanning(
+      libraryRootId: libraryRootIdFromDto(libraryRootId),
+      activeJobRunId: jobRunIdFromDto(activeJobRunId),
+      activeScanRunId: scanRunIdFromDto(activeScanRunId),
+    ),
+};
+
+CancelJobResult cancelJobResultFromDto(dto.CancelJobResultDto value) =>
+    switch (value) {
+      dto.CancelJobResultDto.cancellationRequested =>
+        CancelJobResult.cancellationRequested,
+      dto.CancelJobResultDto.noLongerCancellable =>
+        CancelJobResult.noLongerCancellable,
+    };
+
+JobSummaryPage jobSummaryPageFromDto(dto.JobSummaryPageDto value) =>
+    JobSummaryPage(
+      items: [for (final item in value.items) jobListItemFromDto(item)],
+      totalCount: value.totalCount,
+      nextOffset: value.nextOffset,
+    );
+
+JobListItem jobListItemFromDto(dto.JobSummaryDto value) => JobListItem(
+  jobRunId: jobRunIdFromDto(value.jobRunId),
+  operationType: value.operationType,
+  lifecycleState: jobLifecycleStateFromDto(value.state),
+  phase: value.phase,
+  createdAtMs: value.createdAtMs.toInt(),
+  startedAtMs: value.startedAtMs?.toInt(),
+  terminalAtMs: value.terminalAtMs?.toInt(),
+  cancellationRequested: value.cancellationRequested,
+  safeContextSummary: value.safeContextSummary,
+);
+
+JobDetail jobDetailFromDto(dto.JobDetailDto value) => JobDetail(
+  job: jobRunProjectionFromDto(value.job),
+  operationDetail: operationDetailFromDto(value.operationDetail),
+);
+
+JobRunProjection jobRunProjectionFromDto(dto.JobRunDto value) =>
+    JobRunProjection(
+      jobRunId: jobRunIdFromDto(value.jobRunId),
+      operationType: value.operationType,
+      lifecycleState: jobLifecycleStateFromDto(value.state),
+      phase: value.phase,
+      completedUnits: value.completedUnits?.toInt(),
+      totalUnits: value.totalUnits?.toInt(),
+      statusKey: value.statusKey,
+      createdAtMs: value.createdAtMs.toInt(),
+      queuedAtMs: value.queuedAtMs?.toInt(),
+      startedAtMs: value.startedAtMs?.toInt(),
+      terminalAtMs: value.terminalAtMs?.toInt(),
+      cancellationRequested: value.cancellationRequested,
+      controls: JobControlAvailability(
+        canCancel: value.controls.canCancel,
+        canRetry: value.controls.canRetry,
+      ),
+      boundedTerminalFailure: value.boundedTerminalFailure == null
+          ? null
+          : BoundedTerminalFailure(
+              errorCode: value.boundedTerminalFailure!.errorCode,
+              safeContext: value.boundedTerminalFailure!.safeContext,
+            ),
+    );
+
+OperationDetail operationDetailFromDto(dto.OperationDetailDto value) =>
+    switch (value) {
+      dto.OperationDetailDto_LibraryScan(:final field0) =>
+        OperationDetail.libraryScan(libraryScanJobDetailFromDto(field0)),
+    };
+
+LibraryScanJobDetail libraryScanJobDetailFromDto(
+  dto.LibraryScanJobDetailDto value,
+) => LibraryScanJobDetail(
+  requestedRoots: [
+    for (final root in value.requestedRoots)
+      LibraryScanRootSummary(
+        libraryRootId: libraryRootIdFromDto(root.libraryRootId),
+        displayName: root.displayName,
+        safeLocationDisplay: root.safeLocationDisplay,
+      ),
+  ],
+  admittedRoots: [
+    for (final root in value.admittedRoots)
+      LibraryScanRootSummary(
+        libraryRootId: libraryRootIdFromDto(root.libraryRootId),
+        displayName: root.displayName,
+        safeLocationDisplay: root.safeLocationDisplay,
+      ),
+  ],
+  exclusions: [
+    for (final exclusion in value.exclusions)
+      LibraryScanAdmissionExclusion(
+        libraryRootId: libraryRootIdFromDto(exclusion.libraryRootId),
+        reason: exclusion.reason,
+        activeJobRunId: exclusion.activeJobRunId == null
+            ? null
+            : jobRunIdFromDto(exclusion.activeJobRunId!),
+        activeScanRunId: exclusion.activeScanRunId == null
+            ? null
+            : scanRunIdFromDto(exclusion.activeScanRunId!),
+      ),
+  ],
+  scanRuns: [
+    for (final scan in value.scanRuns)
+      ScanRunSummary(
+        scanRunId: scanRunIdFromDto(scan.scanRunId),
+        jobRunId: jobRunIdFromDto(scan.jobRunId),
+        libraryRootId: libraryRootIdFromDto(scan.libraryRootId),
+        displayName: scan.displayName,
+        safeLocationDisplay: scan.safeLocationDisplay,
+        status: jobScanStatusFromDto(scan.status),
+        startedAtMs: scan.startedAtMs.toInt(),
+        completedAtMs: scan.completedAtMs?.toInt(),
+      ),
+  ],
+  progress: ScanProgressFacts(
+    phase: value.progress.phase,
+    completedUnits: value.progress.completedUnits?.toInt(),
+    totalUnits: value.progress.totalUnits?.toInt(),
+    statusKey: value.progress.statusKey,
+    rootsRequested: value.progress.rootsRequested,
+    rootsAdmitted: value.progress.rootsAdmitted,
+    rootsTerminal: value.progress.rootsTerminal,
+    entriesCommitted: value.progress.entriesCommitted.toInt(),
+  ),
+  retrySourceJobRunId: value.retrySourceJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySourceJobRunId!),
+  retrySuccessorJobRunId: value.retrySuccessorJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySuccessorJobRunId!),
+);

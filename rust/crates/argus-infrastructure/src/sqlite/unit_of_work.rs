@@ -9,6 +9,10 @@ use argus_application::{
 use super::appearance::SqliteAppearanceSettingsRepository;
 use super::connection::SqliteValue;
 use super::errors::{SqliteOperationError, operation_error};
+use super::jobs::{
+    SqliteJobRunRepository, SqliteLibraryScanTargetRepository, SqliteScanRunRepository,
+    SqliteSourceEntryRepository,
+};
 use super::sources::{SqliteLibraryRootRepository, SqliteLibrarySourceRepository};
 
 /// One top-level transaction that cannot be reused after terminal completion.
@@ -29,6 +33,14 @@ impl<'connection> SqliteUnitOfWork<'connection> {
     /// Returns the operation context carried into this transaction scope.
     pub fn operation_context(&self) -> &OperationContext {
         &self.context
+    }
+
+    /// Returns the active transaction for infrastructure-owned repository
+    /// adapters. The transaction is never exposed outside the crate.
+    pub(crate) fn transaction_mut(
+        &mut self,
+    ) -> Result<&mut Transaction<'connection>, PersistenceError> {
+        self.transaction.as_mut().ok_or(PersistenceError::Conflict)
     }
 
     /// Executes a statement inside this Unit of Work.
@@ -276,6 +288,22 @@ impl<'connection> UnitOfWork for SqliteUnitOfWork<'connection> {
         = SqliteLibraryRootRepository<'scope, 'connection>
     where
         Self: 'scope;
+    type JobRunRepository<'scope>
+        = SqliteJobRunRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type ScanRunRepository<'scope>
+        = SqliteScanRunRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type SourceEntryRepository<'scope>
+        = SqliteSourceEntryRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+    type LibraryScanTargetRepository<'scope>
+        = SqliteLibraryScanTargetRepository<'scope, 'connection>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         SqliteAppearanceSettingsRepository::new(self)
@@ -287,6 +315,22 @@ impl<'connection> UnitOfWork for SqliteUnitOfWork<'connection> {
 
     fn library_roots(&mut self) -> Self::LibraryRootRepository<'_> {
         SqliteLibraryRootRepository::new(self)
+    }
+
+    fn job_runs(&mut self) -> Self::JobRunRepository<'_> {
+        SqliteJobRunRepository::new(self)
+    }
+
+    fn scan_runs(&mut self) -> Self::ScanRunRepository<'_> {
+        SqliteScanRunRepository::new(self)
+    }
+
+    fn source_entries(&mut self) -> Self::SourceEntryRepository<'_> {
+        SqliteSourceEntryRepository::new(self)
+    }
+
+    fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
+        SqliteLibraryScanTargetRepository::new(self)
     }
 
     fn commit(self) -> Result<(), ApplicationPortError>

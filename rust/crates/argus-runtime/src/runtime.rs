@@ -13,19 +13,26 @@ use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argus_application::{
-    AddLocalLibraryRootResult, AppearanceSettingsSubscriber, ApplicationError, ErrorCode,
-    EventSubscriberError, LibraryRootId, LibraryRootPage, LibraryRootProjection,
+    AddLocalLibraryRootResult, AppearanceSettingsSubscriber, ApplicationError, CancelJobResult,
+    ErrorCode, EventSubscriberError, JobDetail, JobProgressChanged, JobRunId, JobStateChanged,
+    JobSummaryPage, LibraryRootId, LibraryRootPage, LibraryRootProjection, ListJobsQuery,
     ListLibraryRootsQuery, LocalFilesystemRootSelection, OperationContext, OperationName,
-    RemoveLibraryRootResult, SubsystemName, TraceId,
+    RemoveLibraryRootResult, SourceEntriesChangeScope, SourceEntriesChanged,
+    StartLibraryScanResult, SubsystemName, TraceId,
 };
 
 use crate::{
     FailedRuntimeRecoveryContext, InProcessNotificationSink, KernelBootstrap,
     KernelBootstrapOptions, RecoveryCoordinator, RuntimeNotificationSink, StartupCoordinator,
-    StartupPhaseObserver, StartupResult, SystemClock, new_trace_id,
-    operations::{OperationClass, OperationGuard, OperationTracker},
+    StartupPhaseObserver, StartupResult, SystemClock,
+    background::BackgroundOperationManager,
+    new_trace_id,
+    operations::{OperationClass, OperationGuard, OperationTracker, ResourceClass},
     startup::SettingsReadPort,
 };
+use argus_application::LocalFilesystemProvider;
+use argus_application::{LibraryScanOperationHandler, OperationHandle};
+use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 
 /// Opaque identity for one runtime generation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -319,6 +326,20 @@ pub enum RuntimeEventPayload {
     LibraryRootsChanged,
     LibraryRootChanged {
         library_root_id: argus_application::LibraryRootId,
+    },
+    JobStateChanged {
+        job_run_id: JobRunId,
+    },
+    JobProgress {
+        job_run_id: JobRunId,
+        phase: String,
+        completed_units: Option<u64>,
+        total_units: Option<u64>,
+        status_key: Option<String>,
+    },
+    SourceEntriesChanged {
+        library_root_id: LibraryRootId,
+        scope: SourceEntriesChangeScope,
     },
 }
 
@@ -645,6 +666,57 @@ impl argus_application::LibraryRootsSubscriber for RuntimeEventSubscriber {
     }
 }
 
+impl argus_application::JobsSubscriber for RuntimeEventSubscriber {
+    fn job_state_changed(&self, event: JobStateChanged) -> Result<(), EventSubscriberError> {
+        if let Some(sink) = &self.outward
+            && sink
+                .publish(RuntimeEventPayload::JobStateChanged {
+                    job_run_id: event.job_run_id,
+                })
+                .is_err()
+        {
+            return Err(EventSubscriberError::Failed);
+        }
+        Ok(())
+    }
+
+    fn job_progress_changed(&self, event: JobProgressChanged) -> Result<(), EventSubscriberError> {
+        if let Some(sink) = &self.outward
+            && sink
+                .publish(RuntimeEventPayload::JobProgress {
+                    job_run_id: event.progress.job_run_id(),
+                    phase: event.progress.phase().to_owned(),
+                    completed_units: event.progress.completed_units(),
+                    total_units: event.progress.total_units(),
+                    status_key: event.progress.status_key().map(str::to_owned),
+                })
+                .is_err()
+        {
+            return Err(EventSubscriberError::Failed);
+        }
+        Ok(())
+    }
+}
+
+impl argus_application::SourceEntriesSubscriber for RuntimeEventSubscriber {
+    fn source_entries_changed(
+        &self,
+        event: SourceEntriesChanged,
+    ) -> Result<(), EventSubscriberError> {
+        if let Some(sink) = &self.outward
+            && sink
+                .publish(RuntimeEventPayload::SourceEntriesChanged {
+                    library_root_id: event.library_root_id,
+                    scope: event.scope,
+                })
+                .is_err()
+        {
+            return Err(EventSubscriberError::Failed);
+        }
+        Ok(())
+    }
+}
+
 /// One concrete runtime generation owned by `ApplicationHost`.
 pub struct ApplicationRuntime {
     pub(crate) id: RuntimeInstanceId,
@@ -653,6 +725,7 @@ pub struct ApplicationRuntime {
     pub(crate) events: Arc<EventBoundary>,
     operations: Arc<Mutex<OperationTracker>>,
     pub(crate) recovery_context: Option<Arc<FailedRuntimeRecoveryContext>>,
+    pub(crate) background: Option<Arc<BackgroundOperationManager<crate::KernelUnitOfWorkFactory>>>,
 }
 
 impl ApplicationRuntime {
@@ -667,6 +740,7 @@ impl ApplicationRuntime {
             events: EventBoundary::new(),
             operations: Arc::new(Mutex::new(OperationTracker::new())),
             recovery_context: None,
+            background: None,
         }
     }
 
@@ -915,6 +989,16 @@ impl ApplicationHost {
             },
         };
         id
+    }
+
+    /// Test-only access to the current generation's background manager.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn background_manager_for_tests(
+        &self,
+    ) -> Option<Arc<BackgroundOperationManager<crate::KernelUnitOfWorkFactory>>> {
+        let generation = self.lock_generation().ok()?;
+        generation.background.clone()
     }
 
     /// Begins one top-level request/response bridge operation.
@@ -1240,7 +1324,12 @@ impl ApplicationHost {
             }
         }
         let kernel = {
-            let generation = self.lock_generation_with_context(context)?;
+            let mut generation = self.lock_generation_with_context(context)?;
+            if let Some(manager) = generation.background.take()
+                && !manager.shutdown()
+            {
+                self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
+            }
             if generation.kernel_handle().is_some() {
                 match generation.try_take_kernel() {
                     Some(kernel) => Some(kernel),
@@ -1680,6 +1769,188 @@ impl ApplicationHost {
         })
     }
 
+    /// Admits one durable single-root library scan through the ready
+    /// generation and hands the run to the background manager.
+    pub fn start_library_scan(
+        &self,
+        root_id: LibraryRootId,
+    ) -> Result<StartLibraryScanResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("sources", "start_library_scan")?;
+        self.start_library_scan_with_context(root_id, &context)
+    }
+
+    /// Admits one library scan under an existing top-level context.
+    pub fn start_library_scan_with_context(
+        &self,
+        root_id: LibraryRootId,
+        context: &OperationContext,
+    ) -> Result<StartLibraryScanResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::BackgroundOperation)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let admission = {
+            let generation = self.lock_generation_with_context(context)?;
+            let manager = generation.background.clone().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let handle = generation.kernel_handle().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let kernel_guard = handle.lock().map_err(|_| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let kernel = kernel_guard.as_ref().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let admission = kernel.start_library_scan_with_context(
+                context,
+                root_id,
+                Arc::new(move || guard.token().is_cancelled()),
+            )?;
+            if let Some(admitted) = admission.admitted_scan() {
+                let access = InfraLocalFilesystemProvider
+                    .open_access(admitted.plan().root_locator())
+                    .map_err(|_| {
+                        runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+                    })?;
+                let handler = LibraryScanOperationHandler::new(
+                    admitted.plan().clone(),
+                    access,
+                    kernel.unit_of_work_factory().clone(),
+                    crate::events::EventBusSink::new(kernel.event_bus().clone()),
+                    100,
+                );
+                let handle = OperationHandle::new(
+                    admitted.job_run_id(),
+                    argus_application::OPERATION_TYPE_LIBRARY_SCAN,
+                );
+                let registration = manager.register(
+                    &handle,
+                    Arc::new(handler),
+                    &[
+                        ResourceClass::FilesystemRead,
+                        ResourceClass::PersistenceWrite,
+                    ],
+                );
+                if let Err(registration_error) = registration {
+                    let _ = kernel.fail_unregistered_scan_with_context(
+                        context,
+                        root_id,
+                        admitted.job_run_id(),
+                    );
+                    let code = match registration_error {
+                        crate::background::ManagerAdmissionError::Internal => {
+                            ErrorCode::InternalUnexpected
+                        }
+                        crate::background::ManagerAdmissionError::ShuttingDown
+                        | crate::background::ManagerAdmissionError::CapacityExceeded => {
+                            ErrorCode::OperationCapacityUnavailable
+                        }
+                    };
+                    return Err(ApplicationError::from_code(
+                        code,
+                        context.trace_id(),
+                        argus_application::SafeContext::new(),
+                    )
+                    .expect("background admission error follows the published catalog"));
+                }
+            }
+            admission
+        };
+        Ok(admission.outcome().clone())
+    }
+
+    /// Reads one authoritative job detail through the ready generation.
+    pub fn get_job(&self, job_run_id: JobRunId) -> Result<JobDetail, ApplicationError> {
+        let (context, _guard) = self.begin_operation("jobs", "get_job")?;
+        self.get_job_with_context(job_run_id, &context)
+    }
+
+    /// Reads one authoritative job detail under an existing context.
+    pub fn get_job_with_context(
+        &self,
+        job_run_id: JobRunId,
+        context: &OperationContext,
+    ) -> Result<JobDetail, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.get_job_with_context(context, job_run_id)
+        })
+    }
+
+    /// Lists one closed Jobs scope through the ready generation.
+    pub fn list_jobs(&self, query: ListJobsQuery) -> Result<JobSummaryPage, ApplicationError> {
+        let (context, _guard) = self.begin_operation("jobs", "list_jobs")?;
+        self.list_jobs_with_context(query, &context)
+    }
+
+    /// Lists one closed Jobs scope under an existing context.
+    pub fn list_jobs_with_context(
+        &self,
+        query: ListJobsQuery,
+        context: &OperationContext,
+    ) -> Result<JobSummaryPage, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.list_jobs_with_context(context, query)
+        })
+    }
+
+    /// Requests durable cancellation through the ready generation.
+    pub fn cancel_job(&self, job_run_id: JobRunId) -> Result<CancelJobResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("jobs", "cancel_job")?;
+        self.cancel_job_with_context(job_run_id, &context)
+    }
+
+    /// Requests durable cancellation under an existing top-level context.
+    pub fn cancel_job_with_context(
+        &self,
+        job_run_id: JobRunId,
+        context: &OperationContext,
+    ) -> Result<CancelJobResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let result = self.with_ready_kernel(context, move |kernel| {
+            kernel.cancel_job_with_context(context, job_run_id)
+        })?;
+        if result == CancelJobResult::CancellationRequested {
+            let generation = self.lock_generation_with_context(context)?;
+            if let Some(manager) = &generation.background {
+                manager.notify_cancellation(job_run_id);
+            }
+        }
+        Ok(result)
+    }
+
     /// Opens the one active logical event connection for the current generation.
     pub fn subscribe_events(&self) -> Result<RuntimeEventSubscription, ApplicationError> {
         let id = self.current_state().runtime_instance_id();
@@ -1785,6 +2056,7 @@ impl ApplicationHost {
         if let Some(kernel) = result.kernel {
             generation.kernel = Some(Arc::new(Mutex::new(Some(kernel))));
         }
+        generation.background = result.background;
         generation.recovery_context = result.recovery_context.map(Arc::new);
         self.record_history(result.history);
         match &generation.state {

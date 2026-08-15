@@ -15,6 +15,9 @@ argus-domain = { path = "../argus-domain" }
 argus-infrastructure = { path = "../argus-infrastructure" }
 getrandom.workspace = true
 
+[features]
+test-support = []
+
 [dev-dependencies]
 argus-infrastructure = { path = "../argus-infrastructure", features = ["test-support"] }
 rusqlite.workspace = true

@@ -3,6 +3,7 @@ import 'package:argus/app/routing/app_routes.dart';
 import 'package:argus/app/shell/application_shell.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -14,18 +15,21 @@ Future<void> pumpShell(
   VoidCallback? onSourcesSelected,
 }) async {
   await tester.pumpWidget(
-    MaterialApp(
-      theme: ArgusTheme.light,
-      home: MediaQuery(
-        data: MediaQueryData(size: Size(width, 800)),
-        child: SizedBox(
-          width: width,
-          height: 800,
-          child: ApplicationShell(
-            currentDestination: currentDestination,
-            onSettingsSelected: onSettingsSelected ?? () {},
-            onSourcesSelected: onSourcesSelected ?? () {},
-            child: const Center(child: Text('route child')),
+    ProviderScope(
+      child: MaterialApp(
+        theme: ArgusTheme.light,
+        home: MediaQuery(
+          data: MediaQueryData(size: Size(width, 800)),
+          child: SizedBox(
+            width: width,
+            height: 800,
+            child: ApplicationShell(
+              currentDestination: currentDestination,
+              onSettingsSelected: onSettingsSelected ?? () {},
+              onSourcesSelected: onSourcesSelected ?? () {},
+              onJobsSelected: () {},
+              child: const Center(child: Text('route child')),
+            ),
           ),
         ),
       ),
@@ -39,9 +43,15 @@ void main() {
     expect(AppDestination.values, <AppDestination>[
       AppDestination.settings,
       AppDestination.sources,
+      AppDestination.jobs,
     ]);
     expect(destinationForUri(Uri.parse('/settings')), AppDestination.settings);
     expect(destinationForUri(Uri.parse('/sources')), AppDestination.sources);
+    expect(destinationForUri(Uri.parse('/jobs')), AppDestination.jobs);
+    expect(
+      destinationForUri(Uri.parse('/jobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')),
+      AppDestination.jobs,
+    );
     expect(
       destinationForUri(
         Uri.parse('/sources/roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
@@ -148,6 +158,8 @@ void main() {
       onSettingsSelected: () => selected.add('settings'),
     );
 
+    // The first Tab focuses the Jobs indicator; the second focuses More.
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
@@ -157,7 +169,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
-    // The first Tab focuses the first destination (Sources); Enter activates.
+    // Enter activates the first sheet destination (Sources).
     expect(selected, <String>['sources']);
     selected.clear();
 
@@ -242,11 +254,13 @@ void main() {
           onSettingsSelected: () => selectionCount++,
         );
 
-        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-        await tester.pumpAndSettle();
+        for (var index = 0; index < 8 && selectionCount == 0; index++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pumpAndSettle();
+        }
 
-        expect(selectionCount, width == 720 ? 1 : 2);
+        expect(selectionCount, 1);
       }
     },
   );

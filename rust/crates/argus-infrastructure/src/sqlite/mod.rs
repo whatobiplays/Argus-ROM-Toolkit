@@ -9,6 +9,7 @@ mod appearance;
 mod connection;
 mod errors;
 mod executor;
+mod jobs;
 mod migrations;
 mod sources;
 mod unit_of_work;
@@ -19,6 +20,10 @@ pub use appearance::{SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRe
 pub use connection::{SqliteConnection, SqliteValue};
 pub use errors::{MigrationError, SqliteExecutorError, SqliteOperationError};
 pub use executor::{DEFAULT_QUEUE_CAPACITY, SqliteDatabaseExecutor};
+pub use jobs::{
+    SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryScanTargetRepository,
+    SqliteScanRunRepository, SqliteSourceEntryRepository,
+};
 pub use migrations::{
     Migration, MigrationKind, MigrationOutcome, MigrationRegistry, MigrationSummary,
 };

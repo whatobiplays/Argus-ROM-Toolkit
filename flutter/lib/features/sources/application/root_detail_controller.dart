@@ -243,8 +243,7 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
     if (current is! SourcesRootDetailStateReady ||
         current.scanning ||
         _scanInFlight ||
-        current.root.activeScan != null ||
-        current.root.lastScan != null) {
+        current.root.activeScan != null) {
       return null;
     }
     _scanInFlight = true;

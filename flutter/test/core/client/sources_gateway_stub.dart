@@ -28,6 +28,11 @@ mixin SourcesGatewayStub implements SourcesGateway {
   ) async => throw const TransportFailure('Sources stub is not focused');
 
   @override
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  ) async => throw const TransportFailure('Sources stub is not focused');
+
+  @override
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) async => throw const TransportFailure('Sources stub is not focused');

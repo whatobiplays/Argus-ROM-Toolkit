@@ -194,6 +194,10 @@ final class ArgusClient implements ClientBootstrap {
     LocalFilesystemRootSelection selection,
   ) => _request(() => _gateway.addLocalLibraryRoot(selection));
 
+  Future<AddLocalLibraryRootAndScanResult> _addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  ) => _request(() => _gateway.addLocalLibraryRootAndScan(selection));
+
   Future<RemoveLibraryRootResult> _removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) => _request(() => _gateway.removeLibraryRoot(libraryRootId));
@@ -233,6 +237,13 @@ final class ArgusClient implements ClientBootstrap {
 
   Future<CancelJobResult> _cancelJob(JobRunId jobRunId) =>
       _request(() => _gateway.cancelJob(jobRunId));
+
+  Future<RetryJobResult> _retryJob(JobRunId jobRunId) =>
+      _request(() => _gateway.retryJob(jobRunId));
+
+  Future<LibraryRootScanAdmission?> _getRootScanAdmission(
+    LibraryRootId libraryRootId,
+  ) => _request(() => _gateway.getRootScanAdmission(libraryRootId));
 
   Future<DiagnosticsExport> _exportStartupDiagnostics(
     RuntimeInstanceId expected,
@@ -585,6 +596,11 @@ final class _SourcesApi implements SourcesApi {
   ) => _client._addLocalLibraryRoot(selection);
 
   @override
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  ) => _client._addLocalLibraryRootAndScan(selection);
+
+  @override
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) => _client._removeLibraryRoot(libraryRootId);
@@ -632,6 +648,15 @@ final class _JobsApi implements JobsApi {
   @override
   Future<CancelJobResult> cancelJob(JobRunId jobRunId) =>
       _client._cancelJob(jobRunId);
+
+  @override
+  Future<RetryJobResult> retryJob(JobRunId jobRunId) =>
+      _client._retryJob(jobRunId);
+
+  @override
+  Future<LibraryRootScanAdmission?> getRootScanAdmission(
+    LibraryRootId libraryRootId,
+  ) => _client._getRootScanAdmission(libraryRootId);
 
   @override
   Future<ActiveJobSummary> getActiveJobSummary() async {

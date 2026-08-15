@@ -29,22 +29,22 @@ use argus_application::{
     JobSummaryPage, JobsService, LibraryRootId, LibraryRootPage, LibraryRootProjection,
     LibraryRootRepository, LibraryScanAdmissionResult, LibraryService, LibrarySourceRepository,
     ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome, ObservabilitySink,
-    OperationContext, OperationName, PathClass, PersistenceError, PlatformClass,
-    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
-    SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
-    SourceEntryId, StartLibraryScanCommand, StartupCollector, SubsystemName, TechnicalClass,
-    TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
-    UpdateAppearanceSettingsCommand, Version,
+    LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome,
+    NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationName, PathClass,
+    PersistenceError, PlatformClass, RemoveLibraryRootCommand, RemoveLibraryRootResult,
+    SafeContext, SafeContextField, SafeContextValue, SettingsService, SourceEntryChildrenPage,
+    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanCommand, StartupCollector,
+    SubsystemName, TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork,
+    UnitOfWorkFactory, UpdateAppearanceSettingsCommand, Version,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     MigrationOutcome as InfrastructureMigrationOutcome, MigrationSummary,
     SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteDatabaseExecutor,
     SqliteExecutorError, SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryRootQueries,
-    SqliteLibraryRootRepository, SqliteLibraryScanTargetRepository, SqliteLibrarySourceRepository,
-    SqliteScanRunRepository, SqliteSourceEntryQueries, SqliteSourceEntryRepository,
-    SqliteUnitOfWork,
+    SqliteLibraryRootRepository, SqliteLibraryScanAdmissionContextRepository,
+    SqliteLibraryScanTargetRepository, SqliteLibrarySourceRepository, SqliteScanRunRepository,
+    SqliteSourceEntryQueries, SqliteSourceEntryRepository, SqliteUnitOfWork,
 };
 
 pub mod background;
@@ -431,6 +431,15 @@ impl argus_application::JobRunRepository for KernelJobRunRepository<'_, '_> {
         self.inner.insert(new)
     }
 
+    fn insert_retry_link(
+        &mut self,
+        source_job_run_id: argus_application::JobRunId,
+        successor_job_run_id: argus_application::JobRunId,
+    ) -> Result<(), PersistenceError> {
+        self.inner
+            .insert_retry_link(source_job_run_id, successor_job_run_id)
+    }
+
     fn request_cancellation(
         &mut self,
         job_run_id: argus_application::JobRunId,
@@ -495,6 +504,21 @@ impl argus_application::ScanRunRepository for KernelScanRunRepository<'_, '_> {
     ) -> Result<bool, PersistenceError> {
         self.inner
             .set_status(scan_run_id, status, completed_at_ms, failure_reason)
+    }
+
+    fn set_progress_facts(
+        &mut self,
+        scan_run_id: argus_application::ScanRunId,
+        entries_observed: u64,
+        entries_committed: u64,
+        issue_count: u64,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.set_progress_facts(
+            scan_run_id,
+            entries_observed,
+            entries_committed,
+            issue_count,
+        )
     }
 
     fn find_active_ownership(
@@ -615,6 +639,26 @@ impl argus_application::LibraryScanTargetRepository for KernelLibraryScanTargetR
     }
 }
 
+/// Technology-neutral transaction-scoped LibraryScan admission-context wrapper.
+pub struct KernelLibraryScanAdmissionContextRepository<'scope, 'connection> {
+    inner: SqliteLibraryScanAdmissionContextRepository<'scope, 'connection>,
+}
+
+impl argus_application::LibraryScanAdmissionContextRepository
+    for KernelLibraryScanAdmissionContextRepository<'_, '_>
+{
+    fn insert(&mut self, new: NewLibraryScanAdmissionContext) -> Result<(), PersistenceError> {
+        self.inner.insert(new)
+    }
+
+    fn get_by_job(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+    ) -> Result<Option<argus_application::LibraryScanAdmissionContext>, PersistenceError> {
+        self.inner.get_by_job(job_run_id)
+    }
+}
+
 impl LibraryRootRepository for KernelLibraryRootRepository<'_, '_> {
     fn insert(
         &mut self,
@@ -697,6 +741,10 @@ impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection
         = KernelLibraryScanTargetRepository<'scope, 'connection>
     where
         Self: 'scope;
+    type LibraryScanAdmissionContextRepository<'scope>
+        = KernelLibraryScanAdmissionContextRepository<'scope, 'connection>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         KernelAppearanceSettingsRepository {
@@ -737,6 +785,14 @@ impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection
     fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
         KernelLibraryScanTargetRepository {
             inner: self.inner.library_scan_targets(),
+        }
+    }
+
+    fn library_scan_admission_context(
+        &mut self,
+    ) -> Self::LibraryScanAdmissionContextRepository<'_> {
+        KernelLibraryScanAdmissionContextRepository {
+            inner: self.inner.library_scan_admission_context(),
         }
     }
 

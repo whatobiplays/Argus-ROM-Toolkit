@@ -10,8 +10,8 @@ part 'lib.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_result_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_result_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -87,6 +87,13 @@ Future<AddLocalLibraryRootResultDto> addLocalLibraryRoot({
   required LocalFilesystemRootSelectionDto selection,
 }) => RustLib.instance.api.crateAddLocalLibraryRoot(selection: selection);
 
+/// Executes the Add & Scan composite workflow: commit the root, then request
+/// child LibraryScan admission, then assemble the typed committed result.
+Future<AddLocalLibraryRootAndScanResultDto> addLocalLibraryRootAndScan({
+  required LocalFilesystemRootSelectionDto selection,
+}) =>
+    RustLib.instance.api.crateAddLocalLibraryRootAndScan(selection: selection);
+
 /// Removes one configured root. User filesystem content is never modified.
 Future<RemoveLibraryRootResultDto> removeLibraryRoot({
   required String libraryRootId,
@@ -117,6 +124,20 @@ Future<JobDetailDto> getJob({required String jobRunId}) =>
 /// Requests durable cancellation for one job.
 Future<CancelJobResultDto> cancelJob({required String jobRunId}) =>
     RustLib.instance.api.crateCancelJob(jobRunId: jobRunId);
+
+/// Retries one eligible historical LibraryScan into a new durable run.
+Future<RetryJobResultDto> retryJob({required String jobRunId}) =>
+    RustLib.instance.api.crateRetryJob(jobRunId: jobRunId);
+
+/// Reads the newest scan-run admission (active or terminal) for one root.
+///
+/// This focused query supplies Jobs-authoritative Add & Scan ambiguity
+/// reconciliation; callers must never infer admission from root `lastScan`.
+Future<LibraryRootScanAdmissionReferenceDto?> getRootScanAdmission({
+  required String libraryRootId,
+}) => RustLib.instance.api.crateGetRootScanAdmission(
+  libraryRootId: libraryRootId,
+);
 
 /// Writes sanitized startup diagnostics to the embedding-selected path.
 Future<DiagnosticsExportDto> exportStartupDiagnostics({
@@ -155,6 +176,28 @@ Future<bool> attachEventSubscription({required BigInt attachEpoch}) =>
 /// own.
 Stream<RuntimeEventDto> subscribeEvents({required BigInt attachEpoch}) =>
     RustLib.instance.api.crateSubscribeEvents(attachEpoch: attachEpoch);
+
+@freezed
+sealed class AddLocalLibraryRootAndScanResultDto
+    with _$AddLocalLibraryRootAndScanResultDto {
+  const AddLocalLibraryRootAndScanResultDto._();
+
+  const factory AddLocalLibraryRootAndScanResultDto.addedAndScanAdmitted(
+    LibraryRootDto field0,
+    OperationHandleDto field1,
+  ) = AddLocalLibraryRootAndScanResultDto_AddedAndScanAdmitted;
+  const factory AddLocalLibraryRootAndScanResultDto.addedButScanNotAdmitted(
+    LibraryRootDto field0,
+    LibraryScanChildAdmissionIssueDto field1,
+  ) = AddLocalLibraryRootAndScanResultDto_AddedButScanNotAdmitted;
+  const factory AddLocalLibraryRootAndScanResultDto.alreadyConfigured(
+    String field0,
+  ) = AddLocalLibraryRootAndScanResultDto_AlreadyConfigured;
+  const factory AddLocalLibraryRootAndScanResultDto.overlapsExisting(
+    String field0,
+    RootRelationshipDto field1,
+  ) = AddLocalLibraryRootAndScanResultDto_OverlapsExisting;
+}
 
 @freezed
 sealed class AddLocalLibraryRootResultDto with _$AddLocalLibraryRootResultDto {
@@ -649,6 +692,28 @@ class LibraryRootPageDto {
           totalCount == other.totalCount;
 }
 
+/// One authoritative scan-run admission reference for a historical root.
+class LibraryRootScanAdmissionReferenceDto {
+  final String jobRunId;
+  final String scanRunId;
+
+  const LibraryRootScanAdmissionReferenceDto({
+    required this.jobRunId,
+    required this.scanRunId,
+  });
+
+  @override
+  int get hashCode => jobRunId.hashCode ^ scanRunId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryRootScanAdmissionReferenceDto &&
+          runtimeType == other.runtimeType &&
+          jobRunId == other.jobRunId &&
+          scanRunId == other.scanRunId;
+}
+
 /// One durable typed admission exclusion.
 class LibraryScanAdmissionExclusionDto {
   final String libraryRootId;
@@ -679,6 +744,21 @@ class LibraryScanAdmissionExclusionDto {
           reason == other.reason &&
           activeJobRunId == other.activeJobRunId &&
           activeScanRunId == other.activeScanRunId;
+}
+
+@freezed
+sealed class LibraryScanChildAdmissionIssueDto
+    with _$LibraryScanChildAdmissionIssueDto {
+  const LibraryScanChildAdmissionIssueDto._();
+
+  const factory LibraryScanChildAdmissionIssueDto.alreadyScanning({
+    required String libraryRootId,
+    required String activeJobRunId,
+    required String activeScanRunId,
+  }) = LibraryScanChildAdmissionIssueDto_AlreadyScanning;
+  const factory LibraryScanChildAdmissionIssueDto.admissionFailure(
+    ApplicationErrorDto field0,
+  ) = LibraryScanChildAdmissionIssueDto_AdmissionFailure;
 }
 
 /// Typed LibraryScan operation detail.
@@ -925,6 +1005,32 @@ sealed class RemoveLibraryRootResultDto with _$RemoveLibraryRootResultDto {
   }) = RemoveLibraryRootResultDto_RootHasActiveScan;
 }
 
+@freezed
+sealed class RetryJobResultDto with _$RetryJobResultDto {
+  const RetryJobResultDto._();
+
+  const factory RetryJobResultDto.admitted(OperationHandleDto field0) =
+      RetryJobResultDto_Admitted;
+  const factory RetryJobResultDto.alreadyRetried(String field0) =
+      RetryJobResultDto_AlreadyRetried;
+  const factory RetryJobResultDto.notAdmitted(
+    RetryNotAdmittedReasonDto field0,
+  ) = RetryJobResultDto_NotAdmitted;
+}
+
+@freezed
+sealed class RetryNotAdmittedReasonDto with _$RetryNotAdmittedReasonDto {
+  const RetryNotAdmittedReasonDto._();
+
+  const factory RetryNotAdmittedReasonDto.sourceRunNotTerminal() =
+      RetryNotAdmittedReasonDto_SourceRunNotTerminal;
+  const factory RetryNotAdmittedReasonDto.operationNotRetryable() =
+      RetryNotAdmittedReasonDto_OperationNotRetryable;
+  const factory RetryNotAdmittedReasonDto.noEligibleTargets(
+    List<LibraryScanAdmissionExclusionDto> field0,
+  ) = RetryNotAdmittedReasonDto_NoEligibleTargets;
+}
+
 /// Provider-owned overlap vocabulary.
 enum RootRelationshipDto { same, ancestor, descendant, disjoint, unknown }
 
@@ -1063,7 +1169,9 @@ class ScanProgressFactsDto {
   final int rootsRequested;
   final int rootsAdmitted;
   final int rootsTerminal;
-  final BigInt entriesCommitted;
+  final BigInt? entriesObserved;
+  final BigInt? entriesCommitted;
+  final BigInt? issueCount;
 
   const ScanProgressFactsDto({
     this.phase,
@@ -1073,7 +1181,9 @@ class ScanProgressFactsDto {
     required this.rootsRequested,
     required this.rootsAdmitted,
     required this.rootsTerminal,
-    required this.entriesCommitted,
+    this.entriesObserved,
+    this.entriesCommitted,
+    this.issueCount,
   });
 
   @override
@@ -1085,7 +1195,9 @@ class ScanProgressFactsDto {
       rootsRequested.hashCode ^
       rootsAdmitted.hashCode ^
       rootsTerminal.hashCode ^
-      entriesCommitted.hashCode;
+      entriesObserved.hashCode ^
+      entriesCommitted.hashCode ^
+      issueCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1099,7 +1211,9 @@ class ScanProgressFactsDto {
           rootsRequested == other.rootsRequested &&
           rootsAdmitted == other.rootsAdmitted &&
           rootsTerminal == other.rootsTerminal &&
-          entriesCommitted == other.entriesCommitted;
+          entriesObserved == other.entriesObserved &&
+          entriesCommitted == other.entriesCommitted &&
+          issueCount == other.issueCount;
 }
 
 /// One per-root scan projection with its historical display snapshot.

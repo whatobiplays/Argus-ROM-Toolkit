@@ -9,6 +9,10 @@ final class FakeSourcesApi implements SourcesApi {
   List<LibraryRoot> roots;
   AddLocalLibraryRootResult Function(LocalFilesystemRootSelection selection)?
   onAdd;
+  AddLocalLibraryRootAndScanResult Function(
+    LocalFilesystemRootSelection selection,
+  )?
+  onAddAndScan;
   Object? getFailure;
   Object? listFailure;
   RemoveLibraryRootResult Function(LibraryRootId libraryRootId)? onRemove;
@@ -17,7 +21,9 @@ final class FakeSourcesApi implements SourcesApi {
   int listCalls = 0;
   int getCalls = 0;
   int addCalls = 0;
+  int addAndScanCalls = 0;
   int removeCalls = 0;
+  int startScanCalls = 0;
   int listChildrenCalls = 0;
   int getEntryCalls = 0;
   final List<String> getEntryCallIds = [];
@@ -60,6 +66,27 @@ final class FakeSourcesApi implements SourcesApi {
         displayName: 'Added',
         safeLocationPresentation: selection.selectedFolderPath,
         availability: LibraryRootAvailability.available,
+      ),
+    );
+  }
+
+  @override
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  ) async {
+    addAndScanCalls++;
+    final handler = onAddAndScan;
+    if (handler != null) return handler(selection);
+    return AddLocalLibraryRootAndScanResult.addedAndScanAdmitted(
+      root: LibraryRoot(
+        id: const LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+        displayName: 'Added',
+        safeLocationPresentation: selection.selectedFolderPath,
+        availability: LibraryRootAvailability.available,
+      ),
+      handle: OperationHandle(
+        jobRunId: const JobRunId('11111111111111111111111111111111'),
+        operationType: 'library_scan',
       ),
     );
   }
@@ -115,6 +142,7 @@ final class FakeSourcesApi implements SourcesApi {
   Future<StartLibraryScanResult> startLibraryScan(
     LibraryRootId libraryRootId,
   ) async {
+    startScanCalls++;
     final handler = onStartScan;
     if (handler != null) return handler(libraryRootId);
     return StartLibraryScanResult.admitted(

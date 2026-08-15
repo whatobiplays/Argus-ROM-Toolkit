@@ -52,7 +52,7 @@ final class SourcesAddLibraryFolderControllerProvider
 }
 
 String _$sourcesAddLibraryFolderControllerHash() =>
-    r'3a266521f6823d50bff5c731027460fde8964903';
+    r'c1ca950d38352c0d8ee769f7bb6e56b51384c3fa';
 
 /// One application-lifetime owner of the root-only add workflow state.
 

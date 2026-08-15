@@ -8,22 +8,31 @@ part of 'job_detail_controller.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// One application-lifetime owner of authoritative job-detail state.
+/// One identity-parameterized owner of authoritative job-detail state.
+///
+/// The detail provider is auto-disposed and recreatable per routed
+/// `JobRunId`; it is not retained as an application-lifetime cache (FE-009).
 
 @ProviderFor(JobDetailController)
 final jobDetailControllerProvider = JobDetailControllerFamily._();
 
-/// One application-lifetime owner of authoritative job-detail state.
+/// One identity-parameterized owner of authoritative job-detail state.
+///
+/// The detail provider is auto-disposed and recreatable per routed
+/// `JobRunId`; it is not retained as an application-lifetime cache (FE-009).
 final class JobDetailControllerProvider
     extends $NotifierProvider<JobDetailController, AsyncValue<JobDetailState>> {
-  /// One application-lifetime owner of authoritative job-detail state.
+  /// One identity-parameterized owner of authoritative job-detail state.
+  ///
+  /// The detail provider is auto-disposed and recreatable per routed
+  /// `JobRunId`; it is not retained as an application-lifetime cache (FE-009).
   JobDetailControllerProvider._({
     required JobDetailControllerFamily super.from,
     required JobRunId super.argument,
   }) : super(
          retry: null,
          name: r'jobDetailControllerProvider',
-         isAutoDispose: false,
+         isAutoDispose: true,
          dependencies: null,
          $allTransitiveDependencies: null,
        );
@@ -62,9 +71,12 @@ final class JobDetailControllerProvider
 }
 
 String _$jobDetailControllerHash() =>
-    r'cd9be23983b8732ae4916375dd86d6ce72fdfda4';
+    r'cb6acffa4c387937c57596f405dbfa9466cea503';
 
-/// One application-lifetime owner of authoritative job-detail state.
+/// One identity-parameterized owner of authoritative job-detail state.
+///
+/// The detail provider is auto-disposed and recreatable per routed
+/// `JobRunId`; it is not retained as an application-lifetime cache (FE-009).
 
 final class JobDetailControllerFamily extends $Family
     with
@@ -81,10 +93,13 @@ final class JobDetailControllerFamily extends $Family
         name: r'jobDetailControllerProvider',
         dependencies: null,
         $allTransitiveDependencies: null,
-        isAutoDispose: false,
+        isAutoDispose: true,
       );
 
-  /// One application-lifetime owner of authoritative job-detail state.
+  /// One identity-parameterized owner of authoritative job-detail state.
+  ///
+  /// The detail provider is auto-disposed and recreatable per routed
+  /// `JobRunId`; it is not retained as an application-lifetime cache (FE-009).
 
   JobDetailControllerProvider call(JobRunId jobRunId) =>
       JobDetailControllerProvider._(argument: jobRunId, from: this);
@@ -93,7 +108,10 @@ final class JobDetailControllerFamily extends $Family
   String toString() => r'jobDetailControllerProvider';
 }
 
-/// One application-lifetime owner of authoritative job-detail state.
+/// One identity-parameterized owner of authoritative job-detail state.
+///
+/// The detail provider is auto-disposed and recreatable per routed
+/// `JobRunId`; it is not retained as an application-lifetime cache (FE-009).
 
 abstract class _$JobDetailController
     extends $Notifier<AsyncValue<JobDetailState>> {

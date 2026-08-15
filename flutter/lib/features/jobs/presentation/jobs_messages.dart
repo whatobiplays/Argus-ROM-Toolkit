@@ -25,6 +25,25 @@ abstract final class JobsMessages {
   static const String rootsRequested = 'Roots requested';
   static const String rootsAdmitted = 'Roots admitted';
   static const String rootsTerminal = 'Roots terminal';
+  static const String entriesObserved = 'Entries observed';
   static const String entriesCommitted = 'Entries committed';
+  static const String issues = 'Issues';
   static const String libraryScan = 'Library Scan';
+  static const String retryJob = 'Retry';
+  static const String retryConfirmationTitle = 'Retry this job?';
+  static const String retryConfirmationBody =
+      'Retry creates a new execution attempt with its own identity. '
+      'The historical run remains unchanged.';
+  static const String retrying = 'Retrying…';
+  static const String retryUncertain =
+      'Retry could not be confirmed. Refreshing authoritative state.';
+  static const String retrySourceRunNotTerminal =
+      'This execution is still running, so it cannot be retried yet.';
+  static const String retryOperationNotRetryable =
+      'This execution is not retryable. Cleanly completed scans use '
+      'Scan Again from the folder instead.';
+  static const String retryNoEligibleTargets =
+      'No original folder remains eligible, so no new scan was created.';
+  static const String retriedFrom = 'Retried from';
+  static const String retriedAs = 'Retried as';
 }

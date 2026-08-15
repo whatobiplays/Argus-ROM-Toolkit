@@ -188,6 +188,12 @@ final class _HierarchyFakeGateway
       throw const TransportFailure('hierarchy fake is not focused on roots');
 
   @override
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  ) async =>
+      throw const TransportFailure('hierarchy fake is not focused on roots');
+
+  @override
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) async =>

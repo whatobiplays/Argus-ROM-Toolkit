@@ -8,22 +8,34 @@ part of 'jobs_list_controller.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// One application-lifetime owner of authoritative Jobs list state.
+/// One Jobs-branch owner of authoritative list state.
+///
+/// The list provider is auto-disposed with the Jobs branch; route identity
+/// owns branch restoration and the shell never depends on this controller
+/// (FE-009 provider lifetime).
 
 @ProviderFor(JobsListController)
 final jobsListControllerProvider = JobsListControllerProvider._();
 
-/// One application-lifetime owner of authoritative Jobs list state.
+/// One Jobs-branch owner of authoritative list state.
+///
+/// The list provider is auto-disposed with the Jobs branch; route identity
+/// owns branch restoration and the shell never depends on this controller
+/// (FE-009 provider lifetime).
 final class JobsListControllerProvider
     extends $NotifierProvider<JobsListController, AsyncValue<JobsListState>> {
-  /// One application-lifetime owner of authoritative Jobs list state.
+  /// One Jobs-branch owner of authoritative list state.
+  ///
+  /// The list provider is auto-disposed with the Jobs branch; route identity
+  /// owns branch restoration and the shell never depends on this controller
+  /// (FE-009 provider lifetime).
   JobsListControllerProvider._()
     : super(
         from: null,
         argument: null,
         retry: null,
         name: r'jobsListControllerProvider',
-        isAutoDispose: false,
+        isAutoDispose: true,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
@@ -45,9 +57,13 @@ final class JobsListControllerProvider
 }
 
 String _$jobsListControllerHash() =>
-    r'92d58255cb0d47216ad0561fe47e5dc895904285';
+    r'c928c5bef49720a1159a3f9472c5b174aa2cfe83';
 
-/// One application-lifetime owner of authoritative Jobs list state.
+/// One Jobs-branch owner of authoritative list state.
+///
+/// The list provider is auto-disposed with the Jobs branch; route identity
+/// owns branch restoration and the shell never depends on this controller
+/// (FE-009 provider lifetime).
 
 abstract class _$JobsListController
     extends $Notifier<AsyncValue<JobsListState>> {

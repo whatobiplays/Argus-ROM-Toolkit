@@ -160,6 +160,11 @@ final class _SourcesFakeGateway
   }
 
   @override
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  ) async => throw const TransportFailure('Sources stub is not focused');
+
+  @override
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) async {

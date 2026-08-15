@@ -8,8 +8,8 @@
 use crate::unit_of_work::UnitOfWork;
 use crate::{
     ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, JobRunId, LibraryRootId,
-    LibraryRootLastScanSummary, OperationContext, PersistenceError, SafeContext, ScanRunId,
-    SourceEntryId, TraceId,
+    LibraryRootLastScanSummary, LibraryRootRepository, OperationContext, PersistenceError,
+    SafeContext, ScanRunId, SourceEntryId, TraceId,
 };
 
 use crate::sources::{RelativeSourceLocator, RootLocator, SourceLocatorKey};
@@ -468,11 +468,11 @@ pub struct JobControlAvailability {
 }
 
 impl JobControlAvailability {
-    /// Creates control availability. Slice 002 never enables retry.
-    pub fn new(can_cancel: bool) -> Self {
+    /// Creates control availability from backend-authoritative facts.
+    pub fn new(can_cancel: bool, can_retry: bool) -> Self {
         Self {
             can_cancel,
-            can_retry: false,
+            can_retry,
         }
     }
 
@@ -481,7 +481,7 @@ impl JobControlAvailability {
         self.can_cancel
     }
 
-    /// Returns whether retry is available. Always false in Slice 002.
+    /// Returns whether retry is currently available.
     pub fn can_retry(&self) -> bool {
         self.can_retry
     }
@@ -771,7 +771,9 @@ pub struct ScanProgressFacts {
     roots_requested: u32,
     roots_admitted: u32,
     roots_terminal: u32,
-    entries_committed: u64,
+    entries_observed: Option<u64>,
+    entries_committed: Option<u64>,
+    issue_count: Option<u64>,
 }
 
 impl ScanProgressFacts {
@@ -785,7 +787,9 @@ impl ScanProgressFacts {
         roots_requested: u32,
         roots_admitted: u32,
         roots_terminal: u32,
-        entries_committed: u64,
+        entries_observed: Option<u64>,
+        entries_committed: Option<u64>,
+        issue_count: Option<u64>,
     ) -> Self {
         Self {
             phase,
@@ -795,7 +799,9 @@ impl ScanProgressFacts {
             roots_requested,
             roots_admitted,
             roots_terminal,
+            entries_observed,
             entries_committed,
+            issue_count,
         }
     }
 
@@ -834,9 +840,19 @@ impl ScanProgressFacts {
         self.roots_terminal
     }
 
-    /// Returns the committed source-entry count.
-    pub fn entries_committed(&self) -> u64 {
+    /// Returns the observed source-entry count, when known.
+    pub fn entries_observed(&self) -> Option<u64> {
+        self.entries_observed
+    }
+
+    /// Returns the committed source-entry count, when known.
+    pub fn entries_committed(&self) -> Option<u64> {
         self.entries_committed
+    }
+
+    /// Returns the bounded issue count, when known.
+    pub fn issue_count(&self) -> Option<u64> {
+        self.issue_count
     }
 }
 
@@ -1186,10 +1202,95 @@ pub enum CancelJobResult {
     NoLongerCancellable,
 }
 
+/// One retry request for a historical library scan execution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RetryJobCommand {
+    job_run_id: JobRunId,
+}
+
+impl RetryJobCommand {
+    /// Creates a retry request for one historical execution identity.
+    pub const fn new(job_run_id: JobRunId) -> Self {
+        Self { job_run_id }
+    }
+
+    /// Returns the historical execution identity.
+    pub const fn job_run_id(self) -> JobRunId {
+        self.job_run_id
+    }
+}
+
+/// Typed outcome of one retry request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RetryJobResult {
+    /// A new durable execution was admitted.
+    Admitted(OperationHandle),
+    /// The source run already has one direct retry successor.
+    AlreadyRetried(JobRunId),
+    /// The request was not admitted with a typed reason.
+    NotAdmitted(RetryNotAdmittedReason),
+}
+
+/// Typed reason one retry request was not admitted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RetryNotAdmittedReason {
+    /// The source execution is not terminal.
+    SourceRunNotTerminal,
+    /// The operation type or terminal state is not retryable.
+    OperationNotRetryable,
+    /// No original target remains currently eligible.
+    NoEligibleTargets(Vec<LibraryScanAdmissionExclusion>),
+}
+
+/// Application-level retry result carrying the frozen execution payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetryJobAdmissionResult {
+    outcome: RetryJobResult,
+    admitted: Option<AdmittedScan>,
+}
+
+impl RetryJobAdmissionResult {
+    /// Creates a non-admitted retry outcome.
+    pub fn not_admitted(outcome: RetryJobResult) -> Self {
+        Self {
+            outcome,
+            admitted: None,
+        }
+    }
+
+    /// Creates an admitted retry outcome with its execution payload.
+    pub fn admitted(handle: OperationHandle, admitted: AdmittedScan) -> Self {
+        Self {
+            outcome: RetryJobResult::Admitted(handle),
+            admitted: Some(admitted),
+        }
+    }
+
+    /// Returns the caller-visible typed outcome.
+    pub fn outcome(&self) -> &RetryJobResult {
+        &self.outcome
+    }
+
+    /// Returns the admitted execution payload, if admission succeeded.
+    pub fn admitted_scan(&self) -> Option<&AdmittedScan> {
+        self.admitted.as_ref()
+    }
+}
+
 /// Transaction-scoped generic job-run repository port.
 pub trait JobRunRepository {
     /// Inserts one queued job execution and returns its stable identity.
     fn insert(&mut self, new: NewJobRun) -> Result<JobRunId, PersistenceError>;
+
+    /// Persists one durable linear retry link from a source run to its direct
+    /// successor. Both identities must reference existing job runs; the
+    /// durable schema enforces at most one direct successor per source and at
+    /// most one source per successor.
+    fn insert_retry_link(
+        &mut self,
+        source_job_run_id: JobRunId,
+        successor_job_run_id: JobRunId,
+    ) -> Result<(), PersistenceError>;
 
     /// Persists accepted cancellation intent for an active run. Returns
     /// `None` when the identity is missing, `false` when the run is already
@@ -1317,6 +1418,16 @@ pub trait ScanRunRepository {
         status: ScanRunStatus,
         completed_at_ms: Option<i64>,
         failure_reason: Option<String>,
+    ) -> Result<bool, PersistenceError>;
+
+    /// Persists structured scan-run progress counters. Returns `false` when
+    /// the scan identity is missing.
+    fn set_progress_facts(
+        &mut self,
+        scan_run_id: ScanRunId,
+        entries_observed: u64,
+        entries_committed: u64,
+        issue_count: u64,
     ) -> Result<bool, PersistenceError>;
 
     /// Returns the active owner of one root, if any.
@@ -1501,6 +1612,117 @@ pub trait LibraryScanTargetRepository {
         &mut self,
         job_run_id: JobRunId,
     ) -> Result<Vec<LibraryScanTarget>, PersistenceError>;
+}
+
+/// Operation-specific LibraryScan invocation vocabulary.
+///
+/// The vocabulary preserves the original requested intent so future Scan All
+/// invocations can be reconstructed and retried distinctly from single-root
+/// scans. Slice 006 extends this enum with Scan All invocation kinds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryScanInvocationKind {
+    /// A first single-root scan request.
+    InitialSingleRoot,
+    /// A retry that reconstructs one original single-root request.
+    RetrySingleRoot,
+}
+
+impl LibraryScanInvocationKind {
+    /// Returns the canonical serialized value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InitialSingleRoot => "initial_single_root",
+            Self::RetrySingleRoot => "retry_single_root",
+        }
+    }
+}
+
+/// Immutable LibraryScan admission-context facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryScanAdmissionContext {
+    job_run_id: JobRunId,
+    invocation_kind: LibraryScanInvocationKind,
+    retry_source_job_run_id: Option<JobRunId>,
+}
+
+impl LibraryScanAdmissionContext {
+    /// Creates one loaded admission-context record.
+    pub const fn new(
+        job_run_id: JobRunId,
+        invocation_kind: LibraryScanInvocationKind,
+        retry_source_job_run_id: Option<JobRunId>,
+    ) -> Self {
+        Self {
+            job_run_id,
+            invocation_kind,
+            retry_source_job_run_id,
+        }
+    }
+
+    /// Returns the owning job identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the invocation kind.
+    pub const fn invocation_kind(&self) -> LibraryScanInvocationKind {
+        self.invocation_kind
+    }
+
+    /// Returns the immutable retry source identity, when this run is a retry.
+    pub const fn retry_source_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_source_job_run_id
+    }
+}
+
+/// One new immutable LibraryScan admission-context record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NewLibraryScanAdmissionContext {
+    job_run_id: JobRunId,
+    invocation_kind: LibraryScanInvocationKind,
+    retry_source_job_run_id: Option<JobRunId>,
+}
+
+impl NewLibraryScanAdmissionContext {
+    /// Creates one new admission-context insert.
+    pub const fn new(
+        job_run_id: JobRunId,
+        invocation_kind: LibraryScanInvocationKind,
+        retry_source_job_run_id: Option<JobRunId>,
+    ) -> Self {
+        Self {
+            job_run_id,
+            invocation_kind,
+            retry_source_job_run_id,
+        }
+    }
+
+    /// Returns the owning job identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the invocation kind.
+    pub const fn invocation_kind(&self) -> LibraryScanInvocationKind {
+        self.invocation_kind
+    }
+
+    /// Returns the immutable retry source identity, when this run is a retry.
+    pub const fn retry_source_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_source_job_run_id
+    }
+}
+
+/// Transaction-scoped LibraryScan admission-context repository port.
+pub trait LibraryScanAdmissionContextRepository {
+    /// Inserts one immutable admission-context record.
+    fn insert(&mut self, new: NewLibraryScanAdmissionContext) -> Result<(), PersistenceError>;
+
+    /// Loads the immutable admission context for one job, if present.
+    fn get_by_job(
+        &mut self,
+        job_run_id: JobRunId,
+    ) -> Result<Option<LibraryScanAdmissionContext>, PersistenceError>;
 }
 
 /// One new persisted positive source observation.
@@ -1795,6 +2017,117 @@ pub trait SourceEntryRepository {
     fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError>;
 }
 
+/// One authoritative scan-run admission reference for a historical root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScanAdmissionReference {
+    job_run_id: JobRunId,
+    scan_run_id: ScanRunId,
+}
+
+impl ScanAdmissionReference {
+    /// Creates one scan-run admission reference.
+    pub const fn new(job_run_id: JobRunId, scan_run_id: ScanRunId) -> Self {
+        Self {
+            job_run_id,
+            scan_run_id,
+        }
+    }
+
+    /// Returns the owning job identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the scan identity.
+    pub const fn scan_run_id(&self) -> ScanRunId {
+        self.scan_run_id
+    }
+}
+
+/// Current authoritative eligibility facts for one original retry target.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryScanTargetEligibility {
+    /// The historical root is still configured.
+    pub configured: bool,
+    /// The current root configuration resolves to a valid scan authority.
+    pub configuration_valid: bool,
+    /// Another active scan currently owns the root, when applicable.
+    pub active_owner: Option<ActiveScanOwnership>,
+}
+
+/// Shared outcome of one retry-eligibility evaluation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryScanRetryEvaluation {
+    can_retry: bool,
+    exclusions: Vec<LibraryScanAdmissionExclusion>,
+}
+
+impl LibraryScanRetryEvaluation {
+    /// Returns whether at least one original target is currently eligible.
+    pub const fn can_retry(&self) -> bool {
+        self.can_retry
+    }
+
+    /// Returns the typed exclusions for the evaluated targets.
+    pub fn exclusions(&self) -> &[LibraryScanAdmissionExclusion] {
+        &self.exclusions
+    }
+}
+
+/// One shared retry-eligibility seam.
+///
+/// Both the Jobs projection (`canRetry`) and Retry admission consume this
+/// function so current-target eligibility semantics cannot drift between
+/// control availability and mutation.
+pub fn evaluate_retry_eligibility(
+    source_state: JobRunState,
+    has_successor: bool,
+    targets: &[(LibraryScanTarget, LibraryScanTargetEligibility)],
+) -> LibraryScanRetryEvaluation {
+    let source_eligible = matches!(
+        source_state,
+        JobRunState::CompletedWithIssues
+            | JobRunState::Failed
+            | JobRunState::Cancelled
+            | JobRunState::Abandoned
+    );
+    let mut exclusions = Vec::new();
+    let mut any_eligible = false;
+    for (target, eligibility) in targets {
+        if target.kind() != LibraryScanTargetKind::Requested {
+            continue;
+        }
+        if !eligibility.configured {
+            exclusions.push(LibraryScanAdmissionExclusion::new(
+                target.library_root_id(),
+                LibraryScanTargetExclusionReason::NoLongerConfigured,
+                None,
+                None,
+            ));
+        } else if !eligibility.configuration_valid {
+            exclusions.push(LibraryScanAdmissionExclusion::new(
+                target.library_root_id(),
+                LibraryScanTargetExclusionReason::InvalidConfiguration,
+                None,
+                None,
+            ));
+        } else if let Some(owner) = eligibility.active_owner {
+            exclusions.push(LibraryScanAdmissionExclusion::new(
+                target.library_root_id(),
+                LibraryScanTargetExclusionReason::AlreadyScanning,
+                Some(owner.job_run_id()),
+                Some(owner.scan_run_id()),
+            ));
+        } else {
+            any_eligible = true;
+        }
+    }
+    LibraryScanRetryEvaluation {
+        can_retry: source_eligible && !has_successor && any_eligible,
+        exclusions,
+    }
+}
+
 /// Independent authoritative jobs query port.
 pub trait JobsQueries {
     /// Reads one authoritative job detail, or `None` when unknown.
@@ -1814,6 +2147,80 @@ pub trait JobsQueries {
         offset: u32,
         page_size: u32,
     ) -> Result<JobSummaryPage, PersistenceError>;
+
+    /// Returns the one direct retry successor of a source run, if any.
+    fn find_retry_successor(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<JobRunId>, PersistenceError>;
+
+    /// Lists the immutable requested targets of one LibraryScan job, or
+    /// `None` when the identity is unknown or not a LibraryScan job.
+    fn list_requested_library_scan_targets(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<Vec<LibraryScanTarget>>, PersistenceError>;
+
+    /// Finds the newest scan-run admission (active or terminal) owned by one
+    /// historical root. This is the Jobs-authoritative fact used to reconcile
+    /// an ambiguous Add & Scan transport outcome.
+    fn find_scan_admission_for_root(
+        &self,
+        context: &OperationContext,
+        library_root_id: LibraryRootId,
+    ) -> Result<Option<ScanAdmissionReference>, PersistenceError>;
+}
+
+impl<Q> JobsQueries for &Q
+where
+    Q: JobsQueries,
+{
+    fn get_job(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<JobDetail>, PersistenceError> {
+        (*self).get_job(context, job_run_id)
+    }
+
+    fn list_active(&self, context: &OperationContext) -> Result<Vec<JobSummary>, PersistenceError> {
+        (*self).list_active(context)
+    }
+
+    fn list_recent_terminal(
+        &self,
+        context: &OperationContext,
+        offset: u32,
+        page_size: u32,
+    ) -> Result<JobSummaryPage, PersistenceError> {
+        (*self).list_recent_terminal(context, offset, page_size)
+    }
+
+    fn find_retry_successor(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<JobRunId>, PersistenceError> {
+        (*self).find_retry_successor(context, job_run_id)
+    }
+
+    fn list_requested_library_scan_targets(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+    ) -> Result<Option<Vec<LibraryScanTarget>>, PersistenceError> {
+        (*self).list_requested_library_scan_targets(context, job_run_id)
+    }
+
+    fn find_scan_admission_for_root(
+        &self,
+        context: &OperationContext,
+        library_root_id: LibraryRootId,
+    ) -> Result<Option<ScanAdmissionReference>, PersistenceError> {
+        (*self).find_scan_admission_for_root(context, library_root_id)
+    }
 }
 
 /// Capability-neutral job observation and control service.
@@ -1876,10 +2283,26 @@ where
                 .map_err(|error| map_persistence_error(context.trace_id(), error)),
         }
     }
+
+    /// Reads the newest scan-run admission for one root (active or terminal).
+    ///
+    /// This focused query supplies Jobs-authoritative reconciliation for an
+    /// ambiguous Add & Scan transport outcome: Flutter must never infer child
+    /// admission from root `lastScan` alone.
+    pub fn get_root_scan_admission(
+        &self,
+        library_root_id: LibraryRootId,
+        context: OperationContext,
+    ) -> Result<Option<ScanAdmissionReference>, ApplicationError> {
+        self.queries
+            .find_scan_admission_for_root(&context, library_root_id)
+            .map_err(|error| map_persistence_error(context.trace_id(), error))
+    }
 }
 
 impl<Q, U> JobsService<Q, U>
 where
+    Q: JobsQueries,
     U: crate::UnitOfWorkFactory + Clone,
 {
     /// Persists durable cancellation intent for one active job.
@@ -1928,6 +2351,307 @@ where
             CancelWork::Requested => Ok(CancelJobResult::CancellationRequested),
         }
     }
+
+    /// Retries one eligible historical LibraryScan into a new durable run.
+    pub fn retry_job<R>(
+        &self,
+        command: RetryJobCommand,
+        context: OperationContext,
+        recorder: R,
+    ) -> Result<RetryJobAdmissionResult, ApplicationError>
+    where
+        R: crate::EventRecorder + Clone + Send + Sync + 'static,
+    {
+        RetryJobHandler::new(&self.queries, self.unit_of_work.clone())
+            .handle(command, context, recorder)
+    }
+}
+
+/// Handles one durable LibraryScan retry admission.
+pub struct RetryJobHandler<Q, U> {
+    queries: Q,
+    unit_of_work: U,
+}
+
+impl<Q, U> RetryJobHandler<Q, U> {
+    /// Composes the jobs query and Unit of Work ports.
+    pub const fn new(queries: Q, unit_of_work: U) -> Self {
+        Self {
+            queries,
+            unit_of_work,
+        }
+    }
+}
+
+impl<Q, U> RetryJobHandler<Q, U>
+where
+    Q: JobsQueries,
+    U: crate::UnitOfWorkFactory + Clone,
+{
+    /// Executes one retry admission.
+    ///
+    /// Check order: the source job must exist; an existing direct successor
+    /// returns `AlreadyRetried` without branching; the operation must be a
+    /// LibraryScan; the source state must be terminal and retryable; the
+    /// original requested targets are then revalidated through the shared
+    /// eligibility seam. Every admitted retry creates a fresh JobRunId and
+    /// ScanRunId and records a durable linear source/successor relationship.
+    pub fn handle<R>(
+        &self,
+        command: RetryJobCommand,
+        context: OperationContext,
+        recorder: R,
+    ) -> Result<RetryJobAdmissionResult, ApplicationError>
+    where
+        R: crate::EventRecorder + Clone + Send + Sync + 'static,
+    {
+        let source_job_run_id = command.job_run_id();
+        let trace_id = context.trace_id();
+
+        let successor = self
+            .queries
+            .find_retry_successor(&context, source_job_run_id)
+            .map_err(|error| map_persistence_error(trace_id, error))?;
+        if let Some(successor) = successor {
+            return Ok(RetryJobAdmissionResult::not_admitted(
+                RetryJobResult::AlreadyRetried(successor),
+            ));
+        }
+
+        let source = self
+            .queries
+            .get_job(&context, source_job_run_id)
+            .map_err(|error| map_persistence_error(trace_id, error))?
+            .ok_or_else(|| {
+                ApplicationError::from_code(ErrorCode::JobRunNotFound, trace_id, SafeContext::new())
+                    .expect("job run not found uses an allowlisted empty context")
+            })?;
+        let source_state = source.job().state();
+        if source_state.is_active() {
+            return Ok(RetryJobAdmissionResult::not_admitted(
+                RetryJobResult::NotAdmitted(RetryNotAdmittedReason::SourceRunNotTerminal),
+            ));
+        }
+        if !matches!(
+            source_state,
+            JobRunState::CompletedWithIssues
+                | JobRunState::Failed
+                | JobRunState::Cancelled
+                | JobRunState::Abandoned
+        ) {
+            return Ok(RetryJobAdmissionResult::not_admitted(
+                RetryJobResult::NotAdmitted(RetryNotAdmittedReason::OperationNotRetryable),
+            ));
+        }
+        let requested_targets = self
+            .queries
+            .list_requested_library_scan_targets(&context, source_job_run_id)
+            .map_err(|error| map_persistence_error(trace_id, error))?
+            .ok_or_else(|| {
+                ApplicationError::from_code(ErrorCode::JobRunNotFound, trace_id, SafeContext::new())
+                    .expect("job run not found uses an allowlisted empty context")
+            })?;
+
+        #[derive(Clone, Debug, Eq, PartialEq)]
+        enum RetryWork {
+            NoEligibleTargets {
+                exclusions: Vec<LibraryScanAdmissionExclusion>,
+            },
+            Admitted {
+                job_run_id: JobRunId,
+                scan_run_id: ScanRunId,
+                plan: LibraryScanExecutionPlan,
+            },
+        }
+
+        let created_at_ms = now_millis();
+        let work = self
+            .unit_of_work
+            .clone()
+            .execute(&context, move |mut scope| {
+                let mut evaluated = Vec::with_capacity(requested_targets.len());
+                for target in &requested_targets {
+                    let root_id = target.library_root_id();
+                    let configured = scope.library_roots().exists(root_id)?;
+                    let configuration = if configured {
+                        scope.library_roots().get_scan_authority(root_id)?
+                    } else {
+                        None
+                    };
+                    let configuration_valid = configuration.is_some();
+                    let active_owner = scope.scan_runs().find_active_ownership(root_id)?;
+                    evaluated.push((
+                        target.clone(),
+                        LibraryScanTargetEligibility {
+                            configured,
+                            configuration_valid,
+                            active_owner,
+                        },
+                        configuration,
+                    ));
+                }
+                let eligibility_input: Vec<(LibraryScanTarget, LibraryScanTargetEligibility)> =
+                    evaluated
+                        .iter()
+                        .map(|(target, eligibility, _)| (target.clone(), eligibility.clone()))
+                        .collect();
+                let evaluation =
+                    evaluate_retry_eligibility(source_state, false, &eligibility_input);
+                if !evaluation.can_retry() {
+                    scope.commit()?;
+                    return Ok::<_, ApplicationPortError>(RetryWork::NoEligibleTargets {
+                        exclusions: evaluation.exclusions().to_vec(),
+                    });
+                }
+
+                let job_run_id = scope
+                    .job_runs()
+                    .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
+                scope.library_scan_admission_context().insert(
+                    NewLibraryScanAdmissionContext::new(
+                        job_run_id,
+                        LibraryScanInvocationKind::RetrySingleRoot,
+                        Some(source_job_run_id),
+                    ),
+                )?;
+
+                let mut admitted_scan_run_id: Option<ScanRunId> = None;
+                let mut admitted_plan: Option<LibraryScanExecutionPlan> = None;
+                let mut admitted_root_ids = Vec::new();
+                for (target, eligibility, configuration) in &evaluated {
+                    scope
+                        .library_scan_targets()
+                        .insert(NewLibraryScanTarget::new(
+                            job_run_id,
+                            LibraryScanTargetKind::Requested,
+                            target.library_root_id(),
+                            target.display_name().to_owned(),
+                            target.safe_location_display().to_owned(),
+                            None,
+                            None,
+                        ))?;
+                    if eligibility.configured
+                        && eligibility.configuration_valid
+                        && eligibility.active_owner.is_none()
+                    {
+                        let configuration = configuration
+                            .as_ref()
+                            .expect("eligible retry target has a valid configuration");
+                        let scan_run_id = scope.scan_runs().insert(NewScanRun::new(
+                            job_run_id,
+                            configuration.root_id(),
+                            configuration.locator().clone(),
+                            configuration.display_name().to_owned(),
+                            configuration.safe_location_presentation().to_owned(),
+                            configuration.source_config_revision(),
+                            configuration.config_revision(),
+                            created_at_ms,
+                        ))?;
+                        scope
+                            .library_scan_targets()
+                            .insert(NewLibraryScanTarget::new(
+                                job_run_id,
+                                LibraryScanTargetKind::Admitted,
+                                configuration.root_id(),
+                                configuration.display_name().to_owned(),
+                                configuration.safe_location_presentation().to_owned(),
+                                Some(scan_run_id),
+                                None,
+                            ))?;
+                        admitted_root_ids.push(configuration.root_id());
+                        if admitted_scan_run_id.is_none() {
+                            admitted_scan_run_id = Some(scan_run_id);
+                            admitted_plan = Some(LibraryScanExecutionPlan::new(
+                                configuration.root_id(),
+                                job_run_id,
+                                scan_run_id,
+                                configuration.locator().clone(),
+                                configuration.display_name().to_owned(),
+                                configuration.safe_location_presentation().to_owned(),
+                                configuration.source_config_revision(),
+                                configuration.config_revision(),
+                                configuration.discovery_policy_revision(),
+                                created_at_ms,
+                            ));
+                        }
+                    } else {
+                        let exclusion = evaluation
+                            .exclusions()
+                            .iter()
+                            .find(|exclusion| {
+                                exclusion.library_root_id() == target.library_root_id()
+                            })
+                            .expect("evaluation produced an exclusion for every ineligible target");
+                        scope
+                            .library_scan_targets()
+                            .insert(NewLibraryScanTarget::new(
+                                job_run_id,
+                                LibraryScanTargetKind::Excluded,
+                                target.library_root_id(),
+                                target.display_name().to_owned(),
+                                target.safe_location_display().to_owned(),
+                                None,
+                                Some(exclusion.clone()),
+                            ))?;
+                    }
+                }
+                let Some(scan_run_id) = admitted_scan_run_id else {
+                    scope.rollback()?;
+                    return Ok(RetryWork::NoEligibleTargets {
+                        exclusions: evaluation.exclusions().to_vec(),
+                    });
+                };
+                scope
+                    .job_runs()
+                    .insert_retry_link(source_job_run_id, job_run_id)?;
+                recorder.record(ApplicationEvent::JobStateChanged(crate::JobStateChanged {
+                    job_run_id,
+                }))?;
+                recorder.record(ApplicationEvent::JobStateChanged(crate::JobStateChanged {
+                    job_run_id: source_job_run_id,
+                }))?;
+                for root_id in &admitted_root_ids {
+                    recorder.record(ApplicationEvent::LibraryRootChanged(
+                        crate::LibraryRootChanged {
+                            library_root_id: *root_id,
+                        },
+                    ))?;
+                }
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(RetryWork::Admitted {
+                    job_run_id,
+                    scan_run_id,
+                    plan: admitted_plan.expect("admitted retry always builds one plan"),
+                })
+            })
+            .map_err(|error| map_port_error(trace_id, error))?;
+
+        match work {
+            RetryWork::NoEligibleTargets { exclusions } => Ok(
+                RetryJobAdmissionResult::not_admitted(RetryJobResult::NotAdmitted(
+                    RetryNotAdmittedReason::NoEligibleTargets(exclusions),
+                )),
+            ),
+            RetryWork::Admitted {
+                job_run_id,
+                scan_run_id,
+                plan,
+            } => {
+                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                Ok(RetryJobAdmissionResult::admitted(
+                    handle,
+                    AdmittedScan::new(job_run_id, scan_run_id, plan),
+                ))
+            }
+        }
+    }
+}
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
 }
 
 /// Cooperative progress reporting contract used by operation handlers.

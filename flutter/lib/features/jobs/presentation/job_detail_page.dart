@@ -10,6 +10,7 @@ class JobDetailPage extends ConsumerWidget {
   const JobDetailPage({
     required this.jobRunId,
     required this.onMissingJob,
+    required this.onOpenJob,
     super.key,
   });
 
@@ -17,6 +18,9 @@ class JobDetailPage extends ConsumerWidget {
 
   /// Canonicalizes to /jobs when the job cannot be resolved authoritatively.
   final VoidCallback onMissingJob;
+
+  /// Opens another execution identity (retry source/successor navigation).
+  final void Function(JobRunId jobRunId) onOpenJob;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,6 +57,9 @@ class JobDetailPage extends ConsumerWidget {
           :final refreshing,
           :final cancelling,
           :final cancelAmbiguous,
+          :final retrying,
+          :final retryAmbiguous,
+          :final retryNotAdmittedReason,
           :final lastFailure,
         ) =>
           _JobDetailContent(
@@ -60,10 +67,20 @@ class JobDetailPage extends ConsumerWidget {
             refreshing: refreshing,
             cancelling: cancelling,
             cancelAmbiguous: cancelAmbiguous,
+            retrying: retrying,
+            retryAmbiguous: retryAmbiguous,
+            retryNotAdmittedReason: retryNotAdmittedReason,
             lastFailure: lastFailure,
             onCancel: () => ref
                 .read(jobDetailControllerProvider(jobRunId).notifier)
                 .cancel(jobRunId),
+            onRetry: () => ref
+                .read(jobDetailControllerProvider(jobRunId).notifier)
+                .retry(
+                  jobRunId,
+                  onAdmitted: (newJobRunId) => onOpenJob(newJobRunId),
+                ),
+            onOpenJob: onOpenJob,
           ),
       },
     );
@@ -77,16 +94,26 @@ class _JobDetailContent extends StatelessWidget {
     required this.refreshing,
     required this.cancelling,
     required this.cancelAmbiguous,
+    required this.retrying,
+    required this.retryAmbiguous,
+    required this.retryNotAdmittedReason,
     required this.lastFailure,
     required this.onCancel,
+    required this.onRetry,
+    required this.onOpenJob,
   });
 
   final JobDetail detail;
   final bool refreshing;
   final bool cancelling;
   final bool cancelAmbiguous;
+  final bool retrying;
+  final bool retryAmbiguous;
+  final RetryNotAdmittedReason? retryNotAdmittedReason;
   final ClientFailure? lastFailure;
   final VoidCallback onCancel;
+  final VoidCallback onRetry;
+  final void Function(JobRunId jobRunId) onOpenJob;
 
   Future<void> _confirmCancel(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -111,12 +138,37 @@ class _JobDetailContent extends StatelessWidget {
     }
   }
 
+  Future<void> _confirmRetry(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(JobsMessages.retryConfirmationTitle),
+        content: const Text(JobsMessages.retryConfirmationBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text(JobsMessages.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(JobsMessages.retryJob),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      onRetry();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final job = detail.job;
     final scanDetail = switch (detail.operationDetail) {
       OperationDetailLibraryScan(:final detail) => detail,
     };
+    final controls = job.controls;
+    final controlsBusy = cancelling || retrying;
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -131,14 +183,26 @@ class _JobDetailContent extends StatelessWidget {
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                   ),
-                  if (job.controls.canCancel && !cancelling)
+                  if (controls.canCancel && !controlsBusy && !retryAmbiguous)
                     OutlinedButton.icon(
                       key: const ValueKey<String>('jobs-cancel-job'),
                       onPressed: () => _confirmCancel(context),
                       icon: const Icon(Icons.close),
                       label: const Text(JobsMessages.cancelJob),
                     ),
-                  if (cancelling)
+                  if (controls.canRetry &&
+                      !controlsBusy &&
+                      !cancelAmbiguous &&
+                      !retryAmbiguous)
+                    const SizedBox(width: 8),
+                  if (controls.canRetry && !controlsBusy && !retryAmbiguous)
+                    FilledButton.icon(
+                      key: const ValueKey<String>('jobs-retry-job'),
+                      onPressed: () => _confirmRetry(context),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(JobsMessages.retryJob),
+                    ),
+                  if (controlsBusy)
                     const Padding(
                       padding: EdgeInsets.all(8),
                       child: CircularProgressIndicator(strokeWidth: 2),
@@ -173,6 +237,21 @@ class _JobDetailContent extends StatelessWidget {
                     ),
                   ),
                 ),
+              if (retryAmbiguous)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    JobsMessages.retryUncertain,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              if (retryNotAdmittedReason != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_retryReasonLabel(retryNotAdmittedReason!)),
+                ),
               if (lastFailure != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -184,19 +263,34 @@ class _JobDetailContent extends StatelessWidget {
                   ),
                 ),
               const Divider(height: 32),
-              Text(
-                '${JobsMessages.rootsRequested}: ${scanDetail.progress.rootsRequested}',
-              ),
-              Text(
-                '${JobsMessages.rootsAdmitted}: ${scanDetail.progress.rootsAdmitted}',
-              ),
-              Text(
-                '${JobsMessages.rootsTerminal}: ${scanDetail.progress.rootsTerminal}',
-              ),
-              Text(
-                '${JobsMessages.entriesCommitted}: ${scanDetail.progress.entriesCommitted}',
-              ),
+              _ProgressFacts(progress: scanDetail.progress),
               const SizedBox(height: 16),
+              if (scanDetail.requestedRoots.isNotEmpty) ...[
+                Text(
+                  'Requested folders',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                for (final root in scanDetail.requestedRoots)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.folder_outlined),
+                    title: Text(root.displayName),
+                    subtitle: Text(root.safeLocationDisplay),
+                  ),
+              ],
+              if (scanDetail.exclusions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Excluded',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                for (final exclusion in scanDetail.exclusions)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.block),
+                    title: Text(exclusion.reason),
+                  ),
+              ],
               for (final scan in scanDetail.scanRuns)
                 ListTile(
                   dense: true,
@@ -204,10 +298,65 @@ class _JobDetailContent extends StatelessWidget {
                   title: Text(scan.displayName),
                   subtitle: Text(_scanStatusLabel(scan.status)),
                 ),
+              if (scanDetail.retrySourceJobRunId != null ||
+                  scanDetail.retrySuccessorJobRunId != null) ...[
+                const Divider(height: 32),
+                if (scanDetail.retrySourceJobRunId != null)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.history),
+                    title: const Text(JobsMessages.retriedFrom),
+                    subtitle: Text(scanDetail.retrySourceJobRunId!.value),
+                    onTap: () => onOpenJob(scanDetail.retrySourceJobRunId!),
+                  ),
+                if (scanDetail.retrySuccessorJobRunId != null)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.forward),
+                    title: const Text(JobsMessages.retriedAs),
+                    subtitle: Text(scanDetail.retrySuccessorJobRunId!.value),
+                    onTap: () => onOpenJob(scanDetail.retrySuccessorJobRunId!),
+                  ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  String _retryReasonLabel(RetryNotAdmittedReason reason) => switch (reason) {
+    RetryNotAdmittedReasonSourceRunNotTerminal() =>
+      JobsMessages.retrySourceRunNotTerminal,
+    RetryNotAdmittedReasonOperationNotRetryable() =>
+      JobsMessages.retryOperationNotRetryable,
+    RetryNotAdmittedReasonNoEligibleTargets() =>
+      JobsMessages.retryNoEligibleTargets,
+  };
+}
+
+class _ProgressFacts extends StatelessWidget {
+  const _ProgressFacts({required this.progress});
+
+  final ScanProgressFacts progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${JobsMessages.rootsRequested}: ${progress.rootsRequested}'),
+        Text('${JobsMessages.rootsAdmitted}: ${progress.rootsAdmitted}'),
+        Text('${JobsMessages.rootsTerminal}: ${progress.rootsTerminal}'),
+        if (progress.entriesObserved != null)
+          Text('${JobsMessages.entriesObserved}: ${progress.entriesObserved}'),
+        if (progress.entriesCommitted != null)
+          Text(
+            '${JobsMessages.entriesCommitted}: ${progress.entriesCommitted}',
+          ),
+        if (progress.issueCount != null)
+          Text('${JobsMessages.issues}: ${progress.issueCount}'),
+      ],
     );
   }
 }

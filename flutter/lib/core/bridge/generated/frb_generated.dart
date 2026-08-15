@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 549807420;
+  int get rustContentHash => -1004593407;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -77,6 +77,10 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 
 abstract class RustLibApi extends BaseApi {
   Future<AddLocalLibraryRootResultDto> crateAddLocalLibraryRoot({
+    required LocalFilesystemRootSelectionDto selection,
+  });
+
+  Future<AddLocalLibraryRootAndScanResultDto> crateAddLocalLibraryRootAndScan({
     required LocalFilesystemRootSelectionDto selection,
   });
 
@@ -104,6 +108,10 @@ abstract class RustLibApi extends BaseApi {
   Future<JobDetailDto> crateGetJob({required String jobRunId});
 
   Future<LibraryRootDto> crateGetLibraryRoot({required String libraryRootId});
+
+  Future<LibraryRootScanAdmissionReferenceDto?> crateGetRootScanAdmission({
+    required String libraryRootId,
+  });
 
   Future<RuntimeStateDto> crateGetRuntimeState();
 
@@ -140,6 +148,8 @@ abstract class RustLibApi extends BaseApi {
   Future<RuntimeStateDto> crateResetAppearanceSettings({
     required String expectedRuntimeInstanceId,
   });
+
+  Future<RetryJobResultDto> crateRetryJob({required String jobRunId});
 
   Future<RuntimeStateDto> crateRetryStartup({
     required String expectedRuntimeInstanceId,
@@ -204,6 +214,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<AddLocalLibraryRootAndScanResultDto> crateAddLocalLibraryRootAndScan({
+    required LocalFilesystemRootSelectionDto selection,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_local_filesystem_root_selection_dto(
+            selection,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_add_local_library_root_and_scan_result_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateAddLocalLibraryRootAndScanConstMeta,
+        argValues: [selection],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateAddLocalLibraryRootAndScanConstMeta =>
+      const TaskConstMeta(
+        debugName: "add_local_library_root_and_scan",
+        argNames: ["selection"],
+      );
+
+  @override
   Future<bool> crateAttachEventSubscription({required BigInt attachEpoch}) {
     return handler.executeNormal(
       NormalTask(
@@ -213,7 +260,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -244,7 +291,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -271,7 +318,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -301,7 +348,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -338,7 +385,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -368,7 +415,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -395,7 +442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 9,
             port: port_,
           );
         },
@@ -422,7 +469,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 10,
             port: port_,
           );
         },
@@ -450,7 +497,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -478,7 +525,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },
@@ -499,6 +546,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<LibraryRootScanAdmissionReferenceDto?> crateGetRootScanAdmission({
+    required String libraryRootId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(libraryRootId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 13,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_opt_box_autoadd_library_root_scan_admission_reference_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateGetRootScanAdmissionConstMeta,
+        argValues: [libraryRootId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateGetRootScanAdmissionConstMeta => const TaskConstMeta(
+    debugName: "get_root_scan_admission",
+    argNames: ["libraryRootId"],
+  );
+
+  @override
   Future<RuntimeStateDto> crateGetRuntimeState() {
     return handler.executeNormal(
       NormalTask(
@@ -507,7 +587,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 14,
             port: port_,
           );
         },
@@ -537,7 +617,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 15,
             port: port_,
           );
         },
@@ -566,7 +646,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 16,
             port: port_,
           );
         },
@@ -596,7 +676,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 17,
             port: port_,
           );
         },
@@ -629,7 +709,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 18,
             port: port_,
           );
         },
@@ -662,7 +742,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 19,
             port: port_,
           );
         },
@@ -697,7 +777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 20,
             port: port_,
           );
         },
@@ -730,7 +810,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 21,
             port: port_,
           );
         },
@@ -763,7 +843,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 22,
             port: port_,
           );
         },
@@ -795,7 +875,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 23,
             port: port_,
           );
         },
@@ -817,6 +897,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<RetryJobResultDto> crateRetryJob({required String jobRunId}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(jobRunId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 24,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_retry_job_result_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateRetryJobConstMeta,
+        argValues: [jobRunId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateRetryJobConstMeta =>
+      const TaskConstMeta(debugName: "retry_job", argNames: ["jobRunId"]);
+
+  @override
   Future<RuntimeStateDto> crateRetryStartup({
     required String expectedRuntimeInstanceId,
   }) {
@@ -828,7 +936,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 25,
             port: port_,
           );
         },
@@ -860,7 +968,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 26,
             port: port_,
           );
         },
@@ -892,7 +1000,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 27,
             port: port_,
           );
         },
@@ -926,7 +1034,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 25,
+              funcId: 28,
               port: port_,
             );
           },
@@ -963,7 +1071,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1002,6 +1110,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  AddLocalLibraryRootAndScanResultDto
+  dco_decode_add_local_library_root_and_scan_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return AddLocalLibraryRootAndScanResultDto_AddedAndScanAdmitted(
+          dco_decode_box_autoadd_library_root_dto(raw[1]),
+          dco_decode_box_autoadd_operation_handle_dto(raw[2]),
+        );
+      case 1:
+        return AddLocalLibraryRootAndScanResultDto_AddedButScanNotAdmitted(
+          dco_decode_box_autoadd_library_root_dto(raw[1]),
+          dco_decode_box_autoadd_library_scan_child_admission_issue_dto(raw[2]),
+        );
+      case 2:
+        return AddLocalLibraryRootAndScanResultDto_AlreadyConfigured(
+          dco_decode_String(raw[1]),
+        );
+      case 3:
+        return AddLocalLibraryRootAndScanResultDto_OverlapsExisting(
+          dco_decode_String(raw[1]),
+          dco_decode_root_relationship_dto(raw[2]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   @protected
@@ -1076,6 +1213,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApplicationErrorDto dco_decode_box_autoadd_application_error_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_application_error_dto(raw);
+  }
+
+  @protected
   BoundedTerminalFailureDto dco_decode_box_autoadd_bounded_terminal_failure_dto(
     dynamic raw,
   ) {
@@ -1119,6 +1264,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LibraryRootScanAdmissionReferenceDto
+  dco_decode_box_autoadd_library_root_scan_admission_reference_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_library_root_scan_admission_reference_dto(raw);
+  }
+
+  @protected
+  LibraryScanChildAdmissionIssueDto
+  dco_decode_box_autoadd_library_scan_child_admission_issue_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_library_scan_child_admission_issue_dto(raw);
+  }
+
+  @protected
   LibraryScanJobDetailDto dco_decode_box_autoadd_library_scan_job_detail_dto(
     dynamic raw,
   ) {
@@ -1157,6 +1318,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   OperationHandleDto dco_decode_box_autoadd_operation_handle_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_operation_handle_dto(raw);
+  }
+
+  @protected
+  RetryNotAdmittedReasonDto
+  dco_decode_box_autoadd_retry_not_admitted_reason_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_retry_not_admitted_reason_dto(raw);
   }
 
   @protected
@@ -1419,6 +1587,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LibraryRootScanAdmissionReferenceDto
+  dco_decode_library_root_scan_admission_reference_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LibraryRootScanAdmissionReferenceDto(
+      jobRunId: dco_decode_String(arr[0]),
+      scanRunId: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
   LibraryScanAdmissionExclusionDto
   dco_decode_library_scan_admission_exclusion_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -1431,6 +1612,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       activeJobRunId: dco_decode_opt_String(arr[2]),
       activeScanRunId: dco_decode_opt_String(arr[3]),
     );
+  }
+
+  @protected
+  LibraryScanChildAdmissionIssueDto
+  dco_decode_library_scan_child_admission_issue_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return LibraryScanChildAdmissionIssueDto_AlreadyScanning(
+          libraryRootId: dco_decode_String(raw[1]),
+          activeJobRunId: dco_decode_String(raw[2]),
+          activeScanRunId: dco_decode_String(raw[3]),
+        );
+      case 1:
+        return LibraryScanChildAdmissionIssueDto_AdmissionFailure(
+          dco_decode_box_autoadd_application_error_dto(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   @protected
@@ -1662,6 +1863,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LibraryRootScanAdmissionReferenceDto?
+  dco_decode_opt_box_autoadd_library_root_scan_admission_reference_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_library_root_scan_admission_reference_dto(raw);
+  }
+
+  @protected
   StartupFailureDto? dco_decode_opt_box_autoadd_startup_failure_dto(
     dynamic raw,
   ) {
@@ -1716,6 +1928,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           jobRunId: dco_decode_String(raw[2]),
           scanRunId: dco_decode_String(raw[3]),
           owningJobRootCount: dco_decode_u_32(raw[4]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  RetryJobResultDto dco_decode_retry_job_result_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RetryJobResultDto_Admitted(
+          dco_decode_box_autoadd_operation_handle_dto(raw[1]),
+        );
+      case 1:
+        return RetryJobResultDto_AlreadyRetried(dco_decode_String(raw[1]));
+      case 2:
+        return RetryJobResultDto_NotAdmitted(
+          dco_decode_box_autoadd_retry_not_admitted_reason_dto(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  RetryNotAdmittedReasonDto dco_decode_retry_not_admitted_reason_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return RetryNotAdmittedReasonDto_SourceRunNotTerminal();
+      case 1:
+        return RetryNotAdmittedReasonDto_OperationNotRetryable();
+      case 2:
+        return RetryNotAdmittedReasonDto_NoEligibleTargets(
+          dco_decode_list_library_scan_admission_exclusion_dto(raw[1]),
         );
       default:
         throw Exception("unreachable");
@@ -1820,8 +2070,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ScanProgressFactsDto dco_decode_scan_progress_facts_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return ScanProgressFactsDto(
       phase: dco_decode_opt_String(arr[0]),
       completedUnits: dco_decode_opt_box_autoadd_u_64(arr[1]),
@@ -1830,7 +2080,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       rootsRequested: dco_decode_u_32(arr[4]),
       rootsAdmitted: dco_decode_u_32(arr[5]),
       rootsTerminal: dco_decode_u_32(arr[6]),
-      entriesCommitted: dco_decode_u_64(arr[7]),
+      entriesObserved: dco_decode_opt_box_autoadd_u_64(arr[7]),
+      entriesCommitted: dco_decode_opt_box_autoadd_u_64(arr[8]),
+      issueCount: dco_decode_opt_box_autoadd_u_64(arr[9]),
     );
   }
 
@@ -2054,6 +2306,51 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AddLocalLibraryRootAndScanResultDto
+  sse_decode_add_local_library_root_and_scan_result_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_field0 = sse_decode_box_autoadd_library_root_dto(deserializer);
+        var var_field1 = sse_decode_box_autoadd_operation_handle_dto(
+          deserializer,
+        );
+        return AddLocalLibraryRootAndScanResultDto_AddedAndScanAdmitted(
+          var_field0,
+          var_field1,
+        );
+      case 1:
+        var var_field0 = sse_decode_box_autoadd_library_root_dto(deserializer);
+        var var_field1 =
+            sse_decode_box_autoadd_library_scan_child_admission_issue_dto(
+              deserializer,
+            );
+        return AddLocalLibraryRootAndScanResultDto_AddedButScanNotAdmitted(
+          var_field0,
+          var_field1,
+        );
+      case 2:
+        var var_field0 = sse_decode_String(deserializer);
+        return AddLocalLibraryRootAndScanResultDto_AlreadyConfigured(
+          var_field0,
+        );
+      case 3:
+        var var_field0 = sse_decode_String(deserializer);
+        var var_field1 = sse_decode_root_relationship_dto(deserializer);
+        return AddLocalLibraryRootAndScanResultDto_OverlapsExisting(
+          var_field0,
+          var_field1,
+        );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   AddLocalLibraryRootResultDto sse_decode_add_local_library_root_result_dto(
     SseDeserializer deserializer,
   ) {
@@ -2133,6 +2430,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ApplicationErrorDto sse_decode_box_autoadd_application_error_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_application_error_dto(deserializer));
+  }
+
+  @protected
   BoundedTerminalFailureDto sse_decode_box_autoadd_bounded_terminal_failure_dto(
     SseDeserializer deserializer,
   ) {
@@ -2177,6 +2482,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_library_root_last_scan_dto(deserializer));
+  }
+
+  @protected
+  LibraryRootScanAdmissionReferenceDto
+  sse_decode_box_autoadd_library_root_scan_admission_reference_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_library_root_scan_admission_reference_dto(deserializer));
+  }
+
+  @protected
+  LibraryScanChildAdmissionIssueDto
+  sse_decode_box_autoadd_library_scan_child_admission_issue_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_library_scan_child_admission_issue_dto(deserializer));
   }
 
   @protected
@@ -2228,6 +2551,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_operation_handle_dto(deserializer));
+  }
+
+  @protected
+  RetryNotAdmittedReasonDto
+  sse_decode_box_autoadd_retry_not_admitted_reason_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_retry_not_admitted_reason_dto(deserializer));
   }
 
   @protected
@@ -2533,6 +2865,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LibraryRootScanAdmissionReferenceDto
+  sse_decode_library_root_scan_admission_reference_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_jobRunId = sse_decode_String(deserializer);
+    var var_scanRunId = sse_decode_String(deserializer);
+    return LibraryRootScanAdmissionReferenceDto(
+      jobRunId: var_jobRunId,
+      scanRunId: var_scanRunId,
+    );
+  }
+
+  @protected
   LibraryScanAdmissionExclusionDto
   sse_decode_library_scan_admission_exclusion_dto(
     SseDeserializer deserializer,
@@ -2548,6 +2894,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       activeJobRunId: var_activeJobRunId,
       activeScanRunId: var_activeScanRunId,
     );
+  }
+
+  @protected
+  LibraryScanChildAdmissionIssueDto
+  sse_decode_library_scan_child_admission_issue_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_libraryRootId = sse_decode_String(deserializer);
+        var var_activeJobRunId = sse_decode_String(deserializer);
+        var var_activeScanRunId = sse_decode_String(deserializer);
+        return LibraryScanChildAdmissionIssueDto_AlreadyScanning(
+          libraryRootId: var_libraryRootId,
+          activeJobRunId: var_activeJobRunId,
+          activeScanRunId: var_activeScanRunId,
+        );
+      case 1:
+        var var_field0 = sse_decode_box_autoadd_application_error_dto(
+          deserializer,
+        );
+        return LibraryScanChildAdmissionIssueDto_AdmissionFailure(var_field0);
+      default:
+        throw UnimplementedError('');
+    }
   }
 
   @protected
@@ -2883,6 +3257,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LibraryRootScanAdmissionReferenceDto?
+  sse_decode_opt_box_autoadd_library_root_scan_admission_reference_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_library_root_scan_admission_reference_dto(
+        deserializer,
+      ));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   StartupFailureDto? sse_decode_opt_box_autoadd_startup_failure_dto(
     SseDeserializer deserializer,
   ) {
@@ -2969,6 +3359,54 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           scanRunId: var_scanRunId,
           owningJobRootCount: var_owningJobRootCount,
         );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  RetryJobResultDto sse_decode_retry_job_result_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_field0 = sse_decode_box_autoadd_operation_handle_dto(
+          deserializer,
+        );
+        return RetryJobResultDto_Admitted(var_field0);
+      case 1:
+        var var_field0 = sse_decode_String(deserializer);
+        return RetryJobResultDto_AlreadyRetried(var_field0);
+      case 2:
+        var var_field0 = sse_decode_box_autoadd_retry_not_admitted_reason_dto(
+          deserializer,
+        );
+        return RetryJobResultDto_NotAdmitted(var_field0);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  RetryNotAdmittedReasonDto sse_decode_retry_not_admitted_reason_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return RetryNotAdmittedReasonDto_SourceRunNotTerminal();
+      case 1:
+        return RetryNotAdmittedReasonDto_OperationNotRetryable();
+      case 2:
+        var var_field0 = sse_decode_list_library_scan_admission_exclusion_dto(
+          deserializer,
+        );
+        return RetryNotAdmittedReasonDto_NoEligibleTargets(var_field0);
       default:
         throw UnimplementedError('');
     }
@@ -3103,7 +3541,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_rootsRequested = sse_decode_u_32(deserializer);
     var var_rootsAdmitted = sse_decode_u_32(deserializer);
     var var_rootsTerminal = sse_decode_u_32(deserializer);
-    var var_entriesCommitted = sse_decode_u_64(deserializer);
+    var var_entriesObserved = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_entriesCommitted = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_issueCount = sse_decode_opt_box_autoadd_u_64(deserializer);
     return ScanProgressFactsDto(
       phase: var_phase,
       completedUnits: var_completedUnits,
@@ -3112,7 +3552,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       rootsRequested: var_rootsRequested,
       rootsAdmitted: var_rootsAdmitted,
       rootsTerminal: var_rootsTerminal,
+      entriesObserved: var_entriesObserved,
       entriesCommitted: var_entriesCommitted,
+      issueCount: var_issueCount,
     );
   }
 
@@ -3382,6 +3824,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_add_local_library_root_and_scan_result_dto(
+    AddLocalLibraryRootAndScanResultDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case AddLocalLibraryRootAndScanResultDto_AddedAndScanAdmitted(
+        field0: final field0,
+        field1: final field1,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_box_autoadd_library_root_dto(field0, serializer);
+        sse_encode_box_autoadd_operation_handle_dto(field1, serializer);
+      case AddLocalLibraryRootAndScanResultDto_AddedButScanNotAdmitted(
+        field0: final field0,
+        field1: final field1,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_box_autoadd_library_root_dto(field0, serializer);
+        sse_encode_box_autoadd_library_scan_child_admission_issue_dto(
+          field1,
+          serializer,
+        );
+      case AddLocalLibraryRootAndScanResultDto_AlreadyConfigured(
+        field0: final field0,
+      ):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(field0, serializer);
+      case AddLocalLibraryRootAndScanResultDto_OverlapsExisting(
+        field0: final field0,
+        field1: final field1,
+      ):
+        sse_encode_i_32(3, serializer);
+        sse_encode_String(field0, serializer);
+        sse_encode_root_relationship_dto(field1, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_add_local_library_root_result_dto(
     AddLocalLibraryRootResultDto self,
     SseSerializer serializer,
@@ -3446,6 +3927,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_application_error_dto(
+    ApplicationErrorDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_application_error_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_bounded_terminal_failure_dto(
     BoundedTerminalFailureDto self,
     SseSerializer serializer,
@@ -3500,6 +3990,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_library_root_scan_admission_reference_dto(
+    LibraryRootScanAdmissionReferenceDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_library_root_scan_admission_reference_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_library_scan_child_admission_issue_dto(
+    LibraryScanChildAdmissionIssueDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_library_scan_child_admission_issue_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_library_scan_job_detail_dto(
     LibraryScanJobDetailDto self,
     SseSerializer serializer,
@@ -3551,6 +4059,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_operation_handle_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_retry_not_admitted_reason_dto(
+    RetryNotAdmittedReasonDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_retry_not_admitted_reason_dto(self, serializer);
   }
 
   @protected
@@ -3809,6 +4326,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_library_root_scan_admission_reference_dto(
+    LibraryRootScanAdmissionReferenceDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.jobRunId, serializer);
+    sse_encode_String(self.scanRunId, serializer);
+  }
+
+  @protected
   void sse_encode_library_scan_admission_exclusion_dto(
     LibraryScanAdmissionExclusionDto self,
     SseSerializer serializer,
@@ -3818,6 +4345,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.reason, serializer);
     sse_encode_opt_String(self.activeJobRunId, serializer);
     sse_encode_opt_String(self.activeScanRunId, serializer);
+  }
+
+  @protected
+  void sse_encode_library_scan_child_admission_issue_dto(
+    LibraryScanChildAdmissionIssueDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case LibraryScanChildAdmissionIssueDto_AlreadyScanning(
+        libraryRootId: final libraryRootId,
+        activeJobRunId: final activeJobRunId,
+        activeScanRunId: final activeScanRunId,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(libraryRootId, serializer);
+        sse_encode_String(activeJobRunId, serializer);
+        sse_encode_String(activeScanRunId, serializer);
+      case LibraryScanChildAdmissionIssueDto_AdmissionFailure(
+        field0: final field0,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_box_autoadd_application_error_dto(field0, serializer);
+    }
   }
 
   @protected
@@ -4106,6 +4657,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_library_root_scan_admission_reference_dto(
+    LibraryRootScanAdmissionReferenceDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_library_root_scan_admission_reference_dto(
+        self,
+        serializer,
+      );
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_startup_failure_dto(
     StartupFailureDto? self,
     SseSerializer serializer,
@@ -4189,6 +4756,48 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(jobRunId, serializer);
         sse_encode_String(scanRunId, serializer);
         sse_encode_u_32(owningJobRootCount, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_retry_job_result_dto(
+    RetryJobResultDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RetryJobResultDto_Admitted(field0: final field0):
+        sse_encode_i_32(0, serializer);
+        sse_encode_box_autoadd_operation_handle_dto(field0, serializer);
+      case RetryJobResultDto_AlreadyRetried(field0: final field0):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(field0, serializer);
+      case RetryJobResultDto_NotAdmitted(field0: final field0):
+        sse_encode_i_32(2, serializer);
+        sse_encode_box_autoadd_retry_not_admitted_reason_dto(
+          field0,
+          serializer,
+        );
+    }
+  }
+
+  @protected
+  void sse_encode_retry_not_admitted_reason_dto(
+    RetryNotAdmittedReasonDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case RetryNotAdmittedReasonDto_SourceRunNotTerminal():
+        sse_encode_i_32(0, serializer);
+      case RetryNotAdmittedReasonDto_OperationNotRetryable():
+        sse_encode_i_32(1, serializer);
+      case RetryNotAdmittedReasonDto_NoEligibleTargets(field0: final field0):
+        sse_encode_i_32(2, serializer);
+        sse_encode_list_library_scan_admission_exclusion_dto(
+          field0,
+          serializer,
+        );
     }
   }
 
@@ -4313,7 +4922,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.rootsRequested, serializer);
     sse_encode_u_32(self.rootsAdmitted, serializer);
     sse_encode_u_32(self.rootsTerminal, serializer);
-    sse_encode_u_64(self.entriesCommitted, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.entriesObserved, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.entriesCommitted, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.issueCount, serializer);
   }
 
   @protected

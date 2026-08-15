@@ -6,11 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'library_folder_picker.dart';
 import 'sources_messages.dart';
 
-/// Runs the picker, confirmation, and root-only add workflow.
+/// Runs the picker, confirmation, and Add & Scan / Add Without Scanning
+/// workflow.
 ///
-/// Picker cancellation performs no mutation. The confirmation surface is
-/// root-only: it exposes Add Library Folder while scanning is unavailable,
-/// and later slices can evolve the same authority path into Add & Scan.
+/// Picker cancellation performs no mutation. Add & Scan uses the backend
+/// composite workflow; transport ambiguity is never replayed as a composite.
 Future<void> runAddLibraryFolderFlow(
   BuildContext context,
   WidgetRef ref, {
@@ -29,23 +29,68 @@ Future<void> runAddLibraryFolderFlow(
   if (!context.mounted) return;
   final safeSelection = selection;
 
-  final confirmed = await showDialog<bool>(
+  final choice = await showDialog<_AddFolderChoice>(
     context: context,
     builder: (dialogContext) =>
         _AddFolderConfirmationDialog(selection: safeSelection),
   );
-  if (confirmed != true || !context.mounted) return;
+  if (choice == null || !context.mounted) return;
 
   final controller = ref.read(
     sourcesAddLibraryFolderControllerProvider.notifier,
   );
-  await controller.add(safeSelection);
+  if (choice == _AddFolderChoice.addWithoutScanning) {
+    await controller.add(safeSelection);
+  } else {
+    await controller.addAndScan(safeSelection);
+  }
   if (!context.mounted) return;
   final operation = ref.read(sourcesAddLibraryFolderControllerProvider);
   switch (operation) {
     case SourcesAddOperationAdded(:final root):
       controller.reset();
       onOpenRoot(root.id);
+    case SourcesAddOperationAddedAndScanAdmitted(:final root):
+      controller.reset();
+      onOpenRoot(root.id);
+    case SourcesAddOperationAddedButScanNotAdmitted(:final root, :final issue):
+      controller.reset();
+      onOpenRoot(root.id);
+      if (issue is LibraryScanChildAdmissionIssueAdmissionFailure) {
+        onNotice(SourcesMessages.addAndScanAdmissionFailed);
+      }
+    case SourcesAddOperationScanReconciliationUncertain(:final root):
+      final refresh = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text(SourcesMessages.addAndScanUncertain),
+          content: const Text(SourcesMessages.addAndScanUncertainBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text(SourcesMessages.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(SourcesMessages.reconcileNow),
+            ),
+          ],
+        ),
+      );
+      if (refresh == true && context.mounted) {
+        await controller.refreshReconciliation(root.id);
+        if (!context.mounted) return;
+        final latest = ref.read(sourcesAddLibraryFolderControllerProvider);
+        if (latest is SourcesAddOperationAddedAndScanAdmitted) {
+          controller.reset();
+          onOpenRoot(latest.root.id);
+        } else if (latest is SourcesAddOperationScanReconciliationUncertain) {
+          onNotice(SourcesMessages.addAndScanUncertainBody);
+        }
+      } else {
+        controller.reset();
+        onNotice(SourcesMessages.addAndScanUncertainBody);
+      }
     case SourcesAddOperationAlreadyConfigured(:final existingLibraryRootId):
       controller.reset();
       onOpenRoot(existingLibraryRootId);
@@ -80,7 +125,10 @@ Future<void> runAddLibraryFolderFlow(
   }
 }
 
-/// Root-only confirmation step for one selected local folder.
+enum _AddFolderChoice { addAndScan, addWithoutScanning }
+
+/// Confirmation step for one selected local folder with Add & Scan primary
+/// and Add Without Scanning secondary actions.
 class _AddFolderConfirmationDialog extends StatelessWidget {
   const _AddFolderConfirmationDialog({required this.selection});
 
@@ -102,19 +150,26 @@ class _AddFolderConfirmationDialog extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 16),
-          const Text(SourcesMessages.scanningUnavailableNote),
+          const Text(SourcesMessages.addAndScanExplainsNewFolder),
         ],
       ),
       actions: [
         TextButton(
           key: const ValueKey<String>('add-folder-cancel'),
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text(SourcesMessages.cancel),
         ),
+        TextButton(
+          key: const ValueKey<String>('add-folder-without-scan'),
+          onPressed: () =>
+              Navigator.of(context).pop(_AddFolderChoice.addWithoutScanning),
+          child: const Text(SourcesMessages.addWithoutScanning),
+        ),
         FilledButton(
-          key: const ValueKey<String>('add-folder-confirm'),
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text(SourcesMessages.addLibraryFolder),
+          key: const ValueKey<String>('add-folder-and-scan'),
+          onPressed: () =>
+              Navigator.of(context).pop(_AddFolderChoice.addAndScan),
+          child: const Text(SourcesMessages.addAndScan),
         ),
       ],
     );

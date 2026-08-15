@@ -159,7 +159,7 @@ class _RootDetailContent extends StatelessWidget {
         : null;
     final activeScan = root.activeScan;
     final lastScan = root.lastScan;
-    final canScan = lastScan == null && activeScan == null;
+    final canScan = activeScan == null;
     final statusLabel = activeScan != null
         ? SourcesMessages.scanningInProgress
         : lastScan != null
@@ -196,6 +196,15 @@ class _RootDetailContent extends StatelessWidget {
                   label: const Text(SourcesMessages.viewJob),
                 ),
               ],
+              if (activeScan == null && lastScan != null) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey<String>('sources-view-last-job'),
+                  onPressed: () => onOpenJob(JobRunId(lastScan.jobRunId)),
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text(SourcesMessages.viewJob),
+                ),
+              ],
               if (removalBlockedByActiveScan) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -220,7 +229,11 @@ class _RootDetailContent extends StatelessWidget {
                       key: const ValueKey<String>('sources-start-scan'),
                       onPressed: scanning ? null : onScan,
                       icon: const Icon(Icons.play_arrow),
-                      label: const Text(SourcesMessages.scan),
+                      label: Text(
+                        lastScan == null
+                            ? SourcesMessages.scan
+                            : SourcesMessages.scanAgain,
+                      ),
                     ),
                     const Spacer(),
                   ],

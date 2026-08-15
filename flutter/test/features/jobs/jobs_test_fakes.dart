@@ -16,11 +16,16 @@ final class FakeJobsApi implements JobsApi {
   Object? listFailure;
   Object? detailFailure;
   CancelJobResult Function(JobRunId jobRunId)? onCancel;
+  RetryJobResult Function(JobRunId jobRunId)? onRetry;
+  LibraryRootScanAdmission? Function(LibraryRootId libraryRootId)?
+  onRootScanAdmission;
 
   int activeCalls = 0;
   int recentCalls = 0;
   int getCalls = 0;
   int cancelCalls = 0;
+  int retryCalls = 0;
+  int rootScanAdmissionCalls = 0;
 
   @override
   Future<JobSummaryPage> listActiveJobs() async {
@@ -74,6 +79,26 @@ final class FakeJobsApi implements JobsApi {
   }
 
   @override
+  Future<RetryJobResult> retryJob(JobRunId jobRunId) async {
+    retryCalls++;
+    final handler = onRetry;
+    if (handler != null) return handler(jobRunId);
+    return RetryJobResult.admitted(
+      OperationHandle(jobRunId: jobRunId, operationType: 'library_scan'),
+    );
+  }
+
+  @override
+  Future<LibraryRootScanAdmission?> getRootScanAdmission(
+    LibraryRootId libraryRootId,
+  ) async {
+    rootScanAdmissionCalls++;
+    final handler = onRootScanAdmission;
+    if (handler != null) return handler(libraryRootId);
+    return null;
+  }
+
+  @override
   Future<ActiveJobSummary> getActiveJobSummary() async {
     final active = await listActiveJobs();
     return ActiveJobSummary(
@@ -103,6 +128,12 @@ JobDetail jobDetail({
   String id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   JobLifecycleState state = JobLifecycleState.running,
   bool cancellationRequested = false,
+  bool canRetry = false,
+  JobRunId? retrySourceJobRunId,
+  JobRunId? retrySuccessorJobRunId,
+  int? entriesObserved,
+  int? entriesCommitted,
+  int? issueCount,
 }) => JobDetail(
   job: JobRunProjection(
     jobRunId: JobRunId(id),
@@ -112,7 +143,7 @@ JobDetail jobDetail({
     cancellationRequested: cancellationRequested,
     controls: JobControlAvailability(
       canCancel: state == JobLifecycleState.running && !cancellationRequested,
-      canRetry: false,
+      canRetry: canRetry,
     ),
   ),
   operationDetail: OperationDetail.libraryScan(
@@ -125,8 +156,12 @@ JobDetail jobDetail({
         rootsRequested: 1,
         rootsAdmitted: 1,
         rootsTerminal: 0,
-        entriesCommitted: 0,
+        entriesObserved: entriesObserved,
+        entriesCommitted: entriesCommitted,
+        issueCount: issueCount,
       ),
+      retrySourceJobRunId: retrySourceJobRunId,
+      retrySuccessorJobRunId: retrySuccessorJobRunId,
     ),
   ),
 );

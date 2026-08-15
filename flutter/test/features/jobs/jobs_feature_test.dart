@@ -6,6 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'jobs_test_fakes.dart';
 
+TransportFailure transportFailure() =>
+    const TransportFailure('fake transport failure');
+
 void main() {
   ProviderContainer createContainer(JobsApi api) {
     final container = ProviderContainer(
@@ -78,6 +81,120 @@ void main() {
     expect(api.cancelCalls, 1);
   });
 
+  test('retry admitted navigates to the new execution identity', () async {
+    final oldId = JobRunId('a' * 32);
+    final newId = JobRunId('b' * 32);
+    final api =
+        FakeJobsApi(
+            details: {
+              oldId: jobDetail(
+                id: 'a' * 32,
+                state: JobLifecycleState.failed,
+                canRetry: true,
+              ),
+            },
+          )
+          ..onRetry = (jobRunId) => RetryJobResult.admitted(
+            OperationHandle(jobRunId: newId, operationType: 'library_scan'),
+          );
+    final container = createContainer(api);
+    final provider = jobDetailControllerProvider(oldId);
+    await container.read(provider.notifier).refresh(oldId);
+    final navigated = <JobRunId>[];
+    await container
+        .read(provider.notifier)
+        .retry(oldId, onAdmitted: navigated.add);
+    expect(api.retryCalls, 1);
+    expect(navigated, [newId]);
+  });
+
+  test(
+    'AlreadyRetried resolves to the existing successor without dispatch',
+    () async {
+      final oldId = JobRunId('a' * 32);
+      final successorId = JobRunId('c' * 32);
+      final api = FakeJobsApi(
+        details: {
+          oldId: jobDetail(
+            id: 'a' * 32,
+            state: JobLifecycleState.failed,
+            canRetry: true,
+          ),
+        },
+      )..onRetry = (jobRunId) => RetryJobResult.alreadyRetried(successorId);
+      final container = createContainer(api);
+      final provider = jobDetailControllerProvider(oldId);
+      await container.read(provider.notifier).refresh(oldId);
+      final navigated = <JobRunId>[];
+      await container
+          .read(provider.notifier)
+          .retry(oldId, onAdmitted: navigated.add);
+      expect(api.retryCalls, 1);
+      expect(navigated, [successorId]);
+    },
+  );
+
+  test('NotAdmitted stays on the historical run with a typed reason', () async {
+    final oldId = JobRunId('a' * 32);
+    final api =
+        FakeJobsApi(
+            details: {
+              oldId: jobDetail(
+                id: 'a' * 32,
+                state: JobLifecycleState.failed,
+                canRetry: true,
+              ),
+            },
+          )
+          ..onRetry = (jobRunId) => RetryJobResult.notAdmitted(
+            const RetryNotAdmittedReason.noEligibleTargets([]),
+          );
+    final container = createContainer(api);
+    final provider = jobDetailControllerProvider(oldId);
+    await container.read(provider.notifier).refresh(oldId);
+    final navigated = <JobRunId>[];
+    await container
+        .read(provider.notifier)
+        .retry(oldId, onAdmitted: navigated.add);
+    final state = container.read(provider).requireValue as JobDetailStateReady;
+    expect(navigated, isEmpty);
+    expect(
+      state.retryNotAdmittedReason,
+      isA<RetryNotAdmittedReasonNoEligibleTargets>(),
+    );
+  });
+
+  test('ambiguous retry never dispatches twice and navigates only after the '
+      'authoritative successor appears', () async {
+    final oldId = JobRunId('a' * 32);
+    final successorId = JobRunId('b' * 32);
+    final api = FakeJobsApi(
+      details: {
+        oldId: jobDetail(
+          id: 'a' * 32,
+          state: JobLifecycleState.failed,
+          canRetry: true,
+        ),
+      },
+    )..onRetry = (jobRunId) => throw transportFailure();
+    final container = createContainer(api);
+    final provider = jobDetailControllerProvider(oldId);
+    await container.read(provider.notifier).refresh(oldId);
+    // The authoritative detail now exposes the established successor.
+    api.details[oldId] = jobDetail(
+      id: 'a' * 32,
+      state: JobLifecycleState.failed,
+      canRetry: false,
+      retrySuccessorJobRunId: successorId,
+    );
+    final navigated = <JobRunId>[];
+    await container
+        .read(provider.notifier)
+        .retry(oldId, onAdmitted: navigated.add);
+    expect(api.retryCalls, 1);
+    expect(navigated, [successorId]);
+  });
+
   test('active summary distinguishes zero one and multiple', () async {
     final zero = createContainer(FakeJobsApi());
     expect(
@@ -141,6 +258,76 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('No jobs yet'), findsOneWidget);
+  });
+
+  testWidgets('job detail renders factual progress and Retry only when '
+      'authorized', (tester) async {
+    final jobId = JobRunId('a' * 32);
+    final api = FakeJobsApi(
+      details: {
+        jobId: jobDetail(
+          id: 'a' * 32,
+          state: JobLifecycleState.completedWithIssues,
+          canRetry: true,
+          entriesObserved: 12,
+          entriesCommitted: 10,
+          issueCount: 1,
+        ),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Completed with issues'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('jobs-retry-job')),
+      findsOneWidget,
+    );
+    expect(find.text('Entries observed: 12'), findsOneWidget);
+    expect(find.text('Entries committed: 10'), findsOneWidget);
+    expect(find.text('Issues: 1'), findsOneWidget);
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('jobs-cancel-job')), findsNothing);
+  });
+
+  testWidgets('clean Completed job detail has no Retry control', (
+    tester,
+  ) async {
+    final jobId = JobRunId('a' * 32);
+    final api = FakeJobsApi(
+      details: {
+        jobId: jobDetail(id: 'a' * 32, state: JobLifecycleState.completed),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('jobs-retry-job')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('jobs-cancel-job')), findsNothing);
   });
 }
 

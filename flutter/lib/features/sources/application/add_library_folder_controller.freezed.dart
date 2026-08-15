@@ -55,13 +55,16 @@ extension SourcesAddOperationPatterns on SourcesAddOperation {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourcesAddOperationIdle value)?  idle,TResult Function( SourcesAddOperationSubmitting value)?  submitting,TResult Function( SourcesAddOperationAdded value)?  added,TResult Function( SourcesAddOperationAlreadyConfigured value)?  alreadyConfigured,TResult Function( SourcesAddOperationOverlapsExisting value)?  overlapsExisting,TResult Function( SourcesAddOperationFailed value)?  failed,TResult Function( SourcesAddOperationAmbiguous value)?  ambiguous,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourcesAddOperationIdle value)?  idle,TResult Function( SourcesAddOperationSubmitting value)?  submitting,TResult Function( SourcesAddOperationAdded value)?  added,TResult Function( SourcesAddOperationAddedAndScanAdmitted value)?  addedAndScanAdmitted,TResult Function( SourcesAddOperationAddedButScanNotAdmitted value)?  addedButScanNotAdmitted,TResult Function( SourcesAddOperationScanReconciliationUncertain value)?  scanReconciliationUncertain,TResult Function( SourcesAddOperationAlreadyConfigured value)?  alreadyConfigured,TResult Function( SourcesAddOperationOverlapsExisting value)?  overlapsExisting,TResult Function( SourcesAddOperationFailed value)?  failed,TResult Function( SourcesAddOperationAmbiguous value)?  ambiguous,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case SourcesAddOperationIdle() when idle != null:
 return idle(_that);case SourcesAddOperationSubmitting() when submitting != null:
 return submitting(_that);case SourcesAddOperationAdded() when added != null:
-return added(_that);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
+return added(_that);case SourcesAddOperationAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that);case SourcesAddOperationAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that);case SourcesAddOperationScanReconciliationUncertain() when scanReconciliationUncertain != null:
+return scanReconciliationUncertain(_that);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
 return alreadyConfigured(_that);case SourcesAddOperationOverlapsExisting() when overlapsExisting != null:
 return overlapsExisting(_that);case SourcesAddOperationFailed() when failed != null:
 return failed(_that);case SourcesAddOperationAmbiguous() when ambiguous != null:
@@ -83,13 +86,16 @@ return ambiguous(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourcesAddOperationIdle value)  idle,required TResult Function( SourcesAddOperationSubmitting value)  submitting,required TResult Function( SourcesAddOperationAdded value)  added,required TResult Function( SourcesAddOperationAlreadyConfigured value)  alreadyConfigured,required TResult Function( SourcesAddOperationOverlapsExisting value)  overlapsExisting,required TResult Function( SourcesAddOperationFailed value)  failed,required TResult Function( SourcesAddOperationAmbiguous value)  ambiguous,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourcesAddOperationIdle value)  idle,required TResult Function( SourcesAddOperationSubmitting value)  submitting,required TResult Function( SourcesAddOperationAdded value)  added,required TResult Function( SourcesAddOperationAddedAndScanAdmitted value)  addedAndScanAdmitted,required TResult Function( SourcesAddOperationAddedButScanNotAdmitted value)  addedButScanNotAdmitted,required TResult Function( SourcesAddOperationScanReconciliationUncertain value)  scanReconciliationUncertain,required TResult Function( SourcesAddOperationAlreadyConfigured value)  alreadyConfigured,required TResult Function( SourcesAddOperationOverlapsExisting value)  overlapsExisting,required TResult Function( SourcesAddOperationFailed value)  failed,required TResult Function( SourcesAddOperationAmbiguous value)  ambiguous,}){
 final _that = this;
 switch (_that) {
 case SourcesAddOperationIdle():
 return idle(_that);case SourcesAddOperationSubmitting():
 return submitting(_that);case SourcesAddOperationAdded():
-return added(_that);case SourcesAddOperationAlreadyConfigured():
+return added(_that);case SourcesAddOperationAddedAndScanAdmitted():
+return addedAndScanAdmitted(_that);case SourcesAddOperationAddedButScanNotAdmitted():
+return addedButScanNotAdmitted(_that);case SourcesAddOperationScanReconciliationUncertain():
+return scanReconciliationUncertain(_that);case SourcesAddOperationAlreadyConfigured():
 return alreadyConfigured(_that);case SourcesAddOperationOverlapsExisting():
 return overlapsExisting(_that);case SourcesAddOperationFailed():
 return failed(_that);case SourcesAddOperationAmbiguous():
@@ -107,13 +113,16 @@ return ambiguous(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourcesAddOperationIdle value)?  idle,TResult? Function( SourcesAddOperationSubmitting value)?  submitting,TResult? Function( SourcesAddOperationAdded value)?  added,TResult? Function( SourcesAddOperationAlreadyConfigured value)?  alreadyConfigured,TResult? Function( SourcesAddOperationOverlapsExisting value)?  overlapsExisting,TResult? Function( SourcesAddOperationFailed value)?  failed,TResult? Function( SourcesAddOperationAmbiguous value)?  ambiguous,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourcesAddOperationIdle value)?  idle,TResult? Function( SourcesAddOperationSubmitting value)?  submitting,TResult? Function( SourcesAddOperationAdded value)?  added,TResult? Function( SourcesAddOperationAddedAndScanAdmitted value)?  addedAndScanAdmitted,TResult? Function( SourcesAddOperationAddedButScanNotAdmitted value)?  addedButScanNotAdmitted,TResult? Function( SourcesAddOperationScanReconciliationUncertain value)?  scanReconciliationUncertain,TResult? Function( SourcesAddOperationAlreadyConfigured value)?  alreadyConfigured,TResult? Function( SourcesAddOperationOverlapsExisting value)?  overlapsExisting,TResult? Function( SourcesAddOperationFailed value)?  failed,TResult? Function( SourcesAddOperationAmbiguous value)?  ambiguous,}){
 final _that = this;
 switch (_that) {
 case SourcesAddOperationIdle() when idle != null:
 return idle(_that);case SourcesAddOperationSubmitting() when submitting != null:
 return submitting(_that);case SourcesAddOperationAdded() when added != null:
-return added(_that);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
+return added(_that);case SourcesAddOperationAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that);case SourcesAddOperationAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that);case SourcesAddOperationScanReconciliationUncertain() when scanReconciliationUncertain != null:
+return scanReconciliationUncertain(_that);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
 return alreadyConfigured(_that);case SourcesAddOperationOverlapsExisting() when overlapsExisting != null:
 return overlapsExisting(_that);case SourcesAddOperationFailed() when failed != null:
 return failed(_that);case SourcesAddOperationAmbiguous() when ambiguous != null:
@@ -134,12 +143,15 @@ return ambiguous(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  idle,TResult Function()?  submitting,TResult Function( LibraryRoot root)?  added,TResult Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,TResult Function( ClientFailure failure)?  failed,TResult Function( TransportFailure failure)?  ambiguous,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  idle,TResult Function()?  submitting,TResult Function( LibraryRoot root)?  added,TResult Function( LibraryRoot root,  OperationHandle handle)?  addedAndScanAdmitted,TResult Function( LibraryRoot root,  LibraryScanChildAdmissionIssue issue)?  addedButScanNotAdmitted,TResult Function( LibraryRoot root)?  scanReconciliationUncertain,TResult Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,TResult Function( ClientFailure failure)?  failed,TResult Function( TransportFailure failure)?  ambiguous,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case SourcesAddOperationIdle() when idle != null:
 return idle();case SourcesAddOperationSubmitting() when submitting != null:
 return submitting();case SourcesAddOperationAdded() when added != null:
-return added(_that.root);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
+return added(_that.root);case SourcesAddOperationAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that.root,_that.handle);case SourcesAddOperationAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that.root,_that.issue);case SourcesAddOperationScanReconciliationUncertain() when scanReconciliationUncertain != null:
+return scanReconciliationUncertain(_that.root);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
 return alreadyConfigured(_that.existingLibraryRootId);case SourcesAddOperationOverlapsExisting() when overlapsExisting != null:
 return overlapsExisting(_that.existingLibraryRootId,_that.relationship);case SourcesAddOperationFailed() when failed != null:
 return failed(_that.failure);case SourcesAddOperationAmbiguous() when ambiguous != null:
@@ -161,12 +173,15 @@ return ambiguous(_that.failure);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  idle,required TResult Function()  submitting,required TResult Function( LibraryRoot root)  added,required TResult Function( LibraryRootId existingLibraryRootId)  alreadyConfigured,required TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)  overlapsExisting,required TResult Function( ClientFailure failure)  failed,required TResult Function( TransportFailure failure)  ambiguous,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  idle,required TResult Function()  submitting,required TResult Function( LibraryRoot root)  added,required TResult Function( LibraryRoot root,  OperationHandle handle)  addedAndScanAdmitted,required TResult Function( LibraryRoot root,  LibraryScanChildAdmissionIssue issue)  addedButScanNotAdmitted,required TResult Function( LibraryRoot root)  scanReconciliationUncertain,required TResult Function( LibraryRootId existingLibraryRootId)  alreadyConfigured,required TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)  overlapsExisting,required TResult Function( ClientFailure failure)  failed,required TResult Function( TransportFailure failure)  ambiguous,}) {final _that = this;
 switch (_that) {
 case SourcesAddOperationIdle():
 return idle();case SourcesAddOperationSubmitting():
 return submitting();case SourcesAddOperationAdded():
-return added(_that.root);case SourcesAddOperationAlreadyConfigured():
+return added(_that.root);case SourcesAddOperationAddedAndScanAdmitted():
+return addedAndScanAdmitted(_that.root,_that.handle);case SourcesAddOperationAddedButScanNotAdmitted():
+return addedButScanNotAdmitted(_that.root,_that.issue);case SourcesAddOperationScanReconciliationUncertain():
+return scanReconciliationUncertain(_that.root);case SourcesAddOperationAlreadyConfigured():
 return alreadyConfigured(_that.existingLibraryRootId);case SourcesAddOperationOverlapsExisting():
 return overlapsExisting(_that.existingLibraryRootId,_that.relationship);case SourcesAddOperationFailed():
 return failed(_that.failure);case SourcesAddOperationAmbiguous():
@@ -184,12 +199,15 @@ return ambiguous(_that.failure);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  idle,TResult? Function()?  submitting,TResult? Function( LibraryRoot root)?  added,TResult? Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult? Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,TResult? Function( ClientFailure failure)?  failed,TResult? Function( TransportFailure failure)?  ambiguous,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  idle,TResult? Function()?  submitting,TResult? Function( LibraryRoot root)?  added,TResult? Function( LibraryRoot root,  OperationHandle handle)?  addedAndScanAdmitted,TResult? Function( LibraryRoot root,  LibraryScanChildAdmissionIssue issue)?  addedButScanNotAdmitted,TResult? Function( LibraryRoot root)?  scanReconciliationUncertain,TResult? Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult? Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,TResult? Function( ClientFailure failure)?  failed,TResult? Function( TransportFailure failure)?  ambiguous,}) {final _that = this;
 switch (_that) {
 case SourcesAddOperationIdle() when idle != null:
 return idle();case SourcesAddOperationSubmitting() when submitting != null:
 return submitting();case SourcesAddOperationAdded() when added != null:
-return added(_that.root);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
+return added(_that.root);case SourcesAddOperationAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that.root,_that.handle);case SourcesAddOperationAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that.root,_that.issue);case SourcesAddOperationScanReconciliationUncertain() when scanReconciliationUncertain != null:
+return scanReconciliationUncertain(_that.root);case SourcesAddOperationAlreadyConfigured() when alreadyConfigured != null:
 return alreadyConfigured(_that.existingLibraryRootId);case SourcesAddOperationOverlapsExisting() when overlapsExisting != null:
 return overlapsExisting(_that.existingLibraryRootId,_that.relationship);case SourcesAddOperationFailed() when failed != null:
 return failed(_that.failure);case SourcesAddOperationAmbiguous() when ambiguous != null:
@@ -324,6 +342,244 @@ class _$SourcesAddOperationAddedCopyWithImpl<$Res>
 @pragma('vm:prefer-inline') $Res call({Object? root = null,}) {
   return _then(SourcesAddOperationAdded(
 null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
+as LibraryRoot,
+  ));
+}
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryRootCopyWith<$Res> get root {
+
+  return $LibraryRootCopyWith<$Res>(_self.root, (value) {
+    return _then(_self.copyWith(root: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class SourcesAddOperationAddedAndScanAdmitted implements SourcesAddOperation {
+  const SourcesAddOperationAddedAndScanAdmitted({required this.root, required this.handle});
+
+
+ final  LibraryRoot root;
+ final  OperationHandle handle;
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourcesAddOperationAddedAndScanAdmittedCopyWith<SourcesAddOperationAddedAndScanAdmitted> get copyWith => _$SourcesAddOperationAddedAndScanAdmittedCopyWithImpl<SourcesAddOperationAddedAndScanAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourcesAddOperationAddedAndScanAdmitted&&(identical(other.root, root) || other.root == root)&&(identical(other.handle, handle) || other.handle == handle));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,root,handle);
+
+@override
+String toString() {
+  return 'SourcesAddOperation.addedAndScanAdmitted(root: $root, handle: $handle)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourcesAddOperationAddedAndScanAdmittedCopyWith<$Res> implements $SourcesAddOperationCopyWith<$Res> {
+  factory $SourcesAddOperationAddedAndScanAdmittedCopyWith(SourcesAddOperationAddedAndScanAdmitted value, $Res Function(SourcesAddOperationAddedAndScanAdmitted) _then) = _$SourcesAddOperationAddedAndScanAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRoot root, OperationHandle handle
+});
+
+
+$LibraryRootCopyWith<$Res> get root;
+
+}
+/// @nodoc
+class _$SourcesAddOperationAddedAndScanAdmittedCopyWithImpl<$Res>
+    implements $SourcesAddOperationAddedAndScanAdmittedCopyWith<$Res> {
+  _$SourcesAddOperationAddedAndScanAdmittedCopyWithImpl(this._self, this._then);
+
+  final SourcesAddOperationAddedAndScanAdmitted _self;
+  final $Res Function(SourcesAddOperationAddedAndScanAdmitted) _then;
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? root = null,Object? handle = null,}) {
+  return _then(SourcesAddOperationAddedAndScanAdmitted(
+root: null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
+as LibraryRoot,handle: null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
+as OperationHandle,
+  ));
+}
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryRootCopyWith<$Res> get root {
+
+  return $LibraryRootCopyWith<$Res>(_self.root, (value) {
+    return _then(_self.copyWith(root: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class SourcesAddOperationAddedButScanNotAdmitted implements SourcesAddOperation {
+  const SourcesAddOperationAddedButScanNotAdmitted({required this.root, required this.issue});
+
+
+ final  LibraryRoot root;
+ final  LibraryScanChildAdmissionIssue issue;
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourcesAddOperationAddedButScanNotAdmittedCopyWith<SourcesAddOperationAddedButScanNotAdmitted> get copyWith => _$SourcesAddOperationAddedButScanNotAdmittedCopyWithImpl<SourcesAddOperationAddedButScanNotAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourcesAddOperationAddedButScanNotAdmitted&&(identical(other.root, root) || other.root == root)&&(identical(other.issue, issue) || other.issue == issue));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,root,issue);
+
+@override
+String toString() {
+  return 'SourcesAddOperation.addedButScanNotAdmitted(root: $root, issue: $issue)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourcesAddOperationAddedButScanNotAdmittedCopyWith<$Res> implements $SourcesAddOperationCopyWith<$Res> {
+  factory $SourcesAddOperationAddedButScanNotAdmittedCopyWith(SourcesAddOperationAddedButScanNotAdmitted value, $Res Function(SourcesAddOperationAddedButScanNotAdmitted) _then) = _$SourcesAddOperationAddedButScanNotAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRoot root, LibraryScanChildAdmissionIssue issue
+});
+
+
+$LibraryRootCopyWith<$Res> get root;$LibraryScanChildAdmissionIssueCopyWith<$Res> get issue;
+
+}
+/// @nodoc
+class _$SourcesAddOperationAddedButScanNotAdmittedCopyWithImpl<$Res>
+    implements $SourcesAddOperationAddedButScanNotAdmittedCopyWith<$Res> {
+  _$SourcesAddOperationAddedButScanNotAdmittedCopyWithImpl(this._self, this._then);
+
+  final SourcesAddOperationAddedButScanNotAdmitted _self;
+  final $Res Function(SourcesAddOperationAddedButScanNotAdmitted) _then;
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? root = null,Object? issue = null,}) {
+  return _then(SourcesAddOperationAddedButScanNotAdmitted(
+root: null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
+as LibraryRoot,issue: null == issue ? _self.issue : issue // ignore: cast_nullable_to_non_nullable
+as LibraryScanChildAdmissionIssue,
+  ));
+}
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryRootCopyWith<$Res> get root {
+
+  return $LibraryRootCopyWith<$Res>(_self.root, (value) {
+    return _then(_self.copyWith(root: value));
+  });
+}/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryScanChildAdmissionIssueCopyWith<$Res> get issue {
+
+  return $LibraryScanChildAdmissionIssueCopyWith<$Res>(_self.issue, (value) {
+    return _then(_self.copyWith(issue: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class SourcesAddOperationScanReconciliationUncertain implements SourcesAddOperation {
+  const SourcesAddOperationScanReconciliationUncertain({required this.root});
+
+
+ final  LibraryRoot root;
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$SourcesAddOperationScanReconciliationUncertainCopyWith<SourcesAddOperationScanReconciliationUncertain> get copyWith => _$SourcesAddOperationScanReconciliationUncertainCopyWithImpl<SourcesAddOperationScanReconciliationUncertain>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourcesAddOperationScanReconciliationUncertain&&(identical(other.root, root) || other.root == root));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,root);
+
+@override
+String toString() {
+  return 'SourcesAddOperation.scanReconciliationUncertain(root: $root)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $SourcesAddOperationScanReconciliationUncertainCopyWith<$Res> implements $SourcesAddOperationCopyWith<$Res> {
+  factory $SourcesAddOperationScanReconciliationUncertainCopyWith(SourcesAddOperationScanReconciliationUncertain value, $Res Function(SourcesAddOperationScanReconciliationUncertain) _then) = _$SourcesAddOperationScanReconciliationUncertainCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRoot root
+});
+
+
+$LibraryRootCopyWith<$Res> get root;
+
+}
+/// @nodoc
+class _$SourcesAddOperationScanReconciliationUncertainCopyWithImpl<$Res>
+    implements $SourcesAddOperationScanReconciliationUncertainCopyWith<$Res> {
+  _$SourcesAddOperationScanReconciliationUncertainCopyWithImpl(this._self, this._then);
+
+  final SourcesAddOperationScanReconciliationUncertain _self;
+  final $Res Function(SourcesAddOperationScanReconciliationUncertain) _then;
+
+/// Create a copy of SourcesAddOperation
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? root = null,}) {
+  return _then(SourcesAddOperationScanReconciliationUncertain(
+root: null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
 as LibraryRoot,
   ));
 }

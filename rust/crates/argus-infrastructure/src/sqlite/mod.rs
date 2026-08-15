@@ -22,8 +22,8 @@ pub use connection::{SqliteConnection, SqliteValue};
 pub use errors::{MigrationError, SqliteExecutorError, SqliteOperationError};
 pub use executor::{DEFAULT_QUEUE_CAPACITY, SqliteDatabaseExecutor};
 pub use jobs::{
-    SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryScanTargetRepository,
-    SqliteScanRunRepository, SqliteSourceEntryRepository,
+    SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryScanAdmissionContextRepository,
+    SqliteLibraryScanTargetRepository, SqliteScanRunRepository, SqliteSourceEntryRepository,
 };
 pub use migrations::{
     Migration, MigrationKind, MigrationOutcome, MigrationRegistry, MigrationSummary,

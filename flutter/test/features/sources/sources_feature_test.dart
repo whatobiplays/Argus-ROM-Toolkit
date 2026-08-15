@@ -11,11 +11,13 @@ import 'package:argus/features/sources/presentation/library_folder_picker.dart';
 import 'package:argus/features/sources/presentation/root_detail_page.dart';
 import 'package:argus/features/sources/presentation/sources_page.dart';
 import 'package:argus/features/sources/sources_composition.dart';
+import 'package:argus/features/jobs/jobs_composition.dart';
 import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'sources_test_fakes.dart';
+import '../jobs/jobs_test_fakes.dart';
 
 const _rootId = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 const _runtimeId = RuntimeInstanceId('1234567890abcdef1234567890abcdef');
@@ -32,6 +34,7 @@ ProviderContainer createContainer(
   FakeSourcesApi api, {
   LibraryFolderPicker? picker,
   Stream<SourcesReconciliationDemand>? demands,
+  FakeJobsApi? jobsApi,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -45,6 +48,7 @@ ProviderContainer createContainer(
           demands ?? const Stream<SourcesReconciliationDemand>.empty(),
         ),
       ),
+      if (jobsApi != null) jobsApiProvider.overrideWithValue(jobsApi),
       if (picker != null) libraryFolderPickerProvider.overrideWithValue(picker),
     ],
   );
@@ -673,33 +677,151 @@ void main() {
       expect(api.addCalls, 0);
     });
 
-    testWidgets('confirmation is root-only and navigates after Added', (
+    testWidgets('confirmation offers Add & Scan primary and Add Without '
+        'Scanning secondary', (tester) async {
+      final api = FakeSourcesApi();
+      final container = createContainer(
+        api,
+        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+      );
+      await pumpPage(tester, container);
+
+      await tester.tap(find.text('Add Library Folder'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add Library Folder?'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('add-folder-and-scan')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('add-folder-without-scan')),
+        findsOneWidget,
+      );
+      expect(find.text('Add & Scan'), findsOneWidget);
+      expect(find.text('Add Without Scanning'), findsOneWidget);
+    });
+
+    testWidgets('Add Without Scanning adds the root without admitting a scan', (
       tester,
     ) async {
+      final api = FakeSourcesApi();
       final opened = <LibraryRootId>[];
       final container = createContainer(
-        FakeSourcesApi(),
+        api,
         picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
       );
       await pumpPage(tester, container, onOpenRoot: opened.add);
 
       await tester.tap(find.text('Add Library Folder'));
       await tester.pumpAndSettle();
-      expect(find.text('Add Library Folder?'), findsOneWidget);
-      expect(
-        find.textContaining('Scanning is not available yet'),
-        findsOneWidget,
-      );
-      expect(find.text('Add & Scan'), findsNothing);
-      expect(find.text('Add Without Scanning'), findsNothing);
-
       await tester.tap(
-        find.byKey(const ValueKey<String>('add-folder-confirm')),
+        find.byKey(const ValueKey<String>('add-folder-without-scan')),
       );
       await tester.pumpAndSettle();
 
       expect(opened, isNotEmpty);
+      expect(api.addCalls, 1);
+      expect(api.addAndScanCalls, 0);
       expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('Add & Scan uses the composite workflow and opens the root', (
+      tester,
+    ) async {
+      final api = FakeSourcesApi();
+      final opened = <LibraryRootId>[];
+      final container = createContainer(
+        api,
+        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+      );
+      await pumpPage(tester, container, onOpenRoot: opened.add);
+
+      await tester.tap(find.text('Add Library Folder'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('add-folder-and-scan')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(opened, isNotEmpty);
+      expect(api.addCalls, 0);
+      expect(api.addAndScanCalls, 1);
+    });
+
+    testWidgets('AddedButScanNotAdmitted preserves the root and shows a '
+        'bounded notice', (tester) async {
+      final api = FakeSourcesApi()
+        ..onAddAndScan = (selection) =>
+            AddLocalLibraryRootAndScanResult.addedButScanNotAdmitted(
+              root: fakeRoot(),
+              issue: LibraryScanChildAdmissionIssue.admissionFailure(
+                ClientApplicationError(
+                  code: const ErrorCode(
+                    'ARGUS.V1.OPERATION.CAPACITY_UNAVAILABLE',
+                  ),
+                  category: ErrorCategory.operation,
+                  severity: ApplicationSeverity.error,
+                  recoverability: Recoverability.userAction,
+                  retryPolicy: RetryPolicy.userInitiated,
+                  messageKey: const MessageKey('errors.operation.capacity'),
+                  traceId: const TraceId('11111111111111111111111111111111'),
+                  safeContext: const [],
+                ),
+              ),
+            );
+      final opened = <LibraryRootId>[];
+      final container = createContainer(
+        api,
+        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+      );
+      await pumpPage(tester, container, onOpenRoot: opened.add);
+
+      await tester.tap(find.text('Add Library Folder'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('add-folder-and-scan')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(opened, isNotEmpty);
+      expect(find.textContaining('scan could not start'), findsOneWidget);
+    });
+
+    testWidgets('ambiguous Add & Scan never replays the composite and keeps '
+        'conflicting mutation disabled until authority proves no admission', (
+      tester,
+    ) async {
+      final api = FakeSourcesApi(roots: [fakeRoot()])
+        ..onAddAndScan = (selection) {
+          throw transportFailure();
+        }
+        ..onAdd = (selection) {
+          return AddLocalLibraryRootResult.added(fakeRoot());
+        }
+        ..onStartScan = (rootId) {
+          throw transportFailure();
+        };
+      final jobsApi = FakeJobsApi()..onRootScanAdmission = (_) => null;
+      final container = createContainer(
+        api,
+        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+        jobsApi: jobsApi,
+      );
+      await pumpPage(tester, container);
+
+      await tester.tap(find.text('Add Library Folder'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('add-folder-and-scan')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(api.addAndScanCalls, 1, reason: 'the composite is never replayed');
+      expect(api.addCalls, 1, reason: 'only the idempotent add is replayed');
+      expect(jobsApi.rootScanAdmissionCalls, 1);
+      expect(api.startScanCalls, 1);
+      expect(find.text('Scan not confirmed'), findsOneWidget);
+      expect(find.text('Refresh'), findsOneWidget);
     });
 
     testWidgets('picker failure is sanitized and performs no mutation', (
@@ -765,6 +887,48 @@ void main() {
         find.textContaining('Files on disk are not changed'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('terminal history shows Scan Again and admits a fresh scan', (
+      tester,
+    ) async {
+      final api = FakeSourcesApi(
+        roots: [
+          fakeRoot().copyWith(
+            lastScan: LibraryRootLastScan(
+              scanRunId: 'scan',
+              jobRunId: 'job',
+              status: LibraryRootLastScanStatus.failed,
+              startedAtMs: 1,
+              completedAtMs: 2,
+            ),
+          ),
+        ],
+      );
+      final container = createContainer(api);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ArgusTheme.light,
+            home: SourcesRootDetailPage(
+              rootId: _rootId,
+              onMissingRoot: () {},
+              onRemoved: () {},
+              onOpenRoot: (_) {},
+              onOpenJob: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Scan Again'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('sources-start-scan')),
+      );
+      await tester.pumpAndSettle();
+      expect(api.startScanCalls, 1);
     });
 
     testWidgets('removal confirmation cancel keeps the root', (tester) async {

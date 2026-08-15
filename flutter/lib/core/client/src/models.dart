@@ -311,7 +311,9 @@ sealed class ScanProgressFacts with _$ScanProgressFacts {
     required int rootsRequested,
     required int rootsAdmitted,
     required int rootsTerminal,
-    required int entriesCommitted,
+    int? entriesObserved,
+    int? entriesCommitted,
+    int? issueCount,
   }) = _ScanProgressFacts;
 }
 
@@ -382,6 +384,33 @@ sealed class StartLibraryScanResult with _$StartLibraryScanResult {
 
 /// Typed outcome of one cancel request.
 enum CancelJobResult { cancellationRequested, noLongerCancellable }
+
+/// Typed reason one retry request was not admitted.
+@freezed
+sealed class RetryNotAdmittedReason with _$RetryNotAdmittedReason {
+  const factory RetryNotAdmittedReason.sourceRunNotTerminal() =
+      RetryNotAdmittedReasonSourceRunNotTerminal;
+
+  const factory RetryNotAdmittedReason.operationNotRetryable() =
+      RetryNotAdmittedReasonOperationNotRetryable;
+
+  const factory RetryNotAdmittedReason.noEligibleTargets(
+    List<LibraryScanAdmissionExclusion> exclusions,
+  ) = RetryNotAdmittedReasonNoEligibleTargets;
+}
+
+/// Typed outcome of one retry request.
+@freezed
+sealed class RetryJobResult with _$RetryJobResult {
+  const factory RetryJobResult.admitted(OperationHandle handle) =
+      RetryJobResultAdmitted;
+
+  const factory RetryJobResult.alreadyRetried(JobRunId existingJobRunId) =
+      RetryJobResultAlreadyRetried;
+
+  const factory RetryJobResult.notAdmitted(RetryNotAdmittedReason reason) =
+      RetryJobResultNotAdmitted;
+}
 
 /// Explicit source-graph invalidation scope union.
 ///
@@ -951,6 +980,65 @@ sealed class AddLocalLibraryRootResult with _$AddLocalLibraryRootResult {
     required LibraryRootId existingLibraryRootId,
     required RootRelationship relationship,
   }) = AddLocalLibraryRootResultOverlapsExisting;
+}
+
+/// Typed child LibraryScan admission issue for an Add & Scan workflow.
+@freezed
+sealed class LibraryScanChildAdmissionIssue
+    with _$LibraryScanChildAdmissionIssue {
+  const factory LibraryScanChildAdmissionIssue.alreadyScanning({
+    required LibraryRootId libraryRootId,
+    required JobRunId activeJobRunId,
+    required ScanRunId activeScanRunId,
+  }) = LibraryScanChildAdmissionIssueAlreadyScanning;
+
+  const factory LibraryScanChildAdmissionIssue.admissionFailure(
+    ClientApplicationError error,
+  ) = LibraryScanChildAdmissionIssueAdmissionFailure;
+}
+
+/// Typed outcome of one Add & Scan composite workflow.
+@freezed
+sealed class AddLocalLibraryRootAndScanResult
+    with _$AddLocalLibraryRootAndScanResult {
+  const factory AddLocalLibraryRootAndScanResult.addedAndScanAdmitted({
+    required LibraryRoot root,
+    required OperationHandle handle,
+  }) = AddLocalLibraryRootAndScanResultAddedAndScanAdmitted;
+
+  const factory AddLocalLibraryRootAndScanResult.addedButScanNotAdmitted({
+    required LibraryRoot root,
+    required LibraryScanChildAdmissionIssue issue,
+  }) = AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted;
+
+  const factory AddLocalLibraryRootAndScanResult.alreadyConfigured(
+    LibraryRootId existingLibraryRootId,
+  ) = AddLocalLibraryRootAndScanResultAlreadyConfigured;
+
+  const factory AddLocalLibraryRootAndScanResult.overlapsExisting({
+    required LibraryRootId existingLibraryRootId,
+    required RootRelationship relationship,
+  }) = AddLocalLibraryRootAndScanResultOverlapsExisting;
+}
+
+/// One authoritative scan-run admission reference for a historical root.
+final class LibraryRootScanAdmission {
+  const LibraryRootScanAdmission({
+    required this.jobRunId,
+    required this.scanRunId,
+  });
+
+  final JobRunId jobRunId;
+  final ScanRunId scanRunId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibraryRootScanAdmission &&
+      other.jobRunId == jobRunId &&
+      other.scanRunId == scanRunId;
+
+  @override
+  int get hashCode => Object.hash(jobRunId, scanRunId);
 }
 
 /// Typed outcome of one root-removal operation for the active slice.

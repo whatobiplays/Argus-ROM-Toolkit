@@ -190,6 +190,14 @@ impl JobRunRepository for FakeJobRunRepository<'_> {
         Ok(id)
     }
 
+    fn insert_retry_link(
+        &mut self,
+        _source_job_run_id: JobRunId,
+        _successor_job_run_id: JobRunId,
+    ) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+
     fn request_cancellation(
         &mut self,
         _job_run_id: JobRunId,
@@ -244,6 +252,16 @@ impl ScanRunRepository for FakeScanRunRepository<'_> {
         _status: ScanRunStatus,
         _completed_at_ms: Option<i64>,
         _failure_reason: Option<String>,
+    ) -> Result<bool, PersistenceError> {
+        Ok(true)
+    }
+
+    fn set_progress_facts(
+        &mut self,
+        _scan_run_id: ScanRunId,
+        _entries_observed: u64,
+        _entries_committed: u64,
+        _issue_count: u64,
     ) -> Result<bool, PersistenceError> {
         Ok(true)
     }
@@ -454,6 +472,10 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
         = FakeLibraryScanTargetRepository<'scope>
     where
         Self: 'scope;
+    type LibraryScanAdmissionContextRepository<'scope>
+        = common::NoopLibraryScanAdmissionContextRepository<'scope>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         common::NoopAppearanceRepository {
@@ -498,6 +520,14 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
     fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
         FakeLibraryScanTargetRepository {
             store: Arc::clone(&self.store),
+            marker: PhantomData,
+        }
+    }
+
+    fn library_scan_admission_context(
+        &mut self,
+    ) -> Self::LibraryScanAdmissionContextRepository<'_> {
+        common::NoopLibraryScanAdmissionContextRepository {
             marker: PhantomData,
         }
     }

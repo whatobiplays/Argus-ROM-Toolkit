@@ -73,6 +73,10 @@ abstract interface class SourcesGateway {
     LocalFilesystemRootSelection selection,
   );
 
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  );
+
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   );
@@ -100,6 +104,10 @@ abstract interface class SourcesApi {
   Future<LibraryRoot> getLibraryRoot(LibraryRootId libraryRootId);
 
   Future<AddLocalLibraryRootResult> addLocalLibraryRoot(
+    LocalFilesystemRootSelection selection,
+  );
+
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
     LocalFilesystemRootSelection selection,
   );
 
@@ -131,6 +139,16 @@ abstract interface class JobsGateway {
   Future<JobDetail> getJob(JobRunId jobRunId);
 
   Future<CancelJobResult> cancelJob(JobRunId jobRunId);
+
+  Future<RetryJobResult> retryJob(JobRunId jobRunId);
+
+  /// Jobs-authoritative newest scan-run admission for one root.
+  ///
+  /// This focused query powers Add & Scan transport-ambiguity reconciliation;
+  /// child admission must never be inferred from root `lastScan` alone.
+  Future<LibraryRootScanAdmission?> getRootScanAdmission(
+    LibraryRootId libraryRootId,
+  );
 }
 
 /// Focused Jobs capability. Queries return immutable authoritative
@@ -146,6 +164,12 @@ abstract interface class JobsApi {
   Future<JobDetail> getJob(JobRunId jobRunId);
 
   Future<CancelJobResult> cancelJob(JobRunId jobRunId);
+
+  Future<RetryJobResult> retryJob(JobRunId jobRunId);
+
+  Future<LibraryRootScanAdmission?> getRootScanAdmission(
+    LibraryRootId libraryRootId,
+  );
 
   /// Narrow active-job summary for the application shell.
   Future<ActiveJobSummary> getActiveJobSummary();

@@ -10,12 +10,26 @@ abstract final class SourcesMessages {
       'Library Folders are folders Argus indexes as configured sources. '
       'Adding one lets Argus read it later — it does not modify your files.';
   static const String addLibraryFolder = 'Add Library Folder';
+  static const String addAndScan = 'Add & Scan';
+  static const String addWithoutScanning = 'Add Without Scanning';
+  static const String addAndScanExplainsNewFolder =
+      'Argus will configure this folder and start indexing it immediately. '
+      'Your files are never modified.';
+  static const String addAndScanAdmissionFailed =
+      'Folder added, but the scan could not start. You can scan it from the '
+      'folder details.';
+  static const String addAndScanUncertain = 'Scan not confirmed';
+  static const String addAndScanUncertainBody =
+      'Argus could not confirm whether indexing started. Refresh to check the '
+      'authoritative job state before scanning again.';
+  static const String reconcileNow = 'Refresh';
   static const String scanningUnavailableNote =
       'Scanning is not available yet. The folder will be configured and '
       'ready to scan in a future update.';
   static const String neverScanned = 'Never scanned';
   static const String scanningInProgress = 'Scanning in progress';
   static const String scan = 'Scan';
+  static const String scanAgain = 'Scan Again';
   static const String viewJob = 'View Job';
   static const String rootHasActiveScan =
       'This folder is currently being scanned, so it cannot be removed yet. '

@@ -119,10 +119,10 @@ return missing(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( JobDetail detail,  bool refreshing,  bool cancelling,  bool cancelAmbiguous,  ClientFailure? lastFailure)?  ready,TResult Function()?  missing,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( JobDetail detail,  bool refreshing,  bool cancelling,  bool cancelAmbiguous,  bool retrying,  bool retryAmbiguous,  RetryNotAdmittedReason? retryNotAdmittedReason,  ClientFailure? lastFailure)?  ready,TResult Function()?  missing,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case JobDetailStateReady() when ready != null:
-return ready(_that.detail,_that.refreshing,_that.cancelling,_that.cancelAmbiguous,_that.lastFailure);case JobDetailStateMissing() when missing != null:
+return ready(_that.detail,_that.refreshing,_that.cancelling,_that.cancelAmbiguous,_that.retrying,_that.retryAmbiguous,_that.retryNotAdmittedReason,_that.lastFailure);case JobDetailStateMissing() when missing != null:
 return missing();case _:
   return orElse();
 
@@ -141,10 +141,10 @@ return missing();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( JobDetail detail,  bool refreshing,  bool cancelling,  bool cancelAmbiguous,  ClientFailure? lastFailure)  ready,required TResult Function()  missing,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( JobDetail detail,  bool refreshing,  bool cancelling,  bool cancelAmbiguous,  bool retrying,  bool retryAmbiguous,  RetryNotAdmittedReason? retryNotAdmittedReason,  ClientFailure? lastFailure)  ready,required TResult Function()  missing,}) {final _that = this;
 switch (_that) {
 case JobDetailStateReady():
-return ready(_that.detail,_that.refreshing,_that.cancelling,_that.cancelAmbiguous,_that.lastFailure);case JobDetailStateMissing():
+return ready(_that.detail,_that.refreshing,_that.cancelling,_that.cancelAmbiguous,_that.retrying,_that.retryAmbiguous,_that.retryNotAdmittedReason,_that.lastFailure);case JobDetailStateMissing():
 return missing();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -159,10 +159,10 @@ return missing();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( JobDetail detail,  bool refreshing,  bool cancelling,  bool cancelAmbiguous,  ClientFailure? lastFailure)?  ready,TResult? Function()?  missing,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( JobDetail detail,  bool refreshing,  bool cancelling,  bool cancelAmbiguous,  bool retrying,  bool retryAmbiguous,  RetryNotAdmittedReason? retryNotAdmittedReason,  ClientFailure? lastFailure)?  ready,TResult? Function()?  missing,}) {final _that = this;
 switch (_that) {
 case JobDetailStateReady() when ready != null:
-return ready(_that.detail,_that.refreshing,_that.cancelling,_that.cancelAmbiguous,_that.lastFailure);case JobDetailStateMissing() when missing != null:
+return ready(_that.detail,_that.refreshing,_that.cancelling,_that.cancelAmbiguous,_that.retrying,_that.retryAmbiguous,_that.retryNotAdmittedReason,_that.lastFailure);case JobDetailStateMissing() when missing != null:
 return missing();case _:
   return null;
 
@@ -175,13 +175,16 @@ return missing();case _:
 
 
 class JobDetailStateReady implements JobDetailState {
-  const JobDetailStateReady({required this.detail, required this.refreshing, required this.cancelling, required this.cancelAmbiguous, this.lastFailure});
+  const JobDetailStateReady({required this.detail, required this.refreshing, required this.cancelling, required this.cancelAmbiguous, required this.retrying, required this.retryAmbiguous, this.retryNotAdmittedReason, this.lastFailure});
 
 
  final  JobDetail detail;
  final  bool refreshing;
  final  bool cancelling;
  final  bool cancelAmbiguous;
+ final  bool retrying;
+ final  bool retryAmbiguous;
+ final  RetryNotAdmittedReason? retryNotAdmittedReason;
  final  ClientFailure? lastFailure;
 
 /// Create a copy of JobDetailState
@@ -194,16 +197,16 @@ $JobDetailStateReadyCopyWith<JobDetailStateReady> get copyWith => _$JobDetailSta
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is JobDetailStateReady&&(identical(other.detail, detail) || other.detail == detail)&&(identical(other.refreshing, refreshing) || other.refreshing == refreshing)&&(identical(other.cancelling, cancelling) || other.cancelling == cancelling)&&(identical(other.cancelAmbiguous, cancelAmbiguous) || other.cancelAmbiguous == cancelAmbiguous)&&(identical(other.lastFailure, lastFailure) || other.lastFailure == lastFailure));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is JobDetailStateReady&&(identical(other.detail, detail) || other.detail == detail)&&(identical(other.refreshing, refreshing) || other.refreshing == refreshing)&&(identical(other.cancelling, cancelling) || other.cancelling == cancelling)&&(identical(other.cancelAmbiguous, cancelAmbiguous) || other.cancelAmbiguous == cancelAmbiguous)&&(identical(other.retrying, retrying) || other.retrying == retrying)&&(identical(other.retryAmbiguous, retryAmbiguous) || other.retryAmbiguous == retryAmbiguous)&&(identical(other.retryNotAdmittedReason, retryNotAdmittedReason) || other.retryNotAdmittedReason == retryNotAdmittedReason)&&(identical(other.lastFailure, lastFailure) || other.lastFailure == lastFailure));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,detail,refreshing,cancelling,cancelAmbiguous,lastFailure);
+int get hashCode => Object.hash(runtimeType,detail,refreshing,cancelling,cancelAmbiguous,retrying,retryAmbiguous,retryNotAdmittedReason,lastFailure);
 
 @override
 String toString() {
-  return 'JobDetailState.ready(detail: $detail, refreshing: $refreshing, cancelling: $cancelling, cancelAmbiguous: $cancelAmbiguous, lastFailure: $lastFailure)';
+  return 'JobDetailState.ready(detail: $detail, refreshing: $refreshing, cancelling: $cancelling, cancelAmbiguous: $cancelAmbiguous, retrying: $retrying, retryAmbiguous: $retryAmbiguous, retryNotAdmittedReason: $retryNotAdmittedReason, lastFailure: $lastFailure)';
 }
 
 
@@ -214,11 +217,11 @@ abstract mixin class $JobDetailStateReadyCopyWith<$Res> implements $JobDetailSta
   factory $JobDetailStateReadyCopyWith(JobDetailStateReady value, $Res Function(JobDetailStateReady) _then) = _$JobDetailStateReadyCopyWithImpl;
 @useResult
 $Res call({
- JobDetail detail, bool refreshing, bool cancelling, bool cancelAmbiguous, ClientFailure? lastFailure
+ JobDetail detail, bool refreshing, bool cancelling, bool cancelAmbiguous, bool retrying, bool retryAmbiguous, RetryNotAdmittedReason? retryNotAdmittedReason, ClientFailure? lastFailure
 });
 
 
-$JobDetailCopyWith<$Res> get detail;
+$JobDetailCopyWith<$Res> get detail;$RetryNotAdmittedReasonCopyWith<$Res>? get retryNotAdmittedReason;
 
 }
 /// @nodoc
@@ -231,13 +234,16 @@ class _$JobDetailStateReadyCopyWithImpl<$Res>
 
 /// Create a copy of JobDetailState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? detail = null,Object? refreshing = null,Object? cancelling = null,Object? cancelAmbiguous = null,Object? lastFailure = freezed,}) {
+@pragma('vm:prefer-inline') $Res call({Object? detail = null,Object? refreshing = null,Object? cancelling = null,Object? cancelAmbiguous = null,Object? retrying = null,Object? retryAmbiguous = null,Object? retryNotAdmittedReason = freezed,Object? lastFailure = freezed,}) {
   return _then(JobDetailStateReady(
 detail: null == detail ? _self.detail : detail // ignore: cast_nullable_to_non_nullable
 as JobDetail,refreshing: null == refreshing ? _self.refreshing : refreshing // ignore: cast_nullable_to_non_nullable
 as bool,cancelling: null == cancelling ? _self.cancelling : cancelling // ignore: cast_nullable_to_non_nullable
 as bool,cancelAmbiguous: null == cancelAmbiguous ? _self.cancelAmbiguous : cancelAmbiguous // ignore: cast_nullable_to_non_nullable
-as bool,lastFailure: freezed == lastFailure ? _self.lastFailure : lastFailure // ignore: cast_nullable_to_non_nullable
+as bool,retrying: null == retrying ? _self.retrying : retrying // ignore: cast_nullable_to_non_nullable
+as bool,retryAmbiguous: null == retryAmbiguous ? _self.retryAmbiguous : retryAmbiguous // ignore: cast_nullable_to_non_nullable
+as bool,retryNotAdmittedReason: freezed == retryNotAdmittedReason ? _self.retryNotAdmittedReason : retryNotAdmittedReason // ignore: cast_nullable_to_non_nullable
+as RetryNotAdmittedReason?,lastFailure: freezed == lastFailure ? _self.lastFailure : lastFailure // ignore: cast_nullable_to_non_nullable
 as ClientFailure?,
   ));
 }
@@ -250,6 +256,18 @@ $JobDetailCopyWith<$Res> get detail {
 
   return $JobDetailCopyWith<$Res>(_self.detail, (value) {
     return _then(_self.copyWith(detail: value));
+  });
+}/// Create a copy of JobDetailState
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$RetryNotAdmittedReasonCopyWith<$Res>? get retryNotAdmittedReason {
+    if (_self.retryNotAdmittedReason == null) {
+    return null;
+  }
+
+  return $RetryNotAdmittedReasonCopyWith<$Res>(_self.retryNotAdmittedReason!, (value) {
+    return _then(_self.copyWith(retryNotAdmittedReason: value));
   });
 }
 }

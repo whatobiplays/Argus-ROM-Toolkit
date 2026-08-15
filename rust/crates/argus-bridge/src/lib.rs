@@ -10,14 +10,15 @@ use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
-    AddLocalLibraryRootResult, ApplicationError, ApplicationSeverity, ArchitectureClass,
-    DiagnosticStage, ErrorCategory, ErrorCode, FailureRole, JobDetail, JobRunId, JobRunProjection,
-    JobRunState, JobSummary, JobSummaryPage, LibraryRootAvailability, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
-    LibraryScanAdmissionExclusion, LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery,
-    ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemRootSelection, MigrationOutcome, OperationDetail, PathClass,
-    PersistedSettingsReason, PlatformClass, Recoverability, RemoveLibraryRootResult, RetryPolicy,
+    AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult, ApplicationError,
+    ApplicationSeverity, ArchitectureClass, DiagnosticStage, ErrorCategory, ErrorCode, FailureRole,
+    JobDetail, JobRunId, JobRunProjection, JobRunState, JobSummary, JobSummaryPage,
+    LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage,
+    LibraryRootProjection, LibraryScanAdmissionExclusion, LibraryScanChildAdmissionIssue,
+    LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery, ListJobsScope,
+    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection,
+    MigrationOutcome, OperationDetail, PathClass, PersistedSettingsReason, PlatformClass,
+    Recoverability, RemoveLibraryRootResult, RetryJobResult, RetryNotAdmittedReason, RetryPolicy,
     RootRelationship, SafeContext, SafeContextField, SafeContextValue, ScanProgressFacts,
     ScanRunProjection, ScanRunStatus, SettingsDomain, SourceEntriesChangeScope,
     SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor,
@@ -432,7 +433,9 @@ pub struct ScanProgressFactsDto {
     pub roots_requested: u32,
     pub roots_admitted: u32,
     pub roots_terminal: u32,
-    pub entries_committed: u64,
+    pub entries_observed: Option<u64>,
+    pub entries_committed: Option<u64>,
+    pub issue_count: Option<u64>,
 }
 
 /// Typed LibraryScan operation detail.
@@ -497,6 +500,49 @@ pub enum StartLibraryScanResultDto {
 pub enum CancelJobResultDto {
     CancellationRequested,
     NoLongerCancellable,
+}
+
+/// Typed child LibraryScan admission issue for an Add & Scan workflow.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LibraryScanChildAdmissionIssueDto {
+    AlreadyScanning {
+        library_root_id: String,
+        active_job_run_id: String,
+        active_scan_run_id: String,
+    },
+    AdmissionFailure(ApplicationErrorDto),
+}
+
+/// Typed outcome of one Add & Scan composite workflow.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AddLocalLibraryRootAndScanResultDto {
+    AddedAndScanAdmitted(LibraryRootDto, OperationHandleDto),
+    AddedButScanNotAdmitted(LibraryRootDto, LibraryScanChildAdmissionIssueDto),
+    AlreadyConfigured(String),
+    OverlapsExisting(String, RootRelationshipDto),
+}
+
+/// Typed reason one retry request was not admitted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RetryNotAdmittedReasonDto {
+    SourceRunNotTerminal,
+    OperationNotRetryable,
+    NoEligibleTargets(Vec<LibraryScanAdmissionExclusionDto>),
+}
+
+/// Typed outcome of one retry request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RetryJobResultDto {
+    Admitted(OperationHandleDto),
+    AlreadyRetried(String),
+    NotAdmitted(RetryNotAdmittedReasonDto),
+}
+
+/// One authoritative scan-run admission reference for a historical root.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRootScanAdmissionReferenceDto {
+    pub job_run_id: String,
+    pub scan_run_id: String,
 }
 
 /// Explicit source-graph invalidation scope union.
@@ -864,6 +910,24 @@ pub fn add_local_library_root(
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Executes the Add & Scan composite workflow: commit the root, then request
+/// child LibraryScan admission, then assemble the typed committed result.
+#[allow(clippy::result_large_err)]
+pub fn add_local_library_root_and_scan(
+    selection: LocalFilesystemRootSelectionDto,
+) -> Result<AddLocalLibraryRootAndScanResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "add_local_library_root_and_scan")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .add_local_library_root_and_scan_with_context(
+            &context,
+            LocalFilesystemRootSelection::new(selection.selected_folder_path),
+        )
+        .map(|result| add_local_library_root_and_scan_dto(&result))
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Removes one configured root. User filesystem content is never modified.
 #[allow(clippy::result_large_err)]
 pub fn remove_library_root(
@@ -979,6 +1043,42 @@ pub fn cancel_job(job_run_id: String) -> Result<CancelJobResultDto, ApplicationE
             argus_application::CancelJobResult::NoLongerCancellable => {
                 CancelJobResultDto::NoLongerCancellable
             }
+        })
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Retries one eligible historical LibraryScan into a new durable run.
+#[allow(clippy::result_large_err)]
+pub fn retry_job(job_run_id: String) -> Result<RetryJobResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("jobs", "retry_job")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_job_run_id(&job_run_id, context.trace_id())?;
+    host()
+        .retry_job_with_context(id, &context)
+        .map(|result| retry_job_result_dto(result.outcome()))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads the newest scan-run admission (active or terminal) for one root.
+///
+/// This focused query supplies Jobs-authoritative Add & Scan ambiguity
+/// reconciliation; callers must never infer admission from root `lastScan`.
+#[allow(clippy::result_large_err)]
+pub fn get_root_scan_admission(
+    library_root_id: String,
+) -> Result<Option<LibraryRootScanAdmissionReferenceDto>, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("jobs", "get_root_scan_admission")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_library_root_id(&library_root_id, context.trace_id())?;
+    host()
+        .get_root_scan_admission_with_context(id, &context)
+        .map(|reference| {
+            reference.map(|reference| LibraryRootScanAdmissionReferenceDto {
+                job_run_id: reference.job_run_id().to_string(),
+                scan_run_id: reference.scan_run_id().to_string(),
+            })
         })
         .map_err(|error| application_error_dto(&error))
 }
@@ -1468,6 +1568,61 @@ pub fn add_local_library_root_dto(
     }
 }
 
+/// Maps one Add & Scan composite outcome into its typed transport union.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn add_local_library_root_and_scan_dto(
+    result: &AddLocalLibraryRootAndScanResult,
+) -> AddLocalLibraryRootAndScanResultDto {
+    match result {
+        AddLocalLibraryRootAndScanResult::AddedAndScanAdmitted(root, handle) => {
+            AddLocalLibraryRootAndScanResultDto::AddedAndScanAdmitted(
+                library_root_dto(root),
+                OperationHandleDto {
+                    job_run_id: handle.job_run_id().to_string(),
+                    operation_type: handle.operation_type().to_owned(),
+                },
+            )
+        }
+        AddLocalLibraryRootAndScanResult::AddedButScanNotAdmitted(root, issue) => {
+            AddLocalLibraryRootAndScanResultDto::AddedButScanNotAdmitted(
+                library_root_dto(root),
+                match issue {
+                    LibraryScanChildAdmissionIssue::AlreadyScanning {
+                        library_root_id,
+                        active_job_run_id,
+                        active_scan_run_id,
+                    } => LibraryScanChildAdmissionIssueDto::AlreadyScanning {
+                        library_root_id: library_root_id.to_string(),
+                        active_job_run_id: active_job_run_id.to_string(),
+                        active_scan_run_id: active_scan_run_id.to_string(),
+                    },
+                    LibraryScanChildAdmissionIssue::AdmissionFailure(error) => {
+                        LibraryScanChildAdmissionIssueDto::AdmissionFailure(application_error_dto(
+                            error,
+                        ))
+                    }
+                },
+            )
+        }
+        AddLocalLibraryRootAndScanResult::AlreadyConfigured(root_id) => {
+            AddLocalLibraryRootAndScanResultDto::AlreadyConfigured(root_id.to_string())
+        }
+        AddLocalLibraryRootAndScanResult::OverlapsExisting(root_id, relationship) => {
+            AddLocalLibraryRootAndScanResultDto::OverlapsExisting(
+                root_id.to_string(),
+                match relationship {
+                    RootRelationship::Same => RootRelationshipDto::Same,
+                    RootRelationship::Ancestor => RootRelationshipDto::Ancestor,
+                    RootRelationship::Descendant => RootRelationshipDto::Descendant,
+                    RootRelationship::Disjoint => RootRelationshipDto::Disjoint,
+                    RootRelationship::Unknown => RootRelationshipDto::Unknown,
+                },
+            )
+        }
+    }
+}
+
 /// Maps one root-removal outcome into its typed transport union.
 #[allow(unexpected_cfgs)]
 #[flutter_rust_bridge::frb(ignore)]
@@ -1527,6 +1682,34 @@ pub fn start_library_scan_result_dto(result: &StartLibraryScanResult) -> StartLi
             active_job_run_id: active_job_run_id.to_string(),
             active_scan_run_id: active_scan_run_id.to_string(),
         },
+    }
+}
+
+/// Maps one retry outcome into its typed transport union.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn retry_job_result_dto(result: &RetryJobResult) -> RetryJobResultDto {
+    match result {
+        RetryJobResult::Admitted(handle) => RetryJobResultDto::Admitted(OperationHandleDto {
+            job_run_id: handle.job_run_id().to_string(),
+            operation_type: handle.operation_type().to_owned(),
+        }),
+        RetryJobResult::AlreadyRetried(job_run_id) => {
+            RetryJobResultDto::AlreadyRetried(job_run_id.to_string())
+        }
+        RetryJobResult::NotAdmitted(reason) => RetryJobResultDto::NotAdmitted(match reason {
+            RetryNotAdmittedReason::SourceRunNotTerminal => {
+                RetryNotAdmittedReasonDto::SourceRunNotTerminal
+            }
+            RetryNotAdmittedReason::OperationNotRetryable => {
+                RetryNotAdmittedReasonDto::OperationNotRetryable
+            }
+            RetryNotAdmittedReason::NoEligibleTargets(exclusions) => {
+                RetryNotAdmittedReasonDto::NoEligibleTargets(
+                    exclusions.iter().map(exclusion_dto).collect(),
+                )
+            }
+        }),
     }
 }
 
@@ -1663,7 +1846,9 @@ fn scan_progress_dto(progress: &ScanProgressFacts) -> ScanProgressFactsDto {
         roots_requested: progress.roots_requested(),
         roots_admitted: progress.roots_admitted(),
         roots_terminal: progress.roots_terminal(),
+        entries_observed: progress.entries_observed(),
         entries_committed: progress.entries_committed(),
+        issue_count: progress.issue_count(),
     }
 }
 

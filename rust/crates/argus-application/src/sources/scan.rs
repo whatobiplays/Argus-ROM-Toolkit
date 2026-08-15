@@ -116,10 +116,11 @@ where
         };
         self.commit_availability_available(context)?;
         if is_cancelled() {
-            return self.finish_cancelled(context);
+            return self.finish_cancelled(context, 0, 0, 0);
         }
 
         let mut committed_entries = 0_u64;
+        let mut observed_entries = 0_u64;
         let mut issues = 0_u64;
         let mut cancelled = false;
         let mut root_unavailable = false;
@@ -189,6 +190,7 @@ where
             }
 
             for observation in enumeration.observations() {
+                observed_entries += 1;
                 pending.push(PendingObservation {
                     parent_source_entry_id,
                     observation: observation.clone(),
@@ -199,6 +201,8 @@ where
                         progress,
                         &mut pending,
                         &mut committed_entries,
+                        observed_entries,
+                        issues,
                     )?;
                     stack.extend(committed.into_iter().filter_map(|entry| {
                         (entry.kind == SourceEntryKind::Directory).then_some(Scope::Child {
@@ -214,6 +218,8 @@ where
                     progress,
                     &mut pending,
                     &mut committed_entries,
+                    observed_entries,
+                    issues,
                 )?;
                 stack.extend(committed.into_iter().filter_map(|entry| {
                     (entry.kind == SourceEntryKind::Directory).then_some(Scope::Child {
@@ -229,8 +235,14 @@ where
         }
 
         if !pending.is_empty() {
-            let committed =
-                self.commit_checkpoint(context, progress, &mut pending, &mut committed_entries)?;
+            let committed = self.commit_checkpoint(
+                context,
+                progress,
+                &mut pending,
+                &mut committed_entries,
+                observed_entries,
+                issues,
+            )?;
             stack.extend(committed.into_iter().filter_map(|entry| {
                 (entry.kind == SourceEntryKind::Directory).then_some(Scope::Child {
                     parent_source_entry_id: entry.source_entry_id,
@@ -240,27 +252,44 @@ where
         }
 
         if cancelled {
-            return self.finish_cancelled(context);
+            return self.finish_cancelled(context, observed_entries, committed_entries, issues);
         }
         if root_unavailable {
-            return self.finish_root_unavailable(context);
+            return self.finish_root_unavailable(
+                context,
+                observed_entries,
+                committed_entries,
+                issues,
+            );
         }
 
         let finalization =
             self.finalize_completed_scopes(context, &completed_scopes, is_cancelled)?;
         if finalization.cancelled {
-            return self.finish_cancelled(context);
+            return self.finish_cancelled(context, observed_entries, committed_entries, issues);
         }
         if root_incomplete && committed_entries == 0 {
-            return self.finish_failed(context);
+            return self.finish_failed(context, observed_entries, committed_entries, issues);
         }
         if finalization.suppressed {
-            return self.finish_partial(context, "finalization_authority_changed");
+            return self.finish_partial(
+                context,
+                "finalization_authority_changed",
+                observed_entries,
+                committed_entries,
+                issues,
+            );
         }
         if issues > 0 {
-            return self.finish_partial(context, "incomplete_scope");
+            return self.finish_partial(
+                context,
+                "incomplete_scope",
+                observed_entries,
+                committed_entries,
+                issues,
+            );
         }
-        self.finish_complete(context)
+        self.finish_complete(context, observed_entries, committed_entries, issues)
     }
 
     fn commit_checkpoint(
@@ -269,12 +298,15 @@ where
         progress: &dyn JobProgressReporter,
         pending: &mut Vec<PendingObservation>,
         committed_entries: &mut u64,
+        observed_entries: u64,
+        issues: u64,
     ) -> Result<Vec<CommittedEntry>, ApplicationError> {
         let entries: Vec<NewSourceEntry> = pending
             .iter()
             .map(|pending_observation| map_observation(&self.plan, pending_observation))
             .collect();
         let scan_run_id = self.plan.scan_run_id();
+        let committed_before = *committed_entries;
         let ids = self
             .unit_of_work
             .clone()
@@ -284,6 +316,13 @@ where
                     let mut source_entries = scope.source_entries();
                     ids.push(reconcile_positive(&mut source_entries, entry, scan_run_id)?);
                 }
+                let committed_total = committed_before + ids.len() as u64;
+                scope.scan_runs().set_progress_facts(
+                    scan_run_id,
+                    observed_entries,
+                    committed_total,
+                    issues,
+                )?;
                 scope.commit()?;
                 Ok::<_, ApplicationPortError>(ids)
             })
@@ -406,6 +445,9 @@ where
     fn finish_cancelled(
         &self,
         context: &OperationContext,
+        observed_entries: u64,
+        entries_committed: u64,
+        issues: u64,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.terminalize(
             context,
@@ -413,6 +455,7 @@ where
             LibraryRootLastScanStatus::Cancelled,
             None,
             None,
+            Some((observed_entries, entries_committed, issues)),
         )?;
         Ok(OperationCompletion::new(JobRunState::Cancelled, None, None))
     }
@@ -421,6 +464,9 @@ where
         &self,
         context: &OperationContext,
         failure_reason: &str,
+        observed_entries: u64,
+        entries_committed: u64,
+        issues: u64,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.terminalize(
             context,
@@ -428,6 +474,7 @@ where
             LibraryRootLastScanStatus::Partial,
             Some(failure_reason),
             None,
+            Some((observed_entries, entries_committed, issues)),
         )?;
         Ok(OperationCompletion::new(
             JobRunState::CompletedWithIssues,
@@ -439,6 +486,9 @@ where
     fn finish_complete(
         &self,
         context: &OperationContext,
+        observed_entries: u64,
+        entries_committed: u64,
+        issues: u64,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.terminalize(
             context,
@@ -446,6 +496,7 @@ where
             LibraryRootLastScanStatus::Complete,
             None,
             None,
+            Some((observed_entries, entries_committed, issues)),
         )?;
         Ok(OperationCompletion::new(JobRunState::Completed, None, None))
     }
@@ -454,6 +505,9 @@ where
     fn finish_failed(
         &self,
         context: &OperationContext,
+        observed_entries: u64,
+        entries_committed: u64,
+        issues: u64,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.terminalize(
             context,
@@ -461,6 +515,7 @@ where
             LibraryRootLastScanStatus::Failed,
             Some("source_access_failed"),
             None,
+            Some((observed_entries, entries_committed, issues)),
         )?;
         Ok(OperationCompletion::new(JobRunState::Failed, None, None))
     }
@@ -470,6 +525,9 @@ where
     fn finish_root_unavailable(
         &self,
         context: &OperationContext,
+        observed_entries: u64,
+        entries_committed: u64,
+        issues: u64,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.terminalize(
             context,
@@ -477,6 +535,7 @@ where
             LibraryRootLastScanStatus::Unavailable,
             Some("source_unavailable"),
             Some(LibraryRootAvailability::Unavailable),
+            Some((observed_entries, entries_committed, issues)),
         )?;
         Ok(OperationCompletion::new(JobRunState::Failed, None, None))
     }
@@ -488,9 +547,9 @@ where
     ) -> Result<OperationCompletion, ApplicationError> {
         match error {
             SourceAccessError::SourceUnavailable | SourceAccessError::AuthorizationUnavailable => {
-                self.finish_root_unavailable(context)
+                self.finish_root_unavailable(context, 0, 0, 0)
             }
-            _ => self.finish_failed(context),
+            _ => self.finish_failed(context, 0, 0, 0),
         }
     }
 
@@ -501,6 +560,7 @@ where
         last_scan_status: LibraryRootLastScanStatus,
         failure_reason: Option<&str>,
         availability: Option<LibraryRootAvailability>,
+        progress_facts: Option<(u64, u64, u64)>,
     ) -> Result<(), ApplicationError> {
         let completed_at_ms = now_millis();
         let plan = self.plan.clone();
@@ -508,6 +568,14 @@ where
         self.unit_of_work
             .clone()
             .execute(context, move |mut scope| {
+                if let Some((observed, committed, issues)) = progress_facts {
+                    scope.scan_runs().set_progress_facts(
+                        plan.scan_run_id(),
+                        observed,
+                        committed,
+                        issues,
+                    )?;
+                }
                 scope.scan_runs().set_status(
                     plan.scan_run_id(),
                     status,
@@ -561,6 +629,7 @@ where
                     LibraryRootLastScanStatus::Failed,
                     Some("internal"),
                     None,
+                    None,
                 )?;
                 Ok(OperationCompletion::new(JobRunState::Failed, code, None))
             })
@@ -574,6 +643,7 @@ where
             context,
             ScanRunStatus::Cancelled,
             LibraryRootLastScanStatus::Cancelled,
+            None,
             None,
             None,
         )

@@ -25,8 +25,12 @@ sealed class JobsListState with _$JobsListState {
   }) = JobsListStateReady;
 }
 
-/// One application-lifetime owner of authoritative Jobs list state.
-@Riverpod(keepAlive: true)
+/// One Jobs-branch owner of authoritative list state.
+///
+/// The list provider is auto-disposed with the Jobs branch; route identity
+/// owns branch restoration and the shell never depends on this controller
+/// (FE-009 provider lifetime).
+@Riverpod()
 class JobsListController extends _$JobsListController {
   static const int _pageSize = 20;
 

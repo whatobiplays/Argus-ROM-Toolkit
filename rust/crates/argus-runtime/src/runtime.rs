@@ -13,20 +13,23 @@ use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argus_application::{
-    AddLocalLibraryRootResult, AppearanceSettingsSubscriber, ApplicationError, CancelJobResult,
-    ErrorCode, EventSubscriberError, JobDetail, JobProgressChanged, JobRunId, JobStateChanged,
-    JobSummaryPage, LibraryRootId, LibraryRootPage, LibraryRootProjection, ListJobsQuery,
-    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection,
-    OperationContext, OperationName, RemoveLibraryRootResult, SourceEntriesChangeScope,
+    AddLocalLibraryRootAndScanCommand, AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult,
+    AdmittedScan, AppearanceSettingsSubscriber, ApplicationError, CancelJobResult, ErrorCode,
+    EventSubscriberError, JobDetail, JobProgressChanged, JobRunId, JobStateChanged, JobSummaryPage,
+    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionResult,
+    LibraryScanChildAdmission, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemRootSelection, OperationContext, OperationName, RemoveLibraryRootResult,
+    RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference, SourceEntriesChangeScope,
     SourceEntriesChanged, SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId,
     StartLibraryScanResult, SubsystemName, TraceId,
 };
 
 use crate::{
     FailedRuntimeRecoveryContext, InProcessNotificationSink, KernelBootstrap,
-    KernelBootstrapOptions, RecoveryCoordinator, RuntimeNotificationSink, StartupCoordinator,
-    StartupPhaseObserver, StartupResult, SystemClock,
+    KernelBootstrapOptions, KernelUnitOfWorkFactory, RecoveryCoordinator, RuntimeNotificationSink,
+    StartupCoordinator, StartupPhaseObserver, StartupResult, SystemClock,
     background::BackgroundOperationManager,
+    events::{PendingEventCollector, finalize_library_roots_update},
     new_trace_id,
     operations::{OperationClass, OperationGuard, OperationTracker, ResourceClass},
     startup::SettingsReadPort,
@@ -1840,6 +1843,34 @@ impl ApplicationHost {
         self.start_library_scan_with_context(root_id, &context)
     }
 
+    /// Executes the Add & Scan composite workflow through the ready kernel.
+    pub fn add_local_library_root_and_scan(
+        &self,
+        selection: LocalFilesystemRootSelection,
+    ) -> Result<AddLocalLibraryRootAndScanResult, ApplicationError> {
+        let (context, _guard) =
+            self.begin_operation("sources", "add_local_library_root_and_scan")?;
+        self.add_local_library_root_and_scan_with_context(&context, selection)
+    }
+
+    /// Retries one eligible historical LibraryScan into a new durable run.
+    pub fn retry_job(
+        &self,
+        job_run_id: JobRunId,
+    ) -> Result<RetryJobAdmissionResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("jobs", "retry_job")?;
+        self.retry_job_with_context(job_run_id, &context)
+    }
+
+    /// Reads the newest scan-run admission (active or terminal) for one root.
+    pub fn get_root_scan_admission(
+        &self,
+        library_root_id: LibraryRootId,
+    ) -> Result<Option<ScanAdmissionReference>, ApplicationError> {
+        let (context, _guard) = self.begin_operation("jobs", "get_root_scan_admission")?;
+        self.get_root_scan_admission_with_context(library_root_id, &context)
+    }
+
     /// Admits one library scan under an existing top-level context.
     pub fn start_library_scan_with_context(
         &self,
@@ -1875,56 +1906,143 @@ impl ApplicationHost {
                 Arc::new(move || guard.token().is_cancelled()),
             )?;
             if let Some(admitted) = admission.admitted_scan() {
-                let access = InfraLocalFilesystemProvider
-                    .open_access(admitted.plan().root_locator())
-                    .map_err(|_| {
-                        runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
-                    })?;
-                let handler = LibraryScanOperationHandler::new(
-                    admitted.plan().clone(),
-                    access,
-                    kernel.unit_of_work_factory().clone(),
-                    crate::events::EventBusSink::new(kernel.event_bus().clone()),
-                    100,
-                );
-                let handle = OperationHandle::new(
-                    admitted.job_run_id(),
-                    argus_application::OPERATION_TYPE_LIBRARY_SCAN,
-                );
-                let registration = manager.register(
-                    &handle,
-                    Arc::new(handler),
-                    &[
-                        ResourceClass::FilesystemRead,
-                        ResourceClass::PersistenceWrite,
-                    ],
-                );
-                if let Err(registration_error) = registration {
-                    let _ = kernel.fail_unregistered_scan_with_context(
-                        context,
-                        root_id,
-                        admitted.job_run_id(),
-                    );
-                    let code = match registration_error {
-                        crate::background::ManagerAdmissionError::Internal => {
-                            ErrorCode::InternalUnexpected
-                        }
-                        crate::background::ManagerAdmissionError::ShuttingDown
-                        | crate::background::ManagerAdmissionError::CapacityExceeded => {
-                            ErrorCode::OperationCapacityUnavailable
-                        }
-                    };
-                    return Err(ApplicationError::from_code(
-                        code,
-                        context.trace_id(),
-                        argus_application::SafeContext::new(),
-                    )
-                    .expect("background admission error follows the published catalog"));
-                }
+                register_library_scan(&manager, kernel, context, admitted)?;
             }
             admission
         };
         Ok(admission.outcome().clone())
+    }
+
+    /// Executes the Add & Scan composite workflow through the ready kernel.
+    ///
+    /// The application `LibraryService` workflow owns the committed-root then
+    /// child-admission sequencing; this method only supplies the narrow
+    /// runtime child-admission capability (durable admission plus background
+    /// registration) and publishes collected events.
+    pub fn add_local_library_root_and_scan_with_context(
+        &self,
+        context: &OperationContext,
+        selection: LocalFilesystemRootSelection,
+    ) -> Result<AddLocalLibraryRootAndScanResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let generation = self.lock_generation_with_context(context)?;
+        let manager = generation.background.clone().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let handle = generation.kernel_handle().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel_guard = handle.lock().map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel = kernel_guard.as_ref().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let capability = HostLibraryScanChildAdmission {
+            kernel,
+            manager: manager.clone(),
+        };
+        let result = kernel.library_service.add_local_library_root_and_scan(
+            AddLocalLibraryRootAndScanCommand::new(selection),
+            context.clone(),
+            &capability,
+            recorder,
+        );
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &kernel.event_bus,
+            &kernel.publication_diagnostics,
+        )
+    }
+
+    /// Retries one eligible historical LibraryScan into a new durable run.
+    ///
+    /// A registration failure after durable application admission preserves
+    /// the new execution identity, terminalizes it coherently through the
+    /// existing `fail_unregistered_scan` contract, and returns a definite
+    /// application error — never `NotAdmitted`, which would falsely imply no
+    /// new execution was created.
+    pub fn retry_job_with_context(
+        &self,
+        job_run_id: JobRunId,
+        context: &OperationContext,
+    ) -> Result<RetryJobAdmissionResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let generation = self.lock_generation_with_context(context)?;
+        let manager = generation.background.clone().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let handle = generation.kernel_handle().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel_guard = handle.lock().map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel = kernel_guard.as_ref().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let result = (|| {
+            let admission = kernel.jobs_service.retry_job(
+                RetryJobCommand::new(job_run_id),
+                context.clone(),
+                recorder.clone(),
+            )?;
+            if let Some(admitted) = admission.admitted_scan() {
+                register_library_scan(&manager, kernel, context, admitted)?;
+            }
+            Ok::<_, ApplicationError>(admission)
+        })();
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &kernel.event_bus,
+            &kernel.publication_diagnostics,
+        )
+    }
+
+    /// Reads the newest scan-run admission (active or terminal) for one root.
+    pub fn get_root_scan_admission_with_context(
+        &self,
+        library_root_id: LibraryRootId,
+        context: &OperationContext,
+    ) -> Result<Option<ScanAdmissionReference>, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel
+                .jobs_service
+                .get_root_scan_admission(library_root_id, context.clone())
+        })
     }
 
     /// Reads one authoritative job detail through the ready generation.
@@ -2277,6 +2395,91 @@ fn runtime_error(code: ErrorCode) -> ApplicationError {
 fn runtime_error_with_trace(code: ErrorCode, trace: TraceId) -> ApplicationError {
     ApplicationError::from_code(code, trace, argus_application::SafeContext::new())
         .expect("runtime lifecycle error uses an allowlisted empty context")
+}
+
+/// Registers one durably admitted LibraryScan with the background manager.
+///
+/// On registration failure the admitted execution identity is preserved and
+/// terminalized coherently through the existing `fail_unregistered_scan`
+/// contract; the caller receives a definite application error rather than a
+/// non-admission outcome.
+fn register_library_scan(
+    manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
+    kernel: &KernelBootstrap,
+    context: &OperationContext,
+    admitted: &AdmittedScan,
+) -> Result<(), ApplicationError> {
+    let access = InfraLocalFilesystemProvider
+        .open_access(admitted.plan().root_locator())
+        .map_err(|_| runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id()))?;
+    let handler = LibraryScanOperationHandler::new(
+        admitted.plan().clone(),
+        access,
+        kernel.unit_of_work_factory().clone(),
+        crate::events::EventBusSink::new(kernel.event_bus().clone()),
+        100,
+    );
+    let handle = OperationHandle::new(
+        admitted.job_run_id(),
+        argus_application::OPERATION_TYPE_LIBRARY_SCAN,
+    );
+    match manager.register(
+        &handle,
+        Arc::new(handler),
+        &[
+            ResourceClass::FilesystemRead,
+            ResourceClass::PersistenceWrite,
+        ],
+    ) {
+        Ok(()) => Ok(()),
+        Err(registration_error) => {
+            let _ = kernel.fail_unregistered_scan_with_context(
+                context,
+                admitted.plan().library_root_id(),
+                admitted.job_run_id(),
+            );
+            let code = match registration_error {
+                crate::background::ManagerAdmissionError::Internal => ErrorCode::InternalUnexpected,
+                crate::background::ManagerAdmissionError::ShuttingDown
+                | crate::background::ManagerAdmissionError::CapacityExceeded => {
+                    ErrorCode::OperationCapacityUnavailable
+                }
+            };
+            Err(ApplicationError::from_code(
+                code,
+                context.trace_id(),
+                argus_application::SafeContext::new(),
+            )
+            .expect("background admission error follows the published catalog"))
+        }
+    }
+}
+
+/// Narrow runtime-supplied child LibraryScan admission capability.
+///
+/// The application Add & Scan workflow consumes this capability through
+/// `LibraryScanChildAdmission`; runtime registration and scheduling remain
+/// owned here rather than inside the application composite.
+struct HostLibraryScanChildAdmission<'a> {
+    kernel: &'a KernelBootstrap,
+    manager: Arc<BackgroundOperationManager<KernelUnitOfWorkFactory>>,
+}
+
+impl LibraryScanChildAdmission for HostLibraryScanChildAdmission<'_> {
+    fn admit(
+        &self,
+        library_root_id: LibraryRootId,
+        context: &OperationContext,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<LibraryScanAdmissionResult, ApplicationError> {
+        let admission =
+            self.kernel
+                .start_library_scan_with_context(context, library_root_id, is_cancelled)?;
+        if let Some(admitted) = admission.admitted_scan() {
+            register_library_scan(&self.manager, self.kernel, context, admitted)?;
+        }
+        Ok(admission)
+    }
 }
 
 fn technical_details_text(

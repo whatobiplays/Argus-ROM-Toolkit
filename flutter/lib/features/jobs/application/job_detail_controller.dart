@@ -19,6 +19,9 @@ sealed class JobDetailState with _$JobDetailState {
     required bool refreshing,
     required bool cancelling,
     required bool cancelAmbiguous,
+    required bool retrying,
+    required bool retryAmbiguous,
+    RetryNotAdmittedReason? retryNotAdmittedReason,
     ClientFailure? lastFailure,
   }) = JobDetailStateReady;
 
@@ -26,8 +29,11 @@ sealed class JobDetailState with _$JobDetailState {
   const factory JobDetailState.missing() = JobDetailStateMissing;
 }
 
-/// One application-lifetime owner of authoritative job-detail state.
-@Riverpod(keepAlive: true)
+/// One identity-parameterized owner of authoritative job-detail state.
+///
+/// The detail provider is auto-disposed and recreatable per routed
+/// `JobRunId`; it is not retained as an application-lifetime cache (FE-009).
+@Riverpod()
 class JobDetailController extends _$JobDetailController {
   static const String _jobNotFoundCode = 'ARGUS.V1.JOBS.JOB_RUN_NOT_FOUND';
 
@@ -38,6 +44,7 @@ class JobDetailController extends _$JobDetailController {
   int _readToken = 0;
   bool _readInFlight = false;
   bool _cancelInFlight = false;
+  bool _retryInFlight = false;
   int _demandToken = 0;
   StreamSubscription<JobsReconciliationDemand>? _demandSubscription;
 
@@ -72,7 +79,9 @@ class JobDetailController extends _$JobDetailController {
     if (current is! JobDetailStateReady ||
         current.cancelling ||
         current.cancelAmbiguous ||
+        current.retrying ||
         _cancelInFlight ||
+        _retryInFlight ||
         _readInFlight ||
         !current.detail.job.controls.canCancel) {
       return;
@@ -89,6 +98,8 @@ class JobDetailController extends _$JobDetailController {
             refreshing: true,
             cancelling: true,
             cancelAmbiguous: false,
+            retrying: false,
+            retryAmbiguous: false,
             lastFailure: null,
           ),
         );
@@ -104,12 +115,111 @@ class JobDetailController extends _$JobDetailController {
           refreshing: false,
           cancelling: false,
           cancelAmbiguous: ambiguous,
+          retrying: false,
+          retryAmbiguous: false,
           lastFailure: failure,
         ),
       );
       await _readAuthoritative(jobRunId);
     } finally {
       _cancelInFlight = false;
+    }
+  }
+
+  /// Requests one durable retry and reconciles authoritative state.
+  ///
+  /// `onAdmitted` navigates to the new (or existing) execution identity;
+  /// transport ambiguity never dispatches a second retry and only navigates
+  /// after the authoritative retry relationship is established.
+  Future<void> retry(
+    JobRunId jobRunId, {
+    required void Function(JobRunId jobRunId) onAdmitted,
+  }) async {
+    final current = state.value;
+    if (current is! JobDetailStateReady ||
+        current.retrying ||
+        current.retryAmbiguous ||
+        current.cancelling ||
+        _retryInFlight ||
+        _cancelInFlight ||
+        _readInFlight ||
+        !current.detail.job.controls.canRetry) {
+      return;
+    }
+    _retryInFlight = true;
+    _publish(
+      JobDetailState.ready(
+        detail: current.detail,
+        refreshing: false,
+        cancelling: false,
+        cancelAmbiguous: false,
+        retrying: true,
+        retryAmbiguous: false,
+        retryNotAdmittedReason: null,
+        lastFailure: null,
+      ),
+    );
+    try {
+      final result = await ref.read(jobsApiProvider).retryJob(jobRunId);
+      switch (result) {
+        case RetryJobResultAdmitted(:final handle):
+          onAdmitted(handle.jobRunId);
+          return;
+        case RetryJobResultAlreadyRetried(:final existingJobRunId):
+          onAdmitted(existingJobRunId);
+          return;
+        case RetryJobResultNotAdmitted():
+          // Stay on the historical run with a typed explanation; the
+          // authoritative detail refresh exposes the current controls.
+          final latest = state.value;
+          if (latest is JobDetailStateReady) {
+            _publish(
+              JobDetailState.ready(
+                detail: latest.detail,
+                refreshing: false,
+                cancelling: false,
+                cancelAmbiguous: false,
+                retrying: false,
+                retryAmbiguous: false,
+                retryNotAdmittedReason: result.reason,
+                lastFailure: null,
+              ),
+            );
+          }
+          await _readAuthoritative(jobRunId);
+      }
+    } on ClientFailure catch (failure) {
+      final latest = state.value;
+      if (latest is! JobDetailStateReady) return;
+      final ambiguous = failure is TransportFailure;
+      _publish(
+        JobDetailState.ready(
+          detail: latest.detail,
+          refreshing: false,
+          cancelling: false,
+          cancelAmbiguous: false,
+          retrying: false,
+          retryAmbiguous: ambiguous,
+          retryNotAdmittedReason: null,
+          lastFailure: failure,
+        ),
+      );
+      await _readAuthoritative(jobRunId);
+      if (ambiguous) {
+        // Navigate only when the authoritative relationship is established.
+        final reconciled = state.value;
+        if (reconciled is JobDetailStateReady) {
+          final successor = switch (reconciled.detail.operationDetail) {
+            OperationDetailLibraryScan(:final detail) =>
+              detail.retrySuccessorJobRunId,
+          };
+          if (successor != null) {
+            onAdmitted(successor);
+          }
+        }
+      }
+    } finally {
+      _retryInFlight = false;
     }
   }
 
@@ -130,6 +240,12 @@ class JobDetailController extends _$JobDetailController {
           cancelling: current is JobDetailStateReady && current.cancelling,
           cancelAmbiguous:
               current is JobDetailStateReady && current.cancelAmbiguous,
+          retrying: current is JobDetailStateReady && current.retrying,
+          retryAmbiguous:
+              current is JobDetailStateReady && current.retryAmbiguous,
+          retryNotAdmittedReason: current is JobDetailStateReady
+              ? current.retryNotAdmittedReason
+              : null,
           lastFailure: null,
         ),
       );
@@ -151,6 +267,9 @@ class JobDetailController extends _$JobDetailController {
           refreshing: false,
           cancelling: current.cancelling,
           cancelAmbiguous: current.cancelAmbiguous,
+          retrying: current.retrying,
+          retryAmbiguous: current.retryAmbiguous,
+          retryNotAdmittedReason: current.retryNotAdmittedReason,
           lastFailure: failure,
         ),
       );

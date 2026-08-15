@@ -10,8 +10,8 @@ use super::appearance::SqliteAppearanceSettingsRepository;
 use super::connection::SqliteValue;
 use super::errors::{SqliteOperationError, operation_error};
 use super::jobs::{
-    SqliteJobRunRepository, SqliteLibraryScanTargetRepository, SqliteScanRunRepository,
-    SqliteSourceEntryRepository,
+    SqliteJobRunRepository, SqliteLibraryScanAdmissionContextRepository,
+    SqliteLibraryScanTargetRepository, SqliteScanRunRepository, SqliteSourceEntryRepository,
 };
 use super::sources::{SqliteLibraryRootRepository, SqliteLibrarySourceRepository};
 
@@ -304,6 +304,10 @@ impl<'connection> UnitOfWork for SqliteUnitOfWork<'connection> {
         = SqliteLibraryScanTargetRepository<'scope, 'connection>
     where
         Self: 'scope;
+    type LibraryScanAdmissionContextRepository<'scope>
+        = SqliteLibraryScanAdmissionContextRepository<'scope, 'connection>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         SqliteAppearanceSettingsRepository::new(self)
@@ -331,6 +335,12 @@ impl<'connection> UnitOfWork for SqliteUnitOfWork<'connection> {
 
     fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
         SqliteLibraryScanTargetRepository::new(self)
+    }
+
+    fn library_scan_admission_context(
+        &mut self,
+    ) -> Self::LibraryScanAdmissionContextRepository<'_> {
+        SqliteLibraryScanAdmissionContextRepository::new(self)
     }
 
     fn commit(self) -> Result<(), ApplicationPortError>

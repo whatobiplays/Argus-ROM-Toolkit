@@ -114,6 +114,11 @@ impl MigrationRegistry {
                 "0005_source_hierarchy",
                 include_bytes!("sql/0005_source_hierarchy.sql"),
             ),
+            Migration::sql(
+                6,
+                "0006_retry_and_progress",
+                include_bytes!("sql/0006_retry_and_progress.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

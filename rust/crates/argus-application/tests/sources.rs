@@ -25,6 +25,11 @@ use argus_application::{
 };
 use argus_domain::LibrarySourceId;
 
+use argus_application::{
+    LibraryScanAdmissionContext, LibraryScanAdmissionContextRepository,
+    NewLibraryScanAdmissionContext,
+};
+
 const ROOT_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const ROOT_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const ROOT_EXISTING: &str = "cccccccccccccccccccccccccccccccc";
@@ -298,6 +303,14 @@ impl JobRunRepository for NoopJobRunRepository<'_> {
         Err(PersistenceError::Unavailable)
     }
 
+    fn insert_retry_link(
+        &mut self,
+        _source_job_run_id: JobRunId,
+        _successor_job_run_id: JobRunId,
+    ) -> Result<(), PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
     fn request_cancellation(
         &mut self,
         _job_run_id: JobRunId,
@@ -349,6 +362,16 @@ impl ScanRunRepository for NoopScanRunRepository<'_> {
         _status: ScanRunStatus,
         _completed_at_ms: Option<i64>,
         _failure_reason: Option<String>,
+    ) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn set_progress_facts(
+        &mut self,
+        _scan_run_id: ScanRunId,
+        _entries_observed: u64,
+        _entries_committed: u64,
+        _issue_count: u64,
     ) -> Result<bool, PersistenceError> {
         Err(PersistenceError::Unavailable)
     }
@@ -457,6 +480,23 @@ impl LibraryScanTargetRepository for NoopLibraryScanTargetRepository<'_> {
     }
 }
 
+struct NoopLibraryScanAdmissionContextRepository<'scope> {
+    marker: PhantomData<&'scope mut ()>,
+}
+
+impl LibraryScanAdmissionContextRepository for NoopLibraryScanAdmissionContextRepository<'_> {
+    fn insert(&mut self, _new: NewLibraryScanAdmissionContext) -> Result<(), PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn get_by_job(
+        &mut self,
+        _job_run_id: JobRunId,
+    ) -> Result<Option<LibraryScanAdmissionContext>, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+}
+
 struct FakeUnitOfWork<'scope> {
     store: Rc<RefCell<FakeStore>>,
     terminal: bool,
@@ -490,6 +530,10 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
         Self: 'scope;
     type LibraryScanTargetRepository<'scope>
         = NoopLibraryScanTargetRepository<'scope>
+    where
+        Self: 'scope;
+    type LibraryScanAdmissionContextRepository<'scope>
+        = NoopLibraryScanAdmissionContextRepository<'scope>
     where
         Self: 'scope;
 
@@ -533,6 +577,14 @@ impl UnitOfWork for FakeUnitOfWork<'_> {
 
     fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
         NoopLibraryScanTargetRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_scan_admission_context(
+        &mut self,
+    ) -> Self::LibraryScanAdmissionContextRepository<'_> {
+        NoopLibraryScanAdmissionContextRepository {
             marker: PhantomData,
         }
     }

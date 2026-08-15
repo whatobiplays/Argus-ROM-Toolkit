@@ -1,5 +1,7 @@
 //! Focused library-root configuration capabilities for Slice 001.
 
+use std::sync::Arc;
+
 use crate::jobs::{
     AdmittedScan, JobRunRepository, LibraryScanExecutionPlan, LibraryScanTargetKind,
     LibraryScanTargetRepository, OPERATION_TYPE_LIBRARY_SCAN, OperationHandle, ScanRunRepository,
@@ -650,6 +652,68 @@ pub enum AddLocalLibraryRootResult {
     OverlapsExisting(LibraryRootId, RootRelationship),
 }
 
+/// Typed child LibraryScan admission issue for an Add & Scan workflow.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LibraryScanChildAdmissionIssue {
+    /// The root already has an active scan owner.
+    AlreadyScanning {
+        library_root_id: LibraryRootId,
+        active_job_run_id: JobRunId,
+        active_scan_run_id: ScanRunId,
+    },
+    /// Child admission failed with one canonical bounded application error.
+    AdmissionFailure(ApplicationError),
+}
+
+/// Typed outcome of one Add & Scan composite workflow.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AddLocalLibraryRootAndScanResult {
+    /// The root committed and one child LibraryScan was admitted.
+    AddedAndScanAdmitted(LibraryRootProjection, OperationHandle),
+    /// The root committed but the child LibraryScan was not admitted.
+    AddedButScanNotAdmitted(LibraryRootProjection, LibraryScanChildAdmissionIssue),
+    /// The exact same validated selection is already configured.
+    AlreadyConfigured(LibraryRootId),
+    /// The selection provably overlaps one existing configured root.
+    OverlapsExisting(LibraryRootId, RootRelationship),
+}
+
+/// One Add & Scan composite request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddLocalLibraryRootAndScanCommand {
+    selection: LocalFilesystemRootSelection,
+}
+
+impl AddLocalLibraryRootAndScanCommand {
+    /// Creates one composite request from the typed picker selection.
+    pub fn new(selection: LocalFilesystemRootSelection) -> Self {
+        Self { selection }
+    }
+
+    /// Returns the typed selection input.
+    pub fn selection(&self) -> &LocalFilesystemRootSelection {
+        &self.selection
+    }
+}
+
+/// Narrow runtime-supplied child LibraryScan admission capability.
+///
+/// SPEC-BE-013/SPEC-BE-009 permit the application Add & Scan workflow to
+/// consume a runtime-supplied capability that durably admits the child scan
+/// and establishes background-operation responsibility. Runtime registration
+/// and scheduling remain owned by `ArgusRuntime`/`BackgroundOperationManager`;
+/// the application workflow never sequences an independent add followed by a
+/// separate scan call.
+pub trait LibraryScanChildAdmission {
+    /// Admits one durable child LibraryScan for a freshly committed root.
+    fn admit(
+        &self,
+        library_root_id: LibraryRootId,
+        context: &OperationContext,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<crate::LibraryScanAdmissionResult, ApplicationError>;
+}
+
 /// Typed outcome of one root-removal operation for the active slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RemoveLibraryRootResult {
@@ -831,6 +895,95 @@ where
 /// Handles one transactional root removal.
 pub struct RemoveLibraryRootHandler<U> {
     unit_of_work: U,
+}
+
+/// Handles one Add & Scan composite workflow with two durable boundaries.
+pub struct AddLocalLibraryRootAndScanHandler<P, Q, U> {
+    provider: P,
+    queries: Q,
+    unit_of_work: U,
+}
+
+impl<P, Q, U> AddLocalLibraryRootAndScanHandler<P, Q, U> {
+    /// Composes the provider, query, and Unit of Work capabilities.
+    pub const fn new(provider: P, queries: Q, unit_of_work: U) -> Self {
+        Self {
+            provider,
+            queries,
+            unit_of_work,
+        }
+    }
+}
+
+impl<P, Q, U> AddLocalLibraryRootAndScanHandler<P, Q, U>
+where
+    P: LocalFilesystemProvider + Clone,
+    Q: LibraryRootQueries + Clone,
+    U: UnitOfWorkFactory + Clone,
+{
+    /// Commits the root first, then requests child LibraryScan admission
+    /// through the supplied runtime capability, then assembles the typed
+    /// committed result. Child admission failure never rolls back or deletes
+    /// the committed root and leaves no orphan background-operation state.
+    pub fn handle<A, R>(
+        &self,
+        command: AddLocalLibraryRootAndScanCommand,
+        context: OperationContext,
+        admission: &A,
+        recorder: R,
+    ) -> Result<AddLocalLibraryRootAndScanResult, ApplicationError>
+    where
+        A: LibraryScanChildAdmission,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        let add = AddLocalLibraryRootHandler::new(
+            self.provider.clone(),
+            self.queries.clone(),
+            self.unit_of_work.clone(),
+        )
+        .handle(
+            AddLocalLibraryRootCommand::new(command.selection().clone()),
+            context.clone(),
+            recorder,
+        )?;
+        match add {
+            AddLocalLibraryRootResult::Added(root) => {
+                let is_cancelled = Arc::new(|| false);
+                match admission.admit(root.root_id(), &context, is_cancelled) {
+                    Ok(result) => match result.outcome() {
+                        StartLibraryScanResult::Admitted(handle) => {
+                            Ok(AddLocalLibraryRootAndScanResult::AddedAndScanAdmitted(
+                                root,
+                                handle.clone(),
+                            ))
+                        }
+                        StartLibraryScanResult::AlreadyScanning {
+                            library_root_id,
+                            active_job_run_id,
+                            active_scan_run_id,
+                        } => Ok(AddLocalLibraryRootAndScanResult::AddedButScanNotAdmitted(
+                            root,
+                            LibraryScanChildAdmissionIssue::AlreadyScanning {
+                                library_root_id: *library_root_id,
+                                active_job_run_id: *active_job_run_id,
+                                active_scan_run_id: *active_scan_run_id,
+                            },
+                        )),
+                    },
+                    Err(error) => Ok(AddLocalLibraryRootAndScanResult::AddedButScanNotAdmitted(
+                        root,
+                        LibraryScanChildAdmissionIssue::AdmissionFailure(error),
+                    )),
+                }
+            }
+            AddLocalLibraryRootResult::AlreadyConfigured(root_id) => {
+                Ok(AddLocalLibraryRootAndScanResult::AlreadyConfigured(root_id))
+            }
+            AddLocalLibraryRootResult::OverlapsExisting(root_id, relationship) => Ok(
+                AddLocalLibraryRootAndScanResult::OverlapsExisting(root_id, relationship),
+            ),
+        }
+    }
 }
 
 impl<U> RemoveLibraryRootHandler<U> {
@@ -1178,6 +1331,27 @@ where
         R: EventRecorder + Clone + Send + Sync + 'static,
     {
         self.add_handler().handle(command, context, recorder)
+    }
+
+    /// Executes the Add & Scan composite workflow through the supplied child
+    /// LibraryScan admission capability.
+    pub fn add_local_library_root_and_scan<A, R>(
+        &self,
+        command: AddLocalLibraryRootAndScanCommand,
+        context: OperationContext,
+        admission: &A,
+        recorder: R,
+    ) -> Result<AddLocalLibraryRootAndScanResult, ApplicationError>
+    where
+        A: LibraryScanChildAdmission,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        AddLocalLibraryRootAndScanHandler::new(
+            self.provider.clone(),
+            self.queries.clone(),
+            self.unit_of_work.clone(),
+        )
+        .handle(command, context, admission, recorder)
     }
 
     /// Delegates one root-removal operation.

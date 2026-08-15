@@ -14,8 +14,8 @@ use argus_application::{
     TraceIdError, UnitOfWork, UnitOfWorkFactory, Version,
 };
 use common::{
-    NoopJobRunRepository, NoopLibraryRootRepository, NoopLibraryScanTargetRepository,
-    NoopScanRunRepository, NoopSourceEntryRepository,
+    NoopJobRunRepository, NoopLibraryRootRepository, NoopLibraryScanAdmissionContextRepository,
+    NoopLibraryScanTargetRepository, NoopScanRunRepository, NoopSourceEntryRepository,
 };
 
 fn context() -> OperationContext {
@@ -400,6 +400,10 @@ impl UnitOfWork for RecordingUnitOfWork<'_> {
         = NoopLibraryScanTargetRepository<'scope>
     where
         Self: 'scope;
+    type LibraryScanAdmissionContextRepository<'scope>
+        = NoopLibraryScanAdmissionContextRepository<'scope>
+    where
+        Self: 'scope;
 
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_> {
         NoopAppearanceRepository {
@@ -439,6 +443,14 @@ impl UnitOfWork for RecordingUnitOfWork<'_> {
 
     fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_> {
         NoopLibraryScanTargetRepository {
+            marker: PhantomData,
+        }
+    }
+
+    fn library_scan_admission_context(
+        &mut self,
+    ) -> Self::LibraryScanAdmissionContextRepository<'_> {
+        NoopLibraryScanAdmissionContextRepository {
             marker: PhantomData,
         }
     }

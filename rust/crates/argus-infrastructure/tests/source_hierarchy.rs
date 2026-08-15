@@ -355,7 +355,7 @@ fn projection_exposes_only_safe_application_facts() {
 }
 
 #[test]
-fn migration_0005_applies_fresh_and_upgrades_version_four() {
+fn migration_latest_applies_fresh_and_upgrades_version_four() {
     let directory = tempdir().expect("tempdir");
     let path = directory.path().join("upgrade.sqlite3");
     let old_registry = MigrationRegistry::new(vec![
@@ -386,8 +386,8 @@ fn migration_0005_applies_fresh_and_upgrades_version_four() {
     old.shutdown().expect("old shutdown");
 
     let fresh = SqliteDatabaseExecutor::open(&path).expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 5);
-    assert_eq!(fresh.migration_summary().applied_count, 1);
+    assert_eq!(fresh.migration_summary().current_version, 6);
+    assert_eq!(fresh.migration_summary().applied_count, 2);
     let index = fresh
         .with_connection_for_tests(context(), |connection| {
             connection.scalar_i64(

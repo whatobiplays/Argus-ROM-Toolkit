@@ -1918,7 +1918,7 @@ as ScanRunId?,
 /// @nodoc
 mixin _$ScanProgressFacts {
 
- String? get phase; int? get completedUnits; int? get totalUnits; String? get statusKey; int get rootsRequested; int get rootsAdmitted; int get rootsTerminal; int get entriesCommitted;
+ String? get phase; int? get completedUnits; int? get totalUnits; String? get statusKey; int get rootsRequested; int get rootsAdmitted; int get rootsTerminal; int? get entriesObserved; int? get entriesCommitted; int? get issueCount;
 /// Create a copy of ScanProgressFacts
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1929,16 +1929,16 @@ $ScanProgressFactsCopyWith<ScanProgressFacts> get copyWith => _$ScanProgressFact
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ScanProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.rootsRequested, rootsRequested) || other.rootsRequested == rootsRequested)&&(identical(other.rootsAdmitted, rootsAdmitted) || other.rootsAdmitted == rootsAdmitted)&&(identical(other.rootsTerminal, rootsTerminal) || other.rootsTerminal == rootsTerminal)&&(identical(other.entriesCommitted, entriesCommitted) || other.entriesCommitted == entriesCommitted));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ScanProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.rootsRequested, rootsRequested) || other.rootsRequested == rootsRequested)&&(identical(other.rootsAdmitted, rootsAdmitted) || other.rootsAdmitted == rootsAdmitted)&&(identical(other.rootsTerminal, rootsTerminal) || other.rootsTerminal == rootsTerminal)&&(identical(other.entriesObserved, entriesObserved) || other.entriesObserved == entriesObserved)&&(identical(other.entriesCommitted, entriesCommitted) || other.entriesCommitted == entriesCommitted)&&(identical(other.issueCount, issueCount) || other.issueCount == issueCount));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,rootsRequested,rootsAdmitted,rootsTerminal,entriesCommitted);
+int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,rootsRequested,rootsAdmitted,rootsTerminal,entriesObserved,entriesCommitted,issueCount);
 
 @override
 String toString() {
-  return 'ScanProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, rootsRequested: $rootsRequested, rootsAdmitted: $rootsAdmitted, rootsTerminal: $rootsTerminal, entriesCommitted: $entriesCommitted)';
+  return 'ScanProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, rootsRequested: $rootsRequested, rootsAdmitted: $rootsAdmitted, rootsTerminal: $rootsTerminal, entriesObserved: $entriesObserved, entriesCommitted: $entriesCommitted, issueCount: $issueCount)';
 }
 
 
@@ -1949,7 +1949,7 @@ abstract mixin class $ScanProgressFactsCopyWith<$Res>  {
   factory $ScanProgressFactsCopyWith(ScanProgressFacts value, $Res Function(ScanProgressFacts) _then) = _$ScanProgressFactsCopyWithImpl;
 @useResult
 $Res call({
- String? phase, int? completedUnits, int? totalUnits, String? statusKey, int rootsRequested, int rootsAdmitted, int rootsTerminal, int entriesCommitted
+ String? phase, int? completedUnits, int? totalUnits, String? statusKey, int rootsRequested, int rootsAdmitted, int rootsTerminal, int? entriesObserved, int? entriesCommitted, int? issueCount
 });
 
 
@@ -1966,7 +1966,7 @@ class _$ScanProgressFactsCopyWithImpl<$Res>
 
 /// Create a copy of ScanProgressFacts
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? rootsRequested = null,Object? rootsAdmitted = null,Object? rootsTerminal = null,Object? entriesCommitted = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? rootsRequested = null,Object? rootsAdmitted = null,Object? rootsTerminal = null,Object? entriesObserved = freezed,Object? entriesCommitted = freezed,Object? issueCount = freezed,}) {
   return _then(_self.copyWith(
 phase: freezed == phase ? _self.phase : phase // ignore: cast_nullable_to_non_nullable
 as String?,completedUnits: freezed == completedUnits ? _self.completedUnits : completedUnits // ignore: cast_nullable_to_non_nullable
@@ -1975,8 +1975,10 @@ as int?,statusKey: freezed == statusKey ? _self.statusKey : statusKey // ignore:
 as String?,rootsRequested: null == rootsRequested ? _self.rootsRequested : rootsRequested // ignore: cast_nullable_to_non_nullable
 as int,rootsAdmitted: null == rootsAdmitted ? _self.rootsAdmitted : rootsAdmitted // ignore: cast_nullable_to_non_nullable
 as int,rootsTerminal: null == rootsTerminal ? _self.rootsTerminal : rootsTerminal // ignore: cast_nullable_to_non_nullable
-as int,entriesCommitted: null == entriesCommitted ? _self.entriesCommitted : entriesCommitted // ignore: cast_nullable_to_non_nullable
-as int,
+as int,entriesObserved: freezed == entriesObserved ? _self.entriesObserved : entriesObserved // ignore: cast_nullable_to_non_nullable
+as int?,entriesCommitted: freezed == entriesCommitted ? _self.entriesCommitted : entriesCommitted // ignore: cast_nullable_to_non_nullable
+as int?,issueCount: freezed == issueCount ? _self.issueCount : issueCount // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 
@@ -2058,10 +2060,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int rootsRequested,  int rootsAdmitted,  int rootsTerminal,  int entriesCommitted)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int rootsRequested,  int rootsAdmitted,  int rootsTerminal,  int? entriesObserved,  int? entriesCommitted,  int? issueCount)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ScanProgressFacts() when $default != null:
-return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.rootsRequested,_that.rootsAdmitted,_that.rootsTerminal,_that.entriesCommitted);case _:
+return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.rootsRequested,_that.rootsAdmitted,_that.rootsTerminal,_that.entriesObserved,_that.entriesCommitted,_that.issueCount);case _:
   return orElse();
 
 }
@@ -2079,10 +2081,10 @@ return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKe
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int rootsRequested,  int rootsAdmitted,  int rootsTerminal,  int entriesCommitted)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int rootsRequested,  int rootsAdmitted,  int rootsTerminal,  int? entriesObserved,  int? entriesCommitted,  int? issueCount)  $default,) {final _that = this;
 switch (_that) {
 case _ScanProgressFacts():
-return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.rootsRequested,_that.rootsAdmitted,_that.rootsTerminal,_that.entriesCommitted);}
+return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.rootsRequested,_that.rootsAdmitted,_that.rootsTerminal,_that.entriesObserved,_that.entriesCommitted,_that.issueCount);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2096,10 +2098,10 @@ return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKe
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int rootsRequested,  int rootsAdmitted,  int rootsTerminal,  int entriesCommitted)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int rootsRequested,  int rootsAdmitted,  int rootsTerminal,  int? entriesObserved,  int? entriesCommitted,  int? issueCount)?  $default,) {final _that = this;
 switch (_that) {
 case _ScanProgressFacts() when $default != null:
-return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.rootsRequested,_that.rootsAdmitted,_that.rootsTerminal,_that.entriesCommitted);case _:
+return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.rootsRequested,_that.rootsAdmitted,_that.rootsTerminal,_that.entriesObserved,_that.entriesCommitted,_that.issueCount);case _:
   return null;
 
 }
@@ -2111,7 +2113,7 @@ return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKe
 
 
 class _ScanProgressFacts implements ScanProgressFacts {
-  const _ScanProgressFacts({this.phase, this.completedUnits, this.totalUnits, this.statusKey, required this.rootsRequested, required this.rootsAdmitted, required this.rootsTerminal, required this.entriesCommitted});
+  const _ScanProgressFacts({this.phase, this.completedUnits, this.totalUnits, this.statusKey, required this.rootsRequested, required this.rootsAdmitted, required this.rootsTerminal, this.entriesObserved, this.entriesCommitted, this.issueCount});
 
 
 @override final  String? phase;
@@ -2121,7 +2123,9 @@ class _ScanProgressFacts implements ScanProgressFacts {
 @override final  int rootsRequested;
 @override final  int rootsAdmitted;
 @override final  int rootsTerminal;
-@override final  int entriesCommitted;
+@override final  int? entriesObserved;
+@override final  int? entriesCommitted;
+@override final  int? issueCount;
 
 /// Create a copy of ScanProgressFacts
 /// with the given fields replaced by the non-null parameter values.
@@ -2133,16 +2137,16 @@ _$ScanProgressFactsCopyWith<_ScanProgressFacts> get copyWith => __$ScanProgressF
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ScanProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.rootsRequested, rootsRequested) || other.rootsRequested == rootsRequested)&&(identical(other.rootsAdmitted, rootsAdmitted) || other.rootsAdmitted == rootsAdmitted)&&(identical(other.rootsTerminal, rootsTerminal) || other.rootsTerminal == rootsTerminal)&&(identical(other.entriesCommitted, entriesCommitted) || other.entriesCommitted == entriesCommitted));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ScanProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.rootsRequested, rootsRequested) || other.rootsRequested == rootsRequested)&&(identical(other.rootsAdmitted, rootsAdmitted) || other.rootsAdmitted == rootsAdmitted)&&(identical(other.rootsTerminal, rootsTerminal) || other.rootsTerminal == rootsTerminal)&&(identical(other.entriesObserved, entriesObserved) || other.entriesObserved == entriesObserved)&&(identical(other.entriesCommitted, entriesCommitted) || other.entriesCommitted == entriesCommitted)&&(identical(other.issueCount, issueCount) || other.issueCount == issueCount));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,rootsRequested,rootsAdmitted,rootsTerminal,entriesCommitted);
+int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,rootsRequested,rootsAdmitted,rootsTerminal,entriesObserved,entriesCommitted,issueCount);
 
 @override
 String toString() {
-  return 'ScanProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, rootsRequested: $rootsRequested, rootsAdmitted: $rootsAdmitted, rootsTerminal: $rootsTerminal, entriesCommitted: $entriesCommitted)';
+  return 'ScanProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, rootsRequested: $rootsRequested, rootsAdmitted: $rootsAdmitted, rootsTerminal: $rootsTerminal, entriesObserved: $entriesObserved, entriesCommitted: $entriesCommitted, issueCount: $issueCount)';
 }
 
 
@@ -2153,7 +2157,7 @@ abstract mixin class _$ScanProgressFactsCopyWith<$Res> implements $ScanProgressF
   factory _$ScanProgressFactsCopyWith(_ScanProgressFacts value, $Res Function(_ScanProgressFacts) _then) = __$ScanProgressFactsCopyWithImpl;
 @override @useResult
 $Res call({
- String? phase, int? completedUnits, int? totalUnits, String? statusKey, int rootsRequested, int rootsAdmitted, int rootsTerminal, int entriesCommitted
+ String? phase, int? completedUnits, int? totalUnits, String? statusKey, int rootsRequested, int rootsAdmitted, int rootsTerminal, int? entriesObserved, int? entriesCommitted, int? issueCount
 });
 
 
@@ -2170,7 +2174,7 @@ class __$ScanProgressFactsCopyWithImpl<$Res>
 
 /// Create a copy of ScanProgressFacts
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? rootsRequested = null,Object? rootsAdmitted = null,Object? rootsTerminal = null,Object? entriesCommitted = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? rootsRequested = null,Object? rootsAdmitted = null,Object? rootsTerminal = null,Object? entriesObserved = freezed,Object? entriesCommitted = freezed,Object? issueCount = freezed,}) {
   return _then(_ScanProgressFacts(
 phase: freezed == phase ? _self.phase : phase // ignore: cast_nullable_to_non_nullable
 as String?,completedUnits: freezed == completedUnits ? _self.completedUnits : completedUnits // ignore: cast_nullable_to_non_nullable
@@ -2179,8 +2183,10 @@ as int?,statusKey: freezed == statusKey ? _self.statusKey : statusKey // ignore:
 as String?,rootsRequested: null == rootsRequested ? _self.rootsRequested : rootsRequested // ignore: cast_nullable_to_non_nullable
 as int,rootsAdmitted: null == rootsAdmitted ? _self.rootsAdmitted : rootsAdmitted // ignore: cast_nullable_to_non_nullable
 as int,rootsTerminal: null == rootsTerminal ? _self.rootsTerminal : rootsTerminal // ignore: cast_nullable_to_non_nullable
-as int,entriesCommitted: null == entriesCommitted ? _self.entriesCommitted : entriesCommitted // ignore: cast_nullable_to_non_nullable
-as int,
+as int,entriesObserved: freezed == entriesObserved ? _self.entriesObserved : entriesObserved // ignore: cast_nullable_to_non_nullable
+as int?,entriesCommitted: freezed == entriesCommitted ? _self.entriesCommitted : entriesCommitted // ignore: cast_nullable_to_non_nullable
+as int?,issueCount: freezed == issueCount ? _self.issueCount : issueCount // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 
@@ -3605,6 +3611,681 @@ as ScanRunId,
 }
 
 
+}
+
+/// @nodoc
+mixin _$RetryNotAdmittedReason {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryNotAdmittedReason);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RetryNotAdmittedReason()';
+}
+
+
+}
+
+/// @nodoc
+class $RetryNotAdmittedReasonCopyWith<$Res>  {
+$RetryNotAdmittedReasonCopyWith(RetryNotAdmittedReason _, $Res Function(RetryNotAdmittedReason) __);
+}
+
+
+/// Adds pattern-matching-related methods to [RetryNotAdmittedReason].
+extension RetryNotAdmittedReasonPatterns on RetryNotAdmittedReason {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RetryNotAdmittedReasonSourceRunNotTerminal value)?  sourceRunNotTerminal,TResult Function( RetryNotAdmittedReasonOperationNotRetryable value)?  operationNotRetryable,TResult Function( RetryNotAdmittedReasonNoEligibleTargets value)?  noEligibleTargets,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case RetryNotAdmittedReasonSourceRunNotTerminal() when sourceRunNotTerminal != null:
+return sourceRunNotTerminal(_that);case RetryNotAdmittedReasonOperationNotRetryable() when operationNotRetryable != null:
+return operationNotRetryable(_that);case RetryNotAdmittedReasonNoEligibleTargets() when noEligibleTargets != null:
+return noEligibleTargets(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RetryNotAdmittedReasonSourceRunNotTerminal value)  sourceRunNotTerminal,required TResult Function( RetryNotAdmittedReasonOperationNotRetryable value)  operationNotRetryable,required TResult Function( RetryNotAdmittedReasonNoEligibleTargets value)  noEligibleTargets,}){
+final _that = this;
+switch (_that) {
+case RetryNotAdmittedReasonSourceRunNotTerminal():
+return sourceRunNotTerminal(_that);case RetryNotAdmittedReasonOperationNotRetryable():
+return operationNotRetryable(_that);case RetryNotAdmittedReasonNoEligibleTargets():
+return noEligibleTargets(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RetryNotAdmittedReasonSourceRunNotTerminal value)?  sourceRunNotTerminal,TResult? Function( RetryNotAdmittedReasonOperationNotRetryable value)?  operationNotRetryable,TResult? Function( RetryNotAdmittedReasonNoEligibleTargets value)?  noEligibleTargets,}){
+final _that = this;
+switch (_that) {
+case RetryNotAdmittedReasonSourceRunNotTerminal() when sourceRunNotTerminal != null:
+return sourceRunNotTerminal(_that);case RetryNotAdmittedReasonOperationNotRetryable() when operationNotRetryable != null:
+return operationNotRetryable(_that);case RetryNotAdmittedReasonNoEligibleTargets() when noEligibleTargets != null:
+return noEligibleTargets(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  sourceRunNotTerminal,TResult Function()?  operationNotRetryable,TResult Function( List<LibraryScanAdmissionExclusion> exclusions)?  noEligibleTargets,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case RetryNotAdmittedReasonSourceRunNotTerminal() when sourceRunNotTerminal != null:
+return sourceRunNotTerminal();case RetryNotAdmittedReasonOperationNotRetryable() when operationNotRetryable != null:
+return operationNotRetryable();case RetryNotAdmittedReasonNoEligibleTargets() when noEligibleTargets != null:
+return noEligibleTargets(_that.exclusions);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  sourceRunNotTerminal,required TResult Function()  operationNotRetryable,required TResult Function( List<LibraryScanAdmissionExclusion> exclusions)  noEligibleTargets,}) {final _that = this;
+switch (_that) {
+case RetryNotAdmittedReasonSourceRunNotTerminal():
+return sourceRunNotTerminal();case RetryNotAdmittedReasonOperationNotRetryable():
+return operationNotRetryable();case RetryNotAdmittedReasonNoEligibleTargets():
+return noEligibleTargets(_that.exclusions);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  sourceRunNotTerminal,TResult? Function()?  operationNotRetryable,TResult? Function( List<LibraryScanAdmissionExclusion> exclusions)?  noEligibleTargets,}) {final _that = this;
+switch (_that) {
+case RetryNotAdmittedReasonSourceRunNotTerminal() when sourceRunNotTerminal != null:
+return sourceRunNotTerminal();case RetryNotAdmittedReasonOperationNotRetryable() when operationNotRetryable != null:
+return operationNotRetryable();case RetryNotAdmittedReasonNoEligibleTargets() when noEligibleTargets != null:
+return noEligibleTargets(_that.exclusions);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class RetryNotAdmittedReasonSourceRunNotTerminal implements RetryNotAdmittedReason {
+  const RetryNotAdmittedReasonSourceRunNotTerminal();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryNotAdmittedReasonSourceRunNotTerminal);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RetryNotAdmittedReason.sourceRunNotTerminal()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RetryNotAdmittedReasonOperationNotRetryable implements RetryNotAdmittedReason {
+  const RetryNotAdmittedReasonOperationNotRetryable();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryNotAdmittedReasonOperationNotRetryable);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RetryNotAdmittedReason.operationNotRetryable()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class RetryNotAdmittedReasonNoEligibleTargets implements RetryNotAdmittedReason {
+  const RetryNotAdmittedReasonNoEligibleTargets(final  List<LibraryScanAdmissionExclusion> exclusions): _exclusions = exclusions;
+
+
+ final  List<LibraryScanAdmissionExclusion> _exclusions;
+ List<LibraryScanAdmissionExclusion> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+
+/// Create a copy of RetryNotAdmittedReason
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RetryNotAdmittedReasonNoEligibleTargetsCopyWith<RetryNotAdmittedReasonNoEligibleTargets> get copyWith => _$RetryNotAdmittedReasonNoEligibleTargetsCopyWithImpl<RetryNotAdmittedReasonNoEligibleTargets>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryNotAdmittedReasonNoEligibleTargets&&const DeepCollectionEquality().equals(other._exclusions, _exclusions));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_exclusions));
+
+@override
+String toString() {
+  return 'RetryNotAdmittedReason.noEligibleTargets(exclusions: $exclusions)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RetryNotAdmittedReasonNoEligibleTargetsCopyWith<$Res> implements $RetryNotAdmittedReasonCopyWith<$Res> {
+  factory $RetryNotAdmittedReasonNoEligibleTargetsCopyWith(RetryNotAdmittedReasonNoEligibleTargets value, $Res Function(RetryNotAdmittedReasonNoEligibleTargets) _then) = _$RetryNotAdmittedReasonNoEligibleTargetsCopyWithImpl;
+@useResult
+$Res call({
+ List<LibraryScanAdmissionExclusion> exclusions
+});
+
+
+
+
+}
+/// @nodoc
+class _$RetryNotAdmittedReasonNoEligibleTargetsCopyWithImpl<$Res>
+    implements $RetryNotAdmittedReasonNoEligibleTargetsCopyWith<$Res> {
+  _$RetryNotAdmittedReasonNoEligibleTargetsCopyWithImpl(this._self, this._then);
+
+  final RetryNotAdmittedReasonNoEligibleTargets _self;
+  final $Res Function(RetryNotAdmittedReasonNoEligibleTargets) _then;
+
+/// Create a copy of RetryNotAdmittedReason
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? exclusions = null,}) {
+  return _then(RetryNotAdmittedReasonNoEligibleTargets(
+null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusion>,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$RetryJobResult {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryJobResult);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'RetryJobResult()';
+}
+
+
+}
+
+/// @nodoc
+class $RetryJobResultCopyWith<$Res>  {
+$RetryJobResultCopyWith(RetryJobResult _, $Res Function(RetryJobResult) __);
+}
+
+
+/// Adds pattern-matching-related methods to [RetryJobResult].
+extension RetryJobResultPatterns on RetryJobResult {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RetryJobResultAdmitted value)?  admitted,TResult Function( RetryJobResultAlreadyRetried value)?  alreadyRetried,TResult Function( RetryJobResultNotAdmitted value)?  notAdmitted,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case RetryJobResultAdmitted() when admitted != null:
+return admitted(_that);case RetryJobResultAlreadyRetried() when alreadyRetried != null:
+return alreadyRetried(_that);case RetryJobResultNotAdmitted() when notAdmitted != null:
+return notAdmitted(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RetryJobResultAdmitted value)  admitted,required TResult Function( RetryJobResultAlreadyRetried value)  alreadyRetried,required TResult Function( RetryJobResultNotAdmitted value)  notAdmitted,}){
+final _that = this;
+switch (_that) {
+case RetryJobResultAdmitted():
+return admitted(_that);case RetryJobResultAlreadyRetried():
+return alreadyRetried(_that);case RetryJobResultNotAdmitted():
+return notAdmitted(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RetryJobResultAdmitted value)?  admitted,TResult? Function( RetryJobResultAlreadyRetried value)?  alreadyRetried,TResult? Function( RetryJobResultNotAdmitted value)?  notAdmitted,}){
+final _that = this;
+switch (_that) {
+case RetryJobResultAdmitted() when admitted != null:
+return admitted(_that);case RetryJobResultAlreadyRetried() when alreadyRetried != null:
+return alreadyRetried(_that);case RetryJobResultNotAdmitted() when notAdmitted != null:
+return notAdmitted(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( OperationHandle handle)?  admitted,TResult Function( JobRunId existingJobRunId)?  alreadyRetried,TResult Function( RetryNotAdmittedReason reason)?  notAdmitted,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case RetryJobResultAdmitted() when admitted != null:
+return admitted(_that.handle);case RetryJobResultAlreadyRetried() when alreadyRetried != null:
+return alreadyRetried(_that.existingJobRunId);case RetryJobResultNotAdmitted() when notAdmitted != null:
+return notAdmitted(_that.reason);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( OperationHandle handle)  admitted,required TResult Function( JobRunId existingJobRunId)  alreadyRetried,required TResult Function( RetryNotAdmittedReason reason)  notAdmitted,}) {final _that = this;
+switch (_that) {
+case RetryJobResultAdmitted():
+return admitted(_that.handle);case RetryJobResultAlreadyRetried():
+return alreadyRetried(_that.existingJobRunId);case RetryJobResultNotAdmitted():
+return notAdmitted(_that.reason);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( OperationHandle handle)?  admitted,TResult? Function( JobRunId existingJobRunId)?  alreadyRetried,TResult? Function( RetryNotAdmittedReason reason)?  notAdmitted,}) {final _that = this;
+switch (_that) {
+case RetryJobResultAdmitted() when admitted != null:
+return admitted(_that.handle);case RetryJobResultAlreadyRetried() when alreadyRetried != null:
+return alreadyRetried(_that.existingJobRunId);case RetryJobResultNotAdmitted() when notAdmitted != null:
+return notAdmitted(_that.reason);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class RetryJobResultAdmitted implements RetryJobResult {
+  const RetryJobResultAdmitted(this.handle);
+
+
+ final  OperationHandle handle;
+
+/// Create a copy of RetryJobResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RetryJobResultAdmittedCopyWith<RetryJobResultAdmitted> get copyWith => _$RetryJobResultAdmittedCopyWithImpl<RetryJobResultAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryJobResultAdmitted&&(identical(other.handle, handle) || other.handle == handle));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,handle);
+
+@override
+String toString() {
+  return 'RetryJobResult.admitted(handle: $handle)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RetryJobResultAdmittedCopyWith<$Res> implements $RetryJobResultCopyWith<$Res> {
+  factory $RetryJobResultAdmittedCopyWith(RetryJobResultAdmitted value, $Res Function(RetryJobResultAdmitted) _then) = _$RetryJobResultAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ OperationHandle handle
+});
+
+
+
+
+}
+/// @nodoc
+class _$RetryJobResultAdmittedCopyWithImpl<$Res>
+    implements $RetryJobResultAdmittedCopyWith<$Res> {
+  _$RetryJobResultAdmittedCopyWithImpl(this._self, this._then);
+
+  final RetryJobResultAdmitted _self;
+  final $Res Function(RetryJobResultAdmitted) _then;
+
+/// Create a copy of RetryJobResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? handle = null,}) {
+  return _then(RetryJobResultAdmitted(
+null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
+as OperationHandle,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RetryJobResultAlreadyRetried implements RetryJobResult {
+  const RetryJobResultAlreadyRetried(this.existingJobRunId);
+
+
+ final  JobRunId existingJobRunId;
+
+/// Create a copy of RetryJobResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RetryJobResultAlreadyRetriedCopyWith<RetryJobResultAlreadyRetried> get copyWith => _$RetryJobResultAlreadyRetriedCopyWithImpl<RetryJobResultAlreadyRetried>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryJobResultAlreadyRetried&&(identical(other.existingJobRunId, existingJobRunId) || other.existingJobRunId == existingJobRunId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,existingJobRunId);
+
+@override
+String toString() {
+  return 'RetryJobResult.alreadyRetried(existingJobRunId: $existingJobRunId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RetryJobResultAlreadyRetriedCopyWith<$Res> implements $RetryJobResultCopyWith<$Res> {
+  factory $RetryJobResultAlreadyRetriedCopyWith(RetryJobResultAlreadyRetried value, $Res Function(RetryJobResultAlreadyRetried) _then) = _$RetryJobResultAlreadyRetriedCopyWithImpl;
+@useResult
+$Res call({
+ JobRunId existingJobRunId
+});
+
+
+
+
+}
+/// @nodoc
+class _$RetryJobResultAlreadyRetriedCopyWithImpl<$Res>
+    implements $RetryJobResultAlreadyRetriedCopyWith<$Res> {
+  _$RetryJobResultAlreadyRetriedCopyWithImpl(this._self, this._then);
+
+  final RetryJobResultAlreadyRetried _self;
+  final $Res Function(RetryJobResultAlreadyRetried) _then;
+
+/// Create a copy of RetryJobResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? existingJobRunId = null,}) {
+  return _then(RetryJobResultAlreadyRetried(
+null == existingJobRunId ? _self.existingJobRunId : existingJobRunId // ignore: cast_nullable_to_non_nullable
+as JobRunId,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class RetryJobResultNotAdmitted implements RetryJobResult {
+  const RetryJobResultNotAdmitted(this.reason);
+
+
+ final  RetryNotAdmittedReason reason;
+
+/// Create a copy of RetryJobResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RetryJobResultNotAdmittedCopyWith<RetryJobResultNotAdmitted> get copyWith => _$RetryJobResultNotAdmittedCopyWithImpl<RetryJobResultNotAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RetryJobResultNotAdmitted&&(identical(other.reason, reason) || other.reason == reason));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,reason);
+
+@override
+String toString() {
+  return 'RetryJobResult.notAdmitted(reason: $reason)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RetryJobResultNotAdmittedCopyWith<$Res> implements $RetryJobResultCopyWith<$Res> {
+  factory $RetryJobResultNotAdmittedCopyWith(RetryJobResultNotAdmitted value, $Res Function(RetryJobResultNotAdmitted) _then) = _$RetryJobResultNotAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ RetryNotAdmittedReason reason
+});
+
+
+$RetryNotAdmittedReasonCopyWith<$Res> get reason;
+
+}
+/// @nodoc
+class _$RetryJobResultNotAdmittedCopyWithImpl<$Res>
+    implements $RetryJobResultNotAdmittedCopyWith<$Res> {
+  _$RetryJobResultNotAdmittedCopyWithImpl(this._self, this._then);
+
+  final RetryJobResultNotAdmitted _self;
+  final $Res Function(RetryJobResultNotAdmitted) _then;
+
+/// Create a copy of RetryJobResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,}) {
+  return _then(RetryJobResultNotAdmitted(
+null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as RetryNotAdmittedReason,
+  ));
+}
+
+/// Create a copy of RetryJobResult
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$RetryNotAdmittedReasonCopyWith<$Res> get reason {
+
+  return $RetryNotAdmittedReasonCopyWith<$Res>(_self.reason, (value) {
+    return _then(_self.copyWith(reason: value));
+  });
+}
 }
 
 /// @nodoc
@@ -7821,6 +8502,780 @@ class _$AddLocalLibraryRootResultOverlapsExistingCopyWithImpl<$Res>
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') $Res call({Object? existingLibraryRootId = null,Object? relationship = null,}) {
   return _then(AddLocalLibraryRootResultOverlapsExisting(
+existingLibraryRootId: null == existingLibraryRootId ? _self.existingLibraryRootId : existingLibraryRootId // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,relationship: null == relationship ? _self.relationship : relationship // ignore: cast_nullable_to_non_nullable
+as RootRelationship,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$LibraryScanChildAdmissionIssue {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanChildAdmissionIssue);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LibraryScanChildAdmissionIssue()';
+}
+
+
+}
+
+/// @nodoc
+class $LibraryScanChildAdmissionIssueCopyWith<$Res>  {
+$LibraryScanChildAdmissionIssueCopyWith(LibraryScanChildAdmissionIssue _, $Res Function(LibraryScanChildAdmissionIssue) __);
+}
+
+
+/// Adds pattern-matching-related methods to [LibraryScanChildAdmissionIssue].
+extension LibraryScanChildAdmissionIssuePatterns on LibraryScanChildAdmissionIssue {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LibraryScanChildAdmissionIssueAlreadyScanning value)?  alreadyScanning,TResult Function( LibraryScanChildAdmissionIssueAdmissionFailure value)?  admissionFailure,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case LibraryScanChildAdmissionIssueAlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that);case LibraryScanChildAdmissionIssueAdmissionFailure() when admissionFailure != null:
+return admissionFailure(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LibraryScanChildAdmissionIssueAlreadyScanning value)  alreadyScanning,required TResult Function( LibraryScanChildAdmissionIssueAdmissionFailure value)  admissionFailure,}){
+final _that = this;
+switch (_that) {
+case LibraryScanChildAdmissionIssueAlreadyScanning():
+return alreadyScanning(_that);case LibraryScanChildAdmissionIssueAdmissionFailure():
+return admissionFailure(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LibraryScanChildAdmissionIssueAlreadyScanning value)?  alreadyScanning,TResult? Function( LibraryScanChildAdmissionIssueAdmissionFailure value)?  admissionFailure,}){
+final _that = this;
+switch (_that) {
+case LibraryScanChildAdmissionIssueAlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that);case LibraryScanChildAdmissionIssueAdmissionFailure() when admissionFailure != null:
+return admissionFailure(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryRootId libraryRootId,  JobRunId activeJobRunId,  ScanRunId activeScanRunId)?  alreadyScanning,TResult Function( ClientApplicationError error)?  admissionFailure,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case LibraryScanChildAdmissionIssueAlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that.libraryRootId,_that.activeJobRunId,_that.activeScanRunId);case LibraryScanChildAdmissionIssueAdmissionFailure() when admissionFailure != null:
+return admissionFailure(_that.error);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryRootId libraryRootId,  JobRunId activeJobRunId,  ScanRunId activeScanRunId)  alreadyScanning,required TResult Function( ClientApplicationError error)  admissionFailure,}) {final _that = this;
+switch (_that) {
+case LibraryScanChildAdmissionIssueAlreadyScanning():
+return alreadyScanning(_that.libraryRootId,_that.activeJobRunId,_that.activeScanRunId);case LibraryScanChildAdmissionIssueAdmissionFailure():
+return admissionFailure(_that.error);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryRootId libraryRootId,  JobRunId activeJobRunId,  ScanRunId activeScanRunId)?  alreadyScanning,TResult? Function( ClientApplicationError error)?  admissionFailure,}) {final _that = this;
+switch (_that) {
+case LibraryScanChildAdmissionIssueAlreadyScanning() when alreadyScanning != null:
+return alreadyScanning(_that.libraryRootId,_that.activeJobRunId,_that.activeScanRunId);case LibraryScanChildAdmissionIssueAdmissionFailure() when admissionFailure != null:
+return admissionFailure(_that.error);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class LibraryScanChildAdmissionIssueAlreadyScanning implements LibraryScanChildAdmissionIssue {
+  const LibraryScanChildAdmissionIssueAlreadyScanning({required this.libraryRootId, required this.activeJobRunId, required this.activeScanRunId});
+
+
+ final  LibraryRootId libraryRootId;
+ final  JobRunId activeJobRunId;
+ final  ScanRunId activeScanRunId;
+
+/// Create a copy of LibraryScanChildAdmissionIssue
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryScanChildAdmissionIssueAlreadyScanningCopyWith<LibraryScanChildAdmissionIssueAlreadyScanning> get copyWith => _$LibraryScanChildAdmissionIssueAlreadyScanningCopyWithImpl<LibraryScanChildAdmissionIssueAlreadyScanning>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanChildAdmissionIssueAlreadyScanning&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.activeJobRunId, activeJobRunId) || other.activeJobRunId == activeJobRunId)&&(identical(other.activeScanRunId, activeScanRunId) || other.activeScanRunId == activeScanRunId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,libraryRootId,activeJobRunId,activeScanRunId);
+
+@override
+String toString() {
+  return 'LibraryScanChildAdmissionIssue.alreadyScanning(libraryRootId: $libraryRootId, activeJobRunId: $activeJobRunId, activeScanRunId: $activeScanRunId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryScanChildAdmissionIssueAlreadyScanningCopyWith<$Res> implements $LibraryScanChildAdmissionIssueCopyWith<$Res> {
+  factory $LibraryScanChildAdmissionIssueAlreadyScanningCopyWith(LibraryScanChildAdmissionIssueAlreadyScanning value, $Res Function(LibraryScanChildAdmissionIssueAlreadyScanning) _then) = _$LibraryScanChildAdmissionIssueAlreadyScanningCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId libraryRootId, JobRunId activeJobRunId, ScanRunId activeScanRunId
+});
+
+
+
+
+}
+/// @nodoc
+class _$LibraryScanChildAdmissionIssueAlreadyScanningCopyWithImpl<$Res>
+    implements $LibraryScanChildAdmissionIssueAlreadyScanningCopyWith<$Res> {
+  _$LibraryScanChildAdmissionIssueAlreadyScanningCopyWithImpl(this._self, this._then);
+
+  final LibraryScanChildAdmissionIssueAlreadyScanning _self;
+  final $Res Function(LibraryScanChildAdmissionIssueAlreadyScanning) _then;
+
+/// Create a copy of LibraryScanChildAdmissionIssue
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,Object? activeJobRunId = null,Object? activeScanRunId = null,}) {
+  return _then(LibraryScanChildAdmissionIssueAlreadyScanning(
+libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,activeJobRunId: null == activeJobRunId ? _self.activeJobRunId : activeJobRunId // ignore: cast_nullable_to_non_nullable
+as JobRunId,activeScanRunId: null == activeScanRunId ? _self.activeScanRunId : activeScanRunId // ignore: cast_nullable_to_non_nullable
+as ScanRunId,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LibraryScanChildAdmissionIssueAdmissionFailure implements LibraryScanChildAdmissionIssue {
+  const LibraryScanChildAdmissionIssueAdmissionFailure(this.error);
+
+
+ final  ClientApplicationError error;
+
+/// Create a copy of LibraryScanChildAdmissionIssue
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryScanChildAdmissionIssueAdmissionFailureCopyWith<LibraryScanChildAdmissionIssueAdmissionFailure> get copyWith => _$LibraryScanChildAdmissionIssueAdmissionFailureCopyWithImpl<LibraryScanChildAdmissionIssueAdmissionFailure>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScanChildAdmissionIssueAdmissionFailure&&(identical(other.error, error) || other.error == error));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,error);
+
+@override
+String toString() {
+  return 'LibraryScanChildAdmissionIssue.admissionFailure(error: $error)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryScanChildAdmissionIssueAdmissionFailureCopyWith<$Res> implements $LibraryScanChildAdmissionIssueCopyWith<$Res> {
+  factory $LibraryScanChildAdmissionIssueAdmissionFailureCopyWith(LibraryScanChildAdmissionIssueAdmissionFailure value, $Res Function(LibraryScanChildAdmissionIssueAdmissionFailure) _then) = _$LibraryScanChildAdmissionIssueAdmissionFailureCopyWithImpl;
+@useResult
+$Res call({
+ ClientApplicationError error
+});
+
+
+$ClientApplicationErrorCopyWith<$Res> get error;
+
+}
+/// @nodoc
+class _$LibraryScanChildAdmissionIssueAdmissionFailureCopyWithImpl<$Res>
+    implements $LibraryScanChildAdmissionIssueAdmissionFailureCopyWith<$Res> {
+  _$LibraryScanChildAdmissionIssueAdmissionFailureCopyWithImpl(this._self, this._then);
+
+  final LibraryScanChildAdmissionIssueAdmissionFailure _self;
+  final $Res Function(LibraryScanChildAdmissionIssueAdmissionFailure) _then;
+
+/// Create a copy of LibraryScanChildAdmissionIssue
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? error = null,}) {
+  return _then(LibraryScanChildAdmissionIssueAdmissionFailure(
+null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+as ClientApplicationError,
+  ));
+}
+
+/// Create a copy of LibraryScanChildAdmissionIssue
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ClientApplicationErrorCopyWith<$Res> get error {
+
+  return $ClientApplicationErrorCopyWith<$Res>(_self.error, (value) {
+    return _then(_self.copyWith(error: value));
+  });
+}
+}
+
+/// @nodoc
+mixin _$AddLocalLibraryRootAndScanResult {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootAndScanResult);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootAndScanResult()';
+}
+
+
+}
+
+/// @nodoc
+class $AddLocalLibraryRootAndScanResultCopyWith<$Res>  {
+$AddLocalLibraryRootAndScanResultCopyWith(AddLocalLibraryRootAndScanResult _, $Res Function(AddLocalLibraryRootAndScanResult) __);
+}
+
+
+/// Adds pattern-matching-related methods to [AddLocalLibraryRootAndScanResult].
+extension AddLocalLibraryRootAndScanResultPatterns on AddLocalLibraryRootAndScanResult {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( AddLocalLibraryRootAndScanResultAddedAndScanAdmitted value)?  addedAndScanAdmitted,TResult Function( AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted value)?  addedButScanNotAdmitted,TResult Function( AddLocalLibraryRootAndScanResultAlreadyConfigured value)?  alreadyConfigured,TResult Function( AddLocalLibraryRootAndScanResultOverlapsExisting value)?  overlapsExisting,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case AddLocalLibraryRootAndScanResultAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that);case AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that);case AddLocalLibraryRootAndScanResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that);case AddLocalLibraryRootAndScanResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( AddLocalLibraryRootAndScanResultAddedAndScanAdmitted value)  addedAndScanAdmitted,required TResult Function( AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted value)  addedButScanNotAdmitted,required TResult Function( AddLocalLibraryRootAndScanResultAlreadyConfigured value)  alreadyConfigured,required TResult Function( AddLocalLibraryRootAndScanResultOverlapsExisting value)  overlapsExisting,}){
+final _that = this;
+switch (_that) {
+case AddLocalLibraryRootAndScanResultAddedAndScanAdmitted():
+return addedAndScanAdmitted(_that);case AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted():
+return addedButScanNotAdmitted(_that);case AddLocalLibraryRootAndScanResultAlreadyConfigured():
+return alreadyConfigured(_that);case AddLocalLibraryRootAndScanResultOverlapsExisting():
+return overlapsExisting(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( AddLocalLibraryRootAndScanResultAddedAndScanAdmitted value)?  addedAndScanAdmitted,TResult? Function( AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted value)?  addedButScanNotAdmitted,TResult? Function( AddLocalLibraryRootAndScanResultAlreadyConfigured value)?  alreadyConfigured,TResult? Function( AddLocalLibraryRootAndScanResultOverlapsExisting value)?  overlapsExisting,}){
+final _that = this;
+switch (_that) {
+case AddLocalLibraryRootAndScanResultAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that);case AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that);case AddLocalLibraryRootAndScanResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that);case AddLocalLibraryRootAndScanResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryRoot root,  OperationHandle handle)?  addedAndScanAdmitted,TResult Function( LibraryRoot root,  LibraryScanChildAdmissionIssue issue)?  addedButScanNotAdmitted,TResult Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case AddLocalLibraryRootAndScanResultAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that.root,_that.handle);case AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that.root,_that.issue);case AddLocalLibraryRootAndScanResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that.existingLibraryRootId);case AddLocalLibraryRootAndScanResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that.existingLibraryRootId,_that.relationship);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryRoot root,  OperationHandle handle)  addedAndScanAdmitted,required TResult Function( LibraryRoot root,  LibraryScanChildAdmissionIssue issue)  addedButScanNotAdmitted,required TResult Function( LibraryRootId existingLibraryRootId)  alreadyConfigured,required TResult Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)  overlapsExisting,}) {final _that = this;
+switch (_that) {
+case AddLocalLibraryRootAndScanResultAddedAndScanAdmitted():
+return addedAndScanAdmitted(_that.root,_that.handle);case AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted():
+return addedButScanNotAdmitted(_that.root,_that.issue);case AddLocalLibraryRootAndScanResultAlreadyConfigured():
+return alreadyConfigured(_that.existingLibraryRootId);case AddLocalLibraryRootAndScanResultOverlapsExisting():
+return overlapsExisting(_that.existingLibraryRootId,_that.relationship);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryRoot root,  OperationHandle handle)?  addedAndScanAdmitted,TResult? Function( LibraryRoot root,  LibraryScanChildAdmissionIssue issue)?  addedButScanNotAdmitted,TResult? Function( LibraryRootId existingLibraryRootId)?  alreadyConfigured,TResult? Function( LibraryRootId existingLibraryRootId,  RootRelationship relationship)?  overlapsExisting,}) {final _that = this;
+switch (_that) {
+case AddLocalLibraryRootAndScanResultAddedAndScanAdmitted() when addedAndScanAdmitted != null:
+return addedAndScanAdmitted(_that.root,_that.handle);case AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted() when addedButScanNotAdmitted != null:
+return addedButScanNotAdmitted(_that.root,_that.issue);case AddLocalLibraryRootAndScanResultAlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that.existingLibraryRootId);case AddLocalLibraryRootAndScanResultOverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that.existingLibraryRootId,_that.relationship);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class AddLocalLibraryRootAndScanResultAddedAndScanAdmitted implements AddLocalLibraryRootAndScanResult {
+  const AddLocalLibraryRootAndScanResultAddedAndScanAdmitted({required this.root, required this.handle});
+
+
+ final  LibraryRoot root;
+ final  OperationHandle handle;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWith<AddLocalLibraryRootAndScanResultAddedAndScanAdmitted> get copyWith => _$AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWithImpl<AddLocalLibraryRootAndScanResultAddedAndScanAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootAndScanResultAddedAndScanAdmitted&&(identical(other.root, root) || other.root == root)&&(identical(other.handle, handle) || other.handle == handle));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,root,handle);
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootAndScanResult.addedAndScanAdmitted(root: $root, handle: $handle)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWith<$Res> implements $AddLocalLibraryRootAndScanResultCopyWith<$Res> {
+  factory $AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWith(AddLocalLibraryRootAndScanResultAddedAndScanAdmitted value, $Res Function(AddLocalLibraryRootAndScanResultAddedAndScanAdmitted) _then) = _$AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRoot root, OperationHandle handle
+});
+
+
+$LibraryRootCopyWith<$Res> get root;
+
+}
+/// @nodoc
+class _$AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWithImpl<$Res>
+    implements $AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWith<$Res> {
+  _$AddLocalLibraryRootAndScanResultAddedAndScanAdmittedCopyWithImpl(this._self, this._then);
+
+  final AddLocalLibraryRootAndScanResultAddedAndScanAdmitted _self;
+  final $Res Function(AddLocalLibraryRootAndScanResultAddedAndScanAdmitted) _then;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? root = null,Object? handle = null,}) {
+  return _then(AddLocalLibraryRootAndScanResultAddedAndScanAdmitted(
+root: null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
+as LibraryRoot,handle: null == handle ? _self.handle : handle // ignore: cast_nullable_to_non_nullable
+as OperationHandle,
+  ));
+}
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryRootCopyWith<$Res> get root {
+
+  return $LibraryRootCopyWith<$Res>(_self.root, (value) {
+    return _then(_self.copyWith(root: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted implements AddLocalLibraryRootAndScanResult {
+  const AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted({required this.root, required this.issue});
+
+
+ final  LibraryRoot root;
+ final  LibraryScanChildAdmissionIssue issue;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWith<AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted> get copyWith => _$AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWithImpl<AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted&&(identical(other.root, root) || other.root == root)&&(identical(other.issue, issue) || other.issue == issue));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,root,issue);
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootAndScanResult.addedButScanNotAdmitted(root: $root, issue: $issue)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWith<$Res> implements $AddLocalLibraryRootAndScanResultCopyWith<$Res> {
+  factory $AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWith(AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted value, $Res Function(AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted) _then) = _$AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRoot root, LibraryScanChildAdmissionIssue issue
+});
+
+
+$LibraryRootCopyWith<$Res> get root;$LibraryScanChildAdmissionIssueCopyWith<$Res> get issue;
+
+}
+/// @nodoc
+class _$AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWithImpl<$Res>
+    implements $AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWith<$Res> {
+  _$AddLocalLibraryRootAndScanResultAddedButScanNotAdmittedCopyWithImpl(this._self, this._then);
+
+  final AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted _self;
+  final $Res Function(AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted) _then;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? root = null,Object? issue = null,}) {
+  return _then(AddLocalLibraryRootAndScanResultAddedButScanNotAdmitted(
+root: null == root ? _self.root : root // ignore: cast_nullable_to_non_nullable
+as LibraryRoot,issue: null == issue ? _self.issue : issue // ignore: cast_nullable_to_non_nullable
+as LibraryScanChildAdmissionIssue,
+  ));
+}
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryRootCopyWith<$Res> get root {
+
+  return $LibraryRootCopyWith<$Res>(_self.root, (value) {
+    return _then(_self.copyWith(root: value));
+  });
+}/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LibraryScanChildAdmissionIssueCopyWith<$Res> get issue {
+
+  return $LibraryScanChildAdmissionIssueCopyWith<$Res>(_self.issue, (value) {
+    return _then(_self.copyWith(issue: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class AddLocalLibraryRootAndScanResultAlreadyConfigured implements AddLocalLibraryRootAndScanResult {
+  const AddLocalLibraryRootAndScanResultAlreadyConfigured(this.existingLibraryRootId);
+
+
+ final  LibraryRootId existingLibraryRootId;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWith<AddLocalLibraryRootAndScanResultAlreadyConfigured> get copyWith => _$AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWithImpl<AddLocalLibraryRootAndScanResultAlreadyConfigured>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootAndScanResultAlreadyConfigured&&(identical(other.existingLibraryRootId, existingLibraryRootId) || other.existingLibraryRootId == existingLibraryRootId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,existingLibraryRootId);
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootAndScanResult.alreadyConfigured(existingLibraryRootId: $existingLibraryRootId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWith<$Res> implements $AddLocalLibraryRootAndScanResultCopyWith<$Res> {
+  factory $AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWith(AddLocalLibraryRootAndScanResultAlreadyConfigured value, $Res Function(AddLocalLibraryRootAndScanResultAlreadyConfigured) _then) = _$AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId existingLibraryRootId
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWithImpl<$Res>
+    implements $AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWith<$Res> {
+  _$AddLocalLibraryRootAndScanResultAlreadyConfiguredCopyWithImpl(this._self, this._then);
+
+  final AddLocalLibraryRootAndScanResultAlreadyConfigured _self;
+  final $Res Function(AddLocalLibraryRootAndScanResultAlreadyConfigured) _then;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? existingLibraryRootId = null,}) {
+  return _then(AddLocalLibraryRootAndScanResultAlreadyConfigured(
+null == existingLibraryRootId ? _self.existingLibraryRootId : existingLibraryRootId // ignore: cast_nullable_to_non_nullable
+as LibraryRootId,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class AddLocalLibraryRootAndScanResultOverlapsExisting implements AddLocalLibraryRootAndScanResult {
+  const AddLocalLibraryRootAndScanResultOverlapsExisting({required this.existingLibraryRootId, required this.relationship});
+
+
+ final  LibraryRootId existingLibraryRootId;
+ final  RootRelationship relationship;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLocalLibraryRootAndScanResultOverlapsExistingCopyWith<AddLocalLibraryRootAndScanResultOverlapsExisting> get copyWith => _$AddLocalLibraryRootAndScanResultOverlapsExistingCopyWithImpl<AddLocalLibraryRootAndScanResultOverlapsExisting>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLocalLibraryRootAndScanResultOverlapsExisting&&(identical(other.existingLibraryRootId, existingLibraryRootId) || other.existingLibraryRootId == existingLibraryRootId)&&(identical(other.relationship, relationship) || other.relationship == relationship));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,existingLibraryRootId,relationship);
+
+@override
+String toString() {
+  return 'AddLocalLibraryRootAndScanResult.overlapsExisting(existingLibraryRootId: $existingLibraryRootId, relationship: $relationship)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLocalLibraryRootAndScanResultOverlapsExistingCopyWith<$Res> implements $AddLocalLibraryRootAndScanResultCopyWith<$Res> {
+  factory $AddLocalLibraryRootAndScanResultOverlapsExistingCopyWith(AddLocalLibraryRootAndScanResultOverlapsExisting value, $Res Function(AddLocalLibraryRootAndScanResultOverlapsExisting) _then) = _$AddLocalLibraryRootAndScanResultOverlapsExistingCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootId existingLibraryRootId, RootRelationship relationship
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLocalLibraryRootAndScanResultOverlapsExistingCopyWithImpl<$Res>
+    implements $AddLocalLibraryRootAndScanResultOverlapsExistingCopyWith<$Res> {
+  _$AddLocalLibraryRootAndScanResultOverlapsExistingCopyWithImpl(this._self, this._then);
+
+  final AddLocalLibraryRootAndScanResultOverlapsExisting _self;
+  final $Res Function(AddLocalLibraryRootAndScanResultOverlapsExisting) _then;
+
+/// Create a copy of AddLocalLibraryRootAndScanResult
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? existingLibraryRootId = null,Object? relationship = null,}) {
+  return _then(AddLocalLibraryRootAndScanResultOverlapsExisting(
 existingLibraryRootId: null == existingLibraryRootId ? _self.existingLibraryRootId : existingLibraryRootId // ignore: cast_nullable_to_non_nullable
 as LibraryRootId,relationship: null == relationship ? _self.relationship : relationship // ignore: cast_nullable_to_non_nullable
 as RootRelationship,

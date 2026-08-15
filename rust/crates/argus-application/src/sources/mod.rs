@@ -16,14 +16,16 @@ pub use hierarchy::{
     SourceEntryDetailProjection, SourceEntryProjection, SourceEntryQueries,
 };
 pub use library::{
-    AddLocalLibraryRootCommand, AddLocalLibraryRootHandler, AddLocalLibraryRootResult,
-    GetLibraryRootHandler, GetLibraryRootQuery, LibraryRootActiveScanSummary,
-    LibraryRootAvailability, LibraryRootConfiguration, LibraryRootLastScanStatus,
-    LibraryRootLastScanSummary, LibraryRootPage, LibraryRootProjection, LibraryRootQueries,
-    LibraryRootRepository, LibraryRootScanConfiguration, LibraryService, LibrarySourceRepository,
-    ListLibraryRootsHandler, ListLibraryRootsQuery, NewLibraryRoot, RemoveLibraryRootCommand,
-    RemoveLibraryRootHandler, RemoveLibraryRootResult, StartLibraryScanCommand,
-    StartLibraryScanHandler,
+    AddLocalLibraryRootAndScanCommand, AddLocalLibraryRootAndScanHandler,
+    AddLocalLibraryRootAndScanResult, AddLocalLibraryRootCommand, AddLocalLibraryRootHandler,
+    AddLocalLibraryRootResult, GetLibraryRootHandler, GetLibraryRootQuery,
+    LibraryRootActiveScanSummary, LibraryRootAvailability, LibraryRootConfiguration,
+    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootPage, LibraryRootProjection,
+    LibraryRootQueries, LibraryRootRepository, LibraryRootScanConfiguration,
+    LibraryScanChildAdmission, LibraryScanChildAdmissionIssue, LibraryService,
+    LibrarySourceRepository, ListLibraryRootsHandler, ListLibraryRootsQuery, NewLibraryRoot,
+    RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult,
+    StartLibraryScanCommand, StartLibraryScanHandler,
 };
 pub use provider::{
     DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, LibrarySourceAccess,

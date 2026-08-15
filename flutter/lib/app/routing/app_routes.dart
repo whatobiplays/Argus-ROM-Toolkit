@@ -161,6 +161,8 @@ class JobsDetailRoute extends GoRouteData with $JobsDetailRoute {
     return JobDetailPage(
       jobRunId: id,
       onMissingJob: () => const JobsRoute().go(context),
+      onOpenJob: (jobRunId) =>
+          JobsDetailRoute(jobRunId: jobRunId.value).go(context),
     );
   }
 }

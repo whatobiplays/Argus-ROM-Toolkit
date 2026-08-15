@@ -24,4 +24,13 @@ mixin JobsGatewayStub implements JobsGateway {
   @override
   Future<CancelJobResult> cancelJob(JobRunId jobRunId) async =>
       throw const TransportFailure('Jobs stub is not focused');
+
+  @override
+  Future<RetryJobResult> retryJob(JobRunId jobRunId) async =>
+      throw const TransportFailure('Jobs stub is not focused');
+
+  @override
+  Future<LibraryRootScanAdmission?> getRootScanAdmission(
+    LibraryRootId libraryRootId,
+  ) async => throw const TransportFailure('Jobs stub is not focused');
 }

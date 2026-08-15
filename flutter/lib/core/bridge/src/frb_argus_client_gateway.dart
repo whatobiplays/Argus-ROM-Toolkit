@@ -174,6 +174,17 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   );
 
   @override
+  Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
+    LocalFilesystemRootSelection selection,
+  ) => _call(
+    () async => addLocalLibraryRootAndScanResultFromDto(
+      await _rustApi.crateAddLocalLibraryRootAndScan(
+        selection: selectionToDto(selection),
+      ),
+    ),
+  );
+
+  @override
   Future<RemoveLibraryRootResult> removeLibraryRoot(
     LibraryRootId libraryRootId,
   ) => _call(
@@ -256,6 +267,24 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   Future<CancelJobResult> cancelJob(JobRunId jobRunId) => _call(
     () async => cancelJobResultFromDto(
       await _rustApi.crateCancelJob(jobRunId: jobRunId.value),
+    ),
+  );
+
+  @override
+  Future<RetryJobResult> retryJob(JobRunId jobRunId) => _call(
+    () async => retryJobResultFromDto(
+      await _rustApi.crateRetryJob(jobRunId: jobRunId.value),
+    ),
+  );
+
+  @override
+  Future<LibraryRootScanAdmission?> getRootScanAdmission(
+    LibraryRootId libraryRootId,
+  ) => _call(
+    () async => libraryRootScanAdmissionFromDto(
+      await _rustApi.crateGetRootScanAdmission(
+        libraryRootId: libraryRootId.value,
+      ),
     ),
   );
 
@@ -726,6 +755,54 @@ AddLocalLibraryRootResult addLocalLibraryRootResultFromDto(
     ),
 };
 
+AddLocalLibraryRootAndScanResult addLocalLibraryRootAndScanResultFromDto(
+  dto.AddLocalLibraryRootAndScanResultDto value,
+) => switch (value) {
+  dto.AddLocalLibraryRootAndScanResultDto_AddedAndScanAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    AddLocalLibraryRootAndScanResult.addedAndScanAdmitted(
+      root: libraryRootFromDto(field0),
+      handle: operationHandleFromDto(field1),
+    ),
+  dto.AddLocalLibraryRootAndScanResultDto_AddedButScanNotAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    AddLocalLibraryRootAndScanResult.addedButScanNotAdmitted(
+      root: libraryRootFromDto(field0),
+      issue: switch (field1) {
+        dto.LibraryScanChildAdmissionIssueDto_AlreadyScanning(
+          :final libraryRootId,
+          :final activeJobRunId,
+          :final activeScanRunId,
+        ) =>
+          LibraryScanChildAdmissionIssue.alreadyScanning(
+            libraryRootId: libraryRootIdFromDto(libraryRootId),
+            activeJobRunId: jobRunIdFromDto(activeJobRunId),
+            activeScanRunId: scanRunIdFromDto(activeScanRunId),
+          ),
+        dto.LibraryScanChildAdmissionIssueDto_AdmissionFailure(:final field0) =>
+          LibraryScanChildAdmissionIssue.admissionFailure(
+            applicationErrorFromDto(field0),
+          ),
+      },
+    ),
+  dto.AddLocalLibraryRootAndScanResultDto_AlreadyConfigured(:final field0) =>
+    AddLocalLibraryRootAndScanResult.alreadyConfigured(
+      libraryRootIdFromDto(field0),
+    ),
+  dto.AddLocalLibraryRootAndScanResultDto_OverlapsExisting(
+    :final field0,
+    :final field1,
+  ) =>
+    AddLocalLibraryRootAndScanResult.overlapsExisting(
+      existingLibraryRootId: libraryRootIdFromDto(field0),
+      relationship: rootRelationshipFromDto(field1),
+    ),
+};
+
 RemoveLibraryRootResult removeLibraryRootResultFromDto(
   dto.RemoveLibraryRootResultDto value,
 ) => switch (value) {
@@ -874,6 +951,51 @@ StartLibraryScanResult startLibraryScanResultFromDto(
     ),
 };
 
+OperationHandle operationHandleFromDto(dto.OperationHandleDto value) =>
+    OperationHandle(
+      jobRunId: jobRunIdFromDto(value.jobRunId),
+      operationType: value.operationType,
+    );
+
+LibraryRootScanAdmission? libraryRootScanAdmissionFromDto(
+  dto.LibraryRootScanAdmissionReferenceDto? value,
+) => value == null
+    ? null
+    : LibraryRootScanAdmission(
+        jobRunId: jobRunIdFromDto(value.jobRunId),
+        scanRunId: scanRunIdFromDto(value.scanRunId),
+      );
+
+RetryJobResult retryJobResultFromDto(dto.RetryJobResultDto value) =>
+    switch (value) {
+      dto.RetryJobResultDto_Admitted(:final field0) => RetryJobResult.admitted(
+        operationHandleFromDto(field0),
+      ),
+      dto.RetryJobResultDto_AlreadyRetried(:final field0) =>
+        RetryJobResult.alreadyRetried(jobRunIdFromDto(field0)),
+      dto.RetryJobResultDto_NotAdmitted(:final field0) =>
+        RetryJobResult.notAdmitted(switch (field0) {
+          dto.RetryNotAdmittedReasonDto_SourceRunNotTerminal() =>
+            const RetryNotAdmittedReason.sourceRunNotTerminal(),
+          dto.RetryNotAdmittedReasonDto_OperationNotRetryable() =>
+            const RetryNotAdmittedReason.operationNotRetryable(),
+          dto.RetryNotAdmittedReasonDto_NoEligibleTargets(:final field0) =>
+            RetryNotAdmittedReason.noEligibleTargets([
+              for (final exclusion in field0)
+                LibraryScanAdmissionExclusion(
+                  libraryRootId: libraryRootIdFromDto(exclusion.libraryRootId),
+                  reason: exclusion.reason,
+                  activeJobRunId: exclusion.activeJobRunId == null
+                      ? null
+                      : jobRunIdFromDto(exclusion.activeJobRunId!),
+                  activeScanRunId: exclusion.activeScanRunId == null
+                      ? null
+                      : scanRunIdFromDto(exclusion.activeScanRunId!),
+                ),
+            ]),
+        }),
+    };
+
 CancelJobResult cancelJobResultFromDto(dto.CancelJobResultDto value) =>
     switch (value) {
       dto.CancelJobResultDto.cancellationRequested =>
@@ -991,7 +1113,9 @@ LibraryScanJobDetail libraryScanJobDetailFromDto(
     rootsRequested: value.progress.rootsRequested,
     rootsAdmitted: value.progress.rootsAdmitted,
     rootsTerminal: value.progress.rootsTerminal,
-    entriesCommitted: value.progress.entriesCommitted.toInt(),
+    entriesObserved: value.progress.entriesObserved?.toInt(),
+    entriesCommitted: value.progress.entriesCommitted?.toInt(),
+    issueCount: value.progress.issueCount?.toInt(),
   ),
   retrySourceJobRunId: value.retrySourceJobRunId == null
       ? null

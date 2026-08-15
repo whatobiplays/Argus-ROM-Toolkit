@@ -1,7 +1,8 @@
 //! Consuming callback-scope transaction contracts owned by the application.
 
 use crate::jobs::{
-    JobRunRepository, LibraryScanTargetRepository, ScanRunRepository, SourceEntryRepository,
+    JobRunRepository, LibraryScanAdmissionContextRepository, LibraryScanTargetRepository,
+    ScanRunRepository, SourceEntryRepository,
 };
 use crate::settings::AppearanceSettingsRepository;
 use crate::sources::{LibraryRootRepository, LibrarySourceRepository};
@@ -44,6 +45,12 @@ pub trait UnitOfWork: Sized {
     where
         Self: 'scope;
 
+    /// The short-lived LibraryScan admission-context repository view.
+    type LibraryScanAdmissionContextRepository<'scope>: LibraryScanAdmissionContextRepository
+        + 'scope
+    where
+        Self: 'scope;
+
     /// Borrows a typed appearance repository from the active transaction.
     fn appearance_settings(&mut self) -> Self::AppearanceSettingsRepository<'_>;
 
@@ -64,6 +71,10 @@ pub trait UnitOfWork: Sized {
 
     /// Borrows a typed library-scan admission-target repository.
     fn library_scan_targets(&mut self) -> Self::LibraryScanTargetRepository<'_>;
+
+    /// Borrows a typed LibraryScan admission-context repository.
+    fn library_scan_admission_context(&mut self)
+    -> Self::LibraryScanAdmissionContextRepository<'_>;
 
     /// Explicitly commits and consumes this scope.
     fn commit(self) -> Result<(), ApplicationPortError>;

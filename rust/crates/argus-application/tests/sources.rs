@@ -14,12 +14,12 @@ use argus_application::{
     LibraryRootProjection, LibraryRootQueries, LibraryRootRepository, LibraryRootScanConfiguration,
     LibraryRootsChanged, LibraryRootsSubscriber, LibraryScanTarget, LibraryScanTargetRepository,
     LibraryService, LibrarySourceAccess, ListLibraryRootsQuery, LocalFilesystemProvider,
-    LocalFilesystemRootSelection, NewJobRun, NewLibraryRoot, NewLibraryScanTarget, NewScanRun,
-    NewSourceEntry, OperationContext, OperationName, PersistenceError, ProviderError,
-    RemoveLibraryRootCommand, RemoveLibraryRootResult, RootLocator, RootRelationship, ScanRunId,
-    ScanRunProjection, ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntryId,
-    SourceEntryRepository, SourceProviderType, SubsystemName, TraceId, UnitOfWork,
-    UnitOfWorkFactory, ValidatedLocalRoot,
+    LocalFilesystemRootSelection, NativeIdentityMatch, NewJobRun, NewLibraryRoot,
+    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext, OperationName,
+    PersistenceError, ProviderError, RemoveLibraryRootCommand, RemoveLibraryRootResult,
+    RootLocator, RootRelationship, ScanRunId, ScanRunProjection, ScanRunRepository, ScanRunStatus,
+    SourceAccessError, SourceEntryId, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
+    SourceProviderType, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory, ValidatedLocalRoot,
 };
 use argus_domain::LibrarySourceId;
 
@@ -242,6 +242,13 @@ impl LibraryRootRepository for FakeRootRepository<'_> {
     ) -> Result<bool, PersistenceError> {
         Ok(true)
     }
+
+    fn get_scan_authority(
+        &mut self,
+        _root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError> {
+        Ok(None)
+    }
 }
 
 struct FakeAppearanceRepository<'scope> {
@@ -350,6 +357,57 @@ struct NoopSourceEntryRepository<'scope> {
 
 impl SourceEntryRepository for NoopSourceEntryRepository<'_> {
     fn upsert(&mut self, _entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn find_by_locator_key(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _locator_key: &SourceLocatorKey,
+    ) -> Result<Option<SourceEntryRecord>, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn find_native_identity(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _provider_native_identity: &str,
+    ) -> Result<NativeIdentityMatch, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn reconcile_move(
+        &mut self,
+        _entry: NewSourceEntry,
+        _existing_source_entry_id: SourceEntryId,
+    ) -> Result<SourceEntryId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn list_children(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _parent_source_entry_id: Option<SourceEntryId>,
+        _offset: u32,
+        _limit: u32,
+    ) -> Result<Vec<SourceEntryRecord>, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn delete_subtree(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _source_entry_id: SourceEntryId,
+    ) -> Result<bool, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn finalize_absent_scope(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _parent_source_entry_id: Option<SourceEntryId>,
+        _observed_scan_id: ScanRunId,
+    ) -> Result<u64, PersistenceError> {
         Err(PersistenceError::Unavailable)
     }
 

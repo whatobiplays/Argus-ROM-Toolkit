@@ -104,6 +104,11 @@ impl MigrationRegistry {
                 "0003_jobs_scans",
                 include_bytes!("sql/0003_jobs_scans.sql"),
             ),
+            Migration::sql(
+                4,
+                "0004_source_reconciliation",
+                include_bytes!("sql/0004_source_reconciliation.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

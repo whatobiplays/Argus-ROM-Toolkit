@@ -312,6 +312,8 @@ pub struct LibraryRootScanConfiguration {
     display_name: String,
     safe_location_presentation: String,
     config_revision: u32,
+    source_config_revision: u32,
+    discovery_policy_revision: u32,
 }
 
 impl LibraryRootScanConfiguration {
@@ -323,6 +325,8 @@ impl LibraryRootScanConfiguration {
         display_name: impl Into<String>,
         safe_location_presentation: impl Into<String>,
         config_revision: u32,
+        source_config_revision: u32,
+        discovery_policy_revision: u32,
     ) -> Self {
         Self {
             root_id,
@@ -330,6 +334,8 @@ impl LibraryRootScanConfiguration {
             display_name: display_name.into(),
             safe_location_presentation: safe_location_presentation.into(),
             config_revision,
+            source_config_revision,
+            discovery_policy_revision,
         }
     }
 
@@ -356,6 +362,16 @@ impl LibraryRootScanConfiguration {
     /// Returns the root configuration revision.
     pub fn config_revision(&self) -> u32 {
         self.config_revision
+    }
+
+    /// Returns the owning source configuration revision.
+    pub fn source_config_revision(&self) -> u32 {
+        self.source_config_revision
+    }
+
+    /// Returns the current discovery-policy revision.
+    pub fn discovery_policy_revision(&self) -> u32 {
+        self.discovery_policy_revision
     }
 }
 
@@ -511,6 +527,15 @@ pub trait LibraryRootRepository {
         root_id: LibraryRootId,
         summary: Option<LibraryRootLastScanSummary>,
     ) -> Result<bool, PersistenceError>;
+
+    /// Reads current root/source/policy authority facts inside the active
+    /// transaction, or `None` when the root is no longer configured. This is
+    /// the destructive-finalization authority seam: finalization compares
+    /// these revisions to the frozen scan plan immediately before mutation.
+    fn get_scan_authority(
+        &mut self,
+        root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError>;
 }
 
 /// Parameterized bounded root-list request.
@@ -930,6 +955,8 @@ where
         let display_name = configuration.display_name().to_owned();
         let safe_location = configuration.safe_location_presentation().to_owned();
         let config_revision = configuration.config_revision();
+        let source_config_revision = configuration.source_config_revision();
+        let discovery_policy_revision = configuration.discovery_policy_revision();
         let created_at_ms = now_millis();
         let closure_locator = locator.clone();
         let closure_display_name = display_name.clone();
@@ -960,7 +987,7 @@ where
                     closure_locator,
                     &closure_display_name,
                     &closure_safe_location,
-                    1,
+                    source_config_revision,
                     config_revision,
                     created_at_ms,
                 ))?;
@@ -1026,9 +1053,9 @@ where
                     locator,
                     display_name,
                     safe_location,
-                    1,
+                    source_config_revision,
                     config_revision,
-                    1,
+                    discovery_policy_revision,
                     created_at_ms,
                 );
                 let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);

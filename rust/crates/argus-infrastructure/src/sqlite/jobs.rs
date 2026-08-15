@@ -7,9 +7,10 @@ use argus_application::{
     JobsQueries, LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
     LibraryScanAdmissionExclusion, LibraryScanJobDetail, LibraryScanRootSummary, LibraryScanTarget,
     LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
-    NewJobRun, NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext,
-    PersistenceError, ScanProgressFacts, ScanRunId, ScanRunProjection, ScanRunRepository,
-    ScanRunStatus, SourceEntryId, SourceEntryRepository,
+    NativeIdentityMatch, NewJobRun, NewLibraryScanTarget, NewScanRun, NewSourceEntry,
+    OperationContext, PersistenceError, RelativeSourceLocator, ScanProgressFacts, ScanRunId,
+    ScanRunProjection, ScanRunRepository, ScanRunStatus, SourceEntryClassification, SourceEntryId,
+    SourceEntryKind, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
 };
 use rusqlite::OptionalExtension;
 
@@ -383,6 +384,7 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
                          ?11, ?12, ?12)
                  ON CONFLICT(library_root_id, locator_key) DO UPDATE SET
                      parent_source_entry_id = excluded.parent_source_entry_id,
+                     relative_locator = excluded.relative_locator,
                      display_name = excluded.display_name,
                      display_location = excluded.display_location,
                      kind = excluded.kind,
@@ -412,6 +414,211 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
         parse_source_entry_id(created)
     }
 
+    fn find_by_locator_key(
+        &mut self,
+        library_root_id: LibraryRootId,
+        locator_key: &SourceLocatorKey,
+    ) -> Result<Option<SourceEntryRecord>, PersistenceError> {
+        let raw = self
+            .work
+            .transaction_mut()?
+            .query_row(
+                "SELECT source_entry_id, parent_source_entry_id, relative_locator, locator_key,
+                        display_name, display_location, kind, classification,
+                        provider_native_identity, source_fingerprint, last_observed_scan_id
+                 FROM source_entry
+                 WHERE library_root_id = ?1 AND locator_key = ?2",
+                rusqlite::params![library_root_id.to_string(), locator_key.as_provider_value(),],
+                source_entry_record_raw,
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        raw.map(source_entry_record_from_raw).transpose()
+    }
+
+    fn find_native_identity(
+        &mut self,
+        library_root_id: LibraryRootId,
+        provider_native_identity: &str,
+    ) -> Result<NativeIdentityMatch, PersistenceError> {
+        let mut statement = self
+            .work
+            .transaction_mut()?
+            .prepare(
+                "SELECT source_entry_id, parent_source_entry_id, relative_locator, locator_key,
+                        display_name, display_location, kind, classification,
+                        provider_native_identity, source_fingerprint, last_observed_scan_id
+                 FROM source_entry
+                 WHERE library_root_id = ?1 AND provider_native_identity = ?2
+                 ORDER BY created_at ASC, source_entry_id ASC
+                 LIMIT 2",
+            )
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map(
+                rusqlite::params![library_root_id.to_string(), provider_native_identity],
+                source_entry_record_raw,
+            )
+            .map_err(map_persistence_operation_error)?;
+        let raw = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?;
+        match raw.len() {
+            0 => Ok(NativeIdentityMatch::None),
+            1 => Ok(NativeIdentityMatch::Unique(source_entry_record_from_raw(
+                raw.into_iter().next().expect("one row"),
+            )?)),
+            _ => Ok(NativeIdentityMatch::Ambiguous),
+        }
+    }
+
+    fn reconcile_move(
+        &mut self,
+        entry: NewSourceEntry,
+        existing_source_entry_id: SourceEntryId,
+    ) -> Result<SourceEntryId, PersistenceError> {
+        let changed = self
+            .work
+            .transaction_mut()?
+            .execute(
+                "UPDATE source_entry
+                 SET parent_source_entry_id = ?1,
+                     relative_locator = ?2,
+                     locator_key = ?3,
+                     display_name = ?4,
+                     display_location = ?5,
+                     kind = ?6,
+                     classification = ?7,
+                     provider_native_identity = ?8,
+                     source_fingerprint = ?9,
+                     last_observed_scan_id = ?10,
+                     updated_at = ?11
+                 WHERE source_entry_id = ?12 AND library_root_id = ?13",
+                rusqlite::params![
+                    entry.parent_source_entry_id().map(|id| id.to_string()),
+                    entry.relative_locator().as_provider_value(),
+                    entry.locator_key().as_provider_value(),
+                    entry.display_name(),
+                    entry.display_location(),
+                    entry.kind().as_str(),
+                    entry.classification().as_str(),
+                    entry.provider_native_identity(),
+                    entry.source_fingerprint(),
+                    entry.last_observed_scan_id().to_string(),
+                    crate::sqlite::migrations::timestamp(),
+                    existing_source_entry_id.to_string(),
+                    entry.library_root_id().to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        match changed {
+            1 => Ok(existing_source_entry_id),
+            0 => Err(PersistenceError::Conflict),
+            _ => Err(PersistenceError::CorruptOrIncompatible),
+        }
+    }
+
+    fn list_children(
+        &mut self,
+        library_root_id: LibraryRootId,
+        parent_source_entry_id: Option<SourceEntryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<SourceEntryRecord>, PersistenceError> {
+        let mut statement = self
+            .work
+            .transaction_mut()?
+            .prepare(
+                "SELECT source_entry_id, parent_source_entry_id, relative_locator, locator_key,
+                        display_name, display_location, kind, classification,
+                        provider_native_identity, source_fingerprint, last_observed_scan_id
+                 FROM source_entry
+                 WHERE library_root_id = ?1 AND parent_source_entry_id IS ?2
+                 ORDER BY created_at ASC, source_entry_id ASC
+                 LIMIT ?3 OFFSET ?4",
+            )
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map(
+                rusqlite::params![
+                    library_root_id.to_string(),
+                    parent_source_entry_id.map(|id| id.to_string()),
+                    i64::from(limit),
+                    i64::from(offset),
+                ],
+                source_entry_record_raw,
+            )
+            .map_err(map_persistence_operation_error)?;
+        let raw = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?;
+        raw.into_iter().map(source_entry_record_from_raw).collect()
+    }
+
+    fn delete_subtree(
+        &mut self,
+        library_root_id: LibraryRootId,
+        source_entry_id: SourceEntryId,
+    ) -> Result<bool, PersistenceError> {
+        let changed = self
+            .work
+            .transaction_mut()?
+            .execute(
+                "WITH RECURSIVE subtree(source_entry_id) AS (
+                     SELECT source_entry_id FROM source_entry
+                     WHERE source_entry_id = ?2 AND library_root_id = ?1
+                     UNION ALL
+                     SELECT child.source_entry_id
+                     FROM source_entry child
+                     JOIN subtree ON child.parent_source_entry_id = subtree.source_entry_id
+                     WHERE child.library_root_id = ?1
+                 )
+                 DELETE FROM source_entry
+                 WHERE source_entry_id IN (SELECT source_entry_id FROM subtree)
+                   AND library_root_id = ?1",
+                rusqlite::params![library_root_id.to_string(), source_entry_id.to_string()],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(changed > 0)
+    }
+
+    fn finalize_absent_scope(
+        &mut self,
+        library_root_id: LibraryRootId,
+        parent_source_entry_id: Option<SourceEntryId>,
+        observed_scan_id: ScanRunId,
+    ) -> Result<u64, PersistenceError> {
+        let changed = self
+            .work
+            .transaction_mut()?
+            .execute(
+                "WITH RECURSIVE absent_root(source_entry_id) AS (
+                     SELECT source_entry_id FROM source_entry
+                     WHERE library_root_id = ?1
+                       AND parent_source_entry_id IS ?2
+                       AND last_observed_scan_id != ?3
+                 ),
+                 subtree(source_entry_id) AS (
+                     SELECT source_entry_id FROM absent_root
+                     UNION ALL
+                     SELECT child.source_entry_id
+                     FROM source_entry child
+                     JOIN subtree ON child.parent_source_entry_id = subtree.source_entry_id
+                     WHERE child.library_root_id = ?1
+                 )
+                 DELETE FROM source_entry
+                 WHERE source_entry_id IN (SELECT source_entry_id FROM subtree)
+                   AND library_root_id = ?1",
+                rusqlite::params![
+                    library_root_id.to_string(),
+                    parent_source_entry_id.map(|id| id.to_string()),
+                    observed_scan_id.to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(changed as u64)
+    }
+
     fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError> {
         self.work
             .transaction_mut()?
@@ -422,6 +629,84 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
             .map_err(map_persistence_operation_error)?;
         Ok(())
     }
+}
+
+type SourceEntryRecordRaw = (
+    String,
+    Option<String>,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+);
+
+fn source_entry_record_raw(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceEntryRecordRaw> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+        row.get(7)?,
+        row.get(8)?,
+        row.get(9)?,
+        row.get(10)?,
+    ))
+}
+
+fn source_entry_record_from_raw(
+    raw: SourceEntryRecordRaw,
+) -> Result<SourceEntryRecord, PersistenceError> {
+    let (
+        id,
+        parent,
+        relative,
+        key,
+        display,
+        location,
+        kind,
+        classification,
+        native,
+        fingerprint,
+        observed,
+    ) = raw;
+    let source_entry_id = parse_source_entry_id(id)?;
+    let parent_source_entry_id = parent.map(parse_source_entry_id).transpose()?;
+    let kind = match kind.as_str() {
+        "directory" => SourceEntryKind::Directory,
+        "file" => SourceEntryKind::File,
+        "link_like" => SourceEntryKind::LinkLike,
+        "unknown" => SourceEntryKind::Unknown,
+        _ => return Err(PersistenceError::CorruptOrIncompatible),
+    };
+    let classification = match classification.as_str() {
+        "container" => SourceEntryClassification::Container,
+        "content_candidate" => SourceEntryClassification::ContentCandidate,
+        "supporting_entry" => SourceEntryClassification::SupportingEntry,
+        "ignored" => SourceEntryClassification::Ignored,
+        "unknown" => SourceEntryClassification::Unknown,
+        _ => return Err(PersistenceError::CorruptOrIncompatible),
+    };
+    Ok(SourceEntryRecord::new(
+        source_entry_id,
+        parent_source_entry_id,
+        RelativeSourceLocator::from_provider(relative),
+        SourceLocatorKey::from_provider(key),
+        display,
+        location,
+        kind,
+        classification,
+        native,
+        fingerprint,
+        parse_scan_run_id(observed)?,
+    ))
 }
 
 /// Transaction-scoped library-scan admission-target repository.

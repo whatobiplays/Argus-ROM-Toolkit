@@ -116,9 +116,12 @@ impl LibraryRootQueries for SqliteLibraryRootQueries {
                 let raw = connection
                     .connection
                     .query_row(
-                        "SELECT library_root_id, root_locator, display_name,
-                                safe_location_presentation, config_revision
-                         FROM library_root WHERE library_root_id = ?1",
+                        "SELECT r.library_root_id, r.root_locator, r.display_name,
+                                r.safe_location_presentation, r.config_revision,
+                                (SELECT s.config_revision FROM library_source s
+                                  WHERE s.library_source_id = r.library_source_id),
+                                1
+                         FROM library_root r WHERE r.library_root_id = ?1",
                         [root_id.to_string()],
                         |row| {
                             Ok((
@@ -127,22 +130,36 @@ impl LibraryRootQueries for SqliteLibraryRootQueries {
                                 row.get::<_, String>(2)?,
                                 row.get::<_, String>(3)?,
                                 row.get::<_, i64>(4)?,
+                                row.get::<_, i64>(5)?,
+                                row.get::<_, i64>(6)?,
                             ))
                         },
                     )
                     .optional()
                     .map_err(|error| operation_error(&error))?;
-                raw.map(|(id, locator, display, safe, revision)| {
-                    let root_id =
-                        LibraryRootId::try_from(id.as_str()).map_err(|_| corrupt_persistence())?;
-                    Ok(LibraryRootScanConfiguration::new(
-                        root_id,
-                        argus_application::RootLocator::from_provider(locator),
+                raw.map(
+                    |(
+                        id,
+                        locator,
                         display,
                         safe,
-                        revision as u32,
-                    ))
-                })
+                        root_revision,
+                        source_revision,
+                        policy_revision,
+                    )| {
+                        let root_id = LibraryRootId::try_from(id.as_str())
+                            .map_err(|_| corrupt_persistence())?;
+                        Ok(LibraryRootScanConfiguration::new(
+                            root_id,
+                            argus_application::RootLocator::from_provider(locator),
+                            display,
+                            safe,
+                            root_revision as u32,
+                            source_revision as u32,
+                            policy_revision as u32,
+                        ))
+                    },
+                )
                 .transpose()
             })
             .map_err(map_executor_error)
@@ -405,5 +422,52 @@ impl LibraryRootRepository for SqliteLibraryRootRepository<'_, '_> {
                 .map_err(super::jobs::map_persistence_operation_error)?,
         };
         Ok(changed == 1)
+    }
+
+    fn get_scan_authority(
+        &mut self,
+        root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError> {
+        let raw = self
+            .work
+            .transaction_mut()?
+            .query_row(
+                "SELECT r.library_root_id, r.root_locator, r.display_name,
+                        r.safe_location_presentation, r.config_revision,
+                        (SELECT s.config_revision FROM library_source s
+                          WHERE s.library_source_id = r.library_source_id),
+                        1
+                 FROM library_root r WHERE r.library_root_id = ?1",
+                [root_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, i64>(6)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(super::jobs::map_persistence_operation_error)?;
+        raw.map(
+            |(id, locator, display, safe, root_revision, source_revision, policy_revision)| {
+                let root_id = LibraryRootId::try_from(id.as_str())
+                    .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+                Ok(LibraryRootScanConfiguration::new(
+                    root_id,
+                    argus_application::RootLocator::from_provider(locator),
+                    display,
+                    safe,
+                    root_revision as u32,
+                    source_revision as u32,
+                    policy_revision as u32,
+                ))
+            },
+        )
+        .transpose()
     }
 }

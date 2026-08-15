@@ -1606,11 +1606,189 @@ impl NewSourceEntry {
     }
 }
 
+/// One bounded persisted source-entry record used by reconciliation.
+///
+/// The record exposes provider-owned opaque locator values and optional
+/// continuity facts without parsing them. Generic application code may
+/// compare locator keys and provider-native identity tokens produced by the
+/// provider but must never interpret their text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceEntryRecord {
+    source_entry_id: SourceEntryId,
+    parent_source_entry_id: Option<SourceEntryId>,
+    relative_locator: RelativeSourceLocator,
+    locator_key: SourceLocatorKey,
+    display_name: String,
+    display_location: String,
+    kind: crate::sources::SourceEntryKind,
+    classification: crate::sources::SourceEntryClassification,
+    provider_native_identity: Option<String>,
+    source_fingerprint: Option<String>,
+    last_observed_scan_id: ScanRunId,
+}
+
+impl SourceEntryRecord {
+    /// Creates one persisted source-entry record.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        source_entry_id: SourceEntryId,
+        parent_source_entry_id: Option<SourceEntryId>,
+        relative_locator: RelativeSourceLocator,
+        locator_key: SourceLocatorKey,
+        display_name: impl Into<String>,
+        display_location: impl Into<String>,
+        kind: crate::sources::SourceEntryKind,
+        classification: crate::sources::SourceEntryClassification,
+        provider_native_identity: Option<String>,
+        source_fingerprint: Option<String>,
+        last_observed_scan_id: ScanRunId,
+    ) -> Self {
+        Self {
+            source_entry_id,
+            parent_source_entry_id,
+            relative_locator,
+            locator_key,
+            display_name: display_name.into(),
+            display_location: display_location.into(),
+            kind,
+            classification,
+            provider_native_identity,
+            source_fingerprint,
+            last_observed_scan_id,
+        }
+    }
+
+    /// Returns the stable Argus source identity.
+    pub fn source_entry_id(&self) -> SourceEntryId {
+        self.source_entry_id
+    }
+
+    /// Returns the current parent identity, if any.
+    pub fn parent_source_entry_id(&self) -> Option<SourceEntryId> {
+        self.parent_source_entry_id
+    }
+
+    /// Returns the opaque relative locator.
+    pub fn relative_locator(&self) -> &RelativeSourceLocator {
+        &self.relative_locator
+    }
+
+    /// Returns the provider-defined location equality key.
+    pub fn locator_key(&self) -> &SourceLocatorKey {
+        &self.locator_key
+    }
+
+    /// Returns the display name.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    /// Returns the root-relative display location.
+    pub fn display_location(&self) -> &str {
+        &self.display_location
+    }
+
+    /// Returns the persisted source-entry kind.
+    pub fn kind(&self) -> crate::sources::SourceEntryKind {
+        self.kind
+    }
+
+    /// Returns the persisted classification.
+    pub fn classification(&self) -> crate::sources::SourceEntryClassification {
+        self.classification
+    }
+
+    /// Returns the optional opaque native identity.
+    pub fn provider_native_identity(&self) -> Option<&str> {
+        self.provider_native_identity.as_deref()
+    }
+
+    /// Returns the optional cheap source fingerprint.
+    pub fn source_fingerprint(&self) -> Option<&str> {
+        self.source_fingerprint.as_deref()
+    }
+
+    /// Returns the scan that positively observed this entry.
+    pub fn last_observed_scan_id(&self) -> ScanRunId {
+        self.last_observed_scan_id
+    }
+}
+
+/// Bounded outcome of one provider-native-identity candidate lookup.
+///
+/// The repository returns `Ambiguous` as soon as two persisted candidates
+/// exist for the identity; it never materializes every duplicate. The
+/// application decides continuity only from a `Unique` candidate that has
+/// not already been positively observed by the current scan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NativeIdentityMatch {
+    /// No persisted entry carries this provider-native identity.
+    None,
+    /// Exactly one persisted entry carries this identity.
+    Unique(SourceEntryRecord),
+    /// Two or more persisted entries carry this identity; never guessed.
+    Ambiguous,
+}
+
 /// Transaction-scoped source-entry repository port.
 pub trait SourceEntryRepository {
     /// Upserts one positive observation by root + locator key and returns the
     /// stable source identity.
     fn upsert(&mut self, entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError>;
+
+    /// Finds the current entry at one exact locator within one root.
+    fn find_by_locator_key(
+        &mut self,
+        library_root_id: LibraryRootId,
+        locator_key: &SourceLocatorKey,
+    ) -> Result<Option<SourceEntryRecord>, PersistenceError>;
+
+    /// Classifies persisted provider-native-identity candidates in one root
+    /// as none/unique/ambiguous without loading duplicate rows.
+    fn find_native_identity(
+        &mut self,
+        library_root_id: LibraryRootId,
+        provider_native_identity: &str,
+    ) -> Result<NativeIdentityMatch, PersistenceError>;
+
+    /// Moves one existing entry to a new observation while preserving its
+    /// stable source identity. Fails when the entry is not persisted in the
+    /// same root.
+    fn reconcile_move(
+        &mut self,
+        entry: NewSourceEntry,
+        existing_source_entry_id: SourceEntryId,
+    ) -> Result<SourceEntryId, PersistenceError>;
+
+    /// Lists one bounded page of prior direct children for an exact scope.
+    /// `None` parent addresses the root scope's direct children.
+    fn list_children(
+        &mut self,
+        library_root_id: LibraryRootId,
+        parent_source_entry_id: Option<SourceEntryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<SourceEntryRecord>, PersistenceError>;
+
+    /// Deletes one authoritative subtree (entry plus current descendants)
+    /// atomically and reports whether the subtree root existed. Never
+    /// touches user filesystem content.
+    fn delete_subtree(
+        &mut self,
+        library_root_id: LibraryRootId,
+        source_entry_id: SourceEntryId,
+    ) -> Result<bool, PersistenceError>;
+
+    /// Performs the coherent exact-scope absence mutation: deletes prior
+    /// direct children of one scope that were not positively observed by
+    /// `observed_scan_id`, plus their current descendants, in one bounded
+    /// set-based statement. Returns the number of deleted rows.
+    fn finalize_absent_scope(
+        &mut self,
+        library_root_id: LibraryRootId,
+        parent_source_entry_id: Option<SourceEntryId>,
+        observed_scan_id: ScanRunId,
+    ) -> Result<u64, PersistenceError>;
 
     /// Removes all current Argus-owned entries for one root. Never touches
     /// user filesystem content.

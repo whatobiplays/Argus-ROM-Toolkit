@@ -314,6 +314,77 @@ fn local_filesystem_access_enumerates_nested_scopes_without_following_links() {
 }
 
 #[test]
+fn link_like_entry_with_outside_root_target_is_retained_and_scope_stays_complete() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let outside = directory.path().join("outside-target.bin");
+    fs::write(&outside, b"outside").expect("outside target");
+    let root = directory.path().join("Library");
+    fs::create_dir(&root).expect("library root");
+    fs::write(root.join("rom.bin"), b"rom").expect("file");
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&outside, root.join("escape")).expect("symlink");
+    }
+    #[cfg(windows)]
+    {
+        // Symlink creation requires developer mode on Windows; skip link
+        // creation there and assert only the ordinary-entry behavior.
+    }
+
+    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
+        root.to_string_lossy().into_owned(),
+    ));
+    let resolved = access.resolve_root().expect("resolve");
+    let scope = access
+        .enumerate_root_direct_children(&resolved, &|| false)
+        .expect("root scope");
+    assert_eq!(
+        scope.outcome(),
+        argus_application::EnumerationOutcome::Complete,
+        "an outside-target link must not fail the containing scope"
+    );
+    #[cfg(unix)]
+    {
+        let escape = scope
+            .observations()
+            .iter()
+            .find(|observation| observation.display_name() == "escape")
+            .expect("link observation retained");
+        assert_eq!(escape.observed_kind(), ObservedEntryKind::LinkLike);
+        assert!(escape.provider_native_identity().is_some());
+    }
+}
+
+#[test]
+fn actual_traversal_through_an_outside_target_link_is_rejected() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let outside = directory.path().join("outside-target.bin");
+    fs::write(&outside, b"outside").expect("outside target");
+    let root = directory.path().join("Library");
+    fs::create_dir(&root).expect("library root");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, root.join("escape")).expect("symlink");
+
+    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
+        root.to_string_lossy().into_owned(),
+    ));
+    let resolved = access.resolve_root().expect("resolve");
+    #[cfg(unix)]
+    {
+        let escape = access.enumerate_direct_children(
+            &resolved,
+            &RelativeSourceLocator::from_provider("escape".to_owned()),
+            &|| false,
+        );
+        assert_eq!(
+            escape,
+            Err(SourceAccessError::InvalidLocator),
+            "traversal requests that resolve outside the root are rejected"
+        );
+    }
+}
+
+#[test]
 fn root_resolution_rejects_a_missing_or_link_like_root() {
     let directory = tempfile::tempdir().expect("tempdir");
     let missing = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(

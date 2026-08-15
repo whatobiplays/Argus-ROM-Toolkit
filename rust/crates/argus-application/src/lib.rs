@@ -39,11 +39,11 @@ pub use jobs::{
     JobSummary, JobSummaryPage, JobsQueries, JobsService, LibraryScanAdmissionExclusion,
     LibraryScanAdmissionResult, LibraryScanExecutionPlan, LibraryScanJobDetail,
     LibraryScanRootSummary, LibraryScanTarget, LibraryScanTargetExclusionReason,
-    LibraryScanTargetKind, LibraryScanTargetRepository, ListJobsQuery, ListJobsScope, NewJobRun,
-    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OPERATION_TYPE_LIBRARY_SCAN,
-    OperationCompletion, OperationDetail, OperationHandle, ScanProgressFacts, ScanRunProjection,
-    ScanRunRepository, ScanRunStatus, ScanRunStatusParseError, SourceEntryRepository,
-    StartLibraryScanResult,
+    LibraryScanTargetKind, LibraryScanTargetRepository, ListJobsQuery, ListJobsScope,
+    NativeIdentityMatch, NewJobRun, NewLibraryScanTarget, NewScanRun, NewSourceEntry,
+    OPERATION_TYPE_LIBRARY_SCAN, OperationCompletion, OperationDetail, OperationHandle,
+    ScanProgressFacts, ScanRunProjection, ScanRunRepository, ScanRunStatus,
+    ScanRunStatusParseError, SourceEntryRecord, SourceEntryRepository, StartLibraryScanResult,
 };
 pub use observability::{
     ArchitectureClass, DiagnosticStage, EventName, FailureRole, LogEvent, LogLevel,

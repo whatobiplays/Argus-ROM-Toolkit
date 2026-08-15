@@ -346,12 +346,13 @@ mod tests {
         ActiveScanOwnership, AppearanceSettings, AppearanceSettingsQueries,
         AppearanceSettingsRepository, ApplicationPortError, JobProgress, JobRunId,
         JobRunRepository, JobRunState, LibraryRootAvailability, LibraryRootId,
-        LibraryRootLastScanSummary, LibraryRootRepository, LibraryScanTarget,
-        LibraryScanTargetRepository, LibrarySourceId, LibrarySourceRepository, NewJobRun,
-        NewLibraryRoot, NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext,
-        OperationName, PersistenceError, ScanRunId, ScanRunProjection, ScanRunRepository,
-        ScanRunStatus, SettingsService, SourceEntryId, SourceEntryRepository, SubsystemName,
-        ThemeMode, TraceId, UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand,
+        LibraryRootLastScanSummary, LibraryRootRepository, LibraryRootScanConfiguration,
+        LibraryScanTarget, LibraryScanTargetRepository, LibrarySourceId, LibrarySourceRepository,
+        NativeIdentityMatch, NewJobRun, NewLibraryRoot, NewLibraryScanTarget, NewScanRun,
+        NewSourceEntry, OperationContext, OperationName, PersistenceError, ScanRunId,
+        ScanRunProjection, ScanRunRepository, ScanRunStatus, SettingsService, SourceEntryId,
+        SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, SubsystemName, ThemeMode,
+        TraceId, UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand,
     };
     use std::marker::PhantomData;
 
@@ -409,6 +410,13 @@ mod tests {
             _root_id: LibraryRootId,
             _summary: Option<LibraryRootLastScanSummary>,
         ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn get_scan_authority(
+            &mut self,
+            _root_id: LibraryRootId,
+        ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError> {
             Err(PersistenceError::Unavailable)
         }
     }
@@ -505,6 +513,57 @@ mod tests {
 
     impl SourceEntryRepository for NoopSourceEntryRepository<'_> {
         fn upsert(&mut self, _entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn find_by_locator_key(
+            &mut self,
+            _library_root_id: LibraryRootId,
+            _locator_key: &SourceLocatorKey,
+        ) -> Result<Option<SourceEntryRecord>, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn find_native_identity(
+            &mut self,
+            _library_root_id: LibraryRootId,
+            _provider_native_identity: &str,
+        ) -> Result<NativeIdentityMatch, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn reconcile_move(
+            &mut self,
+            _entry: NewSourceEntry,
+            _existing_source_entry_id: SourceEntryId,
+        ) -> Result<SourceEntryId, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn list_children(
+            &mut self,
+            _library_root_id: LibraryRootId,
+            _parent_source_entry_id: Option<SourceEntryId>,
+            _offset: u32,
+            _limit: u32,
+        ) -> Result<Vec<SourceEntryRecord>, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn delete_subtree(
+            &mut self,
+            _library_root_id: LibraryRootId,
+            _source_entry_id: SourceEntryId,
+        ) -> Result<bool, PersistenceError> {
+            Err(PersistenceError::Unavailable)
+        }
+
+        fn finalize_absent_scope(
+            &mut self,
+            _library_root_id: LibraryRootId,
+            _parent_source_entry_id: Option<SourceEntryId>,
+            _observed_scan_id: ScanRunId,
+        ) -> Result<u64, PersistenceError> {
             Err(PersistenceError::Unavailable)
         }
 

@@ -528,6 +528,60 @@ impl argus_application::SourceEntryRepository for KernelSourceEntryRepository<'_
         self.inner.upsert(entry)
     }
 
+    fn find_by_locator_key(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+        locator_key: &argus_application::SourceLocatorKey,
+    ) -> Result<Option<argus_application::SourceEntryRecord>, PersistenceError> {
+        self.inner.find_by_locator_key(library_root_id, locator_key)
+    }
+
+    fn find_native_identity(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+        provider_native_identity: &str,
+    ) -> Result<argus_application::NativeIdentityMatch, PersistenceError> {
+        self.inner
+            .find_native_identity(library_root_id, provider_native_identity)
+    }
+
+    fn reconcile_move(
+        &mut self,
+        entry: argus_application::NewSourceEntry,
+        existing_source_entry_id: argus_application::SourceEntryId,
+    ) -> Result<argus_application::SourceEntryId, PersistenceError> {
+        self.inner.reconcile_move(entry, existing_source_entry_id)
+    }
+
+    fn list_children(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+        parent_source_entry_id: Option<argus_application::SourceEntryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<argus_application::SourceEntryRecord>, PersistenceError> {
+        self.inner
+            .list_children(library_root_id, parent_source_entry_id, offset, limit)
+    }
+
+    fn delete_subtree(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+        source_entry_id: argus_application::SourceEntryId,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.delete_subtree(library_root_id, source_entry_id)
+    }
+
+    fn finalize_absent_scope(
+        &mut self,
+        library_root_id: argus_application::LibraryRootId,
+        parent_source_entry_id: Option<argus_application::SourceEntryId>,
+        observed_scan_id: argus_application::ScanRunId,
+    ) -> Result<u64, PersistenceError> {
+        self.inner
+            .finalize_absent_scope(library_root_id, parent_source_entry_id, observed_scan_id)
+    }
+
     fn delete_for_root(
         &mut self,
         library_root_id: argus_application::LibraryRootId,
@@ -587,6 +641,13 @@ impl LibraryRootRepository for KernelLibraryRootRepository<'_, '_> {
         summary: Option<argus_application::LibraryRootLastScanSummary>,
     ) -> Result<bool, PersistenceError> {
         self.inner.set_last_scan(root_id, summary)
+    }
+
+    fn get_scan_authority(
+        &mut self,
+        root_id: LibraryRootId,
+    ) -> Result<Option<argus_application::LibraryRootScanConfiguration>, PersistenceError> {
+        self.inner.get_scan_authority(root_id)
     }
 }
 

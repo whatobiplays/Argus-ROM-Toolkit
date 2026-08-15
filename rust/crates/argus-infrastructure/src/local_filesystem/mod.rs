@@ -165,7 +165,15 @@ fn enumerate_scope(
             Some(metadata.len()),
             modified_at_ms(&metadata),
         ));
-        if !is_within_root(root_path, &scope_path.join(entry.file_name())) {
+        // Link-like entries are retained but never traversed. Their targets
+        // are not followed for boundary validation: an in-root link whose
+        // target resolves outside the root must not fail the containing
+        // scope. Actual traversal requests are still rejected by
+        // `enumerate_direct_children`, which validates the resolved target
+        // namespace before any enumeration begins.
+        if !is_link_like(&metadata)
+            && !is_within_root(root_path, &scope_path.join(entry.file_name()))
+        {
             return Ok(EnumerationResult::new(
                 observations,
                 EnumerationOutcome::Failed,

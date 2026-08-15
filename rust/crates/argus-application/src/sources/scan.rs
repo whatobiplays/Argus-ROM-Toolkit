@@ -18,9 +18,9 @@ use crate::{
     ApplicationError, ApplicationEvent, ApplicationPortError, ApplicationPortError::EventRecording,
     ApplicationPortError::Persistence, ErrorCode, JobProgress, JobProgressReporter, JobRunState,
     LibraryRootAvailability, LibraryRootChanged, LibraryRootLastScanStatus,
-    LibraryRootLastScanSummary, NewSourceEntry, OperationCompletion, OperationContext, SafeContext,
-    ScanRunStatus, SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryId,
-    UnitOfWorkFactory,
+    LibraryRootLastScanSummary, NativeIdentityMatch, NewSourceEntry, OperationCompletion,
+    OperationContext, PersistenceError, SafeContext, ScanRunId, ScanRunStatus,
+    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryId, UnitOfWorkFactory,
 };
 
 /// One pending positive observation with its committed parent identity.
@@ -43,6 +43,30 @@ enum Scope {
         parent_source_entry_id: SourceEntryId,
         relative_locator: RelativeSourceLocator,
     },
+}
+
+/// One exact scope whose enumeration completed and may later be finalized.
+///
+/// Finalization is deferred until discovery has seen all available
+/// observations so a move from an earlier-traversed scope to a later one can
+/// preserve identity before the old scope's absences are removed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CompletedScope {
+    parent_source_entry_id: Option<SourceEntryId>,
+}
+
+/// Aggregate outcome of the deferred finalization phase.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct FinalizationOutcome {
+    cancelled: bool,
+    suppressed: bool,
+}
+
+/// One per-scope finalization transaction outcome.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FinalizeWork {
+    Finalized(u64),
+    Suppressed,
 }
 
 /// Application-owned library scan execution handler.
@@ -90,6 +114,7 @@ where
                 return self.root_failure(context, error);
             }
         };
+        self.commit_availability_available(context)?;
         if is_cancelled() {
             return self.finish_cancelled(context);
         }
@@ -97,6 +122,9 @@ where
         let mut committed_entries = 0_u64;
         let mut issues = 0_u64;
         let mut cancelled = false;
+        let mut root_unavailable = false;
+        let mut root_incomplete = false;
+        let mut completed_scopes: Vec<CompletedScope> = Vec::new();
         let mut pending: Vec<PendingObservation> = Vec::new();
         let mut stack = vec![Scope::Root];
 
@@ -129,27 +157,38 @@ where
                     continue;
                 }
             };
+            let parent_source_entry_id = match &scope {
+                Scope::Root => None,
+                Scope::Child {
+                    parent_source_entry_id,
+                    ..
+                } => Some(*parent_source_entry_id),
+            };
             match enumeration.outcome() {
                 EnumerationOutcome::Cancelled => {
                     cancelled = true;
                     break;
                 }
-                EnumerationOutcome::Complete => {}
-                EnumerationOutcome::Partial
-                | EnumerationOutcome::Failed
-                | EnumerationOutcome::Unavailable => {
+                EnumerationOutcome::Complete => {
+                    completed_scopes.push(CompletedScope {
+                        parent_source_entry_id,
+                    });
+                }
+                EnumerationOutcome::Unavailable if matches!(scope, Scope::Root) => {
+                    root_unavailable = true;
+                }
+                EnumerationOutcome::Partial | EnumerationOutcome::Failed => {
+                    if matches!(scope, Scope::Root) {
+                        root_incomplete = true;
+                    }
+                    issues += 1;
+                }
+                EnumerationOutcome::Unavailable => {
                     issues += 1;
                 }
             }
 
             for observation in enumeration.observations() {
-                let parent_source_entry_id = match &scope {
-                    Scope::Root => None,
-                    Scope::Child {
-                        parent_source_entry_id,
-                        ..
-                    } => Some(*parent_source_entry_id),
-                };
                 pending.push(PendingObservation {
                     parent_source_entry_id,
                     observation: observation.clone(),
@@ -203,8 +242,23 @@ where
         if cancelled {
             return self.finish_cancelled(context);
         }
+        if root_unavailable {
+            return self.finish_root_unavailable(context);
+        }
+
+        let finalization =
+            self.finalize_completed_scopes(context, &completed_scopes, is_cancelled)?;
+        if finalization.cancelled {
+            return self.finish_cancelled(context);
+        }
+        if root_incomplete && committed_entries == 0 {
+            return self.finish_failed(context);
+        }
+        if finalization.suppressed {
+            return self.finish_partial(context, "finalization_authority_changed");
+        }
         if issues > 0 {
-            return self.finish_partial(context);
+            return self.finish_partial(context, "incomplete_scope");
         }
         self.finish_complete(context)
     }
@@ -220,13 +274,15 @@ where
             .iter()
             .map(|pending_observation| map_observation(&self.plan, pending_observation))
             .collect();
+        let scan_run_id = self.plan.scan_run_id();
         let ids = self
             .unit_of_work
             .clone()
             .execute(context, move |mut scope| {
                 let mut ids = Vec::with_capacity(entries.len());
                 for entry in entries {
-                    ids.push(scope.source_entries().upsert(entry)?);
+                    let mut source_entries = scope.source_entries();
+                    ids.push(reconcile_positive(&mut source_entries, entry, scan_run_id)?);
                 }
                 scope.commit()?;
                 Ok::<_, ApplicationPortError>(ids)
@@ -263,6 +319,90 @@ where
         Ok(committed)
     }
 
+    /// Commits the current availability evidence after a successful root
+    /// resolution. Successful root access is the only path that marks the
+    /// root `Available`; nested failures and cancellation never do.
+    fn commit_availability_available(
+        &self,
+        context: &OperationContext,
+    ) -> Result<(), ApplicationError> {
+        let root_id = self.plan.library_root_id();
+        self.unit_of_work
+            .clone()
+            .execute(context, move |mut scope| {
+                scope
+                    .library_roots()
+                    .set_availability(root_id, LibraryRootAvailability::Available)?;
+                scope.commit()
+            })
+            .map_err(|error| map_port_error(context.trace_id(), error))?;
+        self.event_sink
+            .publish(ApplicationEvent::LibraryRootChanged(LibraryRootChanged {
+                library_root_id: root_id,
+            }));
+        Ok(())
+    }
+
+    /// Runs the deferred exact-scope finalization phase after discovery has
+    /// consumed all available observations. Each scope is finalized in one
+    /// coherent transaction that first rechecks current plan authority.
+    fn finalize_completed_scopes(
+        &self,
+        context: &OperationContext,
+        completed_scopes: &[CompletedScope],
+        is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<FinalizationOutcome, ApplicationError> {
+        let mut outcome = FinalizationOutcome::default();
+        for scope in completed_scopes {
+            if is_cancelled() {
+                outcome.cancelled = true;
+                break;
+            }
+            let plan = self.plan.clone();
+            let root_id = plan.library_root_id();
+            let parent_source_entry_id = scope.parent_source_entry_id;
+            let scan_run_id = plan.scan_run_id();
+            let work = self
+                .unit_of_work
+                .clone()
+                .execute(context, move |mut scope| {
+                    let Some(current) = scope.library_roots().get_scan_authority(root_id)? else {
+                        scope.commit()?;
+                        return Ok::<_, ApplicationPortError>(FinalizeWork::Suppressed);
+                    };
+                    if current.source_config_revision() != plan.source_config_revision()
+                        || current.config_revision() != plan.root_config_revision()
+                        || current.discovery_policy_revision() != plan.discovery_policy_revision()
+                    {
+                        scope.commit()?;
+                        return Ok::<_, ApplicationPortError>(FinalizeWork::Suppressed);
+                    }
+                    let deleted = scope.source_entries().finalize_absent_scope(
+                        root_id,
+                        parent_source_entry_id,
+                        scan_run_id,
+                    )?;
+                    scope.commit()?;
+                    Ok::<_, ApplicationPortError>(FinalizeWork::Finalized(deleted))
+                })
+                .map_err(|error| map_port_error(context.trace_id(), error))?;
+            match work {
+                FinalizeWork::Suppressed => outcome.suppressed = true,
+                FinalizeWork::Finalized(deleted) if deleted > 0 => {
+                    self.event_sink
+                        .publish(ApplicationEvent::SourceEntriesChanged(
+                            SourceEntriesChanged {
+                                library_root_id: self.plan.library_root_id(),
+                                scope: SourceEntriesChangeScope::EntireRootHierarchy,
+                            },
+                        ));
+                }
+                FinalizeWork::Finalized(_) => {}
+            }
+        }
+        Ok(outcome)
+    }
+
     fn finish_cancelled(
         &self,
         context: &OperationContext,
@@ -280,12 +420,13 @@ where
     fn finish_partial(
         &self,
         context: &OperationContext,
+        failure_reason: &str,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.terminalize(
             context,
             ScanRunStatus::Partial,
             LibraryRootLastScanStatus::Partial,
-            Some("incomplete_scope"),
+            Some(failure_reason),
             None,
         )?;
         Ok(OperationCompletion::new(
@@ -309,6 +450,37 @@ where
         Ok(OperationCompletion::new(JobRunState::Completed, None, None))
     }
 
+    /// Terminalizes a root scan that produced no meaningful indexing result.
+    fn finish_failed(
+        &self,
+        context: &OperationContext,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        self.terminalize(
+            context,
+            ScanRunStatus::Failed,
+            LibraryRootLastScanStatus::Failed,
+            Some("source_access_failed"),
+            None,
+        )?;
+        Ok(OperationCompletion::new(JobRunState::Failed, None, None))
+    }
+
+    /// Terminalizes a root-level unavailable scan: `Failed` scan, `Unavailable`
+    /// last-scan summary, and `Unavailable` availability evidence.
+    fn finish_root_unavailable(
+        &self,
+        context: &OperationContext,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        self.terminalize(
+            context,
+            ScanRunStatus::Failed,
+            LibraryRootLastScanStatus::Unavailable,
+            Some("source_unavailable"),
+            Some(LibraryRootAvailability::Unavailable),
+        )?;
+        Ok(OperationCompletion::new(JobRunState::Failed, None, None))
+    }
+
     fn root_failure(
         &self,
         context: &OperationContext,
@@ -316,25 +488,10 @@ where
     ) -> Result<OperationCompletion, ApplicationError> {
         match error {
             SourceAccessError::SourceUnavailable | SourceAccessError::AuthorizationUnavailable => {
-                self.terminalize(
-                    context,
-                    ScanRunStatus::Failed,
-                    LibraryRootLastScanStatus::Unavailable,
-                    Some("source_unavailable"),
-                    Some(LibraryRootAvailability::Unavailable),
-                )?;
+                self.finish_root_unavailable(context)
             }
-            _ => {
-                self.terminalize(
-                    context,
-                    ScanRunStatus::Failed,
-                    LibraryRootLastScanStatus::Failed,
-                    Some("source_access_failed"),
-                    None,
-                )?;
-            }
+            _ => self.finish_failed(context),
         }
-        Ok(OperationCompletion::new(JobRunState::Failed, None, None))
     }
 
     fn terminalize(
@@ -442,6 +599,40 @@ fn map_observation(
         observation.source_fingerprint().map(str::to_owned),
         plan.scan_run_id(),
     )
+}
+
+/// Reconciles one positive observation against persisted state.
+///
+/// Exact locator observations update the existing entry in place. Otherwise a
+/// provider-native identity preserves `SourceEntryId` only when exactly one
+/// total persisted candidate exists and that sole candidate was not already
+/// positively observed by the current scan. Zero, multiple, or already-
+/// observed candidates never guess continuity and create a new entry.
+fn reconcile_positive(
+    entries: &mut impl SourceEntryRepository,
+    entry: NewSourceEntry,
+    scan_run_id: ScanRunId,
+) -> Result<SourceEntryId, PersistenceError> {
+    let root_id = entry.library_root_id();
+    if entries
+        .find_by_locator_key(root_id, entry.locator_key())?
+        .is_some()
+    {
+        return entries.upsert(entry);
+    }
+    if let Some(identity) = entry.provider_native_identity() {
+        match entries.find_native_identity(root_id, identity)? {
+            NativeIdentityMatch::Unique(candidate)
+                if candidate.last_observed_scan_id() != scan_run_id =>
+            {
+                return entries.reconcile_move(entry, candidate.source_entry_id());
+            }
+            NativeIdentityMatch::None
+            | NativeIdentityMatch::Ambiguous
+            | NativeIdentityMatch::Unique(_) => {}
+        }
+    }
+    entries.upsert(entry)
 }
 
 fn source_entry_kind(observed: ObservedEntryKind) -> SourceEntryKind {

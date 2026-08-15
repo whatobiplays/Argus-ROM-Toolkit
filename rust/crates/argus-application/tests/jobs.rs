@@ -15,14 +15,15 @@ use argus_application::{
     JobRunStateParseError, LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus,
     LibraryRootLastScanSummary, LibraryRootQueries, LibraryRootRepository,
     LibraryRootScanConfiguration, LibraryScanExecutionPlan, LibraryScanOperationHandler,
-    LibraryScanTargetRepository, LibrarySourceAccess, NewJobRun, NewLibraryScanTarget, NewScanRun,
-    NewSourceEntry, ObservedEntryKind, OperationCompletion, OperationContext, OperationName,
-    PersistenceError, RelativeSourceLocator, RemoveLibraryRootCommand, RemoveLibraryRootHandler,
-    RemoveLibraryRootResult, ResolvedRoot, RootLocator, ScanRunId, ScanRunRepository,
-    ScanRunStatus, SourceAccessError, SourceEntriesChangeScope, SourceEntriesChanged,
-    SourceEntryId, SourceEntryRepository, SourceLocatorKey, SourceObservation,
-    StartLibraryScanCommand, StartLibraryScanHandler, StartLibraryScanResult, SubsystemName,
-    TraceId, UnitOfWork, UnitOfWorkFactory,
+    LibraryScanTargetRepository, LibrarySourceAccess, NativeIdentityMatch, NewJobRun,
+    NewLibraryScanTarget, NewScanRun, NewSourceEntry, ObservedEntryKind, OperationCompletion,
+    OperationContext, OperationName, PersistenceError, RelativeSourceLocator,
+    RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult, ResolvedRoot,
+    RootLocator, ScanRunId, ScanRunRepository, ScanRunStatus, SourceAccessError,
+    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryId, SourceEntryRecord,
+    SourceEntryRepository, SourceLocatorKey, SourceObservation, StartLibraryScanCommand,
+    StartLibraryScanHandler, StartLibraryScanResult, SubsystemName, TraceId, UnitOfWork,
+    UnitOfWorkFactory,
 };
 
 const ROOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -159,6 +160,8 @@ impl LibraryRootQueries for FakeQueries {
             "Games",
             "/library/Games",
             1,
+            1,
+            1,
         )))
     }
 }
@@ -279,6 +282,57 @@ impl SourceEntryRepository for FakeSourceEntryRepository<'_> {
         SourceEntryId::from_bytes([store.entries as u8; 16]).map_err(|_| PersistenceError::Internal)
     }
 
+    fn find_by_locator_key(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _locator_key: &SourceLocatorKey,
+    ) -> Result<Option<SourceEntryRecord>, PersistenceError> {
+        Ok(None)
+    }
+
+    fn find_native_identity(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _provider_native_identity: &str,
+    ) -> Result<NativeIdentityMatch, PersistenceError> {
+        Ok(NativeIdentityMatch::None)
+    }
+
+    fn reconcile_move(
+        &mut self,
+        _entry: NewSourceEntry,
+        _existing_source_entry_id: SourceEntryId,
+    ) -> Result<SourceEntryId, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn list_children(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _parent_source_entry_id: Option<SourceEntryId>,
+        _offset: u32,
+        _limit: u32,
+    ) -> Result<Vec<SourceEntryRecord>, PersistenceError> {
+        Ok(Vec::new())
+    }
+
+    fn delete_subtree(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _source_entry_id: SourceEntryId,
+    ) -> Result<bool, PersistenceError> {
+        Ok(false)
+    }
+
+    fn finalize_absent_scope(
+        &mut self,
+        _library_root_id: LibraryRootId,
+        _parent_source_entry_id: Option<SourceEntryId>,
+        _observed_scan_id: ScanRunId,
+    ) -> Result<u64, PersistenceError> {
+        Ok(0)
+    }
+
     fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError> {
         self.store
             .lock()
@@ -348,6 +402,21 @@ impl LibraryRootRepository for FakeLibraryRootRepository<'_> {
     ) -> Result<bool, PersistenceError> {
         self.store.lock().unwrap().last_scan = summary;
         Ok(true)
+    }
+
+    fn get_scan_authority(
+        &mut self,
+        root_id: LibraryRootId,
+    ) -> Result<Option<LibraryRootScanConfiguration>, PersistenceError> {
+        Ok(Some(LibraryRootScanConfiguration::new(
+            root_id,
+            RootLocator::from_provider("/library/Games".to_owned()),
+            "Games",
+            "/library/Games",
+            1,
+            1,
+            1,
+        )))
     }
 }
 

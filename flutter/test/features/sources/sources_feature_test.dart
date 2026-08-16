@@ -1193,6 +1193,55 @@ void main() {
       expect(find.text('Retro'), findsNothing);
     });
 
+    testWidgets('expanding the root sidebar never lays out tiles at '
+        'animation widths', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 800);
+      addTearDown(tester.view.reset);
+      final api = FakeSourcesApi(roots: [fakeRoot()]);
+      final container = createContainer(api);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ArgusTheme.light,
+            home: SourcesRootDetailPage(
+              rootId: _rootId,
+              onMissingRoot: () {},
+              onRemoved: () {},
+              onOpenRoot: (_) {},
+              onOpenJob: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // One root defaults to the collapsed sidebar at expanded width.
+      expect(
+        find.byKey(const ValueKey<String>('sources-sidebar-expand')),
+        findsOneWidget,
+      );
+
+      // A second root becomes configured; the sidebar expands directly to
+      // its full width without laying out ListTiles at too-narrow
+      // intermediate sizes.
+      api.roots = [
+        fakeRoot(),
+        fakeRoot(id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', displayName: 'Retro'),
+      ];
+      await container
+          .read(sourcesRootListControllerProvider.notifier)
+          .refresh();
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('sources-sidebar-list')),
+        findsOneWidget,
+      );
+      expect(find.text('Retro'), findsOneWidget);
+    });
+
     group('root sidebar pagination', () {
       Future<void> pumpWideDetail(
         WidgetTester tester,

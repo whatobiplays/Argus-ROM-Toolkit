@@ -15,7 +15,11 @@ import 'sources_event_coordinator.dart';
 /// Owns the single application-level Riverpod scope.
 class ArgusBootstrap extends StatelessWidget {
   /// Creates the application bootstrap root.
-  const ArgusBootstrap({this.clientGatewayFactory, super.key});
+  const ArgusBootstrap({
+    this.clientGatewayFactory,
+    this.libraryFolderPicker,
+    super.key,
+  });
 
   /// Optional narrow test seam for pointing the real composition at a
   /// test-owned bridge gateway (for example an isolated data directory).
@@ -25,13 +29,24 @@ class ArgusBootstrap extends StatelessWidget {
   /// provider-override list or environment-driven behavior.
   final ArgusClientGateway Function()? clientGatewayFactory;
 
+  /// Optional narrow test seam for the existing [LibraryFolderPicker]
+  /// contract, applied inside this scope exactly like the gateway seam.
+  ///
+  /// Production startup uses [bootstrapArgus] with no override; this seam
+  /// deliberately exposes only the picker contract, never an arbitrary
+  /// provider-override list or environment-driven behavior.
+  final LibraryFolderPicker? libraryFolderPicker;
+
   @override
   Widget build(BuildContext context) {
     final factory = clientGatewayFactory;
+    final picker = libraryFolderPicker;
     return ProviderScope(
       overrides: [
         if (factory != null)
           argusClientGatewayFactoryProvider.overrideWithValue(factory),
+        if (picker != null)
+          libraryFolderPickerProvider.overrideWithValue(picker),
         appearanceSettingsApiProvider.overrideWith(
           (ref) => ref.watch(argusClientProvider).settings,
         ),

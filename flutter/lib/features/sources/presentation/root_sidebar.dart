@@ -36,8 +36,13 @@ class SourcesRootSidebar extends ConsumerWidget {
     };
     final readyState = ready is SourcesRootListStateReady ? ready : null;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
+    // The sidebar switches width instantly rather than animating: an
+    // animated 64 -> 240 transition lays out expanded ListTiles at
+    // intermediate widths where their leading icon plus padding exceed the
+    // tile width, which trips a ListTile layout assertion. Collapse/expand
+    // remains a session preference; only the decorative width animation is
+    // omitted.
+    return SizedBox(
       width: collapsed ? 64 : 240,
       child: Material(
         color: Theme.of(context).colorScheme.surfaceContainerLow,

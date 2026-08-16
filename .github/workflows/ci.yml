@@ -92,3 +92,84 @@ jobs:
             cd flutter
             flutter build macos --debug
           fi
+
+  provider-windows:
+    name: Windows LocalFilesystem provider
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$rust_channel" --profile minimal
+
+      - name: Run real LocalFilesystem provider tests
+        shell: bash
+        run: just test-local-filesystem-native
+
+  provider-linux:
+    name: Linux LocalFilesystem provider
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$rust_channel" --profile minimal
+
+      - name: Run real LocalFilesystem provider tests
+        run: just test-local-filesystem-native
+
+  phase-001-native:
+    name: Phase 001 native milestone
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: flutter/.fvmrc
+          cache: true
+          pub-cache: true
+
+      - name: Install CI FVM prerequisite
+        run: |
+          dart pub global activate fvm 4.1.2
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$rust_channel" --profile minimal
+
+      - name: Bootstrap repository
+        run: just bootstrap
+
+      - name: Phase 001 native milestone
+        run: just test-phase-001-native
+
+      - name: Phase 000 native regression
+        run: just test-phase-000-native

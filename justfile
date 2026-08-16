@@ -81,4 +81,10 @@ test:
 test-phase-000-native:
     bash scripts/run_phase_000_native_tests.sh
 
+test-phase-001-native:
+    bash scripts/run_phase_001_native_tests.sh
+
+test-local-filesystem-native:
+    bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --package argus-infrastructure --all-features --locked
+
 check: check-generated _format-check lint _architecture test

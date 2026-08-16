@@ -6,6 +6,7 @@ import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/client/client.dart';
+import 'package:argus/features/sources/sources.dart';
 import '../../core/client/jobs_gateway_stub.dart';
 import '../../core/client/sources_gateway_stub.dart';
 import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
@@ -74,6 +75,24 @@ void main() {
     // timing-dependent on a Ready completion.
     expect(pendingGateway.initializeCalls, 1);
     expect(pendingGateway.initialization.isCompleted, isFalse);
+  });
+
+  testWidgets('library folder picker seam overrides the picker inside the '
+      'owned scope', (tester) async {
+    const selection = LocalFilesystemRootSelection('/test-owned/folder');
+    Future<LocalFilesystemRootSelection?> seam() async => selection;
+
+    await tester.pumpWidget(ArgusBootstrap(libraryFolderPicker: seam));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArgusApp)),
+      listen: false,
+    );
+
+    // The seam is applied through the existing owned ProviderScope, so the
+    // bootstrap still owns exactly one scope and no second override bag.
+    expect(find.byType(ProviderScope), findsOneWidget);
+    final picked = await container.read(libraryFolderPickerProvider)();
+    expect(picked?.selectedFolderPath, '/test-owned/folder');
   });
 
   testWidgets('root composition blocks until authoritative backend Ready', (

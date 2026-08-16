@@ -28,6 +28,19 @@ void main() {
     expect(owners, <String>['app/bootstrap/app_bootstrap.dart']);
   });
 
+  test('production bootstrap entry stays override-free', () {
+    final main = sources['main.dart']!;
+    final bootstrap = sources['app/bootstrap/app_bootstrap.dart']!;
+
+    // The production entry point invokes the bootstrap without any seam:
+    // gateway and picker overrides are test-only constructor options.
+    expect(main, contains('bootstrapArgus()'));
+    expect(main, isNot(contains('libraryFolderPicker')));
+    expect(main, isNot(contains('clientGatewayFactory')));
+    expect(bootstrap, contains('void bootstrapArgus()'));
+    expect(bootstrap, contains('runApp(const ArgusBootstrap());'));
+  });
+
   test('generated provider declarations have adjacent generated sources', () {
     final generatedProviderFiles = sources.entries
         .where((entry) => RegExp(r'@Riverpod|@riverpod').hasMatch(entry.value))
@@ -680,6 +693,173 @@ void main() {
       '${Directory.current.path}/lib/core/bridge/generated/lib.dart',
     ).readAsStringSync();
     expect(generated, isNot(contains('state: RuntimeStateDto')));
+  });
+
+  test('sources and jobs production code never takes native filesystem '
+      'authority', () {
+    // Flutter Sources/Jobs feature code must stay a consumer of focused typed
+    // APIs. Direct filesystem authority (traversal, canonicalization,
+    // platform path interpretation, or native filesystem objects) lives in
+    // the LocalFilesystem provider and the bridge layer. The approved picker
+    // seam may return an untrusted selected folder value through
+    // LocalFilesystemRootSelection, but it never gains filesystem authority.
+    const forbiddenConcepts = <String>[
+      'dart:io',
+      'File(',
+      'Directory(',
+      'FileSystemEntity',
+      '.listSync(',
+      '.list(',
+      'canonicalize',
+      'Platform.',
+    ];
+    for (final entry in sources.entries) {
+      final isSourcesOrJobs =
+          entry.key.startsWith('features/sources/') ||
+          entry.key.startsWith('features/jobs/');
+      if (!isSourcesOrJobs) continue;
+      for (final concept in forbiddenConcepts) {
+        expect(
+          entry.value,
+          isNot(contains(concept)),
+          reason: '${entry.key} must not hold filesystem authority',
+        );
+      }
+    }
+  });
+
+  test('provider-native filesystem vocabulary never leaks into Flutter-facing '
+      'contracts', () {
+    // Native inode/file-ID facts, reparse-point implementation vocabulary,
+    // and provider path-parsing APIs are provider-owned. Public Flutter-facing
+    // focused APIs and models expose only opaque application identity and
+    // safe presentation facts; opaque values remain opaque.
+    const forbiddenConcepts = <String>[
+      'inode',
+      'fileId',
+      'file_id',
+      'reparse',
+      'dev_t',
+      'ino(',
+      'deviceId',
+    ];
+    for (final entry in sources.entries) {
+      if (entry.key.startsWith('core/bridge/')) continue;
+      for (final concept in forbiddenConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
+      }
+    }
+  });
+
+  test('only app-level coordinators own sources and jobs event continuity', () {
+    const sourcesCoordinator = 'app/bootstrap/sources_event_coordinator.dart';
+    const jobsCoordinator = 'app/bootstrap/jobs_event_coordinator.dart';
+    const forbiddenConcepts = <String>[
+      'EventsApi',
+      'RuntimeEvent',
+      'RuntimeEventPayload',
+      'event.sequence',
+      '_lastSequence',
+      'gap',
+      'reconnect',
+      'runtimeEventsProvider',
+      'subscribeEvents',
+    ];
+    for (final entry in sources.entries) {
+      final isCoordinator =
+          entry.key == sourcesCoordinator || entry.key == jobsCoordinator;
+      final isSourcesOrJobs =
+          entry.key.startsWith('features/sources/') ||
+          entry.key.startsWith('features/jobs/');
+      if (!isSourcesOrJobs || isCoordinator) continue;
+      for (final concept in forbiddenConcepts) {
+        expect(
+          entry.value,
+          isNot(contains(concept)),
+          reason: '${entry.key} owns no native event subscription',
+        );
+      }
+    }
+
+    final sourcesCoordinatorSource = sources[sourcesCoordinator]!;
+    expect(sourcesCoordinatorSource, contains('runtimeEventsProvider'));
+    expect(
+      sourcesCoordinatorSource,
+      contains('SourcesReconciliationDemandSource'),
+    );
+    final jobsCoordinatorSource = sources[jobsCoordinator]!;
+    expect(jobsCoordinatorSource, contains('runtimeEventsProvider'));
+    expect(jobsCoordinatorSource, contains('JobsReconciliationDemandSource'));
+  });
+
+  test('sources and jobs authority flows only through focused composition', () {
+    // The runtime client instance is reachable only from the app bootstrap
+    // composition; features consume focused API providers instead.
+    for (final entry in sources.entries) {
+      if (entry.key.startsWith('app/bootstrap/')) continue;
+      expect(
+        entry.value,
+        isNot(contains('argusClientProvider')),
+        reason: entry.key,
+      );
+    }
+
+    // The Sources-owned Jobs seam is a bootstrap override; feature barrels may
+    // re-export the provider token but never supply the implementation.
+    for (final entry in sources.entries) {
+      if (entry.key == 'app/bootstrap/app_bootstrap.dart') continue;
+      expect(
+        entry.value,
+        isNot(contains('sourcesJobsApiProvider.overrideWith')),
+        reason: entry.key,
+      );
+    }
+
+    // No duplicate mutable source/job repository or cache authority may appear
+    // in feature code; durable state authority remains Rust/SQLite.
+    for (final entry in sources.entries) {
+      final isSourcesOrJobs =
+          entry.key.startsWith('features/sources/') ||
+          entry.key.startsWith('features/jobs/');
+      if (!isSourcesOrJobs) continue;
+      for (final concept in <String>[
+        'sqlite',
+        'Repository(',
+        'Cache(',
+        'event.payload',
+      ]) {
+        expect(
+          entry.value,
+          isNot(contains(concept)),
+          reason: '${entry.key} holds no duplicate authority',
+        );
+      }
+    }
+  });
+
+  test('no later-phase implementation concept has leaked into production', () {
+    // Phase 002+ families (game-content parsing, hashing, metadata/artwork
+    // enrichment, RetroAchievements, filesystem watching, additional source
+    // providers) must not appear in production sources. Tokens are chosen to
+    // avoid false positives from ordinary prose or generated output.
+    const forbiddenConcepts = <String>[
+      'RetroAchievements',
+      'achievement',
+      'artwork',
+      'crc32',
+      'sha256',
+      'FileSystemWatcher',
+      'WatchEvent',
+      'Watcher(',
+      'GameContent',
+      'parseRom',
+      'SourceProviderType',
+    ];
+    for (final entry in sources.entries) {
+      for (final concept in forbiddenConcepts) {
+        expect(entry.value, isNot(contains(concept)), reason: entry.key);
+      }
+    }
   });
 }
 

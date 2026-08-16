@@ -21,6 +21,7 @@ void main() {
     FakeEventsApi? events,
     AppTerminator? terminator,
     DiagnosticsDestinationPicker? picker,
+    StartupPresentationCapabilities? capabilities,
   }) async {
     final container = ProviderContainer(
       overrides: [
@@ -34,6 +35,10 @@ void main() {
           appTerminatorProvider.overrideWithValue(terminator),
         if (picker != null)
           diagnosticsDestinationPickerProvider.overrideWithValue(picker),
+        if (capabilities != null)
+          startupPresentationCapabilitiesProvider.overrideWithValue(
+            capabilities,
+          ),
       ],
     );
     addTearDown(container.dispose);
@@ -134,6 +139,81 @@ void main() {
     await tester.pump();
     expect(retry.focusNode?.hasFocus, isTrue);
   });
+
+  testWidgets('Android capabilities hide Export and Open Directory even when '
+      'advertised', (tester) async {
+    final bootstrap = FakeClientBootstrap();
+    final container = await pumpView(
+      tester,
+      view: StartupFailureView(state: failedStartupState(id: 'a')),
+      bootstrap: bootstrap,
+      capabilities: const StartupPresentationCapabilities(
+        diagnosticsExport: false,
+        openDataDirectory: false,
+      ),
+    );
+    await seedFailed(tester, container, bootstrap);
+
+    expect(
+      find.byKey(const ValueKey<String>('export-diagnostics-button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('open-data-directory-button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('retry-startup-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('reset-appearance-settings-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('copy-technical-details-button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('exit-application-button')),
+      findsOneWidget,
+    );
+
+    // Suppression is presentation-only: backend recovery advertisement
+    // remains untouched.
+    final state = container.read(startupControllerProvider).value;
+    expect(state, isA<StartupStateStartupFailed>());
+    expect(
+      (state as StartupStateStartupFailed).failure.recoveryActions,
+      hasLength(6),
+    );
+  });
+
+  testWidgets(
+    'default capabilities preserve advertised Export and Open actions',
+    (tester) async {
+      final bootstrap = FakeClientBootstrap();
+      final container = await pumpView(
+        tester,
+        view: StartupFailureView(state: failedStartupState(id: 'a')),
+        bootstrap: bootstrap,
+        capabilities: const StartupPresentationCapabilities(
+          diagnosticsExport: true,
+          openDataDirectory: true,
+        ),
+      );
+      await seedFailed(tester, container, bootstrap);
+
+      expect(
+        find.byKey(const ValueKey<String>('export-diagnostics-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('open-data-directory-button')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('recovery view renders all advertised actions in order', (
     tester,

@@ -14,6 +14,7 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
     frb.RustLibApi? api,
     Future<void> Function()? initializeNative,
     String? dataDirectoryOverride,
+    String? standardApplicationDataDirectory,
     Stream<dto.RuntimeEventDto> Function()? eventStreamFactory,
   }) : // The public seam keeps callers independent of private field names.
        // ignore: prefer_initializing_formals
@@ -22,11 +23,14 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
        // ignore: prefer_initializing_formals
        _dataDirectoryOverride = dataDirectoryOverride,
        // ignore: prefer_initializing_formals
+       _standardApplicationDataDirectory = standardApplicationDataDirectory,
+       // ignore: prefer_initializing_formals
        _eventStreamFactory = eventStreamFactory;
 
   final frb.RustLibApi? _api;
   final Future<void> Function() _initializeNative;
   final String? _dataDirectoryOverride;
+  final String? _standardApplicationDataDirectory;
   final Stream<dto.RuntimeEventDto> Function()? _eventStreamFactory;
   Future<void>? _initialization;
 
@@ -50,9 +54,14 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   }
 
   /// Uses process-linked symbols on macOS and the conventional executable
-  /// sibling library location on Windows/Linux. The generated FRB loader
-  /// remains the fallback for development/test layouts.
+  /// sibling library location on Windows/Linux. Android loads the packaged
+  /// native library through the generated FRB loader; the generated loader
+  /// remains the fallback for development/test layouts on other platforms.
   static Future<void> _initializeFrb() async {
+    if (Platform.isAndroid) {
+      await frb.RustLib.init();
+      return;
+    }
     if (Platform.isMacOS) {
       await frb.RustLib.init(
         externalLibrary: frb_io.ExternalLibrary.process(iKnowHowToUseIt: true),
@@ -80,11 +89,20 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
 
   @override
   Future<RuntimeState> initialize() => _call(() async {
-    final dto = _dataDirectoryOverride == null
-        ? await _rustApi.crateInitialize()
-        : await _rustApi.crateInitializeWithDataDirectory(
-            dataDirectory: _dataDirectoryOverride,
-          );
+    final dto = switch ((
+      _dataDirectoryOverride,
+      _standardApplicationDataDirectory,
+    )) {
+      (final String override, _) =>
+        await _rustApi.crateInitializeWithDataDirectory(
+          dataDirectory: override,
+        ),
+      (null, final String standard) =>
+        await _rustApi.crateInitializeWithStandardDataDirectory(
+          dataDirectory: standard,
+        ),
+      (null, null) => await _rustApi.crateInitialize(),
+    };
     return runtimeStateFromDto(dto);
   });
 

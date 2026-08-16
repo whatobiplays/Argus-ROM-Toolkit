@@ -780,6 +780,16 @@ pub fn initialize_with_data_directory(
     ))
 }
 
+/// Initializes the host with a host-supplied standard application-data root.
+#[allow(clippy::result_large_err)]
+pub fn initialize_with_standard_data_directory(
+    data_directory: String,
+) -> Result<RuntimeStateDto, ApplicationErrorDto> {
+    initialize_with_options(
+        argus_runtime::KernelBootstrapOptions::with_standard_data_directory(data_directory),
+    )
+}
+
 #[allow(clippy::result_large_err)]
 fn initialize_with_options(
     options: argus_runtime::KernelBootstrapOptions,
@@ -1271,24 +1281,37 @@ pub fn subscribe_events(
             }
         },
     };
-    loop {
-        match subscription.recv() {
-            Ok(event) => sink
-                .add(runtime_event_dto(&event))
-                .map_err(|_| BridgeTransportError::EventStreamClosed)?,
-            Err(RuntimeEventStreamError::Closed) => {
-                // A closed runtime connection is an expected lifecycle outcome
-                // (shutdown or generation replacement), not a transport
-                // failure.
-                return Ok(());
+    // Event forwarding runs on a dedicated thread rather than occupying the
+    // FRB handler executor. FRB sizes its pool from the host CPU count, so a
+    // blocking subscription loop on the handler thread would starve every
+    // later bridge call on low-core Android devices.
+    std::thread::Builder::new()
+        .name("argus-event-forward".to_owned())
+        .spawn(move || {
+            loop {
+                match subscription.recv() {
+                    Ok(event) => {
+                        if sink.add(runtime_event_dto(&event)).is_err() {
+                            // The Dart side closed or cancelled the stream;
+                            // stop forwarding and let the subscription drop.
+                            return;
+                        }
+                    }
+                    Err(RuntimeEventStreamError::Closed) => {
+                        // A closed runtime connection is an expected lifecycle
+                        // outcome (shutdown or generation replacement).
+                        return;
+                    }
+                    Err(RuntimeEventStreamError::Internal) => {
+                        // Poisoned internal synchronization state cannot be
+                        // recovered; stop forwarding.
+                        return;
+                    }
+                }
             }
-            Err(RuntimeEventStreamError::Internal) => {
-                // Poisoned internal synchronization state is a genuine
-                // transport failure, never a normal completion.
-                return Err(BridgeTransportError::EventStreamClosed);
-            }
-        }
-    }
+        })
+        .expect("event forwarding thread spawn");
+    Ok(())
 }
 
 /// Maps a subscription-establishment failure to its transport projection.
@@ -1323,6 +1346,24 @@ mod tests {
         let error = subscribe_error(ErrorCode::InternalUnexpected);
 
         assert!(classify_subscribe_error(&error).is_some());
+    }
+
+    #[test]
+    fn android_platform_safe_context_serializes_to_android() {
+        use argus_application::{PlatformClass, SafeContextField, SafeContextValue};
+
+        let mut context = SafeContext::new();
+        context
+            .try_insert(
+                SafeContextField::Platform,
+                SafeContextValue::Platform(PlatformClass::Android),
+            )
+            .expect("android platform field");
+
+        let entries = super::safe_context_entries(&context);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].field, "platform");
+        assert_eq!(entries[0].value, "android");
     }
 }
 
@@ -2162,6 +2203,7 @@ fn safe_context_value_name(value: &SafeContextValue) -> String {
             PlatformClass::Windows => "windows".to_owned(),
             PlatformClass::MacOs => "macos".to_owned(),
             PlatformClass::Unix => "unix".to_owned(),
+            PlatformClass::Android => "android".to_owned(),
         },
         SafeContextValue::Architecture(architecture) => match architecture {
             ArchitectureClass::X8664 => "x86_64".to_owned(),

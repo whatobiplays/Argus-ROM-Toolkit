@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
+import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
 import '../../core/client/jobs_gateway_stub.dart';
 import '../../core/client/sources_gateway_stub.dart';
@@ -8,6 +9,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('gateway factory wires the standard data directory provider', () {
+    final container = ProviderContainer(
+      overrides: [
+        standardApplicationDataDirectoryProvider.overrideWithValue(
+          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final gateway = container.read(argusClientGatewayFactoryProvider)();
+
+    expect(gateway, isA<FrbArgusClientGateway>());
+  });
+
+  test('default gateway factory supplies no standard data directory', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(standardApplicationDataDirectoryProvider), isNull);
+    expect(
+      container.read(argusClientGatewayFactoryProvider)(),
+      isA<FrbArgusClientGateway>(),
+    );
+  });
+
   test('host replacement retires the old client before publishing', () async {
     final gatewayA = _FakeGateway();
     final gatewayB = _FakeGateway();

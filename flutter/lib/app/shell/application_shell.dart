@@ -42,13 +42,11 @@ class ApplicationShell extends ConsumerWidget {
 
     return switch (sizeClass) {
       WindowSizeClass.compact => _CompactShell(
+        currentDestination: currentDestination,
         activeSummary: activeSummary,
         onJobsSelected: onJobsSelected,
-        onMoreSelected: (destination) => switch (destination) {
-          AppDestination.settings => onSettingsSelected(),
-          AppDestination.sources => onSourcesSelected(),
-          AppDestination.jobs => onJobsSelected(),
-        },
+        onSettingsSelected: onSettingsSelected,
+        onSourcesSelected: onSourcesSelected,
         child: child,
       ),
       WindowSizeClass.medium => _RailShell(
@@ -158,70 +156,57 @@ class _BranchAwareShellState extends ConsumerState<BranchAwareShell> {
 
 class _CompactShell extends StatelessWidget {
   const _CompactShell({
+    required this.currentDestination,
     required this.activeSummary,
     required this.onJobsSelected,
-    required this.onMoreSelected,
+    required this.onSettingsSelected,
+    required this.onSourcesSelected,
     required this.child,
   });
 
+  final AppDestination? currentDestination;
   final ActiveJobSummary activeSummary;
   final VoidCallback onJobsSelected;
-  final void Function(AppDestination destination) onMoreSelected;
+  final VoidCallback onSettingsSelected;
+  final VoidCallback onSourcesSelected;
   final Widget child;
-
-  Future<void> _showMore(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.folder_outlined),
-                title: const Text('Sources'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onMoreSelected(AppDestination.sources);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: const Text('Settings'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onMoreSelected(AppDestination.settings);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = switch (currentDestination) {
+      AppDestination.sources => 0,
+      AppDestination.jobs => 1,
+      AppDestination.settings => 2,
+      null => 0,
+    };
     return Scaffold(
       body: child,
-      bottomNavigationBar: BottomAppBar(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            _JobsIndicator(summary: activeSummary, onPressed: onJobsSelected),
-            const SizedBox(width: 8),
-            Semantics(
-              button: true,
-              label: 'More',
-              child: IconButton(
-                key: const ValueKey<String>('compact-more-button'),
-                icon: const Icon(Icons.more_horiz),
-                tooltip: 'More',
-                onPressed: () => _showMore(context),
-              ),
-            ),
-          ],
-        ),
+      bottomNavigationBar: NavigationBar(
+        key: const ValueKey<String>('compact-navigation-bar'),
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (index) {
+          switch (index) {
+            case 0:
+              onSourcesSelected();
+            case 1:
+              onJobsSelected();
+            case 2:
+              onSettingsSelected();
+          }
+        },
+        destinations: <NavigationDestination>[
+          const NavigationDestination(
+            icon: Icon(Icons.folder_outlined),
+            selectedIcon: Icon(Icons.folder),
+            label: 'Sources',
+          ),
+          jobsNavigationDestination(activeSummary),
+          const NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
       ),
     );
   }
@@ -314,32 +299,21 @@ NavigationRailDestination _jobsRailDestination(ActiveJobSummary summary) {
   );
 }
 
-class _JobsIndicator extends StatelessWidget {
-  const _JobsIndicator({required this.summary, required this.onPressed});
-
-  final ActiveJobSummary summary;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: summary.activeCount == 0
-          ? 'Jobs'
-          : 'Jobs, ${summary.activeCount} active',
-      child: IconButton(
-        key: const ValueKey<String>('compact-jobs-indicator'),
-        icon: summary.activeCount > 0
-            ? Badge(
-                label: Text('${summary.activeCount}'),
-                child: const Icon(Icons.receipt_long_outlined),
-              )
-            : const Icon(Icons.receipt_long_outlined),
-        tooltip: summary.activeCount == 0
-            ? 'Jobs'
-            : 'Jobs (${summary.activeCount} active)',
-        onPressed: onPressed,
-      ),
-    );
-  }
+NavigationDestination jobsNavigationDestination(ActiveJobSummary summary) {
+  final icon = summary.activeCount > 0
+      ? Badge(
+          label: Text('${summary.activeCount}'),
+          child: const Icon(Icons.receipt_long_outlined),
+        )
+      : const Icon(Icons.receipt_long_outlined);
+  return NavigationDestination(
+    icon: icon,
+    selectedIcon: summary.activeCount > 0
+        ? Badge(
+            label: Text('${summary.activeCount}'),
+            child: const Icon(Icons.receipt_long),
+          )
+        : const Icon(Icons.receipt_long),
+    label: 'Jobs',
+  );
 }

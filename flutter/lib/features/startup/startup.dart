@@ -44,5 +44,7 @@ export 'presentation/presentation_seams.dart'
         AppTerminator,
         DiagnosticsDestinationPicker,
         appTerminatorProvider,
-        diagnosticsDestinationPickerProvider;
+        diagnosticsDestinationPickerProvider,
+        StartupPresentationCapabilities,
+        startupPresentationCapabilitiesProvider;
 export 'presentation/startup_gate.dart' show StartupGate;

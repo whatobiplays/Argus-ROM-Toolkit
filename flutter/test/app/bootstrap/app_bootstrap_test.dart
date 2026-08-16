@@ -4,7 +4,10 @@ import 'package:argus/app/bootstrap/app_bootstrap.dart';
 import 'package:argus/app/bootstrap/appearance_event_coordinator.dart';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
+import 'package:argus/app/platform/native/desktop_platform_host_api.dart';
+import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/app/routing/app_router.dart';
+import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/sources/sources.dart';
 import '../../core/client/jobs_gateway_stub.dart';
@@ -21,6 +24,14 @@ import '../../features/settings/appearance_settings_test_fakes.dart';
 import '../../features/startup/startup_test_fakes.dart';
 
 void main() {
+  final androidSnapshot = PlatformHostSnapshot(
+    allFilesAccessRequired: true,
+    allFilesAccessGranted: false,
+    notificationAuthorization: NotificationAuthorization.promptRequired,
+    standardApplicationDataDirectory:
+        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+  );
+
   testWidgets('ArgusBootstrap owns exactly one root ProviderScope', (
     tester,
   ) async {
@@ -93,6 +104,137 @@ void main() {
     expect(find.byType(ProviderScope), findsOneWidget);
     final picked = await container.read(libraryFolderPickerProvider)();
     expect(picked?.selectedFolderPath, '/test-owned/folder');
+  });
+
+  testWidgets(
+    'Android readiness gate blocks backend initialization until Ready',
+    (tester) async {
+      final platformApi = _ReadinessPlatformHostApi(androidSnapshot);
+      final pendingGateway = _PendingGateway();
+
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          platformHostComposition: PlatformHostComposition(
+            api: platformApi,
+            requiresReadinessGate: true,
+          ),
+          clientGatewayFactory: () => pendingGateway,
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(pendingGateway.initializeCalls, 0);
+      expect(container.read(platformHostApiProvider), same(platformApi));
+
+      platformApi.snapshot = PlatformHostSnapshot(
+        allFilesAccessRequired: true,
+        allFilesAccessGranted: true,
+        notificationAuthorization: NotificationAuthorization.notRequired,
+        standardApplicationDataDirectory:
+            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+      );
+      await container
+          .read(platformReadinessControllerProvider.notifier)
+          .refresh();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(pendingGateway.initializeCalls, 1);
+      expect(
+        container.read(standardApplicationDataDirectoryProvider),
+        isNull,
+        reason:
+            'a supplied clientGatewayFactory is authoritative and '
+            'bypasses the production standard-data seam',
+      );
+      expect(
+        container.read(startupPresentationCapabilitiesProvider),
+        const StartupPresentationCapabilities(
+          diagnosticsExport: false,
+          openDataDirectory: false,
+        ),
+      );
+    },
+  );
+
+  testWidgets(
+    'Android production seam passes standard data to the gateway factory',
+    (tester) async {
+      final platformApi = _ReadinessPlatformHostApi(
+        PlatformHostSnapshot(
+          allFilesAccessRequired: true,
+          allFilesAccessGranted: true,
+          notificationAuthorization: NotificationAuthorization.notRequired,
+          standardApplicationDataDirectory:
+              '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        ),
+      );
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          platformHostComposition: PlatformHostComposition(
+            api: platformApi,
+            requiresReadinessGate: true,
+          ),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(
+        container.read(standardApplicationDataDirectoryProvider),
+        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+      );
+      expect(
+        container.read(argusClientGatewayFactoryProvider)(),
+        isA<FrbArgusClientGateway>(),
+      );
+    },
+  );
+
+  testWidgets('Android production composition keeps root selection inert', (
+    tester,
+  ) async {
+    final platformApi = _ReadinessPlatformHostApi(androidSnapshot);
+    await tester.pumpWidget(
+      ArgusBootstrap(
+        platformHostComposition: PlatformHostComposition(
+          api: platformApi,
+          requiresReadinessGate: true,
+        ),
+        clientGatewayFactory: () => _PendingGateway(),
+      ),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArgusApp)),
+      listen: false,
+    );
+
+    final picker = container.read(libraryFolderPickerProvider);
+    expect(await picker(), isNull);
+  });
+
+  testWidgets('desktop composition requires no readiness gate', (tester) async {
+    await tester.pumpWidget(const ArgusBootstrap());
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArgusApp)),
+      listen: false,
+    );
+
+    expect(
+      container.read(platformHostApiProvider),
+      isA<DesktopPlatformHostApi>(),
+    );
+    expect(container.read(standardApplicationDataDirectoryProvider), isNull);
   });
 
   testWidgets('root composition blocks until authoritative backend Ready', (
@@ -260,4 +402,20 @@ final class _PendingGateway
   @override
   Future<EventBindResult> subscribeEvents(RuntimeInstanceId generation) =>
       Future<EventBindResult>.error(UnimplementedError());
+}
+
+final class _ReadinessPlatformHostApi implements PlatformHostApi {
+  _ReadinessPlatformHostApi(this.snapshot);
+
+  PlatformHostSnapshot snapshot;
+
+  @override
+  Future<void> openAllFilesAccessSettings() async {}
+
+  @override
+  Future<PlatformHostSnapshot> readSnapshot() async => snapshot;
+
+  @override
+  Future<NotificationAuthorization> requestNotificationPermission() async =>
+      NotificationAuthorization.promptRequired;
 }

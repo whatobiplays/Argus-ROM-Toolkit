@@ -447,6 +447,7 @@ fn platform_name(value: argus_application::PlatformClass) -> &'static str {
         argus_application::PlatformClass::Windows => "windows",
         argus_application::PlatformClass::MacOs => "macos",
         argus_application::PlatformClass::Unix => "unix",
+        argus_application::PlatformClass::Android => "android",
     }
 }
 
@@ -613,5 +614,10 @@ mod tests {
     fn health_json_uses_stable_state_names() {
         let json = health_json(&[]);
         assert_eq!(json, "{\"subsystems\":[]}");
+    }
+
+    #[test]
+    fn android_platform_class_serializes_to_bounded_value() {
+        assert_eq!(super::platform_name(PlatformClass::Android), "android");
     }
 }

@@ -60,6 +60,16 @@ class _StartupFailureViewState extends ConsumerState<StartupFailureView> {
   bool _advertises(RecoveryActionKind kind) =>
       widget.state.failure.recoveryActions.any((action) => action.kind == kind);
 
+  bool _renders(RecoveryActionKind kind) {
+    if (!_advertises(kind)) return false;
+    final capabilities = ref.watch(startupPresentationCapabilitiesProvider);
+    return switch (kind) {
+      RecoveryActionKind.exportDiagnostics => capabilities.diagnosticsExport,
+      RecoveryActionKind.openDataDirectory => capabilities.openDataDirectory,
+      _ => true,
+    };
+  }
+
   RecoveryActionKind get _primaryAction {
     if (_advertises(RecoveryActionKind.resetAppearanceSettings)) {
       return RecoveryActionKind.resetAppearanceSettings;
@@ -187,7 +197,7 @@ class _StartupFailureViewState extends ConsumerState<StartupFailureView> {
                         child: const Text('Retry Startup'),
                       ),
                     ],
-                    if (_advertises(RecoveryActionKind.exportDiagnostics))
+                    if (_renders(RecoveryActionKind.exportDiagnostics))
                       ..._exportAction(
                         context,
                         mutationRunning,
@@ -203,7 +213,7 @@ class _StartupFailureViewState extends ConsumerState<StartupFailureView> {
                         detailsLoaded,
                         detailsError,
                       ),
-                    if (_advertises(RecoveryActionKind.openDataDirectory))
+                    if (_renders(RecoveryActionKind.openDataDirectory))
                       ..._openDirectoryAction(
                         context,
                         mutationRunning,
@@ -211,15 +221,13 @@ class _StartupFailureViewState extends ConsumerState<StartupFailureView> {
                         openError,
                       ),
                     if (_advertises(RecoveryActionKind.exit)) ...<Widget>[
-                      if (_advertises(RecoveryActionKind.retryStartup) ||
-                          _advertises(
+                      if (_renders(RecoveryActionKind.retryStartup) ||
+                          _renders(
                             RecoveryActionKind.resetAppearanceSettings,
                           ) ||
-                          _advertises(RecoveryActionKind.exportDiagnostics) ||
-                          _advertises(
-                            RecoveryActionKind.copyTechnicalDetails,
-                          ) ||
-                          _advertises(RecoveryActionKind.openDataDirectory))
+                          _renders(RecoveryActionKind.exportDiagnostics) ||
+                          _renders(RecoveryActionKind.copyTechnicalDetails) ||
+                          _renders(RecoveryActionKind.openDataDirectory))
                         const SizedBox(height: 12),
                       TextButton(
                         key: const ValueKey<String>('exit-application-button'),

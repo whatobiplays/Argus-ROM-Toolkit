@@ -1,3 +1,4 @@
+import 'package:argus/core/bridge/generated/frb_generated.dart' as frb;
 import 'package:argus/core/bridge/generated/lib.dart' as dto;
 import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
@@ -257,6 +258,58 @@ void main() {
       );
     },
   );
+
+  test(
+    'data-directory override precedes host-standard Android data directory',
+    () async {
+      final api = _RecordingRustLibApi();
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+        dataDirectoryOverride: '/tmp/explicit',
+        standardApplicationDataDirectory:
+            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+      );
+
+      await gateway.initialize();
+
+      expect(api.lastCall, 'crateInitializeWithDataDirectory');
+      expect(api.lastArgument, '/tmp/explicit');
+    },
+  );
+
+  test(
+    'host-standard Android data directory is used without an override',
+    () async {
+      final api = _RecordingRustLibApi();
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+        standardApplicationDataDirectory:
+            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+      );
+
+      await gateway.initialize();
+
+      expect(api.lastCall, 'crateInitializeWithStandardDataDirectory');
+      expect(
+        api.lastArgument,
+        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+      );
+    },
+  );
+
+  test('plain initialization calls the default bridge entrypoint', () async {
+    final api = _RecordingRustLibApi();
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+    );
+
+    await gateway.initialize();
+
+    expect(api.lastCall, 'crateInitialize');
+  });
 
   test('startup failure state requires matching authoritative context', () {
     expect(
@@ -719,4 +772,33 @@ void main() {
       SourceEntryClassification.supportingEntry,
     );
   });
+}
+
+/// Records the generated bridge entrypoint invoked by the gateway without
+/// loading any native library.
+final class _RecordingRustLibApi implements frb.RustLibApi {
+  String? lastCall;
+  Object? lastArgument;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    final method = invocation.memberName;
+    if (method == #crateInitializeWithDataDirectory) {
+      lastCall = 'crateInitializeWithDataDirectory';
+      lastArgument = invocation.namedArguments[const Symbol('dataDirectory')];
+    } else if (method == #crateInitializeWithStandardDataDirectory) {
+      lastCall = 'crateInitializeWithStandardDataDirectory';
+      lastArgument = invocation.namedArguments[const Symbol('dataDirectory')];
+    } else if (method == #crateInitialize) {
+      lastCall = 'crateInitialize';
+    }
+    return Future<dto.RuntimeStateDto>.value(
+      const dto.RuntimeStateDto(
+        runtimeInstanceId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        lifecycleState: dto.RuntimeLifecycleDto.ready,
+        startupPhase: null,
+        startupFailure: null,
+      ),
+    );
+  }
 }

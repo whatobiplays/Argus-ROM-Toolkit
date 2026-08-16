@@ -6,10 +6,22 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'client_bootstrap.g.dart';
 
+/// Host-supplied standard application-data directory for production startup.
+///
+/// Desktop production leaves this null and uses the existing platform
+/// defaults; Android app composition supplies the app-private root from the
+/// latched platform runtime configuration before the client is created.
+@Riverpod(keepAlive: true)
+String? standardApplicationDataDirectory(Ref ref) => null;
+
 /// Creates a fresh bridge adapter for each root-client generation.
 @Riverpod(keepAlive: true)
-ArgusClientGateway Function() argusClientGatewayFactory(Ref ref) =>
-    FrbArgusClientGateway.new;
+ArgusClientGateway Function() argusClientGatewayFactory(Ref ref) {
+  final standardDirectory = ref.watch(standardApplicationDataDirectoryProvider);
+  return () => FrbArgusClientGateway(
+    standardApplicationDataDirectory: standardDirectory,
+  );
+}
 
 /// App-lifetime owner of the single active root [ArgusClient].
 ///

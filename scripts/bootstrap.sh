@@ -26,6 +26,10 @@ rustup toolchain install "$rust_channel" \
   --component clippy \
   --component rustfmt
 
+rustup target add --toolchain "$rust_channel" \
+  aarch64-linux-android \
+  x86_64-linux-android
+
 bash "$ROOT_DIR/scripts/run_rust.sh" cargo fetch --manifest-path "$ROOT_DIR/rust/Cargo.toml" --locked
 
 (
@@ -33,5 +37,10 @@ bash "$ROOT_DIR/scripts/run_rust.sh" cargo fetch --manifest-path "$ROOT_DIR/rust
   fvm install
   fvm flutter pub get --enforce-lockfile
 )
+
+if [[ ! -x "$ROOT_DIR/.dart_tool/cargo-ndk/bin/cargo-ndk" ]]; then
+  bash "$ROOT_DIR/scripts/run_rust.sh" cargo install cargo-ndk \
+    --version 4.1.2 --locked --root "$ROOT_DIR/.dart_tool/cargo-ndk"
+fi
 
 printf 'Argus bootstrap complete.\n'

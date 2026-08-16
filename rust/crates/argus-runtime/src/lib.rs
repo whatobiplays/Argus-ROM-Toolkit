@@ -74,11 +74,14 @@ pub(crate) enum Platform {
     Windows,
     MacOs,
     Unix,
+    Android,
 }
 
 impl Platform {
     fn current() -> Self {
-        if cfg!(target_os = "windows") {
+        if cfg!(target_os = "android") {
+            Self::Android
+        } else if cfg!(target_os = "windows") {
             Self::Windows
         } else if cfg!(target_os = "macos") {
             Self::MacOs
@@ -117,12 +120,17 @@ pub(crate) fn resolve_data_directory(
     local_app_data: Option<&Path>,
     xdg_data_home: Option<&Path>,
     override_directory: Option<PathBuf>,
+    standard_data_directory: Option<PathBuf>,
 ) -> Result<PathBuf, DataDirectoryError> {
     if let Some(directory) = override_directory {
         if !directory.is_absolute() || has_dot_component(&directory) {
             return Err(DataDirectoryError::InvalidOverride);
         }
         validate_absolute_root(&directory, DataDirectoryError::InvalidOverride)?;
+        return Ok(directory);
+    }
+    if let Some(directory) = standard_data_directory {
+        validate_absolute_root(&directory, DataDirectoryError::InvalidRoot)?;
         return Ok(directory);
     }
     match platform {
@@ -150,6 +158,7 @@ pub(crate) fn resolve_data_directory(
                 .unwrap_or(Err(DataDirectoryError::MissingHome))
             }
         }
+        Platform::Android => Err(DataDirectoryError::Unavailable),
     }
 }
 
@@ -176,6 +185,8 @@ fn has_dot_component(directory: &Path) -> bool {
 pub struct KernelBootstrapOptions {
     /// Optional absolute root used by tests or an embedding host.
     pub data_directory_override: Option<PathBuf>,
+    /// Optional host-supplied standard application-data root (Android).
+    pub standard_data_directory: Option<PathBuf>,
 }
 
 impl KernelBootstrapOptions {
@@ -183,6 +194,15 @@ impl KernelBootstrapOptions {
     pub fn with_data_directory(directory: impl Into<PathBuf>) -> Self {
         Self {
             data_directory_override: Some(directory.into()),
+            standard_data_directory: None,
+        }
+    }
+
+    /// Creates options with a host-supplied standard application-data root.
+    pub fn with_standard_data_directory(directory: impl Into<PathBuf>) -> Self {
+        Self {
+            data_directory_override: None,
+            standard_data_directory: Some(directory.into()),
         }
     }
 }
@@ -1346,6 +1366,9 @@ pub fn bootstrap_kernel_with_event_bus(
 ) -> Result<KernelBootstrap, KernelBootstrapFailure> {
     let trace_id = new_trace_id();
     let context = startup_context(trace_id);
+    // Host-standard data (including the Android production root) remains
+    // StandardApplicationData; only the explicit test/embedding seam is
+    // classified as an override.
     let path_class = if options.data_directory_override.is_some() {
         PathClass::ExplicitOverride
     } else {
@@ -1375,6 +1398,7 @@ pub fn bootstrap_kernel_with_event_bus(
         local_app_data.as_deref(),
         xdg_data_home.as_deref(),
         options.data_directory_override,
+        options.standard_data_directory,
     )
     .map_err(|_| {
         failure(
@@ -1639,6 +1663,7 @@ pub(crate) fn platform_class(platform: Platform) -> PlatformClass {
         Platform::Windows => PlatformClass::Windows,
         Platform::MacOs => PlatformClass::MacOs,
         Platform::Unix => PlatformClass::Unix,
+        Platform::Android => PlatformClass::Android,
     }
 }
 
@@ -1845,22 +1870,29 @@ mod tests {
         let xdg = PathBuf::from("/tmp/xdg-data");
 
         assert_eq!(
-            resolve_data_directory(Platform::Windows, Some(&home), Some(&local), None, None)
-                .expect("Windows data root"),
+            resolve_data_directory(
+                Platform::Windows,
+                Some(&home),
+                Some(&local),
+                None,
+                None,
+                None
+            )
+            .expect("Windows data root"),
             local.join("Argus ROM Toolkit")
         );
         assert_eq!(
-            resolve_data_directory(Platform::MacOs, Some(&home), None, None, None)
+            resolve_data_directory(Platform::MacOs, Some(&home), None, None, None, None)
                 .expect("macOS data root"),
             home.join("Library/Application Support/Argus ROM Toolkit")
         );
         assert_eq!(
-            resolve_data_directory(Platform::Unix, Some(&home), None, Some(&xdg), None)
+            resolve_data_directory(Platform::Unix, Some(&home), None, Some(&xdg), None, None)
                 .expect("XDG data root"),
             xdg.join("argus-rom-toolkit")
         );
         assert_eq!(
-            resolve_data_directory(Platform::Unix, Some(&home), None, None, None)
+            resolve_data_directory(Platform::Unix, Some(&home), None, None, None, None)
                 .expect("Unix fallback data root"),
             home.join(".local/share/argus-rom-toolkit")
         );
@@ -1875,6 +1907,7 @@ mod tests {
                 None,
                 None,
                 Some(PathBuf::from("relative")),
+                None,
             )
             .is_err()
         );
@@ -1885,6 +1918,7 @@ mod tests {
                 None,
                 None,
                 Some(PathBuf::from("/tmp/../unsafe")),
+                None,
             )
             .is_err()
         );
@@ -1895,6 +1929,7 @@ mod tests {
                 None,
                 None,
                 Some(PathBuf::from("/tmp/./unsafe")),
+                None,
             )
             .is_err()
         );
@@ -1905,6 +1940,7 @@ mod tests {
                 None,
                 None,
                 Some(PathBuf::from("/tmp/unsafe/.")),
+                None,
             )
             .is_err()
         );
@@ -1915,8 +1951,117 @@ mod tests {
                 None,
                 Some(PathBuf::from("relative-xdg").as_path()),
                 None,
+                None,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn android_requires_a_host_standard_data_directory_when_not_explicitly_overridden() {
+        let home = PathBuf::from("/home/tester");
+        let xdg = PathBuf::from("/tmp/xdg-data");
+
+        assert!(
+            resolve_data_directory(
+                Platform::Android,
+                Some(home.as_path()),
+                None,
+                Some(xdg.as_path()),
+                None,
+                None,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn android_accepts_a_host_standard_data_directory() {
+        let standard = PathBuf::from("/data/user/0/dev.argusromtoolkit.argus/files/argus");
+
+        assert_eq!(
+            resolve_data_directory(
+                Platform::Android,
+                None,
+                None,
+                None,
+                None,
+                Some(standard.clone()),
+            )
+            .expect("Android host-standard data root"),
+            standard,
+        );
+    }
+
+    #[test]
+    fn explicit_override_precedes_host_standard_directory() {
+        let explicit = PathBuf::from("/tmp/explicit");
+        let standard = PathBuf::from("/data/user/0/dev.argusromtoolkit.argus/files/argus");
+
+        assert_eq!(
+            resolve_data_directory(
+                Platform::Android,
+                None,
+                None,
+                None,
+                Some(explicit.clone()),
+                Some(standard),
+            )
+            .expect("explicit override precedes host-standard"),
+            explicit,
+        );
+    }
+
+    #[test]
+    fn host_standard_directory_precedes_desktop_defaults() {
+        let home = PathBuf::from("/home/tester");
+        let standard = PathBuf::from("/data/user/0/dev.argusromtoolkit.argus/files/argus");
+
+        assert_eq!(
+            resolve_data_directory(
+                Platform::Unix,
+                Some(home.as_path()),
+                None,
+                None,
+                None,
+                Some(standard.clone()),
+            )
+            .expect("host-standard precedes desktop defaults"),
+            standard,
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_host_standard_directories() {
+        assert!(
+            resolve_data_directory(
+                Platform::Android,
+                None,
+                None,
+                None,
+                None,
+                Some(PathBuf::from("relative")),
+            )
+            .is_err()
+        );
+        assert!(
+            resolve_data_directory(
+                Platform::Android,
+                None,
+                None,
+                None,
+                None,
+                Some(PathBuf::from("/tmp/../unsafe")),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn android_platform_class_maps_to_android() {
+        assert_eq!(
+            super::platform_class(Platform::Android),
+            argus_application::PlatformClass::Android,
         );
     }
 

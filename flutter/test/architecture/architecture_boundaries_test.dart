@@ -53,6 +53,7 @@ void main() {
       'app/bootstrap/client_bootstrap.dart',
       'app/bootstrap/jobs_event_coordinator.dart',
       'app/bootstrap/sources_event_coordinator.dart',
+      'app/platform/application/platform_readiness_controller.dart',
       'app/routing/app_router.dart',
       'features/jobs/application/active_job_summary_controller.dart',
       'features/jobs/application/job_detail_controller.dart',
@@ -859,6 +860,64 @@ void main() {
       for (final concept in forbiddenConcepts) {
         expect(entry.value, isNot(contains(concept)), reason: entry.key);
       }
+    }
+  });
+
+  test('platform OS selection stays confined to the native adapter layer', () {
+    for (final entry in sources.entries) {
+      if (!entry.key.startsWith('app/platform/')) continue;
+      if (entry.key.startsWith('app/platform/native/')) continue;
+      for (final concept in <String>[
+        'dart:io',
+        'Platform.isAndroid',
+        'MethodChannel',
+        'flutter/services',
+      ]) {
+        expect(
+          entry.value,
+          isNot(contains(concept)),
+          reason: '${entry.key} must stay platform-agnostic',
+        );
+      }
+    }
+  });
+
+  test('platform application layer imports no widgets or bridge types', () {
+    _expectNoForbiddenImports(
+      sources,
+      prefix: 'app/platform/application/',
+      forbidden: <String>[
+        'package:flutter/',
+        'core/bridge/',
+        'frb_generated',
+        'flutter_rust_bridge',
+        'dart:io',
+        'MethodChannel',
+        'Activity',
+        'features/',
+      ],
+    );
+  });
+
+  test('Android adapter reaches only the platform MethodChannel seam', () {
+    final adapter =
+        sources['app/platform/native/android_platform_host_api.dart']!;
+    expect(adapter, contains('MethodChannel'));
+    expect(adapter, isNot(contains("import 'package:argus/features/")));
+    expect(adapter, isNot(contains('core/bridge/')));
+    expect(adapter, isNot(contains('argusClient')));
+  });
+
+  test('startup controller stays unaware of Android permission mechanics', () {
+    final controller =
+        sources['features/startup/application/startup_controller.dart']!;
+    for (final concept in <String>[
+      'MANAGE_EXTERNAL_STORAGE',
+      'POST_NOTIFICATIONS',
+      'Platform.isAndroid',
+      'dart:io',
+    ]) {
+      expect(controller, isNot(contains(concept)), reason: concept);
     }
   });
 }

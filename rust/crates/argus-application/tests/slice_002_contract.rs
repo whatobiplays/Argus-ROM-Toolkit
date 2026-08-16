@@ -120,6 +120,22 @@ fn safe_context_accepts_each_slice_002_field_with_its_declared_value() {
 }
 
 #[test]
+fn android_platform_class_is_closed_typed_and_serializable() {
+    let mut context = SafeContext::new();
+    context
+        .try_insert(
+            SafeContextField::Platform,
+            SafeContextValue::Platform(PlatformClass::Android),
+        )
+        .expect("android platform");
+    assert_eq!(context.len(), 1);
+    assert_eq!(
+        context.get(&SafeContextField::Platform),
+        Some(&SafeContextValue::Platform(PlatformClass::Android))
+    );
+}
+
+#[test]
 fn safe_context_rejects_wrong_value_types_for_every_closed_field() {
     let wrong_values = [
         (

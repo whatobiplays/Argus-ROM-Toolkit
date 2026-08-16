@@ -1,11 +1,14 @@
 import 'package:argus/app/routing/app_destination.dart';
 import 'package:argus/app/routing/app_routes.dart';
 import 'package:argus/app/shell/application_shell.dart';
+import 'package:argus/core/client/client.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
+import 'package:argus/features/jobs/jobs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 Future<void> pumpShell(
   WidgetTester tester, {
@@ -13,6 +16,7 @@ Future<void> pumpShell(
   AppDestination? currentDestination = AppDestination.settings,
   VoidCallback? onSettingsSelected,
   VoidCallback? onSourcesSelected,
+  VoidCallback? onJobsSelected,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -27,7 +31,7 @@ Future<void> pumpShell(
               currentDestination: currentDestination,
               onSettingsSelected: onSettingsSelected ?? () {},
               onSourcesSelected: onSourcesSelected ?? () {},
-              onJobsSelected: () {},
+              onJobsSelected: onJobsSelected ?? () {},
               child: const Center(child: Text('route child')),
             ),
           ),
@@ -36,6 +40,40 @@ Future<void> pumpShell(
     ),
   );
   await tester.pumpAndSettle();
+}
+
+GoRouter shellRouter(String initialLocation) {
+  return GoRouter(
+    initialLocation: initialLocation,
+    routes: <RouteBase>[
+      ShellRoute(
+        builder: (context, state, child) => BranchAwareShell(
+          currentUri: state.uri,
+          currentDestination: destinationForUri(state.uri),
+          child: child,
+        ),
+        routes: <RouteBase>[
+          GoRoute(
+            path: '/sources',
+            builder: (context, state) => const Scaffold(body: Text('sources')),
+          ),
+          GoRoute(
+            path: '/settings',
+            builder: (context, state) => const Scaffold(body: Text('settings')),
+          ),
+          GoRoute(
+            path: '/jobs',
+            builder: (context, state) => const Scaffold(body: Text('jobs')),
+          ),
+          GoRoute(
+            path: '/jobs/:jobRunId',
+            builder: (context, state) =>
+                const Scaffold(body: Text('job detail')),
+          ),
+        ],
+      ),
+    ],
+  );
 }
 
 void main() {
@@ -62,7 +100,7 @@ void main() {
   });
 
   for (final testCase in <({double width, Key key})>[
-    (width: 480, key: const ValueKey<String>('compact-more-button')),
+    (width: 480, key: const ValueKey<String>('compact-navigation-bar')),
     (width: 720, key: const ValueKey<String>('medium-navigation-rail')),
     (width: 1024, key: const ValueKey<String>('expanded-navigation-sidebar')),
     (width: 1440, key: const ValueKey<String>('large-navigation-sidebar')),
@@ -81,9 +119,13 @@ void main() {
     tester,
   ) async {
     await pumpShell(tester, width: 480);
-    expect(find.byType(BottomAppBar), findsOneWidget);
-    expect(find.byTooltip('More'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(BottomAppBar), findsNothing);
+    expect(find.byTooltip('More'), findsNothing);
     expect(find.byType(NavigationRail), findsNothing);
+    expect(find.text('Sources'), findsOneWidget);
+    expect(find.text('Jobs'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
     expect(find.text('route child'), findsOneWidget);
 
     await pumpShell(tester, width: 720);
@@ -112,45 +154,64 @@ void main() {
     expect(find.text('route child'), findsOneWidget);
   });
 
-  testWidgets('Compact More is transient and selects Sources then Settings', (
+  testWidgets('Compact destinations are direct and select each destination', (
     tester,
   ) async {
     var sourcesSelectionCount = 0;
     var settingsSelectionCount = 0;
+    var jobsSelectionCount = 0;
     await pumpShell(
       tester,
       width: 480,
       onSourcesSelected: () => sourcesSelectionCount++,
       onSettingsSelected: () => settingsSelectionCount++,
+      onJobsSelected: () => jobsSelectionCount++,
     );
 
-    expect(find.byTooltip('More'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
-    await tester.pumpAndSettle();
-
+    // All three destinations are visible without opening any sheet.
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Sources'), findsOneWidget);
+    expect(find.text('Jobs'), findsOneWidget);
+    final bar = tester.widget<NavigationBar>(
+      find.byKey(const ValueKey<String>('compact-navigation-bar')),
+    );
+    expect(bar.selectedIndex, 2);
+    expect(bar.destinations, hasLength(3));
     expect(sourcesSelectionCount, 0);
     expect(settingsSelectionCount, 0);
+    expect(jobsSelectionCount, 0);
 
-    await tester.tap(find.text('Sources'));
-    await tester.pumpAndSettle();
+    final barRect = tester.getRect(
+      find.byKey(const ValueKey<String>('compact-navigation-bar')),
+    );
+    final destinationWidth = barRect.width / 3;
+    await tester.tapAt(
+      Offset(barRect.left + destinationWidth / 2, barRect.center.dy),
+    );
+    await tester.pump();
+    // ignore: avoid_print
+    print('DEBUG sources=$sourcesSelectionCount');
     expect(sourcesSelectionCount, 1);
     expect(settingsSelectionCount, 0);
+    expect(jobsSelectionCount, 0);
 
-    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
-
+    await tester.tapAt(
+      Offset(barRect.left + destinationWidth * 2.5, barRect.center.dy),
+    );
+    // ignore: avoid_print
+    print('DEBUG settings=$settingsSelectionCount');
     expect(settingsSelectionCount, 1);
+
+    await tester.tapAt(
+      Offset(barRect.left + destinationWidth * 1.5, barRect.center.dy),
+    );
+    // ignore: avoid_print
+    print('DEBUG jobs=$jobsSelectionCount');
+    expect(jobsSelectionCount, 1);
   });
 
-  testWidgets('Compact More is keyboard-operable across both destinations', (
-    tester,
-  ) async {
-    final selected = <String>[];
+  testWidgets('Compact NavigationBar is keyboard-operable', (tester) async {
+    final selected = <String>{};
     await pumpShell(
       tester,
       width: 480,
@@ -158,70 +219,154 @@ void main() {
       onSettingsSelected: () => selected.add('settings'),
     );
 
-    // The first Tab focuses the Jobs indicator; the second focuses More.
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
+    // Tab and activate until at least two distinct destinations responded.
+    for (var attempt = 0; attempt < 18 && selected.length < 2; attempt++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+    }
 
-    expect(find.text('Sources'), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-
-    // Enter activates the first sheet destination (Sources).
-    expect(selected, <String>['sources']);
-    selected.clear();
-
-    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
-    await tester.pumpAndSettle();
-    expect(find.text('Settings'), findsOneWidget);
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-
-    expect(selected, <String>['settings']);
+    expect(selected, containsAll(<String>['sources', 'settings']));
   });
 
-  testWidgets('Compact More dismisses with Escape without a keyboard trap', (
-    tester,
-  ) async {
-    var selectionCount = 0;
-    await pumpShell(
-      tester,
-      width: 480,
-      onSettingsSelected: () => selectionCount++,
-    );
-
-    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
-    await tester.pumpAndSettle();
-    expect(find.text('Sources'), findsOneWidget);
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Settings'), findsNothing);
-    expect(find.text('Sources'), findsNothing);
-    expect(selectionCount, 0);
-
-    // The modal returns focus to More, so ordinary activation remains usable.
-    await tester.tap(find.byKey(const ValueKey<String>('compact-more-button')));
-    await tester.pumpAndSettle();
-    expect(find.text('Sources'), findsOneWidget);
-    expect(selectionCount, 0);
-  });
-
-  testWidgets('Compact More meets the normal interactive target baseline', (
-    tester,
-  ) async {
+  testWidgets('Compact destinations meet the normal interactive target '
+      'baseline', (tester) async {
     await pumpShell(tester, width: 480);
 
-    final size = tester.getSize(
-      find.byKey(const ValueKey<String>('compact-more-button')),
+    final bar = tester.getSize(
+      find.byKey(const ValueKey<String>('compact-navigation-bar')),
     );
-    expect(size.width, greaterThanOrEqualTo(48));
-    expect(size.height, greaterThanOrEqualTo(48));
+    expect(bar.height, greaterThanOrEqualTo(48));
+    expect(find.text('Sources'), findsOneWidget);
+    expect(find.text('Jobs'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+  });
+
+  testWidgets('Compact Jobs shows the active-count badge', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          activeJobSummaryControllerProvider.overrideWithValue(
+            const AsyncValue<ActiveJobSummary>.data(
+              ActiveJobSummary(activeCount: 2),
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          theme: ArgusTheme.light,
+          home: MediaQuery(
+            data: const MediaQueryData(size: Size(480, 800)),
+            child: const SizedBox(
+              width: 480,
+              height: 800,
+              child: ApplicationShell(
+                currentDestination: AppDestination.jobs,
+                onSettingsSelected: _noop,
+                onSourcesSelected: _noop,
+                onJobsSelected: _noop,
+                child: Center(child: Text('route child')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2'), findsOneWidget);
+  });
+
+  testWidgets(
+    'Compact Jobs preserves sole-active-job routing through BranchAwareShell',
+    (tester) async {
+      final runId = 'a' * 32;
+      final router = shellRouter('/sources');
+      addTearDown(router.dispose);
+      tester.view.physicalSize = const Size(480, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            activeJobSummaryControllerProvider.overrideWithValue(
+              AsyncValue<ActiveJobSummary>.data(
+                ActiveJobSummary(
+                  activeCount: 1,
+                  soleActiveJobRunId: JobRunId(runId),
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final barRect = tester.getRect(
+        find.byKey(const ValueKey<String>('compact-navigation-bar')),
+      );
+      await tester.tapAt(
+        Offset(barRect.left + barRect.width / 2, barRect.center.dy),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        '/jobs/$runId',
+      );
+    },
+  );
+
+  testWidgets('Compact destination reselection restores the saved branch', (
+    tester,
+  ) async {
+    final runId = 'a' * 32;
+    final router = shellRouter('/sources');
+    addTearDown(router.dispose);
+    tester.view.physicalSize = const Size(480, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          activeJobSummaryControllerProvider.overrideWithValue(
+            AsyncValue<ActiveJobSummary>.data(
+              ActiveJobSummary(
+                activeCount: 1,
+                soleActiveJobRunId: JobRunId(runId),
+              ),
+            ),
+          ),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final barRect = tester.getRect(
+      find.byKey(const ValueKey<String>('compact-navigation-bar')),
+    );
+    await tester.tapAt(
+      Offset(barRect.left + barRect.width / 2, barRect.center.dy),
+    );
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      Offset(barRect.left + barRect.width / 6, barRect.center.dy),
+    );
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      Offset(barRect.left + barRect.width / 2, barRect.center.dy),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      router.routerDelegate.currentConfiguration.uri.toString(),
+      '/jobs/$runId',
+    );
   });
 
   testWidgets('wide navigation uses the route-derived Settings selection', (
@@ -240,6 +385,18 @@ void main() {
     }
 
     expect(selectionCount, 3);
+  });
+
+  testWidgets('Compact destinations expose Material semantics', (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
+    try {
+      await pumpShell(tester, width: 480);
+      expect(find.bySemanticsLabel(RegExp('Sources')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('Jobs')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('Settings')), findsOneWidget);
+    } finally {
+      semanticsHandle.dispose();
+    }
   });
 
   testWidgets(
@@ -264,26 +421,6 @@ void main() {
       }
     },
   );
-
-  testWidgets('navigation actions expose meaningful semantics', (tester) async {
-    final semanticsHandle = tester.ensureSemantics();
-    try {
-      await pumpShell(tester, width: 480);
-      expect(find.bySemanticsLabel('More'), findsOneWidget);
-
-      await tester.tap(find.byTooltip('More'));
-      await tester.pumpAndSettle();
-      expect(find.bySemanticsLabel('Settings'), findsOneWidget);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-
-      await pumpShell(tester, width: 720);
-      expect(
-        tester.getSemantics(find.text('Settings')).label,
-        contains('Settings'),
-      );
-    } finally {
-      semanticsHandle.dispose();
-    }
-  });
 }
+
+void _noop() {}

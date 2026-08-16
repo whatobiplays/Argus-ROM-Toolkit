@@ -341,7 +341,7 @@ void main() {
       await loadAppearance(tester, host.api);
 
       for (final testCase in <({double width, Key key})>[
-        (width: 480, key: const ValueKey<String>('compact-more-button')),
+        (width: 480, key: const ValueKey<String>('compact-navigation-bar')),
         (width: 720, key: const ValueKey<String>('medium-navigation-rail')),
         (
           width: 1024,
@@ -367,7 +367,7 @@ void main() {
     );
 
     for (final testCase in <({double width, String key})>[
-      (width: 480, key: 'compact-more-button'),
+      (width: 480, key: 'compact-navigation-bar'),
       (width: 1440, key: 'large-navigation-sidebar'),
     ]) {
       for (final scale in <double>[1, 2]) {

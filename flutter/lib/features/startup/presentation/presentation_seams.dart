@@ -5,6 +5,29 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'presentation_seams.g.dart';
 
+/// Presentation-only platform capability filter for startup recovery actions.
+///
+/// Backend recovery advertisement remains authoritative for actions the
+/// runtime owns; this closed value lets app composition suppress a
+/// platform-inapplicable action without mutating backend state.
+final class StartupPresentationCapabilities {
+  const StartupPresentationCapabilities({
+    required this.diagnosticsExport,
+    required this.openDataDirectory,
+  });
+
+  final bool diagnosticsExport;
+  final bool openDataDirectory;
+}
+
+/// Default capabilities preserve the existing desktop action set.
+@Riverpod(keepAlive: true)
+StartupPresentationCapabilities startupPresentationCapabilities(Ref ref) =>
+    const StartupPresentationCapabilities(
+      diagnosticsExport: true,
+      openDataDirectory: true,
+    );
+
 /// Presentation-owned chooser for a diagnostic-export destination.
 typedef DiagnosticsDestinationPicker =
     Future<String?> Function({required String suggestedName});

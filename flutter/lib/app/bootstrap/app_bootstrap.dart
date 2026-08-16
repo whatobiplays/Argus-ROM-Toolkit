@@ -1,5 +1,6 @@
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
+import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/jobs/jobs.dart';
@@ -18,6 +19,7 @@ class ArgusBootstrap extends StatelessWidget {
   const ArgusBootstrap({
     this.clientGatewayFactory,
     this.libraryFolderPicker,
+    this.platformHostComposition,
     super.key,
   });
 
@@ -37,16 +39,50 @@ class ArgusBootstrap extends StatelessWidget {
   /// provider-override list or environment-driven behavior.
   final LibraryFolderPicker? libraryFolderPicker;
 
+  /// Optional narrow test seam for the complete platform-host composition.
+  ///
+  /// Production startup uses [createPlatformHostComposition]; tests may
+  /// supply a fake [PlatformHostApi] and readiness-gate flag. This seam
+  /// deliberately exposes the composition object, never an arbitrary
+  /// provider-override list or raw MethodChannel hook.
+  final PlatformHostComposition? platformHostComposition;
+
   @override
   Widget build(BuildContext context) {
     final factory = clientGatewayFactory;
     final picker = libraryFolderPicker;
+    final platform = platformHostComposition ?? createPlatformHostComposition();
     return ProviderScope(
       overrides: [
+        platformHostApiProvider.overrideWithValue(platform.api),
         if (factory != null)
-          argusClientGatewayFactoryProvider.overrideWithValue(factory),
+          argusClientGatewayFactoryProvider.overrideWithValue(factory)
+        else if (platform.requiresReadinessGate)
+          standardApplicationDataDirectoryProvider.overrideWith((ref) {
+            final configuration = ref
+                .read(platformReadinessControllerProvider.notifier)
+                .runtimeConfiguration;
+            if (configuration == null) {
+              throw StateError(
+                'Android runtime configuration requested before platform '
+                'readiness',
+              );
+            }
+            return configuration.standardApplicationDataDirectory;
+          }),
         if (picker != null)
-          libraryFolderPickerProvider.overrideWithValue(picker),
+          libraryFolderPickerProvider.overrideWithValue(picker)
+        else if (platform.requiresReadinessGate)
+          libraryFolderPickerProvider.overrideWith(
+            (ref) => _androidRootSelectionUnavailable,
+          ),
+        if (platform.requiresReadinessGate)
+          startupPresentationCapabilitiesProvider.overrideWithValue(
+            const StartupPresentationCapabilities(
+              diagnosticsExport: false,
+              openDataDirectory: false,
+            ),
+          ),
         appearanceSettingsApiProvider.overrideWith(
           (ref) => ref.watch(argusClientProvider).settings,
         ),
@@ -91,10 +127,20 @@ class ArgusBootstrap extends StatelessWidget {
           (ref) => ref.watch(jobsEventCoordinatorProvider),
         ),
       ],
-      child: const ArgusApp(),
+      child: ArgusApp(
+        platformReadinessRequired: platform.requiresReadinessGate,
+      ),
     );
   }
 }
+
+/// Slice-001 Android root selection is intentionally inert.
+///
+/// The endorsed Android `file_selector` plugin must not be allowed to create
+/// a rejected SAF/path source before P02-002 replaces this seam with the
+/// approved Argus-owned filesystem picker.
+Future<LocalFilesystemRootSelection?>
+_androidRootSelectionUnavailable() async => null;
 
 /// Starts the application with its root dependency scope.
 void bootstrapArgus() {

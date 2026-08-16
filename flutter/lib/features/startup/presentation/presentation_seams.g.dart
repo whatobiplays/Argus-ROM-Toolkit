@@ -8,6 +8,62 @@ part of 'presentation_seams.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// Default capabilities preserve the existing desktop action set.
+
+@ProviderFor(startupPresentationCapabilities)
+final startupPresentationCapabilitiesProvider =
+    StartupPresentationCapabilitiesProvider._();
+
+/// Default capabilities preserve the existing desktop action set.
+
+final class StartupPresentationCapabilitiesProvider
+    extends
+        $FunctionalProvider<
+          StartupPresentationCapabilities,
+          StartupPresentationCapabilities,
+          StartupPresentationCapabilities
+        >
+    with $Provider<StartupPresentationCapabilities> {
+  /// Default capabilities preserve the existing desktop action set.
+  StartupPresentationCapabilitiesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'startupPresentationCapabilitiesProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$startupPresentationCapabilitiesHash();
+
+  @$internal
+  @override
+  $ProviderElement<StartupPresentationCapabilities> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  StartupPresentationCapabilities create(Ref ref) {
+    return startupPresentationCapabilities(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(StartupPresentationCapabilities value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<StartupPresentationCapabilities>(
+        value,
+      ),
+    );
+  }
+}
+
+String _$startupPresentationCapabilitiesHash() =>
+    r'1c570d8828caca0593a17977ce48ac4457279376';
+
 /// Provides the native save-location chooser used before export dispatch.
 
 @ProviderFor(diagnosticsDestinationPicker)

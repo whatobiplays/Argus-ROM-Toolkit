@@ -8,6 +8,66 @@ part of 'client_bootstrap.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// Host-supplied standard application-data directory for production startup.
+///
+/// Desktop production leaves this null and uses the existing platform
+/// defaults; Android app composition supplies the app-private root from the
+/// latched platform runtime configuration before the client is created.
+
+@ProviderFor(standardApplicationDataDirectory)
+final standardApplicationDataDirectoryProvider =
+    StandardApplicationDataDirectoryProvider._();
+
+/// Host-supplied standard application-data directory for production startup.
+///
+/// Desktop production leaves this null and uses the existing platform
+/// defaults; Android app composition supplies the app-private root from the
+/// latched platform runtime configuration before the client is created.
+
+final class StandardApplicationDataDirectoryProvider
+    extends $FunctionalProvider<String?, String?, String?>
+    with $Provider<String?> {
+  /// Host-supplied standard application-data directory for production startup.
+  ///
+  /// Desktop production leaves this null and uses the existing platform
+  /// defaults; Android app composition supplies the app-private root from the
+  /// latched platform runtime configuration before the client is created.
+  StandardApplicationDataDirectoryProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'standardApplicationDataDirectoryProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$standardApplicationDataDirectoryHash();
+
+  @$internal
+  @override
+  $ProviderElement<String?> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  String? create(Ref ref) {
+    return standardApplicationDataDirectory(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(String? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<String?>(value),
+    );
+  }
+}
+
+String _$standardApplicationDataDirectoryHash() =>
+    r'd2bff5fedd5a5d44d28a0b4298050af02676c0f7';
+
 /// Creates a fresh bridge adapter for each root-client generation.
 
 @ProviderFor(argusClientGatewayFactory)
@@ -61,7 +121,7 @@ final class ArgusClientGatewayFactoryProvider
 }
 
 String _$argusClientGatewayFactoryHash() =>
-    r'17c756ae71b25d58d6009de1d82ce0084d6d4f04';
+    r'75498015b05de9948dfedcc1150ce2ecd4132a9f';
 
 /// App-lifetime owner of the single active root [ArgusClient].
 ///

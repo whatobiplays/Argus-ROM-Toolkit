@@ -351,6 +351,7 @@ impl StartupCoordinator {
             local_app_data.as_deref(),
             xdg_data_home.as_deref(),
             self.options.data_directory_override.clone(),
+            self.options.standard_data_directory.clone(),
         )
         .map_err(|_| configuration_error(self.trace_id))?;
         std::fs::create_dir_all(&data_directory).map_err(|error| {
@@ -872,6 +873,58 @@ mod tests {
             assert_eq!(record.outcome, StartupPhaseOutcome::Succeeded);
             assert_eq!(record.duration_ms, 1);
         }
+    }
+
+    #[test]
+    fn host_standard_data_directory_is_classified_as_standard_application_data() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let options = KernelBootstrapOptions::with_standard_data_directory(directory.path());
+        let generation = RuntimeInstanceId::new();
+        let boundary = EventBoundary::new();
+        let clock = FakeClock::with_values((0..=32).rev().collect());
+
+        let result = StartupCoordinator::run(
+            options,
+            generation,
+            boundary,
+            &clock,
+            &NoopObserver,
+            &|| false,
+            None,
+            Some(Arc::new(InProcessNotificationSink::new())),
+        );
+
+        assert!(matches!(result.state, crate::RuntimeState::Ready { .. }));
+        assert_eq!(
+            result.kernel.expect("ready kernel").path_class(),
+            argus_application::PathClass::StandardApplicationData,
+        );
+    }
+
+    #[test]
+    fn explicit_data_directory_override_remains_explicit_override() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let options = KernelBootstrapOptions::with_data_directory(directory.path());
+        let generation = RuntimeInstanceId::new();
+        let boundary = EventBoundary::new();
+        let clock = FakeClock::with_values((0..=32).rev().collect());
+
+        let result = StartupCoordinator::run(
+            options,
+            generation,
+            boundary,
+            &clock,
+            &NoopObserver,
+            &|| false,
+            None,
+            Some(Arc::new(InProcessNotificationSink::new())),
+        );
+
+        assert!(matches!(result.state, crate::RuntimeState::Ready { .. }));
+        assert_eq!(
+            result.kernel.expect("ready kernel").path_class(),
+            argus_application::PathClass::ExplicitOverride,
+        );
     }
 
     #[test]

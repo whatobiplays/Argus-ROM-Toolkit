@@ -181,6 +181,7 @@ pub enum PlatformClass {
     Windows,
     MacOs,
     Unix,
+    Android,
 }
 
 /// CPU architecture classification that contains no machine-specific details.

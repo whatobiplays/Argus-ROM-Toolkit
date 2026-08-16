@@ -28,6 +28,13 @@ Future<RuntimeStateDto> initializeWithDataDirectory({
   dataDirectory: dataDirectory,
 );
 
+/// Initializes the host with a host-supplied standard application-data root.
+Future<RuntimeStateDto> initializeWithStandardDataDirectory({
+  required String dataDirectory,
+}) => RustLib.instance.api.crateInitializeWithStandardDataDirectory(
+  dataDirectory: dataDirectory,
+);
+
 /// Retries startup against the caller's expected runtime generation.
 Future<RuntimeStateDto> retryStartup({
   required String expectedRuntimeInstanceId,

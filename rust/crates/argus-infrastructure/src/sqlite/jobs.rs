@@ -1876,6 +1876,7 @@ fn safe_context_value_name(value: &SafeContextValue) -> String {
             PlatformClass::Windows => "windows".to_owned(),
             PlatformClass::MacOs => "macos".to_owned(),
             PlatformClass::Unix => "unix".to_owned(),
+            PlatformClass::Android => "android".to_owned(),
         },
         SafeContextValue::Architecture(architecture) => match architecture {
             ArchitectureClass::X8664 => "x86_64".to_owned(),
@@ -1946,6 +1947,7 @@ fn safe_context_value_from_str(
             "windows" => PlatformClass::Windows,
             "macos" => PlatformClass::MacOs,
             "unix" => PlatformClass::Unix,
+            "android" => PlatformClass::Android,
             _ => return Err(invalid()),
         }),
         SafeContextField::Architecture => SafeContextValue::Architecture(match value {

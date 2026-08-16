@@ -15,6 +15,7 @@ fn persistence_startup_failure_is_sanitized_and_classified() {
     std::fs::create_dir_all(data_root.join("argus.sqlite3")).expect("database path directory");
     let options = KernelBootstrapOptions {
         data_directory_override: Some(data_root.clone()),
+        standard_data_directory: None,
     };
     let failure = match bootstrap_kernel(options) {
         Ok(kernel) => {

@@ -95,6 +95,16 @@ abstract interface class SourcesGateway {
   });
 
   Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId);
+
+  /// Lists currently mounted safe local-filesystem browse roots.
+  Future<List<LocalFilesystemBrowseRoot>> listLocalFilesystemBrowseRoots();
+
+  /// Lists one bounded direct-child local-filesystem browse page.
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  });
 }
 
 /// Focused Sources capability. Queries return immutable authoritative
@@ -133,6 +143,16 @@ abstract interface class SourcesApi {
   });
 
   Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId);
+
+  /// Lists currently mounted safe local-filesystem browse roots.
+  Future<List<LocalFilesystemBrowseRoot>> listLocalFilesystemBrowseRoots();
+
+  /// Lists one bounded direct-child local-filesystem browse page.
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  });
 }
 
 /// Framework-neutral durable job observation and control operations.

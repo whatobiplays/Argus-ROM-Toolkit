@@ -91,7 +91,12 @@ void main() {
   testWidgets('library folder picker seam overrides the picker inside the '
       'owned scope', (tester) async {
     const selection = LocalFilesystemRootSelection('/test-owned/folder');
-    Future<LocalFilesystemRootSelection?> seam() async => selection;
+    Future<SelectedLibraryFolder?> seam(BuildContext _, WidgetRef _) async =>
+        const SelectedLibraryFolder(
+          selection: selection,
+          displayName: 'folder',
+          safeLocationPresentation: '/test-owned/folder',
+        );
 
     await tester.pumpWidget(ArgusBootstrap(libraryFolderPicker: seam));
     final container = ProviderScope.containerOf(
@@ -102,8 +107,7 @@ void main() {
     // The seam is applied through the existing owned ProviderScope, so the
     // bootstrap still owns exactly one scope and no second override bag.
     expect(find.byType(ProviderScope), findsOneWidget);
-    final picked = await container.read(libraryFolderPickerProvider)();
-    expect(picked?.selectedFolderPath, '/test-owned/folder');
+    expect(container.read(libraryFolderPickerProvider), same(seam));
   });
 
   testWidgets(
@@ -201,27 +205,31 @@ void main() {
     },
   );
 
-  testWidgets('Android production composition keeps root selection inert', (
-    tester,
-  ) async {
-    final platformApi = _ReadinessPlatformHostApi(androidSnapshot);
-    await tester.pumpWidget(
-      ArgusBootstrap(
-        platformHostComposition: PlatformHostComposition(
-          api: platformApi,
-          requiresReadinessGate: true,
+  testWidgets(
+    'Android composition enables browser and disables scan execution',
+    (tester) async {
+      final platformApi = _ReadinessPlatformHostApi(androidSnapshot);
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          platformHostComposition: PlatformHostComposition(
+            api: platformApi,
+            requiresReadinessGate: true,
+          ),
+          clientGatewayFactory: () => _PendingGateway(),
         ),
-        clientGatewayFactory: () => _PendingGateway(),
-      ),
-    );
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(ArgusApp)),
-      listen: false,
-    );
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
 
-    final picker = container.read(libraryFolderPickerProvider);
-    expect(await picker(), isNull);
-  });
+      final capabilities = container.read(
+        sourcesPresentationCapabilitiesProvider,
+      );
+      expect(capabilities.localFilesystemBrowser, isTrue);
+      expect(capabilities.scanExecution, isFalse);
+    },
+  );
 
   testWidgets('desktop composition requires no readiness gate', (tester) async {
     await tester.pumpWidget(const ArgusBootstrap());

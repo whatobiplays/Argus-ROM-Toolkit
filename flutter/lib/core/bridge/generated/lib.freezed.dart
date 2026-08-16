@@ -1659,6 +1659,298 @@ as int,
 }
 
 /// @nodoc
+mixin _$LocalFilesystemRootSelectionDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LocalFilesystemRootSelectionDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LocalFilesystemRootSelectionDto()';
+}
+
+
+}
+
+/// @nodoc
+class $LocalFilesystemRootSelectionDtoCopyWith<$Res>  {
+$LocalFilesystemRootSelectionDtoCopyWith(LocalFilesystemRootSelectionDto _, $Res Function(LocalFilesystemRootSelectionDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [LocalFilesystemRootSelectionDto].
+extension LocalFilesystemRootSelectionDtoPatterns on LocalFilesystemRootSelectionDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LocalFilesystemRootSelectionDto_Path value)?  path,TResult Function( LocalFilesystemRootSelectionDto_ProviderSelection value)?  providerSelection,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case LocalFilesystemRootSelectionDto_Path() when path != null:
+return path(_that);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
+return providerSelection(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LocalFilesystemRootSelectionDto_Path value)  path,required TResult Function( LocalFilesystemRootSelectionDto_ProviderSelection value)  providerSelection,}){
+final _that = this;
+switch (_that) {
+case LocalFilesystemRootSelectionDto_Path():
+return path(_that);case LocalFilesystemRootSelectionDto_ProviderSelection():
+return providerSelection(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LocalFilesystemRootSelectionDto_Path value)?  path,TResult? Function( LocalFilesystemRootSelectionDto_ProviderSelection value)?  providerSelection,}){
+final _that = this;
+switch (_that) {
+case LocalFilesystemRootSelectionDto_Path() when path != null:
+return path(_that);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
+return providerSelection(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String selectedFolderPath)?  path,TResult Function( String selectionIdentity)?  providerSelection,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case LocalFilesystemRootSelectionDto_Path() when path != null:
+return path(_that.selectedFolderPath);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
+return providerSelection(_that.selectionIdentity);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String selectedFolderPath)  path,required TResult Function( String selectionIdentity)  providerSelection,}) {final _that = this;
+switch (_that) {
+case LocalFilesystemRootSelectionDto_Path():
+return path(_that.selectedFolderPath);case LocalFilesystemRootSelectionDto_ProviderSelection():
+return providerSelection(_that.selectionIdentity);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String selectedFolderPath)?  path,TResult? Function( String selectionIdentity)?  providerSelection,}) {final _that = this;
+switch (_that) {
+case LocalFilesystemRootSelectionDto_Path() when path != null:
+return path(_that.selectedFolderPath);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
+return providerSelection(_that.selectionIdentity);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class LocalFilesystemRootSelectionDto_Path extends LocalFilesystemRootSelectionDto {
+  const LocalFilesystemRootSelectionDto_Path({required this.selectedFolderPath}): super._();
+
+
+ final  String selectedFolderPath;
+
+/// Create a copy of LocalFilesystemRootSelectionDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LocalFilesystemRootSelectionDto_PathCopyWith<LocalFilesystemRootSelectionDto_Path> get copyWith => _$LocalFilesystemRootSelectionDto_PathCopyWithImpl<LocalFilesystemRootSelectionDto_Path>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LocalFilesystemRootSelectionDto_Path&&(identical(other.selectedFolderPath, selectedFolderPath) || other.selectedFolderPath == selectedFolderPath));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,selectedFolderPath);
+
+@override
+String toString() {
+  return 'LocalFilesystemRootSelectionDto.path(selectedFolderPath: $selectedFolderPath)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LocalFilesystemRootSelectionDto_PathCopyWith<$Res> implements $LocalFilesystemRootSelectionDtoCopyWith<$Res> {
+  factory $LocalFilesystemRootSelectionDto_PathCopyWith(LocalFilesystemRootSelectionDto_Path value, $Res Function(LocalFilesystemRootSelectionDto_Path) _then) = _$LocalFilesystemRootSelectionDto_PathCopyWithImpl;
+@useResult
+$Res call({
+ String selectedFolderPath
+});
+
+
+
+
+}
+/// @nodoc
+class _$LocalFilesystemRootSelectionDto_PathCopyWithImpl<$Res>
+    implements $LocalFilesystemRootSelectionDto_PathCopyWith<$Res> {
+  _$LocalFilesystemRootSelectionDto_PathCopyWithImpl(this._self, this._then);
+
+  final LocalFilesystemRootSelectionDto_Path _self;
+  final $Res Function(LocalFilesystemRootSelectionDto_Path) _then;
+
+/// Create a copy of LocalFilesystemRootSelectionDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? selectedFolderPath = null,}) {
+  return _then(LocalFilesystemRootSelectionDto_Path(
+selectedFolderPath: null == selectedFolderPath ? _self.selectedFolderPath : selectedFolderPath // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LocalFilesystemRootSelectionDto_ProviderSelection extends LocalFilesystemRootSelectionDto {
+  const LocalFilesystemRootSelectionDto_ProviderSelection({required this.selectionIdentity}): super._();
+
+
+ final  String selectionIdentity;
+
+/// Create a copy of LocalFilesystemRootSelectionDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LocalFilesystemRootSelectionDto_ProviderSelectionCopyWith<LocalFilesystemRootSelectionDto_ProviderSelection> get copyWith => _$LocalFilesystemRootSelectionDto_ProviderSelectionCopyWithImpl<LocalFilesystemRootSelectionDto_ProviderSelection>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LocalFilesystemRootSelectionDto_ProviderSelection&&(identical(other.selectionIdentity, selectionIdentity) || other.selectionIdentity == selectionIdentity));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,selectionIdentity);
+
+@override
+String toString() {
+  return 'LocalFilesystemRootSelectionDto.providerSelection(selectionIdentity: $selectionIdentity)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LocalFilesystemRootSelectionDto_ProviderSelectionCopyWith<$Res> implements $LocalFilesystemRootSelectionDtoCopyWith<$Res> {
+  factory $LocalFilesystemRootSelectionDto_ProviderSelectionCopyWith(LocalFilesystemRootSelectionDto_ProviderSelection value, $Res Function(LocalFilesystemRootSelectionDto_ProviderSelection) _then) = _$LocalFilesystemRootSelectionDto_ProviderSelectionCopyWithImpl;
+@useResult
+$Res call({
+ String selectionIdentity
+});
+
+
+
+
+}
+/// @nodoc
+class _$LocalFilesystemRootSelectionDto_ProviderSelectionCopyWithImpl<$Res>
+    implements $LocalFilesystemRootSelectionDto_ProviderSelectionCopyWith<$Res> {
+  _$LocalFilesystemRootSelectionDto_ProviderSelectionCopyWithImpl(this._self, this._then);
+
+  final LocalFilesystemRootSelectionDto_ProviderSelection _self;
+  final $Res Function(LocalFilesystemRootSelectionDto_ProviderSelection) _then;
+
+/// Create a copy of LocalFilesystemRootSelectionDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? selectionIdentity = null,}) {
+  return _then(LocalFilesystemRootSelectionDto_ProviderSelection(
+selectionIdentity: null == selectionIdentity ? _self.selectionIdentity : selectionIdentity // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$OperationDetailDto {
 
  LibraryScanJobDetailDto get field0;

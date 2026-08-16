@@ -1,5 +1,6 @@
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/sources/application/root_detail_controller.dart';
+import 'package:argus/features/sources/sources_composition.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -39,6 +40,7 @@ class SourcesRootDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final detail = ref.watch(sourcesRootDetailControllerProvider(rootId));
+    final capabilities = ref.watch(sourcesPresentationCapabilitiesProvider);
     ref.listen(sourcesRootDetailControllerProvider(rootId), (previous, next) {
       final value = next.value;
       if (value is SourcesRootDetailStateMissing) {
@@ -90,6 +92,7 @@ class SourcesRootDetailPage extends ConsumerWidget {
             removalBlockedOwner: removalBlockedOwner,
             cancelAndRemovePending: cancelAndRemovePending,
             cancelAndRemoveAmbiguous: cancelAndRemoveAmbiguous,
+            scanExecution: capabilities.scanExecution,
             onOpenJob: onOpenJob,
             onScan: () async {
               final jobRunId = await ref
@@ -157,6 +160,7 @@ class _RootDetailContent extends StatelessWidget {
     required this.removalBlockedOwner,
     required this.cancelAndRemovePending,
     required this.cancelAndRemoveAmbiguous,
+    required this.scanExecution,
     required this.onOpenJob,
     required this.onScan,
     required this.onRemove,
@@ -172,6 +176,7 @@ class _RootDetailContent extends StatelessWidget {
   final LibraryRootActiveScan? removalBlockedOwner;
   final bool cancelAndRemovePending;
   final bool cancelAndRemoveAmbiguous;
+  final bool scanExecution;
   final void Function(JobRunId jobRunId) onOpenJob;
   final VoidCallback onScan;
   final VoidCallback onRemove;
@@ -276,7 +281,7 @@ class _RootDetailContent extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  if (canScan) ...[
+                  if (scanExecution && canScan) ...[
                     FilledButton.icon(
                       key: const ValueKey<String>('sources-start-scan'),
                       onPressed: scanning ? null : onScan,

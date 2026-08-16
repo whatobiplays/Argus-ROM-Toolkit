@@ -6,6 +6,7 @@ import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/bridge/bridge.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/sources/application/root_detail_controller.dart';
+import 'package:argus/features/sources/presentation/selected_library_folder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -239,8 +240,13 @@ Future<ProviderContainer> _pumpRealApp(
     ArgusBootstrap(
       clientGatewayFactory: () =>
           FrbArgusClientGateway(dataDirectoryOverride: dataDirectory),
-      libraryFolderPicker: () async =>
-          rootOne.isEmpty ? null : LocalFilesystemRootSelection(rootOne),
+      libraryFolderPicker: (_, _) async => rootOne.isEmpty
+          ? null
+          : SelectedLibraryFolder(
+              selection: LocalFilesystemRootSelection(rootOne),
+              displayName: 'Selected root',
+              safeLocationPresentation: rootOne,
+            ),
     ),
   );
   return ProviderScope.containerOf(

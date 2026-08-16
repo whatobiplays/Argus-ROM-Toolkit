@@ -1,0 +1,209 @@
+import 'package:argus/core/client/client.dart';
+import 'package:argus/features/sources/application/local_filesystem_browser_controller.dart';
+import 'package:argus/features/sources/sources_composition.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('loads mounted roots and opens provider-owned locations', () async {
+    final api = _BrowserFakeApi();
+    final container = ProviderContainer(
+      overrides: [sourcesApiProvider.overrideWithValue(api)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(
+      localFilesystemBrowserControllerProvider.notifier,
+    );
+
+    await controller.load();
+    expect(container.read(localFilesystemBrowserControllerProvider).roots, [
+      api.root,
+    ]);
+
+    await controller.openRoot(api.root);
+    expect(
+      container
+          .read(localFilesystemBrowserControllerProvider)
+          .page
+          ?.current
+          .location
+          .value,
+      'root-location',
+    );
+    await controller.openDirectory(api.child);
+    expect(
+      container
+          .read(localFilesystemBrowserControllerProvider)
+          .page
+          ?.current
+          .location
+          .value,
+      'child-location',
+    );
+    expect(api.requests.map((request) => request.location), [
+      'root-location',
+      'child-location',
+    ]);
+  });
+
+  test(
+    'back follows backend breadcrumbs and returns dismiss at volume list',
+    () async {
+      final api = _BrowserFakeApi();
+      final container = ProviderContainer(
+        overrides: [sourcesApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(
+        localFilesystemBrowserControllerProvider.notifier,
+      );
+      await controller.load();
+      await controller.openRoot(api.root);
+      await controller.openDirectory(api.child);
+
+      expect(await controller.back(), isTrue);
+      expect(
+        container
+            .read(localFilesystemBrowserControllerProvider)
+            .page
+            ?.current
+            .location
+            .value,
+        'root-location',
+      );
+      expect(await controller.back(), isTrue);
+      expect(
+        container.read(localFilesystemBrowserControllerProvider).page,
+        isNull,
+      );
+      expect(await controller.back(), isFalse);
+    },
+  );
+
+  test(
+    'load more uses the backend cursor and preserves returned rows',
+    () async {
+      final api = _BrowserFakeApi(withNextPage: true);
+      final container = ProviderContainer(
+        overrides: [sourcesApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(
+        localFilesystemBrowserControllerProvider.notifier,
+      );
+      await controller.openRoot(api.root);
+      await controller.loadMore();
+
+      final state = container.read(localFilesystemBrowserControllerProvider);
+      expect(state.page?.directories.map((entry) => entry.displayName), [
+        'first',
+        'second',
+      ]);
+      expect(api.requests.last.cursor, 'next-cursor');
+    },
+  );
+
+  test('retry repeats the exact failed browse request', () async {
+    final api = _BrowserFakeApi(failNextBrowse: true);
+    final container = ProviderContainer(
+      overrides: [sourcesApiProvider.overrideWithValue(api)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(
+      localFilesystemBrowserControllerProvider.notifier,
+    );
+    await controller.openRoot(api.root);
+    expect(
+      container.read(localFilesystemBrowserControllerProvider).failure,
+      isA<ClientFailure>(),
+    );
+
+    await controller.retry();
+    expect(
+      container.read(localFilesystemBrowserControllerProvider).failure,
+      isNull,
+    );
+    expect(api.requests.map((request) => request.cursor), [null, null]);
+  });
+}
+
+final class _BrowserFakeApi implements SourcesApi {
+  _BrowserFakeApi({this.withNextPage = false, this.failNextBrowse = false});
+
+  final bool withNextPage;
+  bool failNextBrowse;
+  final requests = <_BrowseRequest>[];
+
+  final root = const LocalFilesystemBrowseRoot(
+    location: LocalFilesystemBrowseLocation('root-location'),
+    displayName: 'Internal storage',
+    safeLocationPresentation: 'Internal storage',
+  );
+  final child = const LocalFilesystemBrowseDirectory(
+    location: LocalFilesystemBrowseLocation('child-location'),
+    displayName: 'Games',
+  );
+
+  @override
+  Future<List<LocalFilesystemBrowseRoot>>
+  listLocalFilesystemBrowseRoots() async => [root];
+
+  @override
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) async {
+    requests.add(_BrowseRequest(location.value, cursor));
+    if (failNextBrowse) {
+      failNextBrowse = false;
+      throw const TransportFailure('browse failed');
+    }
+    if (location.value == 'child-location') {
+      return LocalFilesystemBrowsePage(
+        current: LocalFilesystemBrowseRoot(
+          location: location,
+          displayName: 'Games',
+          safeLocationPresentation: 'Internal storage / Games',
+        ),
+        breadcrumbs: [rootAsBreadcrumb, childAsBreadcrumb],
+        directories: const [],
+        nextCursor: null,
+      );
+    }
+    final first = const LocalFilesystemBrowseDirectory(
+      location: LocalFilesystemBrowseLocation('child-location'),
+      displayName: 'first',
+    );
+    final second = const LocalFilesystemBrowseDirectory(
+      location: LocalFilesystemBrowseLocation('second-location'),
+      displayName: 'second',
+    );
+    return LocalFilesystemBrowsePage(
+      current: root,
+      breadcrumbs: const [rootAsBreadcrumb],
+      directories: cursor == null ? [first] : [second],
+      nextCursor: withNextPage && cursor == null ? 'next-cursor' : null,
+    );
+  }
+
+  static const rootAsBreadcrumb = LocalFilesystemBrowseBreadcrumb(
+    location: LocalFilesystemBrowseLocation('root-location'),
+    displayName: 'Internal storage',
+  );
+  static const childAsBreadcrumb = LocalFilesystemBrowseBreadcrumb(
+    location: LocalFilesystemBrowseLocation('child-location'),
+    displayName: 'Games',
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
+}
+
+final class _BrowseRequest {
+  const _BrowseRequest(this.location, this.cursor);
+
+  final String location;
+  final String? cursor;
+}

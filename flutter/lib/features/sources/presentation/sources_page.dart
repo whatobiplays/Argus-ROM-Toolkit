@@ -1,6 +1,7 @@
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/sources/application/add_library_folder_controller.dart';
 import 'package:argus/features/sources/application/root_list_controller.dart';
+import 'package:argus/features/sources/sources_composition.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -29,9 +30,12 @@ class SourcesPage extends ConsumerWidget {
     final listState = ref.watch(sourcesRootListControllerProvider);
     final addState = ref.watch(sourcesAddLibraryFolderControllerProvider);
     final adding = addState is SourcesAddOperationSubmitting;
+    final capabilities = ref.watch(sourcesPresentationCapabilitiesProvider);
     final ready = listState.value;
     final canScanAll =
-        ready is SourcesRootListStateReady && ready.totalCount > 0;
+        capabilities.scanExecution &&
+        ready is SourcesRootListStateReady &&
+        ready.totalCount > 0;
     final scanAllBlocked =
         ready is SourcesRootListStateReady &&
         (ready.scanAllStatus is SourcesScanAllStatusSubmitting ||

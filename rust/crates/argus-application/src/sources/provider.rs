@@ -64,23 +64,285 @@ impl RootLocator {
 /// The selected folder path is request input only. Flutter and generic
 /// application code must not normalize, canonicalize, split, compare, or
 /// derive identity/overlap semantics from it; the LocalFilesystem provider
-/// owns all filesystem interpretation.
+/// owns all filesystem interpretation. Provider selections carry an opaque
+/// identity that is meaningful only to the LocalFilesystem provider.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LocalFilesystemRootSelection {
-    selected_folder_path: String,
+pub enum LocalFilesystemRootSelection {
+    /// A desktop/native picker supplied a filesystem path.
+    Path { selected_folder_path: String },
+    /// The Argus-owned provider browser supplied an opaque selection identity.
+    ProviderSelection { selection_identity: String },
 }
 
 impl LocalFilesystemRootSelection {
-    /// Creates a typed selection from the raw picker-provided path string.
+    /// Creates a path-backed selection. Kept as the compatibility constructor
+    /// for existing desktop callers.
     pub fn new(selected_folder_path: String) -> Self {
-        Self {
+        Self::path(selected_folder_path)
+    }
+
+    /// Creates a path-backed selection.
+    pub fn path(selected_folder_path: String) -> Self {
+        Self::Path {
             selected_folder_path,
         }
     }
 
-    /// Returns the raw provider input path string.
-    pub fn selected_folder_path(&self) -> &str {
-        &self.selected_folder_path
+    /// Creates an opaque provider-browser selection.
+    pub fn provider_selection(selection_identity: String) -> Self {
+        Self::ProviderSelection { selection_identity }
+    }
+
+    /// Returns the raw picker path only for the path variant.
+    pub fn selected_folder_path(&self) -> Option<&str> {
+        match self {
+            Self::Path {
+                selected_folder_path,
+            } => Some(selected_folder_path),
+            Self::ProviderSelection { .. } => None,
+        }
+    }
+
+    /// Returns the opaque provider selection identity only for the provider
+    /// variant.
+    pub fn selection_identity(&self) -> Option<&str> {
+        match self {
+            Self::Path { .. } => None,
+            Self::ProviderSelection { selection_identity } => Some(selection_identity),
+        }
+    }
+}
+
+/// Maximum number of mounted-volume facts accepted in one native snapshot.
+pub const MAX_MOUNTED_LOCAL_FILESYSTEM_VOLUMES: usize = 32;
+
+/// Maximum number of direct-child browse rows returned by one page.
+pub const MAX_LOCAL_FILESYSTEM_BROWSE_PAGE_SIZE: u32 = 200;
+
+/// Current mounted-volume fact supplied by the native platform layer.
+///
+/// The mount path is transient input for the provider registry. It must never
+/// be persisted as a durable root locator.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MountedLocalFilesystemVolume {
+    provider_volume_id: String,
+    mount_path: String,
+    display_name: String,
+    is_primary: bool,
+    is_removable: bool,
+}
+
+impl MountedLocalFilesystemVolume {
+    /// Creates one bounded native mounted-volume fact.
+    pub fn new(
+        provider_volume_id: String,
+        mount_path: String,
+        display_name: String,
+        is_primary: bool,
+        is_removable: bool,
+    ) -> Self {
+        Self {
+            provider_volume_id,
+            mount_path,
+            display_name,
+            is_primary,
+            is_removable,
+        }
+    }
+
+    /// Returns the provider-stable volume identity.
+    pub fn provider_volume_id(&self) -> &str {
+        &self.provider_volume_id
+    }
+
+    /// Returns the transient current mount path.
+    pub fn mount_path(&self) -> &str {
+        &self.mount_path
+    }
+
+    /// Returns the safe native display name.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    /// Returns whether this is the primary shared-storage volume.
+    pub fn is_primary(&self) -> bool {
+        self.is_primary
+    }
+
+    /// Returns whether this volume is removable.
+    pub fn is_removable(&self) -> bool {
+        self.is_removable
+    }
+}
+
+/// Opaque provider-owned browse location.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct LocalFilesystemBrowseLocation(String);
+
+impl LocalFilesystemBrowseLocation {
+    /// Wraps a provider-produced browse location.
+    pub fn from_provider(value: String) -> Self {
+        Self(value)
+    }
+
+    /// Returns the opaque provider value for provider-internal transport.
+    pub fn as_provider_value(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Opaque provider-owned browse pagination cursor.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct LocalFilesystemBrowseCursor(String);
+
+impl LocalFilesystemBrowseCursor {
+    /// Wraps a provider-produced cursor.
+    pub fn from_provider(value: String) -> Self {
+        Self(value)
+    }
+
+    /// Returns the opaque provider value for provider-internal transport.
+    pub fn as_provider_value(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Safe projection of one mounted browse root.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowseRoot {
+    location: LocalFilesystemBrowseLocation,
+    display_name: String,
+    safe_location_presentation: String,
+}
+
+impl LocalFilesystemBrowseRoot {
+    /// Creates one provider-produced browse-root projection.
+    pub fn new(
+        location: LocalFilesystemBrowseLocation,
+        display_name: String,
+        safe_location_presentation: String,
+    ) -> Self {
+        Self {
+            location,
+            display_name,
+            safe_location_presentation,
+        }
+    }
+
+    /// Returns the opaque root location.
+    pub fn location(&self) -> &LocalFilesystemBrowseLocation {
+        &self.location
+    }
+
+    /// Returns the safe display name.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    /// Returns the provider-produced safe location presentation.
+    pub fn safe_location_presentation(&self) -> &str {
+        &self.safe_location_presentation
+    }
+}
+
+/// Safe projection of one provider-generated breadcrumb.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowseBreadcrumb {
+    location: LocalFilesystemBrowseLocation,
+    display_name: String,
+}
+
+impl LocalFilesystemBrowseBreadcrumb {
+    /// Creates one browse breadcrumb projection.
+    pub fn new(location: LocalFilesystemBrowseLocation, display_name: String) -> Self {
+        Self {
+            location,
+            display_name,
+        }
+    }
+
+    /// Returns the opaque breadcrumb location.
+    pub fn location(&self) -> &LocalFilesystemBrowseLocation {
+        &self.location
+    }
+
+    /// Returns the safe breadcrumb label.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+}
+
+/// Safe projection of one selectable direct-child directory.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowseDirectory {
+    location: LocalFilesystemBrowseLocation,
+    display_name: String,
+}
+
+impl LocalFilesystemBrowseDirectory {
+    /// Creates one browse directory projection.
+    pub fn new(location: LocalFilesystemBrowseLocation, display_name: String) -> Self {
+        Self {
+            location,
+            display_name,
+        }
+    }
+
+    /// Returns the opaque child location.
+    pub fn location(&self) -> &LocalFilesystemBrowseLocation {
+        &self.location
+    }
+
+    /// Returns the safe directory label.
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+}
+
+/// One bounded provider browse page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowsePage {
+    current: LocalFilesystemBrowseRoot,
+    breadcrumbs: Vec<LocalFilesystemBrowseBreadcrumb>,
+    directories: Vec<LocalFilesystemBrowseDirectory>,
+    next_cursor: Option<LocalFilesystemBrowseCursor>,
+}
+
+impl LocalFilesystemBrowsePage {
+    /// Creates one provider-produced browse page.
+    pub fn new(
+        current: LocalFilesystemBrowseRoot,
+        breadcrumbs: Vec<LocalFilesystemBrowseBreadcrumb>,
+        directories: Vec<LocalFilesystemBrowseDirectory>,
+        next_cursor: Option<LocalFilesystemBrowseCursor>,
+    ) -> Self {
+        Self {
+            current,
+            breadcrumbs,
+            directories,
+            next_cursor,
+        }
+    }
+
+    /// Returns the current safe location projection.
+    pub fn current(&self) -> &LocalFilesystemBrowseRoot {
+        &self.current
+    }
+
+    /// Returns provider-generated breadcrumbs from the volume root.
+    pub fn breadcrumbs(&self) -> &[LocalFilesystemBrowseBreadcrumb] {
+        &self.breadcrumbs
+    }
+
+    /// Returns the bounded direct-child directory rows.
+    pub fn directories(&self) -> &[LocalFilesystemBrowseDirectory] {
+        &self.directories
+    }
+
+    /// Returns the opaque cursor for the next page, if any.
+    pub fn next_cursor(&self) -> Option<&LocalFilesystemBrowseCursor> {
+        self.next_cursor.as_ref()
     }
 }
 
@@ -517,6 +779,8 @@ pub enum ProviderError {
     PermissionDenied,
     /// The selection could not currently be reached as an enumerable root.
     Unavailable,
+    /// The browse request or mounted-volume snapshot violated provider bounds.
+    InvalidBrowseRequest,
     /// An unexpected provider-side failure occurred.
     Internal,
 }
@@ -545,6 +809,29 @@ pub trait LocalFilesystemProvider {
     ) -> Result<Box<dyn LibrarySourceAccess>, SourceAccessError>;
 }
 
+/// Additive LocalFilesystem browse and mounted-volume capability.
+///
+/// Existing validation, comparison, and access-only providers remain valid
+/// implementations of [`LocalFilesystemProvider`].
+pub trait LocalFilesystemBrowseProvider: LocalFilesystemProvider {
+    /// Replaces the provider's transient mounted-volume registry atomically.
+    fn replace_mounted_volumes(
+        &self,
+        volumes: &[MountedLocalFilesystemVolume],
+    ) -> Result<(), ProviderError>;
+
+    /// Lists currently mounted browse roots using safe projections.
+    fn list_browse_roots(&self) -> Result<Vec<LocalFilesystemBrowseRoot>, ProviderError>;
+
+    /// Lists one bounded page of direct-child browse directories.
+    fn list_browse_directories(
+        &self,
+        location: &LocalFilesystemBrowseLocation,
+        cursor: Option<&LocalFilesystemBrowseCursor>,
+        page_size: u32,
+    ) -> Result<LocalFilesystemBrowsePage, ProviderError>;
+}
+
 impl<P> LocalFilesystemProvider for &P
 where
     P: LocalFilesystemProvider,
@@ -565,5 +852,30 @@ where
         locator: &RootLocator,
     ) -> Result<Box<dyn LibrarySourceAccess>, SourceAccessError> {
         (*self).open_access(locator)
+    }
+}
+
+impl<P> LocalFilesystemBrowseProvider for &P
+where
+    P: LocalFilesystemBrowseProvider,
+{
+    fn replace_mounted_volumes(
+        &self,
+        volumes: &[MountedLocalFilesystemVolume],
+    ) -> Result<(), ProviderError> {
+        (*self).replace_mounted_volumes(volumes)
+    }
+
+    fn list_browse_roots(&self) -> Result<Vec<LocalFilesystemBrowseRoot>, ProviderError> {
+        (*self).list_browse_roots()
+    }
+
+    fn list_browse_directories(
+        &self,
+        location: &LocalFilesystemBrowseLocation,
+        cursor: Option<&LocalFilesystemBrowseCursor>,
+        page_size: u32,
+    ) -> Result<LocalFilesystemBrowsePage, ProviderError> {
+        (*self).list_browse_directories(location, cursor, page_size)
     }
 }

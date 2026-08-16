@@ -68,6 +68,66 @@ final class StandardApplicationDataDirectoryProvider
 String _$standardApplicationDataDirectoryHash() =>
     r'd2bff5fedd5a5d44d28a0b4298050af02676c0f7';
 
+/// Optional mounted-volume capability supplied by production app composition.
+/// Desktop and tests leave this null, preserving the existing gateway call
+/// sequence without platform discovery.
+
+@ProviderFor(localFilesystemPlatformApi)
+final localFilesystemPlatformApiProvider =
+    LocalFilesystemPlatformApiProvider._();
+
+/// Optional mounted-volume capability supplied by production app composition.
+/// Desktop and tests leave this null, preserving the existing gateway call
+/// sequence without platform discovery.
+
+final class LocalFilesystemPlatformApiProvider
+    extends
+        $FunctionalProvider<
+          LocalFilesystemPlatformApi?,
+          LocalFilesystemPlatformApi?,
+          LocalFilesystemPlatformApi?
+        >
+    with $Provider<LocalFilesystemPlatformApi?> {
+  /// Optional mounted-volume capability supplied by production app composition.
+  /// Desktop and tests leave this null, preserving the existing gateway call
+  /// sequence without platform discovery.
+  LocalFilesystemPlatformApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'localFilesystemPlatformApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$localFilesystemPlatformApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<LocalFilesystemPlatformApi?> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  LocalFilesystemPlatformApi? create(Ref ref) {
+    return localFilesystemPlatformApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(LocalFilesystemPlatformApi? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<LocalFilesystemPlatformApi?>(value),
+    );
+  }
+}
+
+String _$localFilesystemPlatformApiHash() =>
+    r'7029a7942d9adf3668c8b7c7240b75a4a3cb2f42';
+
 /// Creates a fresh bridge adapter for each root-client generation.
 
 @ProviderFor(argusClientGatewayFactory)
@@ -121,7 +181,7 @@ final class ArgusClientGatewayFactoryProvider
 }
 
 String _$argusClientGatewayFactoryHash() =>
-    r'75498015b05de9948dfedcc1150ce2ecd4132a9f';
+    r'8e1e29f2c1c2597440da2db75df7b85e9266585f';
 
 /// App-lifetime owner of the single active root [ArgusClient].
 ///

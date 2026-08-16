@@ -1027,11 +1027,121 @@ final class SourceEntryChildrenPage {
   final String? nextCursor;
 }
 
-/// Untrusted typed local-folder selection from the native picker seam.
-final class LocalFilesystemRootSelection {
-  const LocalFilesystemRootSelection(this.selectedFolderPath);
+/// Opaque provider-owned location returned by the local-filesystem browser.
+final class LocalFilesystemBrowseLocation {
+  const LocalFilesystemBrowseLocation(this.value);
 
+  final String value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LocalFilesystemBrowseLocation && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+/// Safe mounted browse root projection.
+final class LocalFilesystemBrowseRoot {
+  const LocalFilesystemBrowseRoot({
+    required this.location,
+    required this.displayName,
+    required this.safeLocationPresentation,
+  });
+
+  final LocalFilesystemBrowseLocation location;
+  final String displayName;
+  final String safeLocationPresentation;
+}
+
+/// Safe provider-generated breadcrumb projection.
+final class LocalFilesystemBrowseBreadcrumb {
+  const LocalFilesystemBrowseBreadcrumb({
+    required this.location,
+    required this.displayName,
+  });
+
+  final LocalFilesystemBrowseLocation location;
+  final String displayName;
+}
+
+/// Safe selectable direct-child directory projection.
+final class LocalFilesystemBrowseDirectory {
+  const LocalFilesystemBrowseDirectory({
+    required this.location,
+    required this.displayName,
+  });
+
+  final LocalFilesystemBrowseLocation location;
+  final String displayName;
+}
+
+/// One bounded local-filesystem browse page.
+final class LocalFilesystemBrowsePage {
+  const LocalFilesystemBrowsePage({
+    required this.current,
+    required this.breadcrumbs,
+    required this.directories,
+    required this.nextCursor,
+  });
+
+  final LocalFilesystemBrowseRoot current;
+  final List<LocalFilesystemBrowseBreadcrumb> breadcrumbs;
+  final List<LocalFilesystemBrowseDirectory> directories;
+  final String? nextCursor;
+}
+
+/// Closed local-folder selection union.
+///
+/// The unnamed constructor remains a compatibility factory for desktop
+/// callers that already provide a validated picker path. Android browse
+/// selections use [LocalFilesystemRootSelection.providerSelection] and carry
+/// only the provider-issued opaque identity.
+sealed class LocalFilesystemRootSelection {
+  const LocalFilesystemRootSelection._();
+
+  /// Compatibility path-selection constructor for existing desktop callers.
+  const factory LocalFilesystemRootSelection(String selectedFolderPath) =
+      LocalFilesystemRootSelectionPath;
+
+  /// Explicit desktop/native path selection.
+  const factory LocalFilesystemRootSelection.path(String selectedFolderPath) =
+      LocalFilesystemRootSelectionPath;
+
+  /// Opaque provider-issued browse selection.
+  const factory LocalFilesystemRootSelection.providerSelection(
+    String selectionIdentity,
+  ) = LocalFilesystemRootSelectionProvider;
+
+  /// Returns the path for a path selection.
+  ///
+  /// Provider selections do not have a path and must be handled as the
+  /// provider identity they carry instead.
+  String get selectedFolderPath => switch (this) {
+    LocalFilesystemRootSelectionPath(:final selectedFolderPath) =>
+      selectedFolderPath,
+    LocalFilesystemRootSelectionProvider() => throw StateError(
+      'Provider selections do not expose a filesystem path',
+    ),
+  };
+}
+
+/// Path variant of [LocalFilesystemRootSelection].
+final class LocalFilesystemRootSelectionPath
+    extends LocalFilesystemRootSelection {
+  const LocalFilesystemRootSelectionPath(this.selectedFolderPath) : super._();
+
+  @override
   final String selectedFolderPath;
+}
+
+/// Provider-identity variant of [LocalFilesystemRootSelection].
+final class LocalFilesystemRootSelectionProvider
+    extends LocalFilesystemRootSelection {
+  const LocalFilesystemRootSelectionProvider(this.selectionIdentity)
+    : super._();
+
+  final String selectionIdentity;
 }
 
 /// Typed outcome of one root-only add operation.

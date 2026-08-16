@@ -30,13 +30,15 @@ use argus_application::{
     LibraryRootRepository, LibraryScanAdmissionResult, LibraryScanAllAdmissionResult,
     LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup, LibraryService,
     LibrarySourceRepository, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome,
     NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationName, PathClass,
-    PersistenceError, PlatformClass, RemoveLibraryRootCommand, RemoveLibraryRootResult,
-    SafeContext, SafeContextField, SafeContextValue, SettingsService, SourceEntryChildrenPage,
-    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllCommand,
-    StartLibraryScanAllResult, StartLibraryScanCommand, StartupCollector, SubsystemName,
-    TechnicalClass, TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
+    PersistenceError, PlatformClass, ProviderError, RemoveLibraryRootCommand,
+    RemoveLibraryRootResult, SafeContext, SafeContextField, SafeContextValue, SettingsService,
+    SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId,
+    StartLibraryScanAllCommand, StartLibraryScanAllResult, StartLibraryScanCommand,
+    StartupCollector, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TechnicalClass,
+    TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
     UpdateAppearanceSettingsCommand, Version,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
@@ -879,7 +881,7 @@ impl KernelBootstrap {
             SqliteLibraryRootQueries::new(executor.clone()),
             SqliteSourceEntryQueries::new(executor.clone()),
             executor.clone(),
-            InfraLocalFilesystemProvider,
+            InfraLocalFilesystemProvider::default(),
         );
         let unit_of_work = KernelUnitOfWorkFactory::new(executor.clone());
         let jobs_service = JobsService::new(
@@ -1022,6 +1024,52 @@ impl KernelBootstrap {
     ) -> Result<LibraryRootPage, ApplicationError> {
         self.library_service
             .list_library_roots(*query, context.clone())
+    }
+
+    /// Synchronizes current native LocalFilesystem mounts and reconciles root
+    /// availability after provider I/O completes.
+    pub fn sync_local_filesystem_mounted_volumes_with_context(
+        &self,
+        command: SyncLocalFilesystemMountedVolumesCommand,
+        context: &OperationContext,
+    ) -> Result<(), ApplicationError> {
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let result = self.library_service.sync_local_filesystem_mounted_volumes(
+            command,
+            context.clone(),
+            recorder,
+        );
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
+    /// Lists the current safe mounted browse roots.
+    pub fn list_local_filesystem_browse_roots_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<LocalFilesystemBrowseRoot>, ApplicationError> {
+        self.library_service
+            .list_local_filesystem_browse_roots()
+            .map_err(|error| application_error_from_provider(context.trace_id(), error))
+    }
+
+    /// Lists one current safe direct-child browse page.
+    pub fn list_local_filesystem_browse_directories_with_context(
+        &self,
+        location: &LocalFilesystemBrowseLocation,
+        cursor: Option<&LocalFilesystemBrowseCursor>,
+        page_size: u32,
+        context: &OperationContext,
+    ) -> Result<LocalFilesystemBrowsePage, ApplicationError> {
+        self.library_service
+            .list_local_filesystem_browse_directories(location, cursor, page_size)
+            .map_err(|error| application_error_from_provider(context.trace_id(), error))
     }
 
     /// Reads one authoritative configured root.
@@ -1476,7 +1524,7 @@ pub fn bootstrap_kernel_with_event_bus(
         SqliteLibraryRootQueries::new(executor.clone()),
         SqliteSourceEntryQueries::new(executor.clone()),
         executor.clone(),
-        InfraLocalFilesystemProvider,
+        InfraLocalFilesystemProvider::default(),
     );
     let unit_of_work = KernelUnitOfWorkFactory::new(executor.clone());
     let jobs_service = JobsService::new(
@@ -1576,6 +1624,20 @@ pub(crate) fn sources_operation_context(
 fn cancelled_sources_error(trace_id: TraceId) -> ApplicationError {
     ApplicationError::from_code(ErrorCode::OperationCancelled, trace_id, SafeContext::new())
         .expect("operation cancelled uses an allowlisted empty context")
+}
+
+fn application_error_from_provider(trace_id: TraceId, error: ProviderError) -> ApplicationError {
+    let code = match error {
+        ProviderError::PermissionDenied => ErrorCode::FilesystemPermissionDenied,
+        ProviderError::InvalidSelection
+        | ProviderError::NotADirectory
+        | ProviderError::LinkLikeRoot
+        | ProviderError::Unavailable
+        | ProviderError::InvalidBrowseRequest => ErrorCode::FilesystemInvalidRootSelection,
+        ProviderError::Internal => ErrorCode::InternalUnexpected,
+    };
+    ApplicationError::from_code(code, trace_id, SafeContext::new())
+        .expect("provider browse error uses an allowlisted empty context")
 }
 
 pub(crate) fn map_application_port_error(

@@ -10,8 +10,8 @@ part 'lib.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -88,6 +88,25 @@ Future<LibraryRootPageDto> listLibraryRoots({
 /// Reads one authoritative configured root.
 Future<LibraryRootDto> getLibraryRoot({required String libraryRootId}) =>
     RustLib.instance.api.crateGetLibraryRoot(libraryRootId: libraryRootId);
+
+/// Replaces the transient native mounted-volume registry and reconciles
+/// persisted root availability. Native mount facts are ingress-only.
+Future<void> syncLocalFilesystemMountedVolumes({
+  required SyncLocalFilesystemMountedVolumesRequestDto request,
+}) => RustLib.instance.api.crateSyncLocalFilesystemMountedVolumes(
+  request: request,
+);
+
+/// Lists currently mounted safe browse roots.
+Future<List<LocalFilesystemBrowseRootDto>> listLocalFilesystemBrowseRoots() =>
+    RustLib.instance.api.crateListLocalFilesystemBrowseRoots();
+
+/// Lists one bounded page of safe direct-child browse directories.
+Future<LocalFilesystemBrowsePageDto> listLocalFilesystemBrowseDirectories({
+  required ListLocalFilesystemBrowseDirectoriesRequestDto request,
+}) => RustLib.instance.api.crateListLocalFilesystemBrowseDirectories(
+  request: request,
+);
 
 /// Configures one root-only local library folder.
 Future<AddLocalLibraryRootResultDto> addLocalLibraryRoot({
@@ -930,6 +949,31 @@ class ListLibraryRootsRequestDto {
           pageSize == other.pageSize;
 }
 
+/// Bounded direct-child browse request.
+class ListLocalFilesystemBrowseDirectoriesRequestDto {
+  final String location;
+  final String? cursor;
+  final int pageSize;
+
+  const ListLocalFilesystemBrowseDirectoriesRequestDto({
+    required this.location,
+    this.cursor,
+    required this.pageSize,
+  });
+
+  @override
+  int get hashCode => location.hashCode ^ cursor.hashCode ^ pageSize.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ListLocalFilesystemBrowseDirectoriesRequestDto &&
+          runtimeType == other.runtimeType &&
+          location == other.location &&
+          cursor == other.cursor &&
+          pageSize == other.pageSize;
+}
+
 /// One bounded direct-child paging request.
 class ListSourceEntryChildrenRequestDto {
   final String libraryRootId;
@@ -964,21 +1008,160 @@ class ListSourceEntryChildrenRequestDto {
           pageSize == other.pageSize;
 }
 
-/// Untrusted typed local-folder selection supplied by the native picker seam.
-class LocalFilesystemRootSelectionDto {
-  final String selectedFolderPath;
+/// Safe browse breadcrumb projection.
+class LocalFilesystemBrowseBreadcrumbDto {
+  final String location;
+  final String displayName;
 
-  const LocalFilesystemRootSelectionDto({required this.selectedFolderPath});
+  const LocalFilesystemBrowseBreadcrumbDto({
+    required this.location,
+    required this.displayName,
+  });
 
   @override
-  int get hashCode => selectedFolderPath.hashCode;
+  int get hashCode => location.hashCode ^ displayName.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is LocalFilesystemRootSelectionDto &&
+      other is LocalFilesystemBrowseBreadcrumbDto &&
           runtimeType == other.runtimeType &&
-          selectedFolderPath == other.selectedFolderPath;
+          location == other.location &&
+          displayName == other.displayName;
+}
+
+/// Safe browse direct-child directory projection.
+class LocalFilesystemBrowseDirectoryDto {
+  final String location;
+  final String displayName;
+
+  const LocalFilesystemBrowseDirectoryDto({
+    required this.location,
+    required this.displayName,
+  });
+
+  @override
+  int get hashCode => location.hashCode ^ displayName.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LocalFilesystemBrowseDirectoryDto &&
+          runtimeType == other.runtimeType &&
+          location == other.location &&
+          displayName == other.displayName;
+}
+
+/// Safe bounded browse page projection.
+class LocalFilesystemBrowsePageDto {
+  final LocalFilesystemBrowseRootDto current;
+  final List<LocalFilesystemBrowseBreadcrumbDto> breadcrumbs;
+  final List<LocalFilesystemBrowseDirectoryDto> directories;
+  final String? nextCursor;
+
+  const LocalFilesystemBrowsePageDto({
+    required this.current,
+    required this.breadcrumbs,
+    required this.directories,
+    this.nextCursor,
+  });
+
+  @override
+  int get hashCode =>
+      current.hashCode ^
+      breadcrumbs.hashCode ^
+      directories.hashCode ^
+      nextCursor.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LocalFilesystemBrowsePageDto &&
+          runtimeType == other.runtimeType &&
+          current == other.current &&
+          breadcrumbs == other.breadcrumbs &&
+          directories == other.directories &&
+          nextCursor == other.nextCursor;
+}
+
+/// Safe browse-root projection.
+class LocalFilesystemBrowseRootDto {
+  final String location;
+  final String displayName;
+  final String safeLocationPresentation;
+
+  const LocalFilesystemBrowseRootDto({
+    required this.location,
+    required this.displayName,
+    required this.safeLocationPresentation,
+  });
+
+  @override
+  int get hashCode =>
+      location.hashCode ^
+      displayName.hashCode ^
+      safeLocationPresentation.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LocalFilesystemBrowseRootDto &&
+          runtimeType == other.runtimeType &&
+          location == other.location &&
+          displayName == other.displayName &&
+          safeLocationPresentation == other.safeLocationPresentation;
+}
+
+@freezed
+sealed class LocalFilesystemRootSelectionDto
+    with _$LocalFilesystemRootSelectionDto {
+  const LocalFilesystemRootSelectionDto._();
+
+  /// A desktop/native picker path that the provider validates before use.
+  const factory LocalFilesystemRootSelectionDto.path({
+    required String selectedFolderPath,
+  }) = LocalFilesystemRootSelectionDto_Path;
+
+  /// An opaque provider browse identity returned by a prior browse query.
+  const factory LocalFilesystemRootSelectionDto.providerSelection({
+    required String selectionIdentity,
+  }) = LocalFilesystemRootSelectionDto_ProviderSelection;
+}
+
+/// One native mounted-volume fact supplied only to the synchronization ingress.
+class MountedLocalFilesystemVolumeDto {
+  final String providerVolumeId;
+  final String transientMountPath;
+  final String safeDisplayName;
+  final bool isPrimary;
+  final bool isRemovable;
+
+  const MountedLocalFilesystemVolumeDto({
+    required this.providerVolumeId,
+    required this.transientMountPath,
+    required this.safeDisplayName,
+    required this.isPrimary,
+    required this.isRemovable,
+  });
+
+  @override
+  int get hashCode =>
+      providerVolumeId.hashCode ^
+      transientMountPath.hashCode ^
+      safeDisplayName.hashCode ^
+      isPrimary.hashCode ^
+      isRemovable.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MountedLocalFilesystemVolumeDto &&
+          runtimeType == other.runtimeType &&
+          providerVolumeId == other.providerVolumeId &&
+          transientMountPath == other.transientMountPath &&
+          safeDisplayName == other.safeDisplayName &&
+          isPrimary == other.isPrimary &&
+          isRemovable == other.isRemovable;
 }
 
 @freezed
@@ -1533,6 +1716,23 @@ enum StartupPhaseDto {
   coreServicesInitialization,
   eventInfrastructureInitialization,
   readinessValidation,
+}
+
+/// Bounded mounted-volume synchronization request.
+class SyncLocalFilesystemMountedVolumesRequestDto {
+  final List<MountedLocalFilesystemVolumeDto> volumes;
+
+  const SyncLocalFilesystemMountedVolumesRequestDto({required this.volumes});
+
+  @override
+  int get hashCode => volumes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SyncLocalFilesystemMountedVolumesRequestDto &&
+          runtimeType == other.runtimeType &&
+          volumes == other.volumes;
 }
 
 /// Copy-safe startup technical details.

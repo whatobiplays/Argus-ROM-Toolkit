@@ -8,6 +8,13 @@ export 'application/platform_host_api.dart'
         PlatformHostException,
         PlatformHostSnapshot,
         PlatformReadinessFailureKind;
+export 'application/local_filesystem_platform_api.dart'
+    show
+        LocalFilesystemPlatformApi,
+        LocalFilesystemPlatformException,
+        LocalFilesystemPlatformFailureKind,
+        PlatformMountedVolume,
+        maxPlatformMountedVolumes;
 export 'application/platform_readiness_controller.dart'
     show
         PlatformReadinessController,

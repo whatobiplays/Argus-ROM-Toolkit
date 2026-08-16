@@ -29,7 +29,15 @@ final class FakeSourcesApi implements SourcesApi {
   int startScanAllCalls = 0;
   int listChildrenCalls = 0;
   int getEntryCalls = 0;
+  int browseRootsCalls = 0;
+  int browseDirectoriesCalls = 0;
   final List<String> getEntryCallIds = [];
+
+  /// Deterministic browse projections keyed by the opaque provider location
+  /// and cursor. Production code never derives these keys; the fake merely
+  /// lets presentation tests provide backend-owned responses.
+  List<LocalFilesystemBrowseRoot> browseRoots = const [];
+  final Map<String, LocalFilesystemBrowsePage> browsePages = {};
 
   /// Direct children by parent key (`''` = root scope) in backend order.
   final Map<String, List<SourceEntry>> childrenByParent = {};
@@ -125,6 +133,28 @@ final class FakeSourcesApi implements SourcesApi {
       pageSize: pageSize,
       totalCount: roots.length,
     );
+  }
+
+  @override
+  Future<List<LocalFilesystemBrowseRoot>>
+  listLocalFilesystemBrowseRoots() async {
+    browseRootsCalls++;
+    return browseRoots;
+  }
+
+  @override
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) async {
+    browseDirectoriesCalls++;
+    final key = '${location.value}|${cursor ?? ''}';
+    final page = browsePages[key];
+    if (page == null) {
+      throw const TransportFailure('FakeSourcesApi browse page missing');
+    }
+    return page;
   }
 
   @override

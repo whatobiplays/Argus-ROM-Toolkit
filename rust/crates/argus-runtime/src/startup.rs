@@ -445,7 +445,7 @@ impl StartupCoordinator {
                 SqliteLibraryRootQueries::new(executor.clone()),
                 SqliteSourceEntryQueries::new(executor.clone()),
                 executor.clone(),
-                InfraLocalFilesystemProvider,
+                InfraLocalFilesystemProvider::default(),
             );
             self.resources.unit_of_work = Some(unit_of_work);
             self.resources.jobs_service = Some(jobs_service);

@@ -1,9 +1,11 @@
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/sources/application/add_library_folder_controller.dart';
+import 'package:argus/features/sources/sources_composition.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'library_folder_picker.dart';
+import 'selected_library_folder.dart';
 import 'sources_messages.dart';
 
 /// Runs the picker, confirmation, and Add & Scan / Add Without Scanning
@@ -18,21 +20,24 @@ Future<void> runAddLibraryFolderFlow(
   required void Function(String message) onNotice,
 }) async {
   final picker = ref.read(libraryFolderPickerProvider);
-  final LocalFilesystemRootSelection? selection;
+  final SelectedLibraryFolder? selected;
   try {
-    selection = await picker();
+    selected = await picker(context, ref);
   } on Object {
     onNotice(SourcesMessages.pickerFailed);
     return;
   }
-  if (selection == null) return;
+  if (selected == null) return;
   if (!context.mounted) return;
-  final safeSelection = selection;
+  final selectedFolder = selected;
+  final capabilities = ref.read(sourcesPresentationCapabilitiesProvider);
 
   final choice = await showDialog<_AddFolderChoice>(
     context: context,
-    builder: (dialogContext) =>
-        _AddFolderConfirmationDialog(selection: safeSelection),
+    builder: (dialogContext) => _AddFolderConfirmationDialog(
+      selected: selectedFolder,
+      allowScan: capabilities.scanExecution,
+    ),
   );
   if (choice == null || !context.mounted) return;
 
@@ -40,9 +45,9 @@ Future<void> runAddLibraryFolderFlow(
     sourcesAddLibraryFolderControllerProvider.notifier,
   );
   if (choice == _AddFolderChoice.addWithoutScanning) {
-    await controller.add(safeSelection);
+    await controller.add(selectedFolder.selection);
   } else {
-    await controller.addAndScan(safeSelection);
+    await controller.addAndScan(selectedFolder.selection);
   }
   if (!context.mounted) return;
   final operation = ref.read(sourcesAddLibraryFolderControllerProvider);
@@ -127,30 +132,37 @@ Future<void> runAddLibraryFolderFlow(
 
 enum _AddFolderChoice { addAndScan, addWithoutScanning }
 
-/// Confirmation step for one selected local folder with Add & Scan primary
-/// and Add Without Scanning secondary actions.
+/// Confirmation step for one selected local folder.
 class _AddFolderConfirmationDialog extends StatelessWidget {
-  const _AddFolderConfirmationDialog({required this.selection});
+  const _AddFolderConfirmationDialog({
+    required this.selected,
+    required this.allowScan,
+  });
 
-  final LocalFilesystemRootSelection selection;
+  final SelectedLibraryFolder selected;
+  final bool allowScan;
 
   @override
   Widget build(BuildContext context) {
-    final folderName = _folderName(selection.selectedFolderPath);
     return AlertDialog(
       title: const Text('Add Library Folder?'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(folderName, style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            selected.displayName,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 4),
           Text(
-            selection.selectedFolderPath,
+            selected.safeLocationPresentation,
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          const SizedBox(height: 16),
-          const Text(SourcesMessages.addAndScanExplainsNewFolder),
+          if (allowScan) ...[
+            const SizedBox(height: 16),
+            const Text(SourcesMessages.addAndScanExplainsNewFolder),
+          ],
         ],
       ),
       actions: [
@@ -165,21 +177,14 @@ class _AddFolderConfirmationDialog extends StatelessWidget {
               Navigator.of(context).pop(_AddFolderChoice.addWithoutScanning),
           child: const Text(SourcesMessages.addWithoutScanning),
         ),
-        FilledButton(
-          key: const ValueKey<String>('add-folder-and-scan'),
-          onPressed: () =>
-              Navigator.of(context).pop(_AddFolderChoice.addAndScan),
-          child: const Text(SourcesMessages.addAndScan),
-        ),
+        if (allowScan)
+          FilledButton(
+            key: const ValueKey<String>('add-folder-and-scan'),
+            onPressed: () =>
+                Navigator.of(context).pop(_AddFolderChoice.addAndScan),
+            child: const Text(SourcesMessages.addAndScan),
+          ),
       ],
     );
   }
-}
-
-String _folderName(String path) {
-  final separatorIndex = path.lastIndexOf(RegExp(r'[/\\]'));
-  if (separatorIndex == -1 || separatorIndex == path.length - 1) {
-    return path;
-  }
-  return path.substring(separatorIndex + 1);
 }

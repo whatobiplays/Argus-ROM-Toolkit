@@ -63,6 +63,57 @@ final class SourcesApiProvider
 
 String _$sourcesApiHash() => r'95355846b91c5ed32b66889d4e06b6c84920a6dd';
 
+@ProviderFor(sourcesPresentationCapabilities)
+final sourcesPresentationCapabilitiesProvider =
+    SourcesPresentationCapabilitiesProvider._();
+
+final class SourcesPresentationCapabilitiesProvider
+    extends
+        $FunctionalProvider<
+          SourcesPresentationCapabilities,
+          SourcesPresentationCapabilities,
+          SourcesPresentationCapabilities
+        >
+    with $Provider<SourcesPresentationCapabilities> {
+  SourcesPresentationCapabilitiesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'sourcesPresentationCapabilitiesProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$sourcesPresentationCapabilitiesHash();
+
+  @$internal
+  @override
+  $ProviderElement<SourcesPresentationCapabilities> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  SourcesPresentationCapabilities create(Ref ref) {
+    return sourcesPresentationCapabilities(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(SourcesPresentationCapabilities value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<SourcesPresentationCapabilities>(
+        value,
+      ),
+    );
+  }
+}
+
+String _$sourcesPresentationCapabilitiesHash() =>
+    r'bba64cf971fda58717d5b2a333e719673f1846eb';
+
 /// Focused Jobs capability injected for Sources-owned coordination (Scan All
 /// ambiguity reconciliation and cancel-and-remove).
 ///

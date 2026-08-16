@@ -1,6 +1,12 @@
 import 'package:argus/core/client/client.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../sources_composition.dart';
+import 'local_filesystem_browser.dart';
+import 'selected_library_folder.dart';
 
 part 'library_folder_picker.g.dart';
 
@@ -8,14 +14,46 @@ part 'library_folder_picker.g.dart';
 ///
 /// Returns null when the user cancels. Platform errors are sanitized before
 /// normal presentation; the feature never sees plugin-specific result types.
-typedef LibraryFolderPicker = Future<LocalFilesystemRootSelection?> Function();
+typedef LibraryFolderPicker =
+    Future<SelectedLibraryFolder?> Function(
+      BuildContext context,
+      WidgetRef ref,
+    );
 
 /// Provides the native folder picker used by the add workflow.
 @Riverpod(keepAlive: true)
-LibraryFolderPicker libraryFolderPicker(Ref ref) => _pickLibraryFolder;
+LibraryFolderPicker libraryFolderPicker(Ref ref) {
+  final capabilities = ref.watch(sourcesPresentationCapabilitiesProvider);
+  return capabilities.localFilesystemBrowser
+      ? _pickLibraryFolderWithArgusBrowser
+      : _pickLibraryFolder;
+}
 
-Future<LocalFilesystemRootSelection?> _pickLibraryFolder() async {
+Future<SelectedLibraryFolder?> _pickLibraryFolder(
+  BuildContext context,
+  WidgetRef ref,
+) async {
   final path = await getDirectoryPath(confirmButtonText: 'Select Folder');
   if (path == null) return null;
-  return LocalFilesystemRootSelection(path);
+  final displayName = path
+      .split(RegExp(r'[/\\]'))
+      .lastWhere((part) => part.isNotEmpty, orElse: () => path);
+  return SelectedLibraryFolder(
+    selection: LocalFilesystemRootSelection(path),
+    displayName: displayName,
+    safeLocationPresentation: path,
+  );
 }
+
+Future<SelectedLibraryFolder?> _pickLibraryFolderWithArgusBrowser(
+  BuildContext context,
+  WidgetRef ref,
+) => showDialog<SelectedLibraryFolder>(
+  context: context,
+  builder: (dialogContext) => Dialog(
+    child: LocalFilesystemBrowser(
+      onSelected: (selection) => Navigator.of(dialogContext).pop(selection),
+      onCancel: () => Navigator.of(dialogContext).pop(),
+    ),
+  ),
+);

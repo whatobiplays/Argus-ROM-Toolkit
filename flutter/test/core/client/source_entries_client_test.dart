@@ -212,6 +212,18 @@ final class _HierarchyFakeGateway
       throw const TransportFailure('hierarchy fake is not focused on roots');
 
   @override
+  Future<List<LocalFilesystemBrowseRoot>>
+  listLocalFilesystemBrowseRoots() async => const [];
+
+  @override
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) async =>
+      throw const TransportFailure('hierarchy fake is not focused on roots');
+
+  @override
   Future<void> closeEventConnection() async {}
 
   @override

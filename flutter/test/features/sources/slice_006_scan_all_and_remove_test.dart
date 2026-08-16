@@ -26,11 +26,17 @@ LibraryRoot _root({LibraryRootActiveScan? activeScan}) => LibraryRoot(
   activeScan: activeScan,
 );
 
-ProviderContainer _container(FakeSourcesApi api, FakeJobsApi jobsApi) {
+ProviderContainer _container(
+  FakeSourcesApi api,
+  FakeJobsApi jobsApi, {
+  SourcesPresentationCapabilities capabilities =
+      const SourcesPresentationCapabilities(),
+}) {
   final container = ProviderContainer(
     overrides: [
       sourcesApiProvider.overrideWithValue(api),
       sourcesJobsApiProvider.overrideWithValue(jobsApi),
+      sourcesPresentationCapabilitiesProvider.overrideWithValue(capabilities),
       sourcesRuntimeContextProvider.overrideWith(
         (ref) =>
             const SourcesRuntimeContext.ready(runtimeInstanceId: _runtimeId),
@@ -87,6 +93,27 @@ Future<void> _pumpDetail(
 }
 
 void main() {
+  testWidgets('Android root-management capabilities hide every scan control', (
+    tester,
+  ) async {
+    final api = FakeSourcesApi(roots: [_root()]);
+    final container = _container(
+      api,
+      FakeJobsApi(),
+      capabilities: const SourcesPresentationCapabilities(
+        scanExecution: false,
+        localFilesystemBrowser: true,
+      ),
+    );
+
+    await _pumpSources(tester, container, onOpenJob: (_) {});
+    expect(find.byKey(const ValueKey('sources-scan-all')), findsNothing);
+
+    await _pumpDetail(tester, container);
+    expect(find.byKey(const ValueKey('sources-start-scan')), findsNothing);
+    expect(find.byKey(const ValueKey('sources-view-last-job')), findsNothing);
+  });
+
   testWidgets('Scan All control is gated by authoritative totalCount', (
     tester,
   ) async {

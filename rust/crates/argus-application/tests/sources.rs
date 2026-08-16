@@ -14,13 +14,16 @@ use argus_application::{
     LibraryRootProjection, LibraryRootQueries, LibraryRootRepository, LibraryRootScanConfiguration,
     LibraryRootsChanged, LibraryRootsSubscriber, LibraryScanTarget, LibraryScanTargetRepository,
     LibraryService, LibrarySourceAccess, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemProvider, LocalFilesystemRootSelection, NativeIdentityMatch, NewJobRun,
-    NewLibraryRoot, NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext,
-    OperationName, PersistenceError, ProviderError, RemoveLibraryRootCommand,
-    RemoveLibraryRootResult, RootLocator, RootRelationship, ScanRunId, ScanRunProjection,
-    ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntryChildrenPage,
-    SourceEntryDetailProjection, SourceEntryId, SourceEntryQueries, SourceEntryRecord,
-    SourceEntryRepository, SourceLocatorKey, SourceProviderType, SubsystemName, TraceId,
+    LocalFilesystemBrowseBreadcrumb, LocalFilesystemBrowseCursor, LocalFilesystemBrowseDirectory,
+    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseProvider,
+    LocalFilesystemBrowseRoot, LocalFilesystemProvider, LocalFilesystemRootSelection,
+    MountedLocalFilesystemVolume, NativeIdentityMatch, NewJobRun, NewLibraryRoot,
+    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext, OperationName,
+    PersistenceError, ProviderError, RemoveLibraryRootCommand, RemoveLibraryRootResult,
+    ResolvedRoot, RootLocator, RootRelationship, ScanRunId, ScanRunProjection, ScanRunRepository,
+    ScanRunStatus, SourceAccessError, SourceEntryChildrenPage, SourceEntryDetailProjection,
+    SourceEntryId, SourceEntryQueries, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
+    SourceProviderType, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId,
     UnitOfWork, UnitOfWorkFactory, ValidatedLocalRoot,
 };
 use argus_domain::LibrarySourceId;
@@ -46,6 +49,69 @@ fn context() -> OperationContext {
 
 fn selection(path: &str) -> LocalFilesystemRootSelection {
     LocalFilesystemRootSelection::new(path.to_owned())
+}
+
+#[test]
+fn mounted_volume_sync_command_preserves_its_bounded_native_facts() {
+    let command = SyncLocalFilesystemMountedVolumesCommand::new(Vec::new());
+    assert!(command.volumes().is_empty());
+}
+
+#[test]
+fn local_filesystem_root_selection_keeps_path_and_provider_identity_closed() {
+    let path = LocalFilesystemRootSelection::path("/tmp/roms".to_owned());
+    assert_eq!(path.selected_folder_path(), Some("/tmp/roms"));
+    assert_eq!(path.selection_identity(), None);
+
+    let provider = LocalFilesystemRootSelection::provider_selection("browse-v1:abc".to_owned());
+    assert_eq!(provider.selected_folder_path(), None);
+    assert_eq!(provider.selection_identity(), Some("browse-v1:abc"));
+}
+
+#[test]
+fn mounted_volume_and_browse_projection_fields_are_provider_owned() {
+    let volume = MountedLocalFilesystemVolume::new(
+        "primary".to_owned(),
+        "/storage/emulated/0".to_owned(),
+        "Internal storage".to_owned(),
+        true,
+        false,
+    );
+    assert_eq!(volume.provider_volume_id(), "primary");
+    assert_eq!(volume.mount_path(), "/storage/emulated/0");
+    assert_eq!(volume.display_name(), "Internal storage");
+    assert!(volume.is_primary());
+    assert!(!volume.is_removable());
+
+    let location =
+        LocalFilesystemBrowseLocation::from_provider("browse-v1:primary:root".to_owned());
+    let root = LocalFilesystemBrowseRoot::new(
+        location.clone(),
+        "Internal storage".to_owned(),
+        "Internal storage".to_owned(),
+    );
+    let breadcrumb =
+        LocalFilesystemBrowseBreadcrumb::new(location.clone(), "Internal storage".to_owned());
+    let directory = LocalFilesystemBrowseDirectory::new(
+        LocalFilesystemBrowseLocation::from_provider("browse-v1:primary:child".to_owned()),
+        "ROMs".to_owned(),
+    );
+    let page = LocalFilesystemBrowsePage::new(
+        root,
+        vec![breadcrumb],
+        vec![directory],
+        Some(LocalFilesystemBrowseCursor::from_provider(
+            "cursor-v1:next".to_owned(),
+        )),
+    );
+    assert_eq!(page.current().display_name(), "Internal storage");
+    assert_eq!(page.breadcrumbs().len(), 1);
+    assert_eq!(page.directories().len(), 1);
+    assert_eq!(
+        page.next_cursor()
+            .map(LocalFilesystemBrowseCursor::as_provider_value),
+        Some("cursor-v1:next")
+    );
 }
 
 fn validated(path: &str) -> ValidatedLocalRoot {
@@ -123,6 +189,105 @@ impl LocalFilesystemProvider for FakeProvider {
         _locator: &RootLocator,
     ) -> Result<Box<dyn LibrarySourceAccess>, SourceAccessError> {
         Err(SourceAccessError::UnsupportedOperation)
+    }
+}
+
+#[derive(Clone)]
+struct SyncFakeProvider {
+    resolution: Arc<Mutex<Vec<Result<(), SourceAccessError>>>>,
+    replacement: Rc<RefCell<Result<(), ProviderError>>>,
+}
+
+impl SyncFakeProvider {
+    fn new(resolution: Vec<Result<(), SourceAccessError>>) -> Self {
+        Self {
+            resolution: Arc::new(Mutex::new(resolution)),
+            replacement: Rc::new(RefCell::new(Ok(()))),
+        }
+    }
+
+    fn fail_replacement(&self, error: ProviderError) {
+        *self.replacement.borrow_mut() = Err(error);
+    }
+}
+
+struct SyncFakeAccess {
+    resolution: Arc<Mutex<Vec<Result<(), SourceAccessError>>>>,
+}
+
+impl LibrarySourceAccess for SyncFakeAccess {
+    fn resolve_root(&self) -> Result<ResolvedRoot, SourceAccessError> {
+        match self
+            .resolution
+            .lock()
+            .expect("resolution lock")
+            .pop()
+            .unwrap_or(Ok(()))
+        {
+            Ok(()) => Ok(ResolvedRoot::from_provider("resolved".to_owned())),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn enumerate_root_direct_children(
+        &self,
+        _root: &ResolvedRoot,
+        _is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<argus_application::EnumerationResult, SourceAccessError> {
+        Err(SourceAccessError::UnsupportedOperation)
+    }
+
+    fn enumerate_direct_children(
+        &self,
+        _root: &ResolvedRoot,
+        _relative: &argus_application::RelativeSourceLocator,
+        _is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<argus_application::EnumerationResult, SourceAccessError> {
+        Err(SourceAccessError::UnsupportedOperation)
+    }
+}
+
+impl LocalFilesystemProvider for SyncFakeProvider {
+    fn validate(
+        &self,
+        _selection: &LocalFilesystemRootSelection,
+    ) -> Result<ValidatedLocalRoot, ProviderError> {
+        Err(ProviderError::Internal)
+    }
+
+    fn compare_roots(&self, _left: &RootLocator, _right: &RootLocator) -> RootRelationship {
+        RootRelationship::Unknown
+    }
+
+    fn open_access(
+        &self,
+        _locator: &RootLocator,
+    ) -> Result<Box<dyn LibrarySourceAccess>, SourceAccessError> {
+        Ok(Box::new(SyncFakeAccess {
+            resolution: Arc::clone(&self.resolution),
+        }))
+    }
+}
+
+impl LocalFilesystemBrowseProvider for SyncFakeProvider {
+    fn replace_mounted_volumes(
+        &self,
+        _volumes: &[MountedLocalFilesystemVolume],
+    ) -> Result<(), ProviderError> {
+        *self.replacement.borrow()
+    }
+
+    fn list_browse_roots(&self) -> Result<Vec<LocalFilesystemBrowseRoot>, ProviderError> {
+        Ok(Vec::new())
+    }
+
+    fn list_browse_directories(
+        &self,
+        _location: &LocalFilesystemBrowseLocation,
+        _cursor: Option<&LocalFilesystemBrowseCursor>,
+        _page_size: u32,
+    ) -> Result<LocalFilesystemBrowsePage, ProviderError> {
+        Err(ProviderError::InvalidBrowseRequest)
     }
 }
 
@@ -214,6 +379,7 @@ struct FakeStore {
     source_id: Option<LibrarySourceId>,
     inserted: Vec<(LibraryRootId, NewLibraryRoot)>,
     deleted: Vec<LibraryRootId>,
+    availability_updates: Vec<(LibraryRootId, LibraryRootAvailability)>,
     commits: usize,
     rollbacks: usize,
 }
@@ -258,9 +424,13 @@ impl LibraryRootRepository for FakeRootRepository<'_> {
 
     fn set_availability(
         &mut self,
-        _root_id: LibraryRootId,
-        _availability: LibraryRootAvailability,
+        root_id: LibraryRootId,
+        availability: LibraryRootAvailability,
     ) -> Result<bool, PersistenceError> {
+        self.store
+            .borrow_mut()
+            .availability_updates
+            .push((root_id, availability));
         Ok(true)
     }
 
@@ -662,6 +832,80 @@ fn assert_committed_roots_changed_and_root_changed(events: &[ApplicationEvent]) 
             }),
         ]
     );
+}
+
+#[test]
+fn mounted_volume_sync_marks_definitely_missing_roots_unavailable_after_provider_io() {
+    let queries = FakeQueries::with_configs(vec![LibraryRootConfiguration::with_availability(
+        root_id(ROOT_MISSING),
+        RootLocator::from_provider("android-root".to_owned()),
+        LibraryRootAvailability::Available,
+    )]);
+    let provider = SyncFakeProvider::new(vec![Err(SourceAccessError::SourceUnavailable)]);
+    let factory = FakeFactory::default();
+    let recorder = FakeRecorder::default();
+    let events = Arc::clone(&recorder.events);
+    let service = LibraryService::new(queries, FakeSourceEntryQueries, factory.clone(), provider);
+
+    service
+        .sync_local_filesystem_mounted_volumes(
+            SyncLocalFilesystemMountedVolumesCommand::new(Vec::new()),
+            context(),
+            recorder,
+        )
+        .expect("sync");
+
+    assert_eq!(
+        factory.store.borrow().availability_updates,
+        vec![(root_id(ROOT_MISSING), LibraryRootAvailability::Unavailable)]
+    );
+    assert_eq!(factory.store.borrow().commits, 1);
+    assert_eq!(
+        events.lock().expect("events").as_slice(),
+        &[ApplicationEvent::LibraryRootChanged(LibraryRootChanged {
+            library_root_id: root_id(ROOT_MISSING),
+        })]
+    );
+}
+
+#[test]
+fn mounted_volume_sync_skips_unchanged_rows_and_preserves_state_on_registry_failure() {
+    let queries = FakeQueries::with_configs(vec![LibraryRootConfiguration::with_availability(
+        root_id(ROOT_EXISTING),
+        RootLocator::from_provider("android-root".to_owned()),
+        LibraryRootAvailability::Available,
+    )]);
+    let provider = SyncFakeProvider::new(vec![Ok(())]);
+    let factory = FakeFactory::default();
+    let recorder = FakeRecorder::default();
+    let events = Arc::clone(&recorder.events);
+    let service = LibraryService::new(
+        queries.clone(),
+        FakeSourceEntryQueries,
+        factory.clone(),
+        provider.clone(),
+    );
+
+    service
+        .sync_local_filesystem_mounted_volumes(
+            SyncLocalFilesystemMountedVolumesCommand::new(Vec::new()),
+            context(),
+            recorder,
+        )
+        .expect("unchanged sync");
+    assert!(factory.store.borrow().availability_updates.is_empty());
+    assert!(events.lock().expect("events").is_empty());
+    assert_eq!(factory.store.borrow().commits, 0);
+
+    provider.fail_replacement(ProviderError::InvalidBrowseRequest);
+    let recorder = FakeRecorder::default();
+    let result = service.sync_local_filesystem_mounted_volumes(
+        SyncLocalFilesystemMountedVolumesCommand::new(Vec::new()),
+        context(),
+        recorder,
+    );
+    assert!(result.is_err());
+    assert!(factory.store.borrow().availability_updates.is_empty());
 }
 
 #[test]

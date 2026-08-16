@@ -8,6 +8,7 @@ import 'package:argus/features/sources/application/root_list_controller.dart';
 import 'package:argus/features/sources/application/sources_session_presentation.dart';
 import 'package:argus/features/sources/application/sources_state.dart';
 import 'package:argus/features/sources/presentation/library_folder_picker.dart';
+import 'package:argus/features/sources/presentation/selected_library_folder.dart';
 import 'package:argus/features/sources/presentation/root_detail_page.dart';
 import 'package:argus/features/sources/presentation/sources_page.dart';
 import 'package:argus/features/sources/sources_composition.dart';
@@ -22,6 +23,13 @@ import '../jobs/jobs_test_fakes.dart';
 const _rootId = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 const _runtimeId = RuntimeInstanceId('1234567890abcdef1234567890abcdef');
 
+SelectedLibraryFolder pickedFolder(LocalFilesystemRootSelection selection) =>
+    SelectedLibraryFolder(
+      selection: selection,
+      displayName: 'Games',
+      safeLocationPresentation: selection.selectedFolderPath,
+    );
+
 List<LibraryRoot> manyRoots(int count) => [
   for (var index = 0; index < count; index++)
     fakeRoot(
@@ -35,10 +43,13 @@ ProviderContainer createContainer(
   LibraryFolderPicker? picker,
   Stream<SourcesReconciliationDemand>? demands,
   FakeJobsApi? jobsApi,
+  SourcesPresentationCapabilities capabilities =
+      const SourcesPresentationCapabilities(),
 }) {
   final container = ProviderContainer(
     overrides: [
       sourcesApiProvider.overrideWithValue(api),
+      sourcesPresentationCapabilitiesProvider.overrideWithValue(capabilities),
       sourcesRuntimeContextProvider.overrideWith(
         (ref) =>
             const SourcesRuntimeContext.ready(runtimeInstanceId: _runtimeId),
@@ -659,7 +670,7 @@ void main() {
     testWidgets('picker cancellation and confirmation cancellation mutate '
         'nothing', (tester) async {
       final api = FakeSourcesApi();
-      final container = createContainer(api, picker: () async => null);
+      final container = createContainer(api, picker: (_, _) async => null);
       await pumpPage(tester, container);
 
       await tester.tap(find.text('Add Library Folder'));
@@ -667,7 +678,10 @@ void main() {
       expect(api.addCalls, 0);
 
       final selection = const LocalFilesystemRootSelection('/tmp/games');
-      final container2 = createContainer(api, picker: () async => selection);
+      final container2 = createContainer(
+        api,
+        picker: (_, _) async => pickedFolder(selection),
+      );
       await pumpPage(tester, container2);
       await tester.tap(find.text('Add Library Folder'));
       await tester.pumpAndSettle();
@@ -682,7 +696,8 @@ void main() {
       final api = FakeSourcesApi();
       final container = createContainer(
         api,
-        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+        picker: (_, _) async =>
+            pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
       );
       await pumpPage(tester, container);
 
@@ -701,6 +716,43 @@ void main() {
       expect(find.text('Add Without Scanning'), findsOneWidget);
     });
 
+    testWidgets(
+      'Android root management confirmation never offers Add & Scan',
+      (tester) async {
+        final api = FakeSourcesApi();
+        final container = createContainer(
+          api,
+          capabilities: const SourcesPresentationCapabilities(
+            scanExecution: false,
+            localFilesystemBrowser: true,
+          ),
+          picker: (_, _) async =>
+              pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
+        );
+        await pumpPage(tester, container);
+
+        await tester.tap(find.text('Add Library Folder'));
+        await tester.pumpAndSettle();
+        expect(find.text('Add Library Folder?'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('add-folder-and-scan')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('add-folder-without-scan')),
+          findsOneWidget,
+        );
+        expect(find.text('Add & Scan'), findsNothing);
+
+        await tester.tap(
+          find.byKey(const ValueKey<String>('add-folder-without-scan')),
+        );
+        await tester.pumpAndSettle();
+        expect(api.addCalls, 1);
+        expect(api.addAndScanCalls, 0);
+      },
+    );
+
     testWidgets('Add Without Scanning adds the root without admitting a scan', (
       tester,
     ) async {
@@ -708,7 +760,8 @@ void main() {
       final opened = <LibraryRootId>[];
       final container = createContainer(
         api,
-        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+        picker: (_, _) async =>
+            pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
       );
       await pumpPage(tester, container, onOpenRoot: opened.add);
 
@@ -732,7 +785,8 @@ void main() {
       final opened = <LibraryRootId>[];
       final container = createContainer(
         api,
-        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+        picker: (_, _) async =>
+            pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
       );
       await pumpPage(tester, container, onOpenRoot: opened.add);
 
@@ -772,7 +826,8 @@ void main() {
       final opened = <LibraryRootId>[];
       final container = createContainer(
         api,
-        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+        picker: (_, _) async =>
+            pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
       );
       await pumpPage(tester, container, onOpenRoot: opened.add);
 
@@ -804,7 +859,8 @@ void main() {
       final jobsApi = FakeJobsApi()..onRootScanAdmission = (_) => null;
       final container = createContainer(
         api,
-        picker: () async => const LocalFilesystemRootSelection('/tmp/games'),
+        picker: (_, _) async =>
+            pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
         jobsApi: jobsApi,
       );
       await pumpPage(tester, container);
@@ -830,7 +886,7 @@ void main() {
       final api = FakeSourcesApi();
       final container = createContainer(
         api,
-        picker: () async => throw StateError('native picker exploded'),
+        picker: (_, _) async => throw StateError('native picker exploded'),
       );
       await pumpPage(tester, container);
 

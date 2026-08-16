@@ -80,26 +80,37 @@ impl LibraryRootQueries for SqliteLibraryRootQueries {
                 let mut statement = connection
                     .connection
                     .prepare(
-                        "SELECT library_root_id, root_locator
+                        "SELECT library_root_id, root_locator, availability_status
                          FROM library_root
                          ORDER BY created_at ASC, library_root_id ASC",
                     )
                     .map_err(|error| operation_error(&error))?;
                 let rows = statement
                     .query_map([], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
                     })
                     .map_err(|error| operation_error(&error))?;
                 let raw = rows
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|error| operation_error(&error))?;
                 raw.into_iter()
-                    .map(|(id, locator)| {
+                    .map(|(id, locator, availability)| {
                         let root_id = LibraryRootId::try_from(id.as_str())
                             .map_err(|_| corrupt_persistence())?;
-                        Ok(LibraryRootConfiguration::new(
+                        let availability = match availability.as_str() {
+                            "available" => LibraryRootAvailability::Available,
+                            "unavailable" => LibraryRootAvailability::Unavailable,
+                            "unknown" => LibraryRootAvailability::Unknown,
+                            _ => return Err(corrupt_persistence()),
+                        };
+                        Ok(LibraryRootConfiguration::with_availability(
                             root_id,
                             argus_application::RootLocator::from_provider(locator),
+                            availability,
                         ))
                     })
                     .collect()

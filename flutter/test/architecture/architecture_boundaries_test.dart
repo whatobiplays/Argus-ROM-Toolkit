@@ -62,6 +62,7 @@ void main() {
       'features/settings/application/appearance_settings_controller.dart',
       'features/settings/application/appearance_settings_dependencies.dart',
       'features/sources/application/add_library_folder_controller.dart',
+      'features/sources/application/local_filesystem_browser_controller.dart',
       'features/sources/application/root_detail_controller.dart',
       'features/sources/application/root_list_controller.dart',
       'features/sources/application/source_entry_detail_controller.dart',
@@ -141,118 +142,110 @@ void main() {
     }
   });
 
-  test(
-    'production source excludes future integrations and alternate shells',
-    () {
-      const forbiddenConcepts = <String>[
-        'StatefulShellRoute',
-        'SQLite',
-        'sqlite',
-        'isDesktop',
-        'isTablet',
-        'isPhone',
-        'LibraryRoute',
-        'CollectionsRoute',
-        'GameDetailRoute',
-        'DiagnosticsRoute',
-      ];
+  test('production source excludes future integrations and alternate shells', () {
+    const forbiddenConcepts = <String>[
+      'StatefulShellRoute',
+      'SQLite',
+      'sqlite',
+      'isDesktop',
+      'isTablet',
+      'isPhone',
+      'LibraryRoute',
+      'CollectionsRoute',
+      'GameDetailRoute',
+      'DiagnosticsRoute',
+    ];
 
-      for (final entry in sources.entries) {
-        for (final forbidden in forbiddenConcepts) {
-          expect(entry.value, isNot(contains(forbidden)), reason: entry.key);
-        }
+    for (final entry in sources.entries) {
+      for (final forbidden in forbiddenConcepts) {
+        expect(entry.value, isNot(contains(forbidden)), reason: entry.key);
       }
-      for (final entry in sources.entries.where(
-        (entry) =>
-            !entry.key.startsWith('core/bridge/') &&
-            !entry.key.startsWith('core/client/') &&
-            entry.key != 'app/bootstrap/client_bootstrap.dart',
-      )) {
-        expect(
-          entry.value,
-          isNot(contains('flutter_rust_bridge')),
-          reason: entry.key,
-        );
-        expect(
-          entry.value,
-          isNot(contains('frb_generated')),
-          reason: entry.key,
-        );
-        if (entry.key == 'app/bootstrap/app_bootstrap.dart') {
-          // Slice 009's approved narrow bootstrap seam names the gateway
-          // factory interface; every other concrete-client token stays
-          // forbidden so only that seam may mention the client layer.
-          expect(
-            entry.value.replaceAll('ArgusClientGateway', ''),
-            isNot(contains('ArgusClient')),
-            reason: entry.key,
-          );
-        } else {
-          expect(
-            entry.value,
-            isNot(contains('ArgusClient')),
-            reason: entry.key,
-          );
-        }
-      }
+    }
+    for (final entry in sources.entries.where(
+      (entry) =>
+          !entry.key.startsWith('core/bridge/') &&
+          !entry.key.startsWith('core/client/') &&
+          entry.key != 'app/bootstrap/client_bootstrap.dart',
+    )) {
       expect(
-        sources.keys.where((path) => path.startsWith('features/')).toList(),
-        <String>[
-          'features/jobs/application/active_job_summary_controller.dart',
-          'features/jobs/application/job_detail_controller.dart',
-          'features/jobs/application/jobs_list_controller.dart',
-          'features/jobs/application/jobs_state.dart',
-          'features/jobs/jobs.dart',
-          'features/jobs/jobs_composition.dart',
-          'features/jobs/presentation/job_detail_page.dart',
-          'features/jobs/presentation/jobs_messages.dart',
-          'features/jobs/presentation/jobs_page.dart',
-          'features/settings/application/appearance_settings_controller.dart',
-          'features/settings/application/appearance_settings_dependencies.dart',
-          'features/settings/application/appearance_settings_state.dart',
-          'features/settings/presentation/appearance_initialization_view.dart',
-          'features/settings/presentation/appearance_messages.dart',
-          'features/settings/presentation/settings_page.dart',
-          'features/settings/presentation/theme_mode_control.dart',
-          'features/settings/settings.dart',
-          'features/settings/settings_composition.dart',
-          'features/sources/application/add_library_folder_controller.dart',
-          'features/sources/application/root_detail_controller.dart',
-          'features/sources/application/root_list_controller.dart',
-          'features/sources/application/source_entry_detail_controller.dart',
-          'features/sources/application/source_hierarchy_controller.dart',
-          'features/sources/application/source_hierarchy_state.dart',
-          'features/sources/application/sources_session_presentation.dart',
-          'features/sources/application/sources_state.dart',
-          'features/sources/presentation/add_library_folder_flow.dart',
-          'features/sources/presentation/hierarchy_drill_down_view.dart',
-          'features/sources/presentation/hierarchy_tree_view.dart',
-          'features/sources/presentation/library_folder_picker.dart',
-          'features/sources/presentation/remove_root_dialog.dart',
-          'features/sources/presentation/root_detail_page.dart',
-          'features/sources/presentation/root_sidebar.dart',
-          'features/sources/presentation/source_entry_inspector.dart',
-          'features/sources/presentation/source_hierarchy_browser.dart',
-          'features/sources/presentation/sources_messages.dart',
-          'features/sources/presentation/sources_page.dart',
-          'features/sources/sources.dart',
-          'features/sources/sources_composition.dart',
-          'features/startup/application/app_readiness.dart',
-          'features/startup/application/startup_controller.dart',
-          'features/startup/application/startup_state.dart',
-          'features/startup/presentation/bootstrap_failure_view.dart',
-          'features/startup/presentation/presentation_seams.dart',
-          'features/startup/presentation/runtime_unavailable_view.dart',
-          'features/startup/presentation/shutdown_views.dart',
-          'features/startup/presentation/startup_failure_view.dart',
-          'features/startup/presentation/startup_gate.dart',
-          'features/startup/presentation/startup_loading_view.dart',
-          'features/startup/presentation/startup_messages.dart',
-          'features/startup/startup.dart',
-        ],
+        entry.value,
+        isNot(contains('flutter_rust_bridge')),
+        reason: entry.key,
       );
-    },
-  );
+      expect(entry.value, isNot(contains('frb_generated')), reason: entry.key);
+      if (entry.key == 'app/bootstrap/app_bootstrap.dart') {
+        // Slice 009's approved narrow bootstrap seam names the gateway
+        // factory interface; every other concrete-client token stays
+        // forbidden so only that seam may mention the client layer.
+        expect(
+          entry.value.replaceAll('ArgusClientGateway', ''),
+          isNot(contains('ArgusClient')),
+          reason: entry.key,
+        );
+      } else {
+        expect(entry.value, isNot(contains('ArgusClient')), reason: entry.key);
+      }
+    }
+    expect(
+      sources.keys.where((path) => path.startsWith('features/')).toList(),
+      <String>[
+        'features/jobs/application/active_job_summary_controller.dart',
+        'features/jobs/application/job_detail_controller.dart',
+        'features/jobs/application/jobs_list_controller.dart',
+        'features/jobs/application/jobs_state.dart',
+        'features/jobs/jobs.dart',
+        'features/jobs/jobs_composition.dart',
+        'features/jobs/presentation/job_detail_page.dart',
+        'features/jobs/presentation/jobs_messages.dart',
+        'features/jobs/presentation/jobs_page.dart',
+        'features/settings/application/appearance_settings_controller.dart',
+        'features/settings/application/appearance_settings_dependencies.dart',
+        'features/settings/application/appearance_settings_state.dart',
+        'features/settings/presentation/appearance_initialization_view.dart',
+        'features/settings/presentation/appearance_messages.dart',
+        'features/settings/presentation/settings_page.dart',
+        'features/settings/presentation/theme_mode_control.dart',
+        'features/settings/settings.dart',
+        'features/settings/settings_composition.dart',
+        'features/sources/application/add_library_folder_controller.dart',
+        'features/sources/application/local_filesystem_browser_controller.dart',
+        'features/sources/application/root_detail_controller.dart',
+        'features/sources/application/root_list_controller.dart',
+        'features/sources/application/source_entry_detail_controller.dart',
+        'features/sources/application/source_hierarchy_controller.dart',
+        'features/sources/application/source_hierarchy_state.dart',
+        'features/sources/application/sources_session_presentation.dart',
+        'features/sources/application/sources_state.dart',
+        'features/sources/presentation/add_library_folder_flow.dart',
+        'features/sources/presentation/hierarchy_drill_down_view.dart',
+        'features/sources/presentation/hierarchy_tree_view.dart',
+        'features/sources/presentation/library_folder_picker.dart',
+        'features/sources/presentation/local_filesystem_browser.dart',
+        'features/sources/presentation/remove_root_dialog.dart',
+        'features/sources/presentation/root_detail_page.dart',
+        'features/sources/presentation/root_sidebar.dart',
+        'features/sources/presentation/selected_library_folder.dart',
+        'features/sources/presentation/source_entry_inspector.dart',
+        'features/sources/presentation/source_hierarchy_browser.dart',
+        'features/sources/presentation/sources_messages.dart',
+        'features/sources/presentation/sources_page.dart',
+        'features/sources/sources.dart',
+        'features/sources/sources_composition.dart',
+        'features/startup/application/app_readiness.dart',
+        'features/startup/application/startup_controller.dart',
+        'features/startup/application/startup_state.dart',
+        'features/startup/presentation/bootstrap_failure_view.dart',
+        'features/startup/presentation/presentation_seams.dart',
+        'features/startup/presentation/runtime_unavailable_view.dart',
+        'features/startup/presentation/shutdown_views.dart',
+        'features/startup/presentation/startup_failure_view.dart',
+        'features/startup/presentation/startup_gate.dart',
+        'features/startup/presentation/startup_loading_view.dart',
+        'features/startup/presentation/startup_messages.dart',
+        'features/startup/startup.dart',
+      ],
+    );
+  });
 
   test('breakpoint literals have one source of truth', () {
     final breakpointPattern = RegExp(r'(?<!\d)(600|840|1200)(?!\d)');
@@ -720,9 +713,12 @@ void main() {
           entry.key.startsWith('features/jobs/');
       if (!isSourcesOrJobs) continue;
       for (final concept in forbiddenConcepts) {
+        final hasForbiddenConcept = concept == 'Directory('
+            ? RegExp(r'(?<![A-Za-z0-9_])Directory\s*\(').hasMatch(entry.value)
+            : entry.value.contains(concept);
         expect(
-          entry.value,
-          isNot(contains(concept)),
+          hasForbiddenConcept,
+          isFalse,
           reason: '${entry.key} must not hold filesystem authority',
         );
       }

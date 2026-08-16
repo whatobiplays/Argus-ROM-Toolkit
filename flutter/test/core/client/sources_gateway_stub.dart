@@ -58,4 +58,15 @@ mixin SourcesGatewayStub implements SourcesGateway {
   @override
   Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) async =>
       throw const TransportFailure('Sources stub is not focused');
+
+  @override
+  Future<List<LocalFilesystemBrowseRoot>>
+  listLocalFilesystemBrowseRoots() async => const [];
+
+  @override
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) async => throw const TransportFailure('Sources stub is not focused');
 }

@@ -55,12 +55,22 @@ export 'application/sources_session_presentation.dart'
         sourcesSidebarPreferenceProvider;
 export 'sources_composition.dart'
     show
+        SourcesPresentationCapabilities,
         sourcesJobsApiProvider,
         sourcesApiProvider,
+        sourcesPresentationCapabilitiesProvider,
         sourcesReconciliationDemandProvider,
         sourcesRuntimeContextProvider;
 export 'presentation/library_folder_picker.dart'
     show LibraryFolderPicker, libraryFolderPickerProvider;
+export 'presentation/selected_library_folder.dart' show SelectedLibraryFolder;
+export 'presentation/local_filesystem_browser.dart' show LocalFilesystemBrowser;
+export 'application/local_filesystem_browser_controller.dart'
+    show
+        LocalFilesystemBrowserController,
+        LocalFilesystemBrowserState,
+        LocalFilesystemBrowserStateReady,
+        localFilesystemBrowserControllerProvider;
 export 'presentation/source_entry_inspector.dart' show SourceEntryInspector;
 export 'presentation/source_hierarchy_browser.dart' show SourceHierarchyBrowser;
 export 'presentation/sources_page.dart' show SourcesPage;

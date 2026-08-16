@@ -11,8 +11,10 @@
 use std::fs;
 
 use argus_application::{
-    EnumerationOutcome, LibrarySourceAccess, LocalFilesystemProvider, LocalFilesystemRootSelection,
-    ObservedEntryKind, ProviderError, RelativeSourceLocator, RootLocator, SourceAccessError,
+    EnumerationOutcome, LibrarySourceAccess, LocalFilesystemBrowseProvider,
+    LocalFilesystemProvider, LocalFilesystemRootSelection, MountedLocalFilesystemVolume,
+    ObservedEntryKind, ProviderError, RelativeSourceLocator, RootLocator, RootRelationship,
+    SourceAccessError,
 };
 use argus_infrastructure::local_filesystem::{
     LocalFilesystemProvider as LocalFilesystemProviderImpl, LocalFilesystemSourceAccess,
@@ -184,7 +186,7 @@ fn inaccessible_root_maps_to_permission_denied_when_the_runner_can_create_it() {
         return;
     }
 
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
     let selection = LocalFilesystemRootSelection::new(root.to_string_lossy().into_owned());
     assert_eq!(
         provider.validate(&selection),
@@ -227,7 +229,7 @@ fn windows_junction_roots_and_children_follow_the_link_like_contract_when_creata
 
     // A junction root is link-like and must be rejected by validation and
     // root resolution rather than traversed.
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
     let selection = LocalFilesystemRootSelection::new(junction.to_string_lossy().into_owned());
     assert_eq!(
         provider.validate(&selection),
@@ -268,5 +270,265 @@ fn windows_junction_roots_and_children_follow_the_link_like_contract_when_creata
             &|| false,
         ),
         Err(SourceAccessError::InvalidLocator)
+    );
+}
+
+#[test]
+fn mounted_volume_replacement_is_atomic_and_bounded() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    let removable = directory.path().join("removable");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir(&removable).expect("removable");
+    let provider = LocalFilesystemProviderImpl::default();
+
+    let valid = vec![
+        MountedLocalFilesystemVolume::new(
+            "primary".to_owned(),
+            primary.to_string_lossy().into_owned(),
+            "Internal storage".to_owned(),
+            true,
+            false,
+        ),
+        MountedLocalFilesystemVolume::new(
+            "removable-1".to_owned(),
+            removable.to_string_lossy().into_owned(),
+            "Game card".to_owned(),
+            false,
+            true,
+        ),
+    ];
+    provider
+        .replace_mounted_volumes(&valid)
+        .expect("valid snapshot");
+    assert_eq!(provider.list_browse_roots().expect("roots").len(), 2);
+
+    let invalid = vec![
+        valid[0].clone(),
+        MountedLocalFilesystemVolume::new(
+            "primary".to_owned(),
+            removable.to_string_lossy().into_owned(),
+            "Duplicate".to_owned(),
+            false,
+            true,
+        ),
+    ];
+    assert_eq!(
+        provider.replace_mounted_volumes(&invalid),
+        Err(ProviderError::InvalidBrowseRequest)
+    );
+    assert_eq!(
+        provider.list_browse_roots().expect("unchanged roots").len(),
+        2
+    );
+}
+
+#[test]
+fn provider_clones_observe_one_transient_mount_registry() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    fs::create_dir(&primary).expect("primary");
+    let provider = LocalFilesystemProviderImpl::default();
+    let clone = provider.clone();
+    provider
+        .replace_mounted_volumes(&[MountedLocalFilesystemVolume::new(
+            "primary".to_owned(),
+            primary.to_string_lossy().into_owned(),
+            "Internal storage".to_owned(),
+            true,
+            false,
+        )])
+        .expect("snapshot");
+    assert_eq!(clone.list_browse_roots().expect("shared roots").len(), 1);
+}
+
+#[test]
+fn browse_pages_are_directory_only_sorted_and_cursor_bounded() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir(primary.join("z-last")).expect("z directory");
+    fs::create_dir(primary.join("a-first")).expect("a directory");
+    fs::write(primary.join("rom.bin"), b"rom").expect("file");
+    let provider = LocalFilesystemProviderImpl::default();
+    provider
+        .replace_mounted_volumes(&[MountedLocalFilesystemVolume::new(
+            "primary".to_owned(),
+            primary.to_string_lossy().into_owned(),
+            "Internal storage".to_owned(),
+            true,
+            false,
+        )])
+        .expect("snapshot");
+
+    let root = provider
+        .list_browse_roots()
+        .expect("roots")
+        .into_iter()
+        .next()
+        .expect("primary root");
+    let first = provider
+        .list_browse_directories(root.location(), None, 1)
+        .expect("first page");
+    assert_eq!(
+        first
+            .directories()
+            .iter()
+            .map(|directory| directory.display_name())
+            .collect::<Vec<_>>(),
+        vec!["a-first"]
+    );
+    let second = provider
+        .list_browse_directories(root.location(), first.next_cursor(), 1)
+        .expect("second page");
+    assert_eq!(second.directories()[0].display_name(), "z-last");
+    assert!(second.next_cursor().is_none());
+}
+
+#[test]
+fn stable_provider_root_locator_survives_remount_at_a_new_path() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    let mount_a = directory.path().join("mount-a");
+    let mount_b = directory.path().join("mount-b");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir(&mount_a).expect("mount a");
+    fs::create_dir(&mount_b).expect("mount b");
+    fs::create_dir(mount_a.join("Games")).expect("games a");
+    fs::create_dir(mount_b.join("Games")).expect("games b");
+    let provider = LocalFilesystemProviderImpl::default();
+    provider
+        .replace_mounted_volumes(&[
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "removable-1".to_owned(),
+                mount_a.to_string_lossy().into_owned(),
+                "Game card".to_owned(),
+                false,
+                true,
+            ),
+        ])
+        .expect("mount a snapshot");
+    let removable_root = provider
+        .list_browse_roots()
+        .expect("roots")
+        .into_iter()
+        .find(|root| root.display_name() == "Game card")
+        .expect("removable root");
+    let validated = provider
+        .validate(&LocalFilesystemRootSelection::provider_selection(
+            removable_root.location().as_provider_value().to_owned(),
+        ))
+        .expect("provider root selection");
+    let locator = validated.locator().clone();
+    assert!(
+        !locator
+            .as_provider_value()
+            .contains(&mount_a.to_string_lossy().to_string())
+    );
+
+    provider
+        .replace_mounted_volumes(&[
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "removable-1".to_owned(),
+                mount_b.to_string_lossy().into_owned(),
+                "Game card".to_owned(),
+                false,
+                true,
+            ),
+        ])
+        .expect("mount b snapshot");
+    let access = provider.open_access(&locator).expect("access");
+    let resolved = access.resolve_root().expect("remounted root");
+    assert_eq!(
+        resolved.as_provider_value(),
+        std::fs::canonicalize(&mount_b)
+            .expect("canonical mount b")
+            .to_string_lossy()
+    );
+}
+
+#[test]
+fn stable_android_relationships_remain_comparable_when_volume_is_absent() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    let mount = directory.path().join("mount");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir_all(mount.join("Games/SNES")).expect("nested removable root");
+    let provider = LocalFilesystemProviderImpl::default();
+    provider
+        .replace_mounted_volumes(&[
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "removable-1".to_owned(),
+                mount.to_string_lossy().into_owned(),
+                "Game card".to_owned(),
+                false,
+                true,
+            ),
+        ])
+        .expect("snapshot");
+    let root = provider
+        .list_browse_roots()
+        .expect("roots")
+        .into_iter()
+        .find(|root| root.display_name() == "Game card")
+        .expect("removable root");
+    let games = provider
+        .list_browse_directories(root.location(), None, 100)
+        .expect("games page")
+        .directories()[0]
+        .location()
+        .clone();
+    let root_locator = provider
+        .validate(&LocalFilesystemRootSelection::provider_selection(
+            root.location().as_provider_value().to_owned(),
+        ))
+        .expect("root selection")
+        .locator()
+        .clone();
+    let child_locator = provider
+        .validate(&LocalFilesystemRootSelection::provider_selection(
+            games.as_provider_value().to_owned(),
+        ))
+        .expect("child selection")
+        .locator()
+        .clone();
+    provider
+        .replace_mounted_volumes(&[MountedLocalFilesystemVolume::new(
+            "primary".to_owned(),
+            primary.to_string_lossy().into_owned(),
+            "Internal storage".to_owned(),
+            true,
+            false,
+        )])
+        .expect("removable absent");
+
+    assert_eq!(
+        provider.compare_roots(&root_locator, &root_locator),
+        RootRelationship::Same
+    );
+    assert_eq!(
+        provider.compare_roots(&root_locator, &child_locator),
+        RootRelationship::Ancestor
     );
 }

@@ -25,8 +25,10 @@ use super::hierarchy::{
     SourceEntryQueries,
 };
 use super::provider::{
-    LocalFilesystemProvider, LocalFilesystemRootSelection, ProviderError, RootLocator,
-    RootRelationship,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseProvider, LocalFilesystemBrowseRoot, LocalFilesystemProvider,
+    LocalFilesystemRootSelection, MountedLocalFilesystemVolume, ProviderError, RootLocator,
+    RootRelationship, SourceAccessError,
 };
 
 /// Application-owned current reachability evidence for one root.
@@ -292,12 +294,51 @@ impl LibraryRootPage {
 pub struct LibraryRootConfiguration {
     root_id: LibraryRootId,
     locator: RootLocator,
+    availability: LibraryRootAvailability,
+}
+
+/// One bounded synchronization request carrying current native mounts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyncLocalFilesystemMountedVolumesCommand {
+    volumes: Vec<MountedLocalFilesystemVolume>,
+}
+
+impl SyncLocalFilesystemMountedVolumesCommand {
+    /// Creates one synchronization request from the native snapshot.
+    pub fn new(volumes: Vec<MountedLocalFilesystemVolume>) -> Self {
+        Self { volumes }
+    }
+
+    /// Returns the native facts without interpreting them in application code.
+    pub fn volumes(&self) -> &[MountedLocalFilesystemVolume] {
+        &self.volumes
+    }
 }
 
 impl LibraryRootConfiguration {
-    /// Creates one opaque configuration record.
+    /// Creates one opaque configuration record without current availability
+    /// evidence. Callers reading durable rows should use
+    /// [`Self::with_availability`].
     pub fn new(root_id: LibraryRootId, locator: RootLocator) -> Self {
-        Self { root_id, locator }
+        Self {
+            root_id,
+            locator,
+            availability: LibraryRootAvailability::Unknown,
+        }
+    }
+
+    /// Creates one configuration record with its current persisted
+    /// availability evidence.
+    pub fn with_availability(
+        root_id: LibraryRootId,
+        locator: RootLocator,
+        availability: LibraryRootAvailability,
+    ) -> Self {
+        Self {
+            root_id,
+            locator,
+            availability,
+        }
     }
 
     /// Returns the configured root identity.
@@ -308,6 +349,11 @@ impl LibraryRootConfiguration {
     /// Returns the opaque provider-owned locator.
     pub fn locator(&self) -> &RootLocator {
         &self.locator
+    }
+
+    /// Returns the current persisted availability evidence.
+    pub fn availability(&self) -> LibraryRootAvailability {
+        self.availability
     }
 }
 
@@ -1659,6 +1705,92 @@ where
         .handle(command, context, admission, recorder)
     }
 
+    /// Replaces current native mounts and reconciles configured-root
+    /// availability without scanning source contents or opening a write
+    /// transaction during provider I/O.
+    pub fn sync_local_filesystem_mounted_volumes<R>(
+        &self,
+        command: SyncLocalFilesystemMountedVolumesCommand,
+        context: OperationContext,
+        recorder: R,
+    ) -> Result<(), ApplicationError>
+    where
+        P: LocalFilesystemBrowseProvider,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        self.provider
+            .replace_mounted_volumes(command.volumes())
+            .map_err(|error| map_provider_error(context.trace_id(), error))?;
+        let configurations = self
+            .queries
+            .list_root_configurations(&context)
+            .map_err(|error| map_persistence_error(context.trace_id(), error))?;
+        let mut changes = Vec::new();
+        for configuration in configurations {
+            let access = self
+                .provider
+                .open_access(configuration.locator())
+                .map_err(|error| map_source_access_error(context.trace_id(), error))?;
+            let availability = match access.resolve_root() {
+                Ok(_) => LibraryRootAvailability::Available,
+                Err(SourceAccessError::SourceUnavailable) => LibraryRootAvailability::Unavailable,
+                Err(error) => {
+                    return Err(map_source_access_error(context.trace_id(), error));
+                }
+            };
+            if availability != configuration.availability() {
+                changes.push((configuration.root_id(), availability));
+            }
+        }
+        if changes.is_empty() {
+            return Ok(());
+        }
+
+        self.unit_of_work
+            .clone()
+            .execute(&context, move |mut scope| {
+                for (root_id, availability) in changes {
+                    if scope
+                        .library_roots()
+                        .set_availability(root_id, availability)?
+                    {
+                        recorder.record(ApplicationEvent::LibraryRootChanged(
+                            LibraryRootChanged {
+                                library_root_id: root_id,
+                            },
+                        ))?;
+                    }
+                }
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(())
+            })
+            .map_err(|error| map_port_error(context.trace_id(), error))
+    }
+
+    /// Lists safe currently mounted browse roots through the provider port.
+    pub fn list_local_filesystem_browse_roots(
+        &self,
+    ) -> Result<Vec<LocalFilesystemBrowseRoot>, ProviderError>
+    where
+        P: LocalFilesystemBrowseProvider,
+    {
+        self.provider.list_browse_roots()
+    }
+
+    /// Lists one bounded safe direct-child browse page through the provider.
+    pub fn list_local_filesystem_browse_directories(
+        &self,
+        location: &LocalFilesystemBrowseLocation,
+        cursor: Option<&LocalFilesystemBrowseCursor>,
+        page_size: u32,
+    ) -> Result<LocalFilesystemBrowsePage, ProviderError>
+    where
+        P: LocalFilesystemBrowseProvider,
+    {
+        self.provider
+            .list_browse_directories(location, cursor, page_size)
+    }
+
     /// Delegates one root-removal operation.
     pub fn remove_library_root<R>(
         &self,
@@ -1782,9 +1914,27 @@ fn map_provider_error(trace_id: crate::TraceId, error: ProviderError) -> Applica
         ProviderError::InvalidSelection
         | ProviderError::NotADirectory
         | ProviderError::LinkLikeRoot
-        | ProviderError::Unavailable => ErrorCode::FilesystemInvalidRootSelection,
+        | ProviderError::Unavailable
+        | ProviderError::InvalidBrowseRequest => ErrorCode::FilesystemInvalidRootSelection,
         ProviderError::PermissionDenied => ErrorCode::FilesystemPermissionDenied,
         ProviderError::Internal => ErrorCode::InternalUnexpected,
+    };
+    application_error(trace_id, code)
+}
+
+fn map_source_access_error(trace_id: crate::TraceId, error: SourceAccessError) -> ApplicationError {
+    let code = match error {
+        SourceAccessError::PermissionDenied | SourceAccessError::AuthorizationUnavailable => {
+            ErrorCode::FilesystemPermissionDenied
+        }
+        SourceAccessError::SourceUnavailable => ErrorCode::FilesystemInvalidRootSelection,
+        SourceAccessError::EntryNotFound
+        | SourceAccessError::InvalidLocator
+        | SourceAccessError::InvalidConfiguration
+        | SourceAccessError::UnsupportedOperation
+        | SourceAccessError::IoFailure
+        | SourceAccessError::InvalidResponse
+        | SourceAccessError::Cancelled => ErrorCode::InternalUnexpected,
     };
     application_error(trace_id, code)
 }

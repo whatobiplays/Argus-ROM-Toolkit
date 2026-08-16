@@ -101,6 +101,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_list_library_roots_request_dto(dynamic raw);
 
   @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  dco_decode_box_autoadd_list_local_filesystem_browse_directories_request_dto(
+    dynamic raw,
+  );
+
+  @protected
   ListSourceEntryChildrenRequestDto
   dco_decode_box_autoadd_list_source_entry_children_request_dto(dynamic raw);
 
@@ -124,6 +130,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StartupPhaseDto dco_decode_box_autoadd_startup_phase_dto(dynamic raw);
+
+  @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  dco_decode_box_autoadd_sync_local_filesystem_mounted_volumes_request_dto(
+    dynamic raw,
+  );
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -256,6 +268,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<LocalFilesystemBrowseBreadcrumbDto>
+  dco_decode_list_local_filesystem_browse_breadcrumb_dto(dynamic raw);
+
+  @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  dco_decode_list_local_filesystem_browse_directories_request_dto(dynamic raw);
+
+  @protected
+  List<LocalFilesystemBrowseDirectoryDto>
+  dco_decode_list_local_filesystem_browse_directory_dto(dynamic raw);
+
+  @protected
+  List<LocalFilesystemBrowseRootDto>
+  dco_decode_list_local_filesystem_browse_root_dto(dynamic raw);
+
+  @protected
+  List<MountedLocalFilesystemVolumeDto>
+  dco_decode_list_mounted_local_filesystem_volume_dto(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -275,8 +307,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SourceEntryDto> dco_decode_list_source_entry_dto(dynamic raw);
 
   @protected
+  LocalFilesystemBrowseBreadcrumbDto
+  dco_decode_local_filesystem_browse_breadcrumb_dto(dynamic raw);
+
+  @protected
+  LocalFilesystemBrowseDirectoryDto
+  dco_decode_local_filesystem_browse_directory_dto(dynamic raw);
+
+  @protected
+  LocalFilesystemBrowsePageDto dco_decode_local_filesystem_browse_page_dto(
+    dynamic raw,
+  );
+
+  @protected
+  LocalFilesystemBrowseRootDto dco_decode_local_filesystem_browse_root_dto(
+    dynamic raw,
+  );
+
+  @protected
   LocalFilesystemRootSelectionDto
   dco_decode_local_filesystem_root_selection_dto(dynamic raw);
+
+  @protected
+  MountedLocalFilesystemVolumeDto
+  dco_decode_mounted_local_filesystem_volume_dto(dynamic raw);
 
   @protected
   OperationDetailDto dco_decode_operation_detail_dto(dynamic raw);
@@ -415,6 +469,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   StartupPhaseDto dco_decode_startup_phase_dto(dynamic raw);
 
   @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  dco_decode_sync_local_filesystem_mounted_volumes_request_dto(dynamic raw);
+
+  @protected
   TechnicalDetailsDto dco_decode_technical_details_dto(dynamic raw);
 
   @protected
@@ -539,6 +597,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  sse_decode_box_autoadd_list_local_filesystem_browse_directories_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ListSourceEntryChildrenRequestDto
   sse_decode_box_autoadd_list_source_entry_children_request_dto(
     SseDeserializer deserializer,
@@ -574,6 +638,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StartupPhaseDto sse_decode_box_autoadd_startup_phase_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  sse_decode_box_autoadd_sync_local_filesystem_mounted_volumes_request_dto(
     SseDeserializer deserializer,
   );
 
@@ -740,6 +810,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<LocalFilesystemBrowseBreadcrumbDto>
+  sse_decode_list_local_filesystem_browse_breadcrumb_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  sse_decode_list_local_filesystem_browse_directories_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LocalFilesystemBrowseDirectoryDto>
+  sse_decode_list_local_filesystem_browse_directory_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<LocalFilesystemBrowseRootDto>
+  sse_decode_list_local_filesystem_browse_root_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<MountedLocalFilesystemVolumeDto>
+  sse_decode_list_mounted_local_filesystem_volume_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -767,8 +867,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LocalFilesystemBrowseBreadcrumbDto
+  sse_decode_local_filesystem_browse_breadcrumb_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LocalFilesystemBrowseDirectoryDto
+  sse_decode_local_filesystem_browse_directory_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LocalFilesystemBrowsePageDto sse_decode_local_filesystem_browse_page_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LocalFilesystemBrowseRootDto sse_decode_local_filesystem_browse_root_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LocalFilesystemRootSelectionDto
   sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer);
+
+  @protected
+  MountedLocalFilesystemVolumeDto
+  sse_decode_mounted_local_filesystem_volume_dto(SseDeserializer deserializer);
 
   @protected
   OperationDetailDto sse_decode_operation_detail_dto(
@@ -939,6 +1065,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   StartupPhaseDto sse_decode_startup_phase_dto(SseDeserializer deserializer);
 
   @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  sse_decode_sync_local_filesystem_mounted_volumes_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   TechnicalDetailsDto sse_decode_technical_details_dto(
     SseDeserializer deserializer,
   );
@@ -1085,6 +1217,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void
+  sse_encode_box_autoadd_list_local_filesystem_browse_directories_request_dto(
+    ListLocalFilesystemBrowseDirectoriesRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_list_source_entry_children_request_dto(
     ListSourceEntryChildrenRequestDto self,
     SseSerializer serializer,
@@ -1123,6 +1262,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_startup_phase_dto(
     StartupPhaseDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_sync_local_filesystem_mounted_volumes_request_dto(
+    SyncLocalFilesystemMountedVolumesRequestDto self,
     SseSerializer serializer,
   );
 
@@ -1319,6 +1464,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_local_filesystem_browse_breadcrumb_dto(
+    List<LocalFilesystemBrowseBreadcrumbDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_local_filesystem_browse_directories_request_dto(
+    ListLocalFilesystemBrowseDirectoriesRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_local_filesystem_browse_directory_dto(
+    List<LocalFilesystemBrowseDirectoryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_local_filesystem_browse_root_dto(
+    List<LocalFilesystemBrowseRootDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_mounted_local_filesystem_volume_dto(
+    List<MountedLocalFilesystemVolumeDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -1355,8 +1530,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_local_filesystem_browse_breadcrumb_dto(
+    LocalFilesystemBrowseBreadcrumbDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_local_filesystem_browse_directory_dto(
+    LocalFilesystemBrowseDirectoryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_local_filesystem_browse_page_dto(
+    LocalFilesystemBrowsePageDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_local_filesystem_browse_root_dto(
+    LocalFilesystemBrowseRootDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_local_filesystem_root_selection_dto(
     LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_mounted_local_filesystem_volume_dto(
+    MountedLocalFilesystemVolumeDto self,
     SseSerializer serializer,
   );
 
@@ -1567,6 +1772,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_startup_phase_dto(
     StartupPhaseDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sync_local_filesystem_mounted_volumes_request_dto(
+    SyncLocalFilesystemMountedVolumesRequestDto self,
     SseSerializer serializer,
   );
 

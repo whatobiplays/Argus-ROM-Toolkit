@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 685584309;
+  int get rustContentHash => -1158369733;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -137,6 +137,14 @@ abstract class RustLibApi extends BaseApi {
     required ListLibraryRootsRequestDto request,
   });
 
+  Future<LocalFilesystemBrowsePageDto>
+  crateListLocalFilesystemBrowseDirectories({
+    required ListLocalFilesystemBrowseDirectoriesRequestDto request,
+  });
+
+  Future<List<LocalFilesystemBrowseRootDto>>
+  crateListLocalFilesystemBrowseRoots();
+
   Future<SourceEntryChildrenPageDto> crateListSourceEntryChildren({
     required ListSourceEntryChildrenRequestDto request,
   });
@@ -176,6 +184,10 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Stream<RuntimeEventDto> crateSubscribeEvents({required BigInt attachEpoch});
+
+  Future<void> crateSyncLocalFilesystemMountedVolumes({
+    required SyncLocalFilesystemMountedVolumesRequestDto request,
+  });
 
   Future<void> crateUpdateAppearanceSettings({
     required UpdateAppearanceSettingsRequestDto request,
@@ -808,6 +820,74 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<LocalFilesystemBrowsePageDto>
+  crateListLocalFilesystemBrowseDirectories({
+    required ListLocalFilesystemBrowseDirectoriesRequestDto request,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_list_local_filesystem_browse_directories_request_dto(
+            request,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 21,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_local_filesystem_browse_page_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateListLocalFilesystemBrowseDirectoriesConstMeta,
+        argValues: [request],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateListLocalFilesystemBrowseDirectoriesConstMeta =>
+      const TaskConstMeta(
+        debugName: "list_local_filesystem_browse_directories",
+        argNames: ["request"],
+      );
+
+  @override
+  Future<List<LocalFilesystemBrowseRootDto>>
+  crateListLocalFilesystemBrowseRoots() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 22,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_local_filesystem_browse_root_dto,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateListLocalFilesystemBrowseRootsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateListLocalFilesystemBrowseRootsConstMeta =>
+      const TaskConstMeta(
+        debugName: "list_local_filesystem_browse_roots",
+        argNames: [],
+      );
+
+  @override
   Future<SourceEntryChildrenPageDto> crateListSourceEntryChildren({
     required ListSourceEntryChildrenRequestDto request,
   }) {
@@ -822,7 +902,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 23,
             port: port_,
           );
         },
@@ -855,7 +935,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 24,
             port: port_,
           );
         },
@@ -888,7 +968,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 25,
             port: port_,
           );
         },
@@ -920,7 +1000,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 26,
             port: port_,
           );
         },
@@ -953,7 +1033,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 27,
             port: port_,
           );
         },
@@ -983,7 +1063,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 28,
             port: port_,
           );
         },
@@ -1013,7 +1093,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1045,7 +1125,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1077,7 +1157,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1109,7 +1189,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1143,7 +1223,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 31,
+              funcId: 33,
               port: port_,
             );
           },
@@ -1166,6 +1246,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<void> crateSyncLocalFilesystemMountedVolumes({
+    required SyncLocalFilesystemMountedVolumesRequestDto request,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_sync_local_filesystem_mounted_volumes_request_dto(
+            request,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 34,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateSyncLocalFilesystemMountedVolumesConstMeta,
+        argValues: [request],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateSyncLocalFilesystemMountedVolumesConstMeta =>
+      const TaskConstMeta(
+        debugName: "sync_local_filesystem_mounted_volumes",
+        argNames: ["request"],
+      );
+
+  @override
   Future<void> crateUpdateAppearanceSettings({
     required UpdateAppearanceSettingsRequestDto request,
   }) {
@@ -1180,7 +1296,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1410,6 +1526,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  dco_decode_box_autoadd_list_local_filesystem_browse_directories_request_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_list_local_filesystem_browse_directories_request_dto(raw);
+  }
+
+  @protected
   ListSourceEntryChildrenRequestDto
   dco_decode_box_autoadd_list_source_entry_children_request_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -1453,6 +1578,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   StartupPhaseDto dco_decode_box_autoadd_startup_phase_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_startup_phase_dto(raw);
+  }
+
+  @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  dco_decode_box_autoadd_sync_local_filesystem_mounted_volumes_request_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_sync_local_filesystem_mounted_volumes_request_dto(raw);
   }
 
   @protected
@@ -1876,6 +2010,56 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<LocalFilesystemBrowseBreadcrumbDto>
+  dco_decode_list_local_filesystem_browse_breadcrumb_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_local_filesystem_browse_breadcrumb_dto)
+        .toList();
+  }
+
+  @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  dco_decode_list_local_filesystem_browse_directories_request_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ListLocalFilesystemBrowseDirectoriesRequestDto(
+      location: dco_decode_String(arr[0]),
+      cursor: dco_decode_opt_String(arr[1]),
+      pageSize: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  List<LocalFilesystemBrowseDirectoryDto>
+  dco_decode_list_local_filesystem_browse_directory_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_local_filesystem_browse_directory_dto)
+        .toList();
+  }
+
+  @protected
+  List<LocalFilesystemBrowseRootDto>
+  dco_decode_list_local_filesystem_browse_root_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_local_filesystem_browse_root_dto)
+        .toList();
+  }
+
+  @protected
+  List<MountedLocalFilesystemVolumeDto>
+  dco_decode_list_mounted_local_filesystem_volume_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_mounted_local_filesystem_volume_dto)
+        .toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
@@ -1925,14 +2109,97 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LocalFilesystemBrowseBreadcrumbDto
+  dco_decode_local_filesystem_browse_breadcrumb_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LocalFilesystemBrowseBreadcrumbDto(
+      location: dco_decode_String(arr[0]),
+      displayName: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  LocalFilesystemBrowseDirectoryDto
+  dco_decode_local_filesystem_browse_directory_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LocalFilesystemBrowseDirectoryDto(
+      location: dco_decode_String(arr[0]),
+      displayName: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  LocalFilesystemBrowsePageDto dco_decode_local_filesystem_browse_page_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return LocalFilesystemBrowsePageDto(
+      current: dco_decode_local_filesystem_browse_root_dto(arr[0]),
+      breadcrumbs: dco_decode_list_local_filesystem_browse_breadcrumb_dto(
+        arr[1],
+      ),
+      directories: dco_decode_list_local_filesystem_browse_directory_dto(
+        arr[2],
+      ),
+      nextCursor: dco_decode_opt_String(arr[3]),
+    );
+  }
+
+  @protected
+  LocalFilesystemBrowseRootDto dco_decode_local_filesystem_browse_root_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return LocalFilesystemBrowseRootDto(
+      location: dco_decode_String(arr[0]),
+      displayName: dco_decode_String(arr[1]),
+      safeLocationPresentation: dco_decode_String(arr[2]),
+    );
+  }
+
+  @protected
   LocalFilesystemRootSelectionDto
   dco_decode_local_filesystem_root_selection_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return LocalFilesystemRootSelectionDto_Path(
+          selectedFolderPath: dco_decode_String(raw[1]),
+        );
+      case 1:
+        return LocalFilesystemRootSelectionDto_ProviderSelection(
+          selectionIdentity: dco_decode_String(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  MountedLocalFilesystemVolumeDto
+  dco_decode_mounted_local_filesystem_volume_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 1)
-      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
-    return LocalFilesystemRootSelectionDto(
-      selectedFolderPath: dco_decode_String(arr[0]),
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return MountedLocalFilesystemVolumeDto(
+      providerVolumeId: dco_decode_String(arr[0]),
+      transientMountPath: dco_decode_String(arr[1]),
+      safeDisplayName: dco_decode_String(arr[2]),
+      isPrimary: dco_decode_bool(arr[3]),
+      isRemovable: dco_decode_bool(arr[4]),
     );
   }
 
@@ -2407,6 +2674,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  dco_decode_sync_local_filesystem_mounted_volumes_request_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return SyncLocalFilesystemMountedVolumesRequestDto(
+      volumes: dco_decode_list_mounted_local_filesystem_volume_dto(arr[0]),
+    );
+  }
+
+  @protected
   TechnicalDetailsDto dco_decode_technical_details_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2702,6 +2981,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  sse_decode_box_autoadd_list_local_filesystem_browse_directories_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_list_local_filesystem_browse_directories_request_dto(
+      deserializer,
+    ));
+  }
+
+  @protected
   ListSourceEntryChildrenRequestDto
   sse_decode_box_autoadd_list_source_entry_children_request_dto(
     SseDeserializer deserializer,
@@ -2759,6 +3049,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_startup_phase_dto(deserializer));
+  }
+
+  @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  sse_decode_box_autoadd_sync_local_filesystem_mounted_volumes_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_sync_local_filesystem_mounted_volumes_request_dto(
+      deserializer,
+    ));
   }
 
   @protected
@@ -3290,6 +3591,82 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<LocalFilesystemBrowseBreadcrumbDto>
+  sse_decode_list_local_filesystem_browse_breadcrumb_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LocalFilesystemBrowseBreadcrumbDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_local_filesystem_browse_breadcrumb_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  ListLocalFilesystemBrowseDirectoriesRequestDto
+  sse_decode_list_local_filesystem_browse_directories_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_location = sse_decode_String(deserializer);
+    var var_cursor = sse_decode_opt_String(deserializer);
+    var var_pageSize = sse_decode_u_32(deserializer);
+    return ListLocalFilesystemBrowseDirectoriesRequestDto(
+      location: var_location,
+      cursor: var_cursor,
+      pageSize: var_pageSize,
+    );
+  }
+
+  @protected
+  List<LocalFilesystemBrowseDirectoryDto>
+  sse_decode_list_local_filesystem_browse_directory_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LocalFilesystemBrowseDirectoryDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_local_filesystem_browse_directory_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<LocalFilesystemBrowseRootDto>
+  sse_decode_list_local_filesystem_browse_root_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <LocalFilesystemBrowseRootDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_local_filesystem_browse_root_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MountedLocalFilesystemVolumeDto>
+  sse_decode_list_mounted_local_filesystem_volume_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MountedLocalFilesystemVolumeDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_mounted_local_filesystem_volume_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -3369,12 +3746,105 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LocalFilesystemBrowseBreadcrumbDto
+  sse_decode_local_filesystem_browse_breadcrumb_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_location = sse_decode_String(deserializer);
+    var var_displayName = sse_decode_String(deserializer);
+    return LocalFilesystemBrowseBreadcrumbDto(
+      location: var_location,
+      displayName: var_displayName,
+    );
+  }
+
+  @protected
+  LocalFilesystemBrowseDirectoryDto
+  sse_decode_local_filesystem_browse_directory_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_location = sse_decode_String(deserializer);
+    var var_displayName = sse_decode_String(deserializer);
+    return LocalFilesystemBrowseDirectoryDto(
+      location: var_location,
+      displayName: var_displayName,
+    );
+  }
+
+  @protected
+  LocalFilesystemBrowsePageDto sse_decode_local_filesystem_browse_page_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_current = sse_decode_local_filesystem_browse_root_dto(deserializer);
+    var var_breadcrumbs =
+        sse_decode_list_local_filesystem_browse_breadcrumb_dto(deserializer);
+    var var_directories = sse_decode_list_local_filesystem_browse_directory_dto(
+      deserializer,
+    );
+    var var_nextCursor = sse_decode_opt_String(deserializer);
+    return LocalFilesystemBrowsePageDto(
+      current: var_current,
+      breadcrumbs: var_breadcrumbs,
+      directories: var_directories,
+      nextCursor: var_nextCursor,
+    );
+  }
+
+  @protected
+  LocalFilesystemBrowseRootDto sse_decode_local_filesystem_browse_root_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_location = sse_decode_String(deserializer);
+    var var_displayName = sse_decode_String(deserializer);
+    var var_safeLocationPresentation = sse_decode_String(deserializer);
+    return LocalFilesystemBrowseRootDto(
+      location: var_location,
+      displayName: var_displayName,
+      safeLocationPresentation: var_safeLocationPresentation,
+    );
+  }
+
+  @protected
   LocalFilesystemRootSelectionDto
   sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_selectedFolderPath = sse_decode_String(deserializer);
-    return LocalFilesystemRootSelectionDto(
-      selectedFolderPath: var_selectedFolderPath,
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_selectedFolderPath = sse_decode_String(deserializer);
+        return LocalFilesystemRootSelectionDto_Path(
+          selectedFolderPath: var_selectedFolderPath,
+        );
+      case 1:
+        var var_selectionIdentity = sse_decode_String(deserializer);
+        return LocalFilesystemRootSelectionDto_ProviderSelection(
+          selectionIdentity: var_selectionIdentity,
+        );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  MountedLocalFilesystemVolumeDto
+  sse_decode_mounted_local_filesystem_volume_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_providerVolumeId = sse_decode_String(deserializer);
+    var var_transientMountPath = sse_decode_String(deserializer);
+    var var_safeDisplayName = sse_decode_String(deserializer);
+    var var_isPrimary = sse_decode_bool(deserializer);
+    var var_isRemovable = sse_decode_bool(deserializer);
+    return MountedLocalFilesystemVolumeDto(
+      providerVolumeId: var_providerVolumeId,
+      transientMountPath: var_transientMountPath,
+      safeDisplayName: var_safeDisplayName,
+      isPrimary: var_isPrimary,
+      isRemovable: var_isRemovable,
     );
   }
 
@@ -4007,6 +4477,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SyncLocalFilesystemMountedVolumesRequestDto
+  sse_decode_sync_local_filesystem_mounted_volumes_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_volumes = sse_decode_list_mounted_local_filesystem_volume_dto(
+      deserializer,
+    );
+    return SyncLocalFilesystemMountedVolumesRequestDto(volumes: var_volumes);
+  }
+
+  @protected
   TechnicalDetailsDto sse_decode_technical_details_dto(
     SseDeserializer deserializer,
   ) {
@@ -4299,6 +4781,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void
+  sse_encode_box_autoadd_list_local_filesystem_browse_directories_request_dto(
+    ListLocalFilesystemBrowseDirectoriesRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_local_filesystem_browse_directories_request_dto(
+      self,
+      serializer,
+    );
+  }
+
+  @protected
   void sse_encode_box_autoadd_list_source_entry_children_request_dto(
     ListSourceEntryChildrenRequestDto self,
     SseSerializer serializer,
@@ -4359,6 +4854,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_startup_phase_dto(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_sync_local_filesystem_mounted_volumes_request_dto(
+    SyncLocalFilesystemMountedVolumesRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_sync_local_filesystem_mounted_volumes_request_dto(
+      self,
+      serializer,
+    );
   }
 
   @protected
@@ -4798,6 +5305,65 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_local_filesystem_browse_breadcrumb_dto(
+    List<LocalFilesystemBrowseBreadcrumbDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_local_filesystem_browse_breadcrumb_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_local_filesystem_browse_directories_request_dto(
+    ListLocalFilesystemBrowseDirectoriesRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.location, serializer);
+    sse_encode_opt_String(self.cursor, serializer);
+    sse_encode_u_32(self.pageSize, serializer);
+  }
+
+  @protected
+  void sse_encode_list_local_filesystem_browse_directory_dto(
+    List<LocalFilesystemBrowseDirectoryDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_local_filesystem_browse_directory_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_local_filesystem_browse_root_dto(
+    List<LocalFilesystemBrowseRootDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_local_filesystem_browse_root_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_mounted_local_filesystem_volume_dto(
+    List<MountedLocalFilesystemVolumeDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_mounted_local_filesystem_volume_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -4868,12 +5434,85 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_local_filesystem_browse_breadcrumb_dto(
+    LocalFilesystemBrowseBreadcrumbDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.location, serializer);
+    sse_encode_String(self.displayName, serializer);
+  }
+
+  @protected
+  void sse_encode_local_filesystem_browse_directory_dto(
+    LocalFilesystemBrowseDirectoryDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.location, serializer);
+    sse_encode_String(self.displayName, serializer);
+  }
+
+  @protected
+  void sse_encode_local_filesystem_browse_page_dto(
+    LocalFilesystemBrowsePageDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_local_filesystem_browse_root_dto(self.current, serializer);
+    sse_encode_list_local_filesystem_browse_breadcrumb_dto(
+      self.breadcrumbs,
+      serializer,
+    );
+    sse_encode_list_local_filesystem_browse_directory_dto(
+      self.directories,
+      serializer,
+    );
+    sse_encode_opt_String(self.nextCursor, serializer);
+  }
+
+  @protected
+  void sse_encode_local_filesystem_browse_root_dto(
+    LocalFilesystemBrowseRootDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.location, serializer);
+    sse_encode_String(self.displayName, serializer);
+    sse_encode_String(self.safeLocationPresentation, serializer);
+  }
+
+  @protected
   void sse_encode_local_filesystem_root_selection_dto(
     LocalFilesystemRootSelectionDto self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.selectedFolderPath, serializer);
+    switch (self) {
+      case LocalFilesystemRootSelectionDto_Path(
+        selectedFolderPath: final selectedFolderPath,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(selectedFolderPath, serializer);
+      case LocalFilesystemRootSelectionDto_ProviderSelection(
+        selectionIdentity: final selectionIdentity,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(selectionIdentity, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_mounted_local_filesystem_volume_dto(
+    MountedLocalFilesystemVolumeDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.providerVolumeId, serializer);
+    sse_encode_String(self.transientMountPath, serializer);
+    sse_encode_String(self.safeDisplayName, serializer);
+    sse_encode_bool(self.isPrimary, serializer);
+    sse_encode_bool(self.isRemovable, serializer);
   }
 
   @protected
@@ -5416,6 +6055,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_sync_local_filesystem_mounted_volumes_request_dto(
+    SyncLocalFilesystemMountedVolumesRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_mounted_local_filesystem_volume_dto(
+      self.volumes,
+      serializer,
+    );
   }
 
   @protected

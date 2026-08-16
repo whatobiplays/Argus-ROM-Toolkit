@@ -7,6 +7,8 @@ import 'package:argus/core/bridge/bridge.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/sources/application/root_detail_controller.dart';
 import 'package:argus/features/sources/application/root_list_controller.dart';
+import 'package:argus/features/sources/presentation/selected_library_folder.dart';
+import 'package:argus/features/sources/presentation/library_folder_picker.dart';
 import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -78,7 +80,11 @@ Future<void> _runMilestone(
   final container = await _pumpRealApp(
     tester,
     dataDirectory,
-    picker: () async => LocalFilesystemRootSelection(nextSelection),
+    picker: (_, _) async => SelectedLibraryFolder(
+      selection: LocalFilesystemRootSelection(nextSelection),
+      displayName: 'Selected root',
+      safeLocationPresentation: nextSelection,
+    ),
   );
   Object? bodyError;
   StackTrace? bodyStack;
@@ -327,7 +333,7 @@ Future<void> _runMilestone(
 Future<ProviderContainer> _pumpRealApp(
   WidgetTester tester,
   String dataDirectory, {
-  required Future<LocalFilesystemRootSelection?> Function() picker,
+  required LibraryFolderPicker picker,
 }) async {
   await tester.pumpWidget(
     ArgusBootstrap(

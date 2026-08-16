@@ -55,6 +55,17 @@ class ArgusBootstrap extends StatelessWidget {
     return ProviderScope(
       overrides: [
         platformHostApiProvider.overrideWithValue(platform.api),
+        localFilesystemPlatformApiProvider.overrideWithValue(
+          platform.localFilesystemApi,
+        ),
+        sourcesPresentationCapabilitiesProvider.overrideWithValue(
+          platform.requiresReadinessGate
+              ? const SourcesPresentationCapabilities(
+                  scanExecution: false,
+                  localFilesystemBrowser: true,
+                )
+              : const SourcesPresentationCapabilities(),
+        ),
         if (factory != null)
           argusClientGatewayFactoryProvider.overrideWithValue(factory)
         else if (platform.requiresReadinessGate)
@@ -71,11 +82,7 @@ class ArgusBootstrap extends StatelessWidget {
             return configuration.standardApplicationDataDirectory;
           }),
         if (picker != null)
-          libraryFolderPickerProvider.overrideWithValue(picker)
-        else if (platform.requiresReadinessGate)
-          libraryFolderPickerProvider.overrideWith(
-            (ref) => _androidRootSelectionUnavailable,
-          ),
+          libraryFolderPickerProvider.overrideWithValue(picker),
         if (platform.requiresReadinessGate)
           startupPresentationCapabilitiesProvider.overrideWithValue(
             const StartupPresentationCapabilities(
@@ -133,14 +140,6 @@ class ArgusBootstrap extends StatelessWidget {
     );
   }
 }
-
-/// Slice-001 Android root selection is intentionally inert.
-///
-/// The endorsed Android `file_selector` plugin must not be allowed to create
-/// a rejected SAF/path source before P02-002 replaces this seam with the
-/// approved Argus-owned filesystem picker.
-Future<LocalFilesystemRootSelection?>
-_androidRootSelectionUnavailable() async => null;
 
 /// Starts the application with its root dependency scope.
 void bootstrapArgus() {

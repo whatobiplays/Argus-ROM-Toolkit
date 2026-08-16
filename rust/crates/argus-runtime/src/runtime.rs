@@ -19,11 +19,13 @@ use argus_application::{
     JobRunRepository, JobRunState, JobStateChanged, JobSummaryPage, LibraryRootId, LibraryRootPage,
     LibraryRootProjection, LibraryScanAdmissionResult, LibraryScanAllRequestIdentity,
     LibraryScanChildAdmission, LibraryScanChildCompletion, LibraryScanExecutionPlan, ListJobsQuery,
-    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection,
-    OperationCompletion, OperationContext, OperationName, RemoveLibraryRootResult,
-    RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference, SourceEntriesChangeScope,
-    SourceEntriesChanged, SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId,
-    StartLibraryScanAllResult, StartLibraryScanResult, SubsystemName, TraceId, UnitOfWork,
+    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor,
+    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot,
+    LocalFilesystemRootSelection, OperationCompletion, OperationContext, OperationName,
+    RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference,
+    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryChildrenPage,
+    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult, StartLibraryScanResult,
+    SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId, UnitOfWork,
     UnitOfWorkFactory, aggregate_library_scan_state,
 };
 
@@ -1706,6 +1708,106 @@ impl ApplicationHost {
         })
     }
 
+    /// Synchronizes current native LocalFilesystem mounts and reconciles root
+    /// availability through the ready generation.
+    pub fn sync_local_filesystem_mounted_volumes(
+        &self,
+        command: SyncLocalFilesystemMountedVolumesCommand,
+    ) -> Result<(), ApplicationError> {
+        let (context, _guard) =
+            self.begin_operation("sources", "sync_local_filesystem_mounted_volumes")?;
+        self.sync_local_filesystem_mounted_volumes_with_context(&context, command)
+    }
+
+    /// Synchronizes mounts under an existing top-level operation context.
+    pub fn sync_local_filesystem_mounted_volumes_with_context(
+        &self,
+        context: &OperationContext,
+        command: SyncLocalFilesystemMountedVolumesCommand,
+    ) -> Result<(), ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.sync_local_filesystem_mounted_volumes_with_context(command, context)
+        })
+    }
+
+    /// Lists currently mounted safe browse roots.
+    pub fn list_local_filesystem_browse_roots(
+        &self,
+    ) -> Result<Vec<LocalFilesystemBrowseRoot>, ApplicationError> {
+        let (context, _guard) =
+            self.begin_operation("sources", "list_local_filesystem_browse_roots")?;
+        self.list_local_filesystem_browse_roots_with_context(&context)
+    }
+
+    /// Lists mounted browse roots under an existing top-level context.
+    pub fn list_local_filesystem_browse_roots_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<LocalFilesystemBrowseRoot>, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.list_local_filesystem_browse_roots_with_context(context)
+        })
+    }
+
+    /// Lists one bounded mounted browse directory page.
+    pub fn list_local_filesystem_browse_directories(
+        &self,
+        location: LocalFilesystemBrowseLocation,
+        cursor: Option<LocalFilesystemBrowseCursor>,
+        page_size: u32,
+    ) -> Result<LocalFilesystemBrowsePage, ApplicationError> {
+        let (context, _guard) =
+            self.begin_operation("sources", "list_local_filesystem_browse_directories")?;
+        self.list_local_filesystem_browse_directories_with_context(
+            &context,
+            &location,
+            cursor.as_ref(),
+            page_size,
+        )
+    }
+
+    /// Lists one browse page under an existing top-level context.
+    pub fn list_local_filesystem_browse_directories_with_context(
+        &self,
+        context: &OperationContext,
+        location: &LocalFilesystemBrowseLocation,
+        cursor: Option<&LocalFilesystemBrowseCursor>,
+        page_size: u32,
+    ) -> Result<LocalFilesystemBrowsePage, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.list_local_filesystem_browse_directories_with_context(
+                location, cursor, page_size, context,
+            )
+        })
+    }
+
     /// Executes the bounded authoritative direct-child page through the
     /// admitted ready generation.
     pub fn list_source_entry_children(
@@ -2511,7 +2613,7 @@ fn register_library_scan(
     context: &OperationContext,
     admitted: &AdmittedScan,
 ) -> Result<(), ApplicationError> {
-    let access = InfraLocalFilesystemProvider
+    let access = InfraLocalFilesystemProvider::default()
         .open_access(admitted.plan().root_locator())
         .map_err(|_| runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id()))?;
     let handler = LibraryScanOperationHandler::new(

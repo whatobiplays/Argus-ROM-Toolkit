@@ -227,6 +227,21 @@ final class ArgusClient implements ClientBootstrap {
   Future<SourceEntryDetail> _getSourceEntry(SourceEntryId sourceEntryId) =>
       _request(() => _gateway.getSourceEntry(sourceEntryId));
 
+  Future<List<LocalFilesystemBrowseRoot>> _listLocalFilesystemBrowseRoots() =>
+      _request(_gateway.listLocalFilesystemBrowseRoots);
+
+  Future<LocalFilesystemBrowsePage> _listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) => _request(
+    () => _gateway.listLocalFilesystemBrowseDirectories(
+      location: location,
+      cursor: cursor,
+      pageSize: pageSize,
+    ),
+  );
+
   Future<JobSummaryPage> _listActiveJobs() => _request(_gateway.listActiveJobs);
 
   Future<JobSummaryPage> _listRecentTerminalJobs({
@@ -639,6 +654,21 @@ final class _SourcesApi implements SourcesApi {
   @override
   Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) =>
       _client._getSourceEntry(sourceEntryId);
+
+  @override
+  Future<List<LocalFilesystemBrowseRoot>> listLocalFilesystemBrowseRoots() =>
+      _client._listLocalFilesystemBrowseRoots();
+
+  @override
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) => _client._listLocalFilesystemBrowseDirectories(
+    location: location,
+    cursor: cursor,
+    pageSize: pageSize,
+  );
 }
 
 final class _JobsApi implements JobsApi {

@@ -17,14 +17,16 @@ use argus_application::{
     LibraryRootProjection, LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity,
     LibraryScanChildAdmissionIssue, LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery,
     ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemRootSelection, MigrationOutcome, OperationDetail, PathClass,
-    PersistedSettingsReason, PlatformClass, Recoverability, RemoveLibraryRootResult,
-    RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext,
-    SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus,
-    SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
-    SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
-    SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult, TechnicalClass,
-    ThemeMode,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MigrationOutcome,
+    MountedLocalFilesystemVolume, OperationDetail, PathClass, PersistedSettingsReason,
+    PlatformClass, Recoverability, RemoveLibraryRootResult, RetryJobResult, RetryNotAdmittedReason,
+    RetryPolicy, RootRelationship, SafeContext, SafeContextField, SafeContextValue,
+    ScanProgressFacts, ScanRunProjection, ScanRunStatus, SettingsDomain, SourceEntriesChangeScope,
+    SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor,
+    SourceEntryDetailProjection, SourceEntryId, SourceEntryKind, SourceEntryProjection,
+    StartLibraryScanAllResult, StartLibraryScanResult, SyncLocalFilesystemMountedVolumesCommand,
+    TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
@@ -151,8 +153,66 @@ pub struct UpdateAppearanceSettingsRequestDto {
 
 /// Untrusted typed local-folder selection supplied by the native picker seam.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LocalFilesystemRootSelectionDto {
-    pub selected_folder_path: String,
+pub enum LocalFilesystemRootSelectionDto {
+    /// A desktop/native picker path that the provider validates before use.
+    Path { selected_folder_path: String },
+    /// An opaque provider browse identity returned by a prior browse query.
+    ProviderSelection { selection_identity: String },
+}
+
+/// One native mounted-volume fact supplied only to the synchronization ingress.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MountedLocalFilesystemVolumeDto {
+    pub provider_volume_id: String,
+    pub transient_mount_path: String,
+    pub safe_display_name: String,
+    pub is_primary: bool,
+    pub is_removable: bool,
+}
+
+/// Bounded mounted-volume synchronization request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyncLocalFilesystemMountedVolumesRequestDto {
+    pub volumes: Vec<MountedLocalFilesystemVolumeDto>,
+}
+
+/// Safe browse-root projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowseRootDto {
+    pub location: String,
+    pub display_name: String,
+    pub safe_location_presentation: String,
+}
+
+/// Safe browse breadcrumb projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowseBreadcrumbDto {
+    pub location: String,
+    pub display_name: String,
+}
+
+/// Safe browse direct-child directory projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowseDirectoryDto {
+    pub location: String,
+    pub display_name: String,
+}
+
+/// Safe bounded browse page projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalFilesystemBrowsePageDto {
+    pub current: LocalFilesystemBrowseRootDto,
+    pub breadcrumbs: Vec<LocalFilesystemBrowseBreadcrumbDto>,
+    pub directories: Vec<LocalFilesystemBrowseDirectoryDto>,
+    pub next_cursor: Option<String>,
+}
+
+/// Bounded direct-child browse request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListLocalFilesystemBrowseDirectoriesRequestDto {
+    pub location: String,
+    pub cursor: Option<String>,
+    pub page_size: u32,
 }
 
 /// Bounded root-list request.
@@ -752,6 +812,93 @@ pub fn runtime_event_dto(event: &RuntimeEvent) -> RuntimeEventDto {
     }
 }
 
+/// Converts the closed bridge selection union into the application-owned
+/// selection without interpreting provider identities in the bridge layer.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn local_filesystem_root_selection_from_dto(
+    selection: LocalFilesystemRootSelectionDto,
+) -> LocalFilesystemRootSelection {
+    match selection {
+        LocalFilesystemRootSelectionDto::Path {
+            selected_folder_path,
+        } => LocalFilesystemRootSelection::Path {
+            selected_folder_path,
+        },
+        LocalFilesystemRootSelectionDto::ProviderSelection { selection_identity } => {
+            LocalFilesystemRootSelection::ProviderSelection { selection_identity }
+        }
+    }
+}
+
+/// Converts native mounted-volume facts into the application synchronization
+/// command. Mount paths remain transient ingress data and are never returned
+/// by browse projections.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn sync_local_filesystem_mounted_volumes_command_from_dto(
+    request: SyncLocalFilesystemMountedVolumesRequestDto,
+) -> SyncLocalFilesystemMountedVolumesCommand {
+    SyncLocalFilesystemMountedVolumesCommand::new(
+        request
+            .volumes
+            .into_iter()
+            .map(|volume| {
+                MountedLocalFilesystemVolume::new(
+                    volume.provider_volume_id,
+                    volume.transient_mount_path,
+                    volume.safe_display_name,
+                    volume.is_primary,
+                    volume.is_removable,
+                )
+            })
+            .collect(),
+    )
+}
+
+/// Maps one provider browse root into a safe transport projection.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn local_filesystem_browse_root_dto(
+    root: &LocalFilesystemBrowseRoot,
+) -> LocalFilesystemBrowseRootDto {
+    LocalFilesystemBrowseRootDto {
+        location: root.location().as_provider_value().to_owned(),
+        display_name: root.display_name().to_owned(),
+        safe_location_presentation: root.safe_location_presentation().to_owned(),
+    }
+}
+
+/// Maps one provider browse page into a safe transport projection.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn local_filesystem_browse_page_dto(
+    page: &LocalFilesystemBrowsePage,
+) -> LocalFilesystemBrowsePageDto {
+    LocalFilesystemBrowsePageDto {
+        current: local_filesystem_browse_root_dto(page.current()),
+        breadcrumbs: page
+            .breadcrumbs()
+            .iter()
+            .map(|breadcrumb| LocalFilesystemBrowseBreadcrumbDto {
+                location: breadcrumb.location().as_provider_value().to_owned(),
+                display_name: breadcrumb.display_name().to_owned(),
+            })
+            .collect(),
+        directories: page
+            .directories()
+            .iter()
+            .map(|directory| LocalFilesystemBrowseDirectoryDto {
+                location: directory.location().as_provider_value().to_owned(),
+                display_name: directory.display_name().to_owned(),
+            })
+            .collect(),
+        next_cursor: page
+            .next_cursor()
+            .map(|cursor| cursor.as_provider_value().to_owned()),
+    }
+}
+
 /// Maps one authoritative runtime state through the current host.
 #[allow(clippy::result_large_err)]
 pub fn get_runtime_state() -> Result<RuntimeStateDto, ApplicationErrorDto> {
@@ -935,6 +1082,59 @@ pub fn get_library_root(library_root_id: String) -> Result<LibraryRootDto, Appli
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Replaces the transient native mounted-volume registry and reconciles
+/// persisted root availability. Native mount facts are ingress-only.
+#[allow(clippy::result_large_err)]
+pub fn sync_local_filesystem_mounted_volumes(
+    request: SyncLocalFilesystemMountedVolumesRequestDto,
+) -> Result<(), ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "sync_local_filesystem_mounted_volumes")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .sync_local_filesystem_mounted_volumes_with_context(
+            &context,
+            sync_local_filesystem_mounted_volumes_command_from_dto(request),
+        )
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Lists currently mounted safe browse roots.
+#[allow(clippy::result_large_err)]
+pub fn list_local_filesystem_browse_roots()
+-> Result<Vec<LocalFilesystemBrowseRootDto>, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "list_local_filesystem_browse_roots")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .list_local_filesystem_browse_roots_with_context(&context)
+        .map(|roots| roots.iter().map(local_filesystem_browse_root_dto).collect())
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Lists one bounded page of safe direct-child browse directories.
+#[allow(clippy::result_large_err)]
+pub fn list_local_filesystem_browse_directories(
+    request: ListLocalFilesystemBrowseDirectoriesRequestDto,
+) -> Result<LocalFilesystemBrowsePageDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("sources", "list_local_filesystem_browse_directories")
+        .map_err(|error| application_error_dto(&error))?;
+    let location = LocalFilesystemBrowseLocation::from_provider(request.location);
+    let cursor = request
+        .cursor
+        .map(LocalFilesystemBrowseCursor::from_provider);
+    host()
+        .list_local_filesystem_browse_directories_with_context(
+            &context,
+            &location,
+            cursor.as_ref(),
+            request.page_size,
+        )
+        .map(|page| local_filesystem_browse_page_dto(&page))
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Configures one root-only local library folder.
 #[allow(clippy::result_large_err)]
 pub fn add_local_library_root(
@@ -946,7 +1146,7 @@ pub fn add_local_library_root(
     host()
         .add_local_library_root_with_context(
             &context,
-            LocalFilesystemRootSelection::new(selection.selected_folder_path),
+            local_filesystem_root_selection_from_dto(selection),
         )
         .map(|result| add_local_library_root_dto(&result))
         .map_err(|error| application_error_dto(&error))
@@ -964,7 +1164,7 @@ pub fn add_local_library_root_and_scan(
     host()
         .add_local_library_root_and_scan_with_context(
             &context,
-            LocalFilesystemRootSelection::new(selection.selected_folder_path),
+            local_filesystem_root_selection_from_dto(selection),
         )
         .map(|result| add_local_library_root_and_scan_dto(&result))
         .map_err(|error| application_error_dto(&error))

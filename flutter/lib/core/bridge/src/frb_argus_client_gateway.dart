@@ -7,6 +7,24 @@ import 'package:argus/core/client/client.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart'
     as frb_io;
 
+/// Framework-neutral native fact used only to refresh Rust's transient mount
+/// registry before a provider-dependent Sources operation.
+final class MountedLocalFilesystemVolumeFact {
+  const MountedLocalFilesystemVolumeFact({
+    required this.providerVolumeId,
+    required this.transientMountPath,
+    required this.safeDisplayName,
+    required this.isPrimary,
+    required this.isRemovable,
+  });
+
+  final String providerVolumeId;
+  final String transientMountPath;
+  final String safeDisplayName;
+  final bool isPrimary;
+  final bool isRemovable;
+}
+
 /// FRB 2.12 adapter translating generated transport types into pure-Dart
 /// client models and typed application/transport failures.
 final class FrbArgusClientGateway implements ArgusClientGateway {
@@ -16,6 +34,8 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
     String? dataDirectoryOverride,
     String? standardApplicationDataDirectory,
     Stream<dto.RuntimeEventDto> Function()? eventStreamFactory,
+    Future<List<MountedLocalFilesystemVolumeFact>> Function()?
+    mountedVolumesReader,
   }) : // The public seam keeps callers independent of private field names.
        // ignore: prefer_initializing_formals
        _api = api,
@@ -25,14 +45,19 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
        // ignore: prefer_initializing_formals
        _standardApplicationDataDirectory = standardApplicationDataDirectory,
        // ignore: prefer_initializing_formals
-       _eventStreamFactory = eventStreamFactory;
+       _eventStreamFactory = eventStreamFactory,
+       // ignore: prefer_initializing_formals
+       _mountedVolumesReader = mountedVolumesReader;
 
   final frb.RustLibApi? _api;
   final Future<void> Function() _initializeNative;
   final String? _dataDirectoryOverride;
   final String? _standardApplicationDataDirectory;
   final Stream<dto.RuntimeEventDto> Function()? _eventStreamFactory;
+  final Future<List<MountedLocalFilesystemVolumeFact>> Function()?
+  _mountedVolumesReader;
   Future<void>? _initialization;
+  Future<void>? _mountRefresh;
 
   // The generated entrypoint intentionally exposes its initialized API via an
   // internal getter; this adapter is the only place that reaches it.
@@ -163,11 +188,13 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
     required int offset,
     required int pageSize,
   }) => _call(
-    () async => libraryRootPageFromDto(
-      await _rustApi.crateListLibraryRoots(
-        request: dto.ListLibraryRootsRequestDto(
-          offset: offset,
-          pageSize: pageSize,
+    () async => _sourcesCall(
+      () async => libraryRootPageFromDto(
+        await _rustApi.crateListLibraryRoots(
+          request: dto.ListLibraryRootsRequestDto(
+            offset: offset,
+            pageSize: pageSize,
+          ),
         ),
       ),
     ),
@@ -175,8 +202,10 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
 
   @override
   Future<LibraryRoot> getLibraryRoot(LibraryRootId libraryRootId) => _call(
-    () async => libraryRootFromDto(
-      await _rustApi.crateGetLibraryRoot(libraryRootId: libraryRootId.value),
+    () async => _sourcesCall(
+      () async => libraryRootFromDto(
+        await _rustApi.crateGetLibraryRoot(libraryRootId: libraryRootId.value),
+      ),
     ),
   );
 
@@ -184,9 +213,11 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   Future<AddLocalLibraryRootResult> addLocalLibraryRoot(
     LocalFilesystemRootSelection selection,
   ) => _call(
-    () async => addLocalLibraryRootResultFromDto(
-      await _rustApi.crateAddLocalLibraryRoot(
-        selection: selectionToDto(selection),
+    () async => _sourcesCall(
+      () async => addLocalLibraryRootResultFromDto(
+        await _rustApi.crateAddLocalLibraryRoot(
+          selection: selectionToDto(selection),
+        ),
       ),
     ),
   );
@@ -195,9 +226,40 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   Future<AddLocalLibraryRootAndScanResult> addLocalLibraryRootAndScan(
     LocalFilesystemRootSelection selection,
   ) => _call(
-    () async => addLocalLibraryRootAndScanResultFromDto(
-      await _rustApi.crateAddLocalLibraryRootAndScan(
-        selection: selectionToDto(selection),
+    () async => _sourcesCall(
+      () async => addLocalLibraryRootAndScanResultFromDto(
+        await _rustApi.crateAddLocalLibraryRootAndScan(
+          selection: selectionToDto(selection),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Future<List<LocalFilesystemBrowseRoot>> listLocalFilesystemBrowseRoots() =>
+      _call(
+        () async => _sourcesCall(
+          () async => (await _rustApi.crateListLocalFilesystemBrowseRoots())
+              .map(localFilesystemBrowseRootFromDto)
+              .toList(growable: false),
+        ),
+      );
+
+  @override
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) => _call(
+    () async => _sourcesCall(
+      () async => localFilesystemBrowsePageFromDto(
+        await _rustApi.crateListLocalFilesystemBrowseDirectories(
+          request: dto.ListLocalFilesystemBrowseDirectoriesRequestDto(
+            location: location.value,
+            cursor: cursor,
+            pageSize: pageSize,
+          ),
+        ),
       ),
     ),
   );
@@ -215,8 +277,12 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   Future<StartLibraryScanResult> startLibraryScan(
     LibraryRootId libraryRootId,
   ) => _call(
-    () async => startLibraryScanResultFromDto(
-      await _rustApi.crateStartLibraryScan(libraryRootId: libraryRootId.value),
+    () async => _sourcesCall(
+      () async => startLibraryScanResultFromDto(
+        await _rustApi.crateStartLibraryScan(
+          libraryRootId: libraryRootId.value,
+        ),
+      ),
     ),
   );
 
@@ -224,9 +290,11 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   Future<StartLibraryScanAllResult> startLibraryScanAll(
     ScanAllRequestIdentity requestIdentity,
   ) => _call(
-    () async => startLibraryScanAllResultFromDto(
-      await _rustApi.crateStartLibraryScanAll(
-        requestIdentity: requestIdentity.value,
+    () async => _sourcesCall(
+      () async => startLibraryScanAllResultFromDto(
+        await _rustApi.crateStartLibraryScanAll(
+          requestIdentity: requestIdentity.value,
+        ),
       ),
     ),
   );
@@ -412,6 +480,49 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
       return await operation();
     } catch (error, stackTrace) {
       throw _mapFailure(error, stackTrace);
+    }
+  }
+
+  /// Runs one provider-dependent Sources operation after a serialized native
+  /// mount snapshot refresh. Desktop gateways omit the reader and therefore
+  /// retain their existing call sequence exactly.
+  Future<T> _sourcesCall<T>(Future<T> Function() operation) async {
+    await _refreshMountedVolumes();
+    return operation();
+  }
+
+  Future<void> _refreshMountedVolumes() async {
+    final reader = _mountedVolumesReader;
+    if (reader == null) return;
+    final inFlight = _mountRefresh;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    final refresh = () async {
+      final facts = await reader();
+      await _rustApi.crateSyncLocalFilesystemMountedVolumes(
+        request: dto.SyncLocalFilesystemMountedVolumesRequestDto(
+          volumes: facts
+              .map(
+                (fact) => dto.MountedLocalFilesystemVolumeDto(
+                  providerVolumeId: fact.providerVolumeId,
+                  transientMountPath: fact.transientMountPath,
+                  safeDisplayName: fact.safeDisplayName,
+                  isPrimary: fact.isPrimary,
+                  isRemovable: fact.isRemovable,
+                ),
+              )
+              .toList(growable: false),
+        ),
+      );
+    }();
+    _mountRefresh = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_mountRefresh, refresh)) _mountRefresh = null;
     }
   }
 
@@ -864,8 +975,46 @@ RemoveLibraryRootResult removeLibraryRootResultFromDto(
 
 dto.LocalFilesystemRootSelectionDto selectionToDto(
   LocalFilesystemRootSelection selection,
-) => dto.LocalFilesystemRootSelectionDto(
-  selectedFolderPath: selection.selectedFolderPath,
+) => switch (selection) {
+  LocalFilesystemRootSelectionPath(:final selectedFolderPath) =>
+    dto.LocalFilesystemRootSelectionDto.path(
+      selectedFolderPath: selectedFolderPath,
+    ),
+  LocalFilesystemRootSelectionProvider(:final selectionIdentity) =>
+    dto.LocalFilesystemRootSelectionDto.providerSelection(
+      selectionIdentity: selectionIdentity,
+    ),
+};
+
+LocalFilesystemBrowseRoot localFilesystemBrowseRootFromDto(
+  dto.LocalFilesystemBrowseRootDto value,
+) => LocalFilesystemBrowseRoot(
+  location: LocalFilesystemBrowseLocation(value.location),
+  displayName: value.displayName,
+  safeLocationPresentation: value.safeLocationPresentation,
+);
+
+LocalFilesystemBrowsePage localFilesystemBrowsePageFromDto(
+  dto.LocalFilesystemBrowsePageDto value,
+) => LocalFilesystemBrowsePage(
+  current: localFilesystemBrowseRootFromDto(value.current),
+  breadcrumbs: value.breadcrumbs
+      .map(
+        (breadcrumb) => LocalFilesystemBrowseBreadcrumb(
+          location: LocalFilesystemBrowseLocation(breadcrumb.location),
+          displayName: breadcrumb.displayName,
+        ),
+      )
+      .toList(growable: false),
+  directories: value.directories
+      .map(
+        (directory) => LocalFilesystemBrowseDirectory(
+          location: LocalFilesystemBrowseLocation(directory.location),
+          displayName: directory.displayName,
+        ),
+      )
+      .toList(growable: false),
+  nextCursor: value.nextCursor,
 );
 
 LibraryRootAvailability libraryRootAvailabilityFromDto(

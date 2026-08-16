@@ -22,11 +22,18 @@ class ArgusApplication : Application() {
     lateinit var platformBridge: ArgusPlatformBridge
         private set
 
+    lateinit var localFilesystemBridge: ArgusLocalFilesystemBridge
+        private set
+
     override fun onCreate() {
         super.onCreate()
         flutterEngine = FlutterEngine(this)
         GeneratedPluginRegistrant.registerWith(flutterEngine)
         platformBridge = ArgusPlatformBridge(
+            application = this,
+            messenger = flutterEngine.dartExecutor.binaryMessenger,
+        )
+        localFilesystemBridge = ArgusLocalFilesystemBridge(
             application = this,
             messenger = flutterEngine.dartExecutor.binaryMessenger,
         )

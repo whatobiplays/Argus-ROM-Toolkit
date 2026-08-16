@@ -193,6 +193,17 @@ final class _SourcesFakeGateway
   Future<SourceEntryDetail> getSourceEntry(SourceEntryId sourceEntryId) async =>
       throw const TransportFailure('Sources stub is not focused');
 
+  @override
+  Future<List<LocalFilesystemBrowseRoot>>
+  listLocalFilesystemBrowseRoots() async => const [];
+
+  @override
+  Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({
+    required LocalFilesystemBrowseLocation location,
+    String? cursor,
+    required int pageSize,
+  }) async => throw const TransportFailure('Sources stub is not focused');
+
   LibraryRoot _root() => LibraryRoot(
     id: const LibraryRootId(_rootIdHex),
     displayName: 'Games',

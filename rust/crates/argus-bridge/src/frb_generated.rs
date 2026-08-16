@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 685584309;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1158369733;
 
 // Section: executor
 
@@ -709,6 +709,73 @@ fn wire__crate__list_library_roots_impl(
         },
     )
 }
+fn wire__crate__list_local_filesystem_browse_directories_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_local_filesystem_browse_directories",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::ListLocalFilesystemBrowseDirectoriesRequestDto>::sse_decode(
+                &mut deserializer,
+            );
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::list_local_filesystem_browse_directories(api_request)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__list_local_filesystem_browse_roots_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_local_filesystem_browse_roots",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::list_local_filesystem_browse_roots()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__list_source_entry_children_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1074,6 +1141,40 @@ fn wire__crate__subscribe_events_impl(
             move |context| {
                 transform_result_sse::<_, crate::BridgeTransportError>((move || {
                     let output_ok = crate::subscribe_events(api_attach_epoch, api_sink)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__sync_local_filesystem_mounted_volumes_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "sync_local_filesystem_mounted_volumes",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request =
+                <crate::SyncLocalFilesystemMountedVolumesRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::sync_local_filesystem_mounted_volumes(api_request)?;
                     Ok(output_ok)
                 })())
             }
@@ -1780,6 +1881,76 @@ impl SseDecode for Vec<crate::LibraryScanRootSummaryDto> {
     }
 }
 
+impl SseDecode for Vec<crate::LocalFilesystemBrowseBreadcrumbDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::LocalFilesystemBrowseBreadcrumbDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for crate::ListLocalFilesystemBrowseDirectoriesRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_location = <String>::sse_decode(deserializer);
+        let mut var_cursor = <Option<String>>::sse_decode(deserializer);
+        let mut var_pageSize = <u32>::sse_decode(deserializer);
+        return crate::ListLocalFilesystemBrowseDirectoriesRequestDto {
+            location: var_location,
+            cursor: var_cursor,
+            page_size: var_pageSize,
+        };
+    }
+}
+
+impl SseDecode for Vec<crate::LocalFilesystemBrowseDirectoryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::LocalFilesystemBrowseDirectoryDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::LocalFilesystemBrowseRootDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::LocalFilesystemBrowseRootDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::MountedLocalFilesystemVolumeDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::MountedLocalFilesystemVolumeDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1856,12 +2027,100 @@ impl SseDecode for Vec<crate::SourceEntryDto> {
     }
 }
 
+impl SseDecode for crate::LocalFilesystemBrowseBreadcrumbDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_location = <String>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        return crate::LocalFilesystemBrowseBreadcrumbDto {
+            location: var_location,
+            display_name: var_displayName,
+        };
+    }
+}
+
+impl SseDecode for crate::LocalFilesystemBrowseDirectoryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_location = <String>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        return crate::LocalFilesystemBrowseDirectoryDto {
+            location: var_location,
+            display_name: var_displayName,
+        };
+    }
+}
+
+impl SseDecode for crate::LocalFilesystemBrowsePageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_current = <crate::LocalFilesystemBrowseRootDto>::sse_decode(deserializer);
+        let mut var_breadcrumbs =
+            <Vec<crate::LocalFilesystemBrowseBreadcrumbDto>>::sse_decode(deserializer);
+        let mut var_directories =
+            <Vec<crate::LocalFilesystemBrowseDirectoryDto>>::sse_decode(deserializer);
+        let mut var_nextCursor = <Option<String>>::sse_decode(deserializer);
+        return crate::LocalFilesystemBrowsePageDto {
+            current: var_current,
+            breadcrumbs: var_breadcrumbs,
+            directories: var_directories,
+            next_cursor: var_nextCursor,
+        };
+    }
+}
+
+impl SseDecode for crate::LocalFilesystemBrowseRootDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_location = <String>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        let mut var_safeLocationPresentation = <String>::sse_decode(deserializer);
+        return crate::LocalFilesystemBrowseRootDto {
+            location: var_location,
+            display_name: var_displayName,
+            safe_location_presentation: var_safeLocationPresentation,
+        };
+    }
+}
+
 impl SseDecode for crate::LocalFilesystemRootSelectionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_selectedFolderPath = <String>::sse_decode(deserializer);
-        return crate::LocalFilesystemRootSelectionDto {
-            selected_folder_path: var_selectedFolderPath,
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_selectedFolderPath = <String>::sse_decode(deserializer);
+                return crate::LocalFilesystemRootSelectionDto::Path {
+                    selected_folder_path: var_selectedFolderPath,
+                };
+            }
+            1 => {
+                let mut var_selectionIdentity = <String>::sse_decode(deserializer);
+                return crate::LocalFilesystemRootSelectionDto::ProviderSelection {
+                    selection_identity: var_selectionIdentity,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::MountedLocalFilesystemVolumeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_providerVolumeId = <String>::sse_decode(deserializer);
+        let mut var_transientMountPath = <String>::sse_decode(deserializer);
+        let mut var_safeDisplayName = <String>::sse_decode(deserializer);
+        let mut var_isPrimary = <bool>::sse_decode(deserializer);
+        let mut var_isRemovable = <bool>::sse_decode(deserializer);
+        return crate::MountedLocalFilesystemVolumeDto {
+            provider_volume_id: var_providerVolumeId,
+            transient_mount_path: var_transientMountPath,
+            safe_display_name: var_safeDisplayName,
+            is_primary: var_isPrimary,
+            is_removable: var_isRemovable,
         };
     }
 }
@@ -2522,6 +2781,17 @@ impl SseDecode for crate::StartupPhaseDto {
     }
 }
 
+impl SseDecode for crate::SyncLocalFilesystemMountedVolumesRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_volumes =
+            <Vec<crate::MountedLocalFilesystemVolumeDto>>::sse_decode(deserializer);
+        return crate::SyncLocalFilesystemMountedVolumesRequestDto {
+            volumes: var_volumes,
+        };
+    }
+}
+
 impl SseDecode for crate::TechnicalDetailsDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2613,18 +2883,33 @@ fn pde_ffi_dispatcher_primary_impl(
         ),
         19 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
         20 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__list_local_filesystem_browse_directories_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        22 => {
+            wire__crate__list_local_filesystem_browse_roots_impl(port, ptr, rust_vec_len, data_len)
+        }
+        23 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        35 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3342,6 +3627,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ListLibraryRootsRequestDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ListLocalFilesystemBrowseDirectoriesRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.location.into_into_dart().into_dart(),
+            self.cursor.into_into_dart().into_dart(),
+            self.page_size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ListLocalFilesystemBrowseDirectoriesRequestDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ListLocalFilesystemBrowseDirectoriesRequestDto>
+    for crate::ListLocalFilesystemBrowseDirectoriesRequestDto
+{
+    fn into_into_dart(self) -> crate::ListLocalFilesystemBrowseDirectoriesRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ListSourceEntryChildrenRequestDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3365,9 +3672,112 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ListSourceEntryChildrenRequestDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LocalFilesystemBrowseBreadcrumbDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.location.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LocalFilesystemBrowseBreadcrumbDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemBrowseBreadcrumbDto>
+    for crate::LocalFilesystemBrowseBreadcrumbDto
+{
+    fn into_into_dart(self) -> crate::LocalFilesystemBrowseBreadcrumbDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LocalFilesystemBrowseDirectoryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.location.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LocalFilesystemBrowseDirectoryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemBrowseDirectoryDto>
+    for crate::LocalFilesystemBrowseDirectoryDto
+{
+    fn into_into_dart(self) -> crate::LocalFilesystemBrowseDirectoryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LocalFilesystemBrowsePageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.current.into_into_dart().into_dart(),
+            self.breadcrumbs.into_into_dart().into_dart(),
+            self.directories.into_into_dart().into_dart(),
+            self.next_cursor.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LocalFilesystemBrowsePageDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemBrowsePageDto>
+    for crate::LocalFilesystemBrowsePageDto
+{
+    fn into_into_dart(self) -> crate::LocalFilesystemBrowsePageDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LocalFilesystemBrowseRootDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.location.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+            self.safe_location_presentation.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LocalFilesystemBrowseRootDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemBrowseRootDto>
+    for crate::LocalFilesystemBrowseRootDto
+{
+    fn into_into_dart(self) -> crate::LocalFilesystemBrowseRootDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::LocalFilesystemRootSelectionDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [self.selected_folder_path.into_into_dart().into_dart()].into_dart()
+        match self {
+            crate::LocalFilesystemRootSelectionDto::Path {
+                selected_folder_path,
+            } => [
+                0.into_dart(),
+                selected_folder_path.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::LocalFilesystemRootSelectionDto::ProviderSelection { selection_identity } => [
+                1.into_dart(),
+                selection_identity.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
@@ -3378,6 +3788,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemRootSelectionDto>
     for crate::LocalFilesystemRootSelectionDto
 {
     fn into_into_dart(self) -> crate::LocalFilesystemRootSelectionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::MountedLocalFilesystemVolumeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.provider_volume_id.into_into_dart().into_dart(),
+            self.transient_mount_path.into_into_dart().into_dart(),
+            self.safe_display_name.into_into_dart().into_dart(),
+            self.is_primary.into_into_dart().into_dart(),
+            self.is_removable.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::MountedLocalFilesystemVolumeDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::MountedLocalFilesystemVolumeDto>
+    for crate::MountedLocalFilesystemVolumeDto
+{
+    fn into_into_dart(self) -> crate::MountedLocalFilesystemVolumeDto {
         self
     }
 }
@@ -3997,6 +4431,23 @@ impl flutter_rust_bridge::IntoIntoDart<crate::StartupPhaseDto> for crate::Startu
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::SyncLocalFilesystemMountedVolumesRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.volumes.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::SyncLocalFilesystemMountedVolumesRequestDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::SyncLocalFilesystemMountedVolumesRequestDto>
+    for crate::SyncLocalFilesystemMountedVolumesRequestDto
+{
+    fn into_into_dart(self) -> crate::SyncLocalFilesystemMountedVolumesRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::TechnicalDetailsDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.text.into_into_dart().into_dart()].into_dart()
@@ -4571,6 +5022,55 @@ impl SseEncode for Vec<crate::LibraryScanRootSummaryDto> {
     }
 }
 
+impl SseEncode for Vec<crate::LocalFilesystemBrowseBreadcrumbDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::LocalFilesystemBrowseBreadcrumbDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::ListLocalFilesystemBrowseDirectoriesRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.location, serializer);
+        <Option<String>>::sse_encode(self.cursor, serializer);
+        <u32>::sse_encode(self.page_size, serializer);
+    }
+}
+
+impl SseEncode for Vec<crate::LocalFilesystemBrowseDirectoryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::LocalFilesystemBrowseDirectoryDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::LocalFilesystemBrowseRootDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::LocalFilesystemBrowseRootDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::MountedLocalFilesystemVolumeDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::MountedLocalFilesystemVolumeDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4631,10 +5131,70 @@ impl SseEncode for Vec<crate::SourceEntryDto> {
     }
 }
 
+impl SseEncode for crate::LocalFilesystemBrowseBreadcrumbDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.location, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+    }
+}
+
+impl SseEncode for crate::LocalFilesystemBrowseDirectoryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.location, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+    }
+}
+
+impl SseEncode for crate::LocalFilesystemBrowsePageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::LocalFilesystemBrowseRootDto>::sse_encode(self.current, serializer);
+        <Vec<crate::LocalFilesystemBrowseBreadcrumbDto>>::sse_encode(self.breadcrumbs, serializer);
+        <Vec<crate::LocalFilesystemBrowseDirectoryDto>>::sse_encode(self.directories, serializer);
+        <Option<String>>::sse_encode(self.next_cursor, serializer);
+    }
+}
+
+impl SseEncode for crate::LocalFilesystemBrowseRootDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.location, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+        <String>::sse_encode(self.safe_location_presentation, serializer);
+    }
+}
+
 impl SseEncode for crate::LocalFilesystemRootSelectionDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.selected_folder_path, serializer);
+        match self {
+            crate::LocalFilesystemRootSelectionDto::Path {
+                selected_folder_path,
+            } => {
+                <i32>::sse_encode(0, serializer);
+                <String>::sse_encode(selected_folder_path, serializer);
+            }
+            crate::LocalFilesystemRootSelectionDto::ProviderSelection { selection_identity } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(selection_identity, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::MountedLocalFilesystemVolumeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.provider_volume_id, serializer);
+        <String>::sse_encode(self.transient_mount_path, serializer);
+        <String>::sse_encode(self.safe_display_name, serializer);
+        <bool>::sse_encode(self.is_primary, serializer);
+        <bool>::sse_encode(self.is_removable, serializer);
     }
 }
 
@@ -5211,6 +5771,13 @@ impl SseEncode for crate::StartupPhaseDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::SyncLocalFilesystemMountedVolumesRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::MountedLocalFilesystemVolumeDto>>::sse_encode(self.volumes, serializer);
     }
 }
 

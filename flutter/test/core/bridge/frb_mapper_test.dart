@@ -3,6 +3,7 @@ import 'package:argus/core/bridge/generated/lib.dart' as dto;
 import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:async';
 
 void main() {
   test('library root DTO maps projections without locator leakage', () {
@@ -258,6 +259,87 @@ void main() {
       );
     },
   );
+
+  test(
+    'provider-dependent Sources calls refresh mounts before the operation',
+    () async {
+      final api = _SourcesRecordingRustLibApi();
+      var reads = 0;
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+        mountedVolumesReader: () async {
+          reads++;
+          return const [
+            MountedLocalFilesystemVolumeFact(
+              providerVolumeId: 'primary',
+              transientMountPath: '/storage/emulated/0',
+              safeDisplayName: 'Internal storage',
+              isPrimary: true,
+              isRemovable: false,
+            ),
+          ];
+        },
+      );
+
+      await gateway.listLibraryRoots(offset: 0, pageSize: 10);
+
+      expect(reads, 1);
+      expect(api.calls, ['sync', 'list']);
+      expect(api.syncedVolumes.single.providerVolumeId, 'primary');
+    },
+  );
+
+  test(
+    'concurrent provider-dependent Sources calls share one mount refresh',
+    () async {
+      final api = _SourcesRecordingRustLibApi();
+      final release = Completer<void>();
+      var reads = 0;
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+        mountedVolumesReader: () async {
+          reads++;
+          await release.future;
+          return const [
+            MountedLocalFilesystemVolumeFact(
+              providerVolumeId: 'primary',
+              transientMountPath: '/storage/emulated/0',
+              safeDisplayName: 'Internal storage',
+              isPrimary: true,
+              isRemovable: false,
+            ),
+          ];
+        },
+      );
+
+      final first = gateway.listLibraryRoots(offset: 0, pageSize: 10);
+      final second = gateway.listLibraryRoots(offset: 0, pageSize: 10);
+      await Future<void>.delayed(Duration.zero);
+      release.complete();
+      await Future.wait([first, second]);
+
+      expect(reads, 1);
+      expect(api.calls.where((call) => call == 'sync'), hasLength(1));
+      expect(api.calls.where((call) => call == 'list'), hasLength(2));
+    },
+  );
+
+  test('mount discovery failures prevent a stale Sources operation', () async {
+    final api = _SourcesRecordingRustLibApi();
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+      mountedVolumesReader: () async => throw StateError('discovery failed'),
+    );
+
+    await expectLater(
+      gateway.listLibraryRoots(offset: 0, pageSize: 10),
+      throwsA(isA<TransportFailure>()),
+    );
+    expect(api.calls, isEmpty);
+  });
 
   test(
     'data-directory override precedes host-standard Android data directory',
@@ -729,6 +811,57 @@ void main() {
     expect(page.nextCursor, 'v1:1700000000:11111111111111111111111111111111');
   });
 
+  test('local filesystem selection maps both closed union variants', () {
+    expect(
+      selectionToDto(const LocalFilesystemRootSelection('/tmp/games')),
+      const dto.LocalFilesystemRootSelectionDto.path(
+        selectedFolderPath: '/tmp/games',
+      ),
+    );
+    expect(
+      selectionToDto(
+        const LocalFilesystemRootSelection.providerSelection('opaque-root'),
+      ),
+      const dto.LocalFilesystemRootSelectionDto.providerSelection(
+        selectionIdentity: 'opaque-root',
+      ),
+    );
+  });
+
+  test(
+    'browse DTOs map only opaque identities and safe display projections',
+    () {
+      final page = localFilesystemBrowsePageFromDto(
+        const dto.LocalFilesystemBrowsePageDto(
+          current: dto.LocalFilesystemBrowseRootDto(
+            location: 'opaque-root',
+            displayName: 'Internal storage',
+            safeLocationPresentation: 'Internal storage',
+          ),
+          breadcrumbs: [
+            dto.LocalFilesystemBrowseBreadcrumbDto(
+              location: 'opaque-root',
+              displayName: 'Internal storage',
+            ),
+          ],
+          directories: [
+            dto.LocalFilesystemBrowseDirectoryDto(
+              location: 'opaque-child',
+              displayName: 'Games',
+            ),
+          ],
+          nextCursor: 'opaque-cursor',
+        ),
+      );
+
+      expect(page.current.location.value, 'opaque-root');
+      expect(page.current.safeLocationPresentation, 'Internal storage');
+      expect(page.breadcrumbs.single.displayName, 'Internal storage');
+      expect(page.directories.single.location.value, 'opaque-child');
+      expect(page.nextCursor, 'opaque-cursor');
+    },
+  );
+
   test('source-entry DTO rejects malformed identity as contract mismatch', () {
     expect(
       () => sourceEntryFromDto(
@@ -800,5 +933,41 @@ final class _RecordingRustLibApi implements frb.RustLibApi {
         startupFailure: null,
       ),
     );
+  }
+}
+
+final class _SourcesRecordingRustLibApi implements frb.RustLibApi {
+  final List<String> calls = [];
+  final List<dto.MountedLocalFilesystemVolumeDto> syncedVolumes = [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    final method = invocation.memberName;
+    if (method == #crateSyncLocalFilesystemMountedVolumes) {
+      calls.add('sync');
+      final request =
+          invocation.namedArguments[const Symbol('request')]
+              as dto.SyncLocalFilesystemMountedVolumesRequestDto;
+      syncedVolumes
+        ..clear()
+        ..addAll(request.volumes);
+      return Future<void>.value();
+    }
+    if (method == #crateListLocalFilesystemBrowseRoots) {
+      calls.add('browseRoots');
+      return Future<List<dto.LocalFilesystemBrowseRootDto>>.value(const []);
+    }
+    if (method == #crateListLibraryRoots) {
+      calls.add('list');
+      return Future<dto.LibraryRootPageDto>.value(
+        const dto.LibraryRootPageDto(
+          items: [],
+          offset: 0,
+          pageSize: 10,
+          totalCount: 0,
+        ),
+      );
+    }
+    return Future<void>.value();
   }
 }

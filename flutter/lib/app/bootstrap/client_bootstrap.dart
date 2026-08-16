@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/core/bridge/bridge.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -14,12 +15,35 @@ part 'client_bootstrap.g.dart';
 @Riverpod(keepAlive: true)
 String? standardApplicationDataDirectory(Ref ref) => null;
 
+/// Optional mounted-volume capability supplied by production app composition.
+/// Desktop and tests leave this null, preserving the existing gateway call
+/// sequence without platform discovery.
+@Riverpod(keepAlive: true)
+LocalFilesystemPlatformApi? localFilesystemPlatformApi(Ref ref) => null;
+
 /// Creates a fresh bridge adapter for each root-client generation.
 @Riverpod(keepAlive: true)
 ArgusClientGateway Function() argusClientGatewayFactory(Ref ref) {
   final standardDirectory = ref.watch(standardApplicationDataDirectoryProvider);
+  final localFilesystem = ref.watch(localFilesystemPlatformApiProvider);
   return () => FrbArgusClientGateway(
     standardApplicationDataDirectory: standardDirectory,
+    mountedVolumesReader: localFilesystem == null
+        ? null
+        : () async {
+            final volumes = await localFilesystem.readMountedVolumes();
+            return volumes
+                .map(
+                  (volume) => MountedLocalFilesystemVolumeFact(
+                    providerVolumeId: volume.providerVolumeId,
+                    transientMountPath: volume.transientMountPath,
+                    safeDisplayName: volume.safeDisplayName,
+                    isPrimary: volume.isPrimary,
+                    isRemovable: volume.isRemovable,
+                  ),
+                )
+                .toList(growable: false);
+          },
   );
 }
 

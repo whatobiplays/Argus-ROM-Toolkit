@@ -16,6 +16,25 @@ SourcesApi sourcesApi(Ref ref) {
   throw StateError('sourcesApiProvider must be supplied by app composition');
 }
 
+/// Presentation-only capabilities selected by app composition.
+///
+/// Android P02-002 enables the Argus-owned browser while disabling scan
+/// execution. Desktop keeps both the browser override and scan execution at
+/// their existing defaults.
+final class SourcesPresentationCapabilities {
+  const SourcesPresentationCapabilities({
+    this.scanExecution = true,
+    this.localFilesystemBrowser = false,
+  });
+
+  final bool scanExecution;
+  final bool localFilesystemBrowser;
+}
+
+@Riverpod(keepAlive: true)
+SourcesPresentationCapabilities sourcesPresentationCapabilities(Ref ref) =>
+    const SourcesPresentationCapabilities();
+
 /// Focused Jobs capability injected for Sources-owned coordination (Scan All
 /// ambiguity reconciliation and cancel-and-remove).
 ///

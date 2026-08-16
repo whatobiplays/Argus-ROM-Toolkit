@@ -26,13 +26,17 @@ pub use library::{
     LibrarySourceRepository, ListLibraryRootsHandler, ListLibraryRootsQuery, NewLibraryRoot,
     RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult,
     StartLibraryScanAllCommand, StartLibraryScanAllHandler, StartLibraryScanCommand,
-    StartLibraryScanHandler,
+    StartLibraryScanHandler, SyncLocalFilesystemMountedVolumesCommand,
 };
 pub use provider::{
     DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, LibrarySourceAccess,
-    LocalFilesystemProvider, LocalFilesystemRootSelection, ObservedEntryKind, ProviderError,
-    RelativeSourceLocator, ResolvedRoot, RootLocator, RootRelationship, SourceAccessError,
-    SourceEntryClassification, SourceEntryKind, SourceLocatorKey, SourceObservation,
-    SourceProviderType, SourceProviderTypeError, ValidatedLocalRoot,
+    LocalFilesystemBrowseBreadcrumb, LocalFilesystemBrowseCursor, LocalFilesystemBrowseDirectory,
+    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseProvider,
+    LocalFilesystemBrowseRoot, LocalFilesystemProvider, LocalFilesystemRootSelection,
+    MAX_LOCAL_FILESYSTEM_BROWSE_PAGE_SIZE, MAX_MOUNTED_LOCAL_FILESYSTEM_VOLUMES,
+    MountedLocalFilesystemVolume, ObservedEntryKind, ProviderError, RelativeSourceLocator,
+    ResolvedRoot, RootLocator, RootRelationship, SourceAccessError, SourceEntryClassification,
+    SourceEntryKind, SourceLocatorKey, SourceObservation, SourceProviderType,
+    SourceProviderTypeError, ValidatedLocalRoot,
 };
 pub use scan::LibraryScanOperationHandler;

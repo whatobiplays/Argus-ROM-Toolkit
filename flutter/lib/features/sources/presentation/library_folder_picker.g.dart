@@ -59,4 +59,4 @@ final class LibraryFolderPickerProvider
 }
 
 String _$libraryFolderPickerHash() =>
-    r'3dfce280bfd43635364f1c6dd17d42b2c37eee22';
+    r'b8b2c9de643a7effeefa4ae27763c3a47f3d1834';

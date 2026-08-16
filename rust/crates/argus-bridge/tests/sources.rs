@@ -3,13 +3,16 @@
 use argus_application::{
     AddLocalLibraryRootResult, ApplicationError, ErrorCode, LibraryRootActiveScanSummary,
     LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
-    LibraryRootProjection, RemoveLibraryRootResult,
+    LibraryRootProjection, LocalFilesystemRootSelection, RemoveLibraryRootResult,
 };
 use argus_bridge::{
     AddLocalLibraryRootResultDto, LibraryRootAvailabilityDto, LibraryRootLastScanStatusDto,
-    RemoveLibraryRootResultDto, RootRelationshipDto, RuntimeEventPayloadDto,
-    add_local_library_root_dto, library_root_dto, library_root_page_dto, parse_library_root_id,
-    remove_library_root_dto, runtime_event_dto,
+    LocalFilesystemBrowseDirectoryDto, LocalFilesystemBrowsePageDto, LocalFilesystemBrowseRootDto,
+    LocalFilesystemRootSelectionDto, MountedLocalFilesystemVolumeDto, RemoveLibraryRootResultDto,
+    RootRelationshipDto, RuntimeEventPayloadDto, SyncLocalFilesystemMountedVolumesRequestDto,
+    add_local_library_root_dto, library_root_dto, library_root_page_dto,
+    local_filesystem_root_selection_from_dto, parse_library_root_id, remove_library_root_dto,
+    runtime_event_dto, sync_local_filesystem_mounted_volumes_command_from_dto,
 };
 use argus_runtime::{RuntimeEvent, RuntimeEventPayload, RuntimeInstanceId};
 
@@ -186,4 +189,67 @@ fn missing_root_application_error_maps_to_the_stable_configuration_code() {
         dto.message_key,
         "errors.configuration.library_root_not_found"
     );
+}
+
+#[test]
+fn local_filesystem_selection_dto_is_a_closed_path_or_provider_union() {
+    assert_eq!(
+        local_filesystem_root_selection_from_dto(LocalFilesystemRootSelectionDto::Path {
+            selected_folder_path: "/tmp/games".to_owned(),
+        },),
+        LocalFilesystemRootSelection::Path {
+            selected_folder_path: "/tmp/games".to_owned(),
+        }
+    );
+    assert_eq!(
+        local_filesystem_root_selection_from_dto(
+            LocalFilesystemRootSelectionDto::ProviderSelection {
+                selection_identity: "argus-local-browse-v1:primary:".to_owned(),
+            },
+        ),
+        LocalFilesystemRootSelection::ProviderSelection {
+            selection_identity: "argus-local-browse-v1:primary:".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn mounted_volume_sync_mapping_keeps_native_facts_ingress_only() {
+    let command = sync_local_filesystem_mounted_volumes_command_from_dto(
+        SyncLocalFilesystemMountedVolumesRequestDto {
+            volumes: vec![MountedLocalFilesystemVolumeDto {
+                provider_volume_id: "primary".to_owned(),
+                transient_mount_path: "/storage/emulated/0".to_owned(),
+                safe_display_name: "Internal storage".to_owned(),
+                is_primary: true,
+                is_removable: false,
+            }],
+        },
+    );
+    let volume = command.volumes().first().expect("one native fact");
+    assert_eq!(volume.provider_volume_id(), "primary");
+    assert_eq!(volume.mount_path(), "/storage/emulated/0");
+    assert!(volume.is_primary());
+}
+
+#[test]
+fn browse_dto_shapes_are_safe_and_bounded() {
+    let root = LocalFilesystemBrowseRootDto {
+        location: "opaque-root".to_owned(),
+        display_name: "Internal storage".to_owned(),
+        safe_location_presentation: "Internal storage".to_owned(),
+    };
+    let directory = LocalFilesystemBrowseDirectoryDto {
+        location: "opaque-child".to_owned(),
+        display_name: "Games".to_owned(),
+    };
+    let page = LocalFilesystemBrowsePageDto {
+        current: root.clone(),
+        breadcrumbs: vec![],
+        directories: vec![directory],
+        next_cursor: Some("opaque-cursor".to_owned()),
+    };
+    assert_eq!(page.current, root);
+    assert_eq!(page.directories.len(), 1);
+    assert_eq!(page.next_cursor.as_deref(), Some("opaque-cursor"));
 }

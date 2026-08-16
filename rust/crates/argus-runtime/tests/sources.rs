@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 
 use argus_application::{
     AddLocalLibraryRootResult, EventSubscriberError, LibraryRootChanged, LibraryRootsChanged,
-    LibraryRootsSubscriber, ListLibraryRootsQuery, LocalFilesystemRootSelection,
+    LibraryRootsSubscriber, ListJobsQuery, ListJobsScope, ListLibraryRootsQuery,
+    LocalFilesystemRootSelection, MountedLocalFilesystemVolume,
+    SyncLocalFilesystemMountedVolumesCommand,
 };
 use argus_runtime::{
     ApplicationHost, EventBus, KernelBootstrapOptions, bootstrap_kernel_with_event_bus,
@@ -115,6 +117,185 @@ fn configured_roots_survive_restart() {
         root_id
     );
     host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+fn stable_provider_root_reconciles_after_restart_and_remount_without_replacement() {
+    let directory = tempdir().expect("temporary directory");
+    let data_directory = directory.path().join("data");
+    let primary_mount = directory.path().join("primary");
+    let removable_mount_a = directory.path().join("removable-a");
+    let removable_mount_b = directory.path().join("removable-b");
+    let removable_root_a = removable_mount_a.join("Games");
+    let removable_root_b = removable_mount_b.join("Games");
+    fs::create_dir_all(&primary_mount).expect("primary mount");
+    fs::create_dir_all(&removable_root_a).expect("first removable root");
+    fs::create_dir_all(&removable_root_b).expect("second removable root");
+    let options = KernelBootstrapOptions::with_data_directory(&data_directory);
+
+    let seed = ApplicationHost::new(options.clone());
+    seed.initialize().expect("seed runtime");
+    seed.sync_local_filesystem_mounted_volumes(SyncLocalFilesystemMountedVolumesCommand::new(
+        vec![
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary_mount.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "removable-volume-1".to_owned(),
+                removable_mount_a.to_string_lossy().into_owned(),
+                "Removable storage".to_owned(),
+                false,
+                true,
+            ),
+        ],
+    ))
+    .expect("initial mount snapshot");
+    let browse_roots = seed
+        .list_local_filesystem_browse_roots()
+        .expect("browse roots");
+    let removable_browse_root = browse_roots
+        .iter()
+        .find(|root| root.display_name() == "Removable storage")
+        .expect("removable browse root");
+    let first_page = seed
+        .list_local_filesystem_browse_directories(
+            removable_browse_root.location().clone(),
+            None,
+            10,
+        )
+        .expect("browse first mount");
+    let games_location = first_page
+        .directories()
+        .iter()
+        .find(|directory| directory.display_name() == "Games")
+        .expect("Games directory")
+        .location()
+        .as_provider_value()
+        .to_owned();
+    let added = seed
+        .add_local_library_root(LocalFilesystemRootSelection::ProviderSelection {
+            selection_identity: games_location,
+        })
+        .expect("provider root added");
+    let root_id = match added {
+        AddLocalLibraryRootResult::Added(root) => root.root_id(),
+        other => panic!("expected Added, got {other:?}"),
+    };
+    seed.general_shutdown().expect("seed shutdown");
+
+    let remounted = ApplicationHost::new(options);
+    remounted.initialize().expect("reopened runtime");
+    remounted
+        .sync_local_filesystem_mounted_volumes(SyncLocalFilesystemMountedVolumesCommand::new(vec![
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary_mount.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+        ]))
+        .expect("removable-absent snapshot");
+
+    let unavailable_page = remounted
+        .list_library_roots(list_all())
+        .expect("unavailable root list");
+    assert_eq!(unavailable_page.total_count(), 1);
+    let unavailable_root = &unavailable_page.items()[0];
+    assert_eq!(unavailable_root.root_id(), root_id);
+    let unavailable_detail = remounted
+        .get_library_root(root_id)
+        .expect("persisted unavailable root");
+    assert_eq!(unavailable_detail.root_id(), root_id);
+    assert_eq!(
+        unavailable_detail.availability(),
+        argus_application::LibraryRootAvailability::Unavailable
+    );
+    assert_eq!(
+        unavailable_root.availability(),
+        argus_application::LibraryRootAvailability::Unavailable
+    );
+    assert!(unavailable_root.last_scan().is_none());
+    assert!(unavailable_root.active_scan().is_none());
+    assert_eq!(
+        remounted
+            .list_jobs(ListJobsQuery::new(ListJobsScope::Active))
+            .expect("active jobs after unavailable reconciliation")
+            .total_count(),
+        0
+    );
+    assert_eq!(
+        remounted
+            .list_jobs(ListJobsQuery::new(ListJobsScope::RecentTerminal {
+                offset: 0,
+                page_size: 100,
+            }))
+            .expect("jobs after unavailable reconciliation")
+            .total_count(),
+        0
+    );
+
+    remounted
+        .sync_local_filesystem_mounted_volumes(SyncLocalFilesystemMountedVolumesCommand::new(vec![
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary_mount.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "removable-volume-1".to_owned(),
+                removable_mount_b.to_string_lossy().into_owned(),
+                "Removable storage".to_owned(),
+                false,
+                true,
+            ),
+        ]))
+        .expect("removable-remounted snapshot");
+
+    let available_page = remounted
+        .list_library_roots(list_all())
+        .expect("available root list");
+    assert_eq!(available_page.total_count(), 1);
+    let available_root = &available_page.items()[0];
+    assert_eq!(available_root.root_id(), root_id);
+    let available_detail = remounted
+        .get_library_root(root_id)
+        .expect("persisted remounted root");
+    assert_eq!(available_detail.root_id(), root_id);
+    assert_eq!(
+        available_detail.availability(),
+        argus_application::LibraryRootAvailability::Available
+    );
+    assert_eq!(
+        available_root.availability(),
+        argus_application::LibraryRootAvailability::Available
+    );
+    assert!(available_root.last_scan().is_none());
+    assert!(available_root.active_scan().is_none());
+    assert_eq!(
+        remounted
+            .list_jobs(ListJobsQuery::new(ListJobsScope::Active))
+            .expect("active jobs after removable remount")
+            .total_count(),
+        0
+    );
+    assert_eq!(
+        remounted
+            .list_jobs(ListJobsQuery::new(ListJobsScope::RecentTerminal {
+                offset: 0,
+                page_size: 100,
+            }))
+            .expect("jobs after removable remount")
+            .total_count(),
+        0
+    );
+    remounted.general_shutdown().expect("remounted shutdown");
 }
 
 #[test]

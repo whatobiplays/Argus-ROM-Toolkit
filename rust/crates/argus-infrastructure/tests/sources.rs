@@ -95,7 +95,7 @@ fn provider_accepts_a_real_directory_and_derives_safe_facts() {
     let directory = tempdir().expect("tempdir");
     let games = directory.path().join("Games");
     fs::create_dir(&games).expect("games directory");
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
 
     let validated = provider
         .validate(&selection(&games))
@@ -117,7 +117,7 @@ fn provider_rejects_a_normal_file_selection() {
     let directory = tempdir().expect("tempdir");
     let file = directory.path().join("rom.bin");
     fs::write(&file, b"rom").expect("file");
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
 
     let error = provider
         .validate(&selection(&file))
@@ -134,7 +134,7 @@ fn provider_rejects_a_link_like_root_without_traversal() {
     let link = directory.path().join("Link");
     fs::create_dir(&target).expect("target directory");
     std::os::unix::fs::symlink(&target, &link).expect("symlink");
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
 
     let error = provider
         .validate(&selection(&link))
@@ -145,7 +145,7 @@ fn provider_rejects_a_link_like_root_without_traversal() {
 
 #[test]
 fn provider_rejects_relative_and_missing_selections() {
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
 
     assert_eq!(
         provider
@@ -173,7 +173,7 @@ fn provider_compares_same_ancestor_descendant_and_disjoint_roots() {
     let sibling = directory.path().join("Sibling");
     fs::create_dir_all(&child).expect("child directory");
     fs::create_dir(&sibling).expect("sibling directory");
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
     let parent_locator = RootLocator::from_provider(parent.to_string_lossy().into_owned());
     let child_locator = RootLocator::from_provider(child.to_string_lossy().into_owned());
     let sibling_locator = RootLocator::from_provider(sibling.to_string_lossy().into_owned());
@@ -201,7 +201,7 @@ fn provider_returns_unknown_when_a_relationship_cannot_be_proven() {
     let directory = tempdir().expect("tempdir");
     let existing = directory.path().join("Existing");
     fs::create_dir(&existing).expect("existing directory");
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
     let existing_locator = RootLocator::from_provider(existing.to_string_lossy().into_owned());
     let missing_locator = RootLocator::from_provider(
         directory
@@ -432,7 +432,7 @@ fn provider_validation_establishes_current_enumerability() {
     let directory = tempdir().expect("tempdir");
     let games = directory.path().join("Games");
     fs::create_dir(&games).expect("games directory");
-    let provider = LocalFilesystemProviderImpl;
+    let provider = LocalFilesystemProviderImpl::default();
 
     // Successful validation proves the directory can currently be opened as
     // an enumerable root without recursively reading its contents.

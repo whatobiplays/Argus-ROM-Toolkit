@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-009  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-X-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1230,7 +1230,22 @@ SPEC-FE-009 is satisfied when:
 40. Deterministic controller/widget/client tests cover the approved list, detail, progress, control, uncertainty, shell-indicator, adaptive, and accessibility contracts.
 41. Phase 001 integration/native verification exercises a real LibraryScan through Jobs and the shell indicator without treating deferred manual checks as passed.
 
-## 61. References
+## 61. Phase 002 Android Foreground-Job Presentation Amendment
+
+Android foreground-service notification UI is a secondary native projection of authoritative Jobs state; it is not the global notification-center capability excluded elsewhere in this specification.
+
+Normative behavior:
+
+- Jobs list/detail/controller state remains authoritative through the existing focused APIs and runtime events/queries.
+- A native foreground notification may show active operation status/progress facts and a cancellation affordance where supported.
+- Native cancellation must route to the same authoritative `CancelJob` path and therefore observes the same `canCancel`, `CancellationRequested`, and terminal-state semantics as Flutter.
+- Notification permission denial does not change Jobs state, disable the Jobs UI, or force long-running work to stop merely because drawer visibility is reduced.
+- Returning to the Activity reconciles from authoritative Jobs/root state; the notification is never used as a restoration snapshot.
+- Foreground-service start/stop state is not rendered as a second job lifecycle status.
+
+Android-specific notification/accessibility tests supplement, rather than replace, the existing Jobs keyboard/touch/controller coverage.
+
+## 62. References
 
 - `docs/architecture/architecture-overview.md` — ARCH-001
 - `docs/architecture/documentation-architecture.md` — ARCH-002

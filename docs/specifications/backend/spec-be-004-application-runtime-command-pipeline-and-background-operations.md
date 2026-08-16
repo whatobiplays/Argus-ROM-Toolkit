@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1685,7 +1685,24 @@ This specification does not finalize:
 - cross-process or distributed job execution
 - remote workers
 
-## 55. References
+## 55. Phase 002 Android Foreground-Execution Amendment
+
+Android foreground execution is a platform execution lease around the existing runtime, not a new runtime or scheduler. A qualifying user-admitted long-running operation may cause the Android host to start/maintain one foreground service while background execution eligibility is required.
+
+Normative rules:
+
+1. `ApplicationRuntime` and `BackgroundOperationManager` remain authoritative for admission, `JobRun` lifecycle, progress, cancellation, retry, shutdown, and recovery.
+2. The foreground service must not initialize a second Rust runtime, open an independent SQLite application authority, create a parallel scheduler, or own an independent job state machine.
+3. Activity detach/recreation/backgrounding does not imply `generalShutdown` while the process/runtime remains alive.
+4. Native notification cancellation, when exposed, routes into the same authoritative `CancelJob` path used by Flutter Jobs.
+5. The service stops when no qualifying active job requires the execution lease.
+6. Notification permission affects native presentation only; it does not change `JobRun` state or admission authority.
+7. Android service timeout/OS execution loss is treated as execution interruption. For the current non-resumable `LibraryScan`, unexpected execution loss recovers as `Abandoned` unless already-accepted durable cancellation intent maps it to `Cancelled`.
+8. No significant job automatically resumes during MVP. A future operation may use `Interrupted`/resume only when its owning operation contract defines valid durable checkpoint semantics.
+
+Phase 002 tests must prove Activity lifecycle does not duplicate the runtime, Flutter/native cancellation converges on one job, the service tears down after the last qualifying job, and process loss/relaunch preserves existing no-auto-resume recovery.
+
+## 56. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

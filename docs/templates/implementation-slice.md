@@ -20,32 +20,36 @@
 
 ## 4. In Scope
 
-## 5. Out of Scope
+## 5. Platform Applicability
 
-## 6. Vertical Behavior
+[State which capabilities are Shared, Platform-adapted, Platform-specific, or Excluded for this slice. A platform may be sequenced later in the same phase, but the classification must be explicit.]
+
+## 6. Out of Scope
+
+## 7. Vertical Behavior
 
 [Describe the flow across backend, persistence, bridge, and Flutter where applicable.]
 
-## 7. Interfaces Consumed
+## 8. Interfaces Consumed
 
-## 8. Interfaces Produced
+## 9. Interfaces Produced
 
-## 9. Persistence and Migration Impact
+## 10. Persistence and Migration Impact
 
-## 10. Failure, Cancellation, and Recovery
+## 11. Failure, Cancellation, and Recovery
 
-## 11. Acceptance Criteria
+## 12. Acceptance Criteria
 
 [Concrete pass/fail criteria.]
 
-## 12. Verification
+## 13. Verification
 
 [Commands and manual/end-to-end checks.]
 
-## 13. Codex Task Decomposition
+## 14. Codex Task Decomposition
 
 [List child TASK IDs in order.]
 
-## 14. Completion Evidence
+## 15. Completion Evidence
 
 [Tests, screenshots, logs, or result files required before Complete.]

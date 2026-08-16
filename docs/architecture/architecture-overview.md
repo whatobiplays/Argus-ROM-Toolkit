@@ -3,7 +3,7 @@
 **Document ID:** ARCH-001  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
+**Last Updated:** 2026-08-15  
 **Depends On:** None  
 **Supersedes:** None  
 **Superseded By:** None  
@@ -404,6 +404,8 @@ Rules:
 2. Reopening a configured local source after restart must restore or reacquire platform authorization before any traversal begins. A persisted path string alone is not sufficient durable authorization on platforms that require more.
 3. Stale, missing, or revoked authorization surfaces as a typed source-access failure. It never silently deletes or rewrites the configured source/root, and it does not by itself prove the storage disappeared.
 4. Non-sandboxed platforms/providers remain free to use simpler or empty authorization representations.
+5. Android Phase 002 uses mandatory process-level All files access as a platform readiness prerequisite rather than persisting SAF tree grants per configured root. Android root identity/availability remains provider-owned; loss of the global authorization never proves that configured storage or indexed entries disappeared.
+6. Android Phase 002 local mounted storage remains the same logical `LocalFilesystem` provider family. Cloud/virtual document providers require a separate future capability rather than being smuggled into local-filesystem semantics.
 
 ## 8. Indexing architecture
 
@@ -1103,6 +1105,8 @@ The architecture requires cooperative cancellation, persisted cancellation reque
 
 Provider-internal request retries remain provider infrastructure policy. User retry and resume create new top-level operations and new trace identities.
 
+On Android, a foreground service may host execution eligibility for qualifying user-admitted long-running operations when the Activity is backgrounded. It is not a scheduler or lifecycle authority: the existing `BackgroundOperationManager`, persisted `JobRun`, cancellation, retry, and restart-recovery contracts remain authoritative, and the service must not create a second Rust runtime or SQLite authority.
+
 ## 15. Application layer
 
 ### 15.1 Runtime admission and application capabilities
@@ -1476,13 +1480,13 @@ A persistent application shell owns:
 
 Navigation modes:
 
-- **Compact:** bottom navigation with `Library`, `Collections`, `Jobs`, and `More`
+- **Compact:** direct bottom navigation for the active primary destination catalog; during Phase 002 the implemented set is `Sources`, `Jobs`, and `Settings`
 - **Medium:** icon navigation rail
 - **Expanded/Large:** full sidebar with icons and labels
 
-`More` contains lower-frequency destinations on compact layouts, such as diagnostics and settings.
+Compact presentation must not invent a semantic `More` route or make a platform-specific route graph. Later active destinations may revise the compact presentation through the owning shell specification while preserving semantic destination identity and branch history.
 
-The destination set above describes the complete MVP shell. During Phase 000, production routing and navigation expose only destinations backed by implemented capability. Adaptive-shell and route-branch coverage may use test-only fixtures; the shipped application does not contain unavailable Library, Collections, Jobs, Sources, or other future-feature placeholders.
+The destination set above describes the current implemented shell contract at this architecture level; owning phase/specification documents may evolve active destination placement as capabilities become real. Production routing and navigation expose only destinations backed by implemented capability. Adaptive-shell and route-branch coverage may use test-only fixtures; the shipped application does not contain unavailable Library, Collections, Jobs, Sources, or other future-feature placeholders.
 
 ### 19.13 Responsive layout
 
@@ -1650,6 +1654,14 @@ Controllers implement feature behavior; the registry does not contain business l
 
 The command palette and user-customizable shortcuts are post-MVP.
 
+### 19.23 Android platform host and applicability
+
+Android extends the same Flutter/Rust product rather than introducing a mobile backend. One Android process owns one application-scoped cached Flutter engine, one normal Dart isolate/root `ProviderScope`, one focused client composition, one FRB runtime host, one Rust `ApplicationRuntime`, and one SQLite authority. Activity recreation, rotation, resizing, split-screen, fold/unfold, or temporary backgrounding does not own runtime shutdown/replacement.
+
+Mandatory Android All files access is checked by the platform host before backend startup is admitted. This readiness gate is outside Rust startup phases. The Android host also supplies the app-private standard application-data directory; production Android startup must not infer the database location from Unix `HOME`/`XDG_*` assumptions.
+
+Starting with PHASE-002, capabilities are explicitly classified as **Shared**, **Platform-adapted**, **Platform-specific**, or **Excluded**. A phase must implement and verify all Android-applicable capability before completion, but must not create fake Android equivalents for desktop-only behavior or fake desktop equivalents for Android-only platform mechanics.
+
 ## 20. Error model and diagnostics
 
 Rust publishes one stable `ApplicationError` contract. `argus-bridge` maps it to `ApplicationErrorDto`; the focused Dart client maps that DTO to an `ApplicationFailure` that preserves code, category, severity, recoverability, retry policy, message key, trace identity, and approved safe context.
@@ -1790,6 +1802,10 @@ The following items have been explicitly identified for future consideration:
 - Parsed-content persistence for proven bottlenecks
 - General plugin/extension system
 - Additional source providers
+- Android 10 / API 29 compatibility
+- 32-bit Android ABI support
+- Google Play distribution/policy adaptation
+- non-local Android document-provider sources
 - Full or richer undo history if justified
 
 These roadmap items must build on the existing contracts rather than being partially embedded in MVP implementations.
@@ -1817,6 +1833,8 @@ The following invariants are non-negotiable unless this architecture is formally
 17. Ready future specifications do not expand the active phase or authorize speculative scaffolding.
 18. Git writes require explicit authorization; a documented commit-sized boundary alone is insufficient.
 19. Save management remains outside MVP scope.
+20. Supported product platforms share one business/runtime architecture; platform-specific hosts adapt OS lifecycle, permissions, storage authorization, and presentation without creating independent product state authorities.
+21. Phase completion requires explicit platform applicability and implementation/verification of every Android-applicable capability once Android is an active supported platform.
 
 ## 28. Follow-up design documents
 

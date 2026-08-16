@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1201,7 +1201,19 @@ This specification does not implement or finalize:
 - automatic support-bundle upload
 - raw database export
 
-## 31. References
+## 31. Phase 002 Android Observability Amendment
+
+Android is a bounded supported platform value in observability. `PlatformClass` must include `Android` with stable serialized value `android`; Android must not be collapsed into generic Unix merely because the Rust target exposes Unix-like APIs.
+
+Platform readiness failures that occur before a trustworthy backend host is admitted remain platform/bootstrap failures and do not fabricate `ApplicationError`, `RuntimeState`, or a Rust startup phase. Once backend execution is reachable, existing error/trace rules apply unchanged.
+
+Android app-private data paths, package-private directories, mount coordinates, and permission implementation details are not safe-context values. Diagnostics may identify bounded platform/architecture/version facts, but path sanitization and allowlisting remain authoritative.
+
+Diagnostic archive assembly remains backend-owned and sanitized. The frontend destination/export interaction is platform-adapted: the existing desktop save-location mechanism is not itself an Android product contract. Open-data-directory presentation is excluded on Android because app-private application data is not a user file-management surface.
+
+Phase 002 acceptance requires Android platform classification and tests proving that no raw app-private path or authorization detail enters safe context, logs, errors, or diagnostic manifests.
+
+## 32. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-011  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1931,7 +1931,7 @@ SPEC-BE-011 is satisfied when:
 45. Provider/source I/O is not held across indexing database write transactions.
 46. `SourceRead` explicitly establishes atomicity or requires post-read consistency validation.
 47. Trusted immutable derived data is never committed from a changed or indeterminate mutable read.
-48. MVP uses one `LocalFilesystem` provider type across desktop platforms.
+48. MVP uses one `LocalFilesystem` provider type across supported desktop platforms and Android; platform-specific mounted-storage mechanics remain provider-owned rather than becoming new product-level provider types.
 49. Local-filesystem capabilities are conservative and based on effective resolved-root semantics rather than OS-name assumptions.
 50. Local filesystem links/junctions/aliases are not followed for traversal.
 51. Cancellation preserves already committed positive observations and never grants absence authority.
@@ -1999,7 +1999,35 @@ This specification intentionally defers:
 - exact event coalescing thresholds;
 - source-provider plugin loading.
 
-## 61. References
+## 61. Phase 002 Android `LocalFilesystem` Amendment
+
+Android Phase 002 uses the existing `SourceProviderType::LocalFilesystem`. It does not introduce a persisted `AndroidDocumentTree` or other Android-only product source family.
+
+### 61.1 Supported storage meaning
+
+Android `LocalFilesystem` means actual locally mounted filesystem storage accessible under the mandatory platform authorization, including primary shared storage, ordinary accessible subdirectories such as Downloads, removable SD storage, and USB/OTG storage where Android exposes usable local filesystem semantics.
+
+Cloud-backed/virtual `DocumentsProvider` trees and protected application-private areas that cannot satisfy the provider contract are unsupported for this capability. SAF/content-provider execution is a separate future capability, not a fallback engine inside this provider.
+
+### 61.2 Root identity and removable volumes
+
+A transient mount path alone is not sufficient durable identity for removable storage. Provider-owned persisted material must retain enough stable volume identity plus root-relative location information to re-identify the same configured root after a trustworthy remount.
+
+The domain/application layers continue to treat `RootLocator` and all platform identity/authorization material as opaque. The same trustworthy root returning after temporary absence preserves its existing `LibraryRootId`.
+
+### 61.3 Authorization and availability
+
+Mandatory Android All files access is a process/platform readiness prerequisite, not per-root SAF authorization. Losing that platform authorization or unmounting a volume never proves indexed entries were deleted and must not authorize destructive reconciliation.
+
+Unavailable media produces typed root/provider unavailability. Regrant/remount causes authoritative availability re-evaluation. Other roots remain usable when their own evidence is valid.
+
+### 61.4 Folder browsing boundary
+
+Provider/native infrastructure owns mounted-volume discovery facts, canonical root validation, bounded enumeration, relationships, stat/open, identity, and boundary safety. Flutter may consume a focused typed browse projection but never becomes traversal authority or constructs canonical provider locators from UI strings.
+
+Android link-like entries remain governed by the existing no-traversal MVP rule.
+
+## 62. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

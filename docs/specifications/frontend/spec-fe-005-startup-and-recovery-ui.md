@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-005  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -2108,7 +2108,27 @@ This specification intentionally leaves the following to later contracts:
 
 It does not define a generic recovery DSL, generic effect bus, or second runtime authority in Flutter.
 
-## 156. References
+## 156. Phase 002 Android Platform-Readiness and Recovery-Presentation Amendment
+
+Android mandatory All files access is gated before backend startup presentation is consumed. The platform-readiness surface lives in app composition with normal Material/MediaQuery context but must prevent backend-dependent startup/controller providers from being built until readiness is satisfied. Missing readiness is not represented as a backend `StartupFailure`.
+
+The live Android OS state is authoritative. Returning from the All files settings surface or resuming the Activity triggers a fresh readiness read; launching Settings alone never marks readiness successful. Notification permission is requested after mandatory storage readiness and terminal denial still permits startup.
+
+If All files access is revoked after the backend is already Ready, the platform gate may cover the normal application until reauthorization, but must not itself call backend shutdown, fabricate startup failure, or replace the runtime generation.
+
+### Platform applicability of startup recovery actions
+
+Backend-advertised recovery capability is necessary but not sufficient to render an action whose platform implementation is unavailable or explicitly excluded. App composition may suppress such an action only through a closed typed presentation-capability seam; widgets/controllers must not branch directly on Android or mutate the backend `recoveryActions` snapshot.
+
+Normative Phase 002 classifications:
+
+- `Export Diagnostics`: **Platform-adapted on Android**. Backend bundle assembly remains authoritative, but Android requires an Android-appropriate export/destination mechanism. Until that mechanism is implemented later in Phase 002, Android presentation suppresses this action even if the backend advertises it.
+- `Open Data Directory`: **Excluded on Android**. The app-private data directory is not exposed as a user file-management surface.
+- Retry Startup, Reset Appearance Settings, Copy Technical Details, and Exit remain governed by backend advertisement/existing presentation rules and are not hidden merely because the platform is Android.
+
+Tests must prove suppression changes presentation only, leaves `StartupState`/backend recovery actions unchanged, leaves desktop defaults unchanged, and cannot dispatch an action that is not rendered.
+
+## 157. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

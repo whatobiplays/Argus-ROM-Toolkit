@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-013  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-X-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1170,7 +1170,22 @@ SPEC-BE-013 is satisfied when:
 29. Cancellation is job-scoped; completed child outcomes remain durable, in-flight coherent commits complete before the next checkpoint, and accepted cancellation intent maps stale active children to `Cancelled` at restart.
 30. Platform-durable authorization is provider-owned opaque configuration; stale/revoked authorization yields a typed source-access failure without deleting the configured root.
 
-## 33. References
+## 33. Phase 002 Android Source/Scan Amendment
+
+Android reuses the existing source/root/scan application contracts; platform storage state changes do not create Android-only scan semantics.
+
+1. Global All files access loss preserves configured roots, indexed source entries, scan/job history, and settings. New Android storage scans are not admitted while the platform readiness prerequisite is unmet.
+2. Permission loss is not root deletion and cannot be used as fresh absence evidence.
+3. Removing/ejecting a configured SD/USB volume makes affected roots unavailable. An active scan terminates through existing failure/interruption semantics without destructive absence finalization.
+4. A trustworthy remount of the same provider-native volume/root restores availability under the existing `LibraryRootId`; it does not silently create a replacement configured root.
+5. `ScanAllLocalLibraryRoots` excludes unavailable/ineligible roots using existing typed exclusion semantics while allowing other eligible roots to proceed.
+6. `AddLocalLibraryRootAndScan` retains the existing committed-root-then-child-admission boundary on Android; root admission is not rolled back because scan admission later fails.
+7. Android foreground execution does not change `JobRun`/`ScanRun` authority. Native service/notification state is secondary projection only.
+8. Removing an Android root remains configuration/index removal only and never deletes, moves, renames, or modifies user files.
+
+Tests must cover permission loss/regrant, removable-media loss/remount, partial Scan All eligibility, no destructive reconciliation on unavailable evidence, and preserved root identity where provider-native proof is trustworthy.
+
+## 34. References
 
 - `docs/architecture/architecture-overview.md` — ARCH-001
 - `docs/architecture/documentation-architecture.md` — ARCH-002

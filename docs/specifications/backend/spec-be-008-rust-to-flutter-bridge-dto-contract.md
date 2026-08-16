@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-X-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -2554,7 +2554,31 @@ This amendment does not activate:
 - job-history deletion/retention UI contracts;
 - client-generated retry idempotency identities.
 
-## 67. References
+## 67. Phase 002 Android Bridge Amendment
+
+Phase 002 adds Android without turning the FRB surface into an Android OS API.
+
+### 67.1 Host-standard application data
+
+Bridge initialization must distinguish normal host-supplied application data from the existing explicit test/embedding override. A focused initialization entrypoint may accept a standard application-data directory and must preserve its classification as normal application data; it must not reuse the explicit-override semantic merely because the path originates outside Rust.
+
+Existing default initialization and explicit-override semantics remain compatible. Android packaged library loading uses the generated FRB/native-loader path appropriate to packaged `.so` artifacts rather than desktop executable-neighbor assumptions.
+
+### 67.2 Platform readiness stays outside business DTOs
+
+Android All files access, notification permission prompts, Activity attachment, and foreground-service host controls are platform-host concerns. They must not be modeled as fake backend business operations or broad Android SDK-shaped FRB DTOs.
+
+### 67.3 Android LocalFilesystem browse projections
+
+When P02-002 activates Android root browsing, bridge/client contracts may expose focused typed projections sufficient to render mounted local volumes and bounded child-directory pages plus an opaque provider-owned selection identity. Generic Flutter code must not construct canonical `RootLocator` values, infer ancestry from raw strings, or receive Android authorization objects.
+
+The active browse contract must remain capability-oriented under the Sources/client boundary, not a generic arbitrary filesystem RPC surface.
+
+### 67.4 Foreground execution
+
+Android foreground-service notification/state transport is secondary platform projection. Authoritative job control remains the existing Jobs/runtime bridge contract; no second native job DTO family may become lifecycle authority.
+
+## 68. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

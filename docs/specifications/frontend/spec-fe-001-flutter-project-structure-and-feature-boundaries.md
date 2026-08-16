@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-008, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-008, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1488,7 +1488,22 @@ This specification intentionally leaves the following to later frontend specific
 
 It also does not define post-MVP multi-package extraction or plugin architecture.
 
-## 86. References
+## 86. Phase 002 Android Platform-Composition Amendment
+
+Android OS integration belongs to app-composition infrastructure, not to feature/domain layers.
+
+The Flutter project may add an `app/platform/` boundary with:
+
+- pure-Dart application/port models for platform readiness/runtime configuration;
+- native platform adapters (for example MethodChannel-backed Android readiness facts);
+- the production platform-host factory as the narrow OS-selection point; and
+- app-level presentation gating required before backend startup.
+
+Feature packages must not branch on `Platform.isAndroid`, import Android SDK concepts, invoke MethodChannels directly, or become owners of global permission/lifecycle state. Sources/Jobs/Settings consume focused shared APIs and platform-neutral state.
+
+One process retains one root `ProviderScope`/client composition. Android Activity recreation must not create a second root application composition or make feature packages responsible for runtime lifetime.
+
+## 87. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

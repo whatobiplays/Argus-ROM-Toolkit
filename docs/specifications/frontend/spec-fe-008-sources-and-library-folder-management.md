@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-X-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -15,7 +15,7 @@ This specification defines the authoritative Flutter product contract for Phase 
 It turns the backend source/root/scan contracts from SPEC-BE-013 into one coherent user-facing capability for:
 
 - navigating to a genuine Sources destination;
-- adding local library folders through the native folder picker;
+- adding local library folders through the platform-appropriate folder-selection flow;
 - explicitly choosing Add & Scan or Add Without Scanning;
 - listing and inspecting configured roots;
 - starting Scan, Scan Again, and Scan All;
@@ -411,9 +411,11 @@ The configured-root list remains a bounded administrative projection. If paginat
 
 The user starts folder configuration through **Add Library Folder**.
 
-The native folder picker is accessed through a focused presentation/platform seam that can be deterministically substituted in tests.
+Folder selection is accessed through a focused presentation/platform seam that can be deterministically substituted in tests.
 
-The picker supplies a typed local-filesystem folder selection suitable for the Sources focused API contract.
+On desktop, the seam may use the supported native folder-selection mechanism. On Android Phase 002, the seam is implemented by the Argus-owned local filesystem browser backed by provider/native browse projections; it does not use SAF tree selection as the product root-selection path.
+
+The selection flow supplies a typed local-filesystem selection suitable for the Sources focused API contract.
 
 Flutter must not construct a backend-authoritative `RootLocator` or infer provider overlap semantics.
 
@@ -1018,9 +1020,9 @@ Sources must not construct raw Jobs URIs through string concatenation.
 
 The detailed Jobs route shape is owned by SPEC-FE-009.
 
-## 42. Native Folder Picker Boundary
+## 42. Folder Selection Boundary
 
-Native folder selection is a presentation/platform side effect and must be isolated behind a narrow Flutter-side seam.
+Folder selection is a presentation/platform side effect and must be isolated behind a narrow Flutter-side seam. The concrete interaction is platform-adapted: supported desktop platforms may use their native picker, while Android Phase 002 uses the Argus-owned mounted-filesystem browser.
 
 The seam must support deterministic fakes for tests covering:
 
@@ -1466,7 +1468,24 @@ SPEC-FE-008 is satisfied when:
 31. Phase 001 native/integration verification exercises the real Sources workflow without treating deferred manual checks as passed.
 32. Sources presents the exact Phase 001 kind/classification/traversal mapping, retains hidden/system ordinary entries, and never presents an incomplete resource-limited scope as a complete hierarchy.
 
-## 69. References
+## 69. Phase 002 Android Folder-Browser and Root-Availability Amendment
+
+Android root selection is platform-adapted rather than a literal copy of the desktop picker.
+
+The Android flow:
+
+1. presents provider/native-discovered locally mounted storage volumes;
+2. browses bounded accessible child directories through focused typed projections;
+3. provides breadcrumbs/up navigation and an explicit `Select this folder` action;
+4. uses Android Back to move up hierarchy before dismissing when appropriate;
+5. never asks Flutter to canonicalize filesystem paths, infer overlap, or interpret Android volume/authorization identity; and
+6. does not use SAF/cloud/virtual document providers as a hidden fallback for Phase 002 local roots.
+
+Final selection enters the existing root-admission API and preserves Added / AlreadyConfigured / OverlapsExisting semantics plus committed-root-then-child-scan admission for Add & Scan.
+
+If All files access is revoked, the Sources feature is covered by platform readiness rather than deleting configuration. If removable media is absent, affected roots render typed unavailable state while other roots remain usable. A trustworthy remount restores the same configured root identity. Removing a root remains configuration/index removal only and never deletes user files.
+
+## 70. References
 
 - `docs/architecture/architecture-overview.md` — ARCH-001
 - `docs/architecture/documentation-architecture.md` — ARCH-002

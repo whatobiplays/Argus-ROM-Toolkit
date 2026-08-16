@@ -24,39 +24,44 @@
 
 [Explicit included capabilities.]
 
-## 5. Out of Scope
+## 5. Platform Applicability
+
+[Classify substantive capabilities as Shared, Platform-adapted, Platform-specific, or Excluded for each supported platform family. Record rationale for exclusions.]
+
+## 6. Out of Scope
 
 [Explicit exclusions and deferred work.]
 
-## 6. Required Subsystem Specifications
+## 7. Required Subsystem Specifications
 
 [List required specification IDs and status.]
 
-## 7. Ordered Implementation Slices
+## 8. Ordered Implementation Slices
 
 [List slice IDs in dependency order with one-sentence outcomes.]
 
-## 8. Failure, Cancellation, and Recovery Expectations
+## 9. Failure, Cancellation, and Recovery Expectations
 
 [Phase-level behavior that slices must preserve.]
 
-## 9. Security and Privacy Impact
+## 10. Security and Privacy Impact
 
 [Data, credentials, filesystem, provider, and privacy implications.]
 
-## 10. Test Strategy
+## 11. Test Strategy
 
 [Required unit, integration, contract, UI, and end-to-end coverage.]
 
-## 11. Exit Criteria
+## 12. Exit Criteria
 
 [Measurable repository and user-visible completion conditions.]
 
-## 12. Readiness Checklist
+## 13. Readiness Checklist
 
 - [ ] User-visible outcome is defined
 - [ ] Dependencies are available or sequenced
 - [ ] Scope and exclusions are explicit
+- [ ] Platform applicability is explicit for each substantive capability
 - [ ] Required public interfaces are identified
 - [ ] Persistence impact is identified
 - [ ] Failure and cancellation behavior are identified
@@ -67,6 +72,6 @@
 - [ ] No blocking design questions remain
 - [ ] Daniel has accepted the capability and scope
 
-## 13. References
+## 14. References
 
 [Links to controlling documents.]

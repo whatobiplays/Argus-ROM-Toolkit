@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-004, SPEC-BE-007, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-004, SPEC-BE-007, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -30,7 +30,7 @@ This specification owns frontend rules for:
 - semantic destination identity;
 - stateful shell branches;
 - compact, medium, expanded, and large navigation structure;
-- compact `More` behavior;
+- compact direct-destination behavior;
 - route-to-destination association;
 - route path, path-parameter, and query-parameter ownership;
 - route canonicalization;
@@ -545,52 +545,39 @@ Library active at /games/abc
 
 This behavior is intentionally different from switching to an inactive branch, which restores that branch's prior location.
 
-## 33. Compact `More`
+## 33. Compact Direct Destinations
 
-On compact layouts, `More` is a presentation affordance for lower-frequency destinations.
+Compact layouts use direct bottom navigation for the currently active primary destination catalog. Compact presentation must not create a semantic `/more` route tree or force implemented primary destinations behind a generic overflow solely because the window is narrow.
 
-It is not a semantic application destination and does not create a `/more` route tree.
-
-Selecting Settings through More still navigates to:
+For the Phase 002 active product, the direct Compact destinations are:
 
 ```text
-/settings
+Sources
+Jobs
+Settings
 ```
 
-not:
+Each item navigates to the same canonical route/branch used by Medium and Expanded/Large presentation.
 
-```text
-/more/settings
-```
+## 34. Compact Navigation State
 
-## 34. `More` State
+Compact navigation owns presentation selection only. Durable location remains route-authoritative and stateful branch history is shared with every other size class.
 
-Temporary open/closed state for the compact More presentation is transient UI state.
-
-It is not route-authoritative and does not become a persistent shell branch.
+No temporary compact-only menu state becomes a persistent shell branch.
 
 ## 35. Destination Visibility
 
 Presentation may expose destinations differently by size class without changing route identity.
 
-Conceptually:
+For the Phase 002 active destination set:
 
 | Destination | Compact | Medium | Expanded/Large |
 |---|---|---|---|
-| high-frequency primary destination | direct bottom item | rail item | sidebar item |
-| lower-frequency destination | More | rail/secondary area | sidebar/secondary area |
+| Sources | direct bottom item | rail item | sidebar item |
+| Jobs | direct bottom item with active-job badge where applicable | rail item | sidebar item |
+| Settings | direct bottom item | rail/secondary area | sidebar/secondary area |
 
-Exact final visual grouping belongs to the implemented destination catalog and SPEC-FE-007 styling rules.
-
-Phase 001 fixes the active destination placement:
-
-| Destination | Compact | Medium | Expanded/Large |
-|---|---|---|---|
-| Jobs | direct bottom item | rail item | sidebar item |
-| Sources | Compact `More` | rail/secondary area | sidebar item |
-| Settings | Compact `More` | secondary area | sidebar/secondary area |
-
-Jobs remains directly reachable on Compact because it is the global active-work surface. Sources and Settings remain canonical semantic destinations even when Compact presents them through `More`; no `/more` route exists. Diagnostics is not an active Phase 001 destination and therefore has no placement in this table.
+Exact later visual grouping belongs to the implemented destination catalog and SPEC-FE-007 styling rules. Adding future destinations may revise the compact presentation through this specification, but must not change canonical routes or introduce OS-specific route graphs.
 
 ## 36. Phase 000 Destination Availability
 
@@ -869,9 +856,9 @@ Shell code must not scatter independent breakpoint numbers through bottom-nav, r
 
 ## 59. Compact Shell
 
-Compact presentation uses bottom navigation for the approved high-frequency primary destinations and `More` for lower-frequency destinations.
+Compact presentation uses direct bottom navigation for the active primary destination catalog. During Phase 002, Sources, Jobs, and Settings are directly reachable.
 
-The shell content remains routed and route-authoritative.
+The shell content remains routed and route-authoritative. Compact behavior is width-driven and shared across supported platforms; it is not an Android-only shell.
 
 ## 60. Medium Shell
 
@@ -1327,7 +1314,7 @@ A route-scoped feature controller may still dispose when its owning route/subtre
 Valid shell-owned state may include narrow application presentation concerns such as:
 
 - current derived destination;
-- transient More presentation state;
+- transient adaptive-navigation presentation state;
 - app-level notice queue/state;
 - narrow status/banner projections;
 - shell layout presentation mechanics.
@@ -1482,17 +1469,18 @@ The same semantic destination must be exercised under Compact, Medium, Expanded,
 
 Tests verify that presentation changes do not change route URI, destination identity, or branch history.
 
-Phase 001 tests additionally verify that Jobs is a direct Compact bottom item, Sources is available through Compact `More`, Settings uses its specified secondary placement, Diagnostics is not an active Phase 001 destination, and all active destinations retain the same canonical routes across resize.
+Phase 002 tests verify that Sources, Jobs, and Settings are direct Compact bottom items, Jobs retains its active-work badge semantics, and all active destinations retain the same canonical routes and branch history across resize.
 
-## 124. Compact `More` Tests
+## 124. Compact Direct-Navigation Tests
 
-Where implemented, tests verify:
+Tests verify:
 
-- More itself is not a route;
-- selecting a lower-frequency destination uses its canonical route;
-- returning/resizing does not introduce `/more` state into location;
-- active destination remains correct when the destination is accessed through More.
-- Phase 001 Jobs remains a direct Compact destination and is never placed under `More` merely because Sources/Settings use it.
+- Sources, Jobs, and Settings are visible without opening an overflow sheet;
+- current destination selection is derived from route state;
+- each direct item activates the same canonical branch used at wider sizes;
+- Jobs preserves active-count badge semantics;
+- resize does not introduce compact-only route state;
+- keyboard/pointer activation remains available on desktop Compact windows while touch behavior remains practical on Android.
 
 ## 125. Restoration Tests
 
@@ -1654,7 +1642,7 @@ SPEC-FE-004 is satisfied when:
 10. Major stateful branches preserve independent history where applicable.
 11. Primary destination switching activates branches rather than pushing across branches.
 12. Reselecting the active destination returns its branch to the canonical root.
-13. Compact `More` is presentation-only and does not create `/more` route identity.
+13. Compact navigation directly exposes the active Phase 002 Sources, Jobs, and Settings destinations and does not create compact-only route identity.
 14. One semantic destination catalog drives all adaptive navigation surfaces.
 15. The active destination is derived from route state rather than duplicate mutable shell state.
 16. Compact, Medium, Expanded, and Large presentations share one route graph.
@@ -1721,7 +1709,17 @@ This specification intentionally leaves the following to later frontend specific
 
 It does not define a second navigation state framework, custom URL dispatcher, or application-wide feature command bus.
 
-## 140. References
+## 140. Phase 002 Android Adaptive/Back Amendment
+
+Android uses the same route graph and width-driven size classes as desktop. No `Platform.isAndroid`, phone/tablet, foldable, or hardware-category Boolean may become global navigation authority.
+
+Argus does not lock orientation. Rotation, split screen, multi-window resize, and fold/unfold may change size class live while preserving canonical route identity and branch history.
+
+Android system Back follows the same route/modal hierarchy and must not exit while a meaningful in-app pop/dismiss action exists. Predictive Back should use the supported Flutter/Android integration without creating separate route state. The Android folder browser defined by SPEC-FE-008 handles Back as hierarchy navigation before dismissal where applicable.
+
+System bars, display cutouts, IME, gesture insets, and safe areas are presentation constraints, not route inputs.
+
+## 141. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

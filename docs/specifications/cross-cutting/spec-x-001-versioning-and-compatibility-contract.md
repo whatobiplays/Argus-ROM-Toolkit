@@ -3,7 +3,7 @@
 **Document ID:** SPEC-X-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-15  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000  
 **Supersedes:** None  
 **Superseded By:** None
@@ -12,7 +12,7 @@
 
 This specification defines the authoritative cross-cutting versioning and compatibility contract for Argus ROM Toolkit.
 
-It establishes how Argus distinguishes product release identity from compatibility-domain versions, how supported persisted state moves forward, how incompatible state fails safely, how the Rust-to-Flutter bridge is versioned inside a matched desktop distribution, and how compatibility claims are verified.
+It establishes how Argus distinguishes product release identity from compatibility-domain versions, how supported persisted state moves forward, how incompatible state fails safely, how the Rust-to-Flutter bridge is versioned inside a matched product distribution, and how compatibility claims are verified.
 
 The specification coordinates versioning requirements already established by persistence, diagnostics, startup, bridge, provider, testing, and repository conventions without replacing their subsystem-specific semantics.
 
@@ -65,7 +65,7 @@ Those concerns belong to subsystem, release, packaging, or future compatibility 
 Argus follows these compatibility principles:
 
 1. One product release has one authoritative Argus version.
-2. Flutter and Rust are components of one desktop release, not independently versioned products.
+2. Flutter and Rust are components of one Argus product release across supported packaged platforms, not independently versioned products.
 3. Build identity is diagnostic provenance, not a compatibility protocol.
 4. Database schema state is determined from migration history, never inferred from application SemVer.
 5. Bridge compatibility state is independent from application SemVer.
@@ -117,7 +117,7 @@ Examples:
 1.3.2
 ```
 
-This value identifies the released Argus desktop product.
+This value identifies the released Argus product across its supported platform artifacts.
 
 The authoritative release version must feed all product surfaces that require a product version, including as applicable:
 
@@ -134,7 +134,7 @@ The exact repository file or generation mechanism that owns the canonical value 
 
 ## 7. Flutter and Rust Release Identity
 
-Flutter and Rust ship as one Argus desktop product.
+Flutter and Rust ship as one Argus product on every supported packaged platform.
 
 Conceptually:
 
@@ -152,7 +152,7 @@ Argus does not define a support matrix such as:
 Flutter 1.3.x supports Rust 1.1.x through 1.8.x
 ```
 
-for the desktop architecture.
+for the packaged Argus architecture.
 
 ## 8. Semantic Versioning Policy
 
@@ -296,7 +296,7 @@ There is no rule such as:
 support only the previous 5 releases
 ```
 
-because users of a desktop application may skip arbitrary numbers of application releases.
+because users of a packaged Argus application may skip arbitrary numbers of application releases.
 
 Compatibility depends on persisted schema state, not elapsed release count.
 
@@ -482,7 +482,7 @@ If a new variant is structurally breaking to the generated contract, the bridge-
 
 ## 25. Matched Flutter/Rust Distribution
 
-The supported desktop deployment model is:
+The supported packaged deployment model is:
 
 ```text
 Flutter from Argus build X
@@ -556,7 +556,7 @@ bridge major 2
 
 The corresponding Flutter and Rust changes land together.
 
-The desktop application is not required to retain active implementations such as:
+A packaged Argus application is not required to retain active implementations such as:
 
 ```text
 BridgeV1
@@ -838,7 +838,7 @@ Subsystems should avoid duplicating the same version under multiple ambiguous fi
 
 If diagnostics expose both `application_version` and `backend_version`, their semantics must be documented.
 
-For the matched desktop distribution:
+For a matched Argus distribution artifact:
 
 - `application_version` identifies the Argus product release;
 - `backend_version` may identify Rust component/build provenance;
@@ -1212,7 +1212,7 @@ SPEC-X-001 is satisfied by the applicable Phase 000 implementation when:
 17. Phase 000 uses bridge contract major `1` or the equivalent initial major representation.
 18. Bridge field semantics remain immutable within a supported contract major.
 19. Incompatible bridge semantics use a new field/DTO/operation or new bridge major rather than reinterpretation.
-20. Flutter and Rust are treated as one matched desktop distribution.
+20. Flutter and Rust are treated as one matched product distribution on every supported packaged platform.
 21. No arbitrary independently deployed Flutter/Rust compatibility matrix is promised.
 22. No runtime bridge-version negotiation/fallback implementation exists in Phase 000.
 23. A pre-host bridge mismatch fails as a typed transport/bootstrap failure, while a reportable backend-side mismatch prevents readiness; one defect is never represented by both classifications.
@@ -1234,7 +1234,15 @@ SPEC-X-001 is satisfied by the applicable Phase 000 implementation when:
 39. Release changes to durable compatibility surfaces answer the compatibility review questions in this specification.
 40. Documentation changes accompany material compatibility-contract changes according to CONV-DOC-001.
 
-## 66. References
+## 66. Phase 002 Multi-Platform Release Amendment
+
+One Argus product version may produce multiple platform artifacts from the same matched source/release identity, including desktop packages and Android APK/AAB artifacts. Platform packaging differences do not create independently versioned Flutter and Rust products or a frontend/backend compatibility matrix.
+
+Phase 002 direct-distribution Android artifacts must carry the same canonical Argus product release identity and matched bridge/backend provenance as the corresponding source release. A signed installable APK is required by PHASE-002 completion; signing credentials are external release inputs and are not compatibility-domain versions.
+
+Platform-specific minimum OS/ABI support is a compatibility claim governed by the owning platform specification (`SPEC-X-002`) and release evidence, not by changing application SemVer semantics. Google Play availability is distribution-channel policy and is not implied merely by an Android artifact existing.
+
+## 67. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

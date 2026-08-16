@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-007  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1790,6 +1790,20 @@ This specification does not introduce:
 - Storybook/Widgetbook/design-system explorer;
 - blanket golden testing for all widgets;
 - native title-bar/window chrome design.
+
+# Phase 002 Android Design-System Amendment
+
+Android remains governed by the same width/local-constraint responsive system rather than device-type checks. There is no Argus orientation lock.
+
+Android-applicable presentation must:
+
+- preserve practical Material touch targets and semantics at Compact widths;
+- remain keyboard/pointer-capable when Android runs in desktop-like/windowed environments where those inputs exist, without making pointer presence layout authority;
+- respect system bars, display cutouts, gesture navigation, IME, and safe insets through normal Flutter constraint/inset APIs rather than device-specific constants;
+- preserve readable scaling and focus/semantics behavior through rotation, split screen, resizing, and fold/unfold transitions;
+- use platform-adapted interactions such as Android Back without creating a separate visual language or route hierarchy.
+
+Physical phone/tablet/handheld labels are test scenarios, not design tokens or breakpoint authority.
 
 # References
 

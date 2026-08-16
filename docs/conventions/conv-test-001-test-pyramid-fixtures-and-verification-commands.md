@@ -3,7 +3,7 @@
 **Document ID:** CONV-TEST-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
+**Last Updated:** 2026-08-15  
 **Depends On:** ARCH-001, PHASE-000, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-008, SPEC-BE-010, SPEC-BE-011, SPEC-BE-012, CONV-REPO-001, CONV-RUST-001, CONV-FLUTTER-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -197,6 +197,8 @@ Native checks include as applicable:
 - other requirements explicitly identified as OS-specific.
 
 Platform-neutral suites should not be duplicated across every supported OS without a demonstrated reason.
+
+For Android, native gates may require the Android SDK/NDK, `adb`, and an emulator/device. Those prerequisites stay outside `just test` and the platform-neutral `just check` gate. Android emulator jobs should exercise the real packaged Flutter/FRB/Rust/SQLite stack when the active slice depends on it rather than substituting mocks for the native boundary being verified.
 
 ## 12. Canonical Verification Commands
 
@@ -779,6 +781,7 @@ Rules:
 A phase/release may require end-to-end or demonstration evidence beyond `just check`.
 
 For example, PHASE-000 requires its canonical demonstration and startup/recovery/settings workflows as part of phase completion.
+PHASE-002 additionally requires a repository-owned x86_64 Android emulator milestone and a recorded critical-path run on at least one physical ARM64 Android device or handheld. Hardware-dependent removable-media cases are recorded as applicable evidence rather than requiring one exact accessory model.
 
 Rules:
 

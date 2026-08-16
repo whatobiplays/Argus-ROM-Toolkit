@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -2057,7 +2057,15 @@ This specification intentionally leaves later specifications to define:
 
 It does not define a generic RPC framework, plugin API, frontend repository layer, or second backend client implementation architecture.
 
-## 150. References
+## 150. Phase 002 Android Focused-API Amendment
+
+Android platform readiness itself is an app-host concern and is not added as a business capability to `ArgusClient`. Permission prompts, Activity attachment, and foreground-service host control stay behind the app/platform boundary.
+
+Android `LocalFilesystem` browsing, once P02-002 activates it, is different: provider-owned traversal/selection semantics cross the Rust boundary and therefore belong behind a focused Sources/client API. That API must expose typed bounded browse projections and opaque provider selection identity rather than raw generated DTOs, Android SDK objects, unrestricted filesystem RPCs, or Flutter-constructed canonical paths.
+
+Existing Sources root admission, scan, hierarchy, Jobs, settings, and runtime APIs remain the authoritative product capabilities on Android. Native foreground notification cancellation must converge on the existing Jobs cancellation capability rather than inventing a parallel client API/state authority.
+
+## 151. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

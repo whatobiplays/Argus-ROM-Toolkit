@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-007  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1175,7 +1175,19 @@ This specification does not finalize:
 - cloud services
 - production crash recovery beyond existing persistence/runtime guarantees
 
-## 50. References
+## 50. Phase 002 Android Platform-Readiness Amendment
+
+Android platform readiness is an outer host prerequisite and is not an additional backend startup phase.
+
+Before `StartupController`/backend startup is consumed on Android, app composition must observe mandatory All files access from the live OS state. Denied or revoked authorization presents platform-readiness recovery and must not be represented as a synthetic `RuntimeState::StartupFailed` or a ninth Rust startup phase.
+
+Once readiness is satisfied, the Android host supplies the app-private standard application-data directory used for normal startup. This is normal host platform configuration, distinct from the explicit data-directory override used by tests/embedding. Android production must not fall back to Unix `HOME`/`XDG_*` resolution.
+
+If All files access is revoked after a runtime has reached Ready, the UI may gate normal storage-dependent presentation and prevent new storage work, but revocation alone does not retire the existing runtime generation, invoke `generalShutdown`, replace the root client, or rewrite startup state. Regrant triggers authoritative platform/provider reconciliation.
+
+Existing backend startup failure/recovery semantics remain unchanged once the backend host is actually invoked.
+
+## 51. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)

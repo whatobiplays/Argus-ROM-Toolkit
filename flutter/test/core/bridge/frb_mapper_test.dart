@@ -291,6 +291,69 @@ void main() {
   );
 
   test(
+    'Add & Scan and single-root Scan refresh mounts before admission',
+    () async {
+      final api = _SourcesRecordingRustLibApi();
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+        mountedVolumesReader: () async => const [
+          MountedLocalFilesystemVolumeFact(
+            providerVolumeId: 'primary',
+            transientMountPath: '/storage/emulated/0',
+            safeDisplayName: 'Internal storage',
+            isPrimary: true,
+            isRemovable: false,
+          ),
+        ],
+      );
+
+      await gateway.addLocalLibraryRootAndScan(
+        const LocalFilesystemRootSelection.providerSelection('selection'),
+      );
+      await gateway.startLibraryScan(
+        const LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      );
+
+      expect(api.calls, ['sync', 'addAndScan', 'sync', 'startScan']);
+    },
+  );
+
+  test('Add & Scan is not invoked after mount refresh failure', () async {
+    final api = _SourcesRecordingRustLibApi();
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+      mountedVolumesReader: () async => throw StateError('discovery failed'),
+    );
+
+    await expectLater(
+      gateway.addLocalLibraryRootAndScan(
+        const LocalFilesystemRootSelection.providerSelection('selection'),
+      ),
+      throwsA(isA<TransportFailure>()),
+    );
+    expect(api.calls, isEmpty);
+  });
+
+  test('single-root Scan is not invoked after mount refresh failure', () async {
+    final api = _SourcesRecordingRustLibApi();
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+      mountedVolumesReader: () async => throw StateError('discovery failed'),
+    );
+
+    await expectLater(
+      gateway.startLibraryScan(
+        const LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      ),
+      throwsA(isA<TransportFailure>()),
+    );
+    expect(api.calls, isEmpty);
+  });
+
+  test(
     'concurrent provider-dependent Sources calls share one mount refresh',
     () async {
       final api = _SourcesRecordingRustLibApi();
@@ -956,6 +1019,34 @@ final class _SourcesRecordingRustLibApi implements frb.RustLibApi {
     if (method == #crateListLocalFilesystemBrowseRoots) {
       calls.add('browseRoots');
       return Future<List<dto.LocalFilesystemBrowseRootDto>>.value(const []);
+    }
+    if (method == #crateAddLocalLibraryRootAndScan) {
+      calls.add('addAndScan');
+      return Future<dto.AddLocalLibraryRootAndScanResultDto>.value(
+        dto.AddLocalLibraryRootAndScanResultDto.addedAndScanAdmitted(
+          const dto.LibraryRootDto(
+            libraryRootId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            displayName: 'Games',
+            safeLocationPresentation: 'Internal storage/Games',
+            availability: dto.LibraryRootAvailabilityDto.available,
+          ),
+          const dto.OperationHandleDto(
+            jobRunId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            operationType: 'library_scan',
+          ),
+        ),
+      );
+    }
+    if (method == #crateStartLibraryScan) {
+      calls.add('startScan');
+      return Future<dto.StartLibraryScanResultDto>.value(
+        const dto.StartLibraryScanResultDto.admitted(
+          dto.OperationHandleDto(
+            jobRunId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            operationType: 'library_scan',
+          ),
+        ),
+      );
     }
     if (method == #crateListLibraryRoots) {
       calls.add('list');

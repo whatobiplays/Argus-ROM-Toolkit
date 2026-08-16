@@ -4,20 +4,24 @@
 //! retain outside-target links, and never touch user files.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use argus_application::{
     ApplicationError, ApplicationEvent, ApplicationEventSink, ApplicationPortError,
     BackgroundOperationHandler, JobProgress, JobProgressReporter, JobRunId, JobRunRepository,
     JobRunState, LibraryRootAvailability, LibraryRootId, LibraryRootQueries, LibraryRootRepository,
-    LibraryScanExecutionPlan, LibraryScanOperationHandler, LibrarySourceId,
-    LibrarySourceRepository, NewJobRun, NewLibraryRoot, NewScanRun, OperationCompletion,
-    OperationContext, OperationName, RootLocator, ScanRunId, ScanRunRepository,
-    SourceEntryClassification, SourceEntryId, SourceEntryKind, SourceEntryRecord,
-    SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
+    LibraryScanExecutionPlan, LibraryScanOperationHandler, LibrarySourceAccess, LibrarySourceId,
+    LibrarySourceRepository, LocalFilesystemBrowseProvider, LocalFilesystemProvider,
+    LocalFilesystemRootSelection, MountedLocalFilesystemVolume, NewJobRun, NewLibraryRoot,
+    NewScanRun, OperationCompletion, OperationContext, OperationName, RootLocator, ScanRunId,
+    ScanRunRepository, SourceEntryClassification, SourceEntryId, SourceEntryKind,
+    SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId, UnitOfWork,
+    UnitOfWorkFactory,
 };
-use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
+use argus_infrastructure::local_filesystem::{
+    LocalFilesystemProvider as LocalFilesystemProviderImpl, LocalFilesystemSourceAccess,
+};
 use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteLibraryRootQueries};
 
 fn context() -> OperationContext {
@@ -50,15 +54,26 @@ fn seed_root(
     executor: &SqliteDatabaseExecutor,
     locator: &RootLocator,
 ) -> (LibrarySourceId, LibraryRootId, JobRunId, ScanRunId) {
+    seed_root_with_presentation(executor, locator, "Games", locator.as_provider_value())
+}
+
+fn seed_root_with_presentation(
+    executor: &SqliteDatabaseExecutor,
+    locator: &RootLocator,
+    display_name: &str,
+    safe_location_display: &str,
+) -> (LibrarySourceId, LibraryRootId, JobRunId, ScanRunId) {
     let locator = locator.clone();
+    let display_name = display_name.to_owned();
+    let safe_location_display = safe_location_display.to_owned();
     executor
         .execute(&context(), move |mut scope| {
             let source_id = scope.library_source().ensure_local_filesystem_source()?;
             let root_id = scope.library_roots().insert(NewLibraryRoot::new(
                 source_id,
                 locator.clone(),
-                "Games".to_owned(),
-                locator.as_provider_value().to_owned(),
+                display_name.clone(),
+                safe_location_display.clone(),
                 LibraryRootAvailability::Unknown,
                 1,
             ))?;
@@ -69,8 +84,8 @@ fn seed_root(
                 job,
                 root_id,
                 locator.clone(),
-                "Games",
-                locator.as_provider_value(),
+                &display_name,
+                &safe_location_display,
                 1,
                 1,
                 1_000,
@@ -88,19 +103,44 @@ fn run_scan(
     job: JobRunId,
     scan: ScanRunId,
 ) -> OperationCompletion {
+    run_scan_with_access(
+        executor,
+        locator,
+        root_id,
+        job,
+        scan,
+        "Games",
+        locator.as_provider_value(),
+        LocalFilesystemSourceAccess::new(locator),
+    )
+}
+
+// Keep the execution inputs explicit so provider-backed and local test cases
+// exercise the same scan handler setup with only their access implementation
+// varying.
+#[allow(clippy::too_many_arguments)]
+fn run_scan_with_access<A: LibrarySourceAccess>(
+    executor: &SqliteDatabaseExecutor,
+    locator: &RootLocator,
+    root_id: LibraryRootId,
+    job: JobRunId,
+    scan: ScanRunId,
+    display_name: &str,
+    safe_location_display: &str,
+    access: A,
+) -> OperationCompletion {
     let plan = LibraryScanExecutionPlan::new(
         root_id,
         job,
         scan,
         locator.clone(),
-        "Games",
-        locator.as_provider_value(),
+        display_name,
+        safe_location_display,
         1,
         1,
         1,
         1_000,
     );
-    let access = LocalFilesystemSourceAccess::new(locator);
     let events = Arc::new(Mutex::new(Vec::new()));
     let handler = LibraryScanOperationHandler::new(
         plan,
@@ -165,6 +205,263 @@ fn read_locator(
             Ok::<_, ApplicationPortError>(found)
         })
         .expect("read locator")
+}
+
+struct MountedScanFixture {
+    provider: LocalFilesystemProviderImpl,
+    primary_path: PathBuf,
+    mount_path: PathBuf,
+    locator: RootLocator,
+    executor: SqliteDatabaseExecutor,
+    root_id: LibraryRootId,
+}
+
+impl MountedScanFixture {
+    fn new(directory: &Path) -> Self {
+        let primary_path = directory.join("primary");
+        let mount_path = directory.join("mounted");
+        fs::create_dir(&primary_path).expect("primary");
+        fs::create_dir_all(mount_path.join("Games")).expect("games");
+
+        let provider = LocalFilesystemProviderImpl::default();
+        provider
+            .replace_mounted_volumes(&[
+                MountedLocalFilesystemVolume::new(
+                    "primary".to_owned(),
+                    primary_path.to_string_lossy().into_owned(),
+                    "Internal storage".to_owned(),
+                    true,
+                    false,
+                ),
+                MountedLocalFilesystemVolume::new(
+                    "android-volume".to_owned(),
+                    mount_path.to_string_lossy().into_owned(),
+                    "Game card".to_owned(),
+                    false,
+                    true,
+                ),
+            ])
+            .expect("mounted snapshot");
+        let mounted_root = provider
+            .list_browse_roots()
+            .expect("browse roots")
+            .into_iter()
+            .find(|root| root.display_name() == "Game card")
+            .expect("mounted browse root");
+        let games_page = provider
+            .list_browse_directories(mounted_root.location(), None, 10)
+            .expect("games page");
+        let games = games_page
+            .directories()
+            .iter()
+            .find(|directory| directory.display_name() == "Games")
+            .expect("games directory");
+        let locator = provider
+            .validate(&LocalFilesystemRootSelection::provider_selection(
+                games.location().as_provider_value().to_owned(),
+            ))
+            .expect("provider selection")
+            .locator()
+            .clone();
+        let executor =
+            SqliteDatabaseExecutor::open(directory.join("argus.sqlite3")).expect("database");
+        let (_, root_id) = seed_configured_root(&executor, &locator, "Games", "Game card/Games");
+        Self {
+            provider,
+            primary_path,
+            mount_path,
+            locator,
+            executor,
+            root_id,
+        }
+    }
+
+    fn admit_scan(&self, started_at: i64) -> (JobRunId, ScanRunId) {
+        let (_, _, job, scan) = seed_root_scan_only_with_presentation(
+            &self.executor,
+            self.root_id,
+            &self.locator,
+            started_at,
+            "Games",
+            "Game card/Games",
+        );
+        (job, scan)
+    }
+
+    fn run_scan(&self, job: JobRunId, scan: ScanRunId) -> OperationCompletion {
+        let access = self
+            .provider
+            .open_access(&self.locator)
+            .expect("source access");
+        run_scan_with_access(
+            &self.executor,
+            &self.locator,
+            self.root_id,
+            job,
+            scan,
+            "Games",
+            "Game card/Games",
+            access,
+        )
+    }
+
+    fn unmount_removable_volume(&self) {
+        self.provider
+            .replace_mounted_volumes(&[MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                self.primary_path.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            )])
+            .expect("remove removable volume");
+    }
+
+    fn shutdown(self) {
+        self.executor.shutdown().expect("shutdown");
+    }
+}
+
+fn seed_configured_root(
+    executor: &SqliteDatabaseExecutor,
+    locator: &RootLocator,
+    display_name: &str,
+    safe_location_display: &str,
+) -> (LibrarySourceId, LibraryRootId) {
+    let locator = locator.clone();
+    let display_name = display_name.to_owned();
+    let safe_location_display = safe_location_display.to_owned();
+    executor
+        .execute(&context(), move |mut scope| {
+            let source_id = scope.library_source().ensure_local_filesystem_source()?;
+            let root_id = scope.library_roots().insert(NewLibraryRoot::new(
+                source_id,
+                locator,
+                display_name,
+                safe_location_display,
+                LibraryRootAvailability::Unknown,
+                1,
+            ))?;
+            scope.commit()?;
+            Ok::<_, ApplicationPortError>((source_id, root_id))
+        })
+        .expect("seed configured root")
+}
+
+#[test]
+fn provider_locator_scan_indexes_nested_hierarchy_and_safe_root_facts() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let fixture = MountedScanFixture::new(directory.path());
+    fs::create_dir_all(fixture.mount_path.join("Games/SNES")).expect("nested directory");
+    fs::write(fixture.mount_path.join("Games/SNES/game.sfc"), b"game").expect("game");
+    fs::write(fixture.mount_path.join("Games/readme.txt"), b"readme").expect("readme");
+
+    let (job, scan) = fixture.admit_scan(1_000);
+    let completion = fixture.run_scan(job, scan);
+    assert_eq!(completion.state(), JobRunState::Completed);
+    assert!(
+        fixture
+            .locator
+            .as_provider_value()
+            .find(&fixture.mount_path.to_string_lossy().to_string())
+            .is_none()
+    );
+    assert!(read_locator(&fixture.executor, fixture.root_id, "SNES").is_some());
+    assert!(read_locator(&fixture.executor, fixture.root_id, "SNES/game.sfc").is_some());
+    assert!(read_locator(&fixture.executor, fixture.root_id, "readme.txt").is_some());
+
+    let projection = SqliteLibraryRootQueries::new(fixture.executor.clone())
+        .get(&context(), fixture.root_id)
+        .expect("projection")
+        .expect("root");
+    assert_eq!(
+        projection.availability(),
+        LibraryRootAvailability::Available
+    );
+    assert_eq!(projection.safe_location_presentation(), "Game card/Games");
+    fixture.shutdown();
+}
+
+#[test]
+#[cfg(unix)]
+fn provider_locator_rescan_preserves_unique_move_and_finalizes_absence() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let fixture = MountedScanFixture::new(directory.path());
+    fs::create_dir_all(fixture.mount_path.join("Games/Sub")).expect("subdirectory");
+    fs::write(fixture.mount_path.join("Games/move.bin"), b"move").expect("move");
+    fs::write(fixture.mount_path.join("Games/remove.bin"), b"remove").expect("remove");
+
+    let (job_one, scan_one) = fixture.admit_scan(1_000);
+    assert_eq!(
+        fixture.run_scan(job_one, scan_one).state(),
+        JobRunState::Completed
+    );
+    let move_id = read_locator(&fixture.executor, fixture.root_id, "move.bin")
+        .expect("move row")
+        .source_entry_id();
+    let sub_id = read_locator(&fixture.executor, fixture.root_id, "Sub")
+        .expect("sub row")
+        .source_entry_id();
+    terminalize_scan(&fixture.executor, job_one, scan_one);
+
+    fs::write(fixture.mount_path.join("Games/new.bin"), b"new").expect("new");
+    fs::remove_file(fixture.mount_path.join("Games/remove.bin")).expect("remove");
+    fs::rename(
+        fixture.mount_path.join("Games/move.bin"),
+        fixture.mount_path.join("Games/Sub/move.bin"),
+    )
+    .expect("move");
+
+    let (job_two, scan_two) = fixture.admit_scan(2_000);
+    assert_eq!(
+        fixture.run_scan(job_two, scan_two).state(),
+        JobRunState::Completed
+    );
+    assert!(read_locator(&fixture.executor, fixture.root_id, "new.bin").is_some());
+    assert_eq!(
+        read_locator(&fixture.executor, fixture.root_id, "remove.bin"),
+        None
+    );
+    let moved =
+        read_locator(&fixture.executor, fixture.root_id, "Sub/move.bin").expect("moved row");
+    assert_eq!(moved.source_entry_id(), move_id);
+    assert_eq!(moved.parent_source_entry_id(), Some(sub_id));
+    fixture.shutdown();
+}
+
+#[test]
+fn unavailable_provider_locator_scan_preserves_prior_entries() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let fixture = MountedScanFixture::new(directory.path());
+    fs::write(fixture.mount_path.join("Games/keep.bin"), b"keep").expect("keep");
+
+    let (job_one, scan_one) = fixture.admit_scan(1_000);
+    assert_eq!(
+        fixture.run_scan(job_one, scan_one).state(),
+        JobRunState::Completed
+    );
+    terminalize_scan(&fixture.executor, job_one, scan_one);
+    fixture.unmount_removable_volume();
+
+    let (job_two, scan_two) = fixture.admit_scan(2_000);
+    assert_eq!(
+        fixture.run_scan(job_two, scan_two).state(),
+        JobRunState::Failed
+    );
+    let projection = SqliteLibraryRootQueries::new(fixture.executor.clone())
+        .get(&context(), fixture.root_id)
+        .expect("projection")
+        .expect("root");
+    assert_eq!(
+        projection.availability(),
+        LibraryRootAvailability::Unavailable
+    );
+    assert_eq!(
+        projection.last_scan().expect("last scan").status(),
+        argus_application::LibraryRootLastScanStatus::Unavailable
+    );
+    assert!(read_locator(&fixture.executor, fixture.root_id, "keep.bin").is_some());
+    fixture.shutdown();
 }
 
 #[test]
@@ -246,7 +543,27 @@ fn seed_root_scan_only(
     locator: &RootLocator,
     started_at: i64,
 ) -> (LibrarySourceId, LibraryRootId, JobRunId, ScanRunId) {
+    seed_root_scan_only_with_presentation(
+        executor,
+        root,
+        locator,
+        started_at,
+        "Games",
+        locator.as_provider_value(),
+    )
+}
+
+fn seed_root_scan_only_with_presentation(
+    executor: &SqliteDatabaseExecutor,
+    root: LibraryRootId,
+    locator: &RootLocator,
+    started_at: i64,
+    display_name: &str,
+    safe_location_display: &str,
+) -> (LibrarySourceId, LibraryRootId, JobRunId, ScanRunId) {
     let locator = locator.clone();
+    let display_name = display_name.to_owned();
+    let safe_location_display = safe_location_display.to_owned();
     executor
         .execute(&context(), move |mut scope| {
             let source_id = scope.library_source().ensure_local_filesystem_source()?;
@@ -257,8 +574,8 @@ fn seed_root_scan_only(
                 job,
                 root,
                 locator.clone(),
-                "Games",
-                locator.as_provider_value(),
+                &display_name,
+                &safe_location_display,
                 1,
                 1,
                 started_at,

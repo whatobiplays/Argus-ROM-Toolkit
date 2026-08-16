@@ -244,7 +244,11 @@ class SourcesRootListController extends _$SourcesRootListController {
         offset: offset,
         pageSize: _pageSize,
       );
-      if (token != _loadToken || runtimeId != _activeRuntimeInstanceId) return;
+      if (!ref.mounted ||
+          token != _loadToken ||
+          runtimeId != _activeRuntimeInstanceId) {
+        return;
+      }
       final latest = state.value;
       if (loadMore && latest is! SourcesRootListStateReady) return;
       final roots = loadMore

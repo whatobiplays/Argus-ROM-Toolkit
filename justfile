@@ -99,4 +99,7 @@ test-phase-002-android-bootstrap:
 test-phase-002-android-local-filesystem:
     bash scripts/run_phase_002_android_local_filesystem_tests.sh
 
+test-phase-002-android-scan:
+    bash scripts/run_phase_002_android_scan_tests.sh
+
 check: check-generated _format-check lint _architecture test

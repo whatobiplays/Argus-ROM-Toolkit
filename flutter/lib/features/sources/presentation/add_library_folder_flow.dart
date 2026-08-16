@@ -36,7 +36,7 @@ Future<void> runAddLibraryFolderFlow(
     context: context,
     builder: (dialogContext) => _AddFolderConfirmationDialog(
       selected: selectedFolder,
-      allowScan: capabilities.scanExecution,
+      allowScan: capabilities.singleRootScanExecution,
     ),
   );
   if (choice == null || !context.mounted) return;

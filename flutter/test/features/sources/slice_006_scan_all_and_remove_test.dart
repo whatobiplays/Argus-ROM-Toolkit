@@ -93,15 +93,14 @@ Future<void> _pumpDetail(
 }
 
 void main() {
-  testWidgets('Android root-management capabilities hide every scan control', (
-    tester,
-  ) async {
+  testWidgets('Android single-root capabilities hide Scan All', (tester) async {
     final api = FakeSourcesApi(roots: [_root()]);
     final container = _container(
       api,
       FakeJobsApi(),
       capabilities: const SourcesPresentationCapabilities(
-        scanExecution: false,
+        singleRootScanExecution: true,
+        scanAllExecution: false,
         localFilesystemBrowser: true,
       ),
     );
@@ -110,8 +109,47 @@ void main() {
     expect(find.byKey(const ValueKey('sources-scan-all')), findsNothing);
 
     await _pumpDetail(tester, container);
-    expect(find.byKey(const ValueKey('sources-start-scan')), findsNothing);
-    expect(find.byKey(const ValueKey('sources-view-last-job')), findsNothing);
+    expect(find.byKey(const ValueKey('sources-start-scan')), findsOneWidget);
+  });
+
+  testWidgets('Android active-root removal cannot invoke cancel-and-remove', (
+    tester,
+  ) async {
+    final api = FakeSourcesApi(
+      roots: [
+        _root(
+          activeScan: const LibraryRootActiveScan(
+            scanRunId: '22222222222222222222222222222222',
+            jobRunId: '11111111111111111111111111111111',
+            owningJobRootCount: 1,
+          ),
+        ),
+      ],
+    );
+    final jobsApi = FakeJobsApi();
+    final container = _container(
+      api,
+      jobsApi,
+      capabilities: const SourcesPresentationCapabilities(
+        singleRootScanExecution: true,
+        activeRootCancelAndRemove: false,
+        localFilesystemBrowser: true,
+      ),
+    );
+
+    await _pumpDetail(tester, container);
+    final removeButton = find.byKey(
+      const ValueKey('sources-remove-library-folder'),
+    );
+    expect(removeButton, findsOneWidget);
+    expect(tester.widget<OutlinedButton>(removeButton).onPressed, isNull);
+
+    await tester.tap(removeButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cancel Scan & Remove Library Folder?'), findsNothing);
+    expect(jobsApi.cancelCalls, 0);
+    expect(api.removeCalls, 0);
   });
 
   testWidgets('Scan All control is gated by authoritative totalCount', (

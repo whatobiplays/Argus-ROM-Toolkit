@@ -8,6 +8,8 @@
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
+#[cfg(target_os = "android")]
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::UNIX_EPOCH;
 
@@ -287,9 +289,40 @@ fn classify_access_error(error: std::io::Error) -> SourceAccessError {
 }
 
 /// The concrete local-filesystem provider adapter.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct LocalFilesystemProvider {
     mounted_volumes: Arc<RwLock<MountedVolumeRegistry>>,
+}
+
+impl Default for LocalFilesystemProvider {
+    fn default() -> Self {
+        Self {
+            mounted_volumes: mounted_volume_registry(),
+        }
+    }
+}
+
+/// Returns the transient mount registry used by one provider instance.
+///
+/// Android runtime scan registration may construct a provider adapter after
+/// the application-owned adapter has refreshed mounted-volume facts. Android
+/// provider instances therefore share one process-local registry, while
+/// desktop instances retain isolated registries for independent embeddings
+/// and tests. The registry contains only current mount facts; durable root
+/// identity remains the opaque provider-volume/relative locator.
+fn mounted_volume_registry() -> Arc<RwLock<MountedVolumeRegistry>> {
+    #[cfg(target_os = "android")]
+    {
+        static REGISTRY: OnceLock<Arc<RwLock<MountedVolumeRegistry>>> = OnceLock::new();
+        return Arc::clone(
+            REGISTRY.get_or_init(|| Arc::new(RwLock::new(MountedVolumeRegistry::default()))),
+        );
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        Arc::new(RwLock::new(MountedVolumeRegistry::default()))
+    }
 }
 
 impl LocalFilesystemProviderPort for LocalFilesystemProvider {

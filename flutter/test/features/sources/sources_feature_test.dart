@@ -10,6 +10,7 @@ import 'package:argus/features/sources/application/sources_state.dart';
 import 'package:argus/features/sources/presentation/library_folder_picker.dart';
 import 'package:argus/features/sources/presentation/selected_library_folder.dart';
 import 'package:argus/features/sources/presentation/root_detail_page.dart';
+import 'package:argus/features/sources/presentation/source_hierarchy_browser.dart';
 import 'package:argus/features/sources/presentation/sources_page.dart';
 import 'package:argus/features/sources/sources_composition.dart';
 import 'package:argus/features/jobs/jobs_composition.dart';
@@ -22,6 +23,12 @@ import '../jobs/jobs_test_fakes.dart';
 
 const _rootId = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 const _runtimeId = RuntimeInstanceId('1234567890abcdef1234567890abcdef');
+const _androidSourcesCapabilities = SourcesPresentationCapabilities(
+  singleRootScanExecution: true,
+  scanAllExecution: false,
+  activeRootCancelAndRemove: false,
+  localFilesystemBrowser: true,
+);
 
 SelectedLibraryFolder pickedFolder(LocalFilesystemRootSelection selection) =>
     SelectedLibraryFolder(
@@ -716,42 +723,41 @@ void main() {
       expect(find.text('Add Without Scanning'), findsOneWidget);
     });
 
-    testWidgets(
-      'Android root management confirmation never offers Add & Scan',
-      (tester) async {
-        final api = FakeSourcesApi();
-        final container = createContainer(
-          api,
-          capabilities: const SourcesPresentationCapabilities(
-            scanExecution: false,
-            localFilesystemBrowser: true,
-          ),
-          picker: (_, _) async =>
-              pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
-        );
-        await pumpPage(tester, container);
+    testWidgets('Android scan-enabled confirmation offers Add & Scan', (
+      tester,
+    ) async {
+      final api = FakeSourcesApi();
+      final container = createContainer(
+        api,
+        capabilities: const SourcesPresentationCapabilities(
+          singleRootScanExecution: true,
+          localFilesystemBrowser: true,
+        ),
+        picker: (_, _) async =>
+            pickedFolder(const LocalFilesystemRootSelection('/tmp/games')),
+      );
+      await pumpPage(tester, container);
 
-        await tester.tap(find.text('Add Library Folder'));
-        await tester.pumpAndSettle();
-        expect(find.text('Add Library Folder?'), findsOneWidget);
-        expect(
-          find.byKey(const ValueKey<String>('add-folder-and-scan')),
-          findsNothing,
-        );
-        expect(
-          find.byKey(const ValueKey<String>('add-folder-without-scan')),
-          findsOneWidget,
-        );
-        expect(find.text('Add & Scan'), findsNothing);
+      await tester.tap(find.text('Add Library Folder'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add Library Folder?'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('add-folder-and-scan')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('add-folder-without-scan')),
+        findsOneWidget,
+      );
+      expect(find.text('Add & Scan'), findsOneWidget);
 
-        await tester.tap(
-          find.byKey(const ValueKey<String>('add-folder-without-scan')),
-        );
-        await tester.pumpAndSettle();
-        expect(api.addCalls, 1);
-        expect(api.addAndScanCalls, 0);
-      },
-    );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('add-folder-and-scan')),
+      );
+      await tester.pumpAndSettle();
+      expect(api.addCalls, 0);
+      expect(api.addAndScanCalls, 1);
+    });
 
     testWidgets('Add Without Scanning adds the root without admitting a scan', (
       tester,
@@ -914,7 +920,10 @@ void main() {
 
     testWidgets('detail shows independent never-scanned state and safe '
         'removal copy', (tester) async {
-      final container = createContainer(FakeSourcesApi(roots: [fakeRoot()]));
+      final container = createContainer(
+        FakeSourcesApi(roots: [fakeRoot()]),
+        capabilities: _androidSourcesCapabilities,
+      );
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
@@ -934,6 +943,7 @@ void main() {
 
       expect(find.text('Games'), findsOneWidget);
       expect(find.text('Never scanned'), findsOneWidget);
+      expect(find.byType(SourceHierarchyBrowser), findsOneWidget);
       await tester.tap(
         find.byKey(const ValueKey<String>('sources-remove-library-folder')),
       );
@@ -986,6 +996,57 @@ void main() {
       await tester.pumpAndSettle();
       expect(api.startScanCalls, 1);
     });
+
+    testWidgets('Android single-root capability shows Scan and starts once', (
+      tester,
+    ) async {
+      final api = FakeSourcesApi(roots: [fakeRoot()]);
+      final container = createContainer(
+        api,
+        capabilities: _androidSourcesCapabilities,
+      );
+      await pumpDetail(tester, container);
+
+      expect(find.text('Scan'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('sources-start-scan')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(api.startScanCalls, 1);
+    });
+
+    testWidgets(
+      'Android single-root capability shows Scan Again and starts once',
+      (tester) async {
+        final api = FakeSourcesApi(
+          roots: [
+            fakeRoot().copyWith(
+              lastScan: LibraryRootLastScan(
+                scanRunId: 'scan',
+                jobRunId: 'job',
+                status: LibraryRootLastScanStatus.failed,
+                startedAtMs: 1,
+                completedAtMs: 2,
+              ),
+            ),
+          ],
+        );
+        final container = createContainer(
+          api,
+          capabilities: _androidSourcesCapabilities,
+        );
+        await pumpDetail(tester, container);
+
+        expect(find.text('Scan Again'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('sources-start-scan')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(api.startScanCalls, 1);
+      },
+    );
 
     testWidgets('removal confirmation cancel keeps the root', (tester) async {
       final api = FakeSourcesApi(roots: [fakeRoot()]);

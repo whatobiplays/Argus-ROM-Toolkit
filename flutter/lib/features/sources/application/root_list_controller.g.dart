@@ -66,7 +66,7 @@ final class SourcesRootListControllerProvider
 }
 
 String _$sourcesRootListControllerHash() =>
-    r'46a2a7162bb06627bd3ade8a3aeba140f68a3615';
+    r'cd9e182a9c88e36e19652cb9316120d9c497ed73';
 
 /// One application-lifetime owner of query-authoritative root-list state.
 ///

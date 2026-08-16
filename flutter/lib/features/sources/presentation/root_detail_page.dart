@@ -92,7 +92,8 @@ class SourcesRootDetailPage extends ConsumerWidget {
             removalBlockedOwner: removalBlockedOwner,
             cancelAndRemovePending: cancelAndRemovePending,
             cancelAndRemoveAmbiguous: cancelAndRemoveAmbiguous,
-            scanExecution: capabilities.scanExecution,
+            singleRootScanExecution: capabilities.singleRootScanExecution,
+            activeRootCancelAndRemove: capabilities.activeRootCancelAndRemove,
             onOpenJob: onOpenJob,
             onScan: () async {
               final jobRunId = await ref
@@ -160,7 +161,8 @@ class _RootDetailContent extends StatelessWidget {
     required this.removalBlockedOwner,
     required this.cancelAndRemovePending,
     required this.cancelAndRemoveAmbiguous,
-    required this.scanExecution,
+    required this.singleRootScanExecution,
+    required this.activeRootCancelAndRemove,
     required this.onOpenJob,
     required this.onScan,
     required this.onRemove,
@@ -176,7 +178,8 @@ class _RootDetailContent extends StatelessWidget {
   final LibraryRootActiveScan? removalBlockedOwner;
   final bool cancelAndRemovePending;
   final bool cancelAndRemoveAmbiguous;
-  final bool scanExecution;
+  final bool singleRootScanExecution;
+  final bool activeRootCancelAndRemove;
   final void Function(JobRunId jobRunId) onOpenJob;
   final VoidCallback onScan;
   final VoidCallback onRemove;
@@ -281,7 +284,7 @@ class _RootDetailContent extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  if (scanExecution && canScan) ...[
+                  if (singleRootScanExecution && canScan) ...[
                     FilledButton.icon(
                       key: const ValueKey<String>('sources-start-scan'),
                       onPressed: scanning ? null : onScan,
@@ -304,7 +307,10 @@ class _RootDetailContent extends StatelessWidget {
                         removing ||
                             removalAmbiguous ||
                             cancelAndRemovePending ||
-                            cancelAndRemoveAmbiguous
+                            cancelAndRemoveAmbiguous ||
+                            (!activeRootCancelAndRemove &&
+                                (activeScan != null ||
+                                    removalBlockedByActiveScan))
                         ? null
                         : onRemove,
                     icon: const Icon(Icons.delete_outline),

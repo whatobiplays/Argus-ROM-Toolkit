@@ -322,7 +322,11 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
     final api = ref.read(sourcesApiProvider);
     try {
       final root = await api.getLibraryRoot(rootId);
-      if (token != _readToken || runtimeId != _activeRuntimeInstanceId) return;
+      if (!ref.mounted ||
+          token != _readToken ||
+          runtimeId != _activeRuntimeInstanceId) {
+        return;
+      }
       final current = state.value;
       final removing =
           current is SourcesRootDetailStateReady && current.removing;

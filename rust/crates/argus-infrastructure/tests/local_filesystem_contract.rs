@@ -462,6 +462,309 @@ fn stable_provider_root_locator_survives_remount_at_a_new_path() {
 }
 
 #[test]
+fn provider_selection_opens_shared_access_and_enumerates_nested_content() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    let mount = directory.path().join("mounted");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir_all(mount.join("Games/Nested")).expect("nested games");
+    fs::write(mount.join("Games/rom.bin"), b"rom").expect("rom");
+    fs::write(mount.join("Games/Nested/save.dat"), b"save").expect("save");
+
+    let provider = LocalFilesystemProviderImpl::default();
+    provider
+        .replace_mounted_volumes(&[
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "android-volume".to_owned(),
+                mount.to_string_lossy().into_owned(),
+                "Game card".to_owned(),
+                false,
+                true,
+            ),
+        ])
+        .expect("mounted snapshot");
+
+    let mounted_root = provider
+        .list_browse_roots()
+        .expect("browse roots")
+        .into_iter()
+        .find(|root| root.display_name() == "Game card")
+        .expect("mounted browse root");
+    let games_page = provider
+        .list_browse_directories(mounted_root.location(), None, 10)
+        .expect("games page");
+    let games = games_page
+        .directories()
+        .iter()
+        .find(|directory| directory.display_name() == "Games")
+        .expect("games directory");
+    let validated = provider
+        .validate(&LocalFilesystemRootSelection::provider_selection(
+            games.location().as_provider_value().to_owned(),
+        ))
+        .expect("provider selection");
+    let locator = validated.locator().clone();
+    assert!(
+        !locator
+            .as_provider_value()
+            .contains(&mount.to_string_lossy().to_string())
+    );
+
+    let access = provider.open_access(&locator).expect("source access");
+    let resolved = access.resolve_root().expect("resolved root");
+    let root_scope = access
+        .enumerate_root_direct_children(&resolved, &|| false)
+        .expect("root scope");
+    assert_eq!(root_scope.outcome(), EnumerationOutcome::Complete);
+    let nested = root_scope
+        .observations()
+        .iter()
+        .find(|observation| observation.display_name() == "Nested")
+        .expect("nested directory");
+    assert!(
+        root_scope
+            .observations()
+            .iter()
+            .any(|observation| observation.display_name() == "rom.bin")
+    );
+
+    let nested_scope = access
+        .enumerate_direct_children(&resolved, nested.relative_locator(), &|| false)
+        .expect("nested scope");
+    assert!(
+        nested_scope
+            .observations()
+            .iter()
+            .any(|observation| observation.display_name() == "save.dat")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn provider_selection_preserves_unix_identity_for_an_in_filesystem_rename() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    let mount = directory.path().join("mounted");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir_all(mount.join("Games")).expect("games");
+    fs::write(mount.join("Games/move.bin"), b"move").expect("move file");
+
+    let provider = LocalFilesystemProviderImpl::default();
+    provider
+        .replace_mounted_volumes(&[
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "android-volume".to_owned(),
+                mount.to_string_lossy().into_owned(),
+                "Game card".to_owned(),
+                false,
+                true,
+            ),
+        ])
+        .expect("mounted snapshot");
+    let mounted_root = provider
+        .list_browse_roots()
+        .expect("browse roots")
+        .into_iter()
+        .find(|root| root.display_name() == "Game card")
+        .expect("mounted browse root");
+    let games_page = provider
+        .list_browse_directories(mounted_root.location(), None, 10)
+        .expect("games page");
+    let games = games_page
+        .directories()
+        .iter()
+        .find(|directory| directory.display_name() == "Games")
+        .expect("games directory");
+    let locator = provider
+        .validate(&LocalFilesystemRootSelection::provider_selection(
+            games.location().as_provider_value().to_owned(),
+        ))
+        .expect("provider selection")
+        .locator()
+        .clone();
+    let access = provider.open_access(&locator).expect("source access");
+    let resolved = access.resolve_root().expect("resolved root");
+
+    let first = access
+        .enumerate_root_direct_children(&resolved, &|| false)
+        .expect("first scope");
+    let first_observation = first
+        .observations()
+        .iter()
+        .find(|observation| observation.display_name() == "move.bin")
+        .expect("move candidate");
+    let identity = first_observation
+        .provider_native_identity()
+        .expect("provider-native identity")
+        .to_owned();
+
+    fs::rename(
+        mount.join("Games/move.bin"),
+        mount.join("Games/renamed.bin"),
+    )
+    .expect("rename");
+    let second = access
+        .enumerate_root_direct_children(&resolved, &|| false)
+        .expect("second scope");
+    let renamed = second
+        .observations()
+        .iter()
+        .find(|observation| observation.display_name() == "renamed.bin")
+        .expect("renamed candidate");
+    assert_eq!(renamed.provider_native_identity(), Some(identity.as_str()));
+}
+
+#[cfg(unix)]
+#[test]
+fn provider_selected_root_retains_but_never_traverses_link_like_children() {
+    use std::os::unix::fs::symlink;
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    let mount = directory.path().join("mounted");
+    let outside = directory.path().join("outside");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir_all(mount.join("Games")).expect("games");
+    fs::create_dir(&outside).expect("outside");
+    fs::write(outside.join("outside.bin"), b"outside").expect("outside file");
+    symlink(&outside, mount.join("Games/link-like")).expect("link-like child");
+
+    let provider = LocalFilesystemProviderImpl::default();
+    provider
+        .replace_mounted_volumes(&[
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "android-volume".to_owned(),
+                mount.to_string_lossy().into_owned(),
+                "Game card".to_owned(),
+                false,
+                true,
+            ),
+        ])
+        .expect("mounted snapshot");
+    let mounted_root = provider
+        .list_browse_roots()
+        .expect("browse roots")
+        .into_iter()
+        .find(|root| root.display_name() == "Game card")
+        .expect("mounted browse root");
+    let games_page = provider
+        .list_browse_directories(mounted_root.location(), None, 10)
+        .expect("games page");
+    let games = games_page
+        .directories()
+        .iter()
+        .find(|directory| directory.display_name() == "Games")
+        .expect("games directory");
+    let locator = provider
+        .validate(&LocalFilesystemRootSelection::provider_selection(
+            games.location().as_provider_value().to_owned(),
+        ))
+        .expect("provider selection")
+        .locator()
+        .clone();
+    let access = provider.open_access(&locator).expect("source access");
+    let resolved = access.resolve_root().expect("resolved root");
+    let scope = access
+        .enumerate_root_direct_children(&resolved, &|| false)
+        .expect("root scope");
+    let link_like = scope
+        .observations()
+        .iter()
+        .find(|observation| observation.display_name() == "link-like")
+        .expect("link-like observation");
+    assert_eq!(link_like.observed_kind(), ObservedEntryKind::LinkLike);
+    assert_eq!(
+        access.enumerate_direct_children(&resolved, link_like.relative_locator(), &|| false),
+        Err(SourceAccessError::InvalidLocator)
+    );
+}
+
+#[test]
+fn missing_provider_volume_makes_provider_selected_access_unavailable() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let primary = directory.path().join("primary");
+    let mount = directory.path().join("mounted");
+    fs::create_dir(&primary).expect("primary");
+    fs::create_dir_all(mount.join("Games")).expect("games");
+    let provider = LocalFilesystemProviderImpl::default();
+    provider
+        .replace_mounted_volumes(&[
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "android-volume".to_owned(),
+                mount.to_string_lossy().into_owned(),
+                "Game card".to_owned(),
+                false,
+                true,
+            ),
+        ])
+        .expect("mounted snapshot");
+    let mounted_root = provider
+        .list_browse_roots()
+        .expect("browse roots")
+        .into_iter()
+        .find(|root| root.display_name() == "Game card")
+        .expect("mounted browse root");
+    let games_page = provider
+        .list_browse_directories(mounted_root.location(), None, 10)
+        .expect("games page");
+    let games = games_page
+        .directories()
+        .iter()
+        .find(|directory| directory.display_name() == "Games")
+        .expect("games directory");
+    let locator = provider
+        .validate(&LocalFilesystemRootSelection::provider_selection(
+            games.location().as_provider_value().to_owned(),
+        ))
+        .expect("provider selection")
+        .locator()
+        .clone();
+
+    provider
+        .replace_mounted_volumes(&[MountedLocalFilesystemVolume::new(
+            "primary".to_owned(),
+            primary.to_string_lossy().into_owned(),
+            "Internal storage".to_owned(),
+            true,
+            false,
+        )])
+        .expect("volume removal");
+    let access = provider.open_access(&locator).expect("source access");
+    assert_eq!(
+        access.resolve_root(),
+        Err(SourceAccessError::SourceUnavailable)
+    );
+}
+
+#[test]
 fn stable_android_relationships_remain_comparable_when_volume_is_absent() {
     let directory = tempfile::tempdir().expect("tempdir");
     let primary = directory.path().join("primary");

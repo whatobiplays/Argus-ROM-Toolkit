@@ -80,7 +80,7 @@ Future<void> _runSeedScenario(WidgetTester tester, ArgusClient client) async {
   );
   expect(
     find.byKey(const ValueKey<String>('add-folder-and-scan')),
-    findsNothing,
+    findsOneWidget,
   );
   expect(
     find.byKey(const ValueKey<String>('add-folder-without-scan')),
@@ -102,7 +102,7 @@ Future<void> _runSeedScenario(WidgetTester tester, ArgusClient client) async {
     find.byKey(const ValueKey<String>('sources-remove-library-folder')),
     message: 'root detail did not appear after root-only add',
   );
-  _assertNoScanControls(tester, includeDetail: true);
+  _assertNoScanControls(tester);
   expect(await _jobCount(client), 0, reason: 'root-only add created a job');
 }
 
@@ -223,14 +223,8 @@ Future<void> _goToSources(WidgetTester tester) async {
   await _pumpUntil(tester, addButton, message: 'Sources page did not appear');
 }
 
-void _assertNoScanControls(WidgetTester tester, {bool includeDetail = false}) {
+void _assertNoScanControls(WidgetTester tester) {
   expect(find.byKey(const ValueKey<String>('sources-scan-all')), findsNothing);
-  if (includeDetail) {
-    expect(
-      find.byKey(const ValueKey<String>('sources-start-scan')),
-      findsNothing,
-    );
-  }
 }
 
 Future<void> _selectFixtureFolder(

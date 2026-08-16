@@ -206,7 +206,7 @@ void main() {
   );
 
   testWidgets(
-    'Android composition enables browser and disables scan execution',
+    'Android composition enables browser and single-root scan execution',
     (tester) async {
       final platformApi = _ReadinessPlatformHostApi(androidSnapshot);
       await tester.pumpWidget(
@@ -227,9 +227,20 @@ void main() {
         sourcesPresentationCapabilitiesProvider,
       );
       expect(capabilities.localFilesystemBrowser, isTrue);
-      expect(capabilities.scanExecution, isFalse);
+      expect(capabilities.singleRootScanExecution, isTrue);
+      expect(capabilities.scanAllExecution, isFalse);
+      expect(capabilities.activeRootCancelAndRemove, isFalse);
     },
   );
+
+  test('desktop Sources capabilities retain every existing workflow', () {
+    const capabilities = SourcesPresentationCapabilities();
+
+    expect(capabilities.singleRootScanExecution, isTrue);
+    expect(capabilities.scanAllExecution, isTrue);
+    expect(capabilities.activeRootCancelAndRemove, isTrue);
+    expect(capabilities.localFilesystemBrowser, isFalse);
+  });
 
   testWidgets('desktop composition requires no readiness gate', (tester) async {
     await tester.pumpWidget(const ArgusBootstrap());

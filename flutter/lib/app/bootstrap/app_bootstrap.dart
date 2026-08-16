@@ -61,7 +61,9 @@ class ArgusBootstrap extends StatelessWidget {
         sourcesPresentationCapabilitiesProvider.overrideWithValue(
           platform.requiresReadinessGate
               ? const SourcesPresentationCapabilities(
-                  scanExecution: false,
+                  singleRootScanExecution: true,
+                  scanAllExecution: false,
+                  activeRootCancelAndRemove: false,
                   localFilesystemBrowser: true,
                 )
               : const SourcesPresentationCapabilities(),

@@ -33,7 +33,7 @@ class SourcesPage extends ConsumerWidget {
     final capabilities = ref.watch(sourcesPresentationCapabilitiesProvider);
     final ready = listState.value;
     final canScanAll =
-        capabilities.scanExecution &&
+        capabilities.scanAllExecution &&
         ready is SourcesRootListStateReady &&
         ready.totalCount > 0;
     final scanAllBlocked =

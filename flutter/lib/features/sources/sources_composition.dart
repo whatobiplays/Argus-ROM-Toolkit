@@ -18,16 +18,23 @@ SourcesApi sourcesApi(Ref ref) {
 
 /// Presentation-only capabilities selected by app composition.
 ///
-/// Android P02-002 enables the Argus-owned browser while disabling scan
-/// execution. Desktop keeps both the browser override and scan execution at
-/// their existing defaults.
+/// App-composition switches for presentation-only Sources capabilities.
+///
+/// The switches describe which existing workflows the current host may show;
+/// they do not replace backend admission or query authority. Desktop keeps all
+/// existing workflows enabled. Android enables the single-root surface while
+/// deferring multi-root Scan All and active-root cancel-and-remove.
 final class SourcesPresentationCapabilities {
   const SourcesPresentationCapabilities({
-    this.scanExecution = true,
+    this.singleRootScanExecution = true,
+    this.scanAllExecution = true,
+    this.activeRootCancelAndRemove = true,
     this.localFilesystemBrowser = false,
   });
 
-  final bool scanExecution;
+  final bool singleRootScanExecution;
+  final bool scanAllExecution;
+  final bool activeRootCancelAndRemove;
   final bool localFilesystemBrowser;
 }
 

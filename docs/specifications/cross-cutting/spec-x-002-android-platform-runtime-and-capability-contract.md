@@ -117,19 +117,21 @@ SAF tree grants and arbitrary virtual/cloud `DocumentsProvider` execution are no
 
 ## 9. Foreground Execution Host
 
-A qualifying user-admitted long-running Android job may acquire a foreground-service execution lease so work can continue when the Activity is not visible.
+A qualifying user-admitted long-running Android job may acquire one foreground-service execution lease so work can continue when the Activity is not visible. The current `LibraryScan` workload is classified as Android `dataSync` foreground work because it performs long-running local-file processing; the Android manifest and service start use the corresponding foreground-service type and required manifest permissions.
 
-The service is an execution host for the existing runtime only. Rust/SQLite remain authoritative for job lifecycle, progress, cancellation, retry, and recovery.
+The service is an execution host for the existing runtime only. Rust/SQLite remain authoritative for admission, job lifecycle, progress, cancellation, retry, terminal aggregation, and recovery.
 
-The service:
+Normative rules:
 
-- exists while at least one qualifying active job requires background execution eligibility;
-- stops when no qualifying job remains;
-- projects active state through a native notification when platform authorization permits;
-- routes native cancellation into the same authoritative cancellation path as Flutter Jobs;
-- never owns job state independently.
-
-Android service timeouts, forced process loss, or equivalent execution interruption use existing background-operation recovery vocabulary. Current non-resumable `LibraryScan` recovers as `Abandoned` after unexpected execution loss unless already-accepted durable cancellation intent maps recovery to `Cancelled`. No significant work auto-resumes during MVP.
+1. A direct user action that admits qualifying work requests the execution lease while the app is eligible to start a foreground service. Argus does not defer first acquisition until it is already backgrounded, use `BOOT_COMPLETED`, or create an Android-only scheduler to recover missed acquisition.
+2. If Android rejects service creation or the `dataSync` execution budget is already exhausted, Argus must not claim background eligibility. Durable job admission still obeys the coherent handoff rule from SPEC-BE-004: the request is rejected before admission or any admitted run is safely terminalized/reconciled; no orphan nonterminal job is permitted.
+3. The service exists only while at least one qualifying active job requires the lease and stops after the final qualifying job leaves that state.
+4. Notification state is a secondary projection. Notification permission denial does not alter Jobs authority or stop otherwise valid execution; it removes notification-drawer projection/actions while the Flutter Jobs UI remains authoritative.
+5. Native cancellation routes into the same `CancelJob` capability used by Flutter and observes the same durable cancellation-request and terminal-state semantics.
+6. On Android versions that time-limit `dataSync` work, the service implements the platform timeout callback, reports a typed execution-host timeout to the existing runtime, reaches the next safe checkpoint, and stops within the platform grace period. A live non-resumable `LibraryScan` finalizes through its ordinary operation facts: useful but incomplete work becomes per-root `Partial` and aggregate `CompletedWithIssues` where applicable; no meaningful indexing result becomes `Failed`. A live timeout is not recovery-only `Abandoned`.
+7. If the process is killed before terminalization, startup recovery applies the existing durable rule: accepted cancellation intent maps stale active work to `Cancelled`; otherwise current non-resumable `LibraryScan` becomes recovery-only `Abandoned`. No significant work auto-resumes during MVP.
+8. A partial wake lock may be used only when measurement or native testing establishes that active screen-off scan execution otherwise loses required CPU continuity. It requires the normal manifest permission, has a bounded timeout, is held only while qualifying work is actually executing, and is released on completion, cancellation, timeout, service stop, or loss of the final lease. Queued/idle work never holds it.
+9. Activity detach/recreation/backgrounding does not itself acquire, release, or replace runtime/job authority.
 
 ## 10. Adaptive Platform Contract
 
@@ -162,6 +164,7 @@ Phase 002 requires:
 - reusable shared contract/controller tests in the platform-neutral suite where behavior is platform-neutral;
 - an x86_64 Android emulator gate through the real Flutter -> client -> FRB -> Rust -> SQLite stack;
 - native tests for permission/readiness, Activity lifecycle, storage/root semantics, foreground execution, process loss/restart, Back/insets, and adaptive presentation as those capabilities become active;
+- foreground-execution tests for `dataSync` declaration, direct-user lease acquisition, service-start rejection, Android 15+ timeout callback/finalization, exhausted-budget rejection, notification denial, bounded wake-lock acquisition/release when required, and teardown after the final qualifying job;
 - at least one physical ARM64 critical-path milestone before phase completion;
 - existing desktop native/regression gates to remain green.
 
@@ -176,6 +179,7 @@ The following classifications are normative:
 - Android foreground-service execution host: **Platform-specific (Android)**.
 - Local library root selection: **Platform-adapted** — desktop uses its native folder-selection mechanism; Android uses the Argus-owned local filesystem browser.
 - Startup diagnostic export: **Platform-adapted** — Android requires an Android-appropriate destination/export mechanism rather than assuming the current desktop save-location flow.
+  `SLICE-P02-005` owns activation of that Android publishing mechanism. It is an output/export adaptation and does not create a SAF/content-provider library source.
 - Open startup data directory: **Excluded on Android** — app-private storage is an implementation detail, not a user file-management surface.
 - Core Sources/Jobs/Settings product capabilities: **Shared or Platform-adapted** according to their focused specifications.
 
@@ -209,6 +213,9 @@ SPEC-X-002 is satisfied when:
 10. Direct distribution produces a signed installable APK with external credentials.
 11. Android native verification is separate from the platform-neutral gate and includes emulator plus physical ARM64 evidence by phase completion.
 12. Future phases explicitly classify Android applicability and cannot complete with undocumented Android deferrals.
+13. Qualifying `LibraryScan` work uses one `dataSync` foreground execution lease acquired from direct user admission, without creating a second runtime or scheduler.
+14. Live foreground-service timeout handling finalizes through ordinary typed operation outcomes, while only stale nonterminal work discovered after process loss uses `Cancelled`/`Abandoned` recovery mapping.
+15. Any manual partial wake lock is bounded, execution-scoped, and released on every terminal or lease-loss path.
 
 ## 16. References
 
@@ -220,3 +227,7 @@ SPEC-X-002 is satisfied when:
 - [SPEC-BE-011 — Source Provider and Indexing](../backend/spec-be-011-source-provider-and-indexing-contract.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](../frontend/spec-fe-004-routing-and-adaptive-application-shell.md)
 - [Approved Phase 002 design](../../superpowers/specs/2026-08-15-phase-002-android-first-class-platform-support-design.md)
+- [Android foreground service types](https://developer.android.com/develop/background-work/services/fgs/service-types)
+- [Android foreground-service background-start restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
+- [Android 15 foreground-service type changes](https://developer.android.com/about/versions/15/changes/foreground-service-types)
+- [Android wake-lock best practices](https://developer.android.com/develop/background-work/background-tasks/awake/wakelock/best-practices)

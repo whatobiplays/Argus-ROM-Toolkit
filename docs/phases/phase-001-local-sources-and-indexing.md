@@ -1,9 +1,9 @@
 # Phase 001 — Local Sources and Indexing
 
 **Document ID:** PHASE-001  
-**Status:** Ready for Implementation  
+**Status:** In Progress  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
+**Last Updated:** 2026-08-15  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000  
 **Supersedes:** None  
 **Superseded By:** None
@@ -20,7 +20,7 @@ The governing product boundary is:
 
 ### 1.1 Active implementation authority
 
-Phase 001 implementation authority exists because the focused Phase 001 public contracts identified in Section 6 are complete and this document has moved to **Ready for Implementation**.
+Phase 001 implementation began after the focused public contracts identified in Section 6 were completed and this document moved to **Ready for Implementation**. All seven implementation slices and the required automated/native gates are now complete. The phase remains **In Progress** until the explicitly deferred manual evidence recorded in `IMPL-P01-007-VERIFICATION` is executed or reclassified through an explicit phase-closeout decision.
 
 Section 6 lists governing prerequisites and same-phase refining contracts. Those same-phase subsystem specifications intentionally do not appear in this phase's authoritative `Depends On` metadata because they refine this phase rather than precede it.
 
@@ -805,6 +805,8 @@ Manual keyboard, screen-reader, visual, and exploratory filesystem checks remain
 
 Automated gates and result artifacts must never mark unexecuted manual verification as passing.
 
+The completed implementation and automated/native evidence do not justify an invented Slice 008. The remaining work is phase-closeout evidence only unless a manual check exposes an implementation defect or an approved contract change creates new scope.
+
 ## 11. Exit Criteria
 
 Phase 001 is complete when all of the following are true:
@@ -862,6 +864,8 @@ Phase 001 is complete when all of the following are true:
 - [x] Cross-document consistency review confirms no unresolved Phase 001 public-contract ambiguity
 
 **Readiness rule:** this document moves to **Ready for Implementation** only when every focused-contract/readiness item above is resolved. Moving the phase to Ready is a deliberate documentation-state change and must not be inferred merely because implementation could begin mechanically.
+
+**Current completion state:** Slices P01-001 through P01-007 and their required automated/native gates are complete. The phase remains **In Progress** because the manual milestone evidence slots in `docs/implementation/phase-001-local-sources-and-indexing-verification.md` are still `NOT RUN`; those slots are not implementation-slice backlog.
 
 ## 13. References
 

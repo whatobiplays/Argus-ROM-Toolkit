@@ -16,6 +16,10 @@
 
 [Identify the active phase, parent implementation slice or approved plan, and explicit task authority. The executable scope is their intersection with the governing architecture, specifications, references, and conventions. Ready future specifications constrain compatibility but do not authorize speculative scaffolding.]
 
+### 1.2 Platform Applicability and Native Evidence
+
+[State which task behaviors are Shared, Platform-adapted, Platform-specific, or Excluded for each supported platform family. Identify the exact native/emulator/physical-device evidence required by the parent slice. `NOT RUN` or `BLOCKED` native evidence must never be represented as passing platform-neutral verification.]
+
 ## 2. Inspect First
 
 - `[repo-relative path]`
@@ -60,6 +64,7 @@ Codex must report:
 - behavior implemented
 - commands run and `PASS` / `FAIL` / `NOT RUN` / `BLOCKED` results
 - acceptance-criteria evidence
+- platform-applicability and native-evidence status, reported separately from platform-neutral gates
 - unresolved issues
 - deviations from the task
 - documentation impact

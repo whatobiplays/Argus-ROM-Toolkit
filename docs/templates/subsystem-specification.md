@@ -14,6 +14,10 @@
 
 ## 3. Non-Responsibilities
 
+## 3.1 Platform Applicability
+
+[For every substantive capability, classify each supported platform family as Shared, Platform-adapted, Platform-specific, or Excluded. Record the owning mechanics and rationale for exclusions. Do not defer a supported platform implicitly.]
+
 ## 4. Public Interfaces
 
 [Exact conceptual or language-level interfaces and ownership.]

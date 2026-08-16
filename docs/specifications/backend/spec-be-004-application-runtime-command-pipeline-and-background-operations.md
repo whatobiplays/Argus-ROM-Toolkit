@@ -1546,7 +1546,7 @@ Use fault injection around durable boundaries to verify:
 - no partial authoritative transactions
 - committed checkpoints survive
 - uncommitted checkpoint work is safely discarded
-- jobs in active states reconcile to Interrupted or Abandoned
+- jobs in active states reconcile to `Interrupted`, `Cancelled`, or `Abandoned` according to the operation recovery policy and durable evidence
 - temporary artifacts are not mistaken for completed output
 - events are not required for recovery
 
@@ -1626,7 +1626,7 @@ SPEC-BE-004 is satisfied when:
 29. Force termination cannot corrupt authoritative state.
 30. Long-running work uses restart-safe checkpoints.
 31. External artifacts are atomically published where supported.
-32. Startup reconciles active jobs from a prior runtime to Interrupted or Abandoned.
+32. Startup reconciles active jobs from a prior runtime to `Interrupted`, `Cancelled`, or `Abandoned` according to the operation recovery policy and durable evidence.
 33. MVP does not automatically resume significant background work.
 34. Bridge interaction uses push for responsiveness and pull for authoritative state.
 35. Event sequences are monotonic within one runtime instance.
@@ -1697,8 +1697,9 @@ Normative rules:
 4. Native notification cancellation, when exposed, routes into the same authoritative `CancelJob` path used by Flutter Jobs.
 5. The service stops when no qualifying active job requires the execution lease.
 6. Notification permission affects native presentation only; it does not change `JobRun` state or admission authority.
-7. Android service timeout/OS execution loss is treated as execution interruption. For the current non-resumable `LibraryScan`, unexpected execution loss recovers as `Abandoned` unless already-accepted durable cancellation intent maps it to `Cancelled`.
-8. No significant job automatically resumes during MVP. A future operation may use `Interrupted`/resume only when its owning operation contract defines valid durable checkpoint semantics.
+7. A live Android foreground-service timeout is handled while the process/runtime is still present: the host requests orderly termination through the existing operation path, and the operation records the truthful ordinary terminal result supported by work already committed (`CompletedWithIssues`, `Failed`, or `Cancelled` when accepted cancellation determines termination). A timeout callback does not by itself relabel the live `JobRun` as recovery-only `Abandoned`.
+8. Forced process loss or equivalent disappearance of the runtime is reconciled only on a later startup from durable state. The current non-resumable `LibraryScan` then maps stale nonterminal execution to `Cancelled` when accepted durable cancellation intent requires it, otherwise to `Abandoned`; it never uses `Interrupted`.
+9. No significant job automatically resumes during MVP. A future operation may use `Interrupted`/resume only when its owning operation contract defines valid durable checkpoint semantics.
 
 Phase 002 tests must prove Activity lifecycle does not duplicate the runtime, Flutter/native cancellation converges on one job, the service tears down after the last qualifying job, and process loss/relaunch preserves existing no-auto-resume recovery.
 

@@ -1265,7 +1265,7 @@ Verify:
 - `runtimeInstanceId` is present
 - `startupFailure` is only populated for `StartupFailed`
 - recovery actions match current failure eligibility
-- capabilities represent currently safe operations
+- no sibling runtime capability bag duplicates recovery-action availability
 
 ### 60.4 Startup failure tests
 
@@ -1354,7 +1354,6 @@ Phase 000 requires at least:
 BridgeResult<T>
 ApplicationErrorDto
 RuntimeStateDto
-RuntimeCapabilitiesDto
 StartupFailureDto
 RecoveryActionDto
 AppearanceSettingsDto
@@ -1588,12 +1587,14 @@ Neither source-entry DTO exposes:
 
 ### 66.4 Native local-folder selection request
 
-Folder selection crosses the bridge only as request input:
+Phase 001 desktop folder selection crosses the bridge only as request input:
 
 ```text
 LocalFilesystemRootSelectionDto
 - selectedFolderPath
 ```
+
+This desktop request shape remains valid. When P02-002 activates the Android Argus folder browser, the bridge adds a platform-adapted request variant carrying an opaque provider/native selection identity produced by the browse boundary rather than requiring Flutter to manufacture a canonical path identity. The additive Android request does not reinterpret `selectedFolderPath` or weaken existing desktop behavior.
 
 Rules:
 

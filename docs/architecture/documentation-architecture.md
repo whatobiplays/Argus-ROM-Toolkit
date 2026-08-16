@@ -3,7 +3,7 @@
 **Document ID:** ARCH-002  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
+**Last Updated:** 2026-08-15  
 **Depends On:** ARCH-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -233,6 +233,7 @@ Owns repeatable engineering rules.
 [ ] User-visible outcome is defined
 [ ] Dependencies are available or explicitly sequenced
 [ ] Scope and exclusions are explicit
+[ ] Platform applicability is explicit for each substantive capability on every supported platform family
 [ ] Required public interfaces are identified
 [ ] Persistence impact is identified
 [ ] Failure and cancellation behavior are identified
@@ -257,6 +258,8 @@ Codex tasks must be narrower than slices. Each task must:
 - identify exact files or allowed paths
 - define interfaces consumed and produced
 - state explicit exclusions
+- state the task's Shared, Platform-adapted, Platform-specific, and Excluded scope where supported-platform applicability is relevant
+- identify required native/emulator/physical-device evidence separately from the platform-neutral gate
 - include acceptance criteria
 - include verification commands
 - preserve a compiling/testable repository
@@ -273,6 +276,7 @@ Before moving to Ready or Complete:
 4. Confirm scope fits the document type.
 5. Confirm dependencies are acyclic.
 6. Confirm requirements are testable where applicable.
+7. Confirm platform applicability, exclusions, and native evidence agree with the governing phase and specifications.
 
 ## 14. Current Canonical Documents
 
@@ -298,4 +302,4 @@ When documents conflict, agents apply the highest-level authoritative contract a
 
 ## 16. Current Documentation Milestone
 
-The Phase 000 product and automated verification baseline is implemented, while `PHASE-000` remains `In Progress` until its explicitly deferred manual evidence is executed honestly. Implement `PHASE-001` through bounded vertical slices and Codex tasks while keeping architecture, Phase 000 contracts, and the active Phase 001 specifications synchronized with repository evidence. Deferred Phase 000 manual evidence does not block Phase 001 unless it later exposes a foundation defect. Later-ready MVP specifications remain forward contracts until an active phase and slice invoke them.
+The Phase 000 and Phase 001 product/automated-verification baselines are implemented. Both phases remain `In Progress` until their explicitly deferred manual evidence is executed or reclassified honestly; those evidence slots do not create additional implementation slices unless they expose a defect or approved contract change. `PHASE-002` is the next Ready implementation scope and must proceed through its seven bounded vertical slices while preserving the completed desktop architecture and truthful earlier-phase evidence. Deferred earlier-phase manual evidence does not block Phase 002 unless it later exposes a foundation defect. Later-ready MVP specifications remain forward contracts until an active phase and slice invoke them.

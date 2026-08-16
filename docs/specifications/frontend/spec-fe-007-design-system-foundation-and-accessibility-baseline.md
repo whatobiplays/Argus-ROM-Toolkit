@@ -1795,6 +1795,8 @@ This specification does not introduce:
 
 Android remains governed by the same width/local-constraint responsive system rather than device-type checks. There is no Argus orientation lock.
 
+For the active Phase 002 destination catalog, Compact navigation presents `Sources`, `Jobs`, and `Settings` directly in bottom navigation. This Phase 002 rule supersedes the earlier Phase 000 Compact `More` presentation wherever those historical sections describe the then-smaller shell catalog; those historical requirements remain valid evidence for Phase 000 rather than current Phase 002 shell structure.
+
 Android-applicable presentation must:
 
 - preserve practical Material touch targets and semantics at Compact widths;
@@ -1812,6 +1814,7 @@ Physical phone/tablet/handheld labels are test scenarios, not design tokens or b
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-002 — Android First-Class Platform Support](../../phases/phase-002-android-first-class-platform-support.md)
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-003 — ArgusClient and Focused Domain APIs](spec-fe-003-argusclient-and-focused-domain-apis.md)
@@ -1819,6 +1822,7 @@ Physical phone/tablet/handheld labels are test scenarios, not design tokens or b
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
+- [SPEC-X-002 — Android Platform Runtime and Capability Contract](../cross-cutting/spec-x-002-android-platform-runtime-and-capability-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)
 - [CONV-TEST-001 — Test Pyramid, Fixtures, and Verification Commands](../../conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md)

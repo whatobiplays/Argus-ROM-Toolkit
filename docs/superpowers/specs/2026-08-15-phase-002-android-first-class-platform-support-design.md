@@ -272,7 +272,7 @@ The notification never owns job state independently.
 
 ### 10.4 Android Execution Limits
 
-Android OS execution limits, service timeout callbacks, or forced process termination must be treated as typed platform interruptions. The implementation must preserve database consistency and use the existing BE-004 recovery vocabulary. For the current non-resumable `LibraryScan`, unexpected execution loss maps to `Abandoned` unless already-accepted durable cancellation intent maps recovery to `Cancelled`. A future operation with a valid resumable checkpoint may use `Interrupted` according to its owning recovery policy. No significant work is automatically resumed during MVP.
+Android OS execution limits must preserve database consistency and use the existing BE-004 lifecycle/recovery vocabulary without conflating live timeout handling with restart recovery. A foreground-service timeout callback while the process/runtime still exists requests orderly termination through the existing operation path and records the truthful ordinary terminal result supported by committed work (`CompletedWithIssues`, `Failed`, or `Cancelled` when accepted cancellation determines termination). `Abandoned` is reserved for stale nonterminal execution discovered after forced process/runtime loss. The current non-resumable `LibraryScan` never uses `Interrupted`; a future operation with a valid resumable checkpoint may use `Interrupted` according to its owning recovery policy. No significant work is automatically resumed during MVP.
 
 ## 11. Adaptive UI and Navigation
 

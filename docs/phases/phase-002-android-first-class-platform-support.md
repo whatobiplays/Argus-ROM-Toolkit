@@ -16,7 +16,7 @@ First-class does not mean literal desktop feature or interaction parity. Every c
 
 ## 2. User-Visible Outcome
 
-When Phase 002 is complete, a user can install Argus directly on a supported Android 11+ ARM64 device, complete required storage onboarding, configure locally mounted game-library roots, scan and rescan them, inspect indexed source hierarchy, manage multiple roots and Scan All, review and control Jobs, leave the Activity while qualifying long-running work continues through Android foreground execution, restart after process loss without silent auto-resume, and use the same width-driven adaptive product across phones, tablets, foldables, split-screen windows, and gaming handhelds.
+When Phase 002 is complete, a user can install Argus directly on a supported Android 11+ ARM64 device, complete required storage onboarding, configure locally mounted game-library roots, scan and rescan them, inspect indexed source hierarchy, manage multiple roots and Scan All, review and control Jobs, leave the Activity while qualifying long-running work continues through Android foreground execution within platform execution limits, restart after process loss without silent auto-resume, and use the same width-driven adaptive product across phones, tablets, foldables, split-screen windows, and gaming handhelds.
 
 ## 3. Dependencies
 
@@ -36,7 +36,7 @@ When Phase 002 is complete, a user can install Argus directly on a supported And
 - Android `LocalFilesystem` using actual locally mounted storage under the existing provider family.
 - Argus-owned Android filesystem browser rather than SAF tree selection for Phase 002.
 - Internal/shared storage, Downloads, removable SD, and USB/OTG where Android exposes usable local filesystem access.
-- Android foreground-service execution host for qualifying user-started long-running work.
+- Android `dataSync` foreground-service execution host for qualifying user-started long-running local-file work, started from direct user admission while the app is eligible to create the service.
 - Shared width-driven Compact/Medium/Expanded/Large adaptive presentation with no orientation lock.
 - x86_64 emulator native verification and a physical ARM64 phase milestone.
 - Explicit platform applicability classification for future phases.
@@ -51,6 +51,8 @@ Phase 002 establishes the following required vocabulary:
 - **Excluded:** deliberately unsupported on a platform; the owning spec records the rationale.
 
 Implementation slices may sequence platforms differently. A phase cannot be marked complete while an Android-applicable capability remains deferred without an explicit owning-spec exclusion.
+
+For the inherited Phase 000 capability set, appearance settings are **Shared**, startup diagnostic export is **Platform-adapted** and owned by `SLICE-P02-005`, and `Open data directory` is **Excluded** on Android because app-private storage is not a user file-management surface.
 
 ## 6. Out of Scope
 
@@ -71,6 +73,7 @@ Phase 002 is governed by the following Ready specifications, as amended for Andr
 - `SPEC-X-001` — matched Argus product/version compatibility across desktop and Android artifacts.
 - `SPEC-BE-003` — bounded Android diagnostics/observability classification.
 - `SPEC-BE-004` — background-operation authority and Android foreground execution host semantics.
+- `SPEC-BE-005` — shared appearance-settings persistence and Android lifecycle invariants.
 - `SPEC-BE-007` — platform readiness outside backend startup coordination.
 - `SPEC-BE-008` — bridge initialization and Android-facing DTO boundaries.
 - `SPEC-BE-011` — Android `LocalFilesystem`, mounted-root identity, traversal, and availability.
@@ -79,6 +82,7 @@ Phase 002 is governed by the following Ready specifications, as amended for Andr
 - `SPEC-FE-003` — focused APIs/projections used by Android-applicable workflows.
 - `SPEC-FE-004` — shared adaptive shell and Compact direct navigation.
 - `SPEC-FE-005` — Android readiness gate and platform-applicable startup recovery presentation.
+- `SPEC-FE-006` — shared appearance authority and Android Activity-lifecycle behavior.
 - `SPEC-FE-007` — touch/accessibility/inset/adaptive design baseline.
 - `SPEC-FE-008` — Android folder browsing and root-management UX.
 - `SPEC-FE-009` — Android foreground-job notification projection and Jobs authority.
@@ -88,8 +92,8 @@ Phase 002 is governed by the following Ready specifications, as amended for Andr
 1. **SLICE-P02-001 — Android Platform Bootstrap and First-Run Readiness**: native Android host/build integration, API 30 baseline, ARM64/x86_64 bridge packaging, one application-scoped runtime, mandatory All files access onboarding, optional notification onboarding, shared Compact direct navigation, and existing startup/settings persistence on Android; no Android root management yet.
 2. **SLICE-P02-002 — Android LocalFilesystem and Argus Folder Picker**: mounted-volume discovery, Argus-owned filesystem browser, Android `LocalFilesystem` root admission, duplicate/overlap behavior, root persistence, and availability; no scan execution yet.
 3. **SLICE-P02-003 — Android Scan and Source Hierarchy**: Add & Scan, `LibraryScan`, authoritative reconciliation, hierarchy inspection, Scan Again, identity/move behavior, and existing single-root Jobs controls.
-4. **SLICE-P02-004 — Foreground Job Execution and Android Lifecycle**: foreground-service execution host, Activity detach/reattach, notification projection/cancel route, background/screen-off continuity, OS interruption handling, and process-death recovery with no auto-resume.
-5. **SLICE-P02-005 — Multi-Root and Applicable Feature Coverage**: multiple roots, Scan All, safe active-root removal, history/retry/cancel, restart recovery, permission regrant, removable-volume unavailability/remount, and all currently Android-applicable Phase 000/001 capabilities.
+4. **SLICE-P02-004 — Foreground Job Execution and Android Lifecycle**: `dataSync` foreground-service execution host, direct-user-admission start boundary, Activity detach/reattach, notification projection/cancel route, bounded partial wake-lock use when active work requires screen-off CPU continuity, Android 15+ timeout handling, OS interruption handling, and process-death recovery with no auto-resume.
+5. **SLICE-P02-005 — Multi-Root and Applicable Feature Coverage**: multiple roots, Scan All, safe active-root removal, history/retry/cancel, restart recovery, permission regrant, removable-volume unavailability/remount, Android-adapted startup diagnostic export, and all currently Android-applicable Phase 000/001 capabilities.
 6. **SLICE-P02-006 — Adaptive Android UX and Platform Integration**: phone/tablet/foldable/handheld hardening, portrait/landscape, live size-class transitions, Back/predictive Back, touch/accessibility/system-inset behavior, picker hardening, and lifecycle edge cases.
 7. **SLICE-P02-007 — Android CI, Distribution, and First-Class Platform Hardening**: x86_64 emulator CI through the real stack, physical ARM64 evidence, signed direct-distribution artifact, desktop regression preservation, future-phase applicability guards, and final Phase 002 verification record.
 
@@ -102,6 +106,8 @@ Phase 002 is governed by the following Ready specifications, as amended for Andr
 - Missing removable media makes affected roots unavailable and does not authorize destructive absence reconciliation.
 - Current non-resumable `LibraryScan` execution lost unexpectedly recovers as `Abandoned` unless already-accepted cancellation intent maps it to `Cancelled`.
 - Android foreground execution must not create a second backend or scheduler.
+- Foreground-service admission, timeout, wake-lock, or notification state never becomes a second job lifecycle authority. A live timeout callback ends work through ordinary typed `Partial`/`Failed` semantics; only stale nonterminal work discovered after process loss becomes recovery-only `Abandoned` unless durable cancellation intent requires `Cancelled`.
+- Notification denial does not block foreground execution; it removes notification-drawer projection/actions while the Jobs UI remains authoritative.
 - Significant work is not silently auto-resumed during MVP.
 - Removing a configured root never deletes or mutates user files.
 
@@ -121,6 +127,7 @@ Phase 002 is governed by the following Ready specifications, as amended for Andr
 - Android-native verification is repository-owned but separate from `just check`.
 - x86_64 emulator tests exercise the real Flutter -> focused client -> FRB -> Rust -> SQLite -> Android `LocalFilesystem` path where the active slice reaches that capability.
 - Native lifecycle tests cover Activity recreation, permission loss/regrant, foreground execution, process death, and restart recovery as those slices activate them.
+- Foreground-execution tests cover `dataSync` declaration/admission, Android 15+ timeout callbacks and exhausted-budget start rejection, bounded wake-lock acquisition/release, notification denial, and service teardown after the final qualifying job.
 - Shared UI tests cover Compact, Medium, Expanded, and Large widths independent of OS.
 - Phase completion requires a recorded critical-path run on at least one physical ARM64 Android device or handheld.
 

@@ -107,3 +107,5 @@ phase exit criteria. A closeout review that finds only deferred manual
 evidence does not justify an invented Slice 008; a new implementation slice
 would require a demonstrated implementation defect or an approved contract
 change.
+
+Until the manual evidence slots above are executed or explicitly reclassified by a governed phase-closeout decision, `PHASE-001` remains `In Progress`. That truthful status does not reopen implementation scope or imply another slice.

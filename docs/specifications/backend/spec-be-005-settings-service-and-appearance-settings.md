@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-005  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-11  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -916,13 +916,25 @@ This specification does not finalize:
 - cloud synchronization
 - policy for deleting obsolete settings columns beyond normal migrations
 
-## 38. References
+## 38. Phase 002 Android Appearance-Authority Amendment
+
+Android platform readiness and lifecycle do not create a second settings domain or change `AppearanceSettings` semantics.
+
+1. The same persisted `AppearanceSettings` singleton and `ThemeMode::{System, Light, Dark}` authority is shared across desktop and Android.
+2. Activity detach/recreation, temporary backgrounding, foreground-service attachment, notification authorization changes, and All files access revocation/regrant do not mutate, reset, duplicate, or re-scope appearance settings.
+3. Android permission/onboarding/readiness facts are platform-host state and must not be added to `AppearanceSettings` merely because they affect whether normal application startup may proceed.
+4. A platform-readiness overlay may delay backend startup or normal-shell admission, but once the existing runtime/settings authority is usable it remains the sole appearance authority; the overlay does not own a fallback persisted theme.
+5. Android tests must prove appearance persistence and first-shell restoration use the same backend settings contract rather than an Android-only store or controller.
+
+## 39. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-002 — Android First-Class Platform Support](../../phases/phase-002-android-first-class-platform-support.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
+- [SPEC-X-002 — Android Platform Runtime and Capability Contract](../cross-cutting/spec-x-002-android-platform-runtime-and-capability-contract.md)
 - [Backend Specifications Index](README.md)

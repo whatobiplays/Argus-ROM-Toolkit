@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-006  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-10  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-X-001, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-15  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1763,13 +1763,26 @@ This specification does not introduce:
 - cloud settings sync;
 - settings profiles.
 
+# Phase 002 Android Appearance Amendment
+
+## 133. Shared Android Appearance Authority
+
+Android reuses the same application-lifetime `AppearanceSettingsController`, focused `SettingsApi`, persisted backend aggregate, and root-theme derivation as desktop.
+
+- Activity recreation/detach and temporary backgrounding must not instantiate an Android-only appearance controller or reset confirmed appearance authority while the process composition survives.
+- All files access revocation/regrant and notification authorization changes are platform-readiness/presentation facts; they do not enter `AppearanceSettings`, change `ThemeMode`, or trigger appearance persistence.
+- Platform-readiness overlays may gate backend startup or shell visibility, but they consume the existing root theme/bootstrap presentation rules and do not become a second theme authority.
+- After process death, normal startup and the existing first-shell authoritative appearance read restore the persisted setting exactly as on desktop.
+- Android widget/integration evidence must cover Activity recreation and permission-overlay transitions without duplicating or mutating appearance authority.
+
 # References
 
-## 133. References
+## 134. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-002 — Android First-Class Platform Support](../../phases/phase-002-android-first-class-platform-support.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](../backend/spec-be-003-application-errors-logging-and-diagnostics.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](../backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
 - [SPEC-BE-005 — Settings Service and Appearance Settings](../backend/spec-be-005-settings-service-and-appearance-settings.md)
@@ -1782,6 +1795,7 @@ This specification does not introduce:
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)
+- [SPEC-X-002 — Android Platform Runtime and Capability Contract](../cross-cutting/spec-x-002-android-platform-runtime-and-capability-contract.md)
 - [CONV-REPO-001 — Repository and Generated-File Conventions](../../conventions/conv-repo-001-repository-and-generated-file-conventions.md)
 - [CONV-FLUTTER-001 — Flutter/Dart Coding and Test Conventions](../../conventions/conv-flutter-001-flutter-dart-coding-and-test-conventions.md)
 - [CONV-TEST-001 — Test Pyramid, Fixtures, and Verification Commands](../../conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md)

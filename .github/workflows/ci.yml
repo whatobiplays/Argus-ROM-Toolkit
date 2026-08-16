@@ -160,6 +160,9 @@ jobs:
           dart pub global activate fvm 4.1.2
           echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
 
+      - name: Install ShellCheck prerequisite
+        run: brew install shellcheck
+
       - name: Install pinned Rust toolchain
         run: |
           rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"

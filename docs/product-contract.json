@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "product": {
+    "name": "Argus ROM Toolkit",
+    "purpose": "Maintain a trustworthy, inspectable model of a user's ROM library and derived game information across supported desktop and Android platforms by indexing local libraries accurately and incrementally, identifying games, resolving metadata and artwork, and verifying local content against recognized hashes."
+  },
+  "primary_users": [
+    {
+      "id": "rom-library-owner",
+      "role": "Person managing a local ROM library",
+      "technical_level": "Comfortable selecting folders and reviewing library information without needing provider, runtime, or persistence internals",
+      "work_context": "Uses Argus on supported desktop or Android platforms to configure local library folders, inspect indexed content, resolve derived game information, monitor background jobs, and recover safely from interruption."
+    }
+  ],
+  "jobs_to_be_done": [
+    {
+      "id": "manage-local-rom-library",
+      "statement": "Configure, scan, inspect, and remove local library folders without modifying the underlying user files."
+    },
+    {
+      "id": "identify-and-enrich-games",
+      "statement": "Identify game content and resolve metadata and artwork through bounded, provider-independent workflows."
+    },
+    {
+      "id": "verify-rom-content",
+      "statement": "Verify local content against recognized hashes, including RetroAchievements-recognized content where supported."
+    },
+    {
+      "id": "monitor-and-recover-background-work",
+      "statement": "Observe, cancel, retry, and recover durable background jobs while preserving authoritative state."
+    },
+    {
+      "id": "use-platform-adapted-workflows",
+      "statement": "Use the same product capabilities through appropriate desktop and Android interactions without creating separate product architectures."
+    }
+  ],
+  "must_reduce": [
+    "Uncertainty about library contents and game identity",
+    "Accidental modification of user-owned files",
+    "Opaque or lost background work",
+    "Coupling between product orchestration and individual providers",
+    "Stale or inaccurate derived information",
+    "UI blocking and platform inconsistency"
+  ],
+  "must_not_become": [
+    "An emulator frontend",
+    "A save manager",
+    "A synchronization platform",
+    "A cloud library",
+    "An achievement-progress client",
+    "An autonomous refresh system",
+    "A generic plugin platform",
+    "A frontend-owned authority layer",
+    "A system that silently resumes abandoned significant work"
+  ],
+  "experience_principles": [
+    "Correctness and explainability before throughput",
+    "One authoritative Rust backend",
+    "Presentation-only Flutter",
+    "Explicit persisted jobs and recovery",
+    "Provider independence",
+    "Scalable incremental local-first operation",
+    "Platform-adapted behavior instead of forced parity",
+    "Explicit MVP restraint"
+  ],
+  "canonical_docs": [
+    "README.md",
+    "docs/README.md",
+    "docs/architecture/architecture-overview.md",
+    "docs/architecture/documentation-architecture.md",
+    "docs/phases/phase-000-foundation.md",
+    "docs/phases/phase-001-local-sources-and-indexing.md",
+    "docs/specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md",
+    "docs/specifications/backend/spec-be-013-library-source-management-scan-operations-and-source-projections.md",
+    "docs/specifications/frontend/spec-fe-008-sources-and-library-folder-management.md",
+    "docs/superpowers/specs/2026-08-15-phase-002-android-first-class-platform-support-design.md"
+  ],
+  "governance": {
+    "mode": "advisory",
+    "product_review_required_for": [
+      "product_slice",
+      "product_correction"
+    ],
+    "checkpoint_every_root_runs": 5
+  }
+}

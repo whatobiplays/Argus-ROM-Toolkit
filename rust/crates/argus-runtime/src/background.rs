@@ -7,20 +7,27 @@
 
 use std::collections::{HashMap, VecDeque};
 #[cfg(feature = "test-support")]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use argus_application::{
-    ApplicationError, ApplicationEvent, BackgroundOperationHandler, JobProgress,
-    JobProgressReporter, JobRunId, JobRunRepository, JobRunState, OperationContext,
+    ApplicationError, ApplicationEvent, BackgroundOperationHandler, BackgroundOperationStopReason,
+    JobProgress, JobProgressReporter, JobRunId, JobRunRepository, JobRunState, OperationContext,
     OperationHandle, OperationName, SubsystemName, UnitOfWork, UnitOfWorkFactory,
 };
 
 use crate::events::EventBus;
 use crate::new_trace_id;
-use crate::operations::{CancellationToken, ResourceClass};
+use crate::operations::ResourceClass;
+
+/// Maximum number of active runs addressable by one execution-host stop.
+///
+/// The bridge uses the same bound as the manager's default pending capacity so
+/// host callbacks stay bounded without introducing a second scheduling policy.
+pub const MAX_EXECUTION_HOST_STOP_JOB_RUNS: usize = 16;
 
 /// Failure to register an already-durably-admitted run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,10 +63,55 @@ impl Default for BackgroundManagerConfig {
 
 struct RunningRun {
     handler: Arc<dyn BackgroundOperationHandler>,
-    token: CancellationToken,
+    token: BackgroundStopToken,
     required_resources: Vec<ResourceClass>,
     acquired_resources: Vec<ResourceClass>,
     worker: Option<JoinHandle<()>>,
+}
+
+/// Runtime-private stop signal that preserves simultaneous stop requests.
+///
+/// Cancellation has precedence over host timeout, which has precedence over
+/// host loss. Keeping these bits separate avoids losing an accepted
+/// cancellation when it races a native host notification.
+#[derive(Clone)]
+struct BackgroundStopToken {
+    bits: Arc<AtomicU8>,
+}
+
+impl BackgroundStopToken {
+    const CANCELLATION: u8 = 1 << 0;
+    const EXECUTION_HOST_TIMEOUT: u8 = 1 << 1;
+    const EXECUTION_HOST_LOST: u8 = 1 << 2;
+
+    fn new() -> Self {
+        Self {
+            bits: Arc::new(AtomicU8::new(0)),
+        }
+    }
+
+    fn request(&self, reason: BackgroundOperationStopReason) {
+        let bit = match reason {
+            BackgroundOperationStopReason::CancellationRequested => Self::CANCELLATION,
+            BackgroundOperationStopReason::ExecutionHostTimeout => Self::EXECUTION_HOST_TIMEOUT,
+            BackgroundOperationStopReason::ExecutionHostLost => Self::EXECUTION_HOST_LOST,
+        };
+        self.bits.fetch_or(bit, Ordering::SeqCst);
+    }
+
+    fn reason(&self) -> Option<BackgroundOperationStopReason> {
+        let bits = self.bits.load(Ordering::SeqCst);
+        if bits & Self::CANCELLATION != 0 {
+            return Some(BackgroundOperationStopReason::CancellationRequested);
+        }
+        if bits & Self::EXECUTION_HOST_TIMEOUT != 0 {
+            return Some(BackgroundOperationStopReason::ExecutionHostTimeout);
+        }
+        if bits & Self::EXECUTION_HOST_LOST != 0 {
+            return Some(BackgroundOperationStopReason::ExecutionHostLost);
+        }
+        None
+    }
 }
 
 struct ManagerState {
@@ -146,7 +198,7 @@ where
             handle.job_run_id(),
             RunningRun {
                 handler,
-                token: CancellationToken::new(),
+                token: BackgroundStopToken::new(),
                 required_resources: required_resources.to_vec(),
                 acquired_resources: Vec::new(),
                 worker: None,
@@ -173,7 +225,27 @@ where
     pub fn notify_cancellation(&self, job_run_id: JobRunId) {
         let state = self.state.lock().expect("manager state lock");
         if let Some(run) = state.active.get(&job_run_id) {
-            run.token.cancel();
+            run.token
+                .request(BackgroundOperationStopReason::CancellationRequested);
+        }
+        self.wake.notify_all();
+    }
+
+    /// Notifies one active run that its live execution host stopped.
+    ///
+    /// Cancellation remains exclusively owned by the durable Jobs control
+    /// path, so a cancellation reason supplied here is intentionally ignored.
+    pub fn notify_execution_host_stop(
+        &self,
+        job_run_id: JobRunId,
+        reason: BackgroundOperationStopReason,
+    ) {
+        if matches!(reason, BackgroundOperationStopReason::CancellationRequested) {
+            return;
+        }
+        let state = self.state.lock().expect("manager state lock");
+        if let Some(run) = state.active.get(&job_run_id) {
+            run.token.request(reason);
         }
         self.wake.notify_all();
     }
@@ -185,7 +257,8 @@ where
             let mut state = self.state.lock().expect("manager state lock");
             state.shutting_down = true;
             for run in state.active.values() {
-                run.token.cancel();
+                run.token
+                    .request(BackgroundOperationStopReason::CancellationRequested);
             }
             self.wake.notify_all();
         }
@@ -248,7 +321,10 @@ where
         };
 
         if !self.acquire_resources(job_run_id, &required_resources, &token) {
-            self.finish_before_execution(job_run_id, &context, &handler);
+            let reason = token
+                .reason()
+                .unwrap_or(BackgroundOperationStopReason::CancellationRequested);
+            self.finish_before_execution(job_run_id, &context, &handler, reason);
             return;
         }
 
@@ -277,12 +353,18 @@ where
         job_run_id: JobRunId,
         context: &OperationContext,
         handler: &Arc<dyn BackgroundOperationHandler>,
+        reason: BackgroundOperationStopReason,
     ) {
         let now = crate::now_millis();
-        let _ = self.persist_terminal(job_run_id, JobRunState::Cancelled, None, None, now);
+        let state = match reason {
+            BackgroundOperationStopReason::CancellationRequested => JobRunState::Cancelled,
+            BackgroundOperationStopReason::ExecutionHostTimeout
+            | BackgroundOperationStopReason::ExecutionHostLost => JobRunState::Failed,
+        };
+        let _ = self.persist_terminal(job_run_id, state, None, None, now);
         // Operation-owned child state (for example ScanRun) is reconciled
         // through the generic cleanup seam without executing business logic.
-        let _ = handler.cancelled_before_execution(context);
+        let _ = handler.stopped_before_execution(context, reason);
         self.publish(ApplicationEvent::JobStateChanged(
             argus_application::JobStateChanged { job_run_id },
         ));
@@ -304,11 +386,11 @@ where
             unit_of_work: self.unit_of_work.clone(),
             event_bus: Arc::clone(&self.event_bus),
         };
-        let is_cancelled = {
+        let stop_reason = {
             let token = token.clone();
-            move || token.as_ref().is_some_and(|token| token.is_cancelled())
+            move || token.as_ref().and_then(BackgroundStopToken::reason)
         };
-        let completion = handler.execute(context, &is_cancelled, &reporter);
+        let completion = handler.execute(context, &stop_reason, &reporter);
         let now = crate::now_millis();
         match completion {
             Ok(completion) => {
@@ -340,11 +422,11 @@ where
         &self,
         job_run_id: JobRunId,
         required_resources: &[ResourceClass],
-        token: &CancellationToken,
+        token: &BackgroundStopToken,
     ) -> bool {
         let mut state = self.state.lock().expect("manager state lock");
         loop {
-            if token.is_cancelled() || state.shutting_down {
+            if token.reason().is_some() || state.shutting_down {
                 return false;
             }
             if can_acquire(&state, required_resources) {

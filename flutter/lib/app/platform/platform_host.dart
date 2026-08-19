@@ -8,6 +8,18 @@ export 'application/platform_host_api.dart'
         PlatformHostException,
         PlatformHostSnapshot,
         PlatformReadinessFailureKind;
+export 'application/foreground_execution_host_api.dart'
+    show
+        ForegroundExecutionCancelRequested,
+        ForegroundExecutionHostApi,
+        ForegroundExecutionHostEvent,
+        ForegroundExecutionHostLost,
+        ForegroundExecutionLease,
+        ForegroundExecutionProjection,
+        ForegroundExecutionTimedOut,
+        maxForegroundExecutionActiveJobs;
+export 'application/foreground_execution_host_composition.dart'
+    show foregroundExecutionHostApiProvider;
 export 'application/local_filesystem_platform_api.dart'
     show
         LocalFilesystemPlatformApi,

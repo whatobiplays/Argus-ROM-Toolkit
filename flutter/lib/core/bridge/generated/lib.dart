@@ -10,8 +10,8 @@ part 'lib.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_execution_host_stop_request`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -165,6 +165,11 @@ Future<JobDetailDto> getJob({required String jobRunId}) =>
 /// Requests durable cancellation for one job.
 Future<CancelJobResultDto> cancelJob({required String jobRunId}) =>
     RustLib.instance.api.crateCancelJob(jobRunId: jobRunId);
+
+/// Reports a live execution-host stop without entering durable cancellation.
+Future<void> reportExecutionHostStop({
+  required ReportExecutionHostStopRequestDto request,
+}) => RustLib.instance.api.crateReportExecutionHostStop(request: request);
 
 /// Retries one eligible historical LibraryScan into a new durable run.
 Future<RetryJobResultDto> retryJob({required String jobRunId}) =>
@@ -384,6 +389,15 @@ class DiagnosticsExportRequestDto {
       other is DiagnosticsExportRequestDto &&
           runtimeType == other.runtimeType &&
           destination == other.destination;
+}
+
+/// Execution-host stop reason accepted across the bridge boundary.
+enum ExecutionHostStopReasonDto {
+  /// The foreground host exceeded its live execution deadline.
+  timeout,
+
+  /// The foreground host stopped without a durable user cancellation.
+  hostLost,
 }
 
 /// Backend-authoritative control availability.
@@ -1233,6 +1247,31 @@ sealed class RemoveLibraryRootResultDto with _$RemoveLibraryRootResultDto {
     required String scanRunId,
     required int owningJobRootCount,
   }) = RemoveLibraryRootResultDto_RootHasActiveScan;
+}
+
+/// Bounded report of foreground-host stops for already-admitted runs.
+class ReportExecutionHostStopRequestDto {
+  /// Durable job-run identities whose live host stopped.
+  final List<String> jobRunIds;
+
+  /// The live host condition observed by the native host.
+  final ExecutionHostStopReasonDto reason;
+
+  const ReportExecutionHostStopRequestDto({
+    required this.jobRunIds,
+    required this.reason,
+  });
+
+  @override
+  int get hashCode => jobRunIds.hashCode ^ reason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReportExecutionHostStopRequestDto &&
+          runtimeType == other.runtimeType &&
+          jobRunIds == other.jobRunIds &&
+          reason == other.reason;
 }
 
 @freezed

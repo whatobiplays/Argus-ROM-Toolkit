@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1158369733;
+  int get rustContentHash => -1228940759;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -155,6 +155,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<RemoveLibraryRootResultDto> crateRemoveLibraryRoot({
     required String libraryRootId,
+  });
+
+  Future<void> crateReportExecutionHostStop({
+    required ReportExecutionHostStopRequestDto request,
   });
 
   Future<RuntimeStateDto> crateResetAppearanceSettings({
@@ -989,6 +993,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<void> crateReportExecutionHostStop({
+    required ReportExecutionHostStopRequestDto request,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_report_execution_host_stop_request_dto(
+            request,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 26,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_application_error_dto,
+        ),
+        constMeta: kCrateReportExecutionHostStopConstMeta,
+        argValues: [request],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateReportExecutionHostStopConstMeta =>
+      const TaskConstMeta(
+        debugName: "report_execution_host_stop",
+        argNames: ["request"],
+      );
+
+  @override
   Future<RuntimeStateDto> crateResetAppearanceSettings({
     required String expectedRuntimeInstanceId,
   }) {
@@ -1000,7 +1040,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1033,7 +1073,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 28,
             port: port_,
           );
         },
@@ -1063,7 +1103,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1093,7 +1133,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1125,7 +1165,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1157,7 +1197,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1189,7 +1229,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1223,7 +1263,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 33,
+              funcId: 34,
               port: port_,
             );
           },
@@ -1260,7 +1300,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1296,7 +1336,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1555,6 +1595,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ReportExecutionHostStopRequestDto
+  dco_decode_box_autoadd_report_execution_host_stop_request_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_report_execution_host_stop_request_dto(raw);
+  }
+
+  @protected
   RetryNotAdmittedReasonDto
   dco_decode_box_autoadd_retry_not_admitted_reason_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -1649,6 +1696,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (arr.length != 1)
       throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
     return DiagnosticsExportRequestDto(destination: dco_decode_String(arr[0]));
+  }
+
+  @protected
+  ExecutionHostStopReasonDto dco_decode_execution_host_stop_reason_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ExecutionHostStopReasonDto.values[raw as int];
   }
 
   @protected
@@ -2351,6 +2406,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ReportExecutionHostStopRequestDto
+  dco_decode_report_execution_host_stop_request_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ReportExecutionHostStopRequestDto(
+      jobRunIds: dco_decode_list_String(arr[0]),
+      reason: dco_decode_execution_host_stop_reason_dto(arr[1]),
+    );
+  }
+
+  @protected
   RetryJobResultDto dco_decode_retry_job_result_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -3018,6 +3086,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ReportExecutionHostStopRequestDto
+  sse_decode_box_autoadd_report_execution_host_stop_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_report_execution_host_stop_request_dto(deserializer));
+  }
+
+  @protected
   RetryNotAdmittedReasonDto
   sse_decode_box_autoadd_retry_not_admitted_reason_dto(
     SseDeserializer deserializer,
@@ -3130,6 +3207,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_destination = sse_decode_String(deserializer);
     return DiagnosticsExportRequestDto(destination: var_destination);
+  }
+
+  @protected
+  ExecutionHostStopReasonDto sse_decode_execution_host_stop_reason_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ExecutionHostStopReasonDto.values[inner];
   }
 
   @protected
@@ -4068,6 +4154,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ReportExecutionHostStopRequestDto
+  sse_decode_report_execution_host_stop_request_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_jobRunIds = sse_decode_list_String(deserializer);
+    var var_reason = sse_decode_execution_host_stop_reason_dto(deserializer);
+    return ReportExecutionHostStopRequestDto(
+      jobRunIds: var_jobRunIds,
+      reason: var_reason,
+    );
+  }
+
+  @protected
   RetryJobResultDto sse_decode_retry_job_result_dto(
     SseDeserializer deserializer,
   ) {
@@ -4821,6 +4921,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_report_execution_host_stop_request_dto(
+    ReportExecutionHostStopRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_report_execution_host_stop_request_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_retry_not_admitted_reason_dto(
     RetryNotAdmittedReasonDto self,
     SseSerializer serializer,
@@ -4933,6 +5042,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.destination, serializer);
+  }
+
+  @protected
+  void sse_encode_execution_host_stop_reason_dto(
+    ExecutionHostStopReasonDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -5714,6 +5832,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(scanRunId, serializer);
         sse_encode_u_32(owningJobRootCount, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_report_execution_host_stop_request_dto(
+    ReportExecutionHostStopRequestDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_String(self.jobRunIds, serializer);
+    sse_encode_execution_host_stop_reason_dto(self.reason, serializer);
   }
 
   @protected

@@ -10,9 +10,9 @@ use std::sync::{Arc, Mutex};
 
 use argus_application::{
     ActiveScanOwnership, ApplicationError, ApplicationEvent, ApplicationEventSink,
-    ApplicationPortError, BackgroundOperationHandler, DiscoveryPath, DiscoverySegment,
-    EnumerationOutcome, EnumerationResult, JobProgress, JobProgressReporter, JobRunId,
-    JobRunRepository, JobRunState, LibraryRootAvailability, LibraryRootId,
+    ApplicationPortError, BackgroundOperationHandler, BackgroundOperationStopReason, DiscoveryPath,
+    DiscoverySegment, EnumerationOutcome, EnumerationResult, JobProgress, JobProgressReporter,
+    JobRunId, JobRunRepository, JobRunState, LibraryRootAvailability, LibraryRootId,
     LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootRepository,
     LibraryRootScanConfiguration, LibraryScanExecutionPlan, LibraryScanOperationHandler,
     LibrarySourceAccess, NativeIdentityMatch, NewJobRun, NewLibraryRoot, NewScanRun,
@@ -778,7 +778,11 @@ fn run_scan(
     let completion = handler
         .execute(
             &context(),
-            &|| cancel.load(Ordering::SeqCst),
+            &|| {
+                cancel
+                    .load(Ordering::SeqCst)
+                    .then_some(BackgroundOperationStopReason::CancellationRequested)
+            },
             &Reporter {
                 reports: Arc::clone(&reports),
             },

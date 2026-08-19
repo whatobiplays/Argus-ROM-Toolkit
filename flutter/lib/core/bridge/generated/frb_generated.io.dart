@@ -118,6 +118,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OperationHandleDto dco_decode_box_autoadd_operation_handle_dto(dynamic raw);
 
   @protected
+  ReportExecutionHostStopRequestDto
+  dco_decode_box_autoadd_report_execution_host_stop_request_dto(dynamic raw);
+
+  @protected
   RetryNotAdmittedReasonDto
   dco_decode_box_autoadd_retry_not_admitted_reason_dto(dynamic raw);
 
@@ -163,6 +167,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DiagnosticsExportRequestDto dco_decode_diagnostics_export_request_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ExecutionHostStopReasonDto dco_decode_execution_host_stop_reason_dto(
     dynamic raw,
   );
 
@@ -394,6 +403,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ReportExecutionHostStopRequestDto
+  dco_decode_report_execution_host_stop_request_dto(dynamic raw);
+
+  @protected
   RetryJobResultDto dco_decode_retry_job_result_dto(dynamic raw);
 
   @protected
@@ -620,6 +633,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ReportExecutionHostStopRequestDto
+  sse_decode_box_autoadd_report_execution_host_stop_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RetryNotAdmittedReasonDto
   sse_decode_box_autoadd_retry_not_admitted_reason_dto(
     SseDeserializer deserializer,
@@ -681,6 +700,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   DiagnosticsExportRequestDto sse_decode_diagnostics_export_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ExecutionHostStopReasonDto sse_decode_execution_host_stop_reason_dto(
     SseDeserializer deserializer,
   );
 
@@ -972,6 +996,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ReportExecutionHostStopRequestDto
+  sse_decode_report_execution_host_stop_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RetryJobResultDto sse_decode_retry_job_result_dto(
     SseDeserializer deserializer,
   );
@@ -1242,6 +1272,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_report_execution_host_stop_request_dto(
+    ReportExecutionHostStopRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_retry_not_admitted_reason_dto(
     RetryNotAdmittedReasonDto self,
     SseSerializer serializer,
@@ -1310,6 +1346,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_diagnostics_export_request_dto(
     DiagnosticsExportRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_execution_host_stop_reason_dto(
+    ExecutionHostStopReasonDto self,
     SseSerializer serializer,
   );
 
@@ -1649,6 +1691,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_remove_library_root_result_dto(
     RemoveLibraryRootResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_report_execution_host_stop_request_dto(
+    ReportExecutionHostStopRequestDto self,
     SseSerializer serializer,
   );
 

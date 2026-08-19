@@ -16,10 +16,10 @@ use crate::sources::{
 use crate::unit_of_work::UnitOfWork;
 use crate::{
     ApplicationError, ApplicationEvent, ApplicationPortError, ApplicationPortError::EventRecording,
-    ApplicationPortError::Persistence, ErrorCode, JobProgress, JobProgressReporter, JobRunState,
-    LibraryRootAvailability, LibraryRootChanged, LibraryRootLastScanStatus,
-    LibraryRootLastScanSummary, NativeIdentityMatch, NewSourceEntry, OperationCompletion,
-    OperationContext, PersistenceError, SafeContext, ScanRunId, ScanRunStatus,
+    ApplicationPortError::Persistence, BackgroundOperationStopReason, ErrorCode, JobProgress,
+    JobProgressReporter, JobRunState, LibraryRootAvailability, LibraryRootChanged,
+    LibraryRootLastScanStatus, LibraryRootLastScanSummary, NativeIdentityMatch, NewSourceEntry,
+    OperationCompletion, OperationContext, PersistenceError, SafeContext, ScanRunId, ScanRunStatus,
     SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryId, UnitOfWorkFactory,
 };
 
@@ -58,7 +58,7 @@ struct CompletedScope {
 /// Aggregate outcome of the deferred finalization phase.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct FinalizationOutcome {
-    cancelled: bool,
+    stop_reason: Option<BackgroundOperationStopReason>,
     suppressed: bool,
 }
 
@@ -142,7 +142,7 @@ where
     fn execute_inner(
         &self,
         context: &OperationContext,
-        is_cancelled: &dyn Fn() -> bool,
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
         progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
         let root = match self.access.resolve_root() {
@@ -152,14 +152,14 @@ where
             }
         };
         self.commit_availability_available(context)?;
-        if is_cancelled() {
-            return self.finish_cancelled(context, 0, 0, 0);
+        if let Some(reason) = stop_reason() {
+            return self.finish_stopped(context, reason, 0, 0, 0);
         }
 
         let mut committed_entries = 0_u64;
         let mut observed_entries = 0_u64;
         let mut issues = 0_u64;
-        let mut cancelled = false;
+        let mut stopped = None;
         let mut root_unavailable = false;
         let mut root_incomplete = false;
         let mut completed_scopes: Vec<CompletedScope> = Vec::new();
@@ -167,25 +167,30 @@ where
         let mut stack = vec![Scope::Root];
 
         while let Some(scope) = stack.pop() {
-            if is_cancelled() {
-                cancelled = true;
+            if let Some(reason) = stop_reason() {
+                stopped = Some(reason);
                 break;
             }
+            let should_stop = || stop_reason().is_some();
             let enumeration = match &scope {
                 Scope::Root => self
                     .access
-                    .enumerate_root_direct_children(&root, is_cancelled),
+                    .enumerate_root_direct_children(&root, &should_stop),
                 Scope::Child {
                     relative_locator, ..
                 } => self
                     .access
-                    .enumerate_direct_children(&root, relative_locator, is_cancelled),
+                    .enumerate_direct_children(&root, relative_locator, &should_stop),
             };
             let enumeration = match enumeration {
                 Ok(result) => result,
                 Err(error) => {
+                    if let Some(reason) = stop_reason() {
+                        stopped = Some(reason);
+                        break;
+                    }
                     if error == SourceAccessError::Cancelled {
-                        cancelled = true;
+                        stopped = Some(BackgroundOperationStopReason::CancellationRequested);
                         break;
                     }
                     if matches!(scope, Scope::Root) {
@@ -204,7 +209,10 @@ where
             };
             match enumeration.outcome() {
                 EnumerationOutcome::Cancelled => {
-                    cancelled = true;
+                    stopped = Some(
+                        stop_reason()
+                            .unwrap_or(BackgroundOperationStopReason::CancellationRequested),
+                    );
                     break;
                 }
                 EnumerationOutcome::Complete => {
@@ -265,13 +273,13 @@ where
                     })
                 }));
             }
-            if is_cancelled() {
-                cancelled = true;
+            if let Some(reason) = stop_reason() {
+                stopped = Some(reason);
                 break;
             }
         }
 
-        if !pending.is_empty() {
+        if stopped.is_none() && !pending.is_empty() {
             let committed = self.commit_checkpoint(
                 context,
                 progress,
@@ -288,8 +296,14 @@ where
             }));
         }
 
-        if cancelled {
-            return self.finish_cancelled(context, observed_entries, committed_entries, issues);
+        if let Some(reason) = stopped.or_else(stop_reason) {
+            return self.finish_stopped(
+                context,
+                reason,
+                observed_entries,
+                committed_entries,
+                issues,
+            );
         }
         if root_unavailable {
             return self.finish_root_unavailable(
@@ -301,9 +315,15 @@ where
         }
 
         let finalization =
-            self.finalize_completed_scopes(context, &completed_scopes, is_cancelled)?;
-        if finalization.cancelled {
-            return self.finish_cancelled(context, observed_entries, committed_entries, issues);
+            self.finalize_completed_scopes(context, &completed_scopes, stop_reason)?;
+        if let Some(reason) = finalization.stop_reason {
+            return self.finish_stopped(
+                context,
+                reason,
+                observed_entries,
+                committed_entries,
+                issues,
+            );
         }
         if root_incomplete && committed_entries == 0 {
             return self.finish_failed(context, observed_entries, committed_entries, issues);
@@ -426,12 +446,12 @@ where
         &self,
         context: &OperationContext,
         completed_scopes: &[CompletedScope],
-        is_cancelled: &dyn Fn() -> bool,
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
     ) -> Result<FinalizationOutcome, ApplicationError> {
         let mut outcome = FinalizationOutcome::default();
         for scope in completed_scopes {
-            if is_cancelled() {
-                outcome.cancelled = true;
+            if let Some(reason) = stop_reason() {
+                outcome.stop_reason = Some(reason);
                 break;
             }
             let plan = self.plan.clone();
@@ -497,6 +517,41 @@ where
         Ok(OperationCompletion::new(JobRunState::Cancelled, None, None))
     }
 
+    fn finish_stopped(
+        &self,
+        context: &OperationContext,
+        reason: BackgroundOperationStopReason,
+        observed_entries: u64,
+        entries_committed: u64,
+        issues: u64,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        if reason == BackgroundOperationStopReason::CancellationRequested {
+            return self.finish_cancelled(context, observed_entries, entries_committed, issues);
+        }
+        let failure_reason = match reason {
+            BackgroundOperationStopReason::ExecutionHostTimeout => "execution_host_timeout",
+            BackgroundOperationStopReason::ExecutionHostLost => "execution_host_lost",
+            BackgroundOperationStopReason::CancellationRequested => unreachable!(),
+        };
+        if entries_committed > 0 {
+            self.finish_partial(
+                context,
+                failure_reason,
+                observed_entries,
+                entries_committed,
+                issues,
+            )
+        } else {
+            self.finish_failed_with_reason(
+                context,
+                failure_reason,
+                observed_entries,
+                entries_committed,
+                issues,
+            )
+        }
+    }
+
     fn finish_partial(
         &self,
         context: &OperationContext,
@@ -546,11 +601,28 @@ where
         entries_committed: u64,
         issues: u64,
     ) -> Result<OperationCompletion, ApplicationError> {
+        self.finish_failed_with_reason(
+            context,
+            "source_access_failed",
+            observed_entries,
+            entries_committed,
+            issues,
+        )
+    }
+
+    fn finish_failed_with_reason(
+        &self,
+        context: &OperationContext,
+        failure_reason: &str,
+        observed_entries: u64,
+        entries_committed: u64,
+        issues: u64,
+    ) -> Result<OperationCompletion, ApplicationError> {
         self.terminalize(
             context,
             ScanRunStatus::Failed,
             LibraryRootLastScanStatus::Failed,
-            Some("source_access_failed"),
+            Some(failure_reason),
             None,
             Some((observed_entries, entries_committed, issues)),
         )?;
@@ -654,10 +726,10 @@ where
     fn execute(
         &self,
         context: &OperationContext,
-        is_cancelled: &dyn Fn() -> bool,
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
         progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
-        self.execute_inner(context, is_cancelled, progress)
+        self.execute_inner(context, stop_reason, progress)
             .or_else(|error| {
                 let code = Some(error.code.as_str().to_owned());
                 self.terminalize(
@@ -672,18 +744,12 @@ where
             })
     }
 
-    fn cancelled_before_execution(
+    fn stopped_before_execution(
         &self,
         context: &OperationContext,
+        reason: BackgroundOperationStopReason,
     ) -> Result<(), ApplicationError> {
-        self.terminalize(
-            context,
-            ScanRunStatus::Cancelled,
-            LibraryRootLastScanStatus::Cancelled,
-            None,
-            None,
-            None,
-        )
+        self.finish_stopped(context, reason, 0, 0, 0).map(|_| ())
     }
 }
 

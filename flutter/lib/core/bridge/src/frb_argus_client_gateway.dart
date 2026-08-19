@@ -530,29 +530,35 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
       _call<void>(operation);
 
   ClientFailure _mapFailure(Object error, StackTrace stackTrace) {
-    if (error is dto.ApplicationErrorDto) {
-      return ApplicationFailure(
-        applicationErrorFromDto(error),
-        cause: error,
-        stackTrace: stackTrace,
-      );
-    }
-    if (error is dto.BridgeTransportError) {
-      return TransportFailure(
-        'Native bridge transport failed: ${error.name}',
-        cause: error,
-        stackTrace: stackTrace,
-        kind: TransportFailureKind.communicationFailed,
-      );
-    }
-    if (error is ClientFailure) return error;
-    return TransportFailure(
-      'Native bridge transport failed',
+    return mapFrbFailure(error, stackTrace);
+  }
+}
+
+/// Translates generated FRB failures into the framework-independent failure
+/// hierarchy shared by all bridge adapters.
+ClientFailure mapFrbFailure(Object error, StackTrace stackTrace) {
+  if (error is dto.ApplicationErrorDto) {
+    return ApplicationFailure(
+      applicationErrorFromDto(error),
       cause: error,
       stackTrace: stackTrace,
-      kind: TransportFailureKind.unexpectedTransportFailure,
     );
   }
+  if (error is dto.BridgeTransportError) {
+    return TransportFailure(
+      'Native bridge transport failed: ${error.name}',
+      cause: error,
+      stackTrace: stackTrace,
+      kind: TransportFailureKind.communicationFailed,
+    );
+  }
+  if (error is ClientFailure) return error;
+  return TransportFailure(
+    'Native bridge transport failed',
+    cause: error,
+    stackTrace: stackTrace,
+    kind: TransportFailureKind.unexpectedTransportFailure,
+  );
 }
 
 ClientApplicationError applicationErrorFromDto(dto.ApplicationErrorDto value) =>

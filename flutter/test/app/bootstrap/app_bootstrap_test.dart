@@ -4,11 +4,13 @@ import 'package:argus/app/bootstrap/app_bootstrap.dart';
 import 'package:argus/app/bootstrap/appearance_event_coordinator.dart';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
+import 'package:argus/app/bootstrap/foreground_execution_coordinator.dart';
 import 'package:argus/app/platform/native/desktop_platform_host_api.dart';
 import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
+import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/sources/sources.dart';
 import '../../core/client/jobs_gateway_stub.dart';
 import '../../core/client/sources_gateway_stub.dart';
@@ -233,6 +235,35 @@ void main() {
     },
   );
 
+  testWidgets('Android composition decorates Sources and Jobs admissions', (
+    tester,
+  ) async {
+    final host = _ForegroundExecutionHostStub();
+    await tester.pumpWidget(
+      ArgusBootstrap(
+        platformHostComposition: PlatformHostComposition(
+          api: _ReadinessPlatformHostApi(androidSnapshot),
+          requiresReadinessGate: true,
+          foregroundExecutionHostApi: host,
+        ),
+        clientGatewayFactory: () => _PendingGateway(),
+      ),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArgusApp)),
+      listen: false,
+    );
+
+    expect(container.read(foregroundExecutionHostApiProvider), same(host));
+    expect(
+      container.read(sourcesApiProvider),
+      isA<ForegroundHostedSourcesApi>(),
+    );
+    final jobsApi = container.read(jobsApiProvider);
+    expect(jobsApi, isA<ForegroundHostedJobsApi>());
+    expect(container.read(sourcesJobsApiProvider), same(jobsApi));
+  });
+
   test('desktop Sources capabilities retain every existing workflow', () {
     const capabilities = SourcesPresentationCapabilities();
 
@@ -437,4 +468,21 @@ final class _ReadinessPlatformHostApi implements PlatformHostApi {
   @override
   Future<NotificationAuthorization> requestNotificationPermission() async =>
       NotificationAuthorization.promptRequired;
+}
+
+final class _ForegroundExecutionHostStub implements ForegroundExecutionHostApi {
+  @override
+  Stream<ForegroundExecutionHostEvent> get events => const Stream.empty();
+
+  @override
+  Future<ForegroundExecutionLease> acquireLibraryScanLease() =>
+      Future.value(const ForegroundExecutionLease('test-lease'));
+
+  @override
+  Future<void> releaseLease(ForegroundExecutionLease lease) async {}
+
+  @override
+  Future<void> updateProjection(
+    ForegroundExecutionProjection projection,
+  ) async {}
 }

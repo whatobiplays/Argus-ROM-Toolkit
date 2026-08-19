@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'appearance_event_coordinator.dart';
+import 'foreground_execution_coordinator.dart';
 import 'jobs_event_coordinator.dart';
 import 'sources_event_coordinator.dart';
 
@@ -57,6 +58,9 @@ class ArgusBootstrap extends StatelessWidget {
         platformHostApiProvider.overrideWithValue(platform.api),
         localFilesystemPlatformApiProvider.overrideWithValue(
           platform.localFilesystemApi,
+        ),
+        foregroundExecutionHostApiProvider.overrideWithValue(
+          platform.foregroundExecutionHostApi,
         ),
         sourcesPresentationCapabilitiesProvider.overrideWithValue(
           platform.requiresReadinessGate
@@ -106,12 +110,23 @@ class ArgusBootstrap extends StatelessWidget {
         appearanceReconciliationDemandProvider.overrideWith(
           (ref) => ref.watch(appearanceEventCoordinatorProvider),
         ),
-        sourcesApiProvider.overrideWith(
-          (ref) => ref.watch(argusClientProvider).sources,
-        ),
-        sourcesJobsApiProvider.overrideWith(
-          (ref) => ref.watch(argusClientProvider).jobs,
-        ),
+        if (platform.foregroundExecutionHostApi != null)
+          sourcesApiProvider.overrideWith(
+            (ref) =>
+                ref.watch(foregroundExecutionCoordinatorProvider).sourcesApi,
+          )
+        else
+          sourcesApiProvider.overrideWith(
+            (ref) => ref.watch(argusClientProvider).sources,
+          ),
+        if (platform.foregroundExecutionHostApi != null)
+          sourcesJobsApiProvider.overrideWith(
+            (ref) => ref.watch(foregroundExecutionCoordinatorProvider).jobsApi,
+          )
+        else
+          sourcesJobsApiProvider.overrideWith(
+            (ref) => ref.watch(argusClientProvider).jobs,
+          ),
         sourcesRuntimeContextProvider.overrideWith((ref) {
           final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
           return runtimeInstanceId == null
@@ -123,9 +138,14 @@ class ArgusBootstrap extends StatelessWidget {
         sourcesReconciliationDemandProvider.overrideWith(
           (ref) => ref.watch(sourcesEventCoordinatorProvider),
         ),
-        jobsApiProvider.overrideWith(
-          (ref) => ref.watch(argusClientProvider).jobs,
-        ),
+        if (platform.foregroundExecutionHostApi != null)
+          jobsApiProvider.overrideWith(
+            (ref) => ref.watch(foregroundExecutionCoordinatorProvider).jobsApi,
+          )
+        else
+          jobsApiProvider.overrideWith(
+            (ref) => ref.watch(argusClientProvider).jobs,
+          ),
         jobsRuntimeContextProvider.overrideWith((ref) {
           final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
           return runtimeInstanceId == null

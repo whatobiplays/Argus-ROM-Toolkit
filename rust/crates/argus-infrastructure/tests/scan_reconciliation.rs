@@ -152,7 +152,7 @@ fn run_scan_with_access<A: LibrarySourceAccess>(
         100,
     );
     handler
-        .execute(&context(), &|| false, &TestReporter)
+        .execute(&context(), &|| None, &TestReporter)
         .expect("scan handler completion")
 }
 

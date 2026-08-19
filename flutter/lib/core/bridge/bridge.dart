@@ -3,3 +3,4 @@
 library;
 
 export 'src/frb_argus_client_gateway.dart';
+export 'src/frb_execution_host_control.dart';

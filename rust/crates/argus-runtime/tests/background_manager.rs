@@ -8,9 +8,10 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use argus_application::{
-    ApplicationError, BackgroundOperationHandler, JobProgressReporter, JobRunId, JobRunRepository,
-    JobRunState, JobsQueries, NewJobRun, OperationCompletion, OperationContext, OperationHandle,
-    OperationName, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
+    ApplicationError, BackgroundOperationHandler, BackgroundOperationStopReason,
+    JobProgressReporter, JobRunId, JobRunRepository, JobRunState, JobsQueries, NewJobRun,
+    OperationCompletion, OperationContext, OperationHandle, OperationName, SubsystemName, TraceId,
+    UnitOfWork, UnitOfWorkFactory,
 };
 use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteJobsQueries};
 use argus_runtime::EventBus;
@@ -134,7 +135,7 @@ impl BackgroundOperationHandler for BlockingHandler {
     fn execute(
         &self,
         _context: &OperationContext,
-        _is_cancelled: &dyn Fn() -> bool,
+        _stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
         _progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.invoked.fetch_add(1, Ordering::SeqCst);
@@ -169,16 +170,17 @@ impl BackgroundOperationHandler for CountingHandler {
     fn execute(
         &self,
         _context: &OperationContext,
-        _is_cancelled: &dyn Fn() -> bool,
+        _stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
         _progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
         self.invoked.fetch_add(1, Ordering::SeqCst);
         Ok(OperationCompletion::new(JobRunState::Completed, None, None))
     }
 
-    fn cancelled_before_execution(
+    fn stopped_before_execution(
         &self,
         _context: &OperationContext,
+        _reason: BackgroundOperationStopReason,
     ) -> Result<(), ApplicationError> {
         self.cleanup.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -468,6 +470,158 @@ fn resources_are_released_after_every_terminal_execution_path() {
         manager.shutdown();
         executor.shutdown().expect("shutdown");
     }
+}
+
+#[test]
+fn queued_execution_host_timeout_fails_without_executing_the_handler() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor = open_executor(directory.path());
+    let manager = manager(&executor);
+    let a_id = insert_job(&executor);
+    let (a_handler, a_started, a_release) = BlockingHandler::new(JobRunState::Completed);
+    manager
+        .register(&handle(a_id), Arc::new(a_handler), RESOURCES)
+        .expect("register A");
+    a_started
+        .recv_timeout(Duration::from_secs(5))
+        .expect("A holds resources");
+
+    let b_id = insert_job(&executor);
+    let (b_handler, b_invoked, b_cleanup) = CountingHandler::new();
+    manager
+        .register(&handle(b_id), Arc::new(b_handler), RESOURCES)
+        .expect("register B");
+    assert!(wait_until(
+        || job_state(&executor, b_id) == JobRunState::Queued,
+        Duration::from_secs(5)
+    ));
+
+    manager.notify_execution_host_stop(b_id, BackgroundOperationStopReason::ExecutionHostTimeout);
+    assert!(wait_until(
+        || job_state(&executor, b_id) == JobRunState::Failed,
+        Duration::from_secs(5)
+    ));
+    assert_eq!(b_invoked.load(Ordering::SeqCst), 0);
+    assert_eq!(b_cleanup.load(Ordering::SeqCst), 1);
+
+    a_release.send(()).expect("release A");
+    assert!(wait_until(
+        || job_state(&executor, a_id) == JobRunState::Completed,
+        Duration::from_secs(5)
+    ));
+    manager.shutdown();
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn queued_execution_host_loss_fails_without_executing_the_handler() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor = open_executor(directory.path());
+    let manager = manager(&executor);
+    let a_id = insert_job(&executor);
+    let (a_handler, a_started, a_release) = BlockingHandler::new(JobRunState::Completed);
+    manager
+        .register(&handle(a_id), Arc::new(a_handler), RESOURCES)
+        .expect("register A");
+    a_started
+        .recv_timeout(Duration::from_secs(5))
+        .expect("A holds resources");
+
+    let b_id = insert_job(&executor);
+    let (b_handler, b_invoked, b_cleanup) = CountingHandler::new();
+    manager
+        .register(&handle(b_id), Arc::new(b_handler), RESOURCES)
+        .expect("register B");
+    assert!(wait_until(
+        || job_state(&executor, b_id) == JobRunState::Queued,
+        Duration::from_secs(5)
+    ));
+
+    manager.notify_execution_host_stop(b_id, BackgroundOperationStopReason::ExecutionHostLost);
+    assert!(wait_until(
+        || job_state(&executor, b_id) == JobRunState::Failed,
+        Duration::from_secs(5)
+    ));
+    assert_eq!(b_invoked.load(Ordering::SeqCst), 0);
+    assert_eq!(b_cleanup.load(Ordering::SeqCst), 1);
+
+    a_release.send(()).expect("release A");
+    assert!(wait_until(
+        || job_state(&executor, a_id) == JobRunState::Completed,
+        Duration::from_secs(5)
+    ));
+    manager.shutdown();
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn accepted_cancellation_wins_when_host_stop_already_exists() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor = open_executor(directory.path());
+    let manager = manager(&executor);
+    let a_id = insert_job(&executor);
+    let (a_handler, a_started, a_release) = BlockingHandler::new(JobRunState::Completed);
+    manager
+        .register(&handle(a_id), Arc::new(a_handler), RESOURCES)
+        .expect("register A");
+    a_started
+        .recv_timeout(Duration::from_secs(5))
+        .expect("A holds resources");
+
+    let b_id = insert_job(&executor);
+    let (b_handler, b_invoked, b_cleanup) = CountingHandler::new();
+    manager
+        .register(&handle(b_id), Arc::new(b_handler), RESOURCES)
+        .expect("register B");
+    assert!(wait_until(
+        || job_state(&executor, b_id) == JobRunState::Queued,
+        Duration::from_secs(5)
+    ));
+
+    manager.notify_execution_host_stop(b_id, BackgroundOperationStopReason::ExecutionHostLost);
+    manager.notify_cancellation(b_id);
+    assert!(wait_until(
+        || job_state(&executor, b_id) == JobRunState::Cancelled,
+        Duration::from_secs(5)
+    ));
+    assert_eq!(b_invoked.load(Ordering::SeqCst), 0);
+    assert_eq!(b_cleanup.load(Ordering::SeqCst), 1);
+
+    a_release.send(()).expect("release A");
+    assert!(wait_until(
+        || job_state(&executor, a_id) == JobRunState::Completed,
+        Duration::from_secs(5)
+    ));
+    manager.shutdown();
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn host_stop_for_unknown_run_is_an_idempotent_no_op() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor = open_executor(directory.path());
+    let manager = manager(&executor);
+    let job_run_id = insert_job(&executor);
+    let (handler, started, release) = BlockingHandler::new(JobRunState::Completed);
+    manager
+        .register(&handle(job_run_id), Arc::new(handler), RESOURCES)
+        .expect("register run");
+    started
+        .recv_timeout(Duration::from_secs(5))
+        .expect("run starts");
+
+    let unknown_id = insert_job(&executor);
+    manager.notify_execution_host_stop(
+        unknown_id,
+        BackgroundOperationStopReason::ExecutionHostTimeout,
+    );
+    release.send(()).expect("release run");
+    assert!(wait_until(
+        || job_state(&executor, job_run_id) == JobRunState::Completed,
+        Duration::from_secs(5)
+    ));
+    manager.shutdown();
+    executor.shutdown().expect("shutdown");
 }
 
 #[test]

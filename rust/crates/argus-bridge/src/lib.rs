@@ -11,22 +11,22 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
     AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult, ApplicationError,
-    ApplicationSeverity, ArchitectureClass, DiagnosticStage, ErrorCategory, ErrorCode, FailureRole,
-    JobDetail, JobRunId, JobRunProjection, JobRunState, JobSummary, JobSummaryPage,
-    LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage,
-    LibraryRootProjection, LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity,
-    LibraryScanChildAdmissionIssue, LibraryScanJobDetail, LibraryScanRootSummary, ListJobsQuery,
-    ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
-    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MigrationOutcome,
-    MountedLocalFilesystemVolume, OperationDetail, PathClass, PersistedSettingsReason,
-    PlatformClass, Recoverability, RemoveLibraryRootResult, RetryJobResult, RetryNotAdmittedReason,
-    RetryPolicy, RootRelationship, SafeContext, SafeContextField, SafeContextValue,
-    ScanProgressFacts, ScanRunProjection, ScanRunStatus, SettingsDomain, SourceEntriesChangeScope,
-    SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor,
-    SourceEntryDetailProjection, SourceEntryId, SourceEntryKind, SourceEntryProjection,
-    StartLibraryScanAllResult, StartLibraryScanResult, SyncLocalFilesystemMountedVolumesCommand,
-    TechnicalClass, ThemeMode,
+    ApplicationSeverity, ArchitectureClass, BackgroundOperationStopReason, DiagnosticStage,
+    ErrorCategory, ErrorCode, FailureRole, JobDetail, JobRunId, JobRunProjection, JobRunState,
+    JobSummary, JobSummaryPage, LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus,
+    LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionExclusion,
+    LibraryScanAllRequestIdentity, LibraryScanChildAdmissionIssue, LibraryScanJobDetail,
+    LibraryScanRootSummary, ListJobsQuery, ListJobsScope, ListLibraryRootsQuery,
+    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
+    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
+    MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
+    PersistedSettingsReason, PlatformClass, Recoverability, RemoveLibraryRootResult,
+    RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext,
+    SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus,
+    SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
+    SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
+    SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
+    SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
     ApplicationHost, DiagnosticsExportOutcome, NotificationSinkError, RecoveryActionKind,
@@ -64,6 +64,24 @@ pub struct ApplicationErrorDto {
     pub message_key: String,
     pub trace_id: String,
     pub safe_context: Vec<SafeContextEntryDto>,
+}
+
+/// Execution-host stop reason accepted across the bridge boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecutionHostStopReasonDto {
+    /// The foreground host exceeded its live execution deadline.
+    Timeout,
+    /// The foreground host stopped without a durable user cancellation.
+    HostLost,
+}
+
+/// Bounded report of foreground-host stops for already-admitted runs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReportExecutionHostStopRequestDto {
+    /// Durable job-run identities whose live host stopped.
+    pub job_run_ids: Vec<String>,
+    /// The live host condition observed by the native host.
+    pub reason: ExecutionHostStopReasonDto,
 }
 
 /// One allowlisted structured diagnostic field.
@@ -1320,6 +1338,20 @@ pub fn cancel_job(job_run_id: String) -> Result<CancelJobResultDto, ApplicationE
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Reports a live execution-host stop without entering durable cancellation.
+#[allow(clippy::result_large_err)]
+pub fn report_execution_host_stop(
+    request: ReportExecutionHostStopRequestDto,
+) -> Result<(), ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "report_execution_host_stop")
+        .map_err(|error| application_error_dto(&error))?;
+    let (job_run_ids, reason) = parse_execution_host_stop_request(request, context.trace_id())?;
+    host()
+        .report_execution_host_stop_with_context(&job_run_ids, reason, &context)
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Retries one eligible historical LibraryScan into a new durable run.
 #[allow(clippy::result_large_err)]
 pub fn retry_job(job_run_id: String) -> Result<RetryJobResultDto, ApplicationErrorDto> {
@@ -1526,8 +1558,12 @@ fn classify_subscribe_error(error: &ApplicationError) -> Option<BridgeTransportE
 
 #[cfg(test)]
 mod tests {
-    use super::classify_subscribe_error;
-    use argus_application::{ApplicationError, ErrorCode, SafeContext};
+    use super::{
+        ExecutionHostStopReasonDto, ReportExecutionHostStopRequestDto, classify_subscribe_error,
+    };
+    use argus_application::{
+        ApplicationError, BackgroundOperationStopReason, ErrorCode, SafeContext,
+    };
 
     fn subscribe_error(code: ErrorCode) -> ApplicationError {
         ApplicationError::from_code(code, argus_runtime::new_trace_id(), SafeContext::new())
@@ -1564,6 +1600,66 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].field, "platform");
         assert_eq!(entries[0].value, "android");
+    }
+
+    #[test]
+    fn execution_host_stop_request_maps_only_supported_host_reasons() {
+        let trace_id = argus_runtime::new_trace_id();
+        let request = ReportExecutionHostStopRequestDto {
+            job_run_ids: vec!["11111111111111111111111111111111".to_owned()],
+            reason: ExecutionHostStopReasonDto::Timeout,
+        };
+        let (ids, reason) = super::parse_execution_host_stop_request(request, trace_id)
+            .expect("valid timeout request");
+        assert_eq!(ids.len(), 1);
+        assert_eq!(reason, BackgroundOperationStopReason::ExecutionHostTimeout);
+
+        let request = ReportExecutionHostStopRequestDto {
+            job_run_ids: vec!["22222222222222222222222222222222".to_owned()],
+            reason: ExecutionHostStopReasonDto::HostLost,
+        };
+        let (_, reason) = super::parse_execution_host_stop_request(request, trace_id)
+            .expect("valid host-loss request");
+        assert_eq!(reason, BackgroundOperationStopReason::ExecutionHostLost);
+    }
+
+    #[test]
+    fn execution_host_stop_request_rejects_empty_oversized_and_malformed_ids() {
+        let trace_id = argus_runtime::new_trace_id();
+        let empty = ReportExecutionHostStopRequestDto {
+            job_run_ids: Vec::new(),
+            reason: ExecutionHostStopReasonDto::Timeout,
+        };
+        assert_eq!(
+            super::parse_execution_host_stop_request(empty, trace_id)
+                .expect_err("empty request rejected")
+                .code,
+            ErrorCode::ValidationInvalidArgument.as_str()
+        );
+
+        let oversized = ReportExecutionHostStopRequestDto {
+            job_run_ids: (0..17)
+                .map(|_| "11111111111111111111111111111111".to_owned())
+                .collect(),
+            reason: ExecutionHostStopReasonDto::Timeout,
+        };
+        assert_eq!(
+            super::parse_execution_host_stop_request(oversized, trace_id)
+                .expect_err("oversized request rejected")
+                .code,
+            ErrorCode::ValidationInvalidArgument.as_str()
+        );
+
+        let malformed = ReportExecutionHostStopRequestDto {
+            job_run_ids: vec!["not-a-job-id".to_owned()],
+            reason: ExecutionHostStopReasonDto::HostLost,
+        };
+        assert_eq!(
+            super::parse_execution_host_stop_request(malformed, trace_id)
+                .expect_err("malformed id rejected")
+                .code,
+            ErrorCode::ValidationInvalidArgument.as_str()
+        );
     }
 }
 
@@ -1985,6 +2081,31 @@ pub fn parse_job_run_id(
             .expect("validation error"),
         )
     })
+}
+
+/// Parses the bounded bridge request for live execution-host stops.
+#[allow(unexpected_cfgs)]
+#[allow(clippy::result_large_err)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn parse_execution_host_stop_request(
+    request: ReportExecutionHostStopRequestDto,
+    trace_id: argus_application::TraceId,
+) -> Result<(Vec<JobRunId>, BackgroundOperationStopReason), ApplicationErrorDto> {
+    if request.job_run_ids.is_empty()
+        || request.job_run_ids.len() > argus_runtime::background::MAX_EXECUTION_HOST_STOP_JOB_RUNS
+    {
+        return Err(validation_failure(trace_id));
+    }
+    let job_run_ids = request
+        .job_run_ids
+        .iter()
+        .map(|value| parse_job_run_id(value, trace_id))
+        .collect::<Result<Vec<_>, _>>()?;
+    let reason = match request.reason {
+        ExecutionHostStopReasonDto::Timeout => BackgroundOperationStopReason::ExecutionHostTimeout,
+        ExecutionHostStopReasonDto::HostLost => BackgroundOperationStopReason::ExecutionHostLost,
+    };
+    Ok((job_run_ids, reason))
 }
 
 /// Maps one scan admission outcome into its typed transport union.

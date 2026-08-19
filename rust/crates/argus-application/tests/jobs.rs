@@ -9,12 +9,12 @@ mod common;
 
 use argus_application::{
     ActiveScanOwnership, ApplicationError, ApplicationEvent, ApplicationEventSink,
-    ApplicationPortError, BackgroundOperationHandler, DiscoveryPath, DiscoverySegment,
-    EnumerationOutcome, EnumerationResult, ErrorCode, EventRecorder, EventRecordingError,
-    JobProgress, JobProgressError, JobProgressReporter, JobRunId, JobRunRepository, JobRunState,
-    JobRunStateParseError, LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus,
-    LibraryRootLastScanSummary, LibraryRootQueries, LibraryRootRepository,
-    LibraryRootScanConfiguration, LibraryScanAdmissionContext,
+    ApplicationPortError, BackgroundOperationHandler, BackgroundOperationStopReason, DiscoveryPath,
+    DiscoverySegment, EnumerationOutcome, EnumerationResult, ErrorCode, EventRecorder,
+    EventRecordingError, JobProgress, JobProgressError, JobProgressReporter, JobRunId,
+    JobRunRepository, JobRunState, JobRunStateParseError, LibraryRootAvailability, LibraryRootId,
+    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootQueries,
+    LibraryRootRepository, LibraryRootScanConfiguration, LibraryScanAdmissionContext,
     LibraryScanAdmissionContextRepository, LibraryScanExecutionPlan, LibraryScanInvocationKind,
     LibraryScanOperationHandler, LibraryScanTargetRepository, LibrarySourceAccess,
     NativeIdentityMatch, NewJobRun, NewLibraryScanAdmissionContext, NewLibraryScanTarget,
@@ -112,6 +112,8 @@ struct FakeStore {
     entries: usize,
     deleted_roots: Vec<LibraryRootId>,
     deleted_entries: Vec<LibraryRootId>,
+    scan_failure_reasons: Vec<Option<String>>,
+    finalized_scopes: usize,
     last_scan: Option<LibraryRootLastScanSummary>,
     availability: Option<LibraryRootAvailability>,
     events: Vec<ApplicationEvent>,
@@ -253,8 +255,13 @@ impl ScanRunRepository for FakeScanRunRepository<'_> {
         _scan_run_id: ScanRunId,
         _status: ScanRunStatus,
         _completed_at_ms: Option<i64>,
-        _failure_reason: Option<String>,
+        failure_reason: Option<String>,
     ) -> Result<bool, PersistenceError> {
+        self.store
+            .lock()
+            .unwrap()
+            .scan_failure_reasons
+            .push(failure_reason);
         Ok(true)
     }
 
@@ -350,6 +357,7 @@ impl SourceEntryRepository for FakeSourceEntryRepository<'_> {
         _parent_source_entry_id: Option<SourceEntryId>,
         _observed_scan_id: ScanRunId,
     ) -> Result<u64, PersistenceError> {
+        self.store.lock().unwrap().finalized_scopes += 1;
         Ok(0)
     }
 
@@ -831,6 +839,20 @@ fn run_handler(
     access: FakeAccess,
     cancel: Arc<AtomicBool>,
 ) -> (OperationCompletion, Vec<ApplicationEvent>, Vec<JobProgress>) {
+    run_handler_with_stop(
+        store,
+        access,
+        cancel,
+        BackgroundOperationStopReason::CancellationRequested,
+    )
+}
+
+fn run_handler_with_stop(
+    store: Arc<Mutex<FakeStore>>,
+    access: FakeAccess,
+    stop: Arc<AtomicBool>,
+    reason: BackgroundOperationStopReason,
+) -> (OperationCompletion, Vec<ApplicationEvent>, Vec<JobProgress>) {
     let events = Arc::new(Mutex::new(Vec::new()));
     let reports = Arc::new(Mutex::new(Vec::new()));
     let handler = LibraryScanOperationHandler::new(
@@ -847,7 +869,7 @@ fn run_handler(
     let completion = handler
         .execute(
             &context(),
-            &|| cancel.load(Ordering::SeqCst),
+            &|| stop.load(Ordering::SeqCst).then_some(reason),
             &Reporter {
                 reports: Arc::clone(&reports),
             },
@@ -918,6 +940,58 @@ fn cancelled_scan_retains_committed_observations_and_terminates_cancelled() {
             .iter()
             .any(|event| matches!(event, ApplicationEvent::LibraryRootChanged(_)))
     );
+}
+
+#[test]
+fn execution_host_timeout_after_progress_is_partial_without_absence_finalization() {
+    let store = Arc::new(Mutex::new(FakeStore::default()));
+    let mut access = FakeAccess::complete(
+        vec![observation("rom.bin", ObservedEntryKind::File)],
+        Vec::new(),
+    );
+    let stop = Arc::new(AtomicBool::new(false));
+    access.cancel_after_root = Some(Arc::clone(&stop));
+    let (completion, _, _) = run_handler_with_stop(
+        store.clone(),
+        access,
+        stop,
+        BackgroundOperationStopReason::ExecutionHostTimeout,
+    );
+    assert_eq!(completion.state(), JobRunState::CompletedWithIssues);
+    assert_eq!(store.lock().unwrap().entries, 1);
+    assert_eq!(
+        store.lock().unwrap().last_scan.as_ref().unwrap().status(),
+        LibraryRootLastScanStatus::Partial
+    );
+    assert_eq!(
+        store.lock().unwrap().scan_failure_reasons,
+        vec![Some("execution_host_timeout".to_owned())]
+    );
+    assert_eq!(store.lock().unwrap().finalized_scopes, 0);
+}
+
+#[test]
+fn execution_host_loss_without_progress_is_failed_with_a_stable_reason() {
+    let store = Arc::new(Mutex::new(FakeStore::default()));
+    let access = FakeAccess::complete(Vec::new(), Vec::new());
+    let stop = Arc::new(AtomicBool::new(true));
+    let (completion, _, _) = run_handler_with_stop(
+        store.clone(),
+        access,
+        stop,
+        BackgroundOperationStopReason::ExecutionHostLost,
+    );
+    assert_eq!(completion.state(), JobRunState::Failed);
+    assert_eq!(store.lock().unwrap().entries, 0);
+    assert_eq!(
+        store.lock().unwrap().last_scan.as_ref().unwrap().status(),
+        LibraryRootLastScanStatus::Failed
+    );
+    assert_eq!(
+        store.lock().unwrap().scan_failure_reasons,
+        vec![Some("execution_host_lost".to_owned())]
+    );
+    assert_eq!(store.lock().unwrap().finalized_scopes, 0);
 }
 
 #[test]

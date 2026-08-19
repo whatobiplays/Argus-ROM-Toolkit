@@ -16,6 +16,7 @@ final class FakeJobsApi implements JobsApi {
   List<JobListItem> recentJobs;
   Map<JobRunId, JobDetail> details;
   Object? listFailure;
+  Future<void> Function()? listGate;
   Object? detailFailure;
   CancelJobResult Function(JobRunId jobRunId)? onCancel;
   RetryJobResult Function(JobRunId jobRunId)? onRetry;
@@ -37,6 +38,8 @@ final class FakeJobsApi implements JobsApi {
   @override
   Future<JobSummaryPage> listActiveJobs() async {
     activeCalls++;
+    final gate = listGate;
+    if (gate != null) await gate();
     final failure = listFailure;
     if (failure != null) {
       listFailure = null;

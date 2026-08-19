@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1158369733;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1228940759;
 
 // Section: executor
 
@@ -877,6 +877,40 @@ fn wire__crate__remove_library_root_impl(
         },
     )
 }
+fn wire__crate__report_execution_host_stop_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "report_execution_host_stop",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request =
+                <crate::ReportExecutionHostStopRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::report_execution_host_stop(api_request)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__reset_appearance_settings_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1415,6 +1449,18 @@ impl SseDecode for crate::DiagnosticsExportRequestDto {
         let mut var_destination = <String>::sse_decode(deserializer);
         return crate::DiagnosticsExportRequestDto {
             destination: var_destination,
+        };
+    }
+}
+
+impl SseDecode for crate::ExecutionHostStopReasonDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::ExecutionHostStopReasonDto::Timeout,
+            1 => crate::ExecutionHostStopReasonDto::HostLost,
+            _ => unreachable!("Invalid variant for ExecutionHostStopReasonDto: {}", inner),
         };
     }
 }
@@ -2327,6 +2373,18 @@ impl SseDecode for crate::RemoveLibraryRootResultDto {
     }
 }
 
+impl SseDecode for crate::ReportExecutionHostStopRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_jobRunIds = <Vec<String>>::sse_decode(deserializer);
+        let mut var_reason = <crate::ExecutionHostStopReasonDto>::sse_decode(deserializer);
+        return crate::ReportExecutionHostStopRequestDto {
+            job_run_ids: var_jobRunIds,
+            reason: var_reason,
+        };
+    }
+}
+
 impl SseDecode for crate::RetryJobResultDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2895,21 +2953,22 @@ fn pde_ffi_dispatcher_primary_impl(
         23 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
         24 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
         25 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
+        26 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        35 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3148,6 +3207,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::DiagnosticsExportRequestDto>
     for crate::DiagnosticsExportRequestDto
 {
     fn into_into_dart(self) -> crate::DiagnosticsExportRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ExecutionHostStopReasonDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Timeout => 0.into_dart(),
+            Self::HostLost => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ExecutionHostStopReasonDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ExecutionHostStopReasonDto>
+    for crate::ExecutionHostStopReasonDto
+{
+    fn into_into_dart(self) -> crate::ExecutionHostStopReasonDto {
         self
     }
 }
@@ -3920,6 +4000,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::RemoveLibraryRootResultDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ReportExecutionHostStopRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.job_run_ids.into_into_dart().into_dart(),
+            self.reason.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ReportExecutionHostStopRequestDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ReportExecutionHostStopRequestDto>
+    for crate::ReportExecutionHostStopRequestDto
+{
+    fn into_into_dart(self) -> crate::ReportExecutionHostStopRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::RetryJobResultDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -4669,6 +4770,22 @@ impl SseEncode for crate::DiagnosticsExportRequestDto {
     }
 }
 
+impl SseEncode for crate::ExecutionHostStopReasonDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::ExecutionHostStopReasonDto::Timeout => 0,
+                crate::ExecutionHostStopReasonDto::HostLost => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5381,6 +5498,14 @@ impl SseEncode for crate::RemoveLibraryRootResultDto {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::ReportExecutionHostStopRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.job_run_ids, serializer);
+        <crate::ExecutionHostStopReasonDto>::sse_encode(self.reason, serializer);
     }
 }
 

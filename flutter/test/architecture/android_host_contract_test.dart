@@ -9,6 +9,10 @@ void main() {
     final manifest = File(
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
+    final service = File(
+      'android/app/src/main/kotlin/dev/argusromtoolkit/argus/'
+      'ArgusForegroundExecutionService.kt',
+    ).readAsStringSync();
 
     expect(settings, contains('dev.flutter.flutter-plugin-loader'));
     expect(appBuild, contains('minSdk = 30'));
@@ -16,7 +20,13 @@ void main() {
       manifest,
       contains('android:name="io.flutter.embedding.android.NormalTheme"'),
     );
-    expect(manifest, isNot(contains('<service')));
+    expect(
+      manifest,
+      contains('android:name=".ArgusForegroundExecutionService"'),
+    );
+    expect(manifest, contains('android:exported="false"'));
+    expect(manifest, contains('android:foregroundServiceType="dataSync"'));
+    expect(service, contains('return START_NOT_STICKY'));
   });
 
   test('Android owns one cached engine and a narrow platform bridge', () {
@@ -48,8 +58,17 @@ void main() {
     expect(bridge, contains('requestNotificationPermission'));
     expect(manifest, contains('android.permission.MANAGE_EXTERNAL_STORAGE'));
     expect(manifest, contains('android.permission.POST_NOTIFICATIONS'));
+    expect(manifest, contains('android.permission.FOREGROUND_SERVICE'));
+    expect(
+      manifest,
+      contains('android.permission.FOREGROUND_SERVICE_DATA_SYNC'),
+    );
     expect(manifest, contains('android:name=".ArgusApplication"'));
-    expect(manifest, isNot(contains('FOREGROUND_SERVICE')));
-    expect(manifest, isNot(contains('<service')));
+    expect(application, contains('foregroundExecutionHost'));
+    expect(application, contains('foregroundExecutionBridge'));
+    expect(
+      RegExp(r'FlutterEngine\(this\)').allMatches(application),
+      hasLength(1),
+    );
   });
 }

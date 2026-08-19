@@ -25,6 +25,12 @@ class ArgusApplication : Application() {
     lateinit var localFilesystemBridge: ArgusLocalFilesystemBridge
         private set
 
+    lateinit var foregroundExecutionHost: ArgusForegroundExecutionHost
+        private set
+
+    lateinit var foregroundExecutionBridge: ArgusForegroundExecutionBridge
+        private set
+
     override fun onCreate() {
         super.onCreate()
         flutterEngine = FlutterEngine(this)
@@ -35,6 +41,11 @@ class ArgusApplication : Application() {
         )
         localFilesystemBridge = ArgusLocalFilesystemBridge(
             application = this,
+            messenger = flutterEngine.dartExecutor.binaryMessenger,
+        )
+        foregroundExecutionHost = ArgusForegroundExecutionHost(this)
+        foregroundExecutionBridge = ArgusForegroundExecutionBridge(
+            host = foregroundExecutionHost,
             messenger = flutterEngine.dartExecutor.binaryMessenger,
         )
         flutterEngine.dartExecutor.executeDartEntrypoint(

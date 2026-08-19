@@ -51,8 +51,10 @@ void main() {
       'app/bootstrap/appearance_event_coordinator.dart',
       'app/bootstrap/application_presentation.dart',
       'app/bootstrap/client_bootstrap.dart',
+      'app/bootstrap/foreground_execution_coordinator.dart',
       'app/bootstrap/jobs_event_coordinator.dart',
       'app/bootstrap/sources_event_coordinator.dart',
+      'app/platform/application/foreground_execution_host_composition.dart',
       'app/platform/application/platform_readiness_controller.dart',
       'app/routing/app_router.dart',
       'features/jobs/application/active_job_summary_controller.dart',
@@ -724,6 +726,33 @@ void main() {
       }
     }
   });
+
+  test(
+    'Sources and Jobs feature layers stay free of Android host concepts',
+    () {
+      const forbiddenConcepts = <String>[
+        'Platform.isAndroid',
+        'MethodChannel',
+        'EventChannel',
+        'FOREGROUND_SERVICE',
+        'foregroundExecution',
+        'android.app.',
+      ];
+      for (final entry in sources.entries) {
+        final isSourcesOrJobs =
+            entry.key.startsWith('features/sources/') ||
+            entry.key.startsWith('features/jobs/');
+        if (!isSourcesOrJobs) continue;
+        for (final concept in forbiddenConcepts) {
+          expect(
+            entry.value,
+            isNot(contains(concept)),
+            reason: '${entry.key} must not own Android host integration',
+          );
+        }
+      }
+    },
+  );
 
   test('provider-native filesystem vocabulary never leaks into Flutter-facing '
       'contracts', () {

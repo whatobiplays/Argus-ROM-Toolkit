@@ -40,7 +40,9 @@ use crate::{
     startup::SettingsReadPort,
 };
 use argus_application::LocalFilesystemProvider;
-use argus_application::{LibraryScanOperationHandler, OperationHandle};
+use argus_application::{
+    BackgroundOperationStopReason, LibraryScanOperationHandler, OperationHandle,
+};
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 
@@ -2334,6 +2336,35 @@ impl ApplicationHost {
         Ok(result)
     }
 
+    /// Reports a live execution-host stop for already-admitted background runs.
+    ///
+    /// This control path deliberately does not inspect or mutate durable Jobs
+    /// state. The foreground host only reports that execution stopped; the
+    /// operation handler owns the durable Partial/Failed completion policy.
+    pub fn report_execution_host_stop_with_context(
+        &self,
+        job_run_ids: &[JobRunId],
+        reason: BackgroundOperationStopReason,
+        context: &OperationContext,
+    ) -> Result<(), ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let generation = self.lock_generation_with_context(context)?;
+        if let Some(manager) = &generation.background {
+            for job_run_id in job_run_ids {
+                manager.notify_execution_host_stop(*job_run_id, reason);
+            }
+        }
+        Ok(())
+    }
+
     /// Opens the one active logical event connection for the current generation.
     pub fn subscribe_events(&self) -> Result<RuntimeEventSubscription, ApplicationError> {
         let id = self.current_state().runtime_instance_id();
@@ -2772,7 +2803,7 @@ impl argus_application::BackgroundOperationHandler for LibraryScanAllOperationHa
     fn execute(
         &self,
         context: &OperationContext,
-        is_cancelled: &dyn Fn() -> bool,
+        stop_reason: &dyn Fn() -> Option<argus_application::BackgroundOperationStopReason>,
         progress: &dyn argus_application::JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
         let mut child_completions = Vec::with_capacity(self.plans.len());
@@ -2785,15 +2816,26 @@ impl argus_application::BackgroundOperationHandler for LibraryScanAllOperationHa
                 self.event_sink.clone(),
                 self.checkpoint_size,
             );
-            if is_cancelled() {
-                child.cancel_without_execution(context)?;
+            if stop_reason().is_some() {
+                let reason = stop_reason().unwrap_or(
+                    argus_application::BackgroundOperationStopReason::CancellationRequested,
+                );
+                child.stopped_before_execution(context, reason)?;
                 child_completions.push(OperationCompletion::new(
-                    JobRunState::Cancelled,
+                    match reason {
+                        argus_application::BackgroundOperationStopReason::CancellationRequested => {
+                            JobRunState::Cancelled
+                        }
+                        argus_application::BackgroundOperationStopReason::ExecutionHostTimeout
+                        | argus_application::BackgroundOperationStopReason::ExecutionHostLost => {
+                            JobRunState::Failed
+                        }
+                    },
                     None,
                     None,
                 ));
             } else {
-                child_completions.push(child.execute(context, is_cancelled, progress)?);
+                child_completions.push(child.execute(context, stop_reason, progress)?);
             }
         }
         let child_states = child_completions
@@ -2819,9 +2861,10 @@ impl argus_application::BackgroundOperationHandler for LibraryScanAllOperationHa
         Ok(OperationCompletion::new(state, None, None))
     }
 
-    fn cancelled_before_execution(
+    fn stopped_before_execution(
         &self,
         context: &OperationContext,
+        reason: argus_application::BackgroundOperationStopReason,
     ) -> Result<(), ApplicationError> {
         for plan in &self.plans {
             let child = LibraryScanOperationHandler::new(
@@ -2831,7 +2874,7 @@ impl argus_application::BackgroundOperationHandler for LibraryScanAllOperationHa
                 self.event_sink.clone(),
                 self.checkpoint_size,
             );
-            child.cancel_without_execution(context)?;
+            child.stopped_before_execution(context, reason)?;
         }
         Ok(())
     }

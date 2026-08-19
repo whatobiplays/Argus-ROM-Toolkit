@@ -3331,6 +3331,20 @@ pub struct OperationCompletion {
     terminal_safe_context: Option<String>,
 }
 
+/// Closed set of cooperative reasons that can stop one live background run.
+///
+/// The runtime owns the transient stop signal, while operation handlers use
+/// this application-level vocabulary to preserve durable business semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BackgroundOperationStopReason {
+    /// Durable user cancellation was accepted by the Jobs authority.
+    CancellationRequested,
+    /// The Android foreground execution host reached its platform time limit.
+    ExecutionHostTimeout,
+    /// The Android foreground execution host disappeared unexpectedly.
+    ExecutionHostLost,
+}
+
 impl OperationCompletion {
     /// Creates one operation completion request.
     pub fn new(
@@ -3425,22 +3439,23 @@ pub fn aggregate_library_scan_state(
 
 /// One registered background operation handler.
 pub trait BackgroundOperationHandler: Send + Sync {
-    /// Executes the operation under the manager's cancellation and progress
+    /// Executes the operation under the manager's typed stop and progress
     /// contracts and returns the generic terminal completion request.
     fn execute(
         &self,
         context: &OperationContext,
-        is_cancelled: &dyn Fn() -> bool,
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
         progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError>;
 
     /// Reconciles operation-owned durable state when the run is terminalized
-    /// before its handler ever executes (queued cancellation or shutdown).
+    /// before its handler ever executes.
     /// The generic manager owns JobRun terminalization; this seam lets the
     /// operation bring its own child records to the governed terminal state.
-    fn cancelled_before_execution(
+    fn stopped_before_execution(
         &self,
         _context: &OperationContext,
+        _reason: BackgroundOperationStopReason,
     ) -> Result<(), ApplicationError> {
         Ok(())
     }

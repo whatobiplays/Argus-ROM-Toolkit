@@ -28,7 +28,13 @@ class ThemeModeControl extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text('Theme Mode', style: Theme.of(context).textTheme.titleMedium),
+        Semantics(
+          header: true,
+          child: Text(
+            'Theme Mode',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
         const SizedBox(height: 4),
         RadioGroup<ThemeMode>(
           groupValue: selectedMode,

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:argus/app/routing/app_destination.dart';
+import 'package:argus/app/shell/application_shell.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
 import 'package:argus/features/sources/application/add_library_folder_controller.dart';
@@ -671,6 +673,117 @@ void main() {
         );
         expect(find.text('Scan All'), findsNothing);
         expect(find.text('Add Library Folder'), findsOneWidget);
+      },
+    );
+
+    testWidgets('empty state remains bounded in a short compact 2x viewport', (
+      tester,
+    ) async {
+      final container = createContainer(FakeSourcesApi());
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ArgusTheme.light,
+            home: MediaQuery(
+              data: const MediaQueryData(
+                size: Size(411, 300),
+                textScaler: TextScaler.linear(2),
+              ),
+              child: const SizedBox(
+                width: 411,
+                height: 300,
+                child: SourcesPage(
+                  onOpenRoot: _ignoreRoot,
+                  onOpenJob: _ignoreJob,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'empty state remains valid in a narrow rotated compact 2x viewport',
+      (tester) async {
+        final container = createContainer(FakeSourcesApi());
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: ArgusTheme.light,
+              home: MediaQuery(
+                data: const MediaQueryData(
+                  size: Size(274, 488),
+                  padding: EdgeInsets.only(bottom: 24),
+                  viewPadding: EdgeInsets.only(bottom: 24),
+                  textScaler: TextScaler.linear(2),
+                ),
+                child: const SizedBox(
+                  width: 274,
+                  height: 488,
+                  child: SourcesPage(
+                    onOpenRoot: _ignoreRoot,
+                    onOpenJob: _ignoreJob,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'empty state remains valid inside the compact shell at rotated 2x size',
+      (tester) async {
+        final container = createContainer(
+          FakeSourcesApi(),
+          jobsApi: FakeJobsApi(),
+        );
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: ArgusTheme.light,
+              home: MediaQuery(
+                data: const MediaQueryData(
+                  size: Size(274, 488),
+                  padding: EdgeInsets.only(bottom: 24),
+                  viewPadding: EdgeInsets.only(bottom: 24),
+                  textScaler: TextScaler.linear(2),
+                ),
+                child: const SizedBox(
+                  width: 274,
+                  height: 488,
+                  child: ApplicationShell(
+                    currentDestination: AppDestination.sources,
+                    onSettingsSelected: _ignoreSettings,
+                    onSourcesSelected: _ignoreSources,
+                    onJobsSelected: _ignoreJobs,
+                    child: SourcesPage(
+                      onOpenRoot: _ignoreRoot,
+                      onOpenJob: _ignoreJob,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
       },
     );
 
@@ -1541,3 +1654,13 @@ void main() {
     });
   });
 }
+
+void _ignoreRoot(LibraryRootId _) {}
+
+void _ignoreJob(JobRunId _) {}
+
+void _ignoreSettings() {}
+
+void _ignoreSources() {}
+
+void _ignoreJobs() {}

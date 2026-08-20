@@ -330,6 +330,48 @@ void main() {
     expect(find.byKey(const ValueKey<String>('jobs-cancel-job')), findsNothing);
   });
 
+  testWidgets(
+    'job detail keeps actions in an adaptive header at compact 2x text',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      addTearDown(
+        tester.binding.platformDispatcher.clearTextScaleFactorTestValue,
+      );
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 640);
+      tester.binding.platformDispatcher.textScaleFactorTestValue = 2;
+
+      final jobId = JobRunId('a' * 32);
+      final container = createContainer(
+        FakeJobsApi(
+          details: {
+            jobId: jobDetail(id: 'a' * 32, state: JobLifecycleState.running),
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: JobDetailPage(
+              jobRunId: jobId,
+              onMissingJob: () {},
+              onOpenJob: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('jobs-detail-header')),
+        findsOneWidget,
+      );
+      expect(find.byType(Wrap), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('job detail renders independent multi-root outcomes', (
     tester,
   ) async {

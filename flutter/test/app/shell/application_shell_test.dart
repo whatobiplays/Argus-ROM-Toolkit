@@ -421,6 +421,49 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'live width transitions preserve the current routed branch identity',
+    (tester) async {
+      final runId = 'a' * 32;
+      final router = shellRouter('/jobs/$runId');
+      addTearDown(router.dispose);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        ProviderScope(child: MaterialApp.router(routerConfig: router)),
+      );
+      await tester.pumpAndSettle();
+
+      for (final width in <double>[599, 600, 839, 840, 1199, 1200, 599]) {
+        tester.view.physicalSize = Size(width, 800);
+        await tester.pumpAndSettle();
+        expect(
+          router.routerDelegate.currentConfiguration.uri.path,
+          '/jobs/$runId',
+          reason: 'route changed while window width became $width',
+        );
+      }
+    },
+  );
+
+  testWidgets('compact navigation remains usable at 2x text scale', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 900);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await pumpShell(tester, width: 320);
+
+    expect(tester.takeException(), isNull);
+    for (final label in <String>['Sources', 'Jobs', 'Settings']) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+  });
 }
 
 void _noop() {}

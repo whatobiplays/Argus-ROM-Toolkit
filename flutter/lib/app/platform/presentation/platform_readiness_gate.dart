@@ -41,8 +41,14 @@ class _PlatformReadinessGateState extends ConsumerState<PlatformReadinessGate>
   Widget build(BuildContext context) {
     final readiness = ref.watch(platformReadinessControllerProvider);
     return switch (readiness) {
-      PlatformReadinessLoading() => const _ReadinessScaffold(
-        child: Center(child: CircularProgressIndicator()),
+      PlatformReadinessLoading() => _ReadinessScaffold(
+        child: Center(
+          child: Semantics(
+            liveRegion: true,
+            label: 'Checking platform readiness',
+            child: const CircularProgressIndicator(),
+          ),
+        ),
       ),
       PlatformReadinessRequiresAllFilesAccess(:final failure) =>
         _ReadinessScaffold(
@@ -115,41 +121,54 @@ class _ReadinessScaffold extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child:
-                  child ??
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      if (title case final String heading) ...<Widget>[
-                        Text(
-                          heading,
-                          style: textTheme.headlineSmall,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      if (body case final String copy) ...<Widget>[
-                        Text(
-                          copy,
-                          style: textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                      if (primaryLabel case final String label)
-                        FilledButton(onPressed: onPrimary, child: Text(label)),
-                      if (secondaryLabel case final String label)
-                        TextButton(onPressed: onSecondary, child: Text(label)),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const verticalPadding = 32.0;
+            final minHeight = (constraints.maxHeight - verticalPadding * 2)
+                .clamp(0.0, double.infinity)
+                .toDouble();
+            final content =
+                child ??
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (title case final String heading) ...<Widget>[
+                      Text(
+                        heading,
+                        style: textTheme.headlineSmall,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
                     ],
-                  ),
-            ),
-          ),
+                    if (body case final String copy) ...<Widget>[
+                      Text(
+                        copy,
+                        style: textTheme.bodyLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                    if (primaryLabel case final String label)
+                      FilledButton(onPressed: onPrimary, child: Text(label)),
+                    if (secondaryLabel case final String label)
+                      TextButton(onPressed: onSecondary, child: Text(label)),
+                  ],
+                );
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: verticalPadding,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: minHeight,
+                  maxWidth: 480,
+                ),
+                child: Align(alignment: Alignment.center, child: content),
+              ),
+            );
+          },
         ),
       ),
     );

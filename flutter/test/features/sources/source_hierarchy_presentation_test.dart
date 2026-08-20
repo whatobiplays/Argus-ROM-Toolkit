@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/core/design_system/argus_theme.dart';
 import 'package:argus/features/sources/application/sources_state.dart';
+import 'package:argus/features/sources/presentation/hierarchy_drill_down_view.dart';
+import 'package:argus/features/sources/presentation/hierarchy_tree_view.dart';
 import 'package:argus/features/sources/presentation/source_hierarchy_browser.dart';
 import 'package:argus/features/sources/sources_composition.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +41,7 @@ Future<ProviderContainer> pumpBrowser(
   double width = 1200,
   double height = 800,
   double textScale = 1.0,
+  double? contentWidth,
   Stream<SourcesReconciliationDemand>? demands,
 }) async {
   tester.view.devicePixelRatio = 1.0;
@@ -66,7 +69,12 @@ Future<ProviderContainer> pumpBrowser(
       container: container,
       child: MaterialApp(
         theme: ArgusTheme.light,
-        home: Scaffold(body: SourceHierarchyBrowser(rootId: _rootId)),
+        home: Scaffold(
+          body: SizedBox(
+            width: contentWidth,
+            child: SourceHierarchyBrowser(rootId: _rootId),
+          ),
+        ),
       ),
     ),
   );
@@ -103,6 +111,114 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('A'), findsOneWidget);
     expect(find.text('B'), findsOneWidget);
+  });
+
+  testWidgets(
+    'system Back retreats Compact hierarchy before routed navigation',
+    (tester) async {
+      final dirA = dirEntry(_idA, 'A');
+      final api = FakeSourcesApi()
+        ..childrenByParent[''] = [dirA, fileEntry(_idB, 'B')]
+        ..childrenByParent[dirA.sourceEntryId.value] = [fileEntry(_idC, 'C')];
+      await pumpBrowser(tester, api, width: 400);
+
+      PopScope<void> popScope() =>
+          tester.widget<PopScope<void>>(find.byType(PopScope<void>));
+
+      expect(popScope().canPop, isTrue);
+      await tester.tap(find.byKey(const ValueKey('hierarchy-row-$_idA')));
+      await tester.pumpAndSettle();
+      expect(popScope().canPop, isFalse);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(find.text('C'), findsNothing);
+      expect(find.text('B'), findsOneWidget);
+      expect(popScope().canPop, isTrue);
+    },
+  );
+
+  testWidgets(
+    'local pane width chooses hierarchy presentation independently of window',
+    (tester) async {
+      final api = FakeSourcesApi()
+        ..childrenByParent[''] = [fileEntry(_idA, 'A')];
+      await pumpBrowser(tester, api, width: 1200, contentWidth: 500);
+
+      expect(find.byType(HierarchyDrillDownView), findsOneWidget);
+      expect(find.byType(HierarchyTreeView), findsNothing);
+    },
+  );
+
+  testWidgets('live pane width changes preserve hierarchy context', (
+    tester,
+  ) async {
+    final dirA = dirEntry(_idA, 'A');
+    final api = FakeSourcesApi()
+      ..childrenByParent[''] = [dirA, fileEntry(_idB, 'B')]
+      ..childrenByParent[dirA.sourceEntryId.value] = [fileEntry(_idC, 'C')];
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.reset);
+    final container = ProviderContainer(
+      overrides: [
+        sourcesApiProvider.overrideWithValue(api),
+        sourcesRuntimeContextProvider.overrideWith(
+          (ref) =>
+              const SourcesRuntimeContext.ready(runtimeInstanceId: _runtimeId),
+        ),
+        sourcesReconciliationDemandProvider.overrideWith(
+          (ref) => const SourcesReconciliationDemandSource(
+            Stream<SourcesReconciliationDemand>.empty(),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final paneWidth = ValueNotifier<double>(500);
+    addTearDown(paneWidth.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: ArgusTheme.light,
+          home: Scaffold(
+            body: ValueListenableBuilder<double>(
+              valueListenable: paneWidth,
+              builder: (context, width, child) => SizedBox(
+                width: width,
+                child: const SourceHierarchyBrowser(rootId: _rootId),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('hierarchy-row-$_idA')));
+    await tester.pumpAndSettle();
+    expect(find.text('C'), findsOneWidget);
+
+    paneWidth.value = 1000;
+    await tester.pumpAndSettle();
+    expect(find.byType(HierarchyTreeView), findsOneWidget);
+    expect(find.text('C'), findsOneWidget);
+    expect(
+      tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+      isTrue,
+    );
+
+    paneWidth.value = 500;
+    await tester.pumpAndSettle();
+    expect(find.byType(HierarchyDrillDownView), findsOneWidget);
+    expect(find.text('C'), findsOneWidget);
+    expect(
+      tester.widget<PopScope<void>>(find.byType(PopScope<void>)).canPop,
+      isFalse,
+    );
   });
 
   testWidgets('expanded tree expands and collapses without eager loads', (

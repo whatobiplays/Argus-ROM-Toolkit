@@ -31,14 +31,25 @@ class JobDetailPage extends ConsumerWidget {
       }
     });
     final content = detailState.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => Scaffold(
+        body: Center(
+          child: Semantics(
+            liveRegion: true,
+            label: 'Loading job details',
+            child: const CircularProgressIndicator(),
+          ),
+        ),
+      ),
       error: (error, stackTrace) => Scaffold(
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(JobsMessages.loadFailed),
+              Semantics(
+                liveRegion: true,
+                label: JobsMessages.loadFailed,
+                child: Text(JobsMessages.loadFailed),
+              ),
               const SizedBox(height: 12),
               FilledButton(
                 onPressed: () => ref
@@ -175,42 +186,64 @@ class _JobDetailContent extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child: ListView(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      JobsMessages.libraryScan,
-                      style: Theme.of(context).textTheme.headlineSmall,
+              LayoutBuilder(
+                builder: (context, constraints) => Wrap(
+                  key: const ValueKey<String>('jobs-detail-header'),
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: constraints.maxWidth,
+                      ),
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          JobsMessages.libraryScan,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
-                  ),
-                  if (controls.canCancel && !controlsBusy && !retryAmbiguous)
-                    OutlinedButton.icon(
-                      key: const ValueKey<String>('jobs-cancel-job'),
-                      onPressed: () => _confirmCancel(context),
-                      icon: const Icon(Icons.close),
-                      label: const Text(JobsMessages.cancelJob),
-                    ),
-                  if (controls.canRetry &&
-                      !controlsBusy &&
-                      !cancelAmbiguous &&
-                      !retryAmbiguous)
-                    const SizedBox(width: 8),
-                  if (controls.canRetry && !controlsBusy && !retryAmbiguous)
-                    FilledButton.icon(
-                      key: const ValueKey<String>('jobs-retry-job'),
-                      onPressed: () => _confirmRetry(context),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text(JobsMessages.retryJob),
-                    ),
-                  if (controlsBusy)
-                    const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                ],
+                    if (controls.canCancel && !controlsBusy && !retryAmbiguous)
+                      OutlinedButton.icon(
+                        key: const ValueKey<String>('jobs-cancel-job'),
+                        onPressed: () => _confirmCancel(context),
+                        icon: const Icon(Icons.close),
+                        label: const Text(JobsMessages.cancelJob),
+                      ),
+                    if (controls.canRetry &&
+                        !controlsBusy &&
+                        !cancelAmbiguous &&
+                        !retryAmbiguous)
+                      const SizedBox(width: 8),
+                    if (controls.canRetry && !controlsBusy && !retryAmbiguous)
+                      FilledButton.icon(
+                        key: const ValueKey<String>('jobs-retry-job'),
+                        onPressed: () => _confirmRetry(context),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text(JobsMessages.retryJob),
+                      ),
+                    if (controlsBusy)
+                      Semantics(
+                        liveRegion: true,
+                        label: 'Job action in progress',
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
-              Text(_lifecycleLabel(job.lifecycleState)),
+              Semantics(
+                liveRegion: true,
+                label: 'Job status: ${_lifecycleLabel(job.lifecycleState)}',
+                child: Text(_lifecycleLabel(job.lifecycleState)),
+              ),
               if (job.phase != null) ...[
                 const SizedBox(height: 8),
                 Text('${JobsMessages.phase}: ${job.phase}'),
@@ -274,8 +307,16 @@ class _JobDetailContent extends StatelessWidget {
                   ListTile(
                     dense: true,
                     leading: const Icon(Icons.folder_outlined),
-                    title: Text(root.displayName),
-                    subtitle: Text(root.safeLocationDisplay),
+                    title: Text(
+                      root.displayName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      root.safeLocationDisplay,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
               ],
               if (scanDetail.exclusions.isNotEmpty) ...[

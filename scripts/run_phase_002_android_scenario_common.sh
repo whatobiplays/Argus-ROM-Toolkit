@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Shared setup for focused P02-005 Android scenarios. Each scenario remains a
-# separate command and owns only its device fixture and evidence paths.
+# Shared setup for focused Phase 002 Android scenarios. Each scenario remains
+# a separate command and owns only its device fixture and evidence paths.
 
 # Returns records present in the current bounded command output but absent
 # from the baseline output. Both arguments are newline-delimited records.
@@ -87,6 +87,11 @@ argus_android_sm_help_supports_commands() {
 }
 
 argus_android_require_device() {
+  local require_arm64="${ARGUS_ANDROID_DEVICE_REQUIRE_ARM64:-true}"
+  if [[ "${require_arm64}" != true && "${require_arm64}" != false ]]; then
+    printf 'ARGUS_ANDROID_DEVICE_REQUIRE_ARM64 must be true or false\n' >&2
+    return 1
+  fi
   ARGUS_ANDROID_SCENARIO_ADB="${ARGUS_ANDROID_ADB:-$(command -v adb || true)}"
   if [[ -z "${ARGUS_ANDROID_SCENARIO_ADB}" ||
     ! -x "${ARGUS_ANDROID_SCENARIO_ADB}" ]]; then
@@ -133,8 +138,17 @@ argus_android_require_device() {
   local abi
   abi="$(${ARGUS_ANDROID_SCENARIO_ADB} -s "${ARGUS_ANDROID_SCENARIO_DEVICE}" \
     shell getprop ro.product.cpu.abi | tr -d '\r')"
-  if [[ "${abi}" != arm64-v8a ]]; then
+  export ARGUS_ANDROID_SCENARIO_ABI="${abi}"
+  if [[ "${require_arm64}" == true && "${abi}" != arm64-v8a ]]; then
     printf 'P02-005 native scenarios require ARM64; device reports %s\n' \
+      "${abi}" >&2
+    return 1
+  fi
+  # P02-006 records the actual emulator ABI and accepts either ABI packaged by
+  # the repository APK. Earlier P02-005 scenarios retain their ARM64 gate.
+  if [[ "${require_arm64}" == false &&
+    "${abi}" != arm64-v8a && "${abi}" != x86_64 ]]; then
+    printf 'P02-006 native scenarios require a packaged ABI (arm64-v8a or x86_64); device reports %s\n' \
       "${abi}" >&2
     return 1
   fi

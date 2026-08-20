@@ -35,6 +35,9 @@ class ArgusApplication : Application() {
     lateinit var diagnosticsShareBridge: ArgusDiagnosticsShareBridge
         private set
 
+    lateinit var qualificationBridge: ArgusQualificationBridge
+        private set
+
     /**
      * One app-private data root shared by the Android readiness bridge and the
      * backend standard-data bootstrap contract.
@@ -61,6 +64,9 @@ class ArgusApplication : Application() {
         )
         diagnosticsShareBridge = ArgusDiagnosticsShareBridge(
             application = this,
+            messenger = flutterEngine.dartExecutor.binaryMessenger,
+        )
+        qualificationBridge = ArgusQualificationBridge(
             messenger = flutterEngine.dartExecutor.binaryMessenger,
         )
         flutterEngine.dartExecutor.executeDartEntrypoint(

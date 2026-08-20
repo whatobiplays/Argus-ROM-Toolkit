@@ -64,11 +64,55 @@ void main() {
       contains('android.permission.FOREGROUND_SERVICE_DATA_SYNC'),
     );
     expect(manifest, contains('android:name=".ArgusApplication"'));
+    expect(manifest, contains('android:enableOnBackInvokedCallback="true"'));
+    expect(manifest, isNot(contains('windowOptOutEdgeToEdgeEnforcement')));
     expect(application, contains('foregroundExecutionHost'));
     expect(application, contains('foregroundExecutionBridge'));
     expect(
       RegExp(r'FlutterEngine\(this\)').allMatches(application),
       hasLength(1),
     );
+  });
+
+  test('Android Activity identity is qualification-only host evidence', () {
+    final kotlinRoot = 'android/app/src/main/kotlin/dev/argusromtoolkit/argus';
+    final qualification = File(
+      '$kotlinRoot/ArgusQualificationBridge.kt',
+    ).readAsStringSync();
+    final application = File(
+      '$kotlinRoot/ArgusApplication.kt',
+    ).readAsStringSync();
+    final activity = File('$kotlinRoot/MainActivity.kt').readAsStringSync();
+    final manifest = File(
+      'android/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
+    final hostApi = File(
+      'lib/app/platform/application/platform_host_api.dart',
+    ).readAsStringSync();
+    final androidHostApi = File(
+      'lib/app/platform/native/android_platform_host_api.dart',
+    ).readAsStringSync();
+
+    expect(qualification, contains('argus/android_qualification'));
+    expect(qualification, contains('readActivityInstanceId'));
+    expect(application, contains('qualificationBridge'));
+    expect(activity, contains('qualificationInstanceId'));
+    expect(activity, contains('qualificationBridge.attachActivity'));
+    // The stock Flutter configChanges opt-out makes rotation an in-place
+    // configuration change; the identity marker proves the expected behavior
+    // and the cached engine/runtime invariant on the API 36 emulator.
+    expect(
+      manifest,
+      contains(
+        'android:configChanges='
+        '"orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|'
+        'locale|layoutDirection|fontScale|screenLayout|density|uiMode"',
+      ),
+    );
+    // The qualification channel must never become product state or a second
+    // platform authority.
+    expect(hostApi, isNot(contains('android_qualification')));
+    expect(androidHostApi, isNot(contains('android_qualification')));
+    expect(hostApi, isNot(contains('readActivityInstanceId')));
   });
 }

@@ -274,21 +274,37 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.folder_open_outlined, size: 56),
-            const SizedBox(height: 16),
-            Text(
-              SourcesMessages.emptyTitle,
-              style: Theme.of(context).textTheme.titleLarge,
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight:
+                constraints.hasBoundedHeight && constraints.maxHeight > 48
+                ? constraints.maxHeight - 48
+                : 0,
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.folder_open_outlined, size: 56),
+                  const SizedBox(height: 16),
+                  Text(
+                    SourcesMessages.emptyTitle,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    SourcesMessages.emptyBody,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            const Text(SourcesMessages.emptyBody, textAlign: TextAlign.center),
-          ],
+          ),
         ),
       ),
     );

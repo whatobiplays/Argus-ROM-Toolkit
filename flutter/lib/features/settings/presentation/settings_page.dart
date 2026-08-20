@@ -43,7 +43,13 @@ class SettingsPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   if (state == null)
-                    const Center(child: CircularProgressIndicator())
+                    Center(
+                      child: Semantics(
+                        liveRegion: true,
+                        label: 'Loading appearance settings',
+                        child: const CircularProgressIndicator(),
+                      ),
+                    )
                   else
                     _AppearanceSection(state: state, notifier: notifier),
                 ],
@@ -92,15 +98,33 @@ class _AppearanceSection extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         if (save is AppearanceSaveOperationSaving)
-          Text('Saving appearance settings…', style: textTheme.bodyMedium),
+          Semantics(
+            liveRegion: true,
+            label: 'Saving appearance settings',
+            child: Text(
+              'Saving appearance settings…',
+              style: textTheme.bodyMedium,
+            ),
+          ),
         if (saveFailure != null)
-          Text(
-            appearanceSaveFailureMessage(saveFailure),
-            style: textTheme.bodyMedium,
+          Semantics(
+            liveRegion: true,
+            label: appearanceSaveFailureMessage(saveFailure),
+            child: Text(
+              appearanceSaveFailureMessage(saveFailure),
+              style: textTheme.bodyMedium,
+            ),
           ),
         if (synchronization is AppearanceSynchronizationUncertain) ...<Widget>[
           const SizedBox(height: 8),
-          Text(appearanceUncertainMessage, style: textTheme.bodyMedium),
+          Semantics(
+            liveRegion: true,
+            label: appearanceUncertainMessage,
+            child: Text(
+              appearanceUncertainMessage,
+              style: textTheme.bodyMedium,
+            ),
+          ),
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton(

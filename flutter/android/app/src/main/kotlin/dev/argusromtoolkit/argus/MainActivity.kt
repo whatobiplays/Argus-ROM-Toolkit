@@ -1,12 +1,17 @@
 package dev.argusromtoolkit.argus
 
 import android.content.Context
+import java.util.UUID
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
     private val argusApplication: ArgusApplication
         get() = application as ArgusApplication
+
+    // One opaque identity per Activity instance. It exists only for the
+    // qualification harness; it is not persisted and carries no product state.
+    private val qualificationInstanceId: String = UUID.randomUUID().toString()
 
     override fun provideFlutterEngine(context: Context): FlutterEngine =
         argusApplication.flutterEngine
@@ -17,11 +22,16 @@ class MainActivity : FlutterActivity() {
         super.onStart()
         argusApplication.platformBridge.attachActivity(this)
         argusApplication.diagnosticsShareBridge.attachActivity(this)
+        argusApplication.qualificationBridge.attachActivity(
+            this,
+            qualificationInstanceId,
+        )
     }
 
     override fun onStop() {
         argusApplication.diagnosticsShareBridge.detachActivity(this)
         argusApplication.platformBridge.detachActivity(this)
+        argusApplication.qualificationBridge.detachActivity(this)
         super.onStop()
     }
 

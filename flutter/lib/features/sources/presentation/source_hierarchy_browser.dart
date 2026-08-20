@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:argus/core/responsive/window_size_class.dart';
 import 'package:argus/features/sources/application/source_hierarchy_controller.dart';
@@ -36,10 +38,6 @@ class _SourceHierarchyBrowserState
   Widget build(BuildContext context) {
     final ref = this.ref;
     final hierarchy = ref.watch(sourceHierarchyControllerProvider(rootId));
-    final sizeClass = classifyWindowWidth(MediaQuery.sizeOf(context).width);
-    final useDrillDown =
-        sizeClass == WindowSizeClass.compact ||
-        sizeClass == WindowSizeClass.medium;
     return hierarchy.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stackTrace) => Center(
@@ -63,91 +61,145 @@ class _SourceHierarchyBrowserState
           // Local-width adaptation reuses the canonical responsive
           // classification so breakpoint literals stay single-sourced.
           final localClass = classifyWindowWidth(constraints.maxWidth);
+          final useDrillDown =
+              localClass == WindowSizeClass.compact ||
+              localClass == WindowSizeClass.medium;
           final narrowInspector = localClass == WindowSizeClass.compact;
           final selected = state.selectedEntryId;
-          if (useDrillDown) {
-            return Column(
-              children: [
-                Expanded(
-                  child: HierarchyDrillDownView(
-                    key: _drillDownKey,
-                    state: state,
-                    onOpenEntry: (entry) => ref
-                        .read(
-                          sourceHierarchyControllerProvider(rootId).notifier,
-                        )
-                        .openContainer(rootId, entry.sourceEntryId),
-                    onSelectEntry: (entry) {
-                      ref
-                          .read(
-                            sourceHierarchyControllerProvider(rootId).notifier,
-                          )
-                          .select(rootId, entry.sourceEntryId);
-                      if (narrowInspector) {
-                        _showTransientInspector(context, entry.sourceEntryId);
-                      }
-                    },
-                    onBack: () => ref
-                        .read(
-                          sourceHierarchyControllerProvider(rootId).notifier,
-                        )
-                        .goBack(rootId),
-                    onLoadMore: () => ref
-                        .read(
-                          sourceHierarchyControllerProvider(rootId).notifier,
-                        )
-                        .loadMore(rootId, _currentScopeKey(state)),
-                    onRetry: () => ref
-                        .read(
-                          sourceHierarchyControllerProvider(rootId).notifier,
-                        )
-                        .retry(rootId, _currentScopeKey(state)),
+          return PopScope<void>(
+            // A non-empty Compact/Medium drill-down path owns the next Back
+            // action. Wide tree presentation has no local drill-down surface,
+            // so a live width change restores the routed navigator as the
+            // Back authority until Compact/Medium is shown again.
+            canPop: !useDrillDown || state.compactDrillDownPath.isEmpty,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop ||
+                  !useDrillDown ||
+                  state.compactDrillDownPath.isEmpty) {
+                return;
+              }
+              unawaited(
+                ref
+                    .read(sourceHierarchyControllerProvider(rootId).notifier)
+                    .goBack(rootId),
+              );
+            },
+            child: useDrillDown
+                ? Column(
+                    children: [
+                      Expanded(
+                        child: HierarchyDrillDownView(
+                          key: _drillDownKey,
+                          state: state,
+                          onOpenEntry: (entry) => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .openContainer(rootId, entry.sourceEntryId),
+                          onSelectEntry: (entry) {
+                            ref
+                                .read(
+                                  sourceHierarchyControllerProvider(
+                                    rootId,
+                                  ).notifier,
+                                )
+                                .select(rootId, entry.sourceEntryId);
+                            if (narrowInspector) {
+                              _showTransientInspector(
+                                context,
+                                entry.sourceEntryId,
+                              );
+                            }
+                          },
+                          onBack: () => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .goBack(rootId),
+                          onLoadMore: () => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .loadMore(rootId, _currentScopeKey(state)),
+                          onRetry: () => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .retry(rootId, _currentScopeKey(state)),
+                        ),
+                      ),
+                      if (!narrowInspector && selected != null)
+                        SizedBox(
+                          height: 280,
+                          child: SourceEntryInspector(
+                            rootId: rootId,
+                            entryId: selected,
+                          ),
+                        ),
+                    ],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: HierarchyTreeView(
+                          state: state,
+                          onExpand: (entry) => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .expand(rootId, entry.sourceEntryId),
+                          onCollapse: (entry) => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .collapse(rootId, entry.sourceEntryId),
+                          onSelect: (entry) => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .select(rootId, entry.sourceEntryId),
+                          onLoadMore: (parentKey) => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .loadMore(rootId, parentKey),
+                          onRetry: (parentKey) => ref
+                              .read(
+                                sourceHierarchyControllerProvider(
+                                  rootId,
+                                ).notifier,
+                              )
+                              .retry(rootId, parentKey),
+                        ),
+                      ),
+                      if (selected != null)
+                        SizedBox(
+                          width: 300,
+                          child: SourceEntryInspector(
+                            rootId: rootId,
+                            entryId: selected,
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-                if (!narrowInspector && selected != null)
-                  SizedBox(
-                    height: 280,
-                    child: SourceEntryInspector(
-                      rootId: rootId,
-                      entryId: selected,
-                    ),
-                  ),
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                flex: 3,
-                child: HierarchyTreeView(
-                  state: state,
-                  onExpand: (entry) => ref
-                      .read(sourceHierarchyControllerProvider(rootId).notifier)
-                      .expand(rootId, entry.sourceEntryId),
-                  onCollapse: (entry) => ref
-                      .read(sourceHierarchyControllerProvider(rootId).notifier)
-                      .collapse(rootId, entry.sourceEntryId),
-                  onSelect: (entry) => ref
-                      .read(sourceHierarchyControllerProvider(rootId).notifier)
-                      .select(rootId, entry.sourceEntryId),
-                  onLoadMore: (parentKey) => ref
-                      .read(sourceHierarchyControllerProvider(rootId).notifier)
-                      .loadMore(rootId, parentKey),
-                  onRetry: (parentKey) => ref
-                      .read(sourceHierarchyControllerProvider(rootId).notifier)
-                      .retry(rootId, parentKey),
-                ),
-              ),
-              if (selected != null)
-                SizedBox(
-                  width: 300,
-                  child: SourceEntryInspector(
-                    rootId: rootId,
-                    entryId: selected,
-                  ),
-                ),
-            ],
           );
         },
       ),

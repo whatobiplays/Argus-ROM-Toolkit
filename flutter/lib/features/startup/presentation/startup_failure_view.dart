@@ -150,11 +150,15 @@ class _StartupFailureViewState extends ConsumerState<StartupFailureView> {
                     ),
                     const SizedBox(height: 24),
                     if (mutationRunning) ...<Widget>[
-                      const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                      Center(
+                        child: Semantics(
+                          liveRegion: true,
+                          label: 'Startup recovery in progress',
+                          child: const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),

@@ -29,8 +29,13 @@ class JobsPage extends ConsumerWidget {
               const SizedBox(height: 16),
               Expanded(
                 child: listState.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
+                  loading: () => Center(
+                    child: Semantics(
+                      liveRegion: true,
+                      label: 'Loading jobs',
+                      child: const CircularProgressIndicator(),
+                    ),
+                  ),
                   error: (error, stackTrace) => _LoadFailure(
                     onRetry: () =>
                         ref.read(jobsListControllerProvider.notifier).refresh(),
@@ -72,18 +77,24 @@ class _JobsContent extends StatelessWidget {
       key: const ValueKey<String>('jobs-list'),
       children: [
         if (state.activeJobs.isNotEmpty) ...[
-          Text(
-            JobsMessages.active,
-            style: Theme.of(context).textTheme.titleMedium,
+          Semantics(
+            header: true,
+            child: Text(
+              JobsMessages.active,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
           for (final job in state.activeJobs)
             _JobRow(job: job, onOpenJob: onOpenJob),
           const SizedBox(height: 16),
         ],
         if (state.recentJobs.isNotEmpty) ...[
-          Text(
-            JobsMessages.recent,
-            style: Theme.of(context).textTheme.titleMedium,
+          Semantics(
+            header: true,
+            child: Text(
+              JobsMessages.recent,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
           for (final job in state.recentJobs)
             _JobRow(job: job, onOpenJob: onOpenJob),
@@ -98,10 +109,14 @@ class _JobsContent extends StatelessWidget {
                   : JobsMessages.loadMore,
             ),
             trailing: state.loadingMore
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                ? Semantics(
+                    liveRegion: true,
+                    label: 'Loading more jobs',
+                    child: const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   )
                 : const Icon(Icons.expand_more),
             onTap: state.loadingMore ? null : onLoadMore,
@@ -127,11 +142,13 @@ class _JobRow extends StatelessWidget {
       leading: Icon(
         job.lifecycleState.isTerminal ? Icons.check_circle_outline : Icons.sync,
       ),
-      title: Text(label),
+      title: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         job.cancellationRequested && !job.lifecycleState.isTerminal
             ? '$stateLabel (cancelling)'
             : stateLabel,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       ),
       isThreeLine: false,
       onTap: () => onOpenJob(job.jobRunId),
@@ -176,7 +193,11 @@ class _LoadFailure extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(JobsMessages.loadFailed),
+          Semantics(
+            liveRegion: true,
+            label: JobsMessages.loadFailed,
+            child: Text(JobsMessages.loadFailed),
+          ),
           const SizedBox(height: 12),
           FilledButton(
             onPressed: onRetry,

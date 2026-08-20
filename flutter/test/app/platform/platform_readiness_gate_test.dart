@@ -89,6 +89,28 @@ void main() {
     expect(api.snapshotReads, greaterThan(readsBeforeRetry));
   });
 
+  testWidgets('readiness actions remain reachable in a compact 2x window', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    addTearDown(
+      tester.binding.platformDispatcher.clearTextScaleFactorTestValue,
+    );
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 360);
+    tester.binding.platformDispatcher.textScaleFactorTestValue = 2;
+
+    await pumpGate(tester);
+
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    final actionFinder = find.text('Open Android settings');
+    await tester.ensureVisible(actionFinder);
+    await tester.pump();
+    final action = tester.getRect(actionFinder);
+    expect(action.bottom, lessThanOrEqualTo(360));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('resume triggers an authoritative refresh', (tester) async {
     await pumpGate(tester);
     final readsBeforeResume = api.snapshotReads;

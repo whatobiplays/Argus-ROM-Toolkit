@@ -27,7 +27,8 @@ final class MountedLocalFilesystemVolumeFact {
 
 /// FRB 2.12 adapter translating generated transport types into pure-Dart
 /// client models and typed application/transport failures.
-final class FrbArgusClientGateway implements ArgusClientGateway {
+final class FrbArgusClientGateway
+    implements ArgusClientGateway, DiagnosticsSharingGateway {
   FrbArgusClientGateway({
     frb.RustLibApi? api,
     Future<void> Function()? initializeNative,
@@ -36,6 +37,7 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
     Stream<dto.RuntimeEventDto> Function()? eventStreamFactory,
     Future<List<MountedLocalFilesystemVolumeFact>> Function()?
     mountedVolumesReader,
+    Future<void> Function()? publishCompletedDiagnostics,
   }) : // The public seam keeps callers independent of private field names.
        // ignore: prefer_initializing_formals
        _api = api,
@@ -47,7 +49,9 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
        // ignore: prefer_initializing_formals
        _eventStreamFactory = eventStreamFactory,
        // ignore: prefer_initializing_formals
-       _mountedVolumesReader = mountedVolumesReader;
+       _mountedVolumesReader = mountedVolumesReader,
+       // ignore: prefer_initializing_formals
+       _publishCompletedDiagnostics = publishCompletedDiagnostics;
 
   final frb.RustLibApi? _api;
   final Future<void> Function() _initializeNative;
@@ -56,6 +60,7 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
   final Stream<dto.RuntimeEventDto> Function()? _eventStreamFactory;
   final Future<List<MountedLocalFilesystemVolumeFact>> Function()?
   _mountedVolumesReader;
+  final Future<void> Function()? _publishCompletedDiagnostics;
   Future<void>? _initialization;
   Future<void>? _mountRefresh;
 
@@ -408,6 +413,29 @@ final class FrbArgusClientGateway implements ArgusClientGateway {
       ),
     ),
   );
+
+  @override
+  bool get supportsDiagnosticsSharing => _publishCompletedDiagnostics != null;
+
+  @override
+  Future<DiagnosticsExport> exportStartupDiagnosticsForSharing(
+    RuntimeInstanceId expected,
+  ) => _call(() async {
+    final publish = _publishCompletedDiagnostics;
+    if (publish == null) {
+      throw const TransportFailure(
+        'Diagnostics sharing is unavailable',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    final export = diagnosticsExportFromDto(
+      await _rustApi.crateExportStartupDiagnosticsForSharing(
+        expectedRuntimeInstanceId: expected.value,
+      ),
+    );
+    await publish();
+    return export;
+  });
 
   @override
   Future<TechnicalDetails> startupTechnicalDetails(

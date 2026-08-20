@@ -194,6 +194,15 @@ Future<DiagnosticsExportDto> exportStartupDiagnostics({
   request: request,
 );
 
+/// Creates the backend-owned diagnostics artifact without accepting a
+/// destination from the embedding layer. Android publishes the completed
+/// artifact through its scoped native share boundary.
+Future<DiagnosticsExportDto> exportStartupDiagnosticsForSharing({
+  required String expectedRuntimeInstanceId,
+}) => RustLib.instance.api.crateExportStartupDiagnosticsForSharing(
+  expectedRuntimeInstanceId: expectedRuntimeInstanceId,
+);
+
 /// Returns copy-safe technical details for a failed startup generation.
 Future<TechnicalDetailsDto> startupTechnicalDetails({
   required String expectedRuntimeInstanceId,

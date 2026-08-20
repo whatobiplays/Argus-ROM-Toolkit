@@ -424,6 +424,32 @@ void main() {
   );
 
   test(
+    'Android diagnostics sharing exports through Rust before native publication',
+    () async {
+      final api = _RecordingRustLibApi();
+      var publicationCalls = 0;
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+        publishCompletedDiagnostics: () async {
+          publicationCalls++;
+        },
+      );
+
+      final export = await gateway.exportStartupDiagnosticsForSharing(
+        const RuntimeInstanceId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      );
+
+      expect(api.lastCall, 'crateExportStartupDiagnosticsForSharing');
+      expect(api.lastNamedArguments?.keys, {
+        const Symbol('expectedRuntimeInstanceId'),
+      });
+      expect(export.destinationClassification, 'backend_owned_diagnostics');
+      expect(publicationCalls, 1);
+    },
+  );
+
+  test(
     'host-standard Android data directory is used without an override',
     () async {
       final api = _RecordingRustLibApi();
@@ -975,6 +1001,7 @@ void main() {
 final class _RecordingRustLibApi implements frb.RustLibApi {
   String? lastCall;
   Object? lastArgument;
+  Map<Symbol, dynamic>? lastNamedArguments;
 
   @override
   dynamic noSuchMethod(Invocation invocation) {
@@ -987,6 +1014,15 @@ final class _RecordingRustLibApi implements frb.RustLibApi {
       lastArgument = invocation.namedArguments[const Symbol('dataDirectory')];
     } else if (method == #crateInitialize) {
       lastCall = 'crateInitialize';
+    } else if (method == #crateExportStartupDiagnosticsForSharing) {
+      lastCall = 'crateExportStartupDiagnosticsForSharing';
+      lastNamedArguments = invocation.namedArguments;
+      return Future<dto.DiagnosticsExportDto>.value(
+        const dto.DiagnosticsExportDto(
+          outcome: dto.DiagnosticsExportOutcomeDto.created,
+          destinationClassification: 'backend_owned_diagnostics',
+        ),
+      );
     }
     return Future<dto.RuntimeStateDto>.value(
       const dto.RuntimeStateDto(

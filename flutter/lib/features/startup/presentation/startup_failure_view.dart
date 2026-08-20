@@ -415,6 +415,13 @@ class _StartupFailureViewState extends ConsumerState<StartupFailureView> {
   }
 
   Future<void> _exportDiagnostics(BuildContext context) async {
+    final capabilities = ref.read(startupPresentationCapabilitiesProvider);
+    if (capabilities.diagnosticsSharing) {
+      await ref
+          .read(startupControllerProvider.notifier)
+          .exportDiagnosticsForSharing();
+      return;
+    }
     final picker = ref.read(diagnosticsDestinationPickerProvider);
     final destination = await picker(
       suggestedName: 'argus-startup-diagnostics.zip',

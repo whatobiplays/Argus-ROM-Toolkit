@@ -194,6 +194,25 @@ class StartupController extends _$StartupController {
 
   /// Exports sanitized backend diagnostics to a presentation-approved path.
   Future<void> exportDiagnostics({required String destination}) async {
+    await _exportDiagnosticsRequest(
+      (expectedId) => ref
+          .read(diagnosticsApiProvider)
+          .exportStartupDiagnostics(expectedId, destination),
+    );
+  }
+
+  /// Exports the backend-owned diagnostics artifact and asks the host to
+  /// publish it through its scoped system share surface. No path or URI is
+  /// returned to Flutter.
+  Future<void> exportDiagnosticsForSharing() async {
+    final sharing = ref.read(diagnosticsSharingApiProvider);
+    if (sharing == null) return;
+    await _exportDiagnosticsRequest(sharing.exportStartupDiagnosticsForSharing);
+  }
+
+  Future<void> _exportDiagnosticsRequest(
+    Future<DiagnosticsExport> Function(RuntimeInstanceId expectedId) request,
+  ) async {
     final current = state.value;
     if (current is! StartupStateStartupFailed || _mutationInFlight) return;
     if (current.exportOperation is ExportOperationStateRunning ||
@@ -206,9 +225,7 @@ class StartupController extends _$StartupController {
       current.copyWith(exportOperation: const ExportOperationState.running()),
     );
     try {
-      final result = await ref
-          .read(diagnosticsApiProvider)
-          .exportStartupDiagnostics(expectedId, destination);
+      final result = await request(expectedId);
       if (!ref.mounted) return;
       final latest = state.value;
       if (latest is! StartupStateStartupFailed ||

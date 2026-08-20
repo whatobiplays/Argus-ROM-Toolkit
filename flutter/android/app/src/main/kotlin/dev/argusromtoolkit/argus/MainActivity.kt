@@ -16,9 +16,11 @@ class MainActivity : FlutterActivity() {
     override fun onStart() {
         super.onStart()
         argusApplication.platformBridge.attachActivity(this)
+        argusApplication.diagnosticsShareBridge.attachActivity(this)
     }
 
     override fun onStop() {
+        argusApplication.diagnosticsShareBridge.detachActivity(this)
         argusApplication.platformBridge.detachActivity(this)
         super.onStop()
     }

@@ -21,9 +21,9 @@ SourcesApi sourcesApi(Ref ref) {
 /// App-composition switches for presentation-only Sources capabilities.
 ///
 /// The switches describe which existing workflows the current host may show;
-/// they do not replace backend admission or query authority. Desktop keeps all
-/// existing workflows enabled. Android enables the single-root surface while
-/// deferring multi-root Scan All and active-root cancel-and-remove.
+/// they do not replace backend admission or query authority. Desktop and the
+/// Android host enable the existing scan and active-root removal workflows;
+/// Android additionally enables its Argus-owned local-filesystem browser.
 final class SourcesPresentationCapabilities {
   const SourcesPresentationCapabilities({
     this.singleRootScanExecution = true,

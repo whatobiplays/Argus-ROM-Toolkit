@@ -17,11 +17,20 @@ import 'sources_test_fakes.dart';
 const _rootId = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 const _runtimeId = RuntimeInstanceId('1234567890abcdef1234567890abcdef');
 const _jobId = JobRunId('11111111111111111111111111111111');
+const _otherRootId = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
 
 LibraryRoot _root({LibraryRootActiveScan? activeScan}) => LibraryRoot(
   id: _rootId,
   displayName: 'Games',
   safeLocationPresentation: '/library/Games',
+  availability: LibraryRootAvailability.available,
+  activeScan: activeScan,
+);
+
+LibraryRoot _otherRoot({LibraryRootActiveScan? activeScan}) => LibraryRoot(
+  id: _otherRootId,
+  displayName: 'Other Games',
+  safeLocationPresentation: '/library/Other Games',
   availability: LibraryRootAvailability.available,
   activeScan: activeScan,
 );
@@ -93,7 +102,7 @@ Future<void> _pumpDetail(
 }
 
 void main() {
-  testWidgets('Android single-root capabilities hide Scan All', (tester) async {
+  testWidgets('disabled Sources capabilities hide Scan All', (tester) async {
     final api = FakeSourcesApi(roots: [_root()]);
     final container = _container(
       api,
@@ -282,51 +291,68 @@ void main() {
     },
   );
 
-  testWidgets('known active removal opens Cancel Scan & Remove directly', (
-    tester,
-  ) async {
-    final api = FakeSourcesApi(
-      roots: [
-        _root(
-          activeScan: const LibraryRootActiveScan(
-            scanRunId: '22222222222222222222222222222222',
-            jobRunId: '11111111111111111111111111111111',
-            owningJobRootCount: 2,
-          ),
+  testWidgets(
+    'multi-root Scan All cancellation stays job-scoped before removing one root',
+    (tester) async {
+      final sibling = _otherRoot(
+        activeScan: const LibraryRootActiveScan(
+          scanRunId: '33333333333333333333333333333333',
+          jobRunId: '11111111111111111111111111111111',
+          owningJobRootCount: 2,
         ),
-      ],
-    );
-    final jobsApi = FakeJobsApi();
-    final cancelledJobs = <JobRunId>[];
-    final removedRoots = <LibraryRootId>[];
-    jobsApi.onCancel = (jobRunId) {
-      cancelledJobs.add(jobRunId);
-      api.roots = [_root()];
-      return CancelJobResult.cancellationRequested;
-    };
-    api.onRemove = (rootId) {
-      removedRoots.add(rootId);
-      return const RemoveLibraryRootResult.removed();
-    };
-    final container = _container(api, jobsApi);
-    var removed = false;
-    await _pumpDetail(tester, container, onRemoved: () => removed = true);
+      );
+      final api = FakeSourcesApi(
+        roots: [
+          _root(
+            activeScan: const LibraryRootActiveScan(
+              scanRunId: '22222222222222222222222222222222',
+              jobRunId: '11111111111111111111111111111111',
+              owningJobRootCount: 2,
+            ),
+          ),
+          sibling,
+        ],
+      );
+      final jobsApi = FakeJobsApi();
+      final cancelledJobs = <JobRunId>[];
+      final removedRoots = <LibraryRootId>[];
+      jobsApi.onCancel = (jobRunId) {
+        cancelledJobs.add(jobRunId);
+        // The authoritative job reconciliation settles the owning Scan All
+        // job for this root while the sibling remains owned by that job until
+        // its own projection settles independently.
+        api.roots = [_root(), sibling];
+        return CancelJobResult.cancellationRequested;
+      };
+      api.onRemove = (rootId) {
+        removedRoots.add(rootId);
+        api.roots = [
+          for (final root in api.roots)
+            if (root.id != rootId) root,
+        ];
+        return const RemoveLibraryRootResult.removed();
+      };
+      final container = _container(api, jobsApi);
+      var removed = false;
+      await _pumpDetail(tester, container, onRemoved: () => removed = true);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sources-remove-library-folder')),
-    );
-    await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('sources-remove-library-folder')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Cancel Scan & Remove Library Folder?'), findsOneWidget);
-    expect(find.textContaining('other 1 folder'), findsOneWidget);
+      expect(find.text('Cancel Scan & Remove Library Folder?'), findsOneWidget);
+      expect(find.textContaining('other 1 folder'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('cancel-remove-confirm')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('cancel-remove-confirm')));
+      await tester.pumpAndSettle();
 
-    expect(cancelledJobs, [_jobId]);
-    expect(removedRoots, [_rootId]);
-    expect(removed, isTrue);
-  });
+      expect(cancelledJobs, [_jobId]);
+      expect(removedRoots, [_rootId]);
+      expect(api.roots, [sibling]);
+      expect(removed, isTrue);
+    },
+  );
 
   testWidgets('definite cancel failure stops removal', (tester) async {
     final api = FakeSourcesApi(

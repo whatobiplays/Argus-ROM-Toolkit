@@ -17,6 +17,14 @@ final class ArgusClient implements ClientBootstrap {
     sources = _SourcesApi(this);
     jobs = _JobsApi(this);
     diagnostics = _DiagnosticsApi(this);
+    final DiagnosticsSharingGateway? sharingGateway =
+        gateway is DiagnosticsSharingGateway
+        ? gateway as DiagnosticsSharingGateway
+        : null;
+    diagnosticsSharing =
+        sharingGateway != null && sharingGateway.supportsDiagnosticsSharing
+        ? _DiagnosticsSharingApi(this)
+        : null;
     events = _EventsApi(this);
   }
 
@@ -38,6 +46,10 @@ final class ArgusClient implements ClientBootstrap {
 
   /// Failed-startup diagnostics operations owned by this root client.
   late final DiagnosticsApi diagnostics;
+
+  /// Optional host-owned diagnostics publication operation. Desktop clients
+  /// intentionally expose null and retain the destination-based API above.
+  late final DiagnosticsSharingApi? diagnosticsSharing;
 
   /// Mapped runtime notifications owned by this root client.
   late final EventsApi events;
@@ -272,6 +284,25 @@ final class ArgusClient implements ClientBootstrap {
     RuntimeInstanceId expected,
     String destination,
   ) => _request(() => _gateway.exportStartupDiagnostics(expected, destination));
+
+  Future<DiagnosticsExport> _exportStartupDiagnosticsForSharing(
+    RuntimeInstanceId expected,
+  ) {
+    final sharingGateway = _gateway is DiagnosticsSharingGateway
+        ? _gateway as DiagnosticsSharingGateway
+        : null;
+    if (sharingGateway == null || !sharingGateway.supportsDiagnosticsSharing) {
+      return Future<DiagnosticsExport>.error(
+        const TransportFailure(
+          'Diagnostics sharing is unavailable',
+          kind: TransportFailureKind.contractMismatch,
+        ),
+      );
+    }
+    return _request(
+      () => sharingGateway.exportStartupDiagnosticsForSharing(expected),
+    );
+  }
 
   Future<TechnicalDetails> _startupTechnicalDetails(
     RuntimeInstanceId expected,
@@ -737,6 +768,17 @@ final class _DiagnosticsApi implements DiagnosticsApi {
   @override
   Future<void> openStartupDataDirectory(RuntimeInstanceId expected) =>
       _client._openStartupDataDirectory(expected);
+}
+
+final class _DiagnosticsSharingApi implements DiagnosticsSharingApi {
+  _DiagnosticsSharingApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<DiagnosticsExport> exportStartupDiagnosticsForSharing(
+    RuntimeInstanceId expected,
+  ) => _client._exportStartupDiagnosticsForSharing(expected);
 }
 
 final class _EventsApi implements EventsApi {

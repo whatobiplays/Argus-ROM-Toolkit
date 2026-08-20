@@ -1,6 +1,7 @@
 package dev.argusromtoolkit.argus
 
 import android.app.Application
+import java.io.File
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.embedding.engine.dart.DartExecutor
@@ -31,6 +32,16 @@ class ArgusApplication : Application() {
     lateinit var foregroundExecutionBridge: ArgusForegroundExecutionBridge
         private set
 
+    lateinit var diagnosticsShareBridge: ArgusDiagnosticsShareBridge
+        private set
+
+    /**
+     * One app-private data root shared by the Android readiness bridge and the
+     * backend standard-data bootstrap contract.
+     */
+    val standardApplicationDataDirectory: File
+        get() = File(filesDir, "argus")
+
     override fun onCreate() {
         super.onCreate()
         flutterEngine = FlutterEngine(this)
@@ -46,6 +57,10 @@ class ArgusApplication : Application() {
         foregroundExecutionHost = ArgusForegroundExecutionHost(this)
         foregroundExecutionBridge = ArgusForegroundExecutionBridge(
             host = foregroundExecutionHost,
+            messenger = flutterEngine.dartExecutor.binaryMessenger,
+        )
+        diagnosticsShareBridge = ArgusDiagnosticsShareBridge(
+            application = this,
             messenger = flutterEngine.dartExecutor.binaryMessenger,
         )
         flutterEngine.dartExecutor.executeDartEntrypoint(

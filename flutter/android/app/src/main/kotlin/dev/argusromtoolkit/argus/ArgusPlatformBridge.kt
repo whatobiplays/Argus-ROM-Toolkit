@@ -13,7 +13,6 @@ import android.provider.Settings
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import java.io.File
 
 /**
  * Narrow Android platform channel for Slice P02-001.
@@ -89,7 +88,7 @@ class ArgusPlatformBridge(
             "allFilesAccessGranted" to Environment.isExternalStorageManager(),
             "notificationAuthorization" to notificationAuthorizationWireValue(),
             "standardApplicationDataDirectory" to
-                File(application.filesDir, "argus").absolutePath,
+                application.standardApplicationDataDirectory.absolutePath,
         )
 
     private fun notificationAuthorizationWireValue(): String {

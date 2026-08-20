@@ -23,6 +23,26 @@ pub(crate) fn export_with_contributors(
     trace_id: argus_application::TraceId,
     extra_contributors: Vec<Box<dyn DiagnosticContributor>>,
 ) -> Result<DiagnosticsExport, ApplicationError> {
+    export_with_contributors_classified(
+        diagnostics,
+        generation_id,
+        destination,
+        trace_id,
+        "user_selected",
+        extra_contributors,
+    )
+}
+
+/// Exports diagnostics with a caller-owned safe destination classification.
+/// The classification is a closed backend value and never contains a path.
+pub(crate) fn export_with_contributors_classified(
+    diagnostics: &FailedStartupDiagnostics,
+    generation_id: RuntimeInstanceId,
+    destination: &Path,
+    trace_id: argus_application::TraceId,
+    destination_classification: &'static str,
+    extra_contributors: Vec<Box<dyn DiagnosticContributor>>,
+) -> Result<DiagnosticsExport, ApplicationError> {
     let mut contributors: Vec<Box<dyn DiagnosticContributor>> = vec![
         Box::new(RuntimeContributor {
             diagnostics,
@@ -79,7 +99,7 @@ pub(crate) fn export_with_contributors(
         } else {
             DiagnosticsExportOutcome::Created
         },
-        destination_classification: "user_selected",
+        destination_classification,
     })
 }
 

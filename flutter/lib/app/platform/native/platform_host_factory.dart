@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import '../application/local_filesystem_platform_api.dart';
+import '../application/diagnostics_publication_api.dart';
 import '../application/foreground_execution_host_api.dart';
 import '../application/platform_host_api.dart';
 import 'android_foreground_execution_host_api.dart';
 import 'android_local_filesystem_platform_api.dart';
+import 'android_diagnostics_publication_api.dart';
 import 'android_platform_host_api.dart';
 import 'desktop_platform_host_api.dart';
 
@@ -15,12 +17,14 @@ final class PlatformHostComposition {
     required this.requiresReadinessGate,
     this.localFilesystemApi,
     this.foregroundExecutionHostApi,
+    this.diagnosticsPublicationApi,
   });
 
   final PlatformHostApi api;
   final bool requiresReadinessGate;
   final LocalFilesystemPlatformApi? localFilesystemApi;
   final ForegroundExecutionHostApi? foregroundExecutionHostApi;
+  final DiagnosticsPublicationApi? diagnosticsPublicationApi;
 }
 
 /// Sole production OS-selection point for platform hosting.
@@ -30,6 +34,8 @@ PlatformHostComposition createPlatformHostComposition() {
       api: MethodChannelAndroidPlatformHostApi(),
       requiresReadinessGate: true,
       localFilesystemApi: MethodChannelAndroidLocalFilesystemPlatformApi(),
+      diagnosticsPublicationApi:
+          MethodChannelAndroidDiagnosticsPublicationApi(),
       foregroundExecutionHostApi:
           MethodChannelAndroidForegroundExecutionHostApi(),
     );

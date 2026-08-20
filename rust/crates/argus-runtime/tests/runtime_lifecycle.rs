@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::{fs::File, io::Read};
 
 use argus_application::{
     AppearanceSettings, OperationContext, OperationName, SubsystemName, ThemeMode,
@@ -7,7 +8,8 @@ use argus_infrastructure::sqlite::{DEFAULT_QUEUE_CAPACITY, SqliteDatabaseExecuto
 use argus_runtime::{
     ApplicationHost, InProcessNotificationSink, KernelBootstrapOptions, NotificationSinkError,
     RecoveryActionKind, RuntimeEventPayload, RuntimeEventPublisher, RuntimeLifecycle,
-    RuntimeNotificationSink, RuntimeState, StartupPhase,
+    RuntimeNotificationSink, RuntimeState, STARTUP_DIAGNOSTICS_ARTIFACT_RELATIVE_PATH,
+    StartupPhase,
 };
 use tempfile::tempdir;
 
@@ -428,6 +430,57 @@ fn unavailable_diagnostics_are_rejected_for_environment_failure() {
     assert!(host.startup_technical_details(id).is_err());
     let archive_path = directory.path().join("startup-diagnostics.zip");
     assert!(host.export_startup_diagnostics(id, &archive_path).is_err());
+}
+
+#[test]
+fn sharing_diagnostics_atomically_publishes_the_backend_owned_artifact() {
+    let (directory, host) = malformed_settings_host();
+    let failed = host.current_state();
+    let id = failed.runtime_instance_id();
+
+    let export = host
+        .export_startup_diagnostics_for_sharing(id)
+        .expect("backend-owned diagnostics export");
+    assert_eq!(
+        export.destination_classification,
+        "backend_owned_diagnostics"
+    );
+    assert!(
+        !export
+            .destination_classification
+            .contains(directory.path().to_string_lossy().as_ref())
+    );
+
+    let artifact = directory
+        .path()
+        .join(STARTUP_DIAGNOSTICS_ARTIFACT_RELATIVE_PATH);
+    assert!(artifact.is_file(), "completed artifact must be present");
+
+    let publication_directory = artifact.parent().expect("artifact parent");
+    let temporary_artifacts = std::fs::read_dir(publication_directory)
+        .expect("publication directory")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".startup-diagnostics-v1.zip.")
+        })
+        .count();
+    assert_eq!(
+        temporary_artifacts, 0,
+        "atomic staging files must be removed"
+    );
+
+    let mut archive = zip::ZipArchive::new(File::open(&artifact).expect("archive file"))
+        .expect("Rust must publish a valid ZIP archive");
+    let mut manifest = String::new();
+    archive
+        .by_name("manifest.json")
+        .expect("manifest")
+        .read_to_string(&mut manifest)
+        .expect("manifest text");
+    assert!(manifest.contains("\"trace_id\""));
 }
 
 #[test]

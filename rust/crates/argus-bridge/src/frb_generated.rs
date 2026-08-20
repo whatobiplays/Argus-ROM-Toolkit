@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1228940759;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -393897843;
 
 // Section: executor
 
@@ -277,6 +277,41 @@ fn wire__crate__export_startup_diagnostics_impl(
                     let output_ok = crate::export_startup_diagnostics(
                         api_expected_runtime_instance_id,
                         api_request,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__export_startup_diagnostics_for_sharing_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "export_startup_diagnostics_for_sharing",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_expected_runtime_instance_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::export_startup_diagnostics_for_sharing(
+                        api_expected_runtime_instance_id,
                     )?;
                     Ok(output_ok)
                 })())
@@ -2923,52 +2958,58 @@ fn pde_ffi_dispatcher_primary_impl(
         5 => wire__crate__close_event_connection_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__exit_failed_runtime_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__export_startup_diagnostics_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__initialize_with_standard_data_directory_impl(
+        8 => wire__crate__export_startup_diagnostics_for_sharing_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        19 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__list_local_filesystem_browse_directories_impl(
+        9 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__initialize_with_standard_data_directory_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        22 => {
+        20 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__list_local_filesystem_browse_directories_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        23 => {
             wire__crate__list_local_filesystem_browse_roots_impl(port, ptr, rust_vec_len, data_len)
         }
-        23 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
+        24 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

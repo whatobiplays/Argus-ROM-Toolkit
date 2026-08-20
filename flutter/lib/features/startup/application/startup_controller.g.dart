@@ -59,7 +59,7 @@ final class StartupControllerProvider
   }
 }
 
-String _$startupControllerHash() => r'acb4cbccf06ead5b63fd9da6479ec7f1930f4a77';
+String _$startupControllerHash() => r'8f7756d42871d24883b780a9d2ca908a5ccc21d5';
 
 /// One application-lifetime owner of pre-ready startup and recovery state.
 ///

@@ -128,6 +128,65 @@ final class LocalFilesystemPlatformApiProvider
 String _$localFilesystemPlatformApiHash() =>
     r'7029a7942d9adf3668c8b7c7240b75a4a3cb2f42';
 
+/// Optional native publication capability for backend-owned startup
+/// diagnostics. Desktop composition leaves this null and retains the existing
+/// destination-based diagnostics exporter.
+
+@ProviderFor(diagnosticsPublicationApi)
+final diagnosticsPublicationApiProvider = DiagnosticsPublicationApiProvider._();
+
+/// Optional native publication capability for backend-owned startup
+/// diagnostics. Desktop composition leaves this null and retains the existing
+/// destination-based diagnostics exporter.
+
+final class DiagnosticsPublicationApiProvider
+    extends
+        $FunctionalProvider<
+          DiagnosticsPublicationApi?,
+          DiagnosticsPublicationApi?,
+          DiagnosticsPublicationApi?
+        >
+    with $Provider<DiagnosticsPublicationApi?> {
+  /// Optional native publication capability for backend-owned startup
+  /// diagnostics. Desktop composition leaves this null and retains the existing
+  /// destination-based diagnostics exporter.
+  DiagnosticsPublicationApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'diagnosticsPublicationApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$diagnosticsPublicationApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<DiagnosticsPublicationApi?> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  DiagnosticsPublicationApi? create(Ref ref) {
+    return diagnosticsPublicationApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(DiagnosticsPublicationApi? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<DiagnosticsPublicationApi?>(value),
+    );
+  }
+}
+
+String _$diagnosticsPublicationApiHash() =>
+    r'78cfc3e397825dfba3936809b0b7f4b3dd164aeb';
+
 /// Creates a fresh bridge adapter for each root-client generation.
 
 @ProviderFor(argusClientGatewayFactory)
@@ -181,7 +240,7 @@ final class ArgusClientGatewayFactoryProvider
 }
 
 String _$argusClientGatewayFactoryHash() =>
-    r'8e1e29f2c1c2597440da2db75df7b85e9266585f';
+    r'7064f1e1adde7700b6ece0c45eb0bc26b8455f6a';
 
 /// App-lifetime owner of the single active root [ArgusClient].
 ///
@@ -398,6 +457,62 @@ final class DiagnosticsApiProvider
 }
 
 String _$diagnosticsApiHash() => r'6c7986bbe53dad71a49580204900bc6a13d294e1';
+
+/// Optional Android diagnostics-sharing capability. Desktop composition keeps
+/// this null and continues using the existing destination-based exporter.
+
+@ProviderFor(diagnosticsSharingApi)
+final diagnosticsSharingApiProvider = DiagnosticsSharingApiProvider._();
+
+/// Optional Android diagnostics-sharing capability. Desktop composition keeps
+/// this null and continues using the existing destination-based exporter.
+
+final class DiagnosticsSharingApiProvider
+    extends
+        $FunctionalProvider<
+          DiagnosticsSharingApi?,
+          DiagnosticsSharingApi?,
+          DiagnosticsSharingApi?
+        >
+    with $Provider<DiagnosticsSharingApi?> {
+  /// Optional Android diagnostics-sharing capability. Desktop composition keeps
+  /// this null and continues using the existing destination-based exporter.
+  DiagnosticsSharingApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'diagnosticsSharingApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$diagnosticsSharingApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<DiagnosticsSharingApi?> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  DiagnosticsSharingApi? create(Ref ref) {
+    return diagnosticsSharingApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(DiagnosticsSharingApi? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<DiagnosticsSharingApi?>(value),
+    );
+  }
+}
+
+String _$diagnosticsSharingApiHash() =>
+    r'2807b9f0fa2934e3a5bd565ef0f7ee7e85311148';
 
 /// Shared mapped runtime notification projection.
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/platform/platform_host.dart';
@@ -59,6 +61,12 @@ class ArgusBootstrap extends StatelessWidget {
         localFilesystemPlatformApiProvider.overrideWithValue(
           platform.localFilesystemApi,
         ),
+        diagnosticsPublicationApiProvider.overrideWithValue(
+          platform.diagnosticsPublicationApi,
+        ),
+        platformMountedVolumesReaderProvider.overrideWithValue(
+          platform.localFilesystemApi?.readMountedVolumes,
+        ),
         foregroundExecutionHostApiProvider.overrideWithValue(
           platform.foregroundExecutionHostApi,
         ),
@@ -66,8 +74,8 @@ class ArgusBootstrap extends StatelessWidget {
           platform.requiresReadinessGate
               ? const SourcesPresentationCapabilities(
                   singleRootScanExecution: true,
-                  scanAllExecution: false,
-                  activeRootCancelAndRemove: false,
+                  scanAllExecution: true,
+                  activeRootCancelAndRemove: true,
                   localFilesystemBrowser: true,
                 )
               : const SourcesPresentationCapabilities(),
@@ -92,7 +100,8 @@ class ArgusBootstrap extends StatelessWidget {
         if (platform.requiresReadinessGate)
           startupPresentationCapabilitiesProvider.overrideWithValue(
             const StartupPresentationCapabilities(
-              diagnosticsExport: false,
+              diagnosticsExport: true,
+              diagnosticsSharing: true,
               openDataDirectory: false,
             ),
           ),
@@ -136,7 +145,11 @@ class ArgusBootstrap extends StatelessWidget {
                 );
         }),
         sourcesReconciliationDemandProvider.overrideWith(
-          (ref) => ref.watch(sourcesEventCoordinatorProvider),
+          (ref) => _composeSourcesReconciliationDemands(
+            ref,
+            ref.watch(sourcesEventCoordinatorProvider),
+            ref.watch(platformStorageReconciliationDemandProvider),
+          ),
         ),
         if (platform.foregroundExecutionHostApi != null)
           jobsApiProvider.overrideWith(
@@ -166,4 +179,25 @@ class ArgusBootstrap extends StatelessWidget {
 /// Starts the application with its root dependency scope.
 void bootstrapArgus() {
   runApp(const ArgusBootstrap());
+}
+
+/// Combines runtime-event invalidations with platform storage transitions.
+/// Only the Sources channel receives the platform transition; Jobs retains
+/// its existing event and recovery authorities.
+SourcesReconciliationDemandSource _composeSourcesReconciliationDemands(
+  Ref ref,
+  SourcesReconciliationDemandSource eventDemands,
+  PlatformStorageReconciliationDemandSource storageDemands,
+) {
+  final merged = StreamController<SourcesReconciliationDemand>.broadcast();
+  final eventSubscription = eventDemands.stream.listen(merged.add);
+  final storageSubscription = storageDemands.stream.listen((_) {
+    merged.add(const SourcesReconciliationDemand.rootsChanged());
+  });
+  ref.onDispose(() {
+    unawaited(eventSubscription.cancel());
+    unawaited(storageSubscription.cancel());
+    unawaited(merged.close());
+  });
+  return SourcesReconciliationDemandSource(merged.stream);
 }

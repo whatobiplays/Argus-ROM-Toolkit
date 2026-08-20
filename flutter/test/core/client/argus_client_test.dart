@@ -157,6 +157,28 @@ void main() {
   });
 
   test(
+    'Android diagnostics sharing is additive to the desktop exporter',
+    () async {
+      final gateway = FakeGateway(RuntimeInstanceId('a' * 32))
+        ..supportsDiagnosticsSharing = true;
+      final client = ArgusClient(gateway: gateway);
+
+      final shared = await client.diagnosticsSharing!
+          .exportStartupDiagnosticsForSharing(gateway.id);
+      final desktop = await client.diagnostics.exportStartupDiagnostics(
+        gateway.id,
+        '/tmp/desktop-diagnostics.zip',
+      );
+
+      expect(shared.destinationClassification, 'backend_owned_diagnostics');
+      expect(desktop.destinationClassification, 'user_selected');
+      expect(gateway.sharingCalls, 1);
+      expect(gateway.destinations, ['/tmp/desktop-diagnostics.zip']);
+      await client.dispose();
+    },
+  );
+
+  test(
     'ambiguous settings transport failure is not automatically retried',
     () async {
       final gateway = FakeGateway(RuntimeInstanceId('7' * 32))
@@ -212,7 +234,7 @@ RuntimeEvent _event(RuntimeInstanceId id, int sequence) => RuntimeEvent(
 
 final class FakeGateway
     with SourcesGatewayStub, JobsGatewayStub
-    implements ArgusClientGateway {
+    implements ArgusClientGateway, DiagnosticsSharingGateway {
   FakeGateway(this.id) : nextState = RuntimeState.ready(runtimeInstanceId: id);
 
   final RuntimeInstanceId id;
@@ -224,6 +246,10 @@ final class FakeGateway
   int updateCalls = 0;
   int retryCalls = 0;
   int closeEventConnectionCalls = 0;
+  @override
+  bool supportsDiagnosticsSharing = false;
+  int sharingCalls = 0;
+  final destinations = <String>[];
   int subscribeCount = 0;
   int activeSubscriptions = 0;
   int maxActiveSubscriptions = 0;
@@ -295,12 +321,28 @@ final class FakeGateway
   Future<DiagnosticsExport> exportStartupDiagnostics(
     RuntimeInstanceId expected,
     String destination,
-  ) => _result(
-    const DiagnosticsExport(
-      outcome: DiagnosticsExportOutcome.created,
-      destinationClassification: 'user_selected',
-    ),
-  );
+  ) {
+    destinations.add(destination);
+    return _result(
+      const DiagnosticsExport(
+        outcome: DiagnosticsExportOutcome.created,
+        destinationClassification: 'user_selected',
+      ),
+    );
+  }
+
+  @override
+  Future<DiagnosticsExport> exportStartupDiagnosticsForSharing(
+    RuntimeInstanceId expected,
+  ) {
+    sharingCalls++;
+    return _result(
+      const DiagnosticsExport(
+        outcome: DiagnosticsExportOutcome.created,
+        destinationClassification: 'backend_owned_diagnostics',
+      ),
+    );
+  }
 
   @override
   Future<TechnicalDetails> startupTechnicalDetails(

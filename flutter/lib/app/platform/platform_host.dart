@@ -27,11 +27,22 @@ export 'application/local_filesystem_platform_api.dart'
         LocalFilesystemPlatformFailureKind,
         PlatformMountedVolume,
         maxPlatformMountedVolumes;
+export 'application/diagnostics_publication_api.dart'
+    show
+        DiagnosticsPublicationApi,
+        DiagnosticsPublicationException,
+        DiagnosticsPublicationFailureKind;
 export 'application/platform_readiness_controller.dart'
     show
+        PlatformMountedVolumesReader,
         PlatformReadinessController,
+        PlatformStorageReconciliationDemand,
+        PlatformStorageReconciliationDemandSource,
+        PlatformStorageReconciliationReason,
         platformHostApiProvider,
-        platformReadinessControllerProvider;
+        platformMountedVolumesReaderProvider,
+        platformReadinessControllerProvider,
+        platformStorageReconciliationDemandProvider;
 export 'application/platform_readiness_state.dart'
     show
         PlatformReadinessLoading,

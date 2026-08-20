@@ -162,7 +162,8 @@ void main() {
       expect(
         container.read(startupPresentationCapabilitiesProvider),
         const StartupPresentationCapabilities(
-          diagnosticsExport: false,
+          diagnosticsExport: true,
+          diagnosticsSharing: true,
           openDataDirectory: false,
         ),
       );
@@ -207,33 +208,40 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Android composition enables browser and single-root scan execution',
-    (tester) async {
-      final platformApi = _ReadinessPlatformHostApi(androidSnapshot);
-      await tester.pumpWidget(
-        ArgusBootstrap(
-          platformHostComposition: PlatformHostComposition(
-            api: platformApi,
-            requiresReadinessGate: true,
-          ),
-          clientGatewayFactory: () => _PendingGateway(),
+  testWidgets('Android composition enables existing Sources workflows', (
+    tester,
+  ) async {
+    final platformApi = _ReadinessPlatformHostApi(androidSnapshot);
+    await tester.pumpWidget(
+      ArgusBootstrap(
+        platformHostComposition: PlatformHostComposition(
+          api: platformApi,
+          requiresReadinessGate: true,
         ),
-      );
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ArgusApp)),
-        listen: false,
-      );
+        clientGatewayFactory: () => _PendingGateway(),
+      ),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArgusApp)),
+      listen: false,
+    );
 
-      final capabilities = container.read(
-        sourcesPresentationCapabilitiesProvider,
-      );
-      expect(capabilities.localFilesystemBrowser, isTrue);
-      expect(capabilities.singleRootScanExecution, isTrue);
-      expect(capabilities.scanAllExecution, isFalse);
-      expect(capabilities.activeRootCancelAndRemove, isFalse);
-    },
-  );
+    final capabilities = container.read(
+      sourcesPresentationCapabilitiesProvider,
+    );
+    expect(capabilities.localFilesystemBrowser, isTrue);
+    expect(capabilities.singleRootScanExecution, isTrue);
+    expect(capabilities.scanAllExecution, isTrue);
+    expect(capabilities.activeRootCancelAndRemove, isTrue);
+    expect(
+      container.read(startupPresentationCapabilitiesProvider),
+      const StartupPresentationCapabilities(
+        diagnosticsExport: true,
+        diagnosticsSharing: true,
+        openDataDirectory: false,
+      ),
+    );
+  });
 
   testWidgets('Android composition decorates Sources and Jobs admissions', (
     tester,
@@ -263,6 +271,74 @@ void main() {
     expect(jobsApi, isA<ForegroundHostedJobsApi>());
     expect(container.read(sourcesJobsApiProvider), same(jobsApi));
   });
+
+  testWidgets(
+    'Android storage transitions refresh Sources once without replaying Jobs',
+    (tester) async {
+      final platformApi = _ReadinessPlatformHostApi(
+        PlatformHostSnapshot(
+          allFilesAccessRequired: true,
+          allFilesAccessGranted: true,
+          notificationAuthorization: NotificationAuthorization.notRequired,
+          standardApplicationDataDirectory:
+              '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        ),
+      );
+      final volumes = _MountedVolumesStub([
+        _volume('/storage/ABCD', '/mnt/first'),
+      ]);
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          platformHostComposition: PlatformHostComposition(
+            api: platformApi,
+            requiresReadinessGate: true,
+            localFilesystemApi: volumes,
+          ),
+          clientGatewayFactory: () => _PendingGateway(),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      final sourceDemands = <SourcesReconciliationDemand>[];
+      final sourceSubscription = container
+          .read(sourcesReconciliationDemandProvider)
+          .stream
+          .listen(sourceDemands.add);
+      final jobDemands = <JobsReconciliationDemand>[];
+      final jobSubscription = container
+          .read(jobsReconciliationDemandProvider)
+          .stream
+          .listen(jobDemands.add);
+      addTearDown(sourceSubscription.cancel);
+      addTearDown(jobSubscription.cancel);
+
+      volumes.volumes = [_volume('/storage/ABCD', '/mnt/remounted')];
+      await container
+          .read(platformReadinessControllerProvider.notifier)
+          .refresh();
+      await tester.pump();
+
+      expect(sourceDemands, hasLength(1));
+      expect(
+        sourceDemands.single,
+        isA<SourcesReconciliationDemandRootsChanged>(),
+      );
+      expect(jobDemands, isEmpty);
+
+      await container
+          .read(platformReadinessControllerProvider.notifier)
+          .refresh();
+      await tester.pump();
+
+      expect(sourceDemands, hasLength(1));
+      expect(jobDemands, isEmpty);
+    },
+  );
 
   test('desktop Sources capabilities retain every existing workflow', () {
     const capabilities = SourcesPresentationCapabilities();
@@ -485,4 +561,23 @@ final class _ForegroundExecutionHostStub implements ForegroundExecutionHostApi {
   Future<void> updateProjection(
     ForegroundExecutionProjection projection,
   ) async {}
+}
+
+final class _MountedVolumesStub implements LocalFilesystemPlatformApi {
+  _MountedVolumesStub(this.volumes);
+
+  List<PlatformMountedVolume> volumes;
+
+  @override
+  Future<List<PlatformMountedVolume>> readMountedVolumes() async => volumes;
+}
+
+PlatformMountedVolume _volume(String id, String path) {
+  return PlatformMountedVolume(
+    providerVolumeId: id,
+    transientMountPath: path,
+    safeDisplayName: 'Removable volume',
+    isPrimary: false,
+    isRemovable: true,
+  );
 }

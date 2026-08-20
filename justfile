@@ -105,4 +105,19 @@ test-phase-002-android-scan:
 test-phase-002-android-foreground:
     bash scripts/run_phase_002_android_foreground_execution_tests.sh
 
+test-phase-002-android-applicable-features:
+    bash scripts/run_phase_002_android_applicable_features_tests.sh
+
+test-phase-002-android-multi-root:
+    bash scripts/run_phase_002_android_multi_root_tests.sh
+
+test-phase-002-android-permission-reconciliation:
+    bash scripts/run_phase_002_android_permission_reconciliation_tests.sh
+
+test-phase-002-android-removable-volume:
+    bash scripts/run_phase_002_android_removable_volume_tests.sh
+
+test-phase-002-android-diagnostics:
+    bash scripts/run_phase_002_android_diagnostics_tests.sh
+
 check: check-generated _format-check lint _architecture test

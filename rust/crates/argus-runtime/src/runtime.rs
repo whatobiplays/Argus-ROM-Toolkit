@@ -7,6 +7,7 @@
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Weak};
@@ -878,6 +879,12 @@ pub struct DiagnosticsExport {
     pub destination_classification: &'static str,
 }
 
+/// Stable backend/platform-relative location for the completed Android
+/// diagnostics artifact. The absolute application-data root is supplied by
+/// the host and is intentionally not part of the bridge contract.
+pub const STARTUP_DIAGNOSTICS_ARTIFACT_RELATIVE_PATH: &str =
+    "diagnostics/startup-diagnostics-v1.zip";
+
 /// Copy-safe technical details for a failed startup generation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TechnicalDetails {
@@ -1407,6 +1414,106 @@ impl ApplicationHost {
         destination: &Path,
         context: &OperationContext,
     ) -> Result<DiagnosticsExport, ApplicationError> {
+        let (recovery_context, generation_id) =
+            self.diagnostics_export_context_with_context(expected_runtime_instance_id, context)?;
+        let Some(diagnostics) = recovery_context.diagnostics.as_ref() else {
+            return Err(runtime_error_with_trace(
+                ErrorCode::RuntimeStartupFailed,
+                context.trace_id(),
+            ));
+        };
+        crate::diagnostics::export_with_contributors(
+            diagnostics,
+            generation_id,
+            destination,
+            context.trace_id(),
+            Vec::new(),
+        )
+    }
+
+    /// Creates and atomically publishes the backend-owned diagnostics archive
+    /// at the stable relative artifact contract used by Android publication.
+    /// No absolute path or archive bytes cross the embedding boundary.
+    pub fn export_startup_diagnostics_for_sharing(
+        &self,
+        expected_runtime_instance_id: RuntimeInstanceId,
+    ) -> Result<DiagnosticsExport, ApplicationError> {
+        let (context, _guard) =
+            self.begin_operation("runtime", "export_startup_diagnostics_for_sharing")?;
+        self.export_startup_diagnostics_for_sharing_with_context(
+            expected_runtime_instance_id,
+            &context,
+        )
+    }
+
+    /// Performs backend-owned diagnostics publication under an existing
+    /// top-level operation context.
+    pub fn export_startup_diagnostics_for_sharing_with_context(
+        &self,
+        expected_runtime_instance_id: RuntimeInstanceId,
+        context: &OperationContext,
+    ) -> Result<DiagnosticsExport, ApplicationError> {
+        let (recovery_context, generation_id) =
+            self.diagnostics_export_context_with_context(expected_runtime_instance_id, context)?;
+        let Some(directory) = recovery_context.data_directory.as_ref() else {
+            return Err(runtime_error_with_trace(
+                ErrorCode::RuntimeStartupFailed,
+                context.trace_id(),
+            ));
+        };
+        if !directory.is_dir() {
+            return Err(runtime_error_with_trace(
+                ErrorCode::RuntimeStartupFailed,
+                context.trace_id(),
+            ));
+        }
+        let Some(diagnostics) = recovery_context.diagnostics.as_ref() else {
+            return Err(runtime_error_with_trace(
+                ErrorCode::RuntimeStartupFailed,
+                context.trace_id(),
+            ));
+        };
+
+        let publication_directory = directory.join("diagnostics");
+        fs::create_dir_all(&publication_directory).map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let artifact = directory.join(STARTUP_DIAGNOSTICS_ARTIFACT_RELATIVE_PATH);
+        let temporary_artifact = publication_directory.join(format!(
+            ".startup-diagnostics-v1.zip.{}.tmp",
+            context.trace_id()
+        ));
+        let export = crate::diagnostics::export_with_contributors_classified(
+            diagnostics,
+            generation_id,
+            &temporary_artifact,
+            context.trace_id(),
+            "backend_owned_diagnostics",
+            Vec::new(),
+        );
+        match export {
+            Ok(export) => {
+                if fs::rename(&temporary_artifact, &artifact).is_err() {
+                    let _ = fs::remove_file(&temporary_artifact);
+                    return Err(runtime_error_with_trace(
+                        ErrorCode::InternalUnexpected,
+                        context.trace_id(),
+                    ));
+                }
+                Ok(export)
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&temporary_artifact);
+                Err(error)
+            }
+        }
+    }
+
+    fn diagnostics_export_context_with_context(
+        &self,
+        expected_runtime_instance_id: RuntimeInstanceId,
+        context: &OperationContext,
+    ) -> Result<(Arc<FailedRuntimeRecoveryContext>, RuntimeInstanceId), ApplicationError> {
         let (recovery_context, generation_id) = {
             let generation = self.lock_generation_with_context(context)?;
             self.validate_failed_generation_with_context(
@@ -1435,19 +1542,13 @@ impl ApplicationHost {
                 context.trace_id(),
             ));
         };
-        let Some(diagnostics) = recovery_context.diagnostics.as_ref() else {
+        if recovery_context.diagnostics.is_none() {
             return Err(runtime_error_with_trace(
                 ErrorCode::RuntimeStartupFailed,
                 context.trace_id(),
             ));
-        };
-        crate::diagnostics::export_with_contributors(
-            diagnostics,
-            generation_id,
-            destination,
-            context.trace_id(),
-            Vec::new(),
-        )
+        }
+        Ok((recovery_context, generation_id))
     }
 
     /// Returns safe, copyable startup details without revealing local paths.

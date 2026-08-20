@@ -1414,6 +1414,29 @@ pub fn export_startup_diagnostics(
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Creates the backend-owned diagnostics artifact without accepting a
+/// destination from the embedding layer. Android publishes the completed
+/// artifact through its scoped native share boundary.
+#[allow(clippy::result_large_err)]
+pub fn export_startup_diagnostics_for_sharing(
+    expected_runtime_instance_id: String,
+) -> Result<DiagnosticsExportDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("runtime", "export_startup_diagnostics_for_sharing")
+        .map_err(|error| application_error_dto(&error))?;
+    let id = parse_runtime_id(&expected_runtime_instance_id, context.trace_id())?;
+    host()
+        .export_startup_diagnostics_for_sharing_with_context(id, &context)
+        .map(|export| DiagnosticsExportDto {
+            outcome: match export.outcome {
+                DiagnosticsExportOutcome::Created => DiagnosticsExportOutcomeDto::Created,
+                DiagnosticsExportOutcome::Partial => DiagnosticsExportOutcomeDto::Partial,
+            },
+            destination_classification: export.destination_classification.to_owned(),
+        })
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Returns copy-safe technical details for a failed startup generation.
 #[allow(clippy::result_large_err)]
 pub fn startup_technical_details(

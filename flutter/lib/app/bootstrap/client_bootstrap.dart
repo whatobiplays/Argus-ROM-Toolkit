@@ -21,11 +21,18 @@ String? standardApplicationDataDirectory(Ref ref) => null;
 @Riverpod(keepAlive: true)
 LocalFilesystemPlatformApi? localFilesystemPlatformApi(Ref ref) => null;
 
+/// Optional native publication capability for backend-owned startup
+/// diagnostics. Desktop composition leaves this null and retains the existing
+/// destination-based diagnostics exporter.
+@Riverpod(keepAlive: true)
+DiagnosticsPublicationApi? diagnosticsPublicationApi(Ref ref) => null;
+
 /// Creates a fresh bridge adapter for each root-client generation.
 @Riverpod(keepAlive: true)
 ArgusClientGateway Function() argusClientGatewayFactory(Ref ref) {
   final standardDirectory = ref.watch(standardApplicationDataDirectoryProvider);
   final localFilesystem = ref.watch(localFilesystemPlatformApiProvider);
+  final diagnosticsPublication = ref.watch(diagnosticsPublicationApiProvider);
   return () => FrbArgusClientGateway(
     standardApplicationDataDirectory: standardDirectory,
     mountedVolumesReader: localFilesystem == null
@@ -44,6 +51,8 @@ ArgusClientGateway Function() argusClientGatewayFactory(Ref ref) {
                 )
                 .toList(growable: false);
           },
+    publishCompletedDiagnostics:
+        diagnosticsPublication?.publishCompletedStartupDiagnostics,
   );
 }
 
@@ -119,6 +128,12 @@ RuntimeApi runtimeApi(Ref ref) => ref.watch(argusClientProvider).runtime;
 @Riverpod(keepAlive: true)
 DiagnosticsApi diagnosticsApi(Ref ref) =>
     ref.watch(argusClientProvider).diagnostics;
+
+/// Optional Android diagnostics-sharing capability. Desktop composition keeps
+/// this null and continues using the existing destination-based exporter.
+@Riverpod(keepAlive: true)
+DiagnosticsSharingApi? diagnosticsSharingApi(Ref ref) =>
+    ref.watch(argusClientProvider).diagnosticsSharing;
 
 /// Shared mapped runtime notification projection.
 @Riverpod(keepAlive: true)

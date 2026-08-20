@@ -55,6 +55,116 @@ final class PlatformHostApiProvider
 
 String _$platformHostApiHash() => r'93283cca848921b6da681b3bca99fcb090a2097f';
 
+@ProviderFor(platformMountedVolumesReader)
+final platformMountedVolumesReaderProvider =
+    PlatformMountedVolumesReaderProvider._();
+
+final class PlatformMountedVolumesReaderProvider
+    extends
+        $FunctionalProvider<
+          PlatformMountedVolumesReader?,
+          PlatformMountedVolumesReader?,
+          PlatformMountedVolumesReader?
+        >
+    with $Provider<PlatformMountedVolumesReader?> {
+  PlatformMountedVolumesReaderProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'platformMountedVolumesReaderProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$platformMountedVolumesReaderHash();
+
+  @$internal
+  @override
+  $ProviderElement<PlatformMountedVolumesReader?> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  PlatformMountedVolumesReader? create(Ref ref) {
+    return platformMountedVolumesReader(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(PlatformMountedVolumesReader? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<PlatformMountedVolumesReader?>(
+        value,
+      ),
+    );
+  }
+}
+
+String _$platformMountedVolumesReaderHash() =>
+    r'8d60da22c6ee71c6ad153f651076bbcf055856c7';
+
+/// Exposes the readiness-owned storage transition channel without rebuilding
+/// it every time the readiness state changes.
+
+@ProviderFor(platformStorageReconciliationDemand)
+final platformStorageReconciliationDemandProvider =
+    PlatformStorageReconciliationDemandProvider._();
+
+/// Exposes the readiness-owned storage transition channel without rebuilding
+/// it every time the readiness state changes.
+
+final class PlatformStorageReconciliationDemandProvider
+    extends
+        $FunctionalProvider<
+          PlatformStorageReconciliationDemandSource,
+          PlatformStorageReconciliationDemandSource,
+          PlatformStorageReconciliationDemandSource
+        >
+    with $Provider<PlatformStorageReconciliationDemandSource> {
+  /// Exposes the readiness-owned storage transition channel without rebuilding
+  /// it every time the readiness state changes.
+  PlatformStorageReconciliationDemandProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'platformStorageReconciliationDemandProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() =>
+      _$platformStorageReconciliationDemandHash();
+
+  @$internal
+  @override
+  $ProviderElement<PlatformStorageReconciliationDemandSource> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  PlatformStorageReconciliationDemandSource create(Ref ref) {
+    return platformStorageReconciliationDemand(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(PlatformStorageReconciliationDemandSource value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride:
+          $SyncValueProvider<PlatformStorageReconciliationDemandSource>(value),
+    );
+  }
+}
+
+String _$platformStorageReconciliationDemandHash() =>
+    r'55d1bf932ae92db8d451bd8da581e4d23e6386f8';
+
 /// Keep-alive authority for live platform readiness.
 ///
 /// The first Ready snapshot latches the runtime configuration for the
@@ -109,7 +219,7 @@ final class PlatformReadinessControllerProvider
 }
 
 String _$platformReadinessControllerHash() =>
-    r'6f2d5fed5db2e0bc2f53ea20e3b6cae59a5e3742';
+    r'54bb2544b18a0260b497f9a5674f567f927f5d70';
 
 /// Keep-alive authority for live platform readiness.
 ///

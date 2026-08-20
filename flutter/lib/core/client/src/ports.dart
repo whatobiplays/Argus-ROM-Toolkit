@@ -245,6 +245,24 @@ abstract interface class DiagnosticsApi {
   );
 }
 
+/// Optional additive capability for hosts that can publish a backend-owned
+/// diagnostics artifact through a system share surface. The existing
+/// destination-based [DiagnosticsApi] contract remains unchanged for desktop.
+abstract interface class DiagnosticsSharingGateway {
+  bool get supportsDiagnosticsSharing;
+
+  Future<DiagnosticsExport> exportStartupDiagnosticsForSharing(
+    RuntimeInstanceId expectedRuntimeInstanceId,
+  );
+}
+
+/// Focused no-destination diagnostics-sharing capability.
+abstract interface class DiagnosticsSharingApi {
+  Future<DiagnosticsExport> exportStartupDiagnosticsForSharing(
+    RuntimeInstanceId expectedRuntimeInstanceId,
+  );
+}
+
 /// Outcome of one event-bind attempt.
 ///
 /// [stream] is the mapped runtime-event stream. [nativeAttached] reports

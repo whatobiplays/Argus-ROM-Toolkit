@@ -13,10 +13,12 @@ part 'presentation_seams.g.dart';
 final class StartupPresentationCapabilities {
   const StartupPresentationCapabilities({
     required this.diagnosticsExport,
+    this.diagnosticsSharing = false,
     required this.openDataDirectory,
   });
 
   final bool diagnosticsExport;
+  final bool diagnosticsSharing;
   final bool openDataDirectory;
 }
 

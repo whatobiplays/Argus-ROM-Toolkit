@@ -14,12 +14,14 @@ void main() {
     required FakeRuntimeApi runtime,
     required FakeDiagnosticsApi diagnostics,
     required FakeEventsApi events,
+    DiagnosticsSharingApi? diagnosticsSharing,
   }) {
     final container = ProviderContainer(
       overrides: [
         clientBootstrapProvider.overrideWithValue(bootstrap),
         runtimeApiProvider.overrideWithValue(runtime),
         diagnosticsApiProvider.overrideWithValue(diagnostics),
+        diagnosticsSharingApiProvider.overrideWithValue(diagnosticsSharing),
         runtimeEventsProvider.overrideWithValue(events),
       ],
     );
@@ -514,6 +516,37 @@ void main() {
     expect(state.exportOperation, isA<ExportOperationStateFailed>());
     expect(state.failure.error.code.value, isNotEmpty);
   });
+
+  test(
+    'Android sharing export is additive and does not request a destination',
+    () async {
+      final bootstrap = FakeClientBootstrap();
+      final diagnostics = FakeDiagnosticsApi();
+      final sharing = FakeDiagnosticsSharingApi();
+      final container = makeContainer(
+        bootstrap: bootstrap,
+        runtime: FakeRuntimeApi(),
+        diagnostics: diagnostics,
+        diagnosticsSharing: sharing,
+        events: FakeEventsApi(),
+      );
+      final controller = container.read(startupControllerProvider.notifier);
+
+      container.read(startupControllerProvider);
+      await settle();
+      bootstrap.completers.single.complete(failedRuntime(id: 'a'));
+      await settle();
+
+      await controller.exportDiagnosticsForSharing();
+
+      expect(sharing.requests, [testId('a')]);
+      expect(diagnostics.exportRequests, isEmpty);
+      final state =
+          container.read(startupControllerProvider).value
+              as StartupStateStartupFailed;
+      expect(state.exportOperation, isA<ExportOperationStateSucceeded>());
+    },
+  );
 
   test('stale export reconciles without retargeting', () async {
     final bootstrap = FakeClientBootstrap();

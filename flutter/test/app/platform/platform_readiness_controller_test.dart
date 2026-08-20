@@ -1,4 +1,5 @@
 import 'package:argus/app/platform/application/platform_host_api.dart';
+import 'package:argus/app/platform/application/local_filesystem_platform_api.dart';
 import 'package:argus/app/platform/application/platform_readiness_controller.dart';
 import 'package:argus/app/platform/application/platform_readiness_state.dart';
 import 'package:flutter/services.dart';
@@ -73,6 +74,113 @@ void main() {
     expect(
       scope.read(platformReadinessControllerProvider),
       isA<PlatformReadinessRequiresNotificationPermission>(),
+    );
+  });
+
+  test(
+    'unchanged Ready refreshes do not emit a Sources reconciliation demand',
+    () async {
+      api.snapshot = const PlatformHostSnapshot(
+        allFilesAccessRequired: true,
+        allFilesAccessGranted: true,
+        notificationAuthorization: NotificationAuthorization.notRequired,
+        standardApplicationDataDirectory:
+            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+      );
+      final scope = container();
+      addTearDown(scope.dispose);
+      final notifier = scope.read(platformReadinessControllerProvider.notifier);
+      final demands = <PlatformStorageReconciliationDemand>[];
+      final subscription = scope
+          .read(platformStorageReconciliationDemandProvider)
+          .stream
+          .listen(demands.add);
+      addTearDown(subscription.cancel);
+      await settle();
+
+      await notifier.refresh();
+      await notifier.refresh();
+      await settle();
+
+      expect(demands, isEmpty);
+    },
+  );
+
+  test('All files regrant emits one demand without lifecycle replay', () async {
+    api.snapshot = const PlatformHostSnapshot(
+      allFilesAccessRequired: true,
+      allFilesAccessGranted: false,
+      notificationAuthorization: NotificationAuthorization.notRequired,
+      standardApplicationDataDirectory:
+          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+    );
+    final scope = container();
+    addTearDown(scope.dispose);
+    final notifier = scope.read(platformReadinessControllerProvider.notifier);
+    final demands = <PlatformStorageReconciliationDemand>[];
+    final subscription = scope
+        .read(platformStorageReconciliationDemandProvider)
+        .stream
+        .listen(demands.add);
+    addTearDown(subscription.cancel);
+    await settle();
+
+    api.snapshot = const PlatformHostSnapshot(
+      allFilesAccessRequired: true,
+      allFilesAccessGranted: true,
+      notificationAuthorization: NotificationAuthorization.notRequired,
+      standardApplicationDataDirectory:
+          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+    );
+    await notifier.refresh();
+    await notifier.refresh();
+    await settle();
+
+    expect(demands, hasLength(1));
+    expect(
+      demands.single.reason,
+      PlatformStorageReconciliationReason.readinessRestored,
+    );
+  });
+
+  test('changed mounted-volume facts emit one demand and settle', () async {
+    api.snapshot = const PlatformHostSnapshot(
+      allFilesAccessRequired: true,
+      allFilesAccessGranted: true,
+      notificationAuthorization: NotificationAuthorization.notRequired,
+      standardApplicationDataDirectory:
+          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+    );
+    final volumes = _FakeMountedVolumesApi([
+      _mountedVolume('/storage/ABCD', '/mnt/first'),
+    ]);
+    final scope = ProviderContainer(
+      overrides: [
+        platformHostApiProvider.overrideWithValue(api),
+        platformMountedVolumesReaderProvider.overrideWithValue(
+          volumes.readMountedVolumes,
+        ),
+      ],
+    );
+    addTearDown(scope.dispose);
+    final notifier = scope.read(platformReadinessControllerProvider.notifier);
+    final demands = <PlatformStorageReconciliationDemand>[];
+    final subscription = scope
+        .read(platformStorageReconciliationDemandProvider)
+        .stream
+        .listen(demands.add);
+    addTearDown(subscription.cancel);
+    await settle();
+
+    volumes.volumes = [_mountedVolume('/storage/ABCD', '/mnt/remounted')];
+    await notifier.refresh();
+    await notifier.refresh();
+    await settle();
+
+    expect(demands, hasLength(1));
+    expect(
+      demands.single.reason,
+      PlatformStorageReconciliationReason.mountedVolumesChanged,
     );
   });
 
@@ -311,4 +419,22 @@ final class _FakePlatformHostApi implements PlatformHostApi {
     }
     return result;
   }
+}
+
+final class _FakeMountedVolumesApi {
+  _FakeMountedVolumesApi(this.volumes);
+
+  List<PlatformMountedVolume> volumes;
+
+  Future<List<PlatformMountedVolume>> readMountedVolumes() async => volumes;
+}
+
+PlatformMountedVolume _mountedVolume(String id, String path) {
+  return PlatformMountedVolume(
+    providerVolumeId: id,
+    transientMountPath: path,
+    safeDisplayName: 'Removable volume',
+    isPrimary: false,
+    isRemovable: true,
+  );
 }

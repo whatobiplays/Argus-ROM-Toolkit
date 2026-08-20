@@ -132,6 +132,23 @@ final class FakeDiagnosticsApi implements DiagnosticsApi {
   }
 }
 
+/// Deterministic Android no-destination diagnostics-sharing fake.
+final class FakeDiagnosticsSharingApi implements DiagnosticsSharingApi {
+  final List<RuntimeInstanceId> requests = <RuntimeInstanceId>[];
+  DiagnosticsExport exportResult = const DiagnosticsExport(
+    outcome: DiagnosticsExportOutcome.created,
+    destinationClassification: 'android_share_sheet',
+  );
+
+  @override
+  Future<DiagnosticsExport> exportStartupDiagnosticsForSharing(
+    RuntimeInstanceId expected,
+  ) async {
+    requests.add(expected);
+    return exportResult;
+  }
+}
+
 /// Deterministic mapped runtime-event projection fake.
 final class FakeEventsApi implements EventsApi {
   final StreamController<RuntimeEvent> _controller =

@@ -196,9 +196,7 @@ The milestone must:
 7. verify authoritative hierarchy reconciliation;
 8. exercise applicable single-root Jobs cancellation/retry behavior using deterministic synchronization rather than timing-dependent sleeps;
 9. verify Scan All is not exposed;
-10. verify the APK still packages both ARM64 and x86_64 ABIs.
-
-x86_64 emulator execution remains deferred on Apple Silicon; packaging coverage is still required.
+10. verify the APK packages the supported ARM64 ABI.
 
 ## What P02-003 does not prove
 

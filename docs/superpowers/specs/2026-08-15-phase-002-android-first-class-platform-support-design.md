@@ -9,7 +9,7 @@
 
 Phase 002 adds Android as a first-class Argus platform without creating a separate mobile product architecture. Android uses the existing Flutter presentation layer, `ArgusClient`, Flutter Rust Bridge, Rust application/runtime, SQLite persistence, source-provider abstractions, job model, and event-driven reconciliation model.
 
-The phase targets **Android 11 / API 30 and newer** for MVP. Production support is **ARM64 (`arm64-v8a`)**. **x86_64** is supported for emulator and CI verification. Android 10 / API 29 and 32-bit Android ABI support are explicitly post-MVP.
+The phase targets **Android 11 / API 30 and newer** for MVP. Android support is **ARM64 (`arm64-v8a`) only**, including production, emulator, CI, and native qualification. Non-ARM64 Android ABIs, including `x86_64`, are outside the Argus product target because they do not represent the intended phone and retro-emulation-handheld hardware. Android 10 / API 29 support is explicitly post-MVP.
 
 Android MVP is **direct-distribution first**. Google Play submission, policy review, and Play-specific packaging are post-MVP concerns. The product therefore treats Android's **All files access** capability (`MANAGE_EXTERNAL_STORAGE`) as a mandatory platform prerequisite rather than weakening the storage model to accommodate Play policy.
 
@@ -39,7 +39,7 @@ Phase 002 must deliver the following outcomes:
 Phase 002 does not include:
 
 1. Android 10 / API 29 support. Add it post-MVP with an intentionally designed compatibility path.
-2. 32-bit Android ABI support.
+2. Non-ARM64 Android ABI support, including `x86_64` and 32-bit ABIs.
 3. Google Play distribution, Play policy approval, or Play-specific product compromises.
 4. Cloud-backed or virtual Android `DocumentsProvider` sources.
 5. A general Storage Access Framework content-provider execution engine.
@@ -56,8 +56,8 @@ Phase 002 does not include:
 The MVP platform baseline is:
 
 - Minimum Android version: **Android 11 / API 30**.
-- Production ABI: **ARM64 (`arm64-v8a`)**.
-- Emulator/CI ABI: **x86_64**.
+- Supported Android ABI: **ARM64 (`arm64-v8a`)** for production, emulator, CI, and native qualification.
+- Non-ARM64 Android ABIs, including `x86_64`, are unsupported.
 - Orientation: **unlocked**.
 - Supported form factors are determined by available window size, not hardware category.
 - `compileSdk` and `targetSdk` should follow the repository's pinned Flutter toolchain defaults unless a required Android capability forces an explicit override. `minSdk` is explicitly pinned to 30.
@@ -351,11 +351,11 @@ Individual implementation slices may sequence desktop and Android work different
 
 `just check` remains deterministic and platform-neutral. Shared Rust/application/domain/bridge/controller behavior remains covered there.
 
-Android support must not reduce existing Windows/Linux/macOS verification.
+Android support must not reduce existing Windows/Linux/macOS verification. Android CI and native qualification must exercise the supported ARM64 ABI rather than maintaining an unsupported `x86_64` Android artifact solely for emulator convenience.
 
-### 13.2 Android Native Emulator Gate
+### 13.2 Android Native ARM64 Gate
 
-The repository must gain an Android-native verification command analogous to the existing native phase harnesses. CI runs it against an **x86_64 Android emulator** and exercises the real:
+The repository must gain an Android-native verification command analogous to the existing native phase harnesses. CI/native qualification runs it against an **ARM64 Android environment** and exercises the real:
 
 `Flutter -> ArgusClient -> FRB -> Rust -> SQLite -> Android LocalFilesystem`
 
@@ -437,7 +437,7 @@ Phase 002 uses capability-vertical slices. Each slice ends with a coherent, demo
 
 - Android Flutter host and build integration.
 - API 30 minimum.
-- ARM64 production and x86_64 emulator builds.
+- ARM64 production, emulator, and native-qualification builds.
 - Android FRB/Rust/SQLite startup.
 - Application-scoped cached Flutter engine and single Argus runtime.
 - Mandatory All files access onboarding.
@@ -503,7 +503,8 @@ This slice does not require copying desktop-only interaction mechanics that are 
 
 ### SLICE-P02-007 — Android CI, Distribution, and First-Class Platform Hardening
 
-- x86_64 emulator CI through the real product stack.
+- ARM64 Android CI/native qualification through the real product stack.
+- Residual non-ARM64 Android build targets, packaged libraries, emulator assumptions, harness branches, and CI jobs removed.
 - Complete Android Phase 002 native milestone harness.
 - Physical ARM64 verification record.
 - Signed direct-distribution artifacts.
@@ -597,11 +598,11 @@ Phase 002 is complete only when all of the following are true:
 
 1. All seven Phase 002 slices are complete.
 2. Android-applicable Phase 000 and Phase 001 product capabilities are implemented.
-3. Android x86_64 emulator CI is green through the real Flutter/FRB/Rust/SQLite stack.
+3. Android ARM64 native qualification is green through the real Flutter/FRB/Rust/SQLite stack.
 4. Existing desktop regression gates remain green.
 5. The physical ARM64 milestone is recorded.
 6. Android direct-distribution artifacts are produced through the repository-owned release path.
 7. Current architecture and specifications describe Android as a supported first-class platform.
 8. Future phase/spec templates enforce explicit platform applicability rather than assuming desktop-only behavior or literal parity.
 9. No known Android MVP blocker is hidden behind an undocumented exclusion.
-10. Android 10 support, Google Play distribution, 32-bit Android, and non-local document providers remain clearly documented post-MVP work rather than accidental partial implementations.
+10. Android 10 support, Google Play distribution, and non-local document providers remain clearly documented as post-MVP work, while non-ARM64 Android ABIs remain clearly documented and enforced as unsupported.

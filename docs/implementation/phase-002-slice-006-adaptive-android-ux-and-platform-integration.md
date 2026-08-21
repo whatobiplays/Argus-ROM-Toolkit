@@ -53,9 +53,10 @@ platform-neutral verification command.
 The repository-owned scenario is
 `scripts/run_phase_002_android_adaptive_ux_tests.sh`, using the shared
 `run_phase_002_android_scenario_common.sh` helper and
-`flutter/integration_test/phase_002_android_adaptive_ux_test.dart`. It accepts
-the packaged `arm64-v8a` or `x86_64` API 36 emulator ABI and records the actual
-device ID, API, and ABI before exercising host window/lifecycle actions,
+`flutter/integration_test/phase_002_android_adaptive_ux_test.dart`. At the time
+of the recorded P02-006 qualification, it accepted the packaged `arm64-v8a` or
+`x86_64` API 36 emulator ABI and recorded the actual device ID, API, and ABI
+before exercising host window/lifecycle actions,
 permission-overlay return, native Back key events through picker hierarchy,
 system inset facts, and runtime identity preservation. Host actions use
 Flutter baseline/completion markers and per-scenario UI or lifecycle
@@ -64,6 +65,12 @@ explicitly recorded as unverified/not applicable because the product exposes
 no text-input surface. Nested local `PopScope` handling remains ordinary Back
 semantics; predictive progress is recorded unverified unless a routed pop
 boundary and platform tooling can exercise it.
+
+The current PHASE-002/SPEC-X-002 contract supports only `arm64-v8a`. The
+recorded ARM64 qualification remains valid, but historical `x86_64` acceptance
+in this slice's tooling is not supported product behavior or valid phase
+evidence. P02-007 owns removal of residual non-ARM64 build, packaging, harness,
+and CI paths.
 
 The final qualification run on 2026-08-20 UTC used `emulator-5554` at API 36
 with ABI `arm64-v8a`; the APK built and installed with the pinned NDK

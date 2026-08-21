@@ -3,7 +3,7 @@
 **Document ID:** SPEC-X-002  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
+**Last Updated:** 2026-08-21  
 **Depends On:** ARCH-001, ARCH-002, PHASE-002, SPEC-X-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -19,14 +19,14 @@ Detailed source-provider behavior remains owned by `SPEC-BE-011`/`SPEC-BE-013`; 
 Phase 002 Android MVP uses:
 
 - minimum Android version: Android 11 / API 30;
-- production ABI: ARM64 (`arm64-v8a`);
-- emulator/test ABI: x86_64;
+- supported Android ABI: ARM64 (`arm64-v8a`) for production, emulator, CI, and native qualification;
+- non-ARM64 Android ABIs, including `x86_64`, are unsupported;
 - no orientation lock;
 - direct distribution first;
 - a signed installable APK required by phase completion;
 - compile/target SDK aligned with the repository's pinned Flutter toolchain unless a required platform capability forces an explicit override.
 
-Android 10/API 29, 32-bit ABIs, Google Play submission/policy work, and arbitrary document-provider execution are post-MVP.
+Android 10/API 29, Google Play submission/policy work, and arbitrary document-provider execution are post-MVP. Non-ARM64 Android ABIs are unsupported because they do not represent Argus's intended phone and retro-emulation-handheld hardware.
 
 ## 3. Platform Applicability Model
 
@@ -162,7 +162,7 @@ Google Play submission and policy approval are explicitly post-MVP and must not 
 Phase 002 requires:
 
 - reusable shared contract/controller tests in the platform-neutral suite where behavior is platform-neutral;
-- an x86_64 Android emulator gate through the real Flutter -> client -> FRB -> Rust -> SQLite stack;
+- an ARM64 Android native gate through the real Flutter -> client -> FRB -> Rust -> SQLite stack;
 - native tests for permission/readiness, Activity lifecycle, storage/root semantics, foreground execution, process loss/restart, Back/insets, and adaptive presentation as those capabilities become active;
 - foreground-execution tests for `dataSync` declaration, direct-user lease acquisition, service-start rejection, Android 15+ timeout callback/finalization, exhausted-budget rejection, notification denial, bounded wake-lock acquisition/release when required, and teardown after the final qualifying job;
 - at least one physical ARM64 critical-path milestone before phase completion;
@@ -195,13 +195,14 @@ Phase 002 must not introduce:
 - Flutter filesystem traversal as source authority;
 - WorkManager or another Android scheduler that silently auto-resumes significant Argus jobs;
 - OS/device-category booleans as global layout authority;
-- Play-policy-driven weakening of the approved direct-distribution MVP contract.
+- Play-policy-driven weakening of the approved direct-distribution MVP contract;
+- non-ARM64 Android build targets, packaged native libraries, emulator assumptions, harness branches, or CI jobs presented as supported product or verification paths.
 
 ## 15. Acceptance Criteria
 
 SPEC-X-002 is satisfied when:
 
-1. Android API/ABI/distribution baselines are explicit.
+1. Android API, ARM64-only ABI, and distribution baselines are explicit.
 2. All files access is a live mandatory platform prerequisite and not a Rust startup phase.
 3. Notification authorization is optional and cannot become Jobs authority.
 4. Android owns one cached Flutter engine/normal Dart isolate/root Argus runtime per process.
@@ -211,7 +212,7 @@ SPEC-X-002 is satisfied when:
 8. Foreground-service execution hosts the existing runtime rather than replacing it.
 9. Shared adaptive presentation remains width-driven with no Android route fork.
 10. Direct distribution produces a signed installable APK with external credentials.
-11. Android native verification is separate from the platform-neutral gate and includes emulator plus physical ARM64 evidence by phase completion.
+11. Android native verification is separate from the platform-neutral gate and uses the supported ARM64 ABI, including emulator/native qualification plus physical ARM64 evidence by phase completion.
 12. Future phases explicitly classify Android applicability and cannot complete with undocumented Android deferrals.
 13. Qualifying `LibraryScan` work uses one `dataSync` foreground execution lease acquired from direct user admission, without creating a second runtime or scheduler.
 14. Live foreground-service timeout handling finalizes through ordinary typed operation outcomes, while only stale nonterminal work discovered after process loss uses `Cancelled`/`Abandoned` recovery mapping.

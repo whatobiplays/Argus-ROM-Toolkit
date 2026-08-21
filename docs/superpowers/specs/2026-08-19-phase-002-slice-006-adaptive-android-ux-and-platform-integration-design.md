@@ -144,7 +144,7 @@ Tests cover at minimum:
 
 ### 5.2 Android native qualification
 
-P02-006 owns a repository-run Android native qualification milestone. On the supported API 36 emulator environment, it exercises representative:
+P02-006 owns a repository-run Android native qualification milestone. On the supported ARM64 API 36 emulator environment, it exercises representative:
 
 - rotation and Activity recreation;
 - background/foreground transitions;
@@ -157,7 +157,7 @@ P02-006 owns a repository-run Android native qualification milestone. On the sup
 
 A required native scenario that cannot be exercised is recorded as unverified rather than inferred from widget tests.
 
-P02-007 remains responsible for CI wiring of Android native gates, signed direct-distribution artifacts, desktop regression closure, future-phase applicability guards, and final physical ARM64 evidence.
+P02-007 remains responsible for ARM64-only CI wiring of Android native gates, removal of residual non-ARM64 build, packaging, harness, and CI paths, signed direct-distribution artifacts, desktop regression closure, future-phase applicability guards, and final physical ARM64 evidence.
 
 ## 6. Expected implementation boundaries
 

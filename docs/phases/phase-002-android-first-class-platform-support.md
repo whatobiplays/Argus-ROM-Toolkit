@@ -3,7 +3,7 @@
 **Document ID:** PHASE-002  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
+**Last Updated:** 2026-08-21  
 **Depends On:** ARCH-001, ARCH-002, PHASE-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -27,8 +27,7 @@ When Phase 002 is complete, a user can install Argus directly on a supported And
 ## 4. In Scope
 
 - Android 11 / API 30 minimum.
-- ARM64 (`arm64-v8a`) production support.
-- x86_64 Android emulator/test support.
+- ARM64 (`arm64-v8a`) Android support for production, emulator, CI, and native qualification.
 - Direct-distribution-first Android release path with a signed installable APK by phase completion.
 - Mandatory Android All files access (`MANAGE_EXTERNAL_STORAGE`) as a platform readiness prerequisite.
 - Optional notification permission onboarding on API 33+.
@@ -38,7 +37,7 @@ When Phase 002 is complete, a user can install Argus directly on a supported And
 - Internal/shared storage, Downloads, removable SD, and USB/OTG where Android exposes usable local filesystem access.
 - Android `dataSync` foreground-service execution host for qualifying user-started long-running local-file work, started from direct user admission while the app is eligible to create the service.
 - Shared width-driven Compact/Medium/Expanded/Large adaptive presentation with no orientation lock.
-- x86_64 emulator native verification and a physical ARM64 phase milestone.
+- ARM64-only emulator/native verification and a physical ARM64 phase milestone.
 - Explicit platform applicability classification for future phases.
 
 ## 5. Platform Applicability
@@ -57,7 +56,7 @@ For the inherited Phase 000 capability set, appearance settings are **Shared**, 
 ## 6. Out of Scope
 
 - Android 10 / API 29 support; add post-MVP with an intentionally designed compatibility path.
-- 32-bit Android ABIs.
+- Non-ARM64 Android ABIs, including `x86_64` and 32-bit ABIs.
 - Google Play submission, Play policy approval, or Play-specific product compromises.
 - SAF/content-provider execution as the Phase 002 local-filesystem engine.
 - Cloud-backed or virtual `DocumentsProvider` sources.
@@ -89,13 +88,13 @@ Phase 002 is governed by the following Ready specifications, as amended for Andr
 
 ## 8. Ordered Implementation Slices
 
-1. **SLICE-P02-001 — Android Platform Bootstrap and First-Run Readiness**: native Android host/build integration, API 30 baseline, ARM64/x86_64 bridge packaging, one application-scoped runtime, mandatory All files access onboarding, optional notification onboarding, shared Compact direct navigation, and existing startup/settings persistence on Android; no Android root management yet.
+1. **SLICE-P02-001 — Android Platform Bootstrap and First-Run Readiness**: native Android host/build integration, API 30 baseline, ARM64 bridge packaging, one application-scoped runtime, mandatory All files access onboarding, optional notification onboarding, shared Compact direct navigation, and existing startup/settings persistence on Android; no Android root management yet.
 2. **SLICE-P02-002 — Android LocalFilesystem and Argus Folder Picker**: mounted-volume discovery, Argus-owned filesystem browser, Android `LocalFilesystem` root admission, duplicate/overlap behavior, root persistence, and availability; no scan execution yet.
 3. **SLICE-P02-003 — Android Scan and Source Hierarchy**: Add & Scan, `LibraryScan`, authoritative reconciliation, hierarchy inspection, Scan Again, identity/move behavior, and existing single-root Jobs controls.
 4. **SLICE-P02-004 — Foreground Job Execution and Android Lifecycle**: `dataSync` foreground-service execution host, direct-user-admission start boundary, Activity detach/reattach, notification projection/cancel route, bounded partial wake-lock use when active work requires screen-off CPU continuity, Android 15+ timeout handling, OS interruption handling, and process-death recovery with no auto-resume.
 5. **SLICE-P02-005 — Multi-Root and Applicable Feature Coverage**: multiple roots, Scan All, safe active-root removal, history/retry/cancel, restart recovery, permission regrant, removable-volume unavailability/remount, Android-adapted startup diagnostic export, and all currently Android-applicable Phase 000/001 capabilities.
 6. **SLICE-P02-006 — Adaptive Android UX and Platform Integration**: phone/tablet/foldable/handheld hardening, portrait/landscape, live size-class transitions, Back/predictive Back, touch/accessibility/system-inset behavior, picker hardening, and lifecycle edge cases.
-7. **SLICE-P02-007 — Android CI, Distribution, and First-Class Platform Hardening**: x86_64 emulator CI through the real stack, physical ARM64 evidence, signed direct-distribution artifact, desktop regression preservation, future-phase applicability guards, and final Phase 002 verification record.
+7. **SLICE-P02-007 — Android CI, Distribution, and First-Class Platform Hardening**: ARM64 Android CI/native qualification through the real stack, removal of residual non-ARM64 build targets, packaged libraries, emulator assumptions, harness branches, and CI jobs, physical ARM64 evidence, signed direct-distribution artifact, desktop regression preservation, future-phase applicability guards, and final Phase 002 verification record.
 
 `SLICE-P02-007` is the final Phase 002 implementation slice.
 
@@ -125,7 +124,7 @@ Phase 002 is governed by the following Ready specifications, as amended for Andr
 - `just check` remains the deterministic platform-neutral gate.
 - Shared domain/application/bridge/controller behavior continues to run there.
 - Android-native verification is repository-owned but separate from `just check`.
-- x86_64 emulator tests exercise the real Flutter -> focused client -> FRB -> Rust -> SQLite -> Android `LocalFilesystem` path where the active slice reaches that capability.
+- ARM64 Android native qualification exercises the real Flutter -> focused client -> FRB -> Rust -> SQLite -> Android `LocalFilesystem` path where the active slice reaches that capability.
 - Native lifecycle tests cover Activity recreation, permission loss/regrant, foreground execution, process death, and restart recovery as those slices activate them.
 - Foreground-execution tests cover `dataSync` declaration/admission, Android 15+ timeout callbacks and exhausted-budget start rejection, bounded wake-lock acquisition/release, notification denial, and service teardown after the final qualifying job.
 - Shared UI tests cover Compact, Medium, Expanded, and Large widths independent of OS.
@@ -137,13 +136,13 @@ Phase 002 is complete only when:
 
 1. all seven slices are complete;
 2. all Android-applicable Phase 000/001 capabilities are implemented or explicitly excluded with rationale in their owning spec;
-3. the x86_64 Android emulator native gate is green through the real product stack;
+3. the ARM64 Android native gate is green through the real product stack;
 4. existing desktop regression gates remain green;
 5. the physical ARM64 milestone is recorded;
 6. a signed installable Android APK is produced through the repository-owned release path with external signing credentials;
 7. architecture/specifications/templates describe Android as a first-class platform and enforce the applicability model for future phases;
 8. no known Android MVP blocker is hidden behind an undocumented exclusion; and
-9. Android 10, Google Play, 32-bit Android, and non-local document providers remain explicitly deferred rather than partially implemented by accident.
+9. Android 10, Google Play, and non-local document providers remain explicitly deferred, while non-ARM64 Android ABIs remain explicitly unsupported rather than partially implemented by accident.
 
 ## 13. Readiness Checklist
 

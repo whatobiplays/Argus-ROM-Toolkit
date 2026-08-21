@@ -3,7 +3,7 @@
 **Document ID:** CONV-TEST-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
+**Last Updated:** 2026-08-21  
 **Depends On:** ARCH-001, PHASE-000, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-008, SPEC-BE-010, SPEC-BE-011, SPEC-BE-012, CONV-REPO-001, CONV-RUST-001, CONV-FLUTTER-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -781,7 +781,7 @@ Rules:
 A phase/release may require end-to-end or demonstration evidence beyond `just check`.
 
 For example, PHASE-000 requires its canonical demonstration and startup/recovery/settings workflows as part of phase completion.
-PHASE-002 additionally requires a repository-owned x86_64 Android emulator milestone and a recorded critical-path run on at least one physical ARM64 Android device or handheld. Hardware-dependent removable-media cases are recorded as applicable evidence rather than requiring one exact accessory model.
+PHASE-002 additionally requires a repository-owned ARM64 Android native milestone and a recorded critical-path run on at least one physical ARM64 Android device or handheld. Android native verification targets the supported ARM64 product ABI rather than maintaining a non-product ABI solely for emulator convenience. Hardware-dependent removable-media cases are recorded as applicable evidence rather than requiring one exact accessory model.
 
 Rules:
 

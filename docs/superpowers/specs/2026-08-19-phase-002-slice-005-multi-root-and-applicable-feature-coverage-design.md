@@ -263,10 +263,10 @@ These cases should use controlled focused fixtures rather than one oversized end
 ### 13.2 Explicitly out of scope
 
 - P02-006 adaptive UX hardening, predictive Back, broader picker hardening, and form-factor-specific polish.
-- P02-007 CI/distribution/signing and physical ARM64 completion evidence.
+- P02-007 ARM64-only CI/native qualification, residual non-ARM64 tooling removal, distribution/signing, and physical ARM64 completion evidence.
 - Android 10 / API 29.
 - Google Play policy or submission work.
-- 32-bit Android ABIs.
+- Non-ARM64 Android ABIs, including `x86_64` and 32-bit ABIs.
 - SAF/content-provider library sources.
 - WorkManager or automatic significant-work resumption.
 - New resumable scan semantics.
@@ -286,7 +286,7 @@ After P02-005:
 
 - Android has functional coverage of all applicable Phase 000/001 product capabilities;
 - P02-006 remains responsible for adaptive Android UX and platform-integration hardening;
-- P02-007 remains responsible for CI, distribution, physical ARM64 evidence, and final Phase 002 first-class-platform qualification.
+- P02-007 remains responsible for ARM64-only CI/native qualification, removal of residual non-ARM64 build, packaging, harness, and CI paths, distribution, physical ARM64 evidence, and final Phase 002 first-class-platform qualification.
 
 ## 15. Rejected Alternatives
 

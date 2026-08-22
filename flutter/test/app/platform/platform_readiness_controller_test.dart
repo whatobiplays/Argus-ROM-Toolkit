@@ -16,7 +16,7 @@ void main() {
         allFilesAccessGranted: false,
         notificationAuthorization: NotificationAuthorization.promptRequired,
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       ),
     );
   });
@@ -67,7 +67,7 @@ void main() {
       allFilesAccessGranted: true,
       notificationAuthorization: NotificationAuthorization.promptRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     await notifier.refresh();
 
@@ -85,7 +85,7 @@ void main() {
         allFilesAccessGranted: true,
         notificationAuthorization: NotificationAuthorization.notRequired,
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
       final scope = container();
       addTearDown(scope.dispose);
@@ -112,7 +112,7 @@ void main() {
       allFilesAccessGranted: false,
       notificationAuthorization: NotificationAuthorization.notRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     final scope = container();
     addTearDown(scope.dispose);
@@ -130,7 +130,7 @@ void main() {
       allFilesAccessGranted: true,
       notificationAuthorization: NotificationAuthorization.notRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     await notifier.refresh();
     await notifier.refresh();
@@ -149,7 +149,7 @@ void main() {
       allFilesAccessGranted: true,
       notificationAuthorization: NotificationAuthorization.notRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     final volumes = _FakeMountedVolumesApi([
       _mountedVolume('/storage/ABCD', '/mnt/first'),
@@ -193,7 +193,7 @@ void main() {
       allFilesAccessGranted: true,
       notificationAuthorization: NotificationAuthorization.promptRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     api.requestedNotificationResult = NotificationAuthorization.granted;
     await settle();
@@ -218,7 +218,7 @@ void main() {
       allFilesAccessGranted: true,
       notificationAuthorization: NotificationAuthorization.promptRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     api.requestedNotificationResult = NotificationAuthorization.denied;
     await settle();
@@ -240,7 +240,7 @@ void main() {
       allFilesAccessGranted: true,
       notificationAuthorization: NotificationAuthorization.notRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     final scope = container();
     addTearDown(scope.dispose);
@@ -327,7 +327,7 @@ void main() {
         allFilesAccessGranted: true,
         notificationAuthorization: NotificationAuthorization.notRequired,
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
       final scope = container();
       addTearDown(scope.dispose);
@@ -339,7 +339,7 @@ void main() {
               as PlatformReadinessReady;
       expect(
         ready.runtimeConfiguration.standardApplicationDataDirectory,
-        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
 
       // Revocation hides content but never changes the latched root.
@@ -356,7 +356,7 @@ void main() {
       );
       expect(
         notifier.runtimeConfiguration!.standardApplicationDataDirectory,
-        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
 
       // Regrant restores Ready with the original latched configuration.
@@ -372,7 +372,7 @@ void main() {
               as PlatformReadinessReady;
       expect(
         restored.runtimeConfiguration.standardApplicationDataDirectory,
-        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
     },
   );

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EVIDENCE_ROOT="/sdcard/ArgusP02005Evidence"
 EVIDENCE_PATH="${EVIDENCE_ROOT}/removable-root-id.txt"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 POLL_SECONDS="${ARGUS_ANDROID_REMOVABLE_POLL_SECONDS:-30}"
 
 # shellcheck disable=SC1091

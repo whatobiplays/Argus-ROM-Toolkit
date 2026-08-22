@@ -27,8 +27,7 @@ rustup toolchain install "$rust_channel" \
   --component rustfmt
 
 rustup target add --toolchain "$rust_channel" \
-  aarch64-linux-android \
-  x86_64-linux-android
+  aarch64-linux-android
 
 bash "$ROOT_DIR/scripts/run_rust.sh" cargo fetch --manifest-path "$ROOT_DIR/rust/Cargo.toml" --locked
 

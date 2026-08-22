@@ -87,11 +87,6 @@ argus_android_sm_help_supports_commands() {
 }
 
 argus_android_require_device() {
-  local require_arm64="${ARGUS_ANDROID_DEVICE_REQUIRE_ARM64:-true}"
-  if [[ "${require_arm64}" != true && "${require_arm64}" != false ]]; then
-    printf 'ARGUS_ANDROID_DEVICE_REQUIRE_ARM64 must be true or false\n' >&2
-    return 1
-  fi
   ARGUS_ANDROID_SCENARIO_ADB="${ARGUS_ANDROID_ADB:-$(command -v adb || true)}"
   if [[ -z "${ARGUS_ANDROID_SCENARIO_ADB}" ||
     ! -x "${ARGUS_ANDROID_SCENARIO_ADB}" ]]; then
@@ -131,35 +126,27 @@ argus_android_require_device() {
     "${ARGUS_ANDROID_SCENARIO_DEVICE}" shell getprop ro.build.version.sdk |
     tr -d '\r')"
   if [[ "${ARGUS_ANDROID_SCENARIO_API}" != 36 ]]; then
-    printf 'P02-005 native scenarios require API 36; device reports %s\n' \
+    printf 'P02-007 final native scenarios require API 36; device reports %s\n' \
       "${ARGUS_ANDROID_SCENARIO_API}" >&2
     return 1
   fi
   local abi
   abi="$(${ARGUS_ANDROID_SCENARIO_ADB} -s "${ARGUS_ANDROID_SCENARIO_DEVICE}" \
     shell getprop ro.product.cpu.abi | tr -d '\r')"
+  if [[ "${abi}" != arm64-v8a ]]; then
+    printf 'P02-007 native scenarios require ARM64 arm64-v8a; device reports %s\n' \
+      "${abi}" >&2
+    return 1
+  fi
   export ARGUS_ANDROID_SCENARIO_ABI="${abi}"
-  if [[ "${require_arm64}" == true && "${abi}" != arm64-v8a ]]; then
-    printf 'P02-005 native scenarios require ARM64; device reports %s\n' \
-      "${abi}" >&2
-    return 1
-  fi
-  # P02-006 records the actual emulator ABI and accepts either ABI packaged by
-  # the repository APK. Earlier P02-005 scenarios retain their ARM64 gate.
-  if [[ "${require_arm64}" == false &&
-    "${abi}" != arm64-v8a && "${abi}" != x86_64 ]]; then
-    printf 'P02-006 native scenarios require a packaged ABI (arm64-v8a or x86_64); device reports %s\n' \
-      "${abi}" >&2
-    return 1
-  fi
 }
 
 argus_android_build_and_install() {
   local root_dir="$1"
-  local package_id="dev.argusromtoolkit.argus"
+  local package_id="com.argusromtoolkit.argus"
   (
     cd "${root_dir}/flutter"
-    fvm flutter build apk --debug --target-platform android-arm64,android-x64
+    fvm flutter build apk --debug --target-platform android-arm64
   )
   local apk_path="${root_dir}/flutter/build/app/outputs/flutter-apk/app-debug.apk"
   if [[ ! -f "${apk_path}" ]]; then

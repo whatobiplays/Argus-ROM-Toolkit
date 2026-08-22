@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATION_SQL_PATH="${ROOT_DIR}/rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0001_initial.sql"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 STAGING_DB_PATH="/data/local/tmp/ArgusP02005Diagnostics.sqlite3"
 fixture_root=''
 

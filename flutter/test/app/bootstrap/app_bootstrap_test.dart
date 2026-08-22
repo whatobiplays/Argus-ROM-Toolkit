@@ -31,7 +31,7 @@ void main() {
     allFilesAccessGranted: false,
     notificationAuthorization: NotificationAuthorization.promptRequired,
     standardApplicationDataDirectory:
-        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        '/data/user/0/com.argusromtoolkit.argus/files/argus',
   );
 
   testWidgets('ArgusBootstrap owns exactly one root ProviderScope', (
@@ -142,7 +142,7 @@ void main() {
         allFilesAccessGranted: true,
         notificationAuthorization: NotificationAuthorization.notRequired,
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
       await container
           .read(platformReadinessControllerProvider.notifier)
@@ -179,7 +179,7 @@ void main() {
           allFilesAccessGranted: true,
           notificationAuthorization: NotificationAuthorization.notRequired,
           standardApplicationDataDirectory:
-              '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+              '/data/user/0/com.argusromtoolkit.argus/files/argus',
         ),
       );
       await tester.pumpWidget(
@@ -199,7 +199,7 @@ void main() {
 
       expect(
         container.read(standardApplicationDataDirectoryProvider),
-        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
       expect(
         container.read(argusClientGatewayFactoryProvider)(),
@@ -281,7 +281,7 @@ void main() {
           allFilesAccessGranted: true,
           notificationAuthorization: NotificationAuthorization.notRequired,
           standardApplicationDataDirectory:
-              '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+              '/data/user/0/com.argusromtoolkit.argus/files/argus',
         ),
       );
       final volumes = _MountedVolumesStub([

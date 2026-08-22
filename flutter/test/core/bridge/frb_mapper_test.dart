@@ -413,7 +413,7 @@ void main() {
         initializeNative: () async {},
         dataDirectoryOverride: '/tmp/explicit',
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
 
       await gateway.initialize();
@@ -457,7 +457,7 @@ void main() {
         api: api,
         initializeNative: () async {},
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
 
       await gateway.initialize();
@@ -465,7 +465,7 @@ void main() {
       expect(api.lastCall, 'crateInitializeWithStandardDataDirectory');
       expect(
         api.lastArgument,
-        '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+        '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
     },
   );

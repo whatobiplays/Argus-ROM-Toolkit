@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FIXTURE_ROOT="/sdcard/ArgusP02005PermissionRoot"
 EVIDENCE_ROOT="/sdcard/ArgusP02005Evidence"
 EVIDENCE_PATH="${EVIDENCE_ROOT}/permission-root-id.txt"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/run_phase_002_android_scenario_common.sh"

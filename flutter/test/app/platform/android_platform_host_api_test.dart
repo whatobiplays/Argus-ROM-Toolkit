@@ -25,7 +25,7 @@ void main() {
       'allFilesAccessGranted': true,
       'notificationAuthorization': 'promptRequired',
       'standardApplicationDataDirectory':
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     };
 
     final snapshot = await const MethodChannelAndroidPlatformHostApi()
@@ -39,7 +39,7 @@ void main() {
     );
     expect(
       snapshot.standardApplicationDataDirectory,
-      '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+      '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
   });
 

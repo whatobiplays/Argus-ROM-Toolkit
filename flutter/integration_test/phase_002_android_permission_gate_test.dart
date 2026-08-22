@@ -37,7 +37,7 @@ void main() {
     expect(standardDirectory, isA<String>());
     expect(
       standardDirectory,
-      startsWith('/data/user/0/dev.argusromtoolkit.argus/files/argus'),
+      startsWith('/data/user/0/com.argusromtoolkit.argus/files/argus'),
     );
     expect(
       File('$standardDirectory/argus.sqlite3').existsSync(),

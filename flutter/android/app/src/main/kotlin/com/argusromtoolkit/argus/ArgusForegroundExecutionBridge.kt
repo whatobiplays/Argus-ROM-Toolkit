@@ -1,4 +1,4 @@
-package dev.argusromtoolkit.argus
+package com.argusromtoolkit.argus
 
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel

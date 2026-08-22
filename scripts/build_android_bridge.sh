@@ -9,7 +9,7 @@ CARGO_NDK_VERSION="4.1.2"
 rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' "$ROOT_DIR/rust-toolchain.toml")"
 [[ -n "$rust_channel" ]] || { printf 'Missing Rust toolchain pin\n' >&2; exit 1; }
 
-rustup target add --toolchain "$rust_channel" aarch64-linux-android x86_64-linux-android
+rustup target add --toolchain "$rust_channel" aarch64-linux-android
 
 if [[ ! -x "$TOOL_ROOT/bin/cargo-ndk" ]]; then
   bash "$ROOT_DIR/scripts/run_rust.sh" cargo install cargo-ndk \
@@ -48,7 +48,6 @@ mkdir -p "$JNI_DIR"
     CARGO_NDK_PLATFORM=30 \
     bash "$ROOT_DIR/scripts/run_rust.sh" cargo ndk \
       -t arm64-v8a \
-      -t x86_64 \
       -o "$JNI_DIR" \
       --manifest-path "$ROOT_DIR/rust/Cargo.toml" \
       build \

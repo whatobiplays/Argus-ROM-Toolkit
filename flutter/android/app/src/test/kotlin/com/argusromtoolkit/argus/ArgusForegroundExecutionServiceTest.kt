@@ -1,4 +1,4 @@
-package dev.argusromtoolkit.argus
+package com.argusromtoolkit.argus
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals

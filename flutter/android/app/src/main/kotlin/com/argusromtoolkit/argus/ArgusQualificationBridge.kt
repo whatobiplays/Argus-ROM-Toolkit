@@ -1,4 +1,4 @@
-package dev.argusromtoolkit.argus
+package com.argusromtoolkit.argus
 
 import android.app.Activity
 import io.flutter.plugin.common.BinaryMessenger

@@ -1,4 +1,4 @@
-package dev.argusromtoolkit.argus
+package com.argusromtoolkit.argus
 
 import android.content.Intent
 import android.os.Handler
@@ -238,9 +238,9 @@ class ArgusForegroundExecutionHost private constructor(
     companion object {
         const val CHANNEL = "argus/foreground_execution"
         const val EVENT_CHANNEL = "argus/foreground_execution/events"
-        const val ACTION_START = "dev.argusromtoolkit.argus.action.START_FOREGROUND"
-        const val ACTION_STOP = "dev.argusromtoolkit.argus.action.STOP_FOREGROUND"
-        const val ACTION_CANCEL = "dev.argusromtoolkit.argus.action.CANCEL_JOB"
+        const val ACTION_START = "com.argusromtoolkit.argus.action.START_FOREGROUND"
+        const val ACTION_STOP = "com.argusromtoolkit.argus.action.STOP_FOREGROUND"
+        const val ACTION_CANCEL = "com.argusromtoolkit.argus.action.CANCEL_JOB"
         const val EXTRA_JOB_RUN_ID = "jobRunId"
         const val KEY_LEASE_ID = "leaseId"
         const val KEY_EVENT = "event"

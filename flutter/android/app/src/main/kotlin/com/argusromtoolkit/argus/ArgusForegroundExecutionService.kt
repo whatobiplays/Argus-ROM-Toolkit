@@ -1,4 +1,4 @@
-package dev.argusromtoolkit.argus
+package com.argusromtoolkit.argus
 
 import android.app.Notification
 import android.app.NotificationChannel

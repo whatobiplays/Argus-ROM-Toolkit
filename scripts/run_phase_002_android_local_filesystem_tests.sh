@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 FIXTURE_ROOT="/sdcard/ArgusP02002Fixture"
 
 adb_command="${ARGUS_ANDROID_ADB:-$(command -v adb || true)}"
@@ -31,8 +31,8 @@ if [[ -z "$device_id" ]]; then
 fi
 
 api_level="$($adb_command -s "$device_id" shell getprop ro.build.version.sdk | tr -d '\r')"
-if [[ ! "$api_level" =~ ^[0-9]+$ ]] || (( api_level < 30 )); then
-  printf 'P02-002 requires Android API 30+; device reports %s\n' "$api_level" >&2
+if [[ "$api_level" != 36 ]]; then
+  printf 'P02-002 requires Android API 36; device reports %s\n' "$api_level" >&2
   exit 1
 fi
 
@@ -47,10 +47,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-printf 'Building the dual-ABI debug APK through repository build plumbing\n'
+printf 'Building the ARM64 debug APK through repository build plumbing\n'
 (
   cd "$ROOT_DIR/flutter"
-  fvm flutter build apk --debug --target-platform android-arm64,android-x64
+  fvm flutter build apk --debug --target-platform android-arm64
 )
 
 printf 'Installing the debug APK on %s\n' "$device_id"

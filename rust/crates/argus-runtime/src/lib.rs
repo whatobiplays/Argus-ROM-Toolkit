@@ -2039,7 +2039,7 @@ mod tests {
 
     #[test]
     fn android_accepts_a_host_standard_data_directory() {
-        let standard = PathBuf::from("/data/user/0/dev.argusromtoolkit.argus/files/argus");
+        let standard = PathBuf::from("/data/user/0/com.argusromtoolkit.argus/files/argus");
 
         assert_eq!(
             resolve_data_directory(
@@ -2058,7 +2058,7 @@ mod tests {
     #[test]
     fn explicit_override_precedes_host_standard_directory() {
         let explicit = PathBuf::from("/tmp/explicit");
-        let standard = PathBuf::from("/data/user/0/dev.argusromtoolkit.argus/files/argus");
+        let standard = PathBuf::from("/data/user/0/com.argusromtoolkit.argus/files/argus");
 
         assert_eq!(
             resolve_data_directory(
@@ -2077,7 +2077,7 @@ mod tests {
     #[test]
     fn host_standard_directory_precedes_desktop_defaults() {
         let home = PathBuf::from("/home/tester");
-        let standard = PathBuf::from("/data/user/0/dev.argusromtoolkit.argus/files/argus");
+        let standard = PathBuf::from("/data/user/0/com.argusromtoolkit.argus/files/argus");
 
         assert_eq!(
             resolve_data_directory(

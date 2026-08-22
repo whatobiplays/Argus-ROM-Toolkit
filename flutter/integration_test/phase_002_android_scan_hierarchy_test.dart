@@ -123,7 +123,7 @@ Future<void> _runSeed(
     find.text('move-me.bin'),
     message: 'initial source hierarchy did not render move-me.bin',
   );
-  expect(find.byKey(const ValueKey<String>('sources-scan-all')), findsNothing);
+  await _expectScanAllAvailable(tester);
 
   final rootChildren = await _rootChildren(client, root.id);
   final moved = _entryByName(rootChildren, 'move-me.bin');
@@ -176,7 +176,7 @@ Future<void> _runReconcile(
   );
   final moved = _entryByName(movedChildren.items, 'move-me.bin');
   expect(moved.sourceEntryId.value, seedEntryId);
-  expect(find.byKey(const ValueKey<String>('sources-scan-all')), findsNothing);
+  await _expectScanAllAvailable(tester);
 
   await _openConfiguredRoot(tester, client, root);
   await _pumpUntil(
@@ -217,7 +217,7 @@ Future<void> _runCancel(
   final afterCancel = await _rootChildren(client, root.id);
   expect(_entryNames(afterCancel), containsAll(<String>['keep.txt', 'Moved']));
   File(evidencePath).writeAsStringSync(jobRunId);
-  expect(find.byKey(const ValueKey<String>('sources-scan-all')), findsNothing);
+  await _expectScanAllAvailable(tester);
 }
 
 Future<void> _runRetry(
@@ -276,7 +276,7 @@ Future<void> _runRetry(
     find.text('Moved'),
     message: 'retry hierarchy did not return authoritative Moved entry',
   );
-  expect(find.byKey(const ValueKey<String>('sources-scan-all')), findsNothing);
+  await _expectScanAllAvailable(tester);
 }
 
 ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(
@@ -379,6 +379,20 @@ Future<void> _goToSources(WidgetTester tester) async {
         .hitTestable(),
   );
   await _pumpUntil(tester, addButton, message: 'Sources page did not appear');
+}
+
+Future<void> _expectScanAllAvailable(WidgetTester tester) async {
+  final addButton = find
+      .byKey(const ValueKey<String>('sources-add-library-folder'))
+      .hitTestable();
+  if (addButton.evaluate().isEmpty) {
+    await _goToSources(tester);
+  }
+  expect(
+    find.byKey(const ValueKey<String>('sources-scan-all')),
+    findsOneWidget,
+    reason: 'Scan All is available once a configured root exists',
+  );
 }
 
 Future<List<LibraryRoot>> _waitForRoots(

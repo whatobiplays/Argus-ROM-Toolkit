@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 FIXTURE_ROOT="/sdcard/ArgusP02003Fixture"
 EVIDENCE_ROOT="/sdcard/ArgusP02003Evidence"
 SEED_ENTRY_EVIDENCE="${EVIDENCE_ROOT}/seed-entry-id.txt"
@@ -63,10 +63,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-printf 'Building the dual-ABI debug APK through repository build plumbing\n'
+printf 'Building the ARM64 debug APK through repository build plumbing\n'
 (
   cd "${ROOT_DIR}/flutter"
-  fvm flutter build apk --debug --target-platform android-arm64,android-x64
+  fvm flutter build apk --debug --target-platform android-arm64
 )
 
 apk_path="${ROOT_DIR}/flutter/build/app/outputs/flutter-apk/app-debug.apk"
@@ -76,14 +76,14 @@ if [[ ! -f "${apk_path}" ]]; then
 fi
 apk_entries="$(unzip -Z1 "${apk_path}")"
 if ! grep -q '^lib/arm64-v8a/' <<<"${apk_entries}"; then
-  printf 'Dual-ABI APK is missing arm64-v8a native packaging\n' >&2
+  printf 'ARM64 APK is missing arm64-v8a native packaging\n' >&2
   exit 1
 fi
-if ! grep -q '^lib/x86_64/' <<<"${apk_entries}"; then
-  printf 'Dual-ABI APK is missing x86_64 native packaging\n' >&2
+if grep -Eq '^lib/(x86_64|x86|armeabi-v7a)/' <<<"${apk_entries}"; then
+  printf 'Unsupported Android ABI packaging is present in the APK\n' >&2
   exit 1
 fi
-printf 'Verified dual-ABI packaging: arm64-v8a and x86_64\n'
+printf 'Verified ARM64-only packaging: arm64-v8a\n'
 
 printf 'Installing the debug APK on %s\n' "${device_id}"
 "${adb_command}" -s "${device_id}" install -r "${apk_path}" >/dev/null

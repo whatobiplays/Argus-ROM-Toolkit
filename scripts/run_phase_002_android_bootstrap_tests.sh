@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 
 require_command() {
   local command_name="$1"
@@ -20,7 +20,7 @@ device_id="${ARGUS_ANDROID_DEVICE_ID:-}"
 if [[ -z "$device_id" ]]; then
   devices="$(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }')"
   if [[ -z "$devices" ]]; then
-    printf 'No connected Android device found; start an x86_64 API-30+ emulator or set ARGUS_ANDROID_DEVICE_ID\n' >&2
+    printf 'No connected Android device found; connect an ARM64 API-36 device or emulator or set ARGUS_ANDROID_DEVICE_ID\n' >&2
     exit 1
   fi
   count="$(printf '%s\n' "$devices" | wc -l | tr -d ' ')"
@@ -32,21 +32,21 @@ if [[ -z "$device_id" ]]; then
 fi
 
 api_level="$(adb -s "$device_id" shell getprop ro.build.version.sdk | tr -d '\r')"
-if (( api_level < 30 )); then
-  printf 'Android API %s is below the P02-001 minimum of 30\n' "$api_level" >&2
+if [[ "$api_level" != 36 ]]; then
+  printf 'P02-001 final milestone requires Android API 36; device reports %s\n' "$api_level" >&2
   exit 1
 fi
 
 abi="$(adb -s "$device_id" shell getprop ro.product.cpu.abi | tr -d '\r')"
-if [[ "$abi" != "x86_64" ]]; then
-  printf 'Slice-001 emulator milestone requires x86_64; device reports %s\n' "$abi" >&2
+if [[ "$abi" != "arm64-v8a" ]]; then
+  printf 'P02-001 native milestone requires ARM64; device reports %s\n' "$abi" >&2
   exit 1
 fi
 
 printf 'Building the debug APK through repository build plumbing\n'
 (
   cd "$ROOT_DIR/flutter"
-  fvm flutter build apk --debug --target-platform android-arm64,android-x64
+  fvm flutter build apk --debug --target-platform android-arm64
 )
 
 printf 'Installing the debug APK on %s\n' "$device_id"
@@ -60,7 +60,7 @@ adb -s "$device_id" shell appops set --uid "$PACKAGE_ID" \
 (
   cd "$ROOT_DIR/flutter"
   fvm flutter test integration_test/phase_002_android_permission_gate_test.dart \
-    -d "$device_id"
+    --no-uninstall -d "$device_id"
 )
 
 printf 'Scenario 2: granted readiness must boot the real stack\n'
@@ -74,7 +74,7 @@ fi
 (
   cd "$ROOT_DIR/flutter"
   fvm flutter test integration_test/phase_002_android_bootstrap_test.dart \
-    -d "$device_id"
+    --no-uninstall -d "$device_id"
 )
 
 printf 'P02-001 Android bootstrap milestone passed on %s\n' "$device_id"

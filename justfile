@@ -91,7 +91,16 @@ build-android-bridge:
     bash scripts/build_android_bridge.sh
 
 build-android-debug:
-    cd flutter && fvm flutter build apk --debug --target-platform android-arm64,android-x64
+    cd flutter && fvm flutter build apk --debug --target-platform android-arm64
+
+build-android-release:
+    bash scripts/build_android_release.sh
+
+check-android-contract:
+    bash scripts/check_android_package.sh --source-contract-only
+
+check-android-package:
+    bash scripts/check_android_package.sh flutter/build/app/outputs/flutter-apk/app-debug.apk
 
 test-phase-002-android-bootstrap:
     bash scripts/run_phase_002_android_bootstrap_tests.sh
@@ -119,5 +128,8 @@ test-phase-002-android-removable-volume:
 
 test-phase-002-android-diagnostics:
     bash scripts/run_phase_002_android_diagnostics_tests.sh
+
+test-phase-002-android-final:
+    bash scripts/run_phase_002_android_final_tests.sh
 
 check: check-generated _format-check lint _architecture test

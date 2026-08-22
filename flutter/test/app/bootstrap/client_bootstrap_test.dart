@@ -13,7 +13,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         standardApplicationDataDirectoryProvider.overrideWithValue(
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
         ),
       ],
     );

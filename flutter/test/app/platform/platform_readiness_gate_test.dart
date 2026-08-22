@@ -15,7 +15,7 @@ void main() {
         allFilesAccessGranted: false,
         notificationAuthorization: NotificationAuthorization.promptRequired,
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       ),
     );
   });
@@ -58,7 +58,7 @@ void main() {
       allFilesAccessGranted: true,
       notificationAuthorization: NotificationAuthorization.promptRequired,
       standardApplicationDataDirectory:
-          '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+          '/data/user/0/com.argusromtoolkit.argus/files/argus',
     );
     await pumpGate(tester);
 
@@ -129,7 +129,7 @@ void main() {
         allFilesAccessGranted: true,
         notificationAuthorization: NotificationAuthorization.notRequired,
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
       await pumpGate(tester);
       expect(find.byType(_CountingChild), findsOneWidget);
@@ -139,7 +139,7 @@ void main() {
         allFilesAccessGranted: false,
         notificationAuthorization: NotificationAuthorization.notRequired,
         standardApplicationDataDirectory:
-            '/data/user/0/dev.argusromtoolkit.argus/files/argus',
+            '/data/user/0/com.argusromtoolkit.argus/files/argus',
       );
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();

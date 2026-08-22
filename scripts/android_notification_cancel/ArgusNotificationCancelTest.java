@@ -1,4 +1,4 @@
-package dev.argusromtoolkit.androidharness;
+package com.argusromtoolkit.androidharness;
 
 import android.graphics.Rect;
 
@@ -30,7 +30,7 @@ public final class ArgusNotificationCancelTest extends UiAutomatorTestCase {
                 new UiSelector()
                         .packageName(SYSTEM_UI_PACKAGE)
                         .text(SCAN_TEXT));
-        if (!scanText.waitForExists(2_000L)) {
+        if (!scanText.waitForExists(5_000L)) {
             throw new AssertionError(
                     "Argus foreground notification scan projection was not visible");
         }

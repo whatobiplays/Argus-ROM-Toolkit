@@ -176,3 +176,71 @@ jobs:
 
       - name: Phase 000 native regression
         run: just test-phase-000-native
+
+  android-arm64-package:
+    name: Android ARM64 build and package verification
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: flutter/.fvmrc
+          cache: true
+          pub-cache: true
+
+      - name: Install CI FVM prerequisite
+        run: |
+          dart pub global activate fvm 4.1.2
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$rust_channel" --profile minimal
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: latest
+
+      - name: Install the Flutter-pinned Android NDK
+        run: |
+          flutter_root="${FLUTTER_ROOT:-$(dirname "$(dirname "$(command -v flutter)")")}"
+          flutter_ndk_version="$(
+            sed -n 's/.*val ndkVersion: String = "\([^"]*\)".*/\1/p' \
+              "${flutter_root}/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt" \
+              | head -n 1
+          )"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "ndk;${flutter_ndk_version}"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${flutter_ndk_version}" \
+            >> "$GITHUB_ENV"
+
+      - name: Bootstrap repository
+        run: just bootstrap
+
+      - name: Verify Android ARM64 source contract
+        run: just check-android-contract
+
+      - name: Build Android ARM64 debug APK
+        run: just build-android-debug
+
+      - name: Verify Android ARM64 package
+        run: just check-android-package

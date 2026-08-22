@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 ANDROID_USER_ID="${ARGUS_ANDROID_USER_ID:-0}"
 FGS_COMPAT_CHANGE="FGS_INTRODUCE_TIME_LIMITS"
 NOTIFICATION_PERMISSION="android.permission.POST_NOTIFICATIONS"
@@ -109,10 +109,10 @@ fi
 mkdir -p "${LOG_DIR}"
 : > "${UI_DUMP_LOG}"
 
-printf 'Building the repository-owned dual-ABI debug APK\n'
+printf 'Building the repository-owned ARM64 debug APK\n'
 (
   cd "${ROOT_DIR}/flutter"
-  fvm flutter build apk --debug --target-platform android-arm64,android-x64
+  fvm flutter build apk --debug --target-platform android-arm64
 )
 apk_path="${ROOT_DIR}/flutter/build/app/outputs/flutter-apk/app-debug.apk"
 if [[ ! -f "${apk_path}" ]]; then
@@ -121,8 +121,11 @@ if [[ ! -f "${apk_path}" ]]; then
 fi
 apk_entries="$(unzip -Z1 "${apk_path}")"
 grep -q '^lib/arm64-v8a/' <<<"${apk_entries}"
-grep -q '^lib/x86_64/' <<<"${apk_entries}"
-printf 'Verified dual-ABI packaging: arm64-v8a and x86_64\n'
+if grep -Eq '^lib/(x86_64|x86|armeabi-v7a)/' <<<"${apk_entries}"; then
+  printf 'Unsupported Android ABI packaging is present in the APK\n' >&2
+  exit 1
+fi
+printf 'Verified ARM64-only packaging: arm64-v8a\n'
 
 if [[ -z "${device_id}" ]]; then
   devices="$(${adb_command} devices | awk 'NR > 1 && $2 == "device" { print $1 }')"
@@ -621,6 +624,16 @@ read_notification_ui_file() {
   return 1
 }
 
+dismiss_keyguard() {
+  # The continuity stage sleeps and wakes the device; the resulting keyguard
+  # can make the legacy UIAutomator shade interactions time out. The lock
+  # screen is harness state only, so dismiss it before UI automation.
+  ${adb_command} -s "${device_id}" shell wm dismiss-keyguard \
+    >/dev/null 2>&1 || true
+  ${adb_command} -s "${device_id}" shell input keyevent KEYCODE_MENU \
+    >/dev/null 2>&1 || true
+}
+
 start_mode() {
   local mode="$1"
   local marker_cleanup_policy="${2:-clear-evidence}"
@@ -632,6 +645,7 @@ start_mode() {
   # mode so the test driver does not wait behind that unrelated Activity.
   ${adb_command} -s "${device_id}" shell input keyevent KEYCODE_HOME \
     >/dev/null 2>&1 || true
+  dismiss_keyguard
   sleep 1
   # recoveryCheck reads the JobRunId written by recoveryStart, so its
   # relaunch must clear transient markers without deleting that durable proof.
@@ -811,7 +825,7 @@ prepare_notification_cancel_automation() {
     --lib "${uiautomator_jar}" \
     --lib "${compile_only_jar}" \
     --output "${dex_dir}" \
-    "${classes_dir}/dev/argusromtoolkit/androidharness/ArgusNotificationCancelTest.class" \
+    "${classes_dir}/com/argusromtoolkit/androidharness/ArgusNotificationCancelTest.class" \
     "${classes_dir}/android/test/RepetitiveTest.class"
   jar cf "${ui_automation_build_dir}/notification-cancel.jar" \
     -C "${dex_dir}" classes.dex
@@ -830,7 +844,7 @@ run_notification_cancel_automation() {
   automation_output="$(${adb_command} -s "${device_id}" shell \
     uiautomator runtest \
     /data/local/tmp/ArgusP02004NotificationCancel.jar \
-    -c dev.argusromtoolkit.androidharness.ArgusNotificationCancelTest#testCancel \
+    -c com.argusromtoolkit.androidharness.ArgusNotificationCancelTest#testCancel \
     -e outputFormat simple 2>&1)" || automation_status=$?
   printf '%s\n' "${automation_output}" \
     >>"${LOG_DIR}/notification-cancel-uiautomator.log"
@@ -857,6 +871,7 @@ sleep 4
 ${adb_command} -s "${device_id}" shell input keyevent KEYCODE_SLEEP
 sleep 5
 ${adb_command} -s "${device_id}" shell input keyevent KEYCODE_WAKEUP
+dismiss_keyguard
 ${adb_command} -s "${device_id}" shell monkey -p "${PACKAGE_ID}" 1 >/dev/null
 sleep 4
 ${adb_command} -s "${device_id}" shell touch "${CONTINUE_PATH}"
@@ -914,6 +929,7 @@ if (( notification_prompt_seen > 0 )); then
 fi
 wait_remote_file "${EVIDENCE_PATH}" "${cancel_pid}" 180
 wait_for_foreground_notification
+dismiss_keyguard
 if ! run_notification_cancel_automation; then
   printf 'Could not invoke the real foreground notification Cancel action\n' >&2
   exit 1

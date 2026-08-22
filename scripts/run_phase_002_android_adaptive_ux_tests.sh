@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_ID="dev.argusromtoolkit.argus"
+PACKAGE_ID="com.argusromtoolkit.argus"
 FIXTURE_ROOT="/sdcard/ArgusP02006Fixture"
 DEVICE_EVIDENCE_ROOT="/sdcard/ArgusP02006Evidence"
 DEVICE_EVIDENCE_PATH="${DEVICE_EVIDENCE_ROOT}/adaptive-ux.txt"
@@ -75,16 +75,12 @@ if ! command -v fvm >/dev/null 2>&1; then
   exit 2
 fi
 
-# P02-006 accepts either ABI packaged by the repository APK, then records the
-# actual selected emulator ABI. Earlier P02-005 helpers retain their ARM64 gate.
 # shellcheck disable=SC1091
 if ! source "${ROOT_DIR}/scripts/run_phase_002_android_scenario_common.sh"; then
   record 'device_id=unavailable|api=unavailable|abi=unavailable'
   record_unverified_scenarios 'shared Android scenario helper could not be sourced'
   exit 2
 fi
-# P02-006 records the actual ABI and accepts either APK-packaged ABI.
-export ARGUS_ANDROID_DEVICE_REQUIRE_ARM64=false
 if ! argus_android_require_device; then
   record "device_id=${ARGUS_ANDROID_SCENARIO_DEVICE:-unavailable}|api=${ARGUS_ANDROID_SCENARIO_API:-unavailable}|abi=${ARGUS_ANDROID_SCENARIO_ABI:-unavailable}"
   record_unverified_scenarios 'no supported online API 36 device or emulator'
@@ -92,7 +88,7 @@ if ! argus_android_require_device; then
 fi
 
 record "device_id=${ARGUS_ANDROID_SCENARIO_DEVICE}|api=${ARGUS_ANDROID_SCENARIO_API}|abi=${ARGUS_ANDROID_SCENARIO_ABI}"
-record 'apk_target_platforms=android-arm64,android-x64'
+record 'apk_target_platforms=android-arm64'
 
 restore_host_state() {
   if [[ -n "${ARGUS_ANDROID_SCENARIO_DEVICE:-}" && "${device_state_captured:-0}" == 1 ]]; then

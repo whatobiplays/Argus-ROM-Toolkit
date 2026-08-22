@@ -38,7 +38,15 @@ void main() {
     final container = _container(tester);
     final client = container.read(argusClientProvider);
     await _goToSources(tester);
-    _assertNoScanControls(tester);
+    if (mode == 'seed') {
+      _assertNoScanControls(tester);
+    } else {
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('sources-scan-all')),
+        message: 'Scan All did not appear once the configured root exists',
+      );
+    }
 
     switch (mode) {
       case 'seed':
@@ -102,7 +110,11 @@ Future<void> _runSeedScenario(WidgetTester tester, ArgusClient client) async {
     find.byKey(const ValueKey<String>('sources-remove-library-folder')),
     message: 'root detail did not appear after root-only add',
   );
-  _assertNoScanControls(tester);
+  expect(
+    find.byKey(const ValueKey<String>('sources-scan-all')),
+    findsOneWidget,
+    reason: 'Scan All is available once a configured root exists',
+  );
   expect(await _jobCount(client), 0, reason: 'root-only add created a job');
 }
 
@@ -164,6 +176,10 @@ Future<void> _runVerifyScenario(WidgetTester tester, ArgusClient client) async {
     find.byKey(const ValueKey<String>('local-browser-select-folder')),
     message: 'primary volume browse page did not load',
   );
+  await tester.ensureVisible(
+    find.byKey(const ValueKey<String>('local-browser-select-folder')),
+  );
+  await tester.pumpAndSettle();
   await tester.tap(
     find.byKey(const ValueKey<String>('local-browser-select-folder')),
   );

@@ -27,7 +27,8 @@ for tool in "${REQUIRED_TOOLS[@]}"; do
   fi
 done
 if [[ -n "${ARGUS_ANDROID_ADB:-}" ]]; then
-  if [[ ! -x "${ARGUS_ANDROID_ADB}" ]]; then
+  adb_candidate="$(command -v "${ARGUS_ANDROID_ADB}" 2>/dev/null || true)"
+  if [[ -z "${adb_candidate}" || ! -x "${adb_candidate}" ]]; then
     record "run=phase-002-android-final|started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     record "device_id=${ARGUS_ANDROID_SCENARIO_DEVICE:-unavailable}"
     record "result=not_run|reason=configured ARGUS_ANDROID_ADB is not executable"
@@ -81,7 +82,8 @@ for entry in "${scenarios[@]}"; do
   reason=""
   if (( status == 0 )); then
     result="passed"
-  elif [[ "${scenario_name}" == removable_volume && "${status}" == 3 ]]; then
+  elif [[ "${scenario_name}" == removable_volume && "${status}" == 3 ]] &&
+    printf '%s\n' "${output}" | rg -q 'NOT_APPLICABLE:'; then
     result="not_applicable"
     reason="$(printf '%s\n' "${output}" |
       rg -o 'NOT_APPLICABLE:.*' | head -n 1 || true)"

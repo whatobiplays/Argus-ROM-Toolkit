@@ -310,21 +310,21 @@ argus_android_run_integration "${ROOT_DIR}" \
 printf 'Making the same physical volume unavailable with sm unmount: %s\n' \
   "${volume_id}"
 if ! sm_output unmount "${volume_id}" >/dev/null; then
-  environment_unavailable \
+  unverified \
     "sm unmount ${volume_id} was rejected; no remount claim is made"
 fi
 if ! wait_for_volume_state "${volume_id}" unmounted >/dev/null; then
-  environment_unavailable \
+  unverified \
     "volume ${volume_id} did not become unmounted before timeout"
 fi
 
 printf 'Restoring the same volume identity with sm mount: %s\n' "${volume_id}"
 if ! sm_output mount "${volume_id}" >/dev/null; then
-  environment_unavailable \
+  unverified \
     "sm mount ${volume_id} was rejected; no remount claim is made"
 fi
 if ! remounted_record="$(wait_for_volume_state "${volume_id}" mounted)"; then
-  environment_unavailable \
+  unverified \
     "volume ${volume_id} did not return mounted before timeout"
 fi
 read -r remounted_id _ remounted_provider < <(
@@ -337,7 +337,7 @@ if [[ "${remounted_id}" != "${volume_id}" ||
     'remount did not preserve the same vold/public and provider identity'
 fi
 if ! remounted_metadata="$(wait_for_removable_mount_info "${volume_id}")"; then
-  environment_unavailable \
+  unverified \
     'remounted StorageManager mount path was not observable before timeout'
 fi
 read -r remounted_disk _ <<<"${remounted_metadata}"

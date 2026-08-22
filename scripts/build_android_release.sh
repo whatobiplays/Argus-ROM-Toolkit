@@ -9,6 +9,9 @@ SIGNING_FIELDS=(
   ARGUS_RELEASE_KEY_PASSWORD
 )
 
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/android_sdk_common.sh"
+
 missing_fields=0
 for name in "${SIGNING_FIELDS[@]}"; do
 if [[ -z "${!name:-}" ]]; then
@@ -21,7 +24,7 @@ if (( missing_fields != 0 )); then
   exit 1
 fi
 case "${ARGUS_RELEASE_KEYSTORE}" in
-  /*) ;;
+  /*|[A-Za-z]:[\\/]*) ;;
   *)
     printf 'Release signing configuration is invalid: ARGUS_RELEASE_KEYSTORE must be an absolute path\n' >&2
     exit 1
@@ -57,21 +60,9 @@ if [[ -z "${expected_version_name}" || -z "${expected_version_code}" || \
   exit 1
 fi
 
-sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-if [[ -z "${sdk_root}" || ! -d "${sdk_root}/build-tools" ]]; then
-  sdk_root="$HOME/Library/Android/sdk"
-fi
-badging_tool_binary="$(command -v aapt2 || true)"
+badging_tool_binary="$(argus_resolve_build_tool aapt2 || true)"
 if [[ -z "${badging_tool_binary}" ]]; then
-  badging_tool_binary="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-    -type f -name aapt2 -print 2>/dev/null | sort | tail -n 1 || true)"
-fi
-if [[ -z "${badging_tool_binary}" ]]; then
-  badging_tool_binary="$(command -v aapt || true)"
-fi
-if [[ -z "${badging_tool_binary}" ]]; then
-  badging_tool_binary="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-    -type f -name aapt -print 2>/dev/null | sort | tail -n 1 || true)"
+  badging_tool_binary="$(argus_resolve_build_tool aapt || true)"
 fi
 if [[ -z "${badging_tool_binary}" || ! -x "${badging_tool_binary}" ]]; then
   printf 'Release verification requires Android aapt2/aapt\n' >&2
@@ -89,11 +80,7 @@ if [[ "${actual_version_code}" != "${expected_version_code}" || \
   exit 1
 fi
 
-apksigner_binary="$(command -v apksigner || true)"
-if [[ -z "${apksigner_binary}" ]]; then
-  apksigner_binary="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-    -type f -name apksigner -print 2>/dev/null | sort | tail -n 1 || true)"
-fi
+apksigner_binary="$(argus_resolve_build_tool apksigner || true)"
 if [[ -z "${apksigner_binary}" || ! -x "${apksigner_binary}" ]]; then
   printf 'Release verification requires Android apksigner\n' >&2
   exit 1

@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_PACKAGE_ID="com.argusromtoolkit.argus"
 
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/android_sdk_common.sh"
+
 fail() {
   printf 'Android package contract failed: %s\n' "$*" >&2
   exit 1
@@ -22,6 +25,7 @@ scan_live_sources() {
     "$ROOT_DIR/justfile"
     "$ROOT_DIR/scripts/build_android_bridge.sh"
     "$ROOT_DIR/scripts/build_android_release.sh"
+    "$ROOT_DIR/scripts/android_sdk_common.sh"
     "$ROOT_DIR/scripts/bootstrap.sh"
     "$ROOT_DIR/scripts/run_phase_002_android_scenario_common.sh"
     "$ROOT_DIR/scripts"/run_phase_002_android_*tests.sh
@@ -40,33 +44,14 @@ scan_live_sources() {
 
 resolve_badging_tool() {
   local tool=""
-  local sdk_root=""
-  local sdk_candidates=()
-  local candidate=""
-  if command -v aapt2 >/dev/null 2>&1; then
-    printf 'aapt2\n'
+  if tool="$(argus_resolve_build_tool aapt2)"; then
+    printf '%s\n' "${tool}"
     return 0
   fi
-  if command -v aapt >/dev/null 2>&1; then
-    printf 'aapt\n'
+  if tool="$(argus_resolve_build_tool aapt)"; then
+    printf '%s\n' "${tool}"
     return 0
   fi
-  sdk_candidates=(
-    "${ANDROID_SDK_ROOT:-}"
-    "${ANDROID_HOME:-}"
-    "$HOME/Library/Android/sdk"
-  )
-  for sdk_root in "${sdk_candidates[@]}"; do
-    [[ -n "${sdk_root}" && -d "${sdk_root}/build-tools" ]] || continue
-    for candidate in aapt2 aapt; do
-      tool="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-        -type f -name "${candidate}" -print 2>/dev/null | sort | tail -n 1 || true)"
-      if [[ -n "${tool}" ]]; then
-        printf '%s\n' "${tool}"
-        return 0
-      fi
-    done
-  done
   return 1
 }
 

@@ -17,8 +17,12 @@ void main() {
     final stderr = process.stderr.transform(utf8.decoder).join();
     final exitCode = await process.exitCode.timeout(
       const Duration(seconds: 30),
-      onTimeout: () {
-        process.kill();
+      onTimeout: () async {
+        process.kill(ProcessSignal.sigkill);
+        await process.exitCode.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => -1,
+        );
         fail('release wrapper did not exit within the test timeout');
       },
     );
@@ -178,6 +182,7 @@ void main() {
     'release wrapper hides signing values on missing configuration',
     () async {
       final result = await runReleaseWrapper({
+        'PATH': '/usr/bin:/bin',
         'ARGUS_RELEASE_KEYSTORE': '',
         'ARGUS_RELEASE_STORE_PASSWORD': '',
         'ARGUS_RELEASE_KEY_ALIAS': '',
@@ -199,6 +204,7 @@ void main() {
   test('release wrapper hides an unreadable keystore value', () async {
     const keystoreValue = '/nonexistent/argus-release.keystore';
     final result = await runReleaseWrapper({
+      'PATH': '/usr/bin:/bin',
       'ARGUS_RELEASE_KEYSTORE': keystoreValue,
       'ARGUS_RELEASE_STORE_PASSWORD': 'secret-store-password',
       'ARGUS_RELEASE_KEY_ALIAS': 'secret-alias',

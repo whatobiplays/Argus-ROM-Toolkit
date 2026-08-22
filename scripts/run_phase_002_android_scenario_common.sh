@@ -87,7 +87,12 @@ argus_android_sm_help_supports_commands() {
 }
 
 argus_android_require_device() {
-  ARGUS_ANDROID_SCENARIO_ADB="${ARGUS_ANDROID_ADB:-$(command -v adb || true)}"
+  if [[ -n "${ARGUS_ANDROID_ADB:-}" ]]; then
+    ARGUS_ANDROID_SCENARIO_ADB="$(command -v "${ARGUS_ANDROID_ADB}" \
+      2>/dev/null || true)"
+  else
+    ARGUS_ANDROID_SCENARIO_ADB="$(command -v adb || true)"
+  fi
   if [[ -z "${ARGUS_ANDROID_SCENARIO_ADB}" ||
     ! -x "${ARGUS_ANDROID_SCENARIO_ADB}" ]]; then
     printf 'Required developer tool is missing: adb\n' >&2

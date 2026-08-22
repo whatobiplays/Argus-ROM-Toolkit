@@ -110,10 +110,11 @@ Future<void> _runSeedScenario(WidgetTester tester, ArgusClient client) async {
     find.byKey(const ValueKey<String>('sources-remove-library-folder')),
     message: 'root detail did not appear after root-only add',
   );
-  expect(
+  await _goToSources(tester);
+  await _pumpUntil(
+    tester,
     find.byKey(const ValueKey<String>('sources-scan-all')),
-    findsOneWidget,
-    reason: 'Scan All is available once a configured root exists',
+    message: 'Scan All did not appear on the Sources landing',
   );
   expect(await _jobCount(client), 0, reason: 'root-only add created a job');
 }

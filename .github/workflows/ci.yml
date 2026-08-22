@@ -216,7 +216,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: latest
+          cmdline-tools-version: '12266719'
 
       - name: Install the Flutter-pinned Android NDK
         run: |

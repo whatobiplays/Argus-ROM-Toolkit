@@ -121,8 +121,12 @@ if [[ ! -f "${apk_path}" ]]; then
 fi
 apk_entries="$(unzip -Z1 "${apk_path}")"
 grep -q '^lib/arm64-v8a/' <<<"${apk_entries}"
-if grep -Eq '^lib/(x86_64|x86|armeabi-v7a)/' <<<"${apk_entries}"; then
-  printf 'Unsupported Android ABI packaging is present in the APK\n' >&2
+unsupported_abi="$(printf '%s\n' "${apk_entries}" | awk -F/ '
+  NF >= 3 && $1 == "lib" && $2 != "arm64-v8a" { print $2; exit }
+')"
+if [[ -n "${unsupported_abi}" ]]; then
+  printf 'Unsupported Android ABI packaging present: %s\n' \
+    "${unsupported_abi}" >&2
   exit 1
 fi
 printf 'Verified ARM64-only packaging: arm64-v8a\n'

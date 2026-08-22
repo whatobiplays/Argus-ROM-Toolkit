@@ -39,8 +39,10 @@ scan_live_sources() {
 }
 
 resolve_badging_tool() {
-  local sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
   local tool=""
+  local sdk_root=""
+  local sdk_candidates=()
+  local candidate=""
   if command -v aapt2 >/dev/null 2>&1; then
     printf 'aapt2\n'
     return 0
@@ -49,18 +51,22 @@ resolve_badging_tool() {
     printf 'aapt\n'
     return 0
   fi
-  if [[ -n "${sdk_root}" && -d "${sdk_root}/build-tools" ]]; then
-    tool="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-      -type f -name aapt2 -print 2>/dev/null | sort | tail -n 1 || true)"
-    if [[ -z "${tool}" ]]; then
+  sdk_candidates=(
+    "${ANDROID_SDK_ROOT:-}"
+    "${ANDROID_HOME:-}"
+    "$HOME/Library/Android/sdk"
+  )
+  for sdk_root in "${sdk_candidates[@]}"; do
+    [[ -n "${sdk_root}" && -d "${sdk_root}/build-tools" ]] || continue
+    for candidate in aapt2 aapt; do
       tool="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-        -type f -name aapt -print 2>/dev/null | sort | tail -n 1 || true)"
-    fi
-    if [[ -n "${tool}" ]]; then
-      printf '%s\n' "${tool}"
-      return 0
-    fi
-  fi
+        -type f -name "${candidate}" -print 2>/dev/null | sort | tail -n 1 || true)"
+      if [[ -n "${tool}" ]]; then
+        printf '%s\n' "${tool}"
+        return 0
+      fi
+    done
+  done
   return 1
 }
 
@@ -72,6 +78,7 @@ check_apk() {
   local unsupported
   local badging_tool=""
   local badging=""
+  local actual_package=""
 
   [[ -f "${apk_path}" && -r "${apk_path}" ]] ||
     fail "APK is missing or unreadable: ${apk_path}"
@@ -101,9 +108,11 @@ check_apk() {
     printf 'Android package contract passed (metadata skipped: no aapt2/aapt)\n'
     return 0
   fi
-  printf '%s\n' "${badging}" |
-    grep -Eq "package: name='${expected_package_id}'" ||
+  actual_package="$(printf '%s\n' "${badging}" |
+    awk -F"'" '/^package: name=/{print $2; exit}')"
+  if [[ "${actual_package}" != "${expected_package_id}" ]]; then
     fail "APK package identity is not ${expected_package_id}"
+  fi
   printf '%s\n' "${badging}" |
     grep -Eq "sdkVersion:'30'|minSdkVersion:'30'" ||
     fail "APK minSdk is not 30"

@@ -388,10 +388,10 @@ Future<void> _expectScanAllAvailable(WidgetTester tester) async {
   if (addButton.evaluate().isEmpty) {
     await _goToSources(tester);
   }
-  expect(
+  await _pumpUntil(
+    tester,
     find.byKey(const ValueKey<String>('sources-scan-all')),
-    findsOneWidget,
-    reason: 'Scan All is available once a configured root exists',
+    message: 'Scan All did not appear on the Sources landing',
   );
 }
 

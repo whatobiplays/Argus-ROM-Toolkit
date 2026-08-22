@@ -1,10 +1,10 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
-
-import java.io.File
 
 android {
     namespace = "com.argusromtoolkit.argus"
@@ -89,9 +89,13 @@ tasks.matching { it.name.contains("Release", ignoreCase = true) }.configureEach 
         }
         val keystore = providers.environmentVariable("ARGUS_RELEASE_KEYSTORE").orNull
         if (missingFields.none { it == "ARGUS_RELEASE_KEYSTORE" } &&
-            (keystore == null || !File(keystore).isFile)
+            keystore != null
         ) {
-            missingFields.add("ARGUS_RELEASE_KEYSTORE (file not found)")
+            if (!File(keystore).isAbsolute) {
+                missingFields.add("ARGUS_RELEASE_KEYSTORE (must be absolute)")
+            } else if (!File(keystore).isFile) {
+                missingFields.add("ARGUS_RELEASE_KEYSTORE (file not found)")
+            }
         }
         if (missingFields.isNotEmpty()) {
             throw GradleException(

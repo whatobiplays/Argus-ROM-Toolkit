@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EVIDENCE_DIR="${ROOT_DIR}/build/phase-002-android-final"
 EVIDENCE_PATH="${EVIDENCE_DIR}/native-qualification.txt"
-REQUIRED_TOOLS=(adb fvm unzip rg timeout mktemp zip sqlite3 javac jar)
+REQUIRED_TOOLS=(fvm unzip rg timeout mktemp zip sqlite3 javac jar shasum)
 
 record() {
   printf '%s\n' "$1" >> "${EVIDENCE_PATH}"
@@ -26,6 +26,22 @@ for tool in "${REQUIRED_TOOLS[@]}"; do
     exit 2
   fi
 done
+if [[ -n "${ARGUS_ANDROID_ADB:-}" ]]; then
+  adb_candidate="$(command -v "${ARGUS_ANDROID_ADB}" 2>/dev/null || true)"
+  if [[ -z "${adb_candidate}" || ! -x "${adb_candidate}" ]]; then
+    record "run=phase-002-android-final|started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    record "device_id=${ARGUS_ANDROID_SCENARIO_DEVICE:-unavailable}"
+    record "result=not_run|reason=configured ARGUS_ANDROID_ADB is not executable"
+    printf 'Final Phase 002 Android milestone could not run: ARGUS_ANDROID_ADB is not executable\n' >&2
+    exit 2
+  fi
+elif ! command -v adb >/dev/null 2>&1; then
+  record "run=phase-002-android-final|started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  record "device_id=${ARGUS_ANDROID_SCENARIO_DEVICE:-unavailable}"
+  record "result=not_run|reason=required host tool is missing: adb"
+  printf 'Final Phase 002 Android milestone could not run: missing adb\n' >&2
+  exit 2
+fi
 
 if ! argus_android_require_device; then
   record "run=phase-002-android-final|started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -66,10 +82,11 @@ for entry in "${scenarios[@]}"; do
   reason=""
   if (( status == 0 )); then
     result="passed"
-  elif [[ "${scenario_name}" == removable_volume && "${status}" == 2 ]]; then
+  elif [[ "${scenario_name}" == removable_volume && "${status}" == 3 ]] &&
+    printf '%s\n' "${output}" | rg -q 'NOT_APPLICABLE:'; then
     result="not_applicable"
     reason="$(printf '%s\n' "${output}" |
-      rg -o 'UNVERIFIED:.*' | head -n 1 || true)"
+      rg -o 'NOT_APPLICABLE:.*' | head -n 1 || true)"
   fi
   if [[ "${result}" == failed ]]; then
     reason="$(printf '%s\n' "${output}" | tail -n 5 | tr '\n' ' ' |

@@ -133,6 +133,11 @@ unverified() {
   exit 2
 }
 
+environment_unavailable() {
+  printf 'NOT_APPLICABLE: %s\n' "$*" >&2
+  exit 3
+}
+
 BASELINE_PUBLIC_VOLUMES="$(public_volumes)"
 BASELINE_ADOPTABLE_DISKS="$(adoptable_disks)"
 BASELINE_MOUNT_DUMP="$(mount_dump)"
@@ -210,7 +215,7 @@ if [[ -n "${selected_existing_record}" ]]; then
   )
 else
   if [[ -n "${BASELINE_MOUNTED_PUBLIC_RECORDS}" ]]; then
-    unverified \
+    environment_unavailable \
       'a mounted public volume exists but its removable DiskInfo could not be established'
   fi
 
@@ -219,28 +224,31 @@ else
   sm_help="$(sm_output help 2>&1 || true)"
   if ! argus_android_sm_help_supports_commands "${sm_help}" \
     set-virtual-disk list-disks partition mount unmount; then
-    unverified 'sm does not expose the required virtual-disk and mount commands'
+    environment_unavailable \
+      'sm does not expose the required virtual-disk and mount commands'
   fi
 
   virtual_disk_enable_attempted=true
   if ! sm_output set-virtual-disk true >/dev/null; then
-    unverified 'sm set-virtual-disk true was rejected by the connected device'
+    environment_unavailable \
+      'sm set-virtual-disk true was rejected by the connected device'
   fi
 
   if ! disk_id="$(wait_for_new_adoptable_disk)"; then
-    unverified \
+    environment_unavailable \
       'sm set-virtual-disk true did not expose one unique newly available adoptable disk'
   fi
   if [[ "$(record_count "${disk_id}")" -ne 1 ]]; then
-    unverified 'virtual-disk provisioning exposed an ambiguous adoptable-disk delta'
+    environment_unavailable \
+      'virtual-disk provisioning exposed an ambiguous adoptable-disk delta'
   fi
   provisioned_virtual_disk=true
 
   if ! sm_output partition "${disk_id}" public >/dev/null; then
-    unverified "sm partition ${disk_id} public was rejected"
+    environment_unavailable "sm partition ${disk_id} public was rejected"
   fi
   if ! new_volume_record="$(wait_for_new_public_volume_record)"; then
-    unverified \
+    environment_unavailable \
       'partition did not expose one unique newly created public volume before timeout'
   fi
   read -r volume_id volume_state provider_id < <(
@@ -249,11 +257,12 @@ else
   provider_id="$(normalize_provider_id "${provider_id}")"
   if [[ "${volume_state}" != mounted ]]; then
     if ! sm_output mount "${volume_id}" >/dev/null; then
-      unverified "sm mount ${volume_id} was rejected"
+      environment_unavailable "sm mount ${volume_id} was rejected"
     fi
   fi
   if ! mounted_record="$(wait_for_volume_state "${volume_id}" mounted)"; then
-    unverified "new public volume ${volume_id} did not become mounted before timeout"
+    environment_unavailable \
+      "new public volume ${volume_id} did not become mounted before timeout"
   fi
   read -r volume_id volume_state provider_id < <(
     argus_android_parse_public_volume_record "${mounted_record}"
@@ -262,11 +271,13 @@ else
 fi
 
 if [[ -z "${volume_id}" || -z "${provider_id}" || "${provider_id}" == NULL ]]; then
-  unverified 'the selected public volume has no trustworthy provider identity'
+  environment_unavailable \
+    'the selected public volume has no trustworthy provider identity'
 fi
 
 if ! mount_metadata="$(wait_for_removable_mount_info "${volume_id}")"; then
-  unverified "StorageManager mount path for ${volume_id} was not observable before timeout"
+  environment_unavailable \
+    "StorageManager mount path for ${volume_id} was not observable before timeout"
 fi
 read -r observed_disk_id observed_mount_path <<<"${mount_metadata}"
 if [[ "${observed_disk_id}" != "${disk_id}" ]]; then
@@ -278,7 +289,8 @@ if [[ "${mount_path}" != /storage/* || "${mount_path}" == /storage/emulated* ]];
   unverified "selected public volume has an unsafe transient mount path: ${mount_path}"
 fi
 if ! "${ADB}" -s "${DEVICE}" shell test -d "${mount_path}"; then
-  unverified "selected removable mount path is not a directory: ${mount_path}"
+  environment_unavailable \
+    "selected removable mount path is not a directory: ${mount_path}"
 fi
 
 printf 'Selected removable public volume=%s provider=%s disk=%s mount=%s\n' \
@@ -298,18 +310,22 @@ argus_android_run_integration "${ROOT_DIR}" \
 printf 'Making the same physical volume unavailable with sm unmount: %s\n' \
   "${volume_id}"
 if ! sm_output unmount "${volume_id}" >/dev/null; then
-  unverified "sm unmount ${volume_id} was rejected; no remount claim is made"
+  unverified \
+    "sm unmount ${volume_id} was rejected; no remount claim is made"
 fi
 if ! wait_for_volume_state "${volume_id}" unmounted >/dev/null; then
-  unverified "volume ${volume_id} did not become unmounted before timeout"
+  unverified \
+    "volume ${volume_id} did not become unmounted before timeout"
 fi
 
 printf 'Restoring the same volume identity with sm mount: %s\n' "${volume_id}"
 if ! sm_output mount "${volume_id}" >/dev/null; then
-  unverified "sm mount ${volume_id} was rejected; no remount claim is made"
+  unverified \
+    "sm mount ${volume_id} was rejected; no remount claim is made"
 fi
 if ! remounted_record="$(wait_for_volume_state "${volume_id}" mounted)"; then
-  unverified "volume ${volume_id} did not return mounted before timeout"
+  unverified \
+    "volume ${volume_id} did not return mounted before timeout"
 fi
 read -r remounted_id _ remounted_provider < <(
   argus_android_parse_public_volume_record "${remounted_record}"
@@ -321,7 +337,8 @@ if [[ "${remounted_id}" != "${volume_id}" ||
     'remount did not preserve the same vold/public and provider identity'
 fi
 if ! remounted_metadata="$(wait_for_removable_mount_info "${volume_id}")"; then
-  unverified 'remounted StorageManager mount path was not observable before timeout'
+  unverified \
+    'remounted StorageManager mount path was not observable before timeout'
 fi
 read -r remounted_disk _ <<<"${remounted_metadata}"
 if [[ "${remounted_disk}" != "${disk_id}" ]]; then

@@ -67,10 +67,8 @@ printf 'Scenario 2: granted readiness must boot the real stack\n'
 adb -s "$device_id" shell pm clear "$PACKAGE_ID" >/dev/null
 adb -s "$device_id" shell appops set --uid "$PACKAGE_ID" \
   MANAGE_EXTERNAL_STORAGE allow
-if (( api_level >= 33 )); then
-  adb -s "$device_id" shell pm grant "$PACKAGE_ID" \
-    android.permission.POST_NOTIFICATIONS || true
-fi
+adb -s "$device_id" shell pm grant "$PACKAGE_ID" \
+  android.permission.POST_NOTIFICATIONS || true
 (
   cd "$ROOT_DIR/flutter"
   fvm flutter test integration_test/phase_002_android_bootstrap_test.dart \

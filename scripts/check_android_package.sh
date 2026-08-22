@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_PACKAGE_ID="com.argusromtoolkit.argus"
 
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/android_sdk_common.sh"
+
 fail() {
   printf 'Android package contract failed: %s\n' "$*" >&2
   exit 1
@@ -22,6 +25,7 @@ scan_live_sources() {
     "$ROOT_DIR/justfile"
     "$ROOT_DIR/scripts/build_android_bridge.sh"
     "$ROOT_DIR/scripts/build_android_release.sh"
+    "$ROOT_DIR/scripts/android_sdk_common.sh"
     "$ROOT_DIR/scripts/bootstrap.sh"
     "$ROOT_DIR/scripts/run_phase_002_android_scenario_common.sh"
     "$ROOT_DIR/scripts"/run_phase_002_android_*tests.sh
@@ -39,27 +43,14 @@ scan_live_sources() {
 }
 
 resolve_badging_tool() {
-  local sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
   local tool=""
-  if command -v aapt2 >/dev/null 2>&1; then
-    printf 'aapt2\n'
+  if tool="$(argus_resolve_build_tool aapt2)"; then
+    printf '%s\n' "${tool}"
     return 0
   fi
-  if command -v aapt >/dev/null 2>&1; then
-    printf 'aapt\n'
+  if tool="$(argus_resolve_build_tool aapt)"; then
+    printf '%s\n' "${tool}"
     return 0
-  fi
-  if [[ -n "${sdk_root}" && -d "${sdk_root}/build-tools" ]]; then
-    tool="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-      -type f -name aapt2 -print 2>/dev/null | sort | tail -n 1 || true)"
-    if [[ -z "${tool}" ]]; then
-      tool="$(find "${sdk_root}/build-tools" -mindepth 2 -maxdepth 2 \
-        -type f -name aapt -print 2>/dev/null | sort | tail -n 1 || true)"
-    fi
-    if [[ -n "${tool}" ]]; then
-      printf '%s\n' "${tool}"
-      return 0
-    fi
   fi
   return 1
 }
@@ -72,6 +63,7 @@ check_apk() {
   local unsupported
   local badging_tool=""
   local badging=""
+  local actual_package=""
 
   [[ -f "${apk_path}" && -r "${apk_path}" ]] ||
     fail "APK is missing or unreadable: ${apk_path}"
@@ -101,9 +93,11 @@ check_apk() {
     printf 'Android package contract passed (metadata skipped: no aapt2/aapt)\n'
     return 0
   fi
-  printf '%s\n' "${badging}" |
-    grep -Eq "package: name='${expected_package_id}'" ||
+  actual_package="$(printf '%s\n' "${badging}" |
+    awk -F"'" '/^package: name=/{print $2; exit}')"
+  if [[ "${actual_package}" != "${expected_package_id}" ]]; then
     fail "APK package identity is not ${expected_package_id}"
+  fi
   printf '%s\n' "${badging}" |
     grep -Eq "sdkVersion:'30'|minSdkVersion:'30'" ||
     fail "APK minSdk is not 30"

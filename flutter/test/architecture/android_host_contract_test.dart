@@ -1,8 +1,34 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  Future<ProcessResult> runReleaseWrapper(
+    Map<String, String> environment,
+  ) async {
+    final process = await Process.start(
+      'bash',
+      [File('../scripts/build_android_release.sh').absolute.path],
+      workingDirectory: File('..').absolute.path,
+      environment: environment,
+    );
+    final stdout = process.stdout.transform(utf8.decoder).join();
+    final stderr = process.stderr.transform(utf8.decoder).join();
+    final exitCode = await process.exitCode.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () async {
+        process.kill(ProcessSignal.sigkill);
+        await process.exitCode.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => -1,
+        );
+        fail('release wrapper did not exit within the test timeout');
+      },
+    );
+    return ProcessResult(process.pid, exitCode, await stdout, await stderr);
+  }
+
   test('Android scaffold is API 30+ and repository-owned', () {
     final settings = File('android/settings.gradle.kts').readAsStringSync();
     final appBuild = File('android/app/build.gradle.kts').readAsStringSync();
@@ -155,16 +181,13 @@ void main() {
   test(
     'release wrapper hides signing values on missing configuration',
     () async {
-      final result = await Process.run(
-        'bash',
-        ['../scripts/build_android_release.sh'],
-        environment: {
-          'ARGUS_RELEASE_KEYSTORE': '',
-          'ARGUS_RELEASE_STORE_PASSWORD': '',
-          'ARGUS_RELEASE_KEY_ALIAS': '',
-          'ARGUS_RELEASE_KEY_PASSWORD': '',
-        },
-      );
+      final result = await runReleaseWrapper({
+        'PATH': '/usr/bin:/bin',
+        'ARGUS_RELEASE_KEYSTORE': '',
+        'ARGUS_RELEASE_STORE_PASSWORD': '',
+        'ARGUS_RELEASE_KEY_ALIAS': '',
+        'ARGUS_RELEASE_KEY_PASSWORD': '',
+      });
 
       expect(result.exitCode, isNot(0));
       final stderr = result.stderr as String;
@@ -180,16 +203,13 @@ void main() {
 
   test('release wrapper hides an unreadable keystore value', () async {
     const keystoreValue = '/nonexistent/argus-release.keystore';
-    final result = await Process.run(
-      'bash',
-      ['../scripts/build_android_release.sh'],
-      environment: {
-        'ARGUS_RELEASE_KEYSTORE': keystoreValue,
-        'ARGUS_RELEASE_STORE_PASSWORD': 'secret-store-password',
-        'ARGUS_RELEASE_KEY_ALIAS': 'secret-alias',
-        'ARGUS_RELEASE_KEY_PASSWORD': 'secret-key-password',
-      },
-    );
+    final result = await runReleaseWrapper({
+      'PATH': '/usr/bin:/bin',
+      'ARGUS_RELEASE_KEYSTORE': keystoreValue,
+      'ARGUS_RELEASE_STORE_PASSWORD': 'secret-store-password',
+      'ARGUS_RELEASE_KEY_ALIAS': 'secret-alias',
+      'ARGUS_RELEASE_KEY_PASSWORD': 'secret-key-password',
+    });
 
     expect(result.exitCode, isNot(0));
     final stderr = result.stderr as String;

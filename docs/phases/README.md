@@ -17,3 +17,4 @@ Use [the phase template](../templates/phase.md).
 | PHASE-000 | [Foundation](phase-000-foundation.md) | In Progress |
 | PHASE-001 | [Local Sources and Indexing](phase-001-local-sources-and-indexing.md) | In Progress |
 | PHASE-002 | [Android First-Class Platform Support](phase-002-android-first-class-platform-support.md) | Complete |
+| PHASE-003 | [Game Identification and Enrichment](phase-003-game-identification-and-enrichment.md) | Draft |

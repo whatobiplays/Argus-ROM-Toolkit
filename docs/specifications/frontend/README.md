@@ -19,5 +19,6 @@ They define application structure, state architecture, client boundaries, routin
 | [SPEC-FE-007](spec-fe-007-design-system-foundation-and-accessibility-baseline.md) | Design-System Foundation and Accessibility Baseline | Ready for Implementation |
 | [SPEC-FE-008](spec-fe-008-sources-and-library-folder-management.md) | Sources and Library Folder Management | Ready for Implementation |
 | [SPEC-FE-009](spec-fe-009-jobs-and-background-operation-presentation.md) | Jobs and Background Operation Presentation | Ready for Implementation |
+| [SPEC-FE-010](spec-fe-010-library-game-detail-and-enrichment-ux.md) | Library, Game Detail, and Enrichment UX | Draft |
 
 Use [the subsystem specification template](../../templates/subsystem-specification.md).

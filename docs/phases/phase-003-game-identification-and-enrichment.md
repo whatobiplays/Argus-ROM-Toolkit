@@ -1,10 +1,10 @@
 # Game Identification and Enrichment
 
 **Document ID:** PHASE-003  
-**Status:** Draft  
+**Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-22  
-**Depends On:** PHASE-001, PHASE-002, ARCH-001, SPEC-BE-010, SPEC-BE-012, SPEC-BE-013  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -104,7 +104,7 @@ metadata refresh/resolution
 artwork discovery/resolution/download
 ```
 
-Provider failures are best-effort and isolated. Successful provider results remain durable; later eligible refreshes fill gaps.
+Provider failures are best-effort and isolated. Successful provider results remain durable; later eligible refreshes fill gaps. Only enabled `Ready` capabilities enter executable provider scope. `Disabled` and intentionally skipped `MissingCredentials` capabilities are exclusions rather than automatic `CompletedWithIssues` causes; invalid configuration and transient failures remain visible as typed outcomes.
 
 ### 4.6 Region and language
 
@@ -116,6 +116,7 @@ Global preferred region/language settings initialize from OS locale. They influe
 - Work is incrementally pipelined after authoritative upstream commits.
 - `Refresh Game` performs focused eligible enrichment without rescanning unrelated roots.
 - Game detail exposes a secondary focused Force Refresh for provider/enrichment work.
+- Changes to region/language or metadata-provider enablement persist first and may admit a local-only `library_resolution_refresh` job that re-resolves current records without scanning, provider networking, or artwork downloading.
 - No normal Library-wide Force Refresh is exposed.
 - Add Library Folder automatically admits the appropriate full refresh after root persistence.
 
@@ -207,16 +208,19 @@ The following must be written, reviewed, and reach **Ready for Implementation** 
 Targeted amendments are required to the existing owning contracts where Phase 003 activates reserved behavior:
 
 - SPEC-BE-004 — composed refresh lifecycle/resource/cancellation semantics;
+- SPEC-BE-003 — Phase 003 published error codes and safe-context allowlists;
 - SPEC-BE-005 — metadata/artwork/locale settings and credential-presence state;
 - SPEC-BE-008 — Phase 003 DTO/event/query boundaries;
 - SPEC-BE-009 — focused Library/Game/enrichment application services;
 - SPEC-BE-010 — production provider activation/readiness and corrected provider-roadmap statements;
+- SPEC-BE-011 — final-source absence/orphan handoff and safe content reconnection;
 - SPEC-BE-012 — production identity-catalog linkage and Phase 003 maintenance semantics;
 - SPEC-BE-013 — scan-commit interaction with composed Library refresh;
 - SPEC-FE-003 — Library/Game/provider focused APIs;
 - SPEC-FE-004 — Library branch/routes/default destination activation;
 - SPEC-FE-008 — normal Add Library Folder → Refresh Library behavior;
 - SPEC-FE-009 — presentation of Phase 003 durable operations.
+- SPEC-X-002 — Android foreground hosting, secure credentials, app-private artwork delivery, and native qualification for Phase 003 operations.
 
 The architecture overview must also be reconciled with the approved Phase 003 Game layer, provider roster, Game-level resolved artwork/metadata, single-game archive policy, Library-default navigation, and later-MVP manual-correction roadmap.
 
@@ -224,7 +228,7 @@ The architecture overview must also be reconciled with the approved Phase 003 Ga
 
 1. **P03-001 — Canonical Content and Logical Library Foundation**: establish Phase 003 persistence/domain foundations, `Game`/`GameMembership`, initial qualified simple content identity, duplicate/orphan semantics, fallback unmatched presentation, read projections, and focused Library APIs without live provider dependency.
 2. **P03-002 — Metadata Providers and Automatic Hydration**: activate Playmatch, GameTDB, SteamGridDB credential/readiness, mappings, provider metadata, deterministic resolution, artwork discovery/resolution/download, immutable storage, and best-effort provider behavior.
-3. **P03-003 — Library Experience and Composed Refresh**: activate Library as product home, onboarding, Add Library Folder → Refresh Library, incremental scan/identify/group/hydrate composition, Refresh Game/Force Refresh, Jobs integration, cancellation/retry/recovery, and Android foreground hosting for qualifying work.
+3. **P03-003 — Library Experience and Composed Refresh**: activate Library as product home, durable product onboarding, Add Library Folder → Refresh Library, incremental scan/identify/group/hydrate composition, Refresh Game/Force Refresh, local-only `library_resolution_refresh`, Jobs integration, cancellation/retry/recovery, app-private artwork delivery, and Android foreground hosting for qualifying work.
 4. **P03-004 — Cartridge and Handheld Platform Coverage**: qualify the complete cartridge/handheld-oriented Nintendo/Sega matrix through recognition, identity, grouping, provider mapping, enrichment, and Library presentation.
 5. **P03-005 — Disc, Multi-File, and Multi-Disc Coverage**: establish canonical logical disc semantics and qualify Sega CD/Saturn/Dreamcast, PS1/PS2/PSP, GameCube/Wii, descriptor/track inputs, native ISO, independently identified discs, M3U evidence, and multi-disc grouping.
 6. **P03-006 — Containers and Compressed Representations**: add ZIP/7z/RAR/supported stream containers and CHD/RVZ/CSO/WBFS, equivalent-representation convergence, single-game archive enforcement, multi-game rejection, nested resource limits, hostile-input safety, staging, and cancellation.
@@ -260,7 +264,7 @@ Required rules:
 3. SteamGridDB credentials are handled only through the credential service and never stored in normal settings, logs, events, diagnostics, job records, or bridge/read DTOs.
 4. No application-owned IGDB/ScreenScraper secret is embedded/obfuscated in clients.
 5. Provider responses and remote artwork are untrusted and strictly validated/bounded.
-6. Artwork object-store paths are derived from application-owned content identity, never remote filenames/URLs.
+6. Artwork object-store paths are derived from the application-owned `ArtworkAssetId` (BLAKE3 of the actual downloaded bytes), never remote filenames or URLs.
 7. Archive/container parsing enforces cumulative resource limits, safe path handling, bounded staging, and cancellation.
 8. Provider work occurs only from explicit user operations; startup/migration/recovery/opening Library do not trigger autonomous significant networking.
 9. Existing Phase 001/002 source-boundary, redaction, Android readiness, and app-private-storage rules remain in force.
@@ -303,7 +307,7 @@ Phase 003 is complete when all of the following are true:
 3. Equivalent physical copies/representations converge where the applicable scheme promises convergence.
 4. `Game` is the durable platform-specific Library identity above exact `GameContent`.
 5. Conservative grouping correctly handles regional/revision/equivalent/multi-disc relationships and does not guess ambiguous merges.
-6. Temporary root/media unavailability does not orphan games; authoritative final absence does, while preserving durable identity/enrichment for reconnection.
+6. Temporary root/media unavailability does not orphan games; authoritative final absence does, while preserving durable `Game`/`GameContent` identity, enrichment, and bounded non-current content-identity evidence for exact re-identification-based reconnection.
 7. Playmatch, GameTDB, and SteamGridDB production adapters satisfy deterministic contracts and current live-provider qualification.
 8. SteamGridDB credentials are stored and used only through the credential service with required redaction guarantees.
 9. Provider matches never establish canonical content identity.
@@ -331,6 +335,8 @@ Phase 003 is complete when all of the following are true:
 31. The 10,000+ synthetic Library qualification passes.
 32. Generated source is current/reproducible and architecture/redaction/privacy checks pass.
 33. Required result artifacts report executed and deferred evidence truthfully.
+34. Metadata/provider preference changes preserve the committed setting independently from local re-resolution admission, and their local-only reconciliation performs no provider network or artwork download work.
+35. Product onboarding is query-authoritative and durable: consent, confirmed preferences, and the explicit provider-setup outcome gate completion; first-folder success automatically completes/admit-refreshes, existing-root upgrades use explicit Finish & Refresh, and completion persists before child admission.
 
 ## 13. Readiness Checklist
 
@@ -347,14 +353,14 @@ Phase 003 is complete when all of the following are true:
 - [x] Exit criteria are measurable
 - [x] No blocking phase-level product decisions remain
 - [x] Daniel has accepted the capability and scope
-- [ ] SPEC-BE-014 is written, reviewed, and Ready for Implementation
-- [ ] SPEC-BE-015 is written, reviewed, and Ready for Implementation
-- [ ] SPEC-FE-010 is written, reviewed, and Ready for Implementation
-- [ ] Required existing specification amendments are written/reviewed
-- [ ] Architecture-overview corrections are written/reviewed
-- [ ] Cross-document consistency review is clean
+- [x] SPEC-BE-014 is written, reviewed, and Ready for Implementation
+- [x] SPEC-BE-015 is written, reviewed, and Ready for Implementation
+- [x] SPEC-FE-010 is written, reviewed, and Ready for Implementation
+- [x] Required existing specification amendments are written/reviewed
+- [x] Architecture-overview corrections are written/reviewed
+- [x] Cross-document consistency review is clean
 
-**Readiness rule:** PHASE-003 remains **Draft** until the focused contract package and required amendments are complete and consistent. Implementation readiness is a deliberate documentation-state change and is not inferred from this phase design alone.
+**Readiness rule:** PHASE-003 is **Ready for Implementation** because the focused contract package and required amendments are complete, consistent, reviewed, and owner-approved. Implementation readiness is a deliberate documentation-state change and is not inferred from phase design alone.
 
 ## 14. References
 

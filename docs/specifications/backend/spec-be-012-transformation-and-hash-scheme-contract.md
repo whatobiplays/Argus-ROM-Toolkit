@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-012  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -20,7 +20,7 @@ The governing rule is:
 
 ### 1.1 Activation scope
 
-This is a forward MVP contract. Ready status does not activate transformations, parsers, hashing, identity-maintenance jobs, schema, dependencies, fixtures, or placeholder modules during Phase 000. Only an active later phase, slice, and task may implement them.
+This is the generic forward MVP transformation/identity contract. Ready status by itself does not activate parsers, hashing, identity-maintenance jobs, schema, dependencies, fixtures, or placeholder modules. PHASE-003 activates concrete production recognition and identity-scheme coverage through SPEC-BE-014 while this specification remains authoritative for the generic mechanics those schemes must obey.
 
 ## 2. Scope
 
@@ -742,6 +742,12 @@ Content without an applicable current identity scheme is not materialized as a n
 
 Selection is deterministic and independent of registration order.
 
+### 22.1 Production catalog
+
+SPEC-BE-014 is the authoritative Phase 003 production catalog for the current `(PlatformId, ContentType)` mappings, accepted source representations, canonical logical representations, `scheme_id` values, and current `identity_revision` values.
+
+BE-012 continues to define the zero-or-one selection invariant and all generic transformation/identity mechanics. A content class absent from the Phase 003 catalog, or explicitly excluded by it, is not an advertised Phase 003 identity class even if a parser can recognize or inspect the representation.
+
 ## 23. `ContentIdentity`
 
 Conceptually:
@@ -785,7 +791,7 @@ NeedsReidentification
 IdentityConflict
 ```
 
-Obsolete identities are not retained as valid aliases or historical matching keys.
+Obsolete identities are removed from current identity and are not retained as valid aliases or general matching keys. Phase 003 may retain one bounded non-current identity-evidence record solely for exact orphan reconnection under Section 30.1; that evidence is excluded from ordinary current-identity queries, provider matching, grouping, hashing, and verification.
 
 Conceptually, durable identification state distinguishes:
 
@@ -1035,6 +1041,31 @@ Every alternative source candidate must pass the normal validated identification
 An unversioned `GameContentSource` association alone is never sufficient proof.
 
 Candidate ordering is deterministic and application-owned; repository enumeration order is never policy.
+
+### 30.1 Phase 003 retained identity evidence for orphan reconnection
+
+When authoritative source removal proves that a `GameContent` has no remaining current source association, the current identity and provenance cease being current. Phase 003 may retain a bounded record equivalent to:
+
+```text
+RetainedContentIdentityEvidence
+- game_content_id
+- scheme_id
+- identity_value
+- identity_revision
+- retained_at
+- reason = FinalSourceAbsent
+```
+
+This record is historical reconnection evidence only. It is not a current `ContentIdentity`, valid provenance, alias, provider/grouping input, hash subject proof, or verification authority.
+
+A returning source must independently complete the ordinary current BE-012/BE-014 identification pipeline. After a current `(scheme_id, identity_value)` has been computed from validated source data, the short convergence Unit of Work may reconnect the source to an existing orphaned `GameContent` only when:
+
+1. exactly one retained record matches the current scheme and identity value;
+2. the retained `identity_revision` is still semantically comparable under the current scheme contract, or application policy has explicitly migrated the evidence without treating it as current proof;
+3. no different current `GameContent` already owns the identity; and
+4. the new exact current provenance basis is persisted in the same coherent mutation that reactivates the content.
+
+Absent, obsolete, or multiple retained matches never authorize a guess. The workflow follows ordinary create/reuse/conflict rules. Filename, folder, provider metadata, old source association, and unavailable-media remount are not reconnection evidence.
 
 ## 31. Identity Conflict During Migration
 
@@ -1427,6 +1458,7 @@ BE-012 requires durable concepts equivalent to:
 ```text
 ContentIdentity
 ContentIdentityProvenance
+RetainedContentIdentityEvidence
 SourceHashRecord
 ContentHashRecord
 ContentIdentificationState
@@ -1458,9 +1490,9 @@ Source and content hashes use separate persistence concepts/tables so foreign-ke
 
 ### 47.3 Stale Record Retention
 
-MVP does not require historical identity or hash revision retention.
+MVP does not require general historical identity or hash revision retention.
 
-Obsolete identity values are discarded from current identity state.
+Obsolete identity values are discarded from current identity state. The narrow Phase 003 `RetainedContentIdentityEvidence` record from Section 30.1 is the sole MVP exception: it is stored separately from current identity/provenance and is usable only after an independently computed current identity establishes an exact orphan-reconnection candidate.
 
 Stale hash records may be replaced or deleted according to repository implementation, but they must never be returned as current.
 
@@ -1493,7 +1525,7 @@ Representative coherent write operations include:
 
 Transactions follow SPEC-BE-002.
 
-## 49. Source Removal and Identity Provenance
+## 49. Source Removal, Identity Provenance, and Orphan State
 
 SPEC-BE-011 owns authoritative source-graph removal. Once BE-012 identity provenance exists, source-removal coordination must also preserve identity correctness.
 
@@ -1501,12 +1533,11 @@ If an authoritatively removed `SourceEntry` participates in a current identity p
 
 - referencing identity-provenance rows no longer claim valid proof from the removed entry;
 - the affected `GameContent` no longer exposes the old identity as current proof;
-- the affected `GameContent` enters `NeedsReidentification` unless another proof is established by an explicit identification workflow;
-- `GameContent` itself is not deleted merely because provenance disappears.
+- if another current source association remains, the content enters `NeedsReidentification` unless replacement proof is established explicitly;
+- if no current source association remains, current identity/provenance are cleared, optional Section 30.1 retained evidence is recorded, `ContentIdentificationState` becomes `NeedsReidentification`, and the separate SPEC-BE-015 `GameContentPresenceState` becomes `Orphaned`;
+- `GameContent`, membership history, and independently valid enrichment are not deleted merely because provenance disappears.
 
-The indexing reconciler still does not compute or guess a replacement identity.
-
-The dedicated identity-maintenance workflow owns re-establishing proof from another source.
+Temporary source/root `Unavailable` state never executes this transition. The indexing reconciler does not compute or guess replacement identity; a later explicit identification workflow must establish new current proof before reconnection/reactivation.
 
 ## 50. Derived Reconciliation Transaction Boundary
 
@@ -1591,20 +1622,26 @@ Internal
 
 and other existing categories where applicable.
 
-Capability-specific stable error codes should cover at least the semantic equivalents of:
+Phase 003 internal processing outcomes map to the published SPEC-BE-003 catalog exactly as follows:
 
-- malformed recognized content
-- unsupported content/feature
-- no valid transformation path
-- ambiguous content recognition
-- transformation resource limit exceeded
-- content requires re-identification
-- current identity conflict
-- source changed during processing
-- source validation indeterminate
-- invalid transformation registry/graph
+| BE-012 / catalog semantic | Published error code |
+|---|---|
+| `MalformedInput` or `InvalidDerivedStructure` | `ARGUS.V1.VALIDATION.CONTENT_MALFORMED` |
+| `UnsupportedFeature` or no valid transformation path | `ARGUS.V1.VALIDATION.CONTENT_UNSUPPORTED_REPRESENTATION` |
+| unsupported encrypted/key-dependent content | `ARGUS.V1.VALIDATION.CONTENT_ENCRYPTED_UNSUPPORTED` |
+| unsupported multi-game generic container | `ARGUS.V1.VALIDATION.MULTI_GAME_CONTAINER_UNSUPPORTED` |
+| missing required descriptor/content dependency | `ARGUS.V1.FILESYSTEM.CONTENT_DEPENDENCY_MISSING` |
+| `AmbiguousContentRecognition` | `ARGUS.V1.VALIDATION.CONTENT_RECOGNITION_AMBIGUOUS` |
+| `ResourceLimitExceeded` | `ARGUS.V1.OPERATION.TRANSFORMATION_RESOURCE_LIMIT_EXCEEDED` |
+| `NeedsReidentification` prevents requested work | `ARGUS.V1.OPERATION.CONTENT_REIDENTIFICATION_REQUIRED` |
+| current identity uniqueness/conflict | `ARGUS.V1.INTERNAL.CONTENT_IDENTITY_CONFLICT` |
+| source changed during processing | `ARGUS.V1.OPERATION.SOURCE_CHANGED_DURING_PROCESSING` |
+| source validation indeterminate | `ARGUS.V1.FILESYSTEM.SOURCE_VALIDATION_INDETERMINATE` |
+| `InvalidTransformationGraph` | `ARGUS.V1.INTERNAL.INVALID_TRANSFORMATION_GRAPH` |
+| `Cancelled` | `ARGUS.V1.OPERATION.CANCELLED` |
+| unexpected `InternalFailure` | `ARGUS.V1.INTERNAL.UNEXPECTED` |
 
-The exact `ARGUS.V1...` catalog additions are made through the SPEC-BE-003 catalog rules.
+`IoFailure` maps through the narrower source/filesystem/persistence error already owned by the failing port when one exists; it must not be flattened into malformed or unsupported content. BE-012 creates no parallel public catalog.
 
 An invalid transformation graph or impossible identity invariant is an Argus defect/configuration failure, not user-content corruption.
 
@@ -1763,6 +1800,10 @@ Tests must verify:
 - obsolete identity values cease current matching immediately;
 - migration collision produces `IdentityConflict` rather than automatic merge;
 - authoritative source removal invalidates affected identity provenance without deleting `GameContent` directly.
+- final-source absence records retained identity evidence separately from current identity/provenance;
+- retained evidence cannot satisfy current identity-dependent operations;
+- an independently identified returning source reconnects only to one exact current-scheme retained match;
+- absent, obsolete, multiple, or current-owner-conflicting matches follow normal create/reuse/conflict handling;
 
 ## 64. Derived-Container Tests
 
@@ -1827,6 +1868,9 @@ Tests must verify:
 - successful re-identification establishes a new identity/provenance basis;
 - normal unrelated operations do not perform hidden alternate-source identity repair;
 - dedicated maintenance may validate associated sources before adopting a replacement basis.
+- orphan reconnection independently recomputes current identity before consulting retained evidence;
+- successful orphan reconnection atomically establishes current identity/provenance and reactivates the existing content;
+- retained evidence never causes hidden startup, remount, or query-time identification work;
 
 ## 68. Acceptance Criteria
 
@@ -1895,6 +1939,7 @@ SPEC-BE-012 is satisfied when:
 61. BE-012 introduces capability-specific error codes through the existing `ApplicationError` contract rather than a new top-level error family.
 62. Events publish only after durable commits.
 63. Architecture, planner, staging, resource-safety, recognition, identity, derived-container, hash, transaction, migration, and recovery tests enforce the defined boundaries.
+64. Phase 003 retained identity evidence is non-current, separately persisted, and usable only after independent exact re-identification of returning orphaned content; orphan-reconnection tests enforce the no-guessing boundary.
 
 ## 69. Prohibited Patterns
 
@@ -1935,14 +1980,14 @@ The following patterns are prohibited unless a later specification explicitly su
 The following remain intentionally deferred:
 
 - concrete parser-library choices
-- exact per-format transformation inventory
+- concrete parser/decompressor implementation choices for the production transformation inventory defined by SPEC-BE-014
 - exact numeric resource-budget defaults
 - persistent transformation-result caching beyond MVP
 - persistent staging reuse
-- automatic duplicate-`GameContent` merge semantics
-- final orphan lifecycle
-- title/release/multi-disc grouping model above `GameContent`
-- metadata matching/resolution
+- automatic reconciliation/merge of pre-existing duplicate `GameContent` records beyond the exact current-identity/orphan-reconnection rules defined here
+- concrete persistence implementation of the SPEC-BE-015-owned Game/orphan lifecycle
+- concrete implementation of the SPEC-BE-015-owned title/release/multi-disc grouping model
+- concrete implementation of the SPEC-BE-015-owned metadata matching/resolution policies
 - RetroAchievements verification policy
 - filesystem watching
 - remote source-provider staging optimization
@@ -1960,6 +2005,7 @@ These decisions must preserve the invariants in this specification.
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
@@ -1968,4 +2014,6 @@ These decisions must preserve the invariants in this specification.
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](spec-be-009-application-service-contracts.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
+- [SPEC-BE-014 — Production Content Identity Catalog](spec-be-014-production-content-identity-catalog.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [Backend Specifications Index](README.md)

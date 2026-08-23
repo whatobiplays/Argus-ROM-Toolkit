@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-010  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1752,11 +1752,65 @@ This specification intentionally defers:
 
 Provider health, circuit breaking, and cross-`JobRun`-attempt runtime health indicators remain post-MVP implementation concerns as stated by ARCH-001. The readiness contract in this specification is required independently of those deferred operational features.
 
-## 53. References
+## 53. Phase 003 Production Provider Amendment
+
+PHASE-003 activates this provider architecture with the following immutable runtime-generation registry membership:
+
+```text
+playmatch
+gametdb
+steamgriddb
+```
+
+Capability selection remains readiness/capability/configuration based; application workflows never branch on concrete adapter class.
+
+### 53.1 Playmatch
+
+Playmatch requires no user credential in Phase 003. It provides exact-content/game matching and any additional mapping/metadata capabilities explicitly implemented by its descriptor. A result is eligible for automatic acceptance only when the provider response explicitly binds the submitted exact strong content hash/identifier and validated platform to one external identity under SPEC-BE-015. Search/title/fuzzy candidates remain provider evidence but never become current mappings automatically. Playmatch never establishes Argus canonical content or Game identity.
+
+### 53.2 GameTDB
+
+GameTDB requires no user credential in Phase 003. It provides applicable platform metadata/artwork discovery and exact platform-native product/disc/release lookup capabilities represented by its descriptor. Automatic mapping acceptance requires the exact identifier/evidence classes defined by SPEC-BE-015; title search alone never establishes a current mapping. Unsupported platforms, fields, types, or exact lookup forms are absent capabilities rather than guessed fallbacks.
+
+### 53.3 SteamGridDB
+
+SteamGridDB artwork capability requires a user-supplied API key. The provider session retrieves that secret transiently through the credential service. SteamGridDB lookup is artwork-enrichment support only in Phase 003: it is not canonical-content, external-match, or Game-grouping authority, and fuzzy/title results cannot merge Games.
+
+Artwork results expose a credential-free stable URL when the provider contract permits it; otherwise they expose an opaque provider asset locator that the authenticated session resolves to a signed/credential-bearing URL only transiently at download time. Signed URLs never become durable normalized results, metadata-provider settings, Jobs detail, diagnostics, events, or bridge DTOs.
+
+#### 53.3.1 Credential mutation semantics
+
+`SetMetadataProviderCredential` writes to the secure credential gateway before refreshing readiness. Outcomes preserve separate facts:
+
+- secure write failure returns `ARGUS.V1.CONFIGURATION.CREDENTIAL_STORE_UNAVAILABLE` and does not pretend the credential changed;
+- successful secure write plus valid live validation returns configured + `Ready`;
+- successful secure write plus invalid authentication returns configured + `InvalidCredentials`, allowing Replace/Remove without exposing the secret;
+- successful secure write plus transient validation/service failure returns configured + `Unavailable`;
+- successful removal returns not configured + `MissingCredentials` for the credentialed capabilities;
+- removal failure preserves the last authoritative configured/readiness projection rather than guessing that the secret is gone.
+
+No credential command returns plaintext or stores a copy in provider settings, SQLite, logs, events, diagnostics, Jobs, or bridge read models.
+
+### 53.4 Deferred providers
+
+IGDB and ScreenScraper are excluded from Phase 003 because the distributed client does not ship application-owned Client Secrets/developer credentials and Phase 003 adds no Argus cloud broker. Hasheous is simply outside the selected Phase 003 provider roster; no credential assumption is part of that decision.
+
+### 53.5 Matching and resolution ownership
+
+Provider sessions may match/fetch/discover but do not decide cross-provider Game grouping, metadata field winners, artwork winners, refresh eligibility, or user-visible provider priority. SPEC-BE-015 owns those deterministic application policies.
+
+Provider confidence remains provider-local. Cross-provider numeric confidence comparison is prohibited unless a later specification defines an explicit normalization contract. Numeric confidence alone never establishes a Phase 003 current mapping; the exact application-owned evidence-class policy in SPEC-BE-015 remains authoritative.
+
+### 53.6 Live provider testing
+
+Normal deterministic tests use provider fixtures/fakes. Explicit live-provider qualification remains separate from `just check`, requires only credentials appropriate to the provider being qualified, and reports external service unavailability truthfully rather than weakening deterministic gates.
+
+## 54. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
@@ -1767,4 +1821,5 @@ Provider health, circuit breaking, and cross-`JobRun`-attempt runtime health ind
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](spec-be-008-rust-to-flutter-bridge-dto-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](spec-be-009-application-service-contracts.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [Backend Specifications Index](README.md)

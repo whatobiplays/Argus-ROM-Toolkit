@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-009  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-X-001, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1245,14 +1245,74 @@ Normative behavior:
 
 Android-specific notification/accessibility tests supplement, rather than replace, the existing Jobs keyboard/touch/controller coverage.
 
-## 62. References
+## 62. Phase 003 Refresh-Job Presentation Amendment
+
+PHASE-003 activates explicit typed Jobs variants for:
+
+```text
+library_refresh            -> Refresh Library
+game_refresh               -> Refresh Game / Refresh Selected Games
+library_resolution_refresh -> Apply Library Preferences
+```
+
+These variants extend the generic Jobs shell; they do not change `JobRunId`, lifecycle, cancellation, retry, event reconciliation, or authoritative-control semantics.
+
+`library_refresh` detail exposes the durable trigger `Manual`, `AddedRoot(rootId)`, or `InitialOnboarding`. That trigger explains the admitted scope and supports transport-ambiguity reconciliation; it is not inferred from UI history.
+
+`library_resolution_refresh` is local-only: it re-resolves current metadata/artwork selections and Library projections after committed metadata/provider preference changes. It performs no source scan, provider request, or artwork download. If newly selected artwork has no local asset, detail reports that bounded gap rather than implying download completion.
+
+### 62.1 Refresh detail
+
+A Phase 003 refresh detail projection may show bounded/paged user-meaningful facts such as:
+
+```text
+current phase
+roots terminal / total where known
+changed source count
+identified content / content issues
+matched / unmatched count
+provider outcomes by provider/capability
+metadata/artwork outcomes
+resulting affected Game count/identities where useful
+```
+
+The `library_resolution_refresh` variant instead projects its local-only facts:
+
+```text
+games planned / terminal
+metadata Games resolved
+artwork selections resolved
+Library projections updated
+selected references missing local assets
+issues count
+```
+
+A selected reference without downloaded bytes is shown as a bounded future-enrichment gap, not as evidence that the local-only preference job failed to download something outside its scope.
+
+Unknown totals stay unknown; Flutter does not manufacture percentages.
+
+### 62.2 `CompletedWithIssues`
+
+For network/content refresh operations, `CompletedWithIssues` may represent a safe durable result with meaningful successes plus scoped unresolved work such as unmatched content, an otherwise-eligible enabled provider failure/unavailability, malformed/unsupported content, or artwork download failure. Disabled or intentionally skipped/unconfigured providers are exclusions, not issues. For `library_resolution_refresh`, a selected reference with no local asset is a normal bounded result (`asset_id = null`/future full-refresh eligibility), not independently a `CompletedWithIssues` cause. The generic state label remains capability-neutral; the operation-specific detail explains actual issues.
+
+### 62.3 Controls
+
+Cancel routes through the existing generic backend Cancel Job authority. Retry creates/navigates to a new JobRun when the backend advertises retry eligibility. Phase 003 refresh jobs remain non-resumable after process loss; no Resume control is shown.
+
+### 62.4 Privacy and scale
+
+Provider detail shows safe provider IDs/readiness/error summaries, never credentials, request headers, full remote payloads, or credential-bearing URLs. Per-game/provider issue lists are bounded/paged rather than rendering unbounded thousands of rows in one detail snapshot.
+
+## 63. References
 
 - `docs/architecture/architecture-overview.md` — ARCH-001
 - `docs/architecture/documentation-architecture.md` — ARCH-002
 - `docs/phases/phase-001-local-sources-and-indexing.md` — PHASE-001
+- `docs/phases/phase-003-game-identification-and-enrichment.md` — PHASE-003
 - `docs/specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md` — SPEC-BE-004
 - `docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md` — SPEC-BE-008
 - `docs/specifications/backend/spec-be-013-library-source-management-scan-operations-and-source-projections.md` — SPEC-BE-013
+- `docs/specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md` — SPEC-BE-015
 - `docs/specifications/frontend/spec-fe-001-flutter-project-structure-and-feature-boundaries.md` — SPEC-FE-001
 - `docs/specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md` — SPEC-FE-002
 - `docs/specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md` — SPEC-FE-003
@@ -1261,4 +1321,5 @@ Android-specific notification/accessibility tests supplement, rather than replac
 - `docs/specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md` — SPEC-FE-006
 - `docs/specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md` — SPEC-FE-007
 - `docs/specifications/frontend/spec-fe-008-sources-and-library-folder-management.md` — SPEC-FE-008
+- `docs/specifications/frontend/spec-fe-010-library-game-detail-and-enrichment-ux.md` — SPEC-FE-010
 - `docs/specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md` — SPEC-X-001

@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-013  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-X-001, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1185,11 +1185,26 @@ Android reuses the existing source/root/scan application contracts; platform sto
 
 Tests must cover permission loss/regrant, removable-media loss/remount, partial Scan All eligibility, no destructive reconciliation on unavailable evidence, and preserved root identity where provider-native proof is trustworthy.
 
+## 33.1 Phase 003 Composed Refresh Amendment
+
+Phase 003 keeps `LibraryScan` as the authoritative source-discovery/reconciliation operation semantics while permitting those semantics to execute as an internal stage of the already-admitted `library_refresh` JobRun defined by SPEC-BE-015.
+
+Normative rules:
+
+1. Standalone Sources `Scan`, `Scan Again`, and `Scan All` continue to admit top-level `library_scan` JobRuns exactly as this specification defines.
+2. `Refresh Library` must not call the public scan-admission command and thereby create an unrelated second top-level scan job. It reuses the scan planner/handler/root-target/reconciliation logic under the parent refresh operation context.
+3. Root-level admission/ownership conflicts are shared between standalone scans and refresh-embedded scans. Two operations cannot simultaneously claim incompatible active scan ownership of the same root.
+4. Embedded scans preserve the same validated-read, positive-observation, exact-scope absence authority, unavailable-root, cancellation, and reconciliation rules as standalone scans.
+5. Scan checkpoints may publish committed changed-source invalidation so SPEC-BE-015 can pipeline identification downstream before every root reaches terminal state. Downstream work consumes committed source facts only.
+6. Process recovery performs no embedded scan work automatically. A stale refresh is recovered under BE-004/SPEC-BE-015 and a later explicit retry re-evaluates scan eligibility.
+7. The Phase 003 normal Library Add Folder experience may compose root creation with later `library_refresh` admission. Root creation remains durable if refresh admission fails. Existing Sources operational actions remain valid and explicit.
+
 ## 34. References
 
 - `docs/architecture/architecture-overview.md` — ARCH-001
 - `docs/architecture/documentation-architecture.md` — ARCH-002
 - `docs/phases/phase-001-local-sources-and-indexing.md` — PHASE-001
+- `docs/phases/phase-003-game-identification-and-enrichment.md` — PHASE-003
 - `docs/specifications/backend/spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md` — SPEC-BE-002
 - `docs/specifications/backend/spec-be-003-application-errors-logging-and-diagnostics.md` — SPEC-BE-003
 - `docs/specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md` — SPEC-BE-004
@@ -1198,6 +1213,7 @@ Tests must cover permission loss/regrant, removable-media loss/remount, partial 
 - `docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md` — SPEC-BE-008
 - `docs/specifications/backend/spec-be-009-application-service-contracts.md` — SPEC-BE-009
 - `docs/specifications/backend/spec-be-011-source-provider-and-indexing-contract.md` — SPEC-BE-011
+- `docs/specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md` — SPEC-BE-015
 - `docs/specifications/frontend/spec-fe-008-sources-and-library-folder-management.md` — SPEC-FE-008
 - `docs/specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md` — SPEC-FE-009
 - `docs/specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md` — SPEC-X-001

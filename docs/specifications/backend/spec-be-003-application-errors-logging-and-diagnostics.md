@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1213,12 +1213,88 @@ Diagnostic archive assembly remains backend-owned and sanitized. The frontend de
 
 Phase 002 acceptance requires Android platform classification and tests proving that no raw app-private path or authorization detail enters safe context, logs, errors, or diagnostic manifests.
 
-## 32. References
+## 32. Phase 003 Published Error-Catalog Amendment
+
+Phase 003 processing, provider, Library, and artwork failures use the existing `ApplicationError` envelope and top-level categories. They do not introduce feature-local public error enums or arbitrary error strings.
+
+### 32.1 Content, Library, and artwork codes
+
+| Error Code | Category | Severity | Recoverability | Retry Policy | Message Key |
+|---|---|---|---|---|---|
+| `ARGUS.V1.VALIDATION.CONTENT_MALFORMED` | Validation | Warning | UserAction | Never | `errors.content.malformed` |
+| `ARGUS.V1.VALIDATION.CONTENT_UNSUPPORTED_REPRESENTATION` | Validation | Warning | UserAction | Never | `errors.content.unsupported_representation` |
+| `ARGUS.V1.VALIDATION.CONTENT_ENCRYPTED_UNSUPPORTED` | Validation | Warning | UserAction | Never | `errors.content.encrypted_unsupported` |
+| `ARGUS.V1.VALIDATION.MULTI_GAME_CONTAINER_UNSUPPORTED` | Validation | Warning | UserAction | Never | `errors.content.multi_game_container_unsupported` |
+| `ARGUS.V1.FILESYSTEM.CONTENT_DEPENDENCY_MISSING` | Filesystem | Error | UserAction | UserInitiated | `errors.content.dependency_missing` |
+| `ARGUS.V1.VALIDATION.CONTENT_RECOGNITION_AMBIGUOUS` | Validation | Warning | UserAction | Never | `errors.content.recognition_ambiguous` |
+| `ARGUS.V1.OPERATION.TRANSFORMATION_RESOURCE_LIMIT_EXCEEDED` | Operation | Warning | UserAction | UserInitiated | `errors.content.resource_limit_exceeded` |
+| `ARGUS.V1.OPERATION.CONTENT_REIDENTIFICATION_REQUIRED` | Operation | Warning | UserAction | UserInitiated | `errors.content.reidentification_required` |
+| `ARGUS.V1.INTERNAL.CONTENT_IDENTITY_CONFLICT` | Internal | Error | ManualIntervention | Never | `errors.content.identity_conflict` |
+| `ARGUS.V1.OPERATION.SOURCE_CHANGED_DURING_PROCESSING` | Operation | Warning | Retry | UserInitiated | `errors.content.source_changed` |
+| `ARGUS.V1.FILESYSTEM.SOURCE_VALIDATION_INDETERMINATE` | Filesystem | Error | Retry | UserInitiated | `errors.content.source_validation_indeterminate` |
+| `ARGUS.V1.INTERNAL.INVALID_TRANSFORMATION_GRAPH` | Internal | Fatal | RestartRequired | Never | `errors.content.invalid_transformation_graph` |
+| `ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND` | Configuration | Warning | UserAction | Never | `errors.library.game_not_found` |
+| `ARGUS.V1.OPERATION.LIBRARY_ROOT_BUSY` | Operation | Warning | Retry | UserInitiated | `errors.library.root_busy` |
+| `ARGUS.V1.FILESYSTEM.ARTWORK_ASSET_NOT_FOUND` | Filesystem | Warning | Retry | UserInitiated | `errors.artwork.asset_not_found` |
+
+### 32.2 Metadata-provider and credential codes
+
+| Error Code | Category | Severity | Recoverability | Retry Policy | Message Key |
+|---|---|---|---|---|---|
+| `ARGUS.V1.PROVIDER.AUTHENTICATION_FAILED` | Provider | Warning | UserAction | UserInitiated | `errors.provider.authentication_failed` |
+| `ARGUS.V1.PROVIDER.AUTHORIZATION_FAILED` | Provider | Error | UserAction | UserInitiated | `errors.provider.authorization_failed` |
+| `ARGUS.V1.PROVIDER.RATE_LIMITED` | Provider | Warning | Retry | UserInitiated | `errors.provider.rate_limited` |
+| `ARGUS.V1.PROVIDER.TIMEOUT` | Provider | Warning | Retry | UserInitiated | `errors.provider.timeout` |
+| `ARGUS.V1.PROVIDER.UNAVAILABLE` | Provider | Warning | Retry | UserInitiated | `errors.provider.unavailable` |
+| `ARGUS.V1.PROVIDER.INVALID_REQUEST` | Provider | Error | ManualIntervention | Never | `errors.provider.invalid_request` |
+| `ARGUS.V1.PROVIDER.INVALID_RESPONSE` | Provider | Error | Retry | UserInitiated | `errors.provider.invalid_response` |
+| `ARGUS.V1.PROVIDER.PROTOCOL_VIOLATION` | Provider | Error | ManualIntervention | Never | `errors.provider.protocol_violation` |
+| `ARGUS.V1.PROVIDER.UNSUPPORTED_CAPABILITY` | Provider | Warning | UserAction | Never | `errors.provider.unsupported_capability` |
+| `ARGUS.V1.PROVIDER.CONFIGURATION_INVALID` | Provider | Error | UserAction | UserInitiated | `errors.provider.configuration_invalid` |
+| `ARGUS.V1.CONFIGURATION.CREDENTIAL_STORE_UNAVAILABLE` | Configuration | Error | UserAction | UserInitiated | `errors.configuration.credential_store_unavailable` |
+
+Provider cancellation maps to the existing `ARGUS.V1.OPERATION.CANCELLED` code.
+
+### 32.3 Safe-context allowlists
+
+Content codes may allow only applicable bounded keys from:
+
+```text
+platform_id
+content_type
+representation_type
+source_entry_id
+game_content_id
+identity_scheme_id
+limit_kind
+bounded_item_count
+```
+
+Provider codes may allow only applicable bounded keys from:
+
+```text
+provider_id
+provider_capability
+provider_operation
+safe_external_status
+retry_after_seconds
+```
+
+Library/artwork codes may allow applicable Argus-owned `GameId`, `LibraryRootId`, `JobRunId`, and `ArtworkAssetId` values. No Phase 003 code permits local paths, filenames, opaque locators, provider URLs, request/response bodies, authorization material, credential input, ROM/disc bytes, parser buffers, or arbitrary native error text.
+
+Catalog tests must prove uniqueness, policy completeness, exact message keys, allowed-context enforcement, bridge mapping, and redaction for every Phase 003 entry.
+
+## 33. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
+- [SPEC-BE-012 — Transformation and Hash-Scheme Contract](spec-be-012-transformation-and-hash-scheme-contract.md)
+- [SPEC-BE-014 — Production Content Identity Catalog](spec-be-014-production-content-identity-catalog.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
+- [SPEC-X-002 — Android Platform Runtime and Capability Contract](../cross-cutting/spec-x-002-android-platform-runtime-and-capability-contract.md)
 - [Backend Specifications Index](README.md)

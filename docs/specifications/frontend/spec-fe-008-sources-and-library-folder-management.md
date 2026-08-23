@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-X-001, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1485,14 +1485,40 @@ Final selection enters the existing root-admission API and preserves Added / Alr
 
 If All files access is revoked, the Sources feature is covered by platform readiness rather than deleting configuration. If removable media is absent, affected roots render typed unavailable state while other roots remain usable. A trustworthy remount restores the same configured root identity. Removing a root remains configuration/index removal only and never deletes user files.
 
-## 70. References
+## 70. Phase 003 Library Add-Folder Integration
+
+PHASE-003 activates a logical game Library, but Sources remains the operational root/filesystem/index surface defined by this specification.
+
+The normal Add Library Folder action launched from Library uses the same platform picker, root validation, duplicate/overlap policy, and root-persistence authority as Sources. After root persistence succeeds it requests the composed `AddLocalLibraryRootAndRefresh` / `library_refresh` workflow defined by SPEC-BE-015 and FE-010.
+
+During incomplete first-run Library onboarding, folder selection uses the existing root-only `AddLocalLibraryRoot` capability. After `Added` or the idempotent `AlreadyConfigured` outcome, the onboarding coordinator automatically commits completion and requests the initial `library_refresh`; selecting the first folder is therefore the final user action and no second confirmation click is required. An `OverlapsExisting` outcome remains unresolved folder-selection feedback and admits no refresh. Existing-root upgrades, which have no folder-selection event, retain the explicit `Finish & Refresh` action.
+
+This sequence prevents duplicate refresh jobs while preserving the committed-root-first boundary. Transport ambiguity is reconciled through idempotent root admission plus authoritative onboarding/root/Jobs queries rather than replaying either composite operation blindly.
+
+Truthfulness rule:
+
+```text
+root creation succeeds + refresh admission fails
+    -> root remains configured
+    -> UI reports refresh failure separately
+```
+
+The Library flow must not roll back a successfully committed root or mislabel the add operation as wholly failed.
+
+Sources retains explicit operational actions for users who need lower-level control, including existing scan/rescan controls and an advanced `Add Without Refreshing` path where the active product surface exposes it. A Sources-originated standalone scan still creates the `library_scan` operation defined by SPEC-BE-013; it does not masquerade as full metadata/artwork hydration.
+
+Archive/disc/playlist semantic expansion introduced by Phase 003 remains backend transformation/Game authority. FE-008 continues to render the source graph it is given and does not infer game/media identity from filenames or extensions.
+
+## 71. References
 
 - `docs/architecture/architecture-overview.md` — ARCH-001
 - `docs/architecture/documentation-architecture.md` — ARCH-002
 - `docs/phases/phase-001-local-sources-and-indexing.md` — PHASE-001
+- `docs/phases/phase-003-game-identification-and-enrichment.md` — PHASE-003
 - `docs/specifications/backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md` — SPEC-BE-004
 - `docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md` — SPEC-BE-008
 - `docs/specifications/backend/spec-be-013-library-source-management-scan-operations-and-source-projections.md` — SPEC-BE-013
+- `docs/specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md` — SPEC-BE-015
 - `docs/specifications/frontend/spec-fe-001-flutter-project-structure-and-feature-boundaries.md` — SPEC-FE-001
 - `docs/specifications/frontend/spec-fe-002-riverpod-freezed-and-controller-state-conventions.md` — SPEC-FE-002
 - `docs/specifications/frontend/spec-fe-003-argusclient-and-focused-domain-apis.md` — SPEC-FE-003
@@ -1500,5 +1526,6 @@ If All files access is revoked, the Sources feature is covered by platform readi
 - `docs/specifications/frontend/spec-fe-005-startup-and-recovery-ui.md` — SPEC-FE-005
 - `docs/specifications/frontend/spec-fe-006-appearance-settings-and-theme-application.md` — SPEC-FE-006
 - `docs/specifications/frontend/spec-fe-007-design-system-foundation-and-accessibility-baseline.md` — SPEC-FE-007
+- `docs/specifications/frontend/spec-fe-010-library-game-detail-and-enrichment-ux.md` — SPEC-FE-010
 - `docs/specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md` — SPEC-FE-009
 - `docs/specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md` — SPEC-X-001

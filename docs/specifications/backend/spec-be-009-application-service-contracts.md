@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-009  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-14  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1045,17 +1045,127 @@ This specification does not finalize:
 - dependency-injection framework choice
 - metadata-provider gateway architecture details
 - source-provider and indexing architecture details
-- library/metadata/import service catalogs
-- authentication/authorization services
+- service catalogs beyond the capabilities activated by later amendments
+- authentication/authorization services beyond the explicit privacy-consent and credential commands activated by later amendments
 - distributed transactions
 - remote RPC/service deployment
 - frontend-focused API wrapper design
 
-## 53. References
+## 53. Phase 003 Service Catalog Amendment
+
+PHASE-003 activates focused application capabilities without creating a god service, service-to-service dependency chain, or repository access from adapters. Cross-domain workflows use explicit coordinators beneath the public capability owner.
+
+### 53.1 `LibraryService`
+
+`LibraryService` retains the source/root operations activated by Phase 001 and adds the logical Library capabilities owned by SPEC-BE-015:
+
+```text
+ListGamesQuery
+GetLibraryFacetsQuery
+GetLibraryOnboardingStateQuery
+ConfirmLibraryMetadataPreferencesCommand
+RecordLibraryProviderSetupOutcomeCommand
+CompleteLibraryOnboardingAndRefreshCommand
+RefreshLibraryCommand
+AddLocalLibraryRootAndRefreshCommand
+```
+
+`GetLibraryFacetsQuery` is active in Phase 003. It returns bounded counts/options for the current scope/search and all filters other than the category being faceted; pagination and sort do not affect facet counts.
+
+`AddLocalLibraryRootAndRefreshCommand` mirrors the proven Phase 001 composite boundary:
+
+```text
+AddedAndRefreshAdmitted(root, operation_handle)
+AddedButRefreshNotAdmitted(root, child_issue)
+AlreadyConfigured(existing_root_id)
+OverlapsExisting(existing_root_id, relationship)
+
+LibraryRefreshChildAdmissionIssue
+├── ConflictingRootOperation(active_job_run_id, root_id, operation_type)
+└── AdmissionFailure(application_error)
+```
+
+Root persistence commits before refresh admission. Duplicate/overlap outcomes create neither a root nor a refresh job. The admitted `library_refresh` persists immutable intent identifying `AddedRoot(root_id)` so a transport-ambiguous caller can replay only idempotent `AddLocalLibraryRoot`, then reconcile the root and Jobs projections before deciding whether an explicit Refresh Library request is safe. Blind replay of the composite command is prohibited.
+
+`ConfirmLibraryMetadataPreferencesCommand` atomically persists validated `MetadataSettings` and marks the onboarding preference step confirmed. `RecordLibraryProviderSetupOutcomeCommand` persists the closed outcome `Configured` or `Skipped`; `Configured` requires an authoritatively stored SteamGridDB credential with readiness `Ready` or transiently `Unavailable`, while `Skipped` requires that no SteamGridDB credential is currently configured. Invalid configured credentials must be removed or replaced before the step can be skipped/completed.
+
+`CompleteLibraryOnboardingAndRefreshCommand` validates current privacy consent, confirmed metadata preferences, a provider setup outcome of `Skipped` or currently valid `Configured`, and at least one configured root. It then commits `LibraryOnboardingProgress.completed_at` before admitting the initial `library_refresh` with immutable trigger `InitialOnboarding`:
+
+```text
+OnboardingCompletedAndRefreshAdmitted(state, operation_handle)
+OnboardingCompletedButRefreshNotAdmitted(state, application_error)
+```
+
+Failure before completion commit leaves onboarding incomplete but never rolls back an independently committed root. Refresh-admission failure after completion commit preserves completion. Transport ambiguity is reconciled through `GetLibraryOnboardingStateQuery` plus root/Jobs queries; callers never replay completion or refresh blindly.
+
+For a fresh no-root onboarding flow, the coordinator invokes this command automatically after root admission returns `Added` or `AlreadyConfigured`, so selecting the first folder remains the final user action and automatically admits the appropriate refresh after root persistence. Existing-root upgrades retain an explicit `Finish & Refresh` action. `OverlapsExisting` remains unresolved selection feedback and does not complete onboarding.
+
+### 53.2 `GamesService`
+
+```text
+GetGameQuery(GameId) -> Found(GameDetail) | Redirected(canonical_game_id)
+RefreshGamesCommand(non-empty bounded GameId set, EligibleOnly | Force)
+```
+
+A missing non-redirected ID returns the published Game-not-found `ApplicationError`. The service delegates grouping/enrichment policy to SPEC-BE-015-owned handlers. `Force` is accepted only for a one-Game target set.
+
+### 53.3 `MetadataProviderService`
+
+```text
+ListMetadataProviderReadinessQuery
+SetMetadataProviderCredentialCommand
+RemoveMetadataProviderCredentialCommand
+```
+
+Metadata-provider enablement persistence is owned by typed `MetadataProviderSettings` commands on `SettingsService`. Credential commands delegate secret bytes immediately to the secure credential gateway. A successful set writes the secret securely and then refreshes readiness; transient validation unavailability may leave the credential configured with readiness `Unavailable`, while invalid credentials remain configured with readiness `InvalidCredentials` until replaced or removed. No command returns secret plaintext.
+
+### 53.4 `ArtworkAssetService`
+
+```text
+GetArtworkAssetBytesQuery(ArtworkAssetId)
+```
+
+This query returns bounded immutable asset bytes plus safe media metadata. It never returns `storage_path`, a file URI, a provider URL, or an infrastructure handle. Missing assets use the published artwork-asset-not-found error and become eligible for a later explicit enrichment refresh.
+
+### 53.5 `SettingsService`
+
+Phase 003 adds typed capabilities:
+
+```text
+GetMetadataSettingsQuery
+UpdateMetadataSettingsCommand
+GetMetadataProviderSettingsQuery
+UpdateMetadataProviderSettingsCommand
+GetPrivacyConsentQuery
+AcceptPrivacyTermsCommand
+```
+
+Metadata/provider-setting update results preserve the committed setting separately from admission of the local-only `library_resolution_refresh` job as defined by SPEC-BE-005. A unified Settings screen does not imply a unified aggregate.
+
+### 53.6 Phase 003 service contract tests
+
+Tests must prove:
+
+- Library paging/facets delegate closed query semantics without repository/provider DTO leakage;
+- preference confirmation atomically commits typed settings plus the onboarding confirmation fact;
+- provider setup records only `Configured` or `Skipped`, rejects invalid configured readiness, requires credential removal before skip, and returns authoritative onboarding state;
+- fresh first-folder `Added`/`AlreadyConfigured` automatically proceeds to completion while `OverlapsExisting` does not;
+- existing-root completion remains explicit;
+- completion commits before refresh admission and survives child-admission failure/restart;
+- add-folder and onboarding transport ambiguity reconcile through authoritative queries without blind replay;
+- Game redirects/not-found, artwork-byte reads, credential write-only behavior, and concrete settings-update results map exhaustively;
+- no service performs source/provider/artwork I/O while holding a write transaction.
+
+### 53.7 Boundary rules
+
+Queries return application-owned projections, not persistence/provider/bridge types. Long-running refresh commands return background-operation handles after admission rather than awaiting completion. Events publish only after authoritative commits. Services and coordinators do not perform provider HTTP calls, filesystem traversal, or artwork reads while holding database write transactions.
+
+## 54. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
@@ -1066,4 +1176,6 @@ This specification does not finalize:
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](spec-be-008-rust-to-flutter-bridge-dto-contract.md)
 - [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
+- [SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections](spec-be-013-library-source-management-scan-operations-and-source-projections.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [Backend Specifications Index](README.md)

@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-011  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1296,32 +1296,36 @@ Policy pruning is permitted only when:
 
 A deliberately excluded scope does not make the scan `Partial`.
 
-## 36. Source Removal and `GameContentSource`
+## 36. Source Removal, Identity Proof, and Orphan Handoff
 
-Authoritative removal of a `SourceEntry` subtree is one coherent source-graph mutation.
+Authoritative removal of a `SourceEntry` subtree is one coherent application mutation owned by the scan/reconciliation coordinator.
 
 The same Unit of Work removes:
 
 - the affected `SourceEntry` subtree;
-- `GameContentSource` relationships referencing those entries.
+- `GameContentSource` relationships referencing those entries;
+- current `ContentIdentityProvenance` edges that consumed those entries.
 
-When SPEC-BE-012 identity provenance exists, the owning application coordinator also invalidates/removes provenance references to the removed entries and transitions any affected currently identified `GameContent` to the BE-012 re-identification state unless an explicit identification workflow has already established replacement proof.
+The coordinator then applies the content-lifecycle handoff using only committed source authority:
 
-No provider I/O occurs inside that write transaction.
+1. if another current source association remains but the removed entry participated in the current proof basis, the affected `GameContent` enters BE-012 `NeedsReidentification` unless replacement proof was already established in the same coherent workflow;
+2. if the removed subtree contained the final current source association for a `GameContent`, the current identity/provenance cease being current, BE-012 may retain bounded non-current identity evidence for future exact reconnection, and the content becomes authoritatively orphaned under SPEC-BE-015;
+3. the owning Game becomes `InactiveOrphan` only when every current member content is authoritatively orphaned;
+4. temporary provider/root/removable-media `Unavailable` state never enters this path and never supplies final-absence authority.
 
-The indexing reconciler does not compute replacement content identity or directly delete `GameContent` merely because source provenance disappears.
+No provider I/O, parsing, hashing, or replacement-identity computation occurs inside the write transaction. The indexing reconciler reports the affected Argus-owned identities and does not delete `GameContent` merely because source provenance disappears.
 
-It also does not directly delete content-owned:
+Content-owned state is retained according to its own validity contract, including:
 
-- hashes
-- metadata
-- artwork
-- external identities
-- RetroAchievements verification state
+- content-scoped hashes;
+- provider mappings and metadata;
+- resolved metadata;
+- artwork references/assets;
+- RetroAchievements verification state.
 
-Later game-content lifecycle work owns final orphan cleanup and automatic reconciliation/merge of pre-existing duplicate `GameContent` records. SPEC-BE-012 owns strong identity convergence for newly identified content but deliberately does not auto-merge pre-existing duplicates.
+Source-scoped records whose subject entry is removed follow their own referential/retention contract; they are not silently reclassified as content-scoped evidence.
 
-Database foreign keys may support referential integrity, but semantic correctness must not depend on accidental cascade behavior alone.
+SPEC-BE-015 owns Phase 003 Game/orphan presentation and lifecycle. SPEC-BE-012 owns strong identity convergence and reconnection proof. Neither indexing nor database cascade behavior may guess a merge, resurrect stale proof, or delete retained enrichment accidentally.
 
 ## 37. Classification and `GameContent` Boundary
 
@@ -1920,8 +1924,8 @@ SPEC-BE-011 is satisfied when:
 34. Move detection prefers stable native identity, then unique strong content identity when already available, otherwise removal plus creation.
 35. Filename/timestamp/size-only move heuristics are prohibited.
 36. Current deterministic discovery-policy exclusion may prune previously indexed state without claiming physical storage absence.
-37. Authoritative source removal atomically removes source entries and referencing `GameContentSource` edges; when SPEC-BE-012 identity provenance exists, the same coherent application mutation invalidates affected identity proof without deleting `GameContent` directly.
-38. Indexing does not directly determine `GameContent` orphan lifecycle.
+37. Authoritative source removal atomically removes source entries and referencing `GameContentSource`/current-provenance edges, then supplies the committed final-source-absence fact to the explicit BE-012/BE-015 orphan handoff without deleting `GameContent` directly.
+38. Indexing determines authoritative source presence/absence and participates in that coherent handoff, but it does not independently reconstruct identity, choose Game lifecycle/grouping policy, guess reconnection, or delete retained content/enrichment.
 39. `ContentCandidate` does not automatically create `GameContent`.
 40. Source adapters translate native failures into stable `SourceAccessError` values.
 41. Root availability is application-owned interpretation, not provider-owned persisted state.
@@ -1992,7 +1996,7 @@ This specification intentionally defers:
 - any future automatic source retry framework beyond MVP;
 - provider-specific network retry policy for future remote source providers;
 - automatic reconciliation/merge of pre-existing duplicate `GameContent` records;
-- final orphan `GameContent` lifecycle;
+- orphan expiration, garbage collection, or lifecycle policy beyond the explicit Phase 003 final-source-absence and reconnection handoff;
 - post-Phase-001 provider-generic source configuration, editing, rename, credential, and advanced root-policy workflows beyond the fixed local-folder UI owned by SPEC-FE-008;
 - long-term scan-history retention policy;
 - durable per-observation scan history;
@@ -2027,13 +2031,27 @@ Provider/native infrastructure owns mounted-volume discovery facts, canonical ro
 
 Android link-like entries remain governed by the existing no-traversal MVP rule.
 
-## 62. References
+## 62. Phase 003 Reappearance and Reconnection Amendment
+
+When content later reappears after authoritative orphaning, source/indexing authority creates or reconciles the current `SourceEntry` normally. It does not reactivate `GameContent` or a Game from filename, path, old association, provider metadata, or retained stale provenance.
+
+The explicit identification workflow must independently validate the returning source under the current BE-012/BE-014 scheme. Only after it computes a current `(scheme_id, identity_value)` may application policy:
+
+- reconnect the source to the unique existing `GameContent` whose permitted retained non-current identity evidence matches exactly;
+- establish a new current identity/provenance basis;
+- reactivate the existing Game membership and Library projection under SPEC-BE-015; or
+- create/reuse another `GameContent` according to the ordinary identity uniqueness contract.
+
+If retained evidence is absent, obsolete, ambiguous, or conflicts with another current owner, Argus does not guess. The content follows normal identity creation/conflict handling. Temporary remount availability restoration alone never performs identification or reconnection work.
+
+## 63. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
 - [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
 - [PHASE-002 — Android First-Class Platform Support](../../phases/phase-002-android-first-class-platform-support.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
@@ -2043,5 +2061,6 @@ Android link-like entries remain governed by the existing no-traversal MVP rule.
 - [SPEC-BE-009 — Application Service Contracts](spec-be-009-application-service-contracts.md)
 - [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
 - [SPEC-BE-012 — Transformation and Hash-Scheme Contract](spec-be-012-transformation-and-hash-scheme-contract.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [SPEC-X-002 — Android Platform Runtime and Capability Contract](../cross-cutting/spec-x-002-android-platform-runtime-and-capability-contract.md)
 - [Backend Specifications Index](README.md)

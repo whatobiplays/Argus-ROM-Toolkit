@@ -3,7 +3,7 @@
 **Document ID:** ARCH-001  
 **Status:** Complete  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
+**Last Updated:** 2026-08-23  
 **Depends On:** None  
 **Supersedes:** None  
 **Superseded By:** None  
@@ -133,7 +133,6 @@ The following are post-MVP unless separately approved:
 - Background autonomous artwork refresh
 - Provider health and circuit-breaker UI
 - Hasheous integration
-- User-selectable artwork candidate browsing
 - Derived artwork variants and thumbnail generation
 - Achievement details, badges, account progress, or synchronization
 - Persistent notification inbox
@@ -271,6 +270,8 @@ Unknown
 
 A content-bearing node is not required to be a leaf. A playlist or CUE sheet may be a content candidate while owning supporting child entries.
 
+Phase 003 generic ZIP/7z/RAR/stream archive support is single-game only: one archive may contain one independently usable game/content family plus required companion files. An archive containing multiple independently usable games is rejected atomically for identification; Argus does not silently select the first member or create multiple Games from one generic archive. M3U is relationship/discovery evidence for independently identified discs rather than a combined content identity.
+
 ### 6.4 GameContent
 
 `GameContent` represents one canonical logical-content unit managed by Argus, independent of where it was discovered.
@@ -318,7 +319,32 @@ ContentIdentityProvenance
 
 A canonical content unit may depend on several source entries, such as CUE/BIN. Independently usable discs remain separate `GameContent` entities; release/title-level multi-disc grouping belongs above this layer.
 
-### 6.5 Identity distinctions
+### 6.5 Game
+
+`Game` is the durable Argus-owned, platform-specific user-facing Library identity above exact `GameContent`.
+
+```text
+Game
+- id: GameId
+- platform_id
+- grouping_revision
+- lifecycle_state
+- created_at
+- updated_at
+
+GameMembership
+- game_id
+- game_content_id
+- relationship
+- grouping_basis
+- grouping_revision
+```
+
+A newly identified `GameContent` obtains a provisional single-content Game without provider access. Conservative grouping may later reconcile regional/language variants, ordinary revisions, equivalent representations, or independently usable discs when trustworthy local/provider evidence supports one platform game. Filename/title/folder similarity alone never merges Games; ambiguity remains separate.
+
+Provider IDs never become `GameId`. Automatic merge/split preserves deterministic Game-ID continuity through the policy defined by SPEC-BE-015. Temporary source unavailability does not orphan a Game. Authoritative final-source absence clears current content-identity proof and may make the Game inactive while retaining durable `Game`/`GameContent` entities, enrichment, and bounded non-current identity evidence; reconnection requires independent current re-identification.
+
+### 6.6 Identity distinctions
 
 The following concepts must not be conflated:
 
@@ -333,6 +359,7 @@ The following concepts must not be conflated:
 | `DerivedFingerprint` | Cheap transformation-defined change evidence for derived entries, not content identity |
 | `SourceVersionEvidence` | Application abstraction over provider or derived cheap version evidence |
 | `GameContentId` | Logical managed-content identity |
+| `GameId` | Durable Argus-owned platform-specific user-facing game identity |
 | `ContentIdentity` | Strong versioned canonical identity of one logical content unit |
 | `SourceHashRecordId` | One source-scoped hash result |
 | `ContentHashRecordId` | One content-scoped hash result |
@@ -629,6 +656,8 @@ Authoritative `(PlatformId, ContentType)` recognition comes from validated trans
 
 Application policy maps each recognized content class to zero or one current canonical identity scheme. A `ContentIdentity` contains semantic `scheme_id`, strong `identity_value`, and trusted `identity_revision`.
 
+For the production Phase 003 catalog, each active identity scheme computes `identity_value` as SHA-256 over that scheme's explicitly defined canonical logical representation. SHA-256 is uniform across the catalog; platform-specific semantics live in canonicalization, byte selection, ordering, and dependency rules. SPEC-BE-014 owns the concrete supported production mappings and representations. External/provider/RetroAchievements hashes remain independent hash records and never substitute for Argus canonical identity.
+
 A canonical content unit may span multiple source entries. Identity is established first from validated source data; only then does a short Unit of Work create/reuse `GameContent` and persist its exact version-bound `ContentIdentityProvenance` basis.
 
 Each `GameContent` has at most one current identity. Scheme/revision upgrades invalidate old identity immediately and trigger targeted eager re-identification while keeping the rest of the library open. A source that produces a different identity under the same current scheme is rebound to different/new logical content rather than mutating the old `GameContent`.
@@ -718,23 +747,25 @@ Metadata processing is divided into independent stages:
 GameContent
     -> Match Metadata
     -> ExternalIdentityMapping
+
+Game + compatible current mappings
     -> Refresh Metadata
     -> ProviderMetadata
     -> MetadataResolver
     -> ResolvedMetadata
 ```
 
-Tools must not implicitly invoke one another. A future composed workflow may chain them, but each tool retains one responsibility.
+A provisional `Game` exists independently of provider success. Current mappings may contribute evidence to later conservative Game-membership reconciliation, but provider identities never become Argus Game or content identity.
+
+Tools must not implicitly invoke one another. The Phase 003 composed refresh workflows may chain them through application-owned orchestration, but each tool retains one responsibility and remains independently callable/testable.
 
 ### 11.2 Matching
 
 Matching produces provider identities and confidence information. It does not download full metadata or artwork.
 
-Future interactive matching may present ranked candidates, but the MVP uses compile-time policy thresholds.
+Interactive candidate matching is deferred to a later MVP correction phase; Phase 003 uses deterministic application-owned thresholds.
 
-Playmatch is included as an MVP matching provider using the public server at `https://playmatch.retrorealm.dev`.
-
-Hasheous is deferred because it requires an API key.
+The Phase 003 production provider roster is Playmatch, GameTDB, and SteamGridDB. Playmatch supplies zero-setup matching capabilities, GameTDB supplies zero-setup applicable metadata/artwork capabilities, and SteamGridDB supplies user-credentialed artwork enrichment. IGDB and ScreenScraper are deferred because Phase 003 ships no embedded application secrets or Argus cloud credential broker. Hasheous is simply outside the selected Phase 003 roster.
 
 ### 11.3 Provider capability model
 
@@ -790,9 +821,9 @@ Refresh is manual in the MVP. Significant provider network activity must be user
 
 ### 11.5 Refresh granularity
 
-A metadata refresh evaluates all configured providers for each selected game. Provider policy determines which provider/game pairs are eligible.
+A metadata refresh evaluates enabled metadata providers for each selected game and executes only capability/provider pairs that are both `Ready` and eligible under application policy. `Disabled` and intentionally unconfigured `MissingCredentials` capabilities are configuration exclusions rather than automatic job issues; actionable invalid configuration and transient provider failures remain typed operation outcomes.
 
-Resolved metadata is recomputed once per game after all provider refresh attempts for that game complete.
+Resolved metadata is recomputed once per game after all admitted provider refresh attempts for that game complete.
 
 ### 11.6 Resolved values
 
@@ -827,8 +858,8 @@ ArtworkReference
 - external_game_id
 - canonical_type
 - native_type
-- source_url
-- thumbnail_url
+- source_location: CredentialFreeUrl(url) | ProviderAssetLocator(opaque)
+- thumbnail_location nullable: CredentialFreeUrl(url) | ProviderAssetLocator(opaque)
 - width
 - height
 - format
@@ -837,6 +868,8 @@ ArtworkReference
 - variant_tags
 - discovered_at
 ```
+
+Persisted artwork locations are a closed union of credential-free canonical URLs and opaque provider asset locators. Signed, token-bearing, or otherwise credential-bearing download URLs are resolved transiently inside an authenticated provider session and are never durable provider data.
 
 ### 12.3 Canonical artwork taxonomy
 
@@ -883,7 +916,7 @@ Resolved artwork points first to a reference and optionally to a downloaded asse
 
 ```text
 ResolvedArtwork
-- game_content_id
+- game_id
 - artwork_type
 - reference_id
 - asset_id nullable
@@ -917,10 +950,14 @@ ArtworkAsset
 
 Filesystem storage is a pure object store. Game, provider, and type relationships remain in the database.
 
-Post-MVP roadmap:
+Later MVP correction roadmap:
 
 - User-selected artwork candidates, especially SteamGridDB variants
 - User-locked artwork overrides
+- Manual metadata/provider-match correction surfaces
+
+Post-MVP roadmap:
+
 - Original-plus-derived thumbnail and optimized cache variants
 
 ## 13. RetroAchievements subsystem
@@ -1053,7 +1090,7 @@ JobRun
 - recovery linkage where applicable
 ```
 
-Representative jobs include library scans, metadata matching and refresh, artwork refresh, and RetroAchievements verification.
+Representative jobs include standalone library scans, composed Library/Game refreshes, local Library resolution refreshes after settings changes, identity maintenance, and RetroAchievements verification.
 
 Canonical states are:
 
@@ -1174,10 +1211,12 @@ GameLibraryRow
 - game_id
 - display_title
 - platform_id
-- region
-- selected_artwork_id
-- verification_state
+- presentation_region nullable
+- selected_cover_asset_id nullable
+- hydration_state
+- content_count
 - source_count
+- availability_state
 - updated_at
 ```
 
@@ -1221,7 +1260,7 @@ Flutter re-queries the smallest relevant authoritative state after reconnect, se
 
 ## 18. Privacy and provider data sharing
 
-Argus submits file-derived identifiers, including hashes, to external services such as RetroAchievements and Playmatch where required by enabled workflows.
+Argus submits file-derived identifiers, including hashes, to enabled external services such as Playmatch, GameTDB, SteamGridDB, and RetroAchievements only where the explicitly admitted workflow and provider capability require them.
 
 Use of Argus is conditional on accepting development privacy terms that disclose this behavior. If the user declines, Argus exits and cannot be used.
 
@@ -1310,6 +1349,8 @@ ArgusClient
 - runtime
 - library
 - games
+- metadataProviders
+- artworkAssets
 - jobs
 - settings
 - sources
@@ -1355,6 +1396,9 @@ Bridge DTOs use serialization-friendly strings for IDs.
 
 ```text
 GameId
+GameContentId
+ArtworkAssetId
+ProviderId
 JobRunId
 LibraryRootId
 SourceEntryId
@@ -1441,17 +1485,25 @@ Use `go_router`.
 
 Routes represent durable location and scope. Riverpod owns transient interaction state.
 
-Library scope uses hierarchical routes:
+Phase 003 uses one root-level product-onboarding route outside the ready shell:
+
+```text
+/onboarding/library
+```
+
+After onboarding, logical Library scope uses:
 
 ```text
 /library
-/library/collections/:collectionId
 /library/platforms/:platformId
 /library/sources/:sourceId
 /library/library-roots/:libraryRootId
+/games/:gameId
 ```
 
-Phase 001 operational source-management and background-execution routes are distinct from the future logical Library scope:
+`/library/collections/:collectionId` remains reserved and is not registered in the Phase 003 production route graph.
+
+Phase 001 operational source-management and background-execution routes remain distinct from the logical Library scope activated by Phase 003:
 
 ```text
 /sources
@@ -1460,7 +1512,7 @@ Phase 001 operational source-management and background-execution routes are dist
 /jobs/:jobRunId
 ```
 
-`/sources` manages configured storage boundaries and the indexed source graph. Future `/library/sources/:sourceId` represents a logical Library browsing scope after game-content capability exists; the two route families must not be conflated.
+`/sources` manages configured storage boundaries and the indexed source graph. Phase 003 activates `/library/sources/:sourceId` as a logical Game browsing scope; the two route families must not be conflated.
 
 Temporary filters, sorting, and view mode use query parameters.
 
@@ -1480,7 +1532,7 @@ A persistent application shell owns:
 
 Navigation modes:
 
-- **Compact:** direct bottom navigation for the active primary destination catalog; during Phase 002 the implemented set is `Sources`, `Jobs`, and `Settings`
+- **Compact:** direct bottom navigation for the active primary destination catalog; Phase 003 activates `Library`, `Sources`, `Jobs`, and `Settings`, with `Library` as the default ready-state destination after onboarding
 - **Medium:** icon navigation rail
 - **Expanded/Large:** full sidebar with icons and labels
 
@@ -1613,10 +1665,10 @@ Settings are grouped into strongly typed domains coordinated by `SettingsService
 
 ```text
 AppearanceSettings
-LibrarySettings
-ProcessingSettings
 MetadataSettings
-ArtworkSettings
+MetadataProviderSettings
+PrivacyConsentRecord
+LibraryOnboardingProgress
 DiagnosticsSettings
 AdvancedSettings
 ```
@@ -1794,7 +1846,6 @@ The following items have been explicitly identified for future consideration:
 - Filesystem watching
 - Persistent actionable notification inbox
 - Command palette and shortcut customization
-- User-selected and user-locked artwork candidates
 - Derived artwork variants and thumbnail cache
 - Hasheous provider
 - Achievement details and user progress

@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-X-001, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-BE-015, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -2579,12 +2579,307 @@ The active browse contract must remain capability-oriented under the Sources/cli
 
 Android foreground-service notification/state transport is secondary platform projection. Authoritative job control remains the existing Jobs/runtime bridge contract; no second native job DTO family may become lifecycle authority.
 
-## 68. References
+## 68. Phase 003 Logical Library and Enrichment DTO Amendment
+
+PHASE-003 activates the previously reserved logical Library/Game bridge capability. All DTOs remain application projections; provider-native payloads, parser types, SQLite rows, secrets, storage paths, provider URLs, and opaque source locators do not cross the bridge.
+
+### 68.1 Stable identifiers and closed Library query vocabulary
+
+Bridge-safe identifiers include `GameId`, `GameContentId`, `ArtworkAssetId`, `ProviderId`, and the already established source/root/platform/job identifiers.
+
+Conceptually:
+
+```text
+LibraryScopeDto
+- All
+- Platform(platformId)
+- Source(sourceId)
+- LibraryRoot(libraryRootId)
+
+LibraryHydrationStateDto
+- Hydrated
+- PartiallyHydrated
+- Unmatched
+- Refreshing
+
+LibraryAvailabilityStateDto
+- Available
+- PartiallyUnavailable
+- Unavailable
+- InactiveOrphan
+
+LibraryFilterDto
+- platformIds[]
+- regions[]
+- hydrationStates[]
+- availabilityStates[]
+
+LibrarySortFieldDto
+- DisplayTitle
+- Platform
+- ReleaseDate
+- UpdatedAt
+
+LibrarySortDto
+- field
+- direction: Ascending | Descending
+
+LibraryQueryDto
+- scope
+- searchText nullable
+- filters
+- sort
+- cursor nullable
+- pageSize
+
+GameLibraryRowDto
+- gameId
+- displayTitle
+- platformId
+- presentationRegion nullable
+- selectedCoverAssetId nullable
+- hydrationState
+- contentCount
+- sourceCount
+- availabilityState
+- updatedAt
+
+GamePageDto
+- items[]
+- nextCursor nullable
+
+LibraryFacetQueryDto
+- scope
+- searchText nullable
+- filters
+
+PlatformFacetBucketDto
+- platformId
+- count
+
+RegionFacetBucketDto
+- region
+- count
+
+HydrationStateFacetBucketDto
+- hydrationState
+- count
+
+AvailabilityStateFacetBucketDto
+- availabilityState
+- count
+
+LibraryFacetsDto
+- platforms: PlatformFacetBucketDto[]
+- regions: RegionFacetBucketDto[]
+- hydrationStates: HydrationStateFacetBucketDto[]
+- availabilityStates: AvailabilityStateFacetBucketDto[]
+```
+
+The bridge validates bounded page-size/filter/query shapes and maps them to application-owned queries; it does not implement search/filter/sort/facet semantics itself. Facet requests carry the same scope/search/filter model but no cursor or sort.
+
+### 68.2 Game detail and redirect results
+
+`GameDetailDto` exposes resolved Game-level presentation plus safe nested projections for current `GameContent` variants/discs, source/copy counts and availability, field/artwork provenance, and operation/history links. Raw provider responses, provider-local secrets, source-provider locators, parser coordinates, and object-store paths are prohibited.
+
+```text
+GetGameResultDto
+- Found(GameDetailDto)
+- Redirected(canonicalGameId)
+```
+
+A missing non-redirected Game returns the published Game-not-found `ApplicationErrorDto`; it is not represented by `null` or a stale list row.
+
+### 68.3 Artwork asset delivery
+
+```text
+GetArtworkAssetBytesRequestDto
+- assetId
+
+ArtworkAssetBytesDto
+- assetId
+- bytes
+- mimeType
+- width
+- height
+```
+
+Bytes are bounded by the backend download/storage policy and represent the immutable original asset. The bridge never returns `storage_path`, a `file:` URI, a provider URL, or a native file handle. Missing assets return the published artwork-asset-not-found error.
+
+### 68.4 Add-folder, onboarding, and refresh commands
+
+```text
+AddLibraryRootAndRefreshRequestDto
+- selection: typed platform-adapted root selection
+
+AddLibraryRootAndRefreshResultDto
+- AddedAndRefreshAdmitted(root, operationHandle)
+- AddedButRefreshNotAdmitted(root, childIssue)
+- AlreadyConfigured(existingRootId)
+- OverlapsExisting(existingRootId, relationship)
+
+LibraryRefreshChildAdmissionIssueDto
+- ConflictingRootOperation(activeJobRunId, rootId, operationType)
+- AdmissionFailure(applicationError)
+```
+
+Duplicate/overlap results never contain a refresh handle. The result preserves root success independently from refresh admission.
+
+```text
+PrivacyTermsVersionDto
+- value
+
+PrivacyConsentDto
+- acceptedTermsVersion nullable
+- acceptedAt nullable
+- satisfiesCurrentRequiredTerms
+
+AcceptPrivacyTermsRequestDto
+- termsVersion
+
+LibraryProviderSetupOutcomeDto
+- Pending
+- Configured
+- Skipped
+
+LibraryProviderSetupDecisionDto
+- Configured
+- Skipped
+
+LibraryOnboardingStateDto
+- requiresPrivacyAcceptance
+- requiredPrivacyTermsVersion
+- acceptedPrivacyTermsVersion nullable
+- metadataPreferencesConfirmed
+- providerSetupOutcome
+- requiresRootSelection
+- complete
+
+ConfirmLibraryMetadataPreferencesRequestDto
+- metadataSettings
+
+RecordLibraryProviderSetupOutcomeRequestDto
+- decision: LibraryProviderSetupDecisionDto
+
+CompleteLibraryOnboardingAndRefreshResultDto
+- OnboardingCompletedAndRefreshAdmitted(state, operationHandle)
+- OnboardingCompletedButRefreshNotAdmitted(state, applicationError)
+```
+
+Each onboarding step returns the authoritative updated `LibraryOnboardingStateDto`. `Configured` is accepted only when credential presence/readiness satisfies SPEC-BE-005/010; `Skipped` is accepted only when no credential is configured; `Pending` cannot be submitted as a command outcome. `AcceptPrivacyTermsRequestDto` accepts only the backend-advertised current required version; callers cannot manufacture acceptance of an unknown future version or silently reuse an obsolete version.
+
+Completion is query-authoritative and persists before refresh admission. In a fresh no-root flow, root admission returning `Added` or `AlreadyConfigured` is followed automatically by the completion command; an existing-root upgrade exposes the explicit `Finish & Refresh` action. Transport ambiguity is repaired by onboarding/root/Jobs queries rather than command replay.
+
+```text
+RefreshLibraryRequestDto
+- mode = EligibleOnly
+
+RefreshGamesRequestDto
+- gameIds: non-empty bounded list<GameId>
+- mode: EligibleOnly | Force
+```
+
+`Force` is valid only for a one-Game request. Accepted background work returns the canonical `OperationHandleDto`; synchronous validation/admission failure returns `ApplicationErrorDto` and creates no fake job-completion result.
+
+The local-only `library_resolution_refresh` is admitted as a child boundary of metadata/provider-settings updates rather than through an unrestricted public refresh request. Its operation handle is returned through the typed settings-update result.
+
+### 68.5 Metadata-provider and settings projections
+
+```text
+MetadataProviderReadinessDto
+- providerId
+- enabled
+- capabilityReadiness[]
+- credentialConfigured
+
+MetadataSettingsDto
+- preferredRegions[]
+- preferredLanguages[]
+
+MetadataProviderSettingsDto
+- enabledProviderIds[]
+
+MetadataSettingsUpdateResultDto
+- CommittedNoResolutionWork(metadataSettings)
+- CommittedAndResolutionAdmitted(metadataSettings, operationHandle)
+- CommittedButResolutionNotAdmitted(metadataSettings, applicationError)
+
+MetadataProviderSettingsUpdateResultDto
+- CommittedNoResolutionWork(metadataProviderSettings)
+- CommittedAndResolutionAdmitted(metadataProviderSettings, operationHandle)
+- CommittedButResolutionNotAdmitted(metadataProviderSettings, applicationError)
+```
+
+`credentialConfigured` is a boolean/readiness fact only. Settings-commit results prevent Flutter from rolling back a committed preference merely because later local resolution admission failed.
+
+Credential mutation is write-only with respect to secret value:
+
+```text
+SetMetadataProviderCredentialRequestDto
+- providerId
+- credentialInput
+
+RemoveMetadataProviderCredentialRequestDto
+- providerId
+```
+
+No bridge read returns credential plaintext. Request mappers, debug representations, structured safe context, events, and result DTOs exclude credential input.
+
+### 68.6 Typed Phase 003 Jobs detail
+
+`OperationDetailDto` adds explicit variants equivalent to:
+
+```text
+LibraryRefresh(LibraryRefreshJobDetailDto)
+GameRefresh(GameRefreshJobDetailDto)
+LibraryResolutionRefresh(LibraryResolutionRefreshJobDetailDto)
+```
+
+Refresh intent includes the trigger/scope required to reconcile add-folder or onboarding transport ambiguity. Issue collections are bounded/paged and contain stable codes plus safe context rather than raw provider/parser payloads.
+
+### 68.7 Phase 003 notifications
+
+The shared runtime event stream may carry notification-first variants equivalent to:
+
+```text
+GameChanged(gameId)
+GameRedirected(oldGameId, canonicalGameId)
+GameMembershipChanged(gameId)
+GameMetadataChanged(gameId)
+GameArtworkChanged(gameId)
+LibraryProjectionChanged(scopeHint)
+MetadataProviderReadinessChanged(providerId)
+MetadataSettingsChanged
+MetadataProviderSettingsChanged
+LibraryOnboardingStateChanged
+```
+
+These notifications never replace authoritative Library/Game/metadata-provider/settings/onboarding queries. Sequence loss/runtime replacement requires focused reconciliation through the active client APIs.
+
+### 68.8 Phase 003 DTO and mapping tests
+
+Bridge contract tests must exhaustively cover:
+
+- every closed Library scope, hydration, availability, filter, sort, direction, and typed facet bucket variant;
+- query-bound opaque cursor validation and invalid page-size/filter combinations;
+- `Found`/`Redirected` Game results plus published not-found failure;
+- artwork-byte success, bounded payload metadata, asset-not-found, and prohibition of paths/URLs/handles;
+- all add-folder, child-admission, onboarding-step, completion, and refresh results;
+- `PrivacyTermsVersionDto`, current-version-only acceptance, and authoritative consent projection;
+- separate read `Pending|Configured|Skipped` outcome and writable `Configured|Skipped` decision mapping, with skip rejected while a credential remains configured;
+- automatic first-folder completion versus explicit existing-root completion without changing DTO authority;
+- both concrete settings-update result families and preservation of committed settings after child-admission failure;
+- write-only credential mapping and absence of credential text from debug/error/event/result representations;
+- all three Phase 003 typed Job-detail variants and notification variants;
+- additive compatibility behavior under SPEC-X-001 without defaulting unknown required enum values.
+
+## 69. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
 - [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
@@ -2593,8 +2888,10 @@ Android foreground-service notification/state transport is secondary platform pr
 - [SPEC-BE-006 — Minimal Domain Event Bus](spec-be-006-minimal-domain-event-bus.md)
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](spec-be-009-application-service-contracts.md)
+- [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
 - [SPEC-BE-011 — Source Provider and Indexing Contract](spec-be-011-source-provider-and-indexing-contract.md)
 - [SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections](spec-be-013-library-source-management-scan-operations-and-source-projections.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [SPEC-FE-008 — Sources and Library Folder Management](../frontend/spec-fe-008-sources-and-library-folder-management.md)
 - [SPEC-FE-009 — Jobs and Background Operation Presentation](../frontend/spec-fe-009-jobs-and-background-operation-presentation.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)

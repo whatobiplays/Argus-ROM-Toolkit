@@ -3,8 +3,8 @@
 **Document ID:** SPEC-X-002  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-21  
-**Depends On:** ARCH-001, ARCH-002, PHASE-002, SPEC-X-001  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-002, PHASE-003, SPEC-X-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -218,13 +218,57 @@ SPEC-X-002 is satisfied when:
 14. Live foreground-service timeout handling finalizes through ordinary typed operation outcomes, while only stale nonterminal work discovered after process loss uses `Cancelled`/`Abandoned` recovery mapping.
 15. Any manual partial wake lock is bounded, execution-scoped, and released on every terminal or lease-loss path.
 
-## 16. References
+## 16. Phase 003 Library and Enrichment Android Amendment
+
+Phase 003 Library, Game, metadata-provider, artwork, onboarding, and refresh capabilities are first-class Android product scope. Their semantic authority remains shared Rust/application behavior.
+
+### 16.1 Foreground-hosted refresh operations
+
+The direct-user-admitted operations `library_refresh`, `game_refresh`, and `library_resolution_refresh` may acquire the existing `dataSync` foreground execution lease when their expected duration/background eligibility requires it.
+
+Rules:
+
+1. lease acquisition follows the same coherent pre-admission or admitted-safe-terminalization boundary as `LibraryScan`;
+2. the service hosts the existing Rust `JobRun`; it does not create provider, parser, download, settings, or projection authority;
+3. live timeout reports a typed execution-host timeout and lets the operation finalize truthfully as `CompletedWithIssues`, `Failed`, or accepted-cancellation `Cancelled` according to committed work; it never becomes recovery-only `Abandoned` merely because the callback fired;
+4. process loss before terminalization maps stale non-resumable refresh work to durable-cancellation `Cancelled` or otherwise `Abandoned`, with no startup scan, provider, parser, download, or resolution work;
+5. any measured and approved partial wake lock remains bounded and is released for every terminal, timeout, cancellation, service-stop, and final-lease-loss path;
+6. `library_resolution_refresh` remains local-only on Android and cannot use its foreground lease as permission to perform network or download work.
+
+### 16.2 Secure metadata-provider credentials
+
+The Android credential adapter uses platform-appropriate secure credential storage. Exact technology is an implementation choice, but production must not fall back to SQLite, shared preferences, plain files, Dart persistence, logs, or diagnostics when secure storage is unavailable.
+
+A secure-store failure leaves SteamGridDB non-Ready and returns the published credential-store-unavailable error. Activity recreation and process reattachment read only configured/readiness facts; credential plaintext never enters Flutter or Android saved-instance state.
+
+### 16.3 App-private artwork delivery
+
+Artwork originals remain in app-private content-addressed storage. Flutter requests bounded immutable bytes by `ArtworkAssetId` through the focused bridge/client API. Android paths, content URIs, file descriptors, provider URLs, and storage coordinates do not become feature/controller state.
+
+Open-data-directory remains excluded. Activity recreation reconstructs artwork presentation from `ArtworkAssetId` and authoritative Game/Library queries rather than preserving native handles.
+
+### 16.4 Product onboarding and readiness
+
+Android platform readiness still precedes backend startup. Once backend and appearance authority are ready, query-authoritative Library product onboarding may gate the normal shell. Product onboarding is not an Android host-readiness boolean and is shared with desktop.
+
+System Back cannot bypass incomplete required onboarding. It dismisses transient onboarding UI first and otherwise follows Activity-exit behavior. Completion persists before initial refresh admission and survives Activity recreation or a later refresh-admission failure.
+
+### 16.5 Native qualification
+
+Phase 003 Android gates cover foreground lease start rejection, timeout, and process loss for all three refresh operation types; secure credential-store success, failure, and redaction; onboarding persistence and Back behavior; app-private artwork-byte delivery across Activity recreation; removable-media effects on Game availability and orphan authority; and single-runtime/provider-session ownership.
+
+## 17. References
 
 - [ARCH-001 — Architecture Overview](../../architecture/architecture-overview.md)
 - [ARCH-002 — Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-002 — Android First-Class Platform Support](../../phases/phase-002-android-first-class-platform-support.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](spec-x-001-versioning-and-compatibility-contract.md)
 - [SPEC-BE-004 — Runtime and Background Operations](../backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
+- [SPEC-BE-005 — Settings Service and Appearance Settings](../backend/spec-be-005-settings-service-and-appearance-settings.md)
+- [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](../backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](../backend/spec-be-015-game-library-grouping-and-enrichment-contract.md)
+- [SPEC-FE-010 — Library, Game Detail, and Enrichment UX](../frontend/spec-fe-010-library-game-detail-and-enrichment-ux.md)
 - [SPEC-BE-011 — Source Provider and Indexing](../backend/spec-be-011-source-provider-and-indexing-contract.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](../frontend/spec-fe-004-routing-and-adaptive-application-shell.md)
 - [Approved Phase 002 design](../../superpowers/specs/2026-08-15-phase-002-android-first-class-platform-support-design.md)

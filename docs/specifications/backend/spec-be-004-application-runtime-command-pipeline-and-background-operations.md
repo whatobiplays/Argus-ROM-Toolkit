@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -1703,12 +1703,38 @@ Normative rules:
 
 Phase 002 tests must prove Activity lifecycle does not duplicate the runtime, Flutter/native cancellation converges on one job, the service tears down after the last qualifying job, and process loss/relaunch preserves existing no-auto-resume recovery.
 
+## 55.1 Phase 003 Refresh-Operation Amendment
+
+PHASE-003 activates three additional stable logical operation types:
+
+```text
+library_refresh
+game_refresh
+library_resolution_refresh
+```
+
+`library_refresh` is one top-level user-admitted `JobRun` whose handler composes source scan, content identification, Game grouping, provider matching, metadata resolution, and artwork work under SPEC-BE-015. `game_refresh` is the focused Game-target refresh operation defined there. `library_resolution_refresh` is admitted only after an explicit metadata/provider-settings change and re-resolves current records/projections locally without scan, provider network, or artwork-download work.
+
+Normative rules:
+
+1. Neither operation introduces a universal workflow-node scheduler; each subsystem retains its own internal planner/checkpoint/executor semantics.
+2. Embedded source-scan work under `library_refresh` uses SPEC-BE-013 scan authority without admitting a second top-level `library_scan` JobRun.
+3. `BackgroundOperationManager` remains authoritative for admission, resource classes, progress validation, cancellation, and terminal transitions.
+4. Phase 003 refreshes are non-auto-resumable in the MVP. After unexpected process loss, stale active execution becomes `Cancelled` when accepted durable cancellation intent requires it, otherwise `Abandoned`; startup performs no scan/parser/provider/download work.
+5. User retry creates a new `JobRunId`, reconstructs bounded intent, and lets subsystem eligibility reuse still-current committed work.
+6. A qualifying direct-user-admitted `library_refresh`, `game_refresh`, or `library_resolution_refresh` may use the existing Android foreground execution host. The host remains a lease around the existing Rust operation and never becomes scheduler/job authority.
+7. `library_resolution_refresh` requires only local CPU/persistence resource classes and must reject any attempt to perform source-provider, metadata-provider, or artwork-download I/O.
+8. Provider/content partial failures may safely yield `CompletedWithIssues` only when the owning operation has durably finalized meaningful successful work and SPEC-BE-015 explains the unsatisfied scope.
+
 ## 56. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
+- [SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections](spec-be-013-library-source-management-scan-operations-and-source-projections.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [Backend Specifications Index](README.md)

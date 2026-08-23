@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-004, SPEC-BE-007, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-004, SPEC-BE-007, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -420,20 +420,18 @@ Routes identify scope; focused APIs and controllers retrieve current authoritati
 
 The shell uses one semantic destination catalog for cross-feature navigation.
 
-Representative conceptual values include the Phase 001 destinations:
+The Phase 003 active semantic destinations are:
 
 ```text
+AppDestination.library
 AppDestination.sources
 AppDestination.jobs
 AppDestination.settings
-AppDestination.diagnostics
 ```
 
-Future destination values such as `AppDestination.library` and `AppDestination.collections` remain reserved for later active phases.
+`AppDestination.collections` and `AppDestination.diagnostics` remain reserved and inactive. Product onboarding is a root-level gating surface, not an `AppDestination` or shell branch.
 
-`AppDestination.diagnostics` also remains reserved: it is not an active Phase 001 destination, even though the route identity and destination vocabulary are established.
-
-Only destinations implemented by the active product slice are required to exist.
+Only destinations implemented by the active product scope exist in the production catalog.
 
 ## 26. Destination Metadata
 
@@ -462,7 +460,7 @@ Examples:
 /diagnostics               → Diagnostics (reserved; active only when a slice implements the destination)
 ```
 
-Future examples such as `/library/platforms/:platformId → Library` and `/games/:gameId → Library` apply when those destinations become active.
+Phase 003 maps `/library/**` and `/games/:gameId` to Library. `/onboarding/library` is outside the shell and therefore maps to no `AppDestination`.
 
 This mapping is centralized.
 
@@ -491,15 +489,13 @@ Conceptually:
 
 ```text
 Stateful ready shell
+├── Library branch
 ├── Sources branch
 ├── Jobs branch
-├── Settings branch
-├── Diagnostics branch
-├── future Library branch
-└── future Collections branch
+└── Settings branch
 ```
 
-The historical Phase 000 branch set contains only its implemented destinations. Phase 001 activates genuine Sources and Jobs branches alongside the retained Settings destination; Diagnostics remains a reserved branch and is not an active Phase 001 destination. Future Library and Collections branches remain absent.
+The historical Phase 000 branch set contained only its implemented destinations, and Phase 001 added Sources and Jobs. Phase 003 activates the Library branch alongside Sources, Jobs, and Settings. Diagnostics and Collections remain reserved/inactive and therefore have no production branch.
 
 ## 30. Branch History
 
@@ -593,31 +589,32 @@ The application uses intentional navigator placement.
 
 Normal ready-state feature routes live inside the shell/branch navigation model.
 
-Startup/recovery surfaces live outside the ready shell.
+Startup/recovery surfaces and required product-onboarding surfaces live outside the ready shell.
 
 Exceptional route-worthy application-level modal surfaces may use the root navigator when they genuinely must appear above the shell.
 
 Root-navigator usage must remain uncommon and explicit.
 
-## 38. Startup and Recovery Placement
+## 38. Startup, Product-Onboarding, and Recovery Placement
 
-Mandatory startup and startup-failure recovery surfaces render outside the normal ready application shell.
+Mandatory startup/startup-failure recovery and incomplete required product onboarding render outside the normal ready application shell.
 
 Conceptually:
 
 ```text
 application root
 ├── startup/recovery surface
+├── product-onboarding surface
 └── ready application shell
 ```
 
-A failed mandatory startup must not reveal a partially usable normal shell underneath a failure dialog.
+A failed mandatory startup or incomplete onboarding gate must not reveal a bypassable partially usable normal shell underneath.
 
 ## 39. Readiness Authority
 
 The router reacts to one narrow app-owned presentation-readiness projection.
 
-It does not derive backend readiness, appearance authority, or shell eligibility from the URI and does not call focused APIs or FRB/native infrastructure.
+It does not derive backend readiness, appearance authority, product-onboarding completion, or shell eligibility from the URI and does not call focused APIs or FRB/native infrastructure.
 
 Conceptually:
 
@@ -625,13 +622,15 @@ Conceptually:
 startup AppReadiness
 +
 appearance initialization/authority
++
+query-authoritative LibraryOnboardingState
     ↓
 app presentation-readiness projection
     ↓
 routing policy
 ```
 
-SPEC-FE-005 owns backend readiness. SPEC-FE-006 owns the initial authoritative appearance prerequisite and the pure combined presentation-readiness derivation used for first-shell admission.
+SPEC-FE-005 owns backend readiness. SPEC-FE-006 owns the initial authoritative appearance prerequisite. SPEC-FE-010 consumes the backend/client-owned Library onboarding projection and exposes only routing-safe completion state to the pure combined readiness derivation.
 
 ## 40. Redirect Purity
 
@@ -665,7 +664,7 @@ under the same readiness state.
 
 ## 42. Intended Ready-State Location
 
-If an application route is requested before startup completes, Argus preserves that intended ready-state location.
+If an application route is requested before startup or required product onboarding completes, Argus preserves that intended ready-state location.
 
 Example:
 
@@ -713,25 +712,23 @@ SPEC-FE-005 owns the recovery interaction; this specification owns routing inten
 
 ## 46. Startup/Recovery History
 
-Readiness-driven startup and recovery surfaces do not become ordinary user-history entries.
+Readiness-driven startup, product-onboarding, and recovery surfaces do not become ordinary ready-shell history entries.
 
-After the application reaches Ready, Back must not walk through internal startup/recovery gating history.
+After the application reaches the ready shell, Back must not walk through internal startup/onboarding/recovery gating history.
 
 ## 47. Canonical Ready Default
 
 Once ready, `/` resolves deterministically to the canonical implemented default destination.
 
-The full product's architectural default is Library when the Library capability exists.
+Phase 003 resolves `/` to `/onboarding/library` while required product onboarding is incomplete and to `/library` after it is complete. A valid preserved deep-link intent takes precedence after all gates are satisfied.
 
-During Phase 000, the default may be the first genuine implemented destination required by the slice.
-
-The implementation must not create a fake Library feature merely to preserve a future default.
+Earlier phases may use their first genuine implemented destination; no phase creates a fake Library feature merely to preserve a future default.
 
 ## 48. Navigation During Startup
 
 The normal ready shell cannot be entered merely because a route exists.
 
-A direct request to `/settings`, `/diagnostics`, or another ready-state route remains gated until the app presentation-readiness requirements are satisfied: authoritative backend readiness from SPEC-FE-005 plus any required initial root-presentation authority such as appearance settings from SPEC-FE-006.
+A direct request to `/settings`, `/library`, `/games/:gameId`, or another ready-state route remains gated until backend readiness, initial appearance authority, and required Library onboarding are satisfied. `/onboarding/library` itself remains gated behind platform/backend/appearance readiness and cannot bypass them.
 
 ## 49. Navigation After Ready-State Degradation
 
@@ -1335,7 +1332,7 @@ The shell does not own library grid/list scroll positions.
 
 ## 110. Independent View Restoration
 
-Where ARCH-001 requires independent grid/list restoration for library browsing, the future Library feature specification must implement it without making the shell a scroll-state owner.
+Where ARCH-001 requires independent grid/list restoration for library browsing, SPEC-FE-010 implements it without making the shell a scroll-state owner.
 
 ## 111. Accessibility Ownership Boundary
 
@@ -1396,7 +1393,7 @@ typed real destination
 adaptive navigation presentation
 ```
 
-Future Library, Collections, Jobs, and Sources behavior is not required merely to make the shell look populated. Their production routes and destinations are absent until an active later phase implements them. Adaptive-shell, branch, and destination-count tests may use test-only fixtures that are not registered in the shipped route graph.
+Phase 000 did not require Library, Collections, Jobs, or Sources merely to make the shell look populated. Later active amendments control the current production catalog: Phase 003 now activates Library/Sources/Jobs/Settings, while Collections and Diagnostics remain absent. Adaptive-shell, branch, and destination-count tests may still use test-only fixtures that are not registered in the shipped route graph.
 
 ## 117. Phase 000 Settings Destination
 
@@ -1702,7 +1699,7 @@ This specification intentionally leaves the following to later frontend specific
 - exact accessibility/focus/keyboard implementation;
 - detailed Library browse/search/filter route-query schema;
 - final game-detail master/detail pane behavior;
-- future Collections and logical Library route catalogs, plus Jobs/Sources extensions beyond the active Phase 001 routes;
+- Collections and route catalogs beyond the Phase 003 Library/Game/Jobs/Sources activation;
 - external OS protocol/deep-link registration;
 - custom native window title bar integration;
 - persistent frontend caching/offline navigation behavior.
@@ -1719,12 +1716,51 @@ Android system Back follows the same route/modal hierarchy and must not exit whi
 
 System bars, display cutouts, IME, gesture insets, and safe areas are presentation constraints, not route inputs.
 
-## 141. References
+## 141. Phase 003 Library-Destination Activation
+
+PHASE-003 activates the previously reserved `AppDestination.library` and canonical Library/Game routes. Collections remains reserved and inactive.
+
+The production primary destination catalog becomes:
+
+```text
+Library
+Sources
+Jobs
+Settings
+```
+
+Library is the default ready-state destination after required startup/platform readiness and Phase 003 product onboarding are satisfied.
+
+Active routes include:
+
+```text
+/onboarding/library
+/library
+/library/platforms/:platformId
+/library/sources/:sourceId
+/library/library-roots/:libraryRootId
+/games/:gameId
+```
+
+All `/library/**` scope routes and `/games/:gameId` map to `AppDestination.library`. `/sources/**` remains `AppDestination.sources`; logical source-scoped Library browsing does not reuse the operational Sources route family.
+
+`/onboarding/library` is a root-navigator gating route outside the shell. It is entered only from authoritative incomplete onboarding state, cannot be selected from primary navigation, does not create a shell branch, and cannot be dismissed to bypass required consent/setup. Back dismisses transient onboarding surfaces first and otherwise follows platform exit behavior.
+
+The Library branch participates in the same independent branch-history contract as other primary destinations. Compact navigation exposes all four active destinations directly; Medium/Expanded/Large use the existing adaptive rail/sidebar policy. No semantic `More` destination is introduced.
+
+`/library/collections/:collectionId` is not registered in the Phase 003 production route graph.
+
+Game detail route identity is invariant across width classes. Compact/Medium may present a full routed page while Expanded/Large may project the same route as a master-detail inspector. Live resize never changes `GameId`, canonical URI, destination identity, or branch history.
+
+Backend-reported `GameId` redirects are canonicalized through the routing/client boundary without redirect loops or using display-title/provider data as route identity.
+
+## 142. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
 - [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](../backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](../backend/spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
@@ -1733,6 +1769,7 @@ System bars, display cutouts, IME, gesture insets, and safe areas are presentati
 - [SPEC-FE-005 — Startup and Recovery UI](spec-fe-005-startup-and-recovery-ui.md)
 - [SPEC-FE-006 — Appearance Settings and Theme Application](spec-fe-006-appearance-settings-and-theme-application.md)
 - [SPEC-FE-007 — Design-System Foundation and Accessibility Baseline](spec-fe-007-design-system-foundation-and-accessibility-baseline.md)
+- [SPEC-FE-010 — Library, Game Detail, and Enrichment UX](spec-fe-010-library-game-detail-and-enrichment-ux.md)
 - [SPEC-FE-008 — Sources and Library Folder Management](spec-fe-008-sources-and-library-folder-management.md)
 - [SPEC-FE-009 — Jobs and Background Operation Presentation](spec-fe-009-jobs-and-background-operation-presentation.md)
 - [SPEC-X-001 — Versioning and Compatibility Contract](../cross-cutting/spec-x-001-versioning-and-compatibility-contract.md)

@@ -3,8 +3,8 @@
 **Document ID:** SPEC-BE-005  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-X-002  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -909,8 +909,8 @@ This specification does not finalize:
 - Flutter-facing settings models
 - settings UI behavior
 - restart-required settings state
-- additional settings domains
-- credentials
+- additional settings domains beyond the domains activated by later amendments
+- credential-store implementation and secret persistence
 - settings backup/export/import
 - multi-client concurrency
 - cloud synchronization
@@ -926,15 +926,118 @@ Android platform readiness and lifecycle do not create a second settings domain 
 4. A platform-readiness overlay may delay backend startup or normal-shell admission, but once the existing runtime/settings authority is usable it remains the sole appearance authority; the overlay does not own a fallback persisted theme.
 5. Android tests must prove appearance persistence and first-shell restoration use the same backend settings contract rather than an Android-only store or controller.
 
+## 38.1 Phase 003 Settings and Product-Onboarding Activation
+
+PHASE-003 activates independently typed configuration records rather than extending `AppearanceSettings` or introducing a generic key/value store:
+
+```text
+MetadataSettings
+- preferred_regions: ordered RegionCode values
+- preferred_languages: ordered BCP-47 language tags
+
+MetadataProviderSettings
+- enabled_provider_ids: set<ProviderId>
+
+PrivacyConsentRecord
+- accepted_terms_version
+- accepted_at
+
+LibraryProviderSetupOutcome
+- Pending
+- Configured
+- Skipped
+
+LibraryOnboardingProgress
+- metadata_preferences_confirmed
+- provider_setup_outcome: LibraryProviderSetupOutcome
+- completed_at nullable
+```
+
+These records have independent repositories, commands, integrity validation, and transaction boundaries. A unified Settings/onboarding UI does not make them one aggregate.
+
+### 38.1.1 Defaults and onboarding authority
+
+Fresh MetadataSettings defaults derive preferred region/language once from the host OS locale when no persisted values exist. Later OS-locale changes do not overwrite confirmed user preferences. The initial enabled metadata-provider set is `playmatch`, `gametdb`, and `steamgriddb`; SteamGridDB may therefore be enabled while capability readiness is `MissingCredentials` after the optional credential step is skipped.
+
+A query-authoritative `LibraryOnboardingState` is derived from the current required privacy-terms version, `PrivacyConsentRecord`, `MetadataSettings`, `LibraryOnboardingProgress`, and whether at least one root exists when onboarding has never completed. The frontend does not own a second persisted completion boolean.
+
+Rules:
+
+1. onboarding can complete only after current privacy terms are accepted, metadata preferences are confirmed, the provider-setup step is completed or explicitly skipped, and at least one root exists;
+2. onboarding completion commits before any initial refresh admission;
+3. refresh-admission failure after completion does not roll onboarding back or reopen it on restart;
+4. later removal of every root does not reopen onboarding; Library shows its normal no-root empty state;
+5. a newer required privacy-terms version makes only the consent step incomplete until accepted;
+6. declining required privacy terms follows ARCH-001 and does not create a reduced-consent product mode.
+
+### 38.1.2 Onboarding commands and initial refresh
+
+Onboarding steps mutate durable authority through focused commands rather than frontend-only flags:
+
+```text
+ConfirmLibraryMetadataPreferencesCommand(metadata_settings)
+    -> LibraryOnboardingState
+
+RecordLibraryProviderSetupOutcomeCommand(Configured | Skipped)
+    -> LibraryOnboardingState
+```
+
+`ConfirmLibraryMetadataPreferencesCommand` validates the typed `MetadataSettings` aggregate and atomically commits it together with `metadata_preferences_confirmed = true`. It performs no provider request, artwork download, source work, or `library_resolution_refresh` admission while onboarding is incomplete.
+
+`RecordLibraryProviderSetupOutcomeCommand` persists an explicit outcome rather than a generic completed Boolean. `Configured` is accepted only when SteamGridDB credential presence is authoritatively true and current readiness is `Ready` or transiently `Unavailable`; `MissingCredentials`, `InvalidCredentials`, and `Misconfigured` cannot be recorded as configured. `Skipped` is accepted only when no SteamGridDB credential is configured. A user skipping after an invalid credential attempt must first remove that credential successfully, preventing a durable `Skipped` outcome from coexisting with actionable `InvalidCredentials`. Skipping remains an explicit user choice and does not prevent later credential setup.
+
+Before onboarding completes, a `Configured` outcome whose credential is subsequently removed no longer satisfies the completion prerequisite. After `completed_at` commits, later credential removal, provider disablement, locale changes, or root removal do not reopen product onboarding; those are normal Settings/Library states.
+
+For a fresh no-root flow, successful root admission (`Added` or the idempotent `AlreadyConfigured` result) is immediately followed by `CompleteLibraryOnboardingAndRefreshCommand`; there is no second required confirmation click after folder selection. An existing-root upgrade has no folder-selection event, so it retains an explicit `Finish & Refresh` action. In both cases onboarding completion commits before refresh admission and remains complete if the child admission fails.
+
+### 38.1.3 Settings changes and local re-resolution
+
+`UpdateMetadataSettings` and `UpdateMetadataProviderSettings` persist the confirmed aggregate first. When the change affects current resolved metadata/artwork selection, the application then requests the local-only `library_resolution_refresh` operation defined by SPEC-BE-004/SPEC-BE-015.
+
+The result distinguishes:
+
+```text
+CommittedNoResolutionWork(settings)
+CommittedAndResolutionAdmitted(settings, operation_handle)
+CommittedButResolutionNotAdmitted(settings, application_error)
+```
+
+A failure before settings commit reverts the UI to its last confirmed value. A later resolution-admission failure does not roll back the committed setting; current projections remain queryable but are marked resolution-stale until an explicit retry succeeds. The local resolution operation performs no source scan, provider request, or artwork download. If newly selected artwork lacks a local asset, `asset_id` remains null until a later explicit enrichment refresh downloads it.
+
+### 38.1.4 Credential boundary
+
+Metadata-provider enablement and locale preferences persist through ordinary typed repositories/commands. Credential configured/readiness facts are query projections from the credential/provider boundary, not secret settings data.
+
+SteamGridDB key bytes are never persisted in `MetadataProviderSettings`, `MetadataSettings`, SQLite settings serialization, logs, diagnostics, events, Jobs records, or normal read DTOs. Credential creation/replacement/removal uses the credential-specific service defined by SPEC-BE-010/SPEC-BE-015. A secure-store failure cannot fall back to ordinary settings or plaintext application storage.
+
+### 38.1.5 Phase 003 tests
+
+Tests must prove:
+
+- OS locale initializes missing metadata preferences once and never silently overwrites confirmed values;
+- preference confirmation atomically commits settings and onboarding progress;
+- provider setup permits only the closed `Configured`/`Skipped` command outcomes, derives `Pending` from authoritative state, and requires credential removal before skipping a configured invalid key;
+- `Configured` requires secure credential presence plus `Ready` or transient `Unavailable` readiness;
+- current required privacy terms, root presence, and all durable steps gate completion;
+- first-folder completion is automatic after root success, existing-root completion is explicit, and child refresh failure never rolls completion back;
+- credential/root/provider/locale changes after completion do not reopen onboarding, while a new required privacy version gates consent only;
+- each settings-update result preserves committed settings independently from local-resolution admission;
+- secure-store failure never writes secret material to ordinary settings or diagnostics.
+
+Phase 003 does not activate an `ArtworkSettings` aggregate merely to expose compile-time resolver policy. A later user-configurable artwork policy may activate that domain when real durable user settings exist.
+
 ## 39. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
 - [PHASE-002 — Android First-Class Platform Support](../../phases/phase-002-android-first-class-platform-support.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-001 — Rust Workspace and Module Boundaries](spec-be-001-rust-workspace-and-module-boundaries.md)
 - [SPEC-BE-002 — SQLite, Migrations, Repositories, and Unit of Work](spec-be-002-sqlite-migrations-repositories-and-unit-of-work.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](spec-be-003-application-errors-logging-and-diagnostics.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
+- [SPEC-BE-010 — Provider Gateway Architecture](spec-be-010-provider-gateway-architecture.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [SPEC-X-002 — Android Platform Runtime and Capability Contract](../cross-cutting/spec-x-002-android-platform-runtime-and-capability-contract.md)
 - [Backend Specifications Index](README.md)

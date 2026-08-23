@@ -3,8 +3,8 @@
 **Document ID:** SPEC-FE-003  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
-**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
+**Last Updated:** 2026-08-23  
+**Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-BE-010, SPEC-BE-013, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
 
@@ -2049,10 +2049,10 @@ This specification intentionally leaves later specifications to define:
 - exact `go_router` route ownership and route-driven client requests;
 - startup/recovery UI variants and presentation policy;
 - exact appearance-settings state/control semantics;
-- logical Library/game catalogs and any Jobs/Sources operations beyond the bounded Phase 001 catalogs owned by SPEC-BE-008, SPEC-FE-008, and SPEC-FE-009;
-- persistent frontend caching/offline synchronization;
-- future provider/account authentication UX;
-- future streaming media/artwork transport needs;
+- logical Library/game/provider/artwork capabilities beyond those explicitly activated by the Phase 003 amendment below;
+- persistent frontend caching/offline synchronization beyond bounded in-process artwork-byte caching;
+- provider account/OAuth UX beyond the activated write-only SteamGridDB credential flow;
+- streaming/range media transport beyond the bounded Phase 003 artwork-byte query;
 - final release packaging/native library discovery details.
 
 It does not define a generic RPC framework, plugin API, frontend repository layer, or second backend client implementation architecture.
@@ -2065,19 +2065,121 @@ Android `LocalFilesystem` browsing, once P02-002 activates it, is different: pro
 
 Existing Sources root admission, scan, hierarchy, Jobs, settings, and runtime APIs remain the authoritative product capabilities on Android. Native foreground notification cancellation must converge on the existing Jobs cancellation capability rather than inventing a parallel client API/state authority.
 
-## 151. References
+## 151. Phase 003 Focused API Activation
+
+PHASE-003 activates logical Library/Game/metadata-provider/artwork client capabilities while preserving the existing Sources, Jobs, Settings, runtime, diagnostics, and events authorities:
+
+```text
+ArgusClient
+├── library: LibraryApi
+├── games: GamesApi
+├── metadataProviders: MetadataProvidersApi
+├── artworkAssets: ArtworkAssetsApi
+├── jobs: JobsApi
+├── settings: SettingsApi
+├── sources: SourcesApi
+├── runtime: RuntimeApi
+├── diagnostics: DiagnosticsApi
+└── events: EventsApi
+```
+
+The `metadataProviders` name is deliberate: this API does not represent source/storage providers.
+
+### 151.1 `LibraryApi`
+
+Conceptually:
+
+```text
+listGames(LibraryQuery query) -> Future<GamePage>
+getLibraryFacets(LibraryFacetQuery query) -> Future<LibraryFacets>
+getLibraryOnboardingState() -> Future<LibraryOnboardingState>
+confirmLibraryMetadataPreferences(MetadataSettings settings)
+    -> Future<LibraryOnboardingState>
+recordLibraryProviderSetupOutcome(LibraryProviderSetupDecision decision)
+    -> Future<LibraryOnboardingState>
+completeLibraryOnboardingAndRefresh()
+    -> Future<CompleteLibraryOnboardingAndRefreshResult>
+refreshLibrary() -> Future<OperationHandle>
+addLibraryRootAndRefresh(LocalFilesystemRootSelection selection)
+    -> Future<AddLibraryRootAndRefreshResult>
+```
+
+The onboarding coordinator uses the existing `SourcesApi` root-admission capability when a folder is required and does not duplicate filesystem/root authority inside `LibraryApi`. In a fresh no-root flow, `Added` or `AlreadyConfigured` immediately triggers `completeLibraryOnboardingAndRefresh()` without another user confirmation. Existing-root upgrades retain the explicit `Finish & Refresh` action.
+
+`AddLibraryRootAndRefreshResult` preserves successful root creation independently from refresh admission. Duplicate/overlap results contain no refresh handle. After ambiguous transport, the coordinator replays only idempotent root admission and reconciles root/Jobs state before any explicit refresh.
+
+### 151.2 `GamesApi`
+
+```text
+getGame(GameId id) -> Future<GetGameResult>
+refreshGames(NonEmptyBoundedSet<GameId> ids, RefreshMode mode)
+    -> Future<OperationHandle>
+```
+
+`GetGameResult` is `found(GameDetail)` or `redirected(GameId)`. A missing non-redirected Game is an `ApplicationFailure`, never `null` or cached row synthesis.
+
+`RefreshMode.force` is valid only for one Game; multi-selection uses `eligibleOnly`.
+
+### 151.3 `MetadataProvidersApi`
+
+```text
+listReadiness() -> Future<List<MetadataProviderReadiness>>
+setCredential(ProviderId providerId, SecretInput credential)
+    -> Future<MetadataProviderReadiness>
+removeCredential(ProviderId providerId)
+    -> Future<MetadataProviderReadiness>
+```
+
+`SecretInput` is ephemeral command input. No API returns stored credential plaintext; production clients and test doubles model the same write-only behavior.
+
+### 151.4 `ArtworkAssetsApi`
+
+```text
+loadBytes(ArtworkAssetId assetId) -> Future<ArtworkAssetBytes>
+```
+
+The API returns immutable bytes plus safe media metadata, never an object-store path, provider URL, file URI, or native handle. The client may deduplicate concurrent requests and maintain a bounded process-local cache keyed by `ArtworkAssetId`; it does not prefetch the whole Library or create durable frontend asset authority.
+
+### 151.5 `SettingsApi` additions
+
+```text
+getMetadataSettings() -> Future<MetadataSettings>
+updateMetadataSettings(MetadataSettings settings)
+    -> Future<MetadataSettingsUpdateResult>
+getMetadataProviderSettings() -> Future<MetadataProviderSettings>
+updateMetadataProviderSettings(MetadataProviderSettings settings)
+    -> Future<MetadataProviderSettingsUpdateResult>
+getPrivacyConsent() -> Future<PrivacyConsent>
+acceptPrivacyTerms(PrivacyTermsVersion version) -> Future<PrivacyConsent>
+```
+
+`MetadataSettingsUpdateResult` and `MetadataProviderSettingsUpdateResult` each distinguish committed settings from later `library_resolution_refresh` admission. A committed setting is never locally reverted because the resolution job could not be admitted.
+
+### 151.6 Closed query/model boundary
+
+`LibraryFilter` is limited to platform, region, hydration-state, and availability-state sets. `LibrarySortField` is `displayTitle`, `platform`, `releaseDate`, or `updatedAt` with an explicit direction. Query/facet/page cursors remain backend-owned.
+
+`GamePage`, `GameLibraryRow`, `LibraryFacetQuery`, `LibraryFacets`, `GameDetail`, `GetGameResult`, `ArtworkAssetBytes`, `MetadataProviderReadiness`, `MetadataProviderSettings`, `MetadataSettings`, `PrivacyTermsVersion`, `PrivacyConsent`, `LibraryProviderSetupOutcome` (`pending|configured|skipped`), `LibraryProviderSetupDecision` (`configured|skipped` only), `LibraryOnboardingState`, `LibraryQuery`, `LibraryFilter`, `LibrarySort`, `MetadataSettingsUpdateResult`, `MetadataProviderSettingsUpdateResult`, and `RefreshMode` are handwritten frontend/client models mapped from bridge DTOs exactly once. Generated FRB DTOs remain inside the bridge adapter.
+
+Long-running methods return after accepted background admission and never await job completion. Jobs/events remain the observation path, with authoritative Library/Game/settings/provider/onboarding re-query after sequence gaps or runtime replacement.
+
+## 152. References
 
 - [ARCH-001 — Argus ROM Toolkit Architecture](../../architecture/architecture-overview.md)
 - [ARCH-002 — Argus Documentation Architecture](../../architecture/documentation-architecture.md)
 - [PHASE-000 — Foundation](../../phases/phase-000-foundation.md)
 - [PHASE-001 — Local Sources and Indexing](../../phases/phase-001-local-sources-and-indexing.md)
 - [PHASE-002 — Android First-Class Platform Support](../../phases/phase-002-android-first-class-platform-support.md)
+- [PHASE-003 — Game Identification and Enrichment](../../phases/phase-003-game-identification-and-enrichment.md)
 - [SPEC-BE-003 — Application Errors, Logging, Diagnostics, and Observability](../backend/spec-be-003-application-errors-logging-and-diagnostics.md)
 - [SPEC-BE-004 — Application Runtime, Command Pipeline, and Background Operations](../backend/spec-be-004-application-runtime-command-pipeline-and-background-operations.md)
 - [SPEC-BE-005 — Settings Service and Appearance Settings](../backend/spec-be-005-settings-service-and-appearance-settings.md)
 - [SPEC-BE-007 — Startup Coordination and Recovery Contract](../backend/spec-be-007-startup-coordination-and-recovery-contract.md)
 - [SPEC-BE-008 — Rust-to-Flutter Bridge DTO Contract](../backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md)
 - [SPEC-BE-009 — Application Service Contracts](../backend/spec-be-009-application-service-contracts.md)
+- [SPEC-BE-010 — Provider Gateway Architecture](../backend/spec-be-010-provider-gateway-architecture.md)
+- [SPEC-BE-013 — Library Source Management, Scan Operations, and Source Projections](../backend/spec-be-013-library-source-management-scan-operations-and-source-projections.md)
+- [SPEC-BE-015 — Game Library, Grouping, and Enrichment Contract](../backend/spec-be-015-game-library-grouping-and-enrichment-contract.md)
 - [SPEC-FE-001 — Flutter Project Structure and Feature Boundaries](spec-fe-001-flutter-project-structure-and-feature-boundaries.md)
 - [SPEC-FE-002 — Riverpod, Freezed, and Controller State Conventions](spec-fe-002-riverpod-freezed-and-controller-state-conventions.md)
 - [SPEC-FE-004 — Routing and Adaptive Application Shell](spec-fe-004-routing-and-adaptive-application-shell.md)

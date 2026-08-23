@@ -4,19 +4,30 @@
 //! application handlers, and infrastructure adapters. It intentionally does not
 //! expose persistence-driver, bridge, filesystem, or asynchronous-runtime types.
 
+mod content;
 mod diagnostics;
 mod errors;
 mod events;
+mod grouping;
 mod jobs;
+mod library;
+mod logical;
 mod observability;
 mod settings;
 mod sources;
 mod unit_of_work;
 
 pub use argus_domain::{
-    AppearanceSettings, JobRunId, JobRunIdError, LibraryRootId, LibraryRootIdError,
-    LibrarySourceId, LibrarySourceIdError, ScanRunId, ScanRunIdError, SourceEntryId,
-    SourceEntryIdError, ThemeMode, ThemeModeParseError,
+    AppearanceSettings, AvailabilityState, ContentType, Game, GameContent, GameContentId,
+    GameContentIdError, GameContentPresence, GameContentSource, GameId, GameIdError, GameLifecycle,
+    GameMembership, GameRedirect, GroupingBasis, HydrationState, IdentificationState,
+    InvalidContentType, InvalidPlatformId, JobRunId, JobRunIdError, LibraryRootId,
+    LibraryRootIdError, LibrarySourceId, LibrarySourceIdError, MembershipRelationship, PlatformId,
+    ScanRunId, ScanRunIdError, SourceEntryId, SourceEntryIdError, ThemeMode, ThemeModeParseError,
+};
+pub use content::{
+    IdentityDigest, IdentitySchemeCatalog, IdentitySchemeDescriptor, TransformationDescriptor,
+    TransformationRegistry,
 };
 pub use diagnostics::{
     DiagnosticArtifact, DiagnosticContributor, DiagnosticContributorError, HealthSnapshot,
@@ -31,6 +42,9 @@ pub use events::{
     AppearanceSettingsChanged, AppearanceSettingsSubscriber, ApplicationEvent, EventRecorder,
     EventRecordingError, EventSubscriberError, JobProgressChanged, JobStateChanged, JobsSubscriber,
     SourceEntriesChangeScope, SourceEntriesChanged, SourceEntriesSubscriber,
+};
+pub use grouping::{
+    GroupingValidationError, RedirectGraph, validate_continuity_anchor, validate_memberships,
 };
 pub use jobs::{
     ActiveScanOwnership, AdmittedLibraryScanJob, AdmittedScan, ApplicationEventSink,
@@ -54,6 +68,17 @@ pub use jobs::{
     StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
     StartLibraryScanResult, aggregate_library_scan_state, evaluate_retry_eligibility,
     evaluate_retry_eligibility_with_trace,
+};
+pub use library::{
+    ContentIdentitySummary, ContentProvenanceSummary, GameContentSummary, GameDetail,
+    GameLibraryPage, GameLibraryRow, GameListCursor, GameMembershipSummary, GetGameResult,
+    LibraryScope, LibrarySort, ListGamesQuery, ListGamesQueryBuilder, LogicalLibraryQueries,
+    QueryValidationError,
+};
+pub use logical::{
+    ContentIdentity, ConvergenceOutcome, IdentificationService, IdentityConvergenceStore,
+    LogicalContentRepository, LogicalContentUnitOfWork, SourceVersionEvidence,
+    ValidatedContentDerivation,
 };
 pub use observability::{
     ArchitectureClass, DiagnosticStage, EventName, FailureRole, LogEvent, LogLevel,

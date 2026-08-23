@@ -740,6 +740,21 @@ pub trait LibrarySourceAccess: Send + Sync {
         relative: &RelativeSourceLocator,
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<EnumerationResult, SourceAccessError>;
+
+    /// Reads one source entry into a bounded, operation-scoped byte buffer.
+    ///
+    /// The provider owns path interpretation and returns bytes only. A
+    /// default unsupported implementation keeps source providers that do not
+    /// expose byte access compatible with the browse and indexing seams.
+    fn read_entry_bytes(
+        &self,
+        root: &ResolvedRoot,
+        relative: &RelativeSourceLocator,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, SourceAccessError> {
+        let _ = (root, relative, max_bytes);
+        Err(SourceAccessError::UnsupportedOperation)
+    }
 }
 
 impl LibrarySourceAccess for Box<dyn LibrarySourceAccess> {
@@ -762,6 +777,15 @@ impl LibrarySourceAccess for Box<dyn LibrarySourceAccess> {
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<EnumerationResult, SourceAccessError> {
         (**self).enumerate_direct_children(root, relative, is_cancelled)
+    }
+
+    fn read_entry_bytes(
+        &self,
+        root: &ResolvedRoot,
+        relative: &RelativeSourceLocator,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, SourceAccessError> {
+        (**self).read_entry_bytes(root, relative, max_bytes)
     }
 }
 

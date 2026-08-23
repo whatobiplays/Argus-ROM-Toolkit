@@ -72,6 +72,16 @@ hex_identity!(
     SourceEntryIdError,
     "Stable identity of one persisted source-graph entity."
 );
+hex_identity!(
+    GameContentId,
+    GameContentIdError,
+    "Stable identity of one canonical logical content entity."
+);
+hex_identity!(
+    GameId,
+    GameIdError,
+    "Stable identity of one logical library game entity."
+);
 
 const fn all_zero(bytes: &[u8; 16]) -> bool {
     let mut index = 0;

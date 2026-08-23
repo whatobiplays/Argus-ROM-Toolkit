@@ -3,7 +3,8 @@
 use rusqlite::{OptionalExtension, Transaction, types::Value};
 
 use argus_application::{
-    ApplicationPortError, NewLibraryRoot, OperationContext, PersistenceError, UnitOfWork,
+    ApplicationPortError, LogicalContentUnitOfWork, NewLibraryRoot, OperationContext,
+    PersistenceError, UnitOfWork,
 };
 
 use super::appearance::SqliteAppearanceSettingsRepository;
@@ -13,6 +14,7 @@ use super::jobs::{
     SqliteJobRunRepository, SqliteLibraryScanAdmissionContextRepository,
     SqliteLibraryScanTargetRepository, SqliteScanRunRepository, SqliteSourceEntryRepository,
 };
+use super::logical::SqliteLogicalContentRepository;
 use super::sources::{SqliteLibraryRootRepository, SqliteLibrarySourceRepository};
 
 /// One top-level transaction that cannot be reused after terminal completion.
@@ -355,6 +357,17 @@ impl<'connection> UnitOfWork for SqliteUnitOfWork<'connection> {
         Self: Sized,
     {
         SqliteUnitOfWork::rollback(self)
+    }
+}
+
+impl<'connection> LogicalContentUnitOfWork for SqliteUnitOfWork<'connection> {
+    type LogicalContentRepository<'scope>
+        = SqliteLogicalContentRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn logical_content(&mut self) -> Self::LogicalContentRepository<'_> {
+        SqliteLogicalContentRepository::new(self)
     }
 }
 

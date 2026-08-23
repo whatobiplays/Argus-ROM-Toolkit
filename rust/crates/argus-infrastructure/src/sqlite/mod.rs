@@ -10,6 +10,7 @@ mod connection;
 mod errors;
 mod executor;
 mod jobs;
+mod logical;
 mod migrations;
 mod source_entries;
 mod sources;
@@ -25,6 +26,7 @@ pub use jobs::{
     SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryScanAdmissionContextRepository,
     SqliteLibraryScanTargetRepository, SqliteScanRunRepository, SqliteSourceEntryRepository,
 };
+pub use logical::SqliteLogicalContentRepository;
 pub use migrations::{
     Migration, MigrationKind, MigrationOutcome, MigrationRegistry, MigrationSummary,
 };

@@ -11,16 +11,20 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
     AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult, ApplicationError,
-    ApplicationSeverity, ArchitectureClass, BackgroundOperationStopReason, DiagnosticStage,
-    ErrorCategory, ErrorCode, FailureRole, JobDetail, JobRunId, JobRunProjection, JobRunState,
-    JobSummary, JobSummaryPage, LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus,
-    LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionExclusion,
-    LibraryScanAllRequestIdentity, LibraryScanChildAdmissionIssue, LibraryScanJobDetail,
-    LibraryScanRootSummary, ListJobsQuery, ListJobsScope, ListLibraryRootsQuery,
-    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
-    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
+    ApplicationSeverity, ArchitectureClass, AvailabilityState, BackgroundOperationStopReason,
+    ContentIdentitySummary, ContentProvenanceSummary, ContentType, DiagnosticStage, ErrorCategory,
+    ErrorCode, FailureRole, GameContentPresence, GameContentSummary, GameDetail, GameId,
+    GameLibraryPage, GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary,
+    GetGameResult, GroupingBasis, HydrationState, IdentificationState, IdentityDigest, JobDetail,
+    JobRunId, JobRunProjection, JobRunState, JobSummary, JobSummaryPage, LibraryRootAvailability,
+    LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
+    LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanChildAdmissionIssue,
+    LibraryScanJobDetail, LibraryScanRootSummary, LibraryScope, LibrarySort, ListGamesQuery,
+    ListJobsQuery, ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MembershipRelationship,
     MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
-    PersistedSettingsReason, PlatformClass, Recoverability, RemoveLibraryRootResult,
+    PersistedSettingsReason, PlatformClass, PlatformId, Recoverability, RemoveLibraryRootResult,
     RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext,
     SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus,
     SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
@@ -295,6 +299,230 @@ pub struct LibraryRootPageDto {
     pub offset: u32,
     pub page_size: u32,
     pub total_count: u32,
+}
+
+/// Closed logical-library scope vocabulary from BE-008.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LibraryScopeDto {
+    All,
+    Platform { platform_id: String },
+    Source { source_id: String },
+    LibraryRoot { library_root_id: String },
+}
+
+/// Closed logical-library hydration filter vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryHydrationStateDto {
+    Hydrated,
+    PartiallyHydrated,
+    Unmatched,
+    Refreshing,
+}
+
+/// Closed logical-library availability filter vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryAvailabilityStateDto {
+    Available,
+    PartiallyUnavailable,
+    Unavailable,
+    InactiveOrphan,
+}
+
+/// Structurally valid BE-008 library filters. P03-001 accepts only empty
+/// filters; non-empty values are rejected as INVALID_ARGUMENT.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryFilterDto {
+    pub platform_ids: Vec<String>,
+    pub regions: Vec<String>,
+    pub hydration_states: Vec<LibraryHydrationStateDto>,
+    pub availability_states: Vec<LibraryAvailabilityStateDto>,
+}
+
+/// Closed logical-library sort field vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibrarySortFieldDto {
+    DisplayTitle,
+    Platform,
+    ReleaseDate,
+    UpdatedAt,
+}
+
+/// Closed logical-library sort direction vocabulary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibrarySortDirectionDto {
+    Ascending,
+    Descending,
+}
+
+/// Structurally valid BE-008 sort request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LibrarySortDto {
+    pub field: LibrarySortFieldDto,
+    pub direction: LibrarySortDirectionDto,
+}
+
+/// Baseline logical-library request. The bridge validates this full query
+/// shape and activates only All/empty/default/opaque-cursor paging.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ListGamesRequestDto {
+    pub scope: LibraryScopeDto,
+    pub search_text: Option<String>,
+    pub filters: LibraryFilterDto,
+    pub sort: LibrarySortDto,
+    pub cursor: Option<String>,
+    pub page_size: u32,
+}
+
+/// Stable platform vocabulary in logical-library projections.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlatformIdDto {
+    NintendoGb,
+    NintendoGbc,
+    NintendoGba,
+}
+
+/// Stable content-type vocabulary in logical-library projections.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContentTypeDto {
+    CartridgeImage,
+}
+
+/// Independent content presence state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContentPresenceDto {
+    Available,
+    PartiallyUnavailable,
+    Unavailable,
+    Orphaned,
+}
+
+/// Independent content identification state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IdentificationStateDto {
+    Identified,
+    NeedsReidentification,
+    Unidentified,
+}
+
+/// Durable game lifecycle state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GameLifecycleDto {
+    Active,
+    InactiveOrphan,
+    Redirected,
+}
+
+/// Local logical-library hydration state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HydrationStateDto {
+    Hydrated,
+    PartiallyHydrated,
+    Unmatched,
+    Refreshing,
+}
+
+/// Local logical-library availability state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GameAvailabilityStateDto {
+    Available,
+    PartiallyUnavailable,
+    Unavailable,
+    InactiveOrphan,
+}
+
+/// Membership role in a durable game aggregate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MembershipRelationshipDto {
+    Primary,
+    Secondary,
+}
+
+/// Grouping evidence basis for one durable membership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GroupingBasisDto {
+    ExactContentIdentity,
+    Provisional,
+}
+
+/// Safe current identity summary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentIdentitySummaryDto {
+    pub scheme_id: String,
+    pub revision: u32,
+    pub digest: String,
+}
+
+/// Safe exact proving-provenance summary. Raw locations and parser details
+/// remain private to infrastructure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentProvenanceSummaryDto {
+    pub source_entry_id: String,
+    pub association_key: String,
+    pub source_fingerprint: Option<String>,
+    pub last_observed_scan_id: String,
+}
+
+/// Focused current logical-content detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentSummaryDto {
+    pub game_content_id: String,
+    pub platform_id: PlatformIdDto,
+    pub content_type: ContentTypeDto,
+    pub presence: ContentPresenceDto,
+    pub identification: IdentificationStateDto,
+    pub source_count: u32,
+    pub identity: Option<ContentIdentitySummaryDto>,
+    pub provenance: Option<ContentProvenanceSummaryDto>,
+}
+
+/// Focused current membership detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameMembershipSummaryDto {
+    pub game_content_id: String,
+    pub relationship: MembershipRelationshipDto,
+    pub grouping_basis: GroupingBasisDto,
+    pub grouping_revision: u32,
+}
+
+/// Bounded logical-library list row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameLibraryRowDto {
+    pub game_id: String,
+    pub display_title: String,
+    pub platform_id: PlatformIdDto,
+    pub hydration_state: HydrationStateDto,
+    pub content_count: u32,
+    pub source_count: u32,
+    pub availability_state: GameAvailabilityStateDto,
+    pub updated_at_ms: i64,
+}
+
+/// Bounded logical-library page with an opaque continuation cursor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GamePageDto {
+    pub items: Vec<GameLibraryRowDto>,
+    pub next_cursor: Option<String>,
+}
+
+/// Focused durable logical-game detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameDetailDto {
+    pub game_id: String,
+    pub platform_id: PlatformIdDto,
+    pub lifecycle: GameLifecycleDto,
+    pub hydration_state: HydrationStateDto,
+    pub fallback_title: String,
+    pub memberships: Vec<GameMembershipSummaryDto>,
+    pub content: Vec<ContentSummaryDto>,
+    pub availability_state: GameAvailabilityStateDto,
+}
+
+/// Focused lookup result. A missing game is returned as the published
+/// GAME_NOT_FOUND application error rather than a nullable DTO.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GetGameResultDto {
+    Found(GameDetailDto),
+    Redirected { canonical_game_id: String },
 }
 
 /// Application-owned source-entry kind vocabulary.
@@ -1100,6 +1328,48 @@ pub fn get_library_root(library_root_id: String) -> Result<LibraryRootDto, Appli
         .map_err(|error| application_error_dto(&error))
 }
 
+/// Lists the baseline logical-library page. Structurally valid BE-008 query
+/// concepts outside the P03-001 activation subset are rejected as
+/// `ARGUS.V1.VALIDATION.INVALID_ARGUMENT`.
+#[allow(clippy::result_large_err)]
+pub fn list_games(request: ListGamesRequestDto) -> Result<GamePageDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "list_games")
+        .map_err(|error| application_error_dto(&error))?;
+    let query = list_games_query_from_dto(request, context.trace_id())?;
+    host()
+        .list_games_with_context(query, &context)
+        .map(|page| game_page_dto(&page))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads one focused logical game. Redirects are represented explicitly;
+/// missing canonical games use the published typed application error.
+#[allow(clippy::result_large_err)]
+pub fn get_game(game_id: String) -> Result<GetGameResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "get_game")
+        .map_err(|error| application_error_dto(&error))?;
+    let game_id = parse_game_id(&game_id, context.trace_id())?;
+    let result = host()
+        .get_game_with_context(game_id, &context)
+        .map_err(|error| application_error_dto(&error))?;
+    match result {
+        GetGameResult::Found(detail) => Ok(GetGameResultDto::Found(game_detail_dto(&detail))),
+        GetGameResult::Redirected(canonical_game_id) => Ok(GetGameResultDto::Redirected {
+            canonical_game_id: canonical_game_id.to_string(),
+        }),
+        GetGameResult::NotFound => Err(application_error_dto(
+            &ApplicationError::from_code(
+                ErrorCode::ConfigurationGameNotFound,
+                context.trace_id(),
+                SafeContext::new(),
+            )
+            .expect("game-not-found error uses an allowlisted empty context"),
+        )),
+    }
+}
+
 /// Replaces the transient native mounted-volume registry and reconciles
 /// persisted root availability. Native mount facts are ingress-only.
 #[allow(clippy::result_large_err)]
@@ -1785,6 +2055,16 @@ pub fn parse_library_root_id(
     })
 }
 
+/// Parses one bridge-supplied logical-game identity with typed validation.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn parse_game_id(
+    value: &str,
+    trace_id: argus_application::TraceId,
+) -> Result<GameId, ApplicationErrorDto> {
+    GameId::try_from(value).map_err(|_| validation_failure(trace_id))
+}
+
 /// Parses one bridge-supplied Scan All request identity with typed
 /// validation.
 #[allow(unexpected_cfgs)]
@@ -1832,6 +2112,40 @@ pub fn parse_source_entry_cursor(
             SourceEntryCursor::try_from(value.as_str()).map_err(|_| validation_failure(trace_id))
         })
         .transpose()
+}
+
+#[allow(clippy::result_large_err)]
+fn list_games_query_from_dto(
+    request: ListGamesRequestDto,
+    trace_id: argus_application::TraceId,
+) -> Result<ListGamesQuery, ApplicationErrorDto> {
+    if !matches!(request.scope, LibraryScopeDto::All)
+        || request.search_text.is_some()
+        || !request.filters.platform_ids.is_empty()
+        || !request.filters.regions.is_empty()
+        || !request.filters.hydration_states.is_empty()
+        || !request.filters.availability_states.is_empty()
+        || request.sort.field != LibrarySortFieldDto::DisplayTitle
+        || request.sort.direction != LibrarySortDirectionDto::Ascending
+    {
+        return Err(validation_failure(trace_id));
+    }
+
+    let cursor = request
+        .cursor
+        .map(|value| {
+            GameListCursor::try_from_external(value).map_err(|_| validation_failure(trace_id))
+        })
+        .transpose()?;
+    ListGamesQuery::builder()
+        .scope(LibraryScope::All)
+        .search(None)
+        .filters_empty(true)
+        .sort(LibrarySort::DisplayTitleAscending)
+        .cursor(cursor)
+        .page_size(request.page_size)
+        .build()
+        .map_err(|_| validation_failure(trace_id))
 }
 
 fn validation_failure(trace_id: argus_application::TraceId) -> ApplicationErrorDto {
@@ -1910,6 +2224,172 @@ pub fn library_root_page_dto(page: &LibraryRootPage) -> LibraryRootPageDto {
         page_size: page.page_size(),
         total_count: page.total_count(),
     }
+}
+
+/// Maps one baseline logical-library page into its safe transport DTO.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn game_page_dto(page: &GameLibraryPage) -> GamePageDto {
+    GamePageDto {
+        items: page.items().iter().map(game_library_row_dto).collect(),
+        next_cursor: page.next_cursor().map(|cursor| cursor.as_str().to_owned()),
+    }
+}
+
+/// Maps one bounded logical-library row.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn game_library_row_dto(row: &GameLibraryRow) -> GameLibraryRowDto {
+    GameLibraryRowDto {
+        game_id: row.game_id().to_string(),
+        display_title: row.display_title().to_owned(),
+        platform_id: platform_id_dto(row.platform_id()),
+        hydration_state: hydration_state_dto(row.hydration_state()),
+        content_count: row.content_count(),
+        source_count: row.source_count(),
+        availability_state: game_availability_state_dto(row.availability_state()),
+        updated_at_ms: row.updated_at_ms(),
+    }
+}
+
+/// Maps one focused logical-game detail.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn game_detail_dto(detail: &GameDetail) -> GameDetailDto {
+    GameDetailDto {
+        game_id: detail.game_id().to_string(),
+        platform_id: platform_id_dto(detail.platform_id()),
+        lifecycle: game_lifecycle_dto(detail.lifecycle()),
+        hydration_state: hydration_state_dto(detail.hydration_state()),
+        fallback_title: detail.fallback_title().to_owned(),
+        memberships: detail
+            .memberships()
+            .iter()
+            .map(game_membership_summary_dto)
+            .collect(),
+        content: detail.content().iter().map(content_summary_dto).collect(),
+        availability_state: game_availability_state_dto(detail.availability_state()),
+    }
+}
+
+fn content_summary_dto(summary: &GameContentSummary) -> ContentSummaryDto {
+    ContentSummaryDto {
+        game_content_id: summary.game_content_id().to_string(),
+        platform_id: platform_id_dto(summary.platform_id()),
+        content_type: content_type_dto(summary.content_type()),
+        presence: content_presence_dto(summary.presence()),
+        identification: identification_state_dto(summary.identification()),
+        source_count: summary.source_count(),
+        identity: summary.identity().map(content_identity_summary_dto),
+        provenance: summary.provenance().map(content_provenance_summary_dto),
+    }
+}
+
+fn content_identity_summary_dto(summary: &ContentIdentitySummary) -> ContentIdentitySummaryDto {
+    ContentIdentitySummaryDto {
+        scheme_id: summary.scheme_id().to_owned(),
+        revision: summary.revision(),
+        digest: digest_hex(summary.digest()),
+    }
+}
+
+fn content_provenance_summary_dto(
+    summary: &ContentProvenanceSummary,
+) -> ContentProvenanceSummaryDto {
+    ContentProvenanceSummaryDto {
+        source_entry_id: summary.source_entry_id().to_string(),
+        association_key: summary.association_key().to_owned(),
+        source_fingerprint: summary.source_fingerprint().map(str::to_owned),
+        last_observed_scan_id: summary.last_observed_scan_id().to_string(),
+    }
+}
+
+fn game_membership_summary_dto(summary: &GameMembershipSummary) -> GameMembershipSummaryDto {
+    GameMembershipSummaryDto {
+        game_content_id: summary.game_content_id().to_string(),
+        relationship: membership_relationship_dto(summary.relationship()),
+        grouping_basis: grouping_basis_dto(summary.grouping_basis()),
+        grouping_revision: summary.grouping_revision(),
+    }
+}
+
+fn platform_id_dto(platform: PlatformId) -> PlatformIdDto {
+    match platform {
+        PlatformId::NintendoGb => PlatformIdDto::NintendoGb,
+        PlatformId::NintendoGbc => PlatformIdDto::NintendoGbc,
+        PlatformId::NintendoGba => PlatformIdDto::NintendoGba,
+    }
+}
+
+fn content_type_dto(content_type: ContentType) -> ContentTypeDto {
+    match content_type {
+        ContentType::CartridgeImage => ContentTypeDto::CartridgeImage,
+    }
+}
+
+fn content_presence_dto(presence: GameContentPresence) -> ContentPresenceDto {
+    match presence {
+        GameContentPresence::Available => ContentPresenceDto::Available,
+        GameContentPresence::PartiallyUnavailable => ContentPresenceDto::PartiallyUnavailable,
+        GameContentPresence::Unavailable => ContentPresenceDto::Unavailable,
+        GameContentPresence::Orphaned => ContentPresenceDto::Orphaned,
+    }
+}
+
+fn identification_state_dto(state: IdentificationState) -> IdentificationStateDto {
+    match state {
+        IdentificationState::Identified => IdentificationStateDto::Identified,
+        IdentificationState::NeedsReidentification => IdentificationStateDto::NeedsReidentification,
+        IdentificationState::Unidentified => IdentificationStateDto::Unidentified,
+    }
+}
+
+fn game_lifecycle_dto(lifecycle: GameLifecycle) -> GameLifecycleDto {
+    match lifecycle {
+        GameLifecycle::Active => GameLifecycleDto::Active,
+        GameLifecycle::InactiveOrphan => GameLifecycleDto::InactiveOrphan,
+        GameLifecycle::Redirected => GameLifecycleDto::Redirected,
+    }
+}
+
+fn hydration_state_dto(state: HydrationState) -> HydrationStateDto {
+    match state {
+        HydrationState::Hydrated => HydrationStateDto::Hydrated,
+        HydrationState::PartiallyHydrated => HydrationStateDto::PartiallyHydrated,
+        HydrationState::Unmatched => HydrationStateDto::Unmatched,
+        HydrationState::Refreshing => HydrationStateDto::Refreshing,
+    }
+}
+
+fn game_availability_state_dto(state: AvailabilityState) -> GameAvailabilityStateDto {
+    match state {
+        AvailabilityState::Available => GameAvailabilityStateDto::Available,
+        AvailabilityState::PartiallyUnavailable => GameAvailabilityStateDto::PartiallyUnavailable,
+        AvailabilityState::Unavailable => GameAvailabilityStateDto::Unavailable,
+        AvailabilityState::InactiveOrphan => GameAvailabilityStateDto::InactiveOrphan,
+    }
+}
+
+fn membership_relationship_dto(relationship: MembershipRelationship) -> MembershipRelationshipDto {
+    match relationship {
+        MembershipRelationship::Primary => MembershipRelationshipDto::Primary,
+        MembershipRelationship::Secondary => MembershipRelationshipDto::Secondary,
+    }
+}
+
+fn grouping_basis_dto(basis: GroupingBasis) -> GroupingBasisDto {
+    match basis {
+        GroupingBasis::ExactContentIdentity => GroupingBasisDto::ExactContentIdentity,
+        GroupingBasis::Provisional => GroupingBasisDto::Provisional,
+    }
+}
+
+fn digest_hex(digest: IdentityDigest) -> String {
+    digest
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Maps one safe source-entry row projection into its canonical DTO.

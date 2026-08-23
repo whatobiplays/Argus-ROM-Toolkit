@@ -24,22 +24,24 @@ use std::sync::{Arc, Mutex};
 use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
-    CancelJobResult, DiagnosticStage, ErrorCode, EventName, FailureRole,
-    GetAppearanceSettingsQuery, GetLibraryRootQuery, GetSourceEntryQuery, JobDetail, JobRunId,
-    JobSummaryPage, JobsService, LibraryRootId, LibraryRootPage, LibraryRootProjection,
-    LibraryRootRepository, LibraryScanAdmissionResult, LibraryScanAllAdmissionResult,
-    LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup, LibraryService,
-    LibrarySourceRepository, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
-    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent, LogLevel, MigrationOutcome,
-    NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationName, PathClass,
-    PersistenceError, PlatformClass, ProviderError, RemoveLibraryRootCommand,
-    RemoveLibraryRootResult, SafeContext, SafeContextField, SafeContextValue, SettingsService,
-    SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId,
-    StartLibraryScanAllCommand, StartLibraryScanAllResult, StartLibraryScanCommand,
-    StartupCollector, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TechnicalClass,
-    TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
-    UpdateAppearanceSettingsCommand, Version,
+    CancelJobResult, DiagnosticStage, ErrorCode, EventName, FailureRole, GameId, GameLibraryPage,
+    GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery, GetSourceEntryQuery,
+    IdentityConvergenceStore, JobDetail, JobRunId, JobSummaryPage, JobsService, LibraryRootId,
+    LibraryRootPage, LibraryRootProjection, LibraryRootRepository, LibraryScanAdmissionResult,
+    LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
+    LibraryService, LibrarySourceRepository, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
+    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
+    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent,
+    LogLevel, LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries,
+    MigrationOutcome, NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext,
+    OperationName, PathClass, PersistenceError, PlatformClass, ProviderError,
+    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
+    SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
+    SourceEntryId, SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
+    StartLibraryScanCommand, StartupCollector, SubsystemName,
+    SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, TraceEvent, TraceEventPhase, TraceId,
+    UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand, ValidatedContentDerivation,
+    Version,
 };
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
@@ -47,8 +49,9 @@ use argus_infrastructure::sqlite::{
     SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteDatabaseExecutor,
     SqliteExecutorError, SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryRootQueries,
     SqliteLibraryRootRepository, SqliteLibraryScanAdmissionContextRepository,
-    SqliteLibraryScanTargetRepository, SqliteLibrarySourceRepository, SqliteScanRunRepository,
-    SqliteSourceEntryQueries, SqliteSourceEntryRepository, SqliteUnitOfWork,
+    SqliteLibraryScanTargetRepository, SqliteLibrarySourceRepository,
+    SqliteLogicalContentRepository, SqliteScanRunRepository, SqliteSourceEntryQueries,
+    SqliteSourceEntryRepository, SqliteUnitOfWork,
 };
 
 pub mod background;
@@ -642,6 +645,46 @@ impl argus_application::SourceEntryRepository for KernelSourceEntryRepository<'_
     }
 }
 
+/// Technology-neutral transaction-scoped logical-content repository wrapper.
+pub struct KernelLogicalContentRepository<'scope, 'connection> {
+    inner: SqliteLogicalContentRepository<'scope, 'connection>,
+}
+
+impl IdentityConvergenceStore for KernelLogicalContentRepository<'_, '_> {
+    fn source_version_matches(
+        &mut self,
+        evidence: &SourceVersionEvidence,
+    ) -> Result<bool, PersistenceError> {
+        self.inner.source_version_matches(evidence)
+    }
+
+    fn converge_identity(
+        &mut self,
+        derivation: &ValidatedContentDerivation,
+    ) -> Result<argus_application::ConvergenceOutcome, PersistenceError> {
+        self.inner.converge_identity(derivation)
+    }
+}
+
+impl LogicalLibraryQueries for KernelLogicalContentRepository<'_, '_> {
+    fn list_games(&mut self, query: &ListGamesQuery) -> Result<GameLibraryPage, PersistenceError> {
+        self.inner.list_games(query)
+    }
+
+    fn get_game(&mut self, game_id: GameId) -> Result<GetGameResult, PersistenceError> {
+        self.inner.get_game(game_id)
+    }
+}
+
+impl LogicalContentRepository for KernelLogicalContentRepository<'_, '_> {
+    fn finalize_source_absence(
+        &mut self,
+        source_entry_ids: &[SourceEntryId],
+    ) -> Result<u64, PersistenceError> {
+        self.inner.finalize_source_absence(source_entry_ids)
+    }
+}
+
 /// Technology-neutral transaction-scoped admission-target repository wrapper.
 pub struct KernelLibraryScanTargetRepository<'scope, 'connection> {
     inner: SqliteLibraryScanTargetRepository<'scope, 'connection>,
@@ -826,6 +869,19 @@ impl<'connection> argus_application::UnitOfWork for KernelUnitOfWork<'connection
 
     fn rollback(self) -> Result<(), ApplicationPortError> {
         self.inner.rollback()
+    }
+}
+
+impl<'connection> LogicalContentUnitOfWork for KernelUnitOfWork<'connection> {
+    type LogicalContentRepository<'scope>
+        = KernelLogicalContentRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn logical_content(&mut self) -> Self::LogicalContentRepository<'_> {
+        KernelLogicalContentRepository {
+            inner: self.inner.logical_content(),
+        }
     }
 }
 
@@ -1024,6 +1080,45 @@ impl KernelBootstrap {
     ) -> Result<LibraryRootPage, ApplicationError> {
         self.library_service
             .list_library_roots(*query, context.clone())
+    }
+
+    /// Reads the bounded baseline logical-library page in a short transaction.
+    ///
+    /// The transaction contains only SQLite projection reads and commit
+    /// bookkeeping. Content I/O and identification are owned by the internal
+    /// identification capability and complete before convergence begins.
+    pub fn list_games_with_context(
+        &self,
+        query: &ListGamesQuery,
+        context: &OperationContext,
+    ) -> Result<GameLibraryPage, ApplicationError> {
+        let query = query.clone();
+        self.execute(context, move |mut work| {
+            let mut logical = work.logical_content();
+            let page = logical
+                .list_games(&query)
+                .map_err(ApplicationPortError::Persistence)?;
+            work.commit()?;
+            Ok(page)
+        })
+        .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads one focused durable logical-game result in a short transaction.
+    pub fn get_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+    ) -> Result<GetGameResult, ApplicationError> {
+        self.execute(context, move |mut work| {
+            let mut logical = work.logical_content();
+            let result = logical
+                .get_game(game_id)
+                .map_err(ApplicationPortError::Persistence)?;
+            work.commit()?;
+            Ok(result)
+        })
+        .map_err(|error| map_application_port_error(context.trace_id(), error))
     }
 
     /// Synchronizes current native LocalFilesystem mounts and reconciles root

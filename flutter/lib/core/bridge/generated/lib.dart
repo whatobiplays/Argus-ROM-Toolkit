@@ -8,10 +8,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `exclusion_dto`, `host_with_options`, `host`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `parse_runtime_id`, `pending_event_subscription`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
+// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `content_identity_summary_dto`, `content_presence_dto`, `content_provenance_summary_dto`, `content_summary_dto`, `content_type_dto`, `digest_hex`, `exclusion_dto`, `game_availability_state_dto`, `game_lifecycle_dto`, `game_membership_summary_dto`, `grouping_basis_dto`, `host_with_options`, `host`, `hydration_state_dto`, `identification_state_dto`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `list_games_query_from_dto`, `membership_relationship_dto`, `parse_runtime_id`, `pending_event_subscription`, `platform_id_dto`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_execution_host_stop_request`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `game_detail_dto`, `game_library_row_dto`, `game_page_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_execution_host_stop_request`, `parse_game_id`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// Maps one authoritative runtime state through the current host.
@@ -88,6 +88,17 @@ Future<LibraryRootPageDto> listLibraryRoots({
 /// Reads one authoritative configured root.
 Future<LibraryRootDto> getLibraryRoot({required String libraryRootId}) =>
     RustLib.instance.api.crateGetLibraryRoot(libraryRootId: libraryRootId);
+
+/// Lists the baseline logical-library page. Structurally valid BE-008 query
+/// concepts outside the P03-001 activation subset are rejected as
+/// `ARGUS.V1.VALIDATION.INVALID_ARGUMENT`.
+Future<GamePageDto> listGames({required ListGamesRequestDto request}) =>
+    RustLib.instance.api.crateListGames(request: request);
+
+/// Reads one focused logical game. Redirects are represented explicitly;
+/// missing canonical games use the published typed application error.
+Future<GetGameResultDto> getGame({required String gameId}) =>
+    RustLib.instance.api.crateGetGame(gameId: gameId);
 
 /// Replaces the transient native mounted-volume registry and reconciles
 /// persisted root availability. Native mount facts are ingress-only.
@@ -358,6 +369,123 @@ enum BridgeTransportError { eventStreamClosed }
 /// Typed outcome of one cancel request.
 enum CancelJobResultDto { cancellationRequested, noLongerCancellable }
 
+/// Safe current identity summary.
+class ContentIdentitySummaryDto {
+  final String schemeId;
+  final int revision;
+  final String digest;
+
+  const ContentIdentitySummaryDto({
+    required this.schemeId,
+    required this.revision,
+    required this.digest,
+  });
+
+  @override
+  int get hashCode => schemeId.hashCode ^ revision.hashCode ^ digest.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ContentIdentitySummaryDto &&
+          runtimeType == other.runtimeType &&
+          schemeId == other.schemeId &&
+          revision == other.revision &&
+          digest == other.digest;
+}
+
+/// Independent content presence state.
+enum ContentPresenceDto {
+  available,
+  partiallyUnavailable,
+  unavailable,
+  orphaned,
+}
+
+/// Safe exact proving-provenance summary. Raw locations and parser details
+/// remain private to infrastructure.
+class ContentProvenanceSummaryDto {
+  final String sourceEntryId;
+  final String associationKey;
+  final String? sourceFingerprint;
+  final String lastObservedScanId;
+
+  const ContentProvenanceSummaryDto({
+    required this.sourceEntryId,
+    required this.associationKey,
+    this.sourceFingerprint,
+    required this.lastObservedScanId,
+  });
+
+  @override
+  int get hashCode =>
+      sourceEntryId.hashCode ^
+      associationKey.hashCode ^
+      sourceFingerprint.hashCode ^
+      lastObservedScanId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ContentProvenanceSummaryDto &&
+          runtimeType == other.runtimeType &&
+          sourceEntryId == other.sourceEntryId &&
+          associationKey == other.associationKey &&
+          sourceFingerprint == other.sourceFingerprint &&
+          lastObservedScanId == other.lastObservedScanId;
+}
+
+/// Focused current logical-content detail.
+class ContentSummaryDto {
+  final String gameContentId;
+  final PlatformIdDto platformId;
+  final ContentTypeDto contentType;
+  final ContentPresenceDto presence;
+  final IdentificationStateDto identification;
+  final int sourceCount;
+  final ContentIdentitySummaryDto? identity;
+  final ContentProvenanceSummaryDto? provenance;
+
+  const ContentSummaryDto({
+    required this.gameContentId,
+    required this.platformId,
+    required this.contentType,
+    required this.presence,
+    required this.identification,
+    required this.sourceCount,
+    this.identity,
+    this.provenance,
+  });
+
+  @override
+  int get hashCode =>
+      gameContentId.hashCode ^
+      platformId.hashCode ^
+      contentType.hashCode ^
+      presence.hashCode ^
+      identification.hashCode ^
+      sourceCount.hashCode ^
+      identity.hashCode ^
+      provenance.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ContentSummaryDto &&
+          runtimeType == other.runtimeType &&
+          gameContentId == other.gameContentId &&
+          platformId == other.platformId &&
+          contentType == other.contentType &&
+          presence == other.presence &&
+          identification == other.identification &&
+          sourceCount == other.sourceCount &&
+          identity == other.identity &&
+          provenance == other.provenance;
+}
+
+/// Stable content-type vocabulary in logical-library projections.
+enum ContentTypeDto { cartridgeImage }
+
 /// Safe terminal export summary; archive bytes never cross the bridge.
 class DiagnosticsExportDto {
   final DiagnosticsExportOutcomeDto outcome;
@@ -408,6 +536,183 @@ enum ExecutionHostStopReasonDto {
   /// The foreground host stopped without a durable user cancellation.
   hostLost,
 }
+
+/// Local logical-library availability state.
+enum GameAvailabilityStateDto {
+  available,
+  partiallyUnavailable,
+  unavailable,
+  inactiveOrphan,
+}
+
+/// Focused durable logical-game detail.
+class GameDetailDto {
+  final String gameId;
+  final PlatformIdDto platformId;
+  final GameLifecycleDto lifecycle;
+  final HydrationStateDto hydrationState;
+  final String fallbackTitle;
+  final List<GameMembershipSummaryDto> memberships;
+  final List<ContentSummaryDto> content;
+  final GameAvailabilityStateDto availabilityState;
+
+  const GameDetailDto({
+    required this.gameId,
+    required this.platformId,
+    required this.lifecycle,
+    required this.hydrationState,
+    required this.fallbackTitle,
+    required this.memberships,
+    required this.content,
+    required this.availabilityState,
+  });
+
+  @override
+  int get hashCode =>
+      gameId.hashCode ^
+      platformId.hashCode ^
+      lifecycle.hashCode ^
+      hydrationState.hashCode ^
+      fallbackTitle.hashCode ^
+      memberships.hashCode ^
+      content.hashCode ^
+      availabilityState.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GameDetailDto &&
+          runtimeType == other.runtimeType &&
+          gameId == other.gameId &&
+          platformId == other.platformId &&
+          lifecycle == other.lifecycle &&
+          hydrationState == other.hydrationState &&
+          fallbackTitle == other.fallbackTitle &&
+          memberships == other.memberships &&
+          content == other.content &&
+          availabilityState == other.availabilityState;
+}
+
+/// Bounded logical-library list row.
+class GameLibraryRowDto {
+  final String gameId;
+  final String displayTitle;
+  final PlatformIdDto platformId;
+  final HydrationStateDto hydrationState;
+  final int contentCount;
+  final int sourceCount;
+  final GameAvailabilityStateDto availabilityState;
+  final PlatformInt64 updatedAtMs;
+
+  const GameLibraryRowDto({
+    required this.gameId,
+    required this.displayTitle,
+    required this.platformId,
+    required this.hydrationState,
+    required this.contentCount,
+    required this.sourceCount,
+    required this.availabilityState,
+    required this.updatedAtMs,
+  });
+
+  @override
+  int get hashCode =>
+      gameId.hashCode ^
+      displayTitle.hashCode ^
+      platformId.hashCode ^
+      hydrationState.hashCode ^
+      contentCount.hashCode ^
+      sourceCount.hashCode ^
+      availabilityState.hashCode ^
+      updatedAtMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GameLibraryRowDto &&
+          runtimeType == other.runtimeType &&
+          gameId == other.gameId &&
+          displayTitle == other.displayTitle &&
+          platformId == other.platformId &&
+          hydrationState == other.hydrationState &&
+          contentCount == other.contentCount &&
+          sourceCount == other.sourceCount &&
+          availabilityState == other.availabilityState &&
+          updatedAtMs == other.updatedAtMs;
+}
+
+/// Durable game lifecycle state.
+enum GameLifecycleDto { active, inactiveOrphan, redirected }
+
+/// Focused current membership detail.
+class GameMembershipSummaryDto {
+  final String gameContentId;
+  final MembershipRelationshipDto relationship;
+  final GroupingBasisDto groupingBasis;
+  final int groupingRevision;
+
+  const GameMembershipSummaryDto({
+    required this.gameContentId,
+    required this.relationship,
+    required this.groupingBasis,
+    required this.groupingRevision,
+  });
+
+  @override
+  int get hashCode =>
+      gameContentId.hashCode ^
+      relationship.hashCode ^
+      groupingBasis.hashCode ^
+      groupingRevision.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GameMembershipSummaryDto &&
+          runtimeType == other.runtimeType &&
+          gameContentId == other.gameContentId &&
+          relationship == other.relationship &&
+          groupingBasis == other.groupingBasis &&
+          groupingRevision == other.groupingRevision;
+}
+
+/// Bounded logical-library page with an opaque continuation cursor.
+class GamePageDto {
+  final List<GameLibraryRowDto> items;
+  final String? nextCursor;
+
+  const GamePageDto({required this.items, this.nextCursor});
+
+  @override
+  int get hashCode => items.hashCode ^ nextCursor.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GamePageDto &&
+          runtimeType == other.runtimeType &&
+          items == other.items &&
+          nextCursor == other.nextCursor;
+}
+
+@freezed
+sealed class GetGameResultDto with _$GetGameResultDto {
+  const GetGameResultDto._();
+
+  const factory GetGameResultDto.found(GameDetailDto field0) =
+      GetGameResultDto_Found;
+  const factory GetGameResultDto.redirected({required String canonicalGameId}) =
+      GetGameResultDto_Redirected;
+}
+
+/// Grouping evidence basis for one durable membership.
+enum GroupingBasisDto { exactContentIdentity, provisional }
+
+/// Local logical-library hydration state.
+enum HydrationStateDto { hydrated, partiallyHydrated, unmatched, refreshing }
+
+/// Independent content identification state.
+enum IdentificationStateDto { identified, needsReidentification, unidentified }
 
 /// Backend-authoritative control availability.
 class JobControlAvailabilityDto {
@@ -611,6 +916,55 @@ class JobSummaryPageDto {
           items == other.items &&
           totalCount == other.totalCount &&
           nextOffset == other.nextOffset;
+}
+
+/// Closed logical-library availability filter vocabulary.
+enum LibraryAvailabilityStateDto {
+  available,
+  partiallyUnavailable,
+  unavailable,
+  inactiveOrphan,
+}
+
+/// Structurally valid BE-008 library filters. P03-001 accepts only empty
+/// filters; non-empty values are rejected as INVALID_ARGUMENT.
+class LibraryFilterDto {
+  final List<String> platformIds;
+  final List<String> regions;
+  final List<LibraryHydrationStateDto> hydrationStates;
+  final List<LibraryAvailabilityStateDto> availabilityStates;
+
+  const LibraryFilterDto({
+    required this.platformIds,
+    required this.regions,
+    required this.hydrationStates,
+    required this.availabilityStates,
+  });
+
+  @override
+  int get hashCode =>
+      platformIds.hashCode ^
+      regions.hashCode ^
+      hydrationStates.hashCode ^
+      availabilityStates.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryFilterDto &&
+          runtimeType == other.runtimeType &&
+          platformIds == other.platformIds &&
+          regions == other.regions &&
+          hydrationStates == other.hydrationStates &&
+          availabilityStates == other.availabilityStates;
+}
+
+/// Closed logical-library hydration filter vocabulary.
+enum LibraryHydrationStateDto {
+  hydrated,
+  partiallyHydrated,
+  unmatched,
+  refreshing,
 }
 
 /// Bounded active scan-ownership summary carried by a root projection.
@@ -922,6 +1276,85 @@ class LibraryScanRootSummaryDto {
           safeLocationDisplay == other.safeLocationDisplay;
 }
 
+@freezed
+sealed class LibraryScopeDto with _$LibraryScopeDto {
+  const LibraryScopeDto._();
+
+  const factory LibraryScopeDto.all() = LibraryScopeDto_All;
+  const factory LibraryScopeDto.platform({required String platformId}) =
+      LibraryScopeDto_Platform;
+  const factory LibraryScopeDto.source({required String sourceId}) =
+      LibraryScopeDto_Source;
+  const factory LibraryScopeDto.libraryRoot({required String libraryRootId}) =
+      LibraryScopeDto_LibraryRoot;
+}
+
+/// Closed logical-library sort direction vocabulary.
+enum LibrarySortDirectionDto { ascending, descending }
+
+/// Structurally valid BE-008 sort request.
+class LibrarySortDto {
+  final LibrarySortFieldDto field;
+  final LibrarySortDirectionDto direction;
+
+  const LibrarySortDto({required this.field, required this.direction});
+
+  @override
+  int get hashCode => field.hashCode ^ direction.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibrarySortDto &&
+          runtimeType == other.runtimeType &&
+          field == other.field &&
+          direction == other.direction;
+}
+
+/// Closed logical-library sort field vocabulary.
+enum LibrarySortFieldDto { displayTitle, platform, releaseDate, updatedAt }
+
+/// Baseline logical-library request. The bridge validates this full query
+/// shape and activates only All/empty/default/opaque-cursor paging.
+class ListGamesRequestDto {
+  final LibraryScopeDto scope;
+  final String? searchText;
+  final LibraryFilterDto filters;
+  final LibrarySortDto sort;
+  final String? cursor;
+  final int pageSize;
+
+  const ListGamesRequestDto({
+    required this.scope,
+    this.searchText,
+    required this.filters,
+    required this.sort,
+    this.cursor,
+    required this.pageSize,
+  });
+
+  @override
+  int get hashCode =>
+      scope.hashCode ^
+      searchText.hashCode ^
+      filters.hashCode ^
+      sort.hashCode ^
+      cursor.hashCode ^
+      pageSize.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ListGamesRequestDto &&
+          runtimeType == other.runtimeType &&
+          scope == other.scope &&
+          searchText == other.searchText &&
+          filters == other.filters &&
+          sort == other.sort &&
+          cursor == other.cursor &&
+          pageSize == other.pageSize;
+}
+
 /// One bounded Jobs list request.
 class ListJobsRequestDto {
   final ListJobsScopeDto scope;
@@ -1151,6 +1584,9 @@ sealed class LocalFilesystemRootSelectionDto
   }) = LocalFilesystemRootSelectionDto_ProviderSelection;
 }
 
+/// Membership role in a durable game aggregate.
+enum MembershipRelationshipDto { primary, secondary }
+
 /// One native mounted-volume fact supplied only to the synchronization ingress.
 class MountedLocalFilesystemVolumeDto {
   final String providerVolumeId;
@@ -1216,6 +1652,9 @@ class OperationHandleDto {
           jobRunId == other.jobRunId &&
           operationType == other.operationType;
 }
+
+/// Stable platform vocabulary in logical-library projections.
+enum PlatformIdDto { nintendoGb, nintendoGbc, nintendoGba }
 
 /// One declarative failed-startup action.
 class RecoveryActionDto {

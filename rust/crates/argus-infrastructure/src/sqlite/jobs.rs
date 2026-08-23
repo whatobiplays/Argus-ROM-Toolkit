@@ -26,6 +26,7 @@ use super::appearance::map_executor_error;
 use super::connection::SqliteConnection;
 use super::errors::SqliteOperationError;
 use super::executor::SqliteDatabaseExecutor;
+use super::logical::finalize_sources;
 use super::unit_of_work::SqliteUnitOfWork;
 
 type RootLastScanRaw = (
@@ -420,6 +421,10 @@ impl<'scope, 'connection> SqliteSourceEntryRepository<'scope, 'connection> {
     pub(crate) fn new(work: &'scope mut SqliteUnitOfWork<'connection>) -> Self {
         Self { work }
     }
+
+    fn parse_source_ids(raw: Vec<String>) -> Result<Vec<SourceEntryId>, PersistenceError> {
+        raw.into_iter().map(parse_source_entry_id).collect()
+    }
 }
 
 impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
@@ -612,6 +617,37 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
         library_root_id: LibraryRootId,
         source_entry_id: SourceEntryId,
     ) -> Result<bool, PersistenceError> {
+        let raw_ids: Vec<String> = {
+            let mut statement = self
+                .work
+                .transaction_mut()?
+                .prepare(
+                    "WITH RECURSIVE subtree(source_entry_id) AS (
+                         SELECT source_entry_id FROM source_entry
+                         WHERE source_entry_id = ?2 AND library_root_id = ?1
+                         UNION ALL
+                         SELECT child.source_entry_id
+                         FROM source_entry child
+                         JOIN subtree ON child.parent_source_entry_id = subtree.source_entry_id
+                         WHERE child.library_root_id = ?1
+                     )
+                     SELECT source_entry_id FROM subtree",
+                )
+                .map_err(map_persistence_operation_error)?;
+            let rows = statement
+                .query_map(
+                    rusqlite::params![library_root_id.to_string(), source_entry_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(map_persistence_operation_error)?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(map_persistence_operation_error)?
+        };
+        let ids = Self::parse_source_ids(raw_ids)?;
+        if ids.is_empty() {
+            return Ok(false);
+        }
+        finalize_sources(self.work, &ids)?;
         let changed = self
             .work
             .transaction_mut()?
@@ -640,6 +676,46 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
         parent_source_entry_id: Option<SourceEntryId>,
         observed_scan_id: ScanRunId,
     ) -> Result<u64, PersistenceError> {
+        let raw_ids: Vec<String> = {
+            let mut statement = self
+                .work
+                .transaction_mut()?
+                .prepare(
+                    "WITH RECURSIVE absent_root(source_entry_id) AS (
+                         SELECT source_entry_id FROM source_entry
+                         WHERE library_root_id = ?1
+                           AND parent_source_entry_id IS ?2
+                           AND last_observed_scan_id != ?3
+                     ),
+                     subtree(source_entry_id) AS (
+                         SELECT source_entry_id FROM absent_root
+                         UNION ALL
+                         SELECT child.source_entry_id
+                         FROM source_entry child
+                         JOIN subtree ON child.parent_source_entry_id = subtree.source_entry_id
+                         WHERE child.library_root_id = ?1
+                     )
+                     SELECT source_entry_id FROM subtree",
+                )
+                .map_err(map_persistence_operation_error)?;
+            let rows = statement
+                .query_map(
+                    rusqlite::params![
+                        library_root_id.to_string(),
+                        parent_source_entry_id.map(|id| id.to_string()),
+                        observed_scan_id.to_string(),
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(map_persistence_operation_error)?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(map_persistence_operation_error)?
+        };
+        let ids = Self::parse_source_ids(raw_ids)?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        finalize_sources(self.work, &ids)?;
         let changed = self
             .work
             .transaction_mut()?
@@ -672,6 +748,20 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
     }
 
     fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError> {
+        let raw_ids: Vec<String> = {
+            let mut statement = self
+                .work
+                .transaction_mut()?
+                .prepare("SELECT source_entry_id FROM source_entry WHERE library_root_id = ?1")
+                .map_err(map_persistence_operation_error)?;
+            let rows = statement
+                .query_map([library_root_id.to_string()], |row| row.get(0))
+                .map_err(map_persistence_operation_error)?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(map_persistence_operation_error)?
+        };
+        let ids = Self::parse_source_ids(raw_ids)?;
+        finalize_sources(self.work, &ids)?;
         self.work
             .transaction_mut()?
             .execute(

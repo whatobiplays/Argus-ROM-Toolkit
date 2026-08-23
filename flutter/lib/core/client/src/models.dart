@@ -991,6 +991,330 @@ final class LibraryRootPage {
   final int totalCount;
 }
 
+/// Opaque identity for one durable logical game.
+final class GameId {
+  const GameId(this.value);
+
+  final String value;
+
+  static GameId? tryParse(String value) {
+    final id = GameId(value);
+    return id.isValid ? id : null;
+  }
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) => other is GameId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+/// Opaque identity for one durable logical content unit.
+final class ContentId {
+  const ContentId(this.value);
+
+  final String value;
+
+  static ContentId? tryParse(String value) {
+    final id = ContentId(value);
+    return id.isValid ? id : null;
+  }
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) => other is ContentId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+/// Production platform identity used by logical-library projections.
+enum PlatformId {
+  nintendoGb,
+  nintendoGbc,
+  nintendoGba;
+
+  static PlatformId fromWire(String value) => switch (value) {
+    'nintendo_gb' => PlatformId.nintendoGb,
+    'nintendo_gbc' => PlatformId.nintendoGbc,
+    'nintendo_gba' => PlatformId.nintendoGba,
+    _ => throw const TransportFailure(
+      'Unknown logical-library platform',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Content representation exposed by the focused logical-library read.
+enum ContentType { cartridgeImage }
+
+/// Content availability/presence, independent from identification proof.
+enum ContentPresence { available, partiallyUnavailable, unavailable, orphaned }
+
+/// Current identity-proof state, independent from content availability.
+enum IdentificationState { identified, needsReidentification, unidentified }
+
+/// Durable logical-game lifecycle.
+enum GameLifecycle { active, inactiveOrphan, redirected }
+
+/// Local fallback hydration state.
+enum HydrationState { hydrated, partiallyHydrated, unmatched, refreshing }
+
+/// Local fallback availability state.
+enum AvailabilityState {
+  available,
+  partiallyUnavailable,
+  unavailable,
+  inactiveOrphan,
+}
+
+/// Current game membership role.
+enum MembershipRelationship { primary, secondary }
+
+/// Current grouping evidence basis.
+enum GroupingBasis { exactContentIdentity, provisional }
+
+/// Safe current identity proof summary.
+final class ContentIdentitySummary {
+  const ContentIdentitySummary({
+    required this.schemeId,
+    required this.revision,
+    required this.digest,
+  });
+
+  final String schemeId;
+  final int revision;
+  final String digest;
+}
+
+/// Safe exact proving provenance summary. Raw paths and locators are absent.
+final class ContentProvenanceSummary {
+  const ContentProvenanceSummary({
+    required this.sourceEntryId,
+    required this.associationKey,
+    required this.sourceFingerprint,
+    required this.lastObservedScanId,
+  });
+
+  final SourceEntryId sourceEntryId;
+  final String associationKey;
+  final String? sourceFingerprint;
+  final String lastObservedScanId;
+}
+
+/// Focused durable logical-content summary.
+final class ContentSummary {
+  const ContentSummary({
+    required this.gameContentId,
+    required this.platformId,
+    required this.contentType,
+    required this.presence,
+    required this.identification,
+    required this.sourceCount,
+    required this.identity,
+    required this.provenance,
+  });
+
+  final ContentId gameContentId;
+  final PlatformId platformId;
+  final ContentType contentType;
+  final ContentPresence presence;
+  final IdentificationState identification;
+  final int sourceCount;
+  final ContentIdentitySummary? identity;
+  final ContentProvenanceSummary? provenance;
+}
+
+/// Focused durable membership summary.
+final class GameMembershipSummary {
+  const GameMembershipSummary({
+    required this.gameContentId,
+    required this.relationship,
+    required this.groupingBasis,
+    required this.groupingRevision,
+  });
+
+  final ContentId gameContentId;
+  final MembershipRelationship relationship;
+  final GroupingBasis groupingBasis;
+  final int groupingRevision;
+}
+
+/// Bounded logical-library list row.
+final class GameLibraryRow {
+  const GameLibraryRow({
+    required this.gameId,
+    required this.displayTitle,
+    required this.platformId,
+    required this.hydrationState,
+    required this.contentCount,
+    required this.sourceCount,
+    required this.availabilityState,
+    required this.updatedAtMs,
+  });
+
+  final GameId gameId;
+  final String displayTitle;
+  final PlatformId platformId;
+  final HydrationState hydrationState;
+  final int contentCount;
+  final int sourceCount;
+  final AvailabilityState availabilityState;
+  final int updatedAtMs;
+}
+
+/// Bounded logical-library page with an opaque continuation cursor.
+final class GamePage {
+  const GamePage({required this.items, this.nextCursor});
+
+  final List<GameLibraryRow> items;
+  final String? nextCursor;
+}
+
+/// Focused durable logical-game detail.
+final class GameDetail {
+  const GameDetail({
+    required this.gameId,
+    required this.platformId,
+    required this.lifecycle,
+    required this.hydrationState,
+    required this.fallbackTitle,
+    required this.memberships,
+    required this.content,
+    required this.availabilityState,
+  });
+
+  final GameId gameId;
+  final PlatformId platformId;
+  final GameLifecycle lifecycle;
+  final HydrationState hydrationState;
+  final String fallbackTitle;
+  final List<GameMembershipSummary> memberships;
+  final List<ContentSummary> content;
+  final AvailabilityState availabilityState;
+}
+
+/// Focused logical-game lookup result.
+sealed class GetGameResult {
+  const GetGameResult();
+}
+
+final class GetGameFound extends GetGameResult {
+  const GetGameFound(this.detail);
+
+  final GameDetail detail;
+}
+
+final class GetGameRedirected extends GetGameResult {
+  const GetGameRedirected(this.canonicalGameId);
+
+  final GameId canonicalGameId;
+}
+
+/// Closed BE-008 logical-library scope vocabulary.
+sealed class LibraryScope {
+  const LibraryScope._();
+
+  const factory LibraryScope.all() = LibraryScopeAll;
+  const factory LibraryScope.platform(String platformId) = LibraryScopePlatform;
+  const factory LibraryScope.source(String sourceId) = LibraryScopeSource;
+  const factory LibraryScope.libraryRoot(String libraryRootId) =
+      LibraryScopeLibraryRoot;
+}
+
+final class LibraryScopeAll extends LibraryScope {
+  const LibraryScopeAll() : super._();
+}
+
+final class LibraryScopePlatform extends LibraryScope {
+  const LibraryScopePlatform(this.platformId) : super._();
+
+  final String platformId;
+}
+
+final class LibraryScopeSource extends LibraryScope {
+  const LibraryScopeSource(this.sourceId) : super._();
+
+  final String sourceId;
+}
+
+final class LibraryScopeLibraryRoot extends LibraryScope {
+  const LibraryScopeLibraryRoot(this.libraryRootId) : super._();
+
+  final String libraryRootId;
+}
+
+/// Closed BE-008 sort-field vocabulary.
+enum LibrarySortField { displayTitle, platform, releaseDate, updatedAt }
+
+/// Closed BE-008 sort-direction vocabulary.
+enum LibrarySortDirection { ascending, descending }
+
+/// Structurally valid BE-008 filter shape.
+final class LibraryFilter {
+  const LibraryFilter({
+    this.platformIds = const [],
+    this.regions = const [],
+    this.hydrationStates = const [],
+    this.availabilityStates = const [],
+  });
+
+  final List<String> platformIds;
+  final List<String> regions;
+  final List<HydrationState> hydrationStates;
+  final List<AvailabilityState> availabilityStates;
+
+  bool get isEmpty =>
+      platformIds.isEmpty &&
+      regions.isEmpty &&
+      hydrationStates.isEmpty &&
+      availabilityStates.isEmpty;
+}
+
+/// Structurally valid BE-008 sort shape.
+final class LibrarySort {
+  const LibrarySort({
+    this.field = LibrarySortField.displayTitle,
+    this.direction = LibrarySortDirection.ascending,
+  });
+
+  final LibrarySortField field;
+  final LibrarySortDirection direction;
+}
+
+/// Full logical-library query shape. P03-001 activates only its baseline
+/// values; unsupported values are rejected by the native bridge.
+final class ListGamesRequest {
+  const ListGamesRequest({
+    this.scope = const LibraryScopeAll(),
+    this.searchText,
+    this.filters = const LibraryFilter(),
+    this.sort = const LibrarySort(),
+    this.cursor,
+    this.pageSize = 50,
+  });
+
+  final LibraryScope scope;
+  final String? searchText;
+  final LibraryFilter filters;
+  final LibrarySort sort;
+  final String? cursor;
+  final int pageSize;
+}
+
 /// Safe authoritative row projection for one source entry.
 @freezed
 sealed class SourceEntry with _$SourceEntry {

@@ -48,6 +48,39 @@ fn direct_enumeration_classifies_files_and_directories_explicitly() {
 }
 
 #[test]
+fn bounded_entry_bytes_never_returns_more_than_the_requested_limit() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let root = directory.path().join("Library");
+    fs::create_dir_all(root.join("nested")).expect("root");
+    fs::write(root.join("rom.bin"), b"0123456789").expect("file");
+
+    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
+        root.to_string_lossy().into_owned(),
+    ));
+    let resolved = access.resolve_root().expect("resolve");
+    let locator = RelativeSourceLocator::from_provider("rom.bin".to_owned());
+
+    assert_eq!(
+        access.read_entry_bytes(&resolved, &locator, 4),
+        Err(SourceAccessError::UnsupportedOperation)
+    );
+    assert_eq!(
+        access
+            .read_entry_bytes(&resolved, &locator, 10)
+            .expect("bounded bytes"),
+        b"0123456789"
+    );
+    assert_eq!(
+        access.read_entry_bytes(
+            &resolved,
+            &RelativeSourceLocator::from_provider("../rom.bin".to_owned()),
+            10,
+        ),
+        Err(SourceAccessError::InvalidLocator)
+    );
+}
+
+#[test]
 fn cancellation_mid_enumeration_is_honored_after_partial_progress() {
     let directory = tempfile::tempdir().expect("tempdir");
     let root = directory.path().join("Library");

@@ -61,8 +61,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ContentIdentitySummaryDto dco_decode_box_autoadd_content_identity_summary_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ContentProvenanceSummaryDto
+  dco_decode_box_autoadd_content_provenance_summary_dto(dynamic raw);
+
+  @protected
   DiagnosticsExportRequestDto
   dco_decode_box_autoadd_diagnostics_export_request_dto(dynamic raw);
+
+  @protected
+  GameDetailDto dco_decode_box_autoadd_game_detail_dto(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
@@ -90,6 +102,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryScanJobDetailDto dco_decode_box_autoadd_library_scan_job_detail_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ListGamesRequestDto dco_decode_box_autoadd_list_games_request_dto(
     dynamic raw,
   );
 
@@ -158,6 +175,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CancelJobResultDto dco_decode_cancel_job_result_dto(dynamic raw);
 
   @protected
+  ContentIdentitySummaryDto dco_decode_content_identity_summary_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ContentPresenceDto dco_decode_content_presence_dto(dynamic raw);
+
+  @protected
+  ContentProvenanceSummaryDto dco_decode_content_provenance_summary_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ContentSummaryDto dco_decode_content_summary_dto(dynamic raw);
+
+  @protected
+  ContentTypeDto dco_decode_content_type_dto(dynamic raw);
+
+  @protected
   DiagnosticsExportDto dco_decode_diagnostics_export_dto(dynamic raw);
 
   @protected
@@ -176,10 +212,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  GameAvailabilityStateDto dco_decode_game_availability_state_dto(dynamic raw);
+
+  @protected
+  GameDetailDto dco_decode_game_detail_dto(dynamic raw);
+
+  @protected
+  GameLibraryRowDto dco_decode_game_library_row_dto(dynamic raw);
+
+  @protected
+  GameLifecycleDto dco_decode_game_lifecycle_dto(dynamic raw);
+
+  @protected
+  GameMembershipSummaryDto dco_decode_game_membership_summary_dto(dynamic raw);
+
+  @protected
+  GamePageDto dco_decode_game_page_dto(dynamic raw);
+
+  @protected
+  GetGameResultDto dco_decode_get_game_result_dto(dynamic raw);
+
+  @protected
+  GroupingBasisDto dco_decode_grouping_basis_dto(dynamic raw);
+
+  @protected
+  HydrationStateDto dco_decode_hydration_state_dto(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  IdentificationStateDto dco_decode_identification_state_dto(dynamic raw);
 
   @protected
   JobControlAvailabilityDto dco_decode_job_control_availability_dto(
@@ -200,6 +266,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   JobSummaryPageDto dco_decode_job_summary_page_dto(dynamic raw);
+
+  @protected
+  LibraryAvailabilityStateDto dco_decode_library_availability_state_dto(
+    dynamic raw,
+  );
+
+  @protected
+  LibraryFilterDto dco_decode_library_filter_dto(dynamic raw);
+
+  @protected
+  LibraryHydrationStateDto dco_decode_library_hydration_state_dto(dynamic raw);
 
   @protected
   LibraryRootActiveScanDto dco_decode_library_root_active_scan_dto(dynamic raw);
@@ -248,7 +325,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryScopeDto dco_decode_library_scope_dto(dynamic raw);
+
+  @protected
+  LibrarySortDirectionDto dco_decode_library_sort_direction_dto(dynamic raw);
+
+  @protected
+  LibrarySortDto dco_decode_library_sort_dto(dynamic raw);
+
+  @protected
+  LibrarySortFieldDto dco_decode_library_sort_field_dto(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<ContentSummaryDto> dco_decode_list_content_summary_dto(dynamic raw);
+
+  @protected
+  List<GameLibraryRowDto> dco_decode_list_game_library_row_dto(dynamic raw);
+
+  @protected
+  List<GameMembershipSummaryDto> dco_decode_list_game_membership_summary_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ListGamesRequestDto dco_decode_list_games_request_dto(dynamic raw);
 
   @protected
   List<JobSummaryDto> dco_decode_list_job_summary_dto(dynamic raw);
@@ -258,6 +361,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ListJobsScopeDto dco_decode_list_jobs_scope_dto(dynamic raw);
+
+  @protected
+  List<LibraryAvailabilityStateDto>
+  dco_decode_list_library_availability_state_dto(dynamic raw);
+
+  @protected
+  List<LibraryHydrationStateDto> dco_decode_list_library_hydration_state_dto(
+    dynamic raw,
+  );
 
   @protected
   List<LibraryRootDto> dco_decode_list_library_root_dto(dynamic raw);
@@ -338,6 +450,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_local_filesystem_root_selection_dto(dynamic raw);
 
   @protected
+  MembershipRelationshipDto dco_decode_membership_relationship_dto(dynamic raw);
+
+  @protected
   MountedLocalFilesystemVolumeDto
   dco_decode_mounted_local_filesystem_volume_dto(dynamic raw);
 
@@ -358,6 +473,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BoundedTerminalFailureDto?
   dco_decode_opt_box_autoadd_bounded_terminal_failure_dto(dynamic raw);
+
+  @protected
+  ContentIdentitySummaryDto?
+  dco_decode_opt_box_autoadd_content_identity_summary_dto(dynamic raw);
+
+  @protected
+  ContentProvenanceSummaryDto?
+  dco_decode_opt_box_autoadd_content_provenance_summary_dto(dynamic raw);
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
@@ -390,6 +513,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  PlatformIdDto dco_decode_platform_id_dto(dynamic raw);
 
   @protected
   RecoveryActionDto dco_decode_recovery_action_dto(dynamic raw);
@@ -558,8 +684,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ContentIdentitySummaryDto sse_decode_box_autoadd_content_identity_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ContentProvenanceSummaryDto
+  sse_decode_box_autoadd_content_provenance_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DiagnosticsExportRequestDto
   sse_decode_box_autoadd_diagnostics_export_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  GameDetailDto sse_decode_box_autoadd_game_detail_dto(
     SseDeserializer deserializer,
   );
 
@@ -595,6 +737,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryScanJobDetailDto sse_decode_box_autoadd_library_scan_job_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListGamesRequestDto sse_decode_box_autoadd_list_games_request_dto(
     SseDeserializer deserializer,
   );
 
@@ -689,6 +836,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ContentIdentitySummaryDto sse_decode_content_identity_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ContentPresenceDto sse_decode_content_presence_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ContentProvenanceSummaryDto sse_decode_content_provenance_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ContentSummaryDto sse_decode_content_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ContentTypeDto sse_decode_content_type_dto(SseDeserializer deserializer);
+
+  @protected
   DiagnosticsExportDto sse_decode_diagnostics_export_dto(
     SseDeserializer deserializer,
   );
@@ -709,10 +879,50 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  GameAvailabilityStateDto sse_decode_game_availability_state_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  GameDetailDto sse_decode_game_detail_dto(SseDeserializer deserializer);
+
+  @protected
+  GameLibraryRowDto sse_decode_game_library_row_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  GameLifecycleDto sse_decode_game_lifecycle_dto(SseDeserializer deserializer);
+
+  @protected
+  GameMembershipSummaryDto sse_decode_game_membership_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  GamePageDto sse_decode_game_page_dto(SseDeserializer deserializer);
+
+  @protected
+  GetGameResultDto sse_decode_get_game_result_dto(SseDeserializer deserializer);
+
+  @protected
+  GroupingBasisDto sse_decode_grouping_basis_dto(SseDeserializer deserializer);
+
+  @protected
+  HydrationStateDto sse_decode_hydration_state_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  IdentificationStateDto sse_decode_identification_state_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   JobControlAvailabilityDto sse_decode_job_control_availability_dto(
@@ -733,6 +943,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   JobSummaryPageDto sse_decode_job_summary_page_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryAvailabilityStateDto sse_decode_library_availability_state_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryFilterDto sse_decode_library_filter_dto(SseDeserializer deserializer);
+
+  @protected
+  LibraryHydrationStateDto sse_decode_library_hydration_state_dto(
     SseDeserializer deserializer,
   );
 
@@ -797,7 +1020,43 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryScopeDto sse_decode_library_scope_dto(SseDeserializer deserializer);
+
+  @protected
+  LibrarySortDirectionDto sse_decode_library_sort_direction_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibrarySortDto sse_decode_library_sort_dto(SseDeserializer deserializer);
+
+  @protected
+  LibrarySortFieldDto sse_decode_library_sort_field_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<ContentSummaryDto> sse_decode_list_content_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<GameLibraryRowDto> sse_decode_list_game_library_row_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<GameMembershipSummaryDto> sse_decode_list_game_membership_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ListGamesRequestDto sse_decode_list_games_request_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<JobSummaryDto> sse_decode_list_job_summary_dto(
@@ -811,6 +1070,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ListJobsScopeDto sse_decode_list_jobs_scope_dto(SseDeserializer deserializer);
+
+  @protected
+  List<LibraryAvailabilityStateDto>
+  sse_decode_list_library_availability_state_dto(SseDeserializer deserializer);
+
+  @protected
+  List<LibraryHydrationStateDto> sse_decode_list_library_hydration_state_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<LibraryRootDto> sse_decode_list_library_root_dto(
@@ -917,6 +1185,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer);
 
   @protected
+  MembershipRelationshipDto sse_decode_membership_relationship_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MountedLocalFilesystemVolumeDto
   sse_decode_mounted_local_filesystem_volume_dto(SseDeserializer deserializer);
 
@@ -941,6 +1214,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   BoundedTerminalFailureDto?
   sse_decode_opt_box_autoadd_bounded_terminal_failure_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ContentIdentitySummaryDto?
+  sse_decode_opt_box_autoadd_content_identity_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ContentProvenanceSummaryDto?
+  sse_decode_opt_box_autoadd_content_provenance_summary_dto(
     SseDeserializer deserializer,
   );
 
@@ -979,6 +1264,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  PlatformIdDto sse_decode_platform_id_dto(SseDeserializer deserializer);
 
   @protected
   RecoveryActionDto sse_decode_recovery_action_dto(
@@ -1187,8 +1475,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_content_identity_summary_dto(
+    ContentIdentitySummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_content_provenance_summary_dto(
+    ContentProvenanceSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_diagnostics_export_request_dto(
     DiagnosticsExportRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_game_detail_dto(
+    GameDetailDto self,
     SseSerializer serializer,
   );
 
@@ -1231,6 +1537,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_library_scan_job_detail_dto(
     LibraryScanJobDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_list_games_request_dto(
+    ListGamesRequestDto self,
     SseSerializer serializer,
   );
 
@@ -1332,6 +1644,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_content_identity_summary_dto(
+    ContentIdentitySummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_content_presence_dto(
+    ContentPresenceDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_content_provenance_summary_dto(
+    ContentProvenanceSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_content_summary_dto(
+    ContentSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_content_type_dto(
+    ContentTypeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_diagnostics_export_dto(
     DiagnosticsExportDto self,
     SseSerializer serializer,
@@ -1356,10 +1698,64 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_game_availability_state_dto(
+    GameAvailabilityStateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_game_detail_dto(GameDetailDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_game_library_row_dto(
+    GameLibraryRowDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_game_lifecycle_dto(
+    GameLifecycleDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_game_membership_summary_dto(
+    GameMembershipSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_game_page_dto(GamePageDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_get_game_result_dto(
+    GetGameResultDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_grouping_basis_dto(
+    GroupingBasisDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_hydration_state_dto(
+    HydrationStateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_identification_state_dto(
+    IdentificationStateDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_job_control_availability_dto(
@@ -1385,6 +1781,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_job_summary_page_dto(
     JobSummaryPageDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_availability_state_dto(
+    LibraryAvailabilityStateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_filter_dto(
+    LibraryFilterDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_hydration_state_dto(
+    LibraryHydrationStateDto self,
     SseSerializer serializer,
   );
 
@@ -1461,7 +1875,55 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_library_scope_dto(
+    LibraryScopeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_sort_direction_dto(
+    LibrarySortDirectionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_sort_dto(
+    LibrarySortDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_sort_field_dto(
+    LibrarySortFieldDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_content_summary_dto(
+    List<ContentSummaryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_game_library_row_dto(
+    List<GameLibraryRowDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_game_membership_summary_dto(
+    List<GameMembershipSummaryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_games_request_dto(
+    ListGamesRequestDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_job_summary_dto(
@@ -1478,6 +1940,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_jobs_scope_dto(
     ListJobsScopeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_library_availability_state_dto(
+    List<LibraryAvailabilityStateDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_library_hydration_state_dto(
+    List<LibraryHydrationStateDto> self,
     SseSerializer serializer,
   );
 
@@ -1602,6 +2076,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_membership_relationship_dto(
+    MembershipRelationshipDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_mounted_local_filesystem_volume_dto(
     MountedLocalFilesystemVolumeDto self,
     SseSerializer serializer,
@@ -1631,6 +2111,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_bounded_terminal_failure_dto(
     BoundedTerminalFailureDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_content_identity_summary_dto(
+    ContentIdentitySummaryDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_content_provenance_summary_dto(
+    ContentProvenanceSummaryDto? self,
     SseSerializer serializer,
   );
 
@@ -1675,6 +2167,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_platform_id_dto(PlatformIdDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_recovery_action_dto(

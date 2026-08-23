@@ -16,10 +16,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use argus_application::{
     AddLocalLibraryRootAndScanCommand, AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult,
     AdmittedLibraryScanJob, AdmittedScan, AppearanceSettingsSubscriber, ApplicationError,
-    CancelJobResult, ErrorCode, EventSubscriberError, JobDetail, JobProgressChanged, JobRunId,
-    JobRunRepository, JobRunState, JobStateChanged, JobSummaryPage, LibraryRootId, LibraryRootPage,
-    LibraryRootProjection, LibraryScanAdmissionResult, LibraryScanAllRequestIdentity,
-    LibraryScanChildAdmission, LibraryScanChildCompletion, LibraryScanExecutionPlan, ListJobsQuery,
+    CancelJobResult, ErrorCode, EventSubscriberError, GameId, GameLibraryPage, GetGameResult,
+    JobDetail, JobProgressChanged, JobRunId, JobRunRepository, JobRunState, JobStateChanged,
+    JobSummaryPage, LibraryRootId, LibraryRootPage, LibraryRootProjection,
+    LibraryScanAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanChildAdmission,
+    LibraryScanChildCompletion, LibraryScanExecutionPlan, ListGamesQuery, ListJobsQuery,
     ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor,
     LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot,
     LocalFilesystemRootSelection, OperationCompletion, OperationContext, OperationName,
@@ -1778,6 +1779,59 @@ impl ApplicationHost {
         }
         self.with_ready_kernel(context, |kernel| {
             kernel.list_library_roots_with_context(query, context)
+        })
+    }
+
+    /// Executes the bounded baseline logical-library list through the ready
+    /// generation.
+    pub fn list_games(&self, query: ListGamesQuery) -> Result<GameLibraryPage, ApplicationError> {
+        let (context, _guard) = self.begin_operation("library", "list_games")?;
+        self.list_games_with_context(query, &context)
+    }
+
+    /// Executes the baseline logical-library list under an existing context.
+    pub fn list_games_with_context(
+        &self,
+        query: ListGamesQuery,
+        context: &OperationContext,
+    ) -> Result<GameLibraryPage, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.list_games_with_context(&query, context)
+        })
+    }
+
+    /// Executes one focused logical-game lookup through the ready generation.
+    pub fn get_game(&self, game_id: GameId) -> Result<GetGameResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("library", "get_game")?;
+        self.get_game_with_context(game_id, &context)
+    }
+
+    /// Executes one focused logical-game lookup under an existing context.
+    pub fn get_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+    ) -> Result<GetGameResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.get_game_with_context(game_id, context)
         })
     }
 

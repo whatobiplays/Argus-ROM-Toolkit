@@ -340,7 +340,7 @@ accepted_source_representations: raw-cartridge-image
 
 Recognition validates the cartridge header, Nintendo-logo region, ROM-size code, cartridge type, and header checksum, and requires no CGB capability flag. Content that validly declares CGB capability belongs to the Game Boy Color row instead of being duplicated across both platforms.
 
-Canonical representation is the cartridge ROM byte stream from offset zero through the exact header-declared ROM size. Bytes outside that extent are accepted only when the transformation can prove they are non-cartridge transport padding; otherwise the input is malformed/unsupported rather than silently trimmed. No header field is rewritten.
+Canonical representation is the raw cartridge ROM byte stream from offset zero through the exact header-declared ROM size, and `raw-cartridge-image` is valid only when the source byte length exactly equals that declared extent. Extra leading or trailing bytes are unsupported under this representation rather than silently trimmed. Any future padded-dump support requires a separately named representation/transformation with its own proof and normalization contract. No header field is rewritten.
 
 ### 8.5 Game Boy Color
 
@@ -355,7 +355,7 @@ accepted_source_representations: raw-cartridge-image
 
 Recognition uses the same validated cartridge-header contract and additionally requires a valid CGB capability flag. Both CGB-only and dual-mode CGB-capable cartridges are canonically `nintendo.gbc`; the same binary is never duplicated as a Game Boy `GameContent`.
 
-Canonical representation is the cartridge ROM byte stream from offset zero through the exact header-declared ROM size under the same padding rule as the Game Boy row. Header/title/checksum/revision changes remain identity-bearing.
+Canonical representation is the raw cartridge ROM byte stream from offset zero through the exact header-declared ROM size, and `raw-cartridge-image` is valid only when the source byte length exactly equals that declared extent. Extra leading or trailing bytes are unsupported under this representation rather than silently trimmed. Any future padded-dump support requires a separately named representation/transformation with its own proof and normalization contract. Header/title/checksum/revision changes remain identity-bearing.
 
 Technical basis for both rows: GBDev Pan Docs cartridge-header specification.
 

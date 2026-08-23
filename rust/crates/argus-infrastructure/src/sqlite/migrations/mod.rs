@@ -124,6 +124,11 @@ impl MigrationRegistry {
                 "0007_scan_all_recovery",
                 include_bytes!("sql/0007_scan_all_recovery.sql"),
             ),
+            Migration::sql(
+                8,
+                "0008_logical_library",
+                include_bytes!("sql/0008_logical_library.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

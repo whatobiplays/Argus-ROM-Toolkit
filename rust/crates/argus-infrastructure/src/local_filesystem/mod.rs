@@ -7,6 +7,7 @@
 //! values produced here.
 
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 #[cfg(target_os = "android")]
 use std::sync::OnceLock;
@@ -124,6 +125,35 @@ impl LibrarySourceAccess for LocalFilesystemSourceAccess {
             .collect();
         enumerate_scope(&root_path, &scope_path, &prefix, is_cancelled)
     }
+
+    fn read_entry_bytes(
+        &self,
+        root: &ResolvedRoot,
+        relative: &RelativeSourceLocator,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, SourceAccessError> {
+        let root_path = self.current_root(root)?;
+        let entry_path = resolve_entry_path(&root_path, relative)?;
+        let metadata = std::fs::metadata(&entry_path).map_err(classify_entry_access_error)?;
+        if !metadata.is_file() {
+            return Err(SourceAccessError::UnsupportedOperation);
+        }
+        if metadata.len() > max_bytes as u64 {
+            return Err(SourceAccessError::UnsupportedOperation);
+        }
+
+        let mut file = std::fs::File::open(&entry_path).map_err(classify_entry_access_error)?;
+        let mut bytes = Vec::with_capacity(metadata.len().min(max_bytes as u64) as usize);
+        let read = file
+            .by_ref()
+            .take(max_bytes as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(classify_entry_access_error)?;
+        if read > max_bytes {
+            return Err(SourceAccessError::UnsupportedOperation);
+        }
+        Ok(bytes)
+    }
 }
 
 impl LocalFilesystemSourceAccess {
@@ -217,6 +247,41 @@ fn enumerate_scope(
         observations,
         EnumerationOutcome::Complete,
     ))
+}
+
+fn resolve_entry_path(
+    root_path: &Path,
+    relative: &RelativeSourceLocator,
+) -> Result<PathBuf, SourceAccessError> {
+    let relative_path = Path::new(relative.as_provider_value());
+    let components = relative_components(relative_path).ok_or(SourceAccessError::InvalidLocator)?;
+    if components.is_empty() {
+        return Err(SourceAccessError::InvalidLocator);
+    }
+
+    let mut candidate = root_path.to_path_buf();
+    for component in components {
+        candidate.push(component);
+        let metadata =
+            std::fs::symlink_metadata(&candidate).map_err(classify_entry_access_error)?;
+        if is_link_like(&metadata) {
+            return Err(SourceAccessError::InvalidLocator);
+        }
+    }
+
+    let canonical = std::fs::canonicalize(&candidate).map_err(classify_entry_access_error)?;
+    if !canonical.starts_with(root_path) {
+        return Err(SourceAccessError::InvalidLocator);
+    }
+    Ok(canonical)
+}
+
+fn classify_entry_access_error(error: std::io::Error) -> SourceAccessError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => SourceAccessError::EntryNotFound,
+        std::io::ErrorKind::PermissionDenied => SourceAccessError::PermissionDenied,
+        _ => SourceAccessError::IoFailure,
+    }
 }
 
 fn is_within_root(root_path: &Path, candidate: &Path) -> bool {

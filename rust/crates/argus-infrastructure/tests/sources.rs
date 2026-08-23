@@ -61,7 +61,7 @@ fn embedded_registry_upgrades_a_phase_000_database_through_slice_004() {
     first.shutdown().expect("shutdown");
 
     let second = SqliteDatabaseExecutor::open(&database).expect("upgraded database");
-    assert_eq!(second.migration_summary().current_version, 7);
+    assert_eq!(second.migration_summary().current_version, 8);
     assert_eq!(
         second.migration_summary().outcome,
         MigrationOutcome::Applied
@@ -85,8 +85,8 @@ fn fresh_database_reaches_the_phase_001_schema() {
     let directory = tempdir().expect("tempdir");
     let executor = SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3"))
         .expect("fresh database");
-    assert_eq!(executor.migration_summary().current_version, 7);
-    assert_eq!(executor.migration_summary().applied_count, 7);
+    assert_eq!(executor.migration_summary().current_version, 8);
+    assert_eq!(executor.migration_summary().applied_count, 8);
     executor.shutdown().expect("shutdown");
 }
 

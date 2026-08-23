@@ -6,6 +6,196 @@ import 'package:flutter_test/flutter_test.dart';
 import 'dart:async';
 
 void main() {
+  test('logical-library row DTO maps durable fallback facts', () {
+    final row = gameLibraryRowFromDto(
+      const dto.GameLibraryRowDto(
+        gameId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        displayTitle: 'Fallback Game Boy',
+        platformId: dto.PlatformIdDto.nintendoGb,
+        hydrationState: dto.HydrationStateDto.partiallyHydrated,
+        contentCount: 1,
+        sourceCount: 2,
+        availabilityState: dto.GameAvailabilityStateDto.unavailable,
+        updatedAtMs: 1234,
+      ),
+    );
+
+    expect(row.gameId, const GameId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'));
+    expect(row.displayTitle, 'Fallback Game Boy');
+    expect(row.platformId, PlatformId.nintendoGb);
+    expect(row.hydrationState, HydrationState.partiallyHydrated);
+    expect(row.contentCount, 1);
+    expect(row.sourceCount, 2);
+    expect(row.availabilityState, AvailabilityState.unavailable);
+    expect(row.updatedAtMs, 1234);
+  });
+
+  test(
+    'logical-game DTO preserves independent content states and summaries',
+    () {
+      final detail = gameDetailFromDto(
+        const dto.GameDetailDto(
+          gameId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          platformId: dto.PlatformIdDto.nintendoGbc,
+          lifecycle: dto.GameLifecycleDto.active,
+          hydrationState: dto.HydrationStateDto.partiallyHydrated,
+          fallbackTitle: 'Local fallback',
+          memberships: [
+            dto.GameMembershipSummaryDto(
+              gameContentId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              relationship: dto.MembershipRelationshipDto.primary,
+              groupingBasis: dto.GroupingBasisDto.provisional,
+              groupingRevision: 1,
+            ),
+          ],
+          content: [
+            dto.ContentSummaryDto(
+              gameContentId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              platformId: dto.PlatformIdDto.nintendoGbc,
+              contentType: dto.ContentTypeDto.cartridgeImage,
+              presence: dto.ContentPresenceDto.orphaned,
+              identification: dto.IdentificationStateDto.needsReidentification,
+              sourceCount: 0,
+              identity: null,
+              provenance: null,
+            ),
+          ],
+          availabilityState: dto.GameAvailabilityStateDto.inactiveOrphan,
+        ),
+      );
+
+      expect(detail.gameId, const GameId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'));
+      expect(detail.platformId, PlatformId.nintendoGbc);
+      expect(detail.lifecycle, GameLifecycle.active);
+      expect(detail.hydrationState, HydrationState.partiallyHydrated);
+      expect(detail.fallbackTitle, 'Local fallback');
+      expect(
+        detail.memberships.single.relationship,
+        MembershipRelationship.primary,
+      );
+      expect(
+        detail.memberships.single.groupingBasis,
+        GroupingBasis.provisional,
+      );
+      expect(detail.content.single.presence, ContentPresence.orphaned);
+      expect(
+        detail.content.single.identification,
+        IdentificationState.needsReidentification,
+      );
+      expect(detail.content.single.identity, isNull);
+      expect(detail.content.single.provenance, isNull);
+      expect(detail.availabilityState, AvailabilityState.inactiveOrphan);
+    },
+  );
+
+  test('logical-game DTO maps current identity and exact proving provenance', () {
+    final summary = contentSummaryFromDto(
+      const dto.ContentSummaryDto(
+        gameContentId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        platformId: dto.PlatformIdDto.nintendoGba,
+        contentType: dto.ContentTypeDto.cartridgeImage,
+        presence: dto.ContentPresenceDto.available,
+        identification: dto.IdentificationStateDto.identified,
+        sourceCount: 2,
+        identity: dto.ContentIdentitySummaryDto(
+          schemeId: 'argus.content.identity.nintendo-gba.cartridge.v1',
+          revision: 1,
+          digest:
+              '9999999999999999999999999999999999999999999999999999999999999999',
+        ),
+        provenance: dto.ContentProvenanceSummaryDto(
+          sourceEntryId: 'cccccccccccccccccccccccccccccccc',
+          associationKey: 'raw',
+          sourceFingerprint: 'v1:32:1',
+          lastObservedScanId: 'dddddddddddddddddddddddddddddddd',
+        ),
+      ),
+    );
+
+    expect(
+      summary.identity?.schemeId,
+      'argus.content.identity.nintendo-gba.cartridge.v1',
+    );
+    expect(summary.identity?.revision, 1);
+    expect(summary.identity?.digest, startsWith('99'));
+    expect(
+      summary.provenance?.sourceEntryId,
+      const SourceEntryId('cccccccccccccccccccccccccccccccc'),
+    );
+    expect(summary.provenance?.associationKey, 'raw');
+    expect(summary.provenance?.sourceFingerprint, 'v1:32:1');
+    expect(
+      summary.provenance?.lastObservedScanId,
+      'dddddddddddddddddddddddddddddddd',
+    );
+  });
+
+  test('logical-game lookup DTO preserves Found and Redirected outcomes', () {
+    const found = dto.GetGameResultDto_Found(
+      dto.GameDetailDto(
+        gameId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        platformId: dto.PlatformIdDto.nintendoGb,
+        lifecycle: dto.GameLifecycleDto.active,
+        hydrationState: dto.HydrationStateDto.partiallyHydrated,
+        fallbackTitle: 'Found',
+        memberships: [],
+        content: [],
+        availabilityState: dto.GameAvailabilityStateDto.available,
+      ),
+    );
+    const redirected = dto.GetGameResultDto_Redirected(
+      canonicalGameId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+
+    expect(getGameResultFromDto(found), isA<GetGameFound>());
+    expect(
+      (getGameResultFromDto(redirected) as GetGameRedirected).canonicalGameId,
+      const GameId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+    );
+  });
+
+  test(
+    'full BE-008 query DTO mapping keeps baseline and unsupported inputs explicit',
+    () {
+      final baseline = listGamesRequestToDto(const ListGamesRequest());
+      expect(baseline.scope, isA<dto.LibraryScopeDto_All>());
+      expect(baseline.searchText, isNull);
+      expect(baseline.filters.platformIds, isEmpty);
+      expect(baseline.filters.regions, isEmpty);
+      expect(baseline.sort.field, dto.LibrarySortFieldDto.displayTitle);
+      expect(baseline.sort.direction, dto.LibrarySortDirectionDto.ascending);
+      expect(baseline.pageSize, 50);
+
+      final unsupported = listGamesRequestToDto(
+        const ListGamesRequest(
+          scope: LibraryScope.platform('nintendo.gb'),
+          searchText: 'zelda',
+          filters: LibraryFilter(platformIds: ['nintendo.gb']),
+          sort: LibrarySort(
+            field: LibrarySortField.platform,
+            direction: LibrarySortDirection.descending,
+          ),
+          cursor: 'v1:Fallback Game Boy:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pageSize: 7,
+        ),
+      );
+      expect(unsupported.scope, isA<dto.LibraryScopeDto_Platform>());
+      expect(
+        (unsupported.scope as dto.LibraryScopeDto_Platform).platformId,
+        'nintendo.gb',
+      );
+      expect(unsupported.searchText, 'zelda');
+      expect(unsupported.filters.platformIds, ['nintendo.gb']);
+      expect(unsupported.sort.field, dto.LibrarySortFieldDto.platform);
+      expect(
+        unsupported.sort.direction,
+        dto.LibrarySortDirectionDto.descending,
+      );
+      expect(unsupported.cursor, startsWith('v1:'));
+      expect(unsupported.pageSize, 7);
+    },
+  );
+
   test('library root DTO maps projections without locator leakage', () {
     final root = libraryRootFromDto(
       const dto.LibraryRootDto(

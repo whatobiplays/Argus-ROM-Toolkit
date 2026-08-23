@@ -829,6 +829,298 @@ as RootRelationshipDto,
 }
 
 /// @nodoc
+mixin _$GetGameResultDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is GetGameResultDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'GetGameResultDto()';
+}
+
+
+}
+
+/// @nodoc
+class $GetGameResultDtoCopyWith<$Res>  {
+$GetGameResultDtoCopyWith(GetGameResultDto _, $Res Function(GetGameResultDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [GetGameResultDto].
+extension GetGameResultDtoPatterns on GetGameResultDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( GetGameResultDto_Found value)?  found,TResult Function( GetGameResultDto_Redirected value)?  redirected,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case GetGameResultDto_Found() when found != null:
+return found(_that);case GetGameResultDto_Redirected() when redirected != null:
+return redirected(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( GetGameResultDto_Found value)  found,required TResult Function( GetGameResultDto_Redirected value)  redirected,}){
+final _that = this;
+switch (_that) {
+case GetGameResultDto_Found():
+return found(_that);case GetGameResultDto_Redirected():
+return redirected(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( GetGameResultDto_Found value)?  found,TResult? Function( GetGameResultDto_Redirected value)?  redirected,}){
+final _that = this;
+switch (_that) {
+case GetGameResultDto_Found() when found != null:
+return found(_that);case GetGameResultDto_Redirected() when redirected != null:
+return redirected(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( GameDetailDto field0)?  found,TResult Function( String canonicalGameId)?  redirected,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case GetGameResultDto_Found() when found != null:
+return found(_that.field0);case GetGameResultDto_Redirected() when redirected != null:
+return redirected(_that.canonicalGameId);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( GameDetailDto field0)  found,required TResult Function( String canonicalGameId)  redirected,}) {final _that = this;
+switch (_that) {
+case GetGameResultDto_Found():
+return found(_that.field0);case GetGameResultDto_Redirected():
+return redirected(_that.canonicalGameId);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( GameDetailDto field0)?  found,TResult? Function( String canonicalGameId)?  redirected,}) {final _that = this;
+switch (_that) {
+case GetGameResultDto_Found() when found != null:
+return found(_that.field0);case GetGameResultDto_Redirected() when redirected != null:
+return redirected(_that.canonicalGameId);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class GetGameResultDto_Found extends GetGameResultDto {
+  const GetGameResultDto_Found(this.field0): super._();
+
+
+ final  GameDetailDto field0;
+
+/// Create a copy of GetGameResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$GetGameResultDto_FoundCopyWith<GetGameResultDto_Found> get copyWith => _$GetGameResultDto_FoundCopyWithImpl<GetGameResultDto_Found>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is GetGameResultDto_Found&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'GetGameResultDto.found(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $GetGameResultDto_FoundCopyWith<$Res> implements $GetGameResultDtoCopyWith<$Res> {
+  factory $GetGameResultDto_FoundCopyWith(GetGameResultDto_Found value, $Res Function(GetGameResultDto_Found) _then) = _$GetGameResultDto_FoundCopyWithImpl;
+@useResult
+$Res call({
+ GameDetailDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$GetGameResultDto_FoundCopyWithImpl<$Res>
+    implements $GetGameResultDto_FoundCopyWith<$Res> {
+  _$GetGameResultDto_FoundCopyWithImpl(this._self, this._then);
+
+  final GetGameResultDto_Found _self;
+  final $Res Function(GetGameResultDto_Found) _then;
+
+/// Create a copy of GetGameResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(GetGameResultDto_Found(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as GameDetailDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class GetGameResultDto_Redirected extends GetGameResultDto {
+  const GetGameResultDto_Redirected({required this.canonicalGameId}): super._();
+
+
+ final  String canonicalGameId;
+
+/// Create a copy of GetGameResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$GetGameResultDto_RedirectedCopyWith<GetGameResultDto_Redirected> get copyWith => _$GetGameResultDto_RedirectedCopyWithImpl<GetGameResultDto_Redirected>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is GetGameResultDto_Redirected&&(identical(other.canonicalGameId, canonicalGameId) || other.canonicalGameId == canonicalGameId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,canonicalGameId);
+
+@override
+String toString() {
+  return 'GetGameResultDto.redirected(canonicalGameId: $canonicalGameId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $GetGameResultDto_RedirectedCopyWith<$Res> implements $GetGameResultDtoCopyWith<$Res> {
+  factory $GetGameResultDto_RedirectedCopyWith(GetGameResultDto_Redirected value, $Res Function(GetGameResultDto_Redirected) _then) = _$GetGameResultDto_RedirectedCopyWithImpl;
+@useResult
+$Res call({
+ String canonicalGameId
+});
+
+
+
+
+}
+/// @nodoc
+class _$GetGameResultDto_RedirectedCopyWithImpl<$Res>
+    implements $GetGameResultDto_RedirectedCopyWith<$Res> {
+  _$GetGameResultDto_RedirectedCopyWithImpl(this._self, this._then);
+
+  final GetGameResultDto_Redirected _self;
+  final $Res Function(GetGameResultDto_Redirected) _then;
+
+/// Create a copy of GetGameResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? canonicalGameId = null,}) {
+  return _then(GetGameResultDto_Redirected(
+canonicalGameId: null == canonicalGameId ? _self.canonicalGameId : canonicalGameId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$LibraryScanAllRequestResolutionDto {
 
 
@@ -1392,6 +1684,408 @@ class _$LibraryScanChildAdmissionIssueDto_AdmissionFailureCopyWithImpl<$Res>
   return _then(LibraryScanChildAdmissionIssueDto_AdmissionFailure(
 null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
 as ApplicationErrorDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$LibraryScopeDto {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScopeDto);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LibraryScopeDto()';
+}
+
+
+}
+
+/// @nodoc
+class $LibraryScopeDtoCopyWith<$Res>  {
+$LibraryScopeDtoCopyWith(LibraryScopeDto _, $Res Function(LibraryScopeDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [LibraryScopeDto].
+extension LibraryScopeDtoPatterns on LibraryScopeDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LibraryScopeDto_All value)?  all,TResult Function( LibraryScopeDto_Platform value)?  platform,TResult Function( LibraryScopeDto_Source value)?  source,TResult Function( LibraryScopeDto_LibraryRoot value)?  libraryRoot,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case LibraryScopeDto_All() when all != null:
+return all(_that);case LibraryScopeDto_Platform() when platform != null:
+return platform(_that);case LibraryScopeDto_Source() when source != null:
+return source(_that);case LibraryScopeDto_LibraryRoot() when libraryRoot != null:
+return libraryRoot(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LibraryScopeDto_All value)  all,required TResult Function( LibraryScopeDto_Platform value)  platform,required TResult Function( LibraryScopeDto_Source value)  source,required TResult Function( LibraryScopeDto_LibraryRoot value)  libraryRoot,}){
+final _that = this;
+switch (_that) {
+case LibraryScopeDto_All():
+return all(_that);case LibraryScopeDto_Platform():
+return platform(_that);case LibraryScopeDto_Source():
+return source(_that);case LibraryScopeDto_LibraryRoot():
+return libraryRoot(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LibraryScopeDto_All value)?  all,TResult? Function( LibraryScopeDto_Platform value)?  platform,TResult? Function( LibraryScopeDto_Source value)?  source,TResult? Function( LibraryScopeDto_LibraryRoot value)?  libraryRoot,}){
+final _that = this;
+switch (_that) {
+case LibraryScopeDto_All() when all != null:
+return all(_that);case LibraryScopeDto_Platform() when platform != null:
+return platform(_that);case LibraryScopeDto_Source() when source != null:
+return source(_that);case LibraryScopeDto_LibraryRoot() when libraryRoot != null:
+return libraryRoot(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  all,TResult Function( String platformId)?  platform,TResult Function( String sourceId)?  source,TResult Function( String libraryRootId)?  libraryRoot,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case LibraryScopeDto_All() when all != null:
+return all();case LibraryScopeDto_Platform() when platform != null:
+return platform(_that.platformId);case LibraryScopeDto_Source() when source != null:
+return source(_that.sourceId);case LibraryScopeDto_LibraryRoot() when libraryRoot != null:
+return libraryRoot(_that.libraryRootId);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  all,required TResult Function( String platformId)  platform,required TResult Function( String sourceId)  source,required TResult Function( String libraryRootId)  libraryRoot,}) {final _that = this;
+switch (_that) {
+case LibraryScopeDto_All():
+return all();case LibraryScopeDto_Platform():
+return platform(_that.platformId);case LibraryScopeDto_Source():
+return source(_that.sourceId);case LibraryScopeDto_LibraryRoot():
+return libraryRoot(_that.libraryRootId);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  all,TResult? Function( String platformId)?  platform,TResult? Function( String sourceId)?  source,TResult? Function( String libraryRootId)?  libraryRoot,}) {final _that = this;
+switch (_that) {
+case LibraryScopeDto_All() when all != null:
+return all();case LibraryScopeDto_Platform() when platform != null:
+return platform(_that.platformId);case LibraryScopeDto_Source() when source != null:
+return source(_that.sourceId);case LibraryScopeDto_LibraryRoot() when libraryRoot != null:
+return libraryRoot(_that.libraryRootId);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class LibraryScopeDto_All extends LibraryScopeDto {
+  const LibraryScopeDto_All(): super._();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScopeDto_All);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'LibraryScopeDto.all()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class LibraryScopeDto_Platform extends LibraryScopeDto {
+  const LibraryScopeDto_Platform({required this.platformId}): super._();
+
+
+ final  String platformId;
+
+/// Create a copy of LibraryScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryScopeDto_PlatformCopyWith<LibraryScopeDto_Platform> get copyWith => _$LibraryScopeDto_PlatformCopyWithImpl<LibraryScopeDto_Platform>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScopeDto_Platform&&(identical(other.platformId, platformId) || other.platformId == platformId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,platformId);
+
+@override
+String toString() {
+  return 'LibraryScopeDto.platform(platformId: $platformId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryScopeDto_PlatformCopyWith<$Res> implements $LibraryScopeDtoCopyWith<$Res> {
+  factory $LibraryScopeDto_PlatformCopyWith(LibraryScopeDto_Platform value, $Res Function(LibraryScopeDto_Platform) _then) = _$LibraryScopeDto_PlatformCopyWithImpl;
+@useResult
+$Res call({
+ String platformId
+});
+
+
+
+
+}
+/// @nodoc
+class _$LibraryScopeDto_PlatformCopyWithImpl<$Res>
+    implements $LibraryScopeDto_PlatformCopyWith<$Res> {
+  _$LibraryScopeDto_PlatformCopyWithImpl(this._self, this._then);
+
+  final LibraryScopeDto_Platform _self;
+  final $Res Function(LibraryScopeDto_Platform) _then;
+
+/// Create a copy of LibraryScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? platformId = null,}) {
+  return _then(LibraryScopeDto_Platform(
+platformId: null == platformId ? _self.platformId : platformId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LibraryScopeDto_Source extends LibraryScopeDto {
+  const LibraryScopeDto_Source({required this.sourceId}): super._();
+
+
+ final  String sourceId;
+
+/// Create a copy of LibraryScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryScopeDto_SourceCopyWith<LibraryScopeDto_Source> get copyWith => _$LibraryScopeDto_SourceCopyWithImpl<LibraryScopeDto_Source>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScopeDto_Source&&(identical(other.sourceId, sourceId) || other.sourceId == sourceId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,sourceId);
+
+@override
+String toString() {
+  return 'LibraryScopeDto.source(sourceId: $sourceId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryScopeDto_SourceCopyWith<$Res> implements $LibraryScopeDtoCopyWith<$Res> {
+  factory $LibraryScopeDto_SourceCopyWith(LibraryScopeDto_Source value, $Res Function(LibraryScopeDto_Source) _then) = _$LibraryScopeDto_SourceCopyWithImpl;
+@useResult
+$Res call({
+ String sourceId
+});
+
+
+
+
+}
+/// @nodoc
+class _$LibraryScopeDto_SourceCopyWithImpl<$Res>
+    implements $LibraryScopeDto_SourceCopyWith<$Res> {
+  _$LibraryScopeDto_SourceCopyWithImpl(this._self, this._then);
+
+  final LibraryScopeDto_Source _self;
+  final $Res Function(LibraryScopeDto_Source) _then;
+
+/// Create a copy of LibraryScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? sourceId = null,}) {
+  return _then(LibraryScopeDto_Source(
+sourceId: null == sourceId ? _self.sourceId : sourceId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LibraryScopeDto_LibraryRoot extends LibraryScopeDto {
+  const LibraryScopeDto_LibraryRoot({required this.libraryRootId}): super._();
+
+
+ final  String libraryRootId;
+
+/// Create a copy of LibraryScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LibraryScopeDto_LibraryRootCopyWith<LibraryScopeDto_LibraryRoot> get copyWith => _$LibraryScopeDto_LibraryRootCopyWithImpl<LibraryScopeDto_LibraryRoot>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryScopeDto_LibraryRoot&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,libraryRootId);
+
+@override
+String toString() {
+  return 'LibraryScopeDto.libraryRoot(libraryRootId: $libraryRootId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LibraryScopeDto_LibraryRootCopyWith<$Res> implements $LibraryScopeDtoCopyWith<$Res> {
+  factory $LibraryScopeDto_LibraryRootCopyWith(LibraryScopeDto_LibraryRoot value, $Res Function(LibraryScopeDto_LibraryRoot) _then) = _$LibraryScopeDto_LibraryRootCopyWithImpl;
+@useResult
+$Res call({
+ String libraryRootId
+});
+
+
+
+
+}
+/// @nodoc
+class _$LibraryScopeDto_LibraryRootCopyWithImpl<$Res>
+    implements $LibraryScopeDto_LibraryRootCopyWith<$Res> {
+  _$LibraryScopeDto_LibraryRootCopyWithImpl(this._self, this._then);
+
+  final LibraryScopeDto_LibraryRoot _self;
+  final $Res Function(LibraryScopeDto_LibraryRoot) _then;
+
+/// Create a copy of LibraryScopeDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? libraryRootId = null,}) {
+  return _then(LibraryScopeDto_LibraryRoot(
+libraryRootId: null == libraryRootId ? _self.libraryRootId : libraryRootId // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 

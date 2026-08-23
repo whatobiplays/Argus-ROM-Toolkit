@@ -15,6 +15,7 @@ final class ArgusClient implements ClientBootstrap {
     runtime = _RuntimeApi(this);
     settings = _SettingsApi(this);
     sources = _SourcesApi(this);
+    library = _LibraryReads(this);
     jobs = _JobsApi(this);
     diagnostics = _DiagnosticsApi(this);
     final DiagnosticsSharingGateway? sharingGateway =
@@ -40,6 +41,9 @@ final class ArgusClient implements ClientBootstrap {
 
   /// Configured library-root operations owned by this root client.
   late final SourcesApi sources;
+
+  /// Durable logical-library reads owned by this root client.
+  late final LibraryReads library;
 
   /// Durable job observation and control operations owned by this root client.
   late final JobsApi jobs;
@@ -201,6 +205,22 @@ final class ArgusClient implements ClientBootstrap {
 
   Future<LibraryRoot> _getLibraryRoot(LibraryRootId libraryRootId) =>
       _request(() => _gateway.getLibraryRoot(libraryRootId));
+
+  Future<GamePage> _listGames(ListGamesRequest request) => _request(() {
+    final gateway = _gateway;
+    if (gateway is! LibraryGateway) {
+      throw const TransportFailure('Logical-library capability is unavailable');
+    }
+    return (gateway as LibraryGateway).listGames(request);
+  });
+
+  Future<GetGameResult> _getGame(GameId gameId) => _request(() {
+    final gateway = _gateway;
+    if (gateway is! LibraryGateway) {
+      throw const TransportFailure('Logical-library capability is unavailable');
+    }
+    return (gateway as LibraryGateway).getGame(gameId);
+  });
 
   Future<AddLocalLibraryRootResult> _addLocalLibraryRoot(
     LocalFilesystemRootSelection selection,
@@ -700,6 +720,19 @@ final class _SourcesApi implements SourcesApi {
     cursor: cursor,
     pageSize: pageSize,
   );
+}
+
+final class _LibraryReads implements LibraryReads {
+  _LibraryReads(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<GamePage> listGames(ListGamesRequest request) =>
+      _client._listGames(request);
+
+  @override
+  Future<GetGameResult> getGame(GameId gameId) => _client._getGame(gameId);
 }
 
 final class _JobsApi implements JobsApi {

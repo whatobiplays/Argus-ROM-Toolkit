@@ -13,6 +13,7 @@ use super::appearance::map_executor_error;
 use super::connection::SqliteConnection;
 use super::errors::{SqliteOperationError, operation_error};
 use super::executor::SqliteDatabaseExecutor;
+use super::logical::refresh_root_availability;
 use super::unit_of_work::SqliteUnitOfWork;
 
 type RootProjectionRaw = (
@@ -406,6 +407,9 @@ impl LibraryRootRepository for SqliteLibraryRootRepository<'_, '_> {
                 rusqlite::params![availability.as_str(), root_id.to_string()],
             )
             .map_err(super::jobs::map_persistence_operation_error)?;
+        if changed == 1 {
+            refresh_root_availability(self.work, root_id)?;
+        }
         Ok(changed == 1)
     }
 

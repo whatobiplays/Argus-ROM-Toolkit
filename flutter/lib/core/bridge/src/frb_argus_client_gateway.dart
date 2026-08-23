@@ -28,7 +28,7 @@ final class MountedLocalFilesystemVolumeFact {
 /// FRB 2.12 adapter translating generated transport types into pure-Dart
 /// client models and typed application/transport failures.
 final class FrbArgusClientGateway
-    implements ArgusClientGateway, DiagnosticsSharingGateway {
+    implements ArgusClientGateway, DiagnosticsSharingGateway, LibraryGateway {
   FrbArgusClientGateway({
     frb.RustLibApi? api,
     Future<void> Function()? initializeNative,
@@ -212,6 +212,19 @@ final class FrbArgusClientGateway
         await _rustApi.crateGetLibraryRoot(libraryRootId: libraryRootId.value),
       ),
     ),
+  );
+
+  @override
+  Future<GamePage> listGames(ListGamesRequest request) => _call(
+    () async => gamePageFromDto(
+      await _rustApi.crateListGames(request: listGamesRequestToDto(request)),
+    ),
+  );
+
+  @override
+  Future<GetGameResult> getGame(GameId gameId) => _call(
+    () async =>
+        getGameResultFromDto(await _rustApi.crateGetGame(gameId: gameId.value)),
   );
 
   @override
@@ -861,6 +874,244 @@ LibraryRootPage libraryRootPageFromDto(dto.LibraryRootPageDto value) =>
       pageSize: value.pageSize,
       totalCount: value.totalCount,
     );
+
+dto.ListGamesRequestDto listGamesRequestToDto(ListGamesRequest value) =>
+    dto.ListGamesRequestDto(
+      scope: libraryScopeToDto(value.scope),
+      searchText: value.searchText,
+      filters: dto.LibraryFilterDto(
+        platformIds: value.filters.platformIds,
+        regions: value.filters.regions,
+        hydrationStates: value.filters.hydrationStates
+            .map(hydrationStateToFilterDto)
+            .toList(growable: false),
+        availabilityStates: value.filters.availabilityStates
+            .map(availabilityStateToFilterDto)
+            .toList(growable: false),
+      ),
+      sort: dto.LibrarySortDto(
+        field: librarySortFieldToDto(value.sort.field),
+        direction: librarySortDirectionToDto(value.sort.direction),
+      ),
+      cursor: value.cursor,
+      pageSize: value.pageSize,
+    );
+
+dto.LibraryScopeDto libraryScopeToDto(LibraryScope value) => switch (value) {
+  LibraryScopeAll() => dto.LibraryScopeDto.all(),
+  LibraryScopePlatform(:final platformId) => dto.LibraryScopeDto.platform(
+    platformId: platformId,
+  ),
+  LibraryScopeSource(:final sourceId) => dto.LibraryScopeDto.source(
+    sourceId: sourceId,
+  ),
+  LibraryScopeLibraryRoot(:final libraryRootId) =>
+    dto.LibraryScopeDto.libraryRoot(libraryRootId: libraryRootId),
+};
+
+dto.LibraryHydrationStateDto hydrationStateToFilterDto(HydrationState value) =>
+    switch (value) {
+      HydrationState.hydrated => dto.LibraryHydrationStateDto.hydrated,
+      HydrationState.partiallyHydrated =>
+        dto.LibraryHydrationStateDto.partiallyHydrated,
+      HydrationState.unmatched => dto.LibraryHydrationStateDto.unmatched,
+      HydrationState.refreshing => dto.LibraryHydrationStateDto.refreshing,
+    };
+
+dto.LibraryAvailabilityStateDto availabilityStateToFilterDto(
+  AvailabilityState value,
+) => switch (value) {
+  AvailabilityState.available => dto.LibraryAvailabilityStateDto.available,
+  AvailabilityState.partiallyUnavailable =>
+    dto.LibraryAvailabilityStateDto.partiallyUnavailable,
+  AvailabilityState.unavailable => dto.LibraryAvailabilityStateDto.unavailable,
+  AvailabilityState.inactiveOrphan =>
+    dto.LibraryAvailabilityStateDto.inactiveOrphan,
+};
+
+dto.LibrarySortFieldDto librarySortFieldToDto(LibrarySortField value) =>
+    switch (value) {
+      LibrarySortField.displayTitle => dto.LibrarySortFieldDto.displayTitle,
+      LibrarySortField.platform => dto.LibrarySortFieldDto.platform,
+      LibrarySortField.releaseDate => dto.LibrarySortFieldDto.releaseDate,
+      LibrarySortField.updatedAt => dto.LibrarySortFieldDto.updatedAt,
+    };
+
+dto.LibrarySortDirectionDto librarySortDirectionToDto(
+  LibrarySortDirection value,
+) => switch (value) {
+  LibrarySortDirection.ascending => dto.LibrarySortDirectionDto.ascending,
+  LibrarySortDirection.descending => dto.LibrarySortDirectionDto.descending,
+};
+
+GamePage gamePageFromDto(dto.GamePageDto value) => GamePage(
+  items: [for (final item in value.items) gameLibraryRowFromDto(item)],
+  nextCursor: value.nextCursor,
+);
+
+GameLibraryRow gameLibraryRowFromDto(dto.GameLibraryRowDto value) =>
+    GameLibraryRow(
+      gameId: gameIdFromDto(value.gameId),
+      displayTitle: value.displayTitle,
+      platformId: platformIdFromDto(value.platformId),
+      hydrationState: hydrationStateFromDto(value.hydrationState),
+      contentCount: value.contentCount,
+      sourceCount: value.sourceCount,
+      availabilityState: availabilityStateFromDto(value.availabilityState),
+      updatedAtMs: value.updatedAtMs.toInt(),
+    );
+
+GetGameResult getGameResultFromDto(dto.GetGameResultDto value) =>
+    switch (value) {
+      dto.GetGameResultDto_Found(:final field0) => GetGameFound(
+        gameDetailFromDto(field0),
+      ),
+      dto.GetGameResultDto_Redirected(:final canonicalGameId) =>
+        GetGameRedirected(gameIdFromDto(canonicalGameId)),
+    };
+
+GameDetail gameDetailFromDto(dto.GameDetailDto value) => GameDetail(
+  gameId: gameIdFromDto(value.gameId),
+  platformId: platformIdFromDto(value.platformId),
+  lifecycle: gameLifecycleFromDto(value.lifecycle),
+  hydrationState: hydrationStateFromDto(value.hydrationState),
+  fallbackTitle: value.fallbackTitle,
+  memberships: [
+    for (final membership in value.memberships)
+      gameMembershipSummaryFromDto(membership),
+  ],
+  content: [
+    for (final summary in value.content) contentSummaryFromDto(summary),
+  ],
+  availabilityState: availabilityStateFromDto(value.availabilityState),
+);
+
+ContentSummary contentSummaryFromDto(dto.ContentSummaryDto value) =>
+    ContentSummary(
+      gameContentId: contentIdFromDto(value.gameContentId),
+      platformId: platformIdFromDto(value.platformId),
+      contentType: contentTypeFromDto(value.contentType),
+      presence: contentPresenceFromDto(value.presence),
+      identification: identificationStateFromDto(value.identification),
+      sourceCount: value.sourceCount,
+      identity: value.identity == null
+          ? null
+          : ContentIdentitySummary(
+              schemeId: value.identity!.schemeId,
+              revision: value.identity!.revision,
+              digest: value.identity!.digest,
+            ),
+      provenance: value.provenance == null
+          ? null
+          : ContentProvenanceSummary(
+              sourceEntryId: sourceEntryIdFromDto(
+                value.provenance!.sourceEntryId,
+              ),
+              associationKey: value.provenance!.associationKey,
+              sourceFingerprint: value.provenance!.sourceFingerprint,
+              lastObservedScanId: value.provenance!.lastObservedScanId,
+            ),
+    );
+
+GameMembershipSummary gameMembershipSummaryFromDto(
+  dto.GameMembershipSummaryDto value,
+) => GameMembershipSummary(
+  gameContentId: contentIdFromDto(value.gameContentId),
+  relationship: membershipRelationshipFromDto(value.relationship),
+  groupingBasis: groupingBasisFromDto(value.groupingBasis),
+  groupingRevision: value.groupingRevision,
+);
+
+GameId gameIdFromDto(String value) {
+  final id = GameId.tryParse(value);
+  if (id == null) {
+    throw const TransportFailure(
+      'Native game identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return id;
+}
+
+ContentId contentIdFromDto(String value) {
+  final id = ContentId.tryParse(value);
+  if (id == null) {
+    throw const TransportFailure(
+      'Native game-content identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return id;
+}
+
+PlatformId platformIdFromDto(dto.PlatformIdDto value) => switch (value) {
+  dto.PlatformIdDto.nintendoGb => PlatformId.nintendoGb,
+  dto.PlatformIdDto.nintendoGbc => PlatformId.nintendoGbc,
+  dto.PlatformIdDto.nintendoGba => PlatformId.nintendoGba,
+};
+
+ContentType contentTypeFromDto(dto.ContentTypeDto value) => switch (value) {
+  dto.ContentTypeDto.cartridgeImage => ContentType.cartridgeImage,
+};
+
+ContentPresence contentPresenceFromDto(dto.ContentPresenceDto value) =>
+    switch (value) {
+      dto.ContentPresenceDto.available => ContentPresence.available,
+      dto.ContentPresenceDto.partiallyUnavailable =>
+        ContentPresence.partiallyUnavailable,
+      dto.ContentPresenceDto.unavailable => ContentPresence.unavailable,
+      dto.ContentPresenceDto.orphaned => ContentPresence.orphaned,
+    };
+
+IdentificationState identificationStateFromDto(
+  dto.IdentificationStateDto value,
+) => switch (value) {
+  dto.IdentificationStateDto.identified => IdentificationState.identified,
+  dto.IdentificationStateDto.needsReidentification =>
+    IdentificationState.needsReidentification,
+  dto.IdentificationStateDto.unidentified => IdentificationState.unidentified,
+};
+
+GameLifecycle gameLifecycleFromDto(dto.GameLifecycleDto value) =>
+    switch (value) {
+      dto.GameLifecycleDto.active => GameLifecycle.active,
+      dto.GameLifecycleDto.inactiveOrphan => GameLifecycle.inactiveOrphan,
+      dto.GameLifecycleDto.redirected => GameLifecycle.redirected,
+    };
+
+HydrationState hydrationStateFromDto(dto.HydrationStateDto value) =>
+    switch (value) {
+      dto.HydrationStateDto.hydrated => HydrationState.hydrated,
+      dto.HydrationStateDto.partiallyHydrated =>
+        HydrationState.partiallyHydrated,
+      dto.HydrationStateDto.unmatched => HydrationState.unmatched,
+      dto.HydrationStateDto.refreshing => HydrationState.refreshing,
+    };
+
+AvailabilityState availabilityStateFromDto(
+  dto.GameAvailabilityStateDto value,
+) => switch (value) {
+  dto.GameAvailabilityStateDto.available => AvailabilityState.available,
+  dto.GameAvailabilityStateDto.partiallyUnavailable =>
+    AvailabilityState.partiallyUnavailable,
+  dto.GameAvailabilityStateDto.unavailable => AvailabilityState.unavailable,
+  dto.GameAvailabilityStateDto.inactiveOrphan =>
+    AvailabilityState.inactiveOrphan,
+};
+
+MembershipRelationship membershipRelationshipFromDto(
+  dto.MembershipRelationshipDto value,
+) => switch (value) {
+  dto.MembershipRelationshipDto.primary => MembershipRelationship.primary,
+  dto.MembershipRelationshipDto.secondary => MembershipRelationship.secondary,
+};
+
+GroupingBasis groupingBasisFromDto(dto.GroupingBasisDto value) =>
+    switch (value) {
+      dto.GroupingBasisDto.exactContentIdentity =>
+        GroupingBasis.exactContentIdentity,
+      dto.GroupingBasisDto.provisional => GroupingBasis.provisional,
+    };
 
 SourceEntryId sourceEntryIdFromDto(String value) {
   final id = SourceEntryId(value);

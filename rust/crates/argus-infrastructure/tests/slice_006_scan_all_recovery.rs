@@ -160,8 +160,8 @@ fn migration_0007_upgrades_0006_history_and_backfills_invalid_configuration_erro
     drop(connection);
 
     let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 7);
-    assert_eq!(fresh.migration_summary().applied_count, 1);
+    assert_eq!(fresh.migration_summary().current_version, 8);
+    assert_eq!(fresh.migration_summary().applied_count, 2);
 
     let detail = SqliteJobsQueries::new(fresh.clone())
         .get_job(&context(), job_id(JOB_A))

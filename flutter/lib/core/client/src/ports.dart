@@ -155,6 +155,22 @@ abstract interface class SourcesApi {
   });
 }
 
+/// Framework-neutral durable logical-library reads.
+abstract interface class LibraryGateway {
+  Future<GamePage> listGames(ListGamesRequest request);
+
+  Future<GetGameResult> getGame(GameId gameId);
+}
+
+/// Focused logical-library capability. It exposes durable local state only;
+/// provider metadata, rich presentation data, raw locators, and parser details
+/// remain out.
+abstract interface class LibraryReads {
+  Future<GamePage> listGames(ListGamesRequest request);
+
+  Future<GetGameResult> getGame(GameId gameId);
+}
+
 /// Framework-neutral durable job observation and control operations.
 abstract interface class JobsGateway {
   Future<JobSummaryPage> listActiveJobs();

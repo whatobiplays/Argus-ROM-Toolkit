@@ -85,6 +85,8 @@ pub enum ErrorCode {
     JobRunNotFound,
     OperationCapacityUnavailable,
     ConfigurationSourceEntryNotFound,
+    ConfigurationGameNotFound,
+    OperationSourceChangedDuringProcessing,
 }
 
 /// Central policy metadata for one published code.
@@ -229,6 +231,37 @@ impl ErrorCode {
         ]
     }
 
+    /// Returns the additive catalog required by the logical-content foundation.
+    pub const fn phase_003_all() -> &'static [Self; 25] {
+        &[
+            Self::ValidationInvalidArgument,
+            Self::ConfigurationInvalid,
+            Self::ConfigurationPersistedSettingsInvalid,
+            Self::PersistenceDatabaseOpenFailed,
+            Self::PersistenceDatabaseLocked,
+            Self::PersistenceMigrationFailed,
+            Self::PersistenceIncompatibleSchema,
+            Self::FilesystemPermissionDenied,
+            Self::RuntimeBridgeInitializationFailed,
+            Self::RuntimeCoreServiceInitializationFailed,
+            Self::RuntimeNotReady,
+            Self::RuntimeStartupFailed,
+            Self::RuntimeShuttingDown,
+            Self::RuntimeStopped,
+            Self::RuntimeStaleInstance,
+            Self::OperationCancelled,
+            Self::InternalUnexpected,
+            Self::InternalInvariantViolation,
+            Self::ConfigurationLibraryRootNotFound,
+            Self::FilesystemInvalidRootSelection,
+            Self::JobRunNotFound,
+            Self::OperationCapacityUnavailable,
+            Self::ConfigurationSourceEntryNotFound,
+            Self::ConfigurationGameNotFound,
+            Self::OperationSourceChangedDuringProcessing,
+        ]
+    }
+
     /// Returns the permanent machine-readable code.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -264,6 +297,10 @@ impl ErrorCode {
             Self::OperationCapacityUnavailable => "ARGUS.V1.OPERATION.CAPACITY_UNAVAILABLE",
             Self::ConfigurationSourceEntryNotFound => {
                 "ARGUS.V1.CONFIGURATION.SOURCE_ENTRY_NOT_FOUND"
+            }
+            Self::ConfigurationGameNotFound => "ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND",
+            Self::OperationSourceChangedDuringProcessing => {
+                "ARGUS.V1.OPERATION.SOURCE_CHANGED_DURING_PROCESSING"
             }
         }
     }
@@ -453,6 +490,22 @@ impl ErrorCode {
                 Recoverability::UserAction,
                 RetryPolicy::Never,
                 "errors.configuration.source_entry_not_found",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ConfigurationGameNotFound => policy(
+                ErrorCategory::Configuration,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.library.game_not_found",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::OperationSourceChangedDuringProcessing => policy(
+                ErrorCategory::Operation,
+                ApplicationSeverity::Warning,
+                Recoverability::Retry,
+                RetryPolicy::Immediate,
+                "errors.operation.source_changed_during_processing",
                 COMMON_FAILURE_FIELDS,
             ),
         }

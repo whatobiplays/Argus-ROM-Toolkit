@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -393897843;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1861757425;
 
 // Section: executor
 
@@ -415,6 +415,39 @@ fn wire__crate__get_event_attach_epoch_impl(
         },
     )
 }
+fn wire__crate__get_game_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_game",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_game_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_game(api_game_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__get_job_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -672,6 +705,39 @@ fn wire__crate__initialize_with_standard_data_directory_impl(
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok =
                         crate::initialize_with_standard_data_directory(api_data_directory)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__list_games_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_games",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::ListGamesRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::list_games(api_request)?;
                     Ok(output_ok)
                 })())
             }
@@ -1454,6 +1520,86 @@ impl SseDecode for crate::CancelJobResultDto {
     }
 }
 
+impl SseDecode for crate::ContentIdentitySummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_schemeId = <String>::sse_decode(deserializer);
+        let mut var_revision = <u32>::sse_decode(deserializer);
+        let mut var_digest = <String>::sse_decode(deserializer);
+        return crate::ContentIdentitySummaryDto {
+            scheme_id: var_schemeId,
+            revision: var_revision,
+            digest: var_digest,
+        };
+    }
+}
+
+impl SseDecode for crate::ContentPresenceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::ContentPresenceDto::Available,
+            1 => crate::ContentPresenceDto::PartiallyUnavailable,
+            2 => crate::ContentPresenceDto::Unavailable,
+            3 => crate::ContentPresenceDto::Orphaned,
+            _ => unreachable!("Invalid variant for ContentPresenceDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::ContentProvenanceSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sourceEntryId = <String>::sse_decode(deserializer);
+        let mut var_associationKey = <String>::sse_decode(deserializer);
+        let mut var_sourceFingerprint = <Option<String>>::sse_decode(deserializer);
+        let mut var_lastObservedScanId = <String>::sse_decode(deserializer);
+        return crate::ContentProvenanceSummaryDto {
+            source_entry_id: var_sourceEntryId,
+            association_key: var_associationKey,
+            source_fingerprint: var_sourceFingerprint,
+            last_observed_scan_id: var_lastObservedScanId,
+        };
+    }
+}
+
+impl SseDecode for crate::ContentSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_gameContentId = <String>::sse_decode(deserializer);
+        let mut var_platformId = <crate::PlatformIdDto>::sse_decode(deserializer);
+        let mut var_contentType = <crate::ContentTypeDto>::sse_decode(deserializer);
+        let mut var_presence = <crate::ContentPresenceDto>::sse_decode(deserializer);
+        let mut var_identification = <crate::IdentificationStateDto>::sse_decode(deserializer);
+        let mut var_sourceCount = <u32>::sse_decode(deserializer);
+        let mut var_identity = <Option<crate::ContentIdentitySummaryDto>>::sse_decode(deserializer);
+        let mut var_provenance =
+            <Option<crate::ContentProvenanceSummaryDto>>::sse_decode(deserializer);
+        return crate::ContentSummaryDto {
+            game_content_id: var_gameContentId,
+            platform_id: var_platformId,
+            content_type: var_contentType,
+            presence: var_presence,
+            identification: var_identification,
+            source_count: var_sourceCount,
+            identity: var_identity,
+            provenance: var_provenance,
+        };
+    }
+}
+
+impl SseDecode for crate::ContentTypeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::ContentTypeDto::CartridgeImage,
+            _ => unreachable!("Invalid variant for ContentTypeDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::DiagnosticsExportDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1500,6 +1646,157 @@ impl SseDecode for crate::ExecutionHostStopReasonDto {
     }
 }
 
+impl SseDecode for crate::GameAvailabilityStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::GameAvailabilityStateDto::Available,
+            1 => crate::GameAvailabilityStateDto::PartiallyUnavailable,
+            2 => crate::GameAvailabilityStateDto::Unavailable,
+            3 => crate::GameAvailabilityStateDto::InactiveOrphan,
+            _ => unreachable!("Invalid variant for GameAvailabilityStateDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::GameDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_gameId = <String>::sse_decode(deserializer);
+        let mut var_platformId = <crate::PlatformIdDto>::sse_decode(deserializer);
+        let mut var_lifecycle = <crate::GameLifecycleDto>::sse_decode(deserializer);
+        let mut var_hydrationState = <crate::HydrationStateDto>::sse_decode(deserializer);
+        let mut var_fallbackTitle = <String>::sse_decode(deserializer);
+        let mut var_memberships = <Vec<crate::GameMembershipSummaryDto>>::sse_decode(deserializer);
+        let mut var_content = <Vec<crate::ContentSummaryDto>>::sse_decode(deserializer);
+        let mut var_availabilityState = <crate::GameAvailabilityStateDto>::sse_decode(deserializer);
+        return crate::GameDetailDto {
+            game_id: var_gameId,
+            platform_id: var_platformId,
+            lifecycle: var_lifecycle,
+            hydration_state: var_hydrationState,
+            fallback_title: var_fallbackTitle,
+            memberships: var_memberships,
+            content: var_content,
+            availability_state: var_availabilityState,
+        };
+    }
+}
+
+impl SseDecode for crate::GameLibraryRowDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_gameId = <String>::sse_decode(deserializer);
+        let mut var_displayTitle = <String>::sse_decode(deserializer);
+        let mut var_platformId = <crate::PlatformIdDto>::sse_decode(deserializer);
+        let mut var_hydrationState = <crate::HydrationStateDto>::sse_decode(deserializer);
+        let mut var_contentCount = <u32>::sse_decode(deserializer);
+        let mut var_sourceCount = <u32>::sse_decode(deserializer);
+        let mut var_availabilityState = <crate::GameAvailabilityStateDto>::sse_decode(deserializer);
+        let mut var_updatedAtMs = <i64>::sse_decode(deserializer);
+        return crate::GameLibraryRowDto {
+            game_id: var_gameId,
+            display_title: var_displayTitle,
+            platform_id: var_platformId,
+            hydration_state: var_hydrationState,
+            content_count: var_contentCount,
+            source_count: var_sourceCount,
+            availability_state: var_availabilityState,
+            updated_at_ms: var_updatedAtMs,
+        };
+    }
+}
+
+impl SseDecode for crate::GameLifecycleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::GameLifecycleDto::Active,
+            1 => crate::GameLifecycleDto::InactiveOrphan,
+            2 => crate::GameLifecycleDto::Redirected,
+            _ => unreachable!("Invalid variant for GameLifecycleDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::GameMembershipSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_gameContentId = <String>::sse_decode(deserializer);
+        let mut var_relationship = <crate::MembershipRelationshipDto>::sse_decode(deserializer);
+        let mut var_groupingBasis = <crate::GroupingBasisDto>::sse_decode(deserializer);
+        let mut var_groupingRevision = <u32>::sse_decode(deserializer);
+        return crate::GameMembershipSummaryDto {
+            game_content_id: var_gameContentId,
+            relationship: var_relationship,
+            grouping_basis: var_groupingBasis,
+            grouping_revision: var_groupingRevision,
+        };
+    }
+}
+
+impl SseDecode for crate::GamePageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_items = <Vec<crate::GameLibraryRowDto>>::sse_decode(deserializer);
+        let mut var_nextCursor = <Option<String>>::sse_decode(deserializer);
+        return crate::GamePageDto {
+            items: var_items,
+            next_cursor: var_nextCursor,
+        };
+    }
+}
+
+impl SseDecode for crate::GetGameResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 = <crate::GameDetailDto>::sse_decode(deserializer);
+                return crate::GetGameResultDto::Found(var_field0);
+            }
+            1 => {
+                let mut var_canonicalGameId = <String>::sse_decode(deserializer);
+                return crate::GetGameResultDto::Redirected {
+                    canonical_game_id: var_canonicalGameId,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::GroupingBasisDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::GroupingBasisDto::ExactContentIdentity,
+            1 => crate::GroupingBasisDto::Provisional,
+            _ => unreachable!("Invalid variant for GroupingBasisDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::HydrationStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::HydrationStateDto::Hydrated,
+            1 => crate::HydrationStateDto::PartiallyHydrated,
+            2 => crate::HydrationStateDto::Unmatched,
+            3 => crate::HydrationStateDto::Refreshing,
+            _ => unreachable!("Invalid variant for HydrationStateDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1511,6 +1808,19 @@ impl SseDecode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for crate::IdentificationStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::IdentificationStateDto::Identified,
+            1 => crate::IdentificationStateDto::NeedsReidentification,
+            2 => crate::IdentificationStateDto::Unidentified,
+            _ => unreachable!("Invalid variant for IdentificationStateDto: {}", inner),
+        };
     }
 }
 
@@ -1630,6 +1940,52 @@ impl SseDecode for crate::JobSummaryPageDto {
             items: var_items,
             total_count: var_totalCount,
             next_offset: var_nextOffset,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryAvailabilityStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibraryAvailabilityStateDto::Available,
+            1 => crate::LibraryAvailabilityStateDto::PartiallyUnavailable,
+            2 => crate::LibraryAvailabilityStateDto::Unavailable,
+            3 => crate::LibraryAvailabilityStateDto::InactiveOrphan,
+            _ => unreachable!("Invalid variant for LibraryAvailabilityStateDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryFilterDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_platformIds = <Vec<String>>::sse_decode(deserializer);
+        let mut var_regions = <Vec<String>>::sse_decode(deserializer);
+        let mut var_hydrationStates =
+            <Vec<crate::LibraryHydrationStateDto>>::sse_decode(deserializer);
+        let mut var_availabilityStates =
+            <Vec<crate::LibraryAvailabilityStateDto>>::sse_decode(deserializer);
+        return crate::LibraryFilterDto {
+            platform_ids: var_platformIds,
+            regions: var_regions,
+            hydration_states: var_hydrationStates,
+            availability_states: var_availabilityStates,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryHydrationStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibraryHydrationStateDto::Hydrated,
+            1 => crate::LibraryHydrationStateDto::PartiallyHydrated,
+            2 => crate::LibraryHydrationStateDto::Unmatched,
+            3 => crate::LibraryHydrationStateDto::Refreshing,
+            _ => unreachable!("Invalid variant for LibraryHydrationStateDto: {}", inner),
         };
     }
 }
@@ -1857,6 +2213,77 @@ impl SseDecode for crate::LibraryScanRootSummaryDto {
     }
 }
 
+impl SseDecode for crate::LibraryScopeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::LibraryScopeDto::All;
+            }
+            1 => {
+                let mut var_platformId = <String>::sse_decode(deserializer);
+                return crate::LibraryScopeDto::Platform {
+                    platform_id: var_platformId,
+                };
+            }
+            2 => {
+                let mut var_sourceId = <String>::sse_decode(deserializer);
+                return crate::LibraryScopeDto::Source {
+                    source_id: var_sourceId,
+                };
+            }
+            3 => {
+                let mut var_libraryRootId = <String>::sse_decode(deserializer);
+                return crate::LibraryScopeDto::LibraryRoot {
+                    library_root_id: var_libraryRootId,
+                };
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::LibrarySortDirectionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibrarySortDirectionDto::Ascending,
+            1 => crate::LibrarySortDirectionDto::Descending,
+            _ => unreachable!("Invalid variant for LibrarySortDirectionDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::LibrarySortDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_field = <crate::LibrarySortFieldDto>::sse_decode(deserializer);
+        let mut var_direction = <crate::LibrarySortDirectionDto>::sse_decode(deserializer);
+        return crate::LibrarySortDto {
+            field: var_field,
+            direction: var_direction,
+        };
+    }
+}
+
+impl SseDecode for crate::LibrarySortFieldDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibrarySortFieldDto::DisplayTitle,
+            1 => crate::LibrarySortFieldDto::Platform,
+            2 => crate::LibrarySortFieldDto::ReleaseDate,
+            3 => crate::LibrarySortFieldDto::UpdatedAt,
+            _ => unreachable!("Invalid variant for LibrarySortFieldDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1866,6 +2293,62 @@ impl SseDecode for Vec<String> {
             ans_.push(<String>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::ContentSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::ContentSummaryDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::GameLibraryRowDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::GameLibraryRowDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::GameMembershipSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::GameMembershipSummaryDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for crate::ListGamesRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_scope = <crate::LibraryScopeDto>::sse_decode(deserializer);
+        let mut var_searchText = <Option<String>>::sse_decode(deserializer);
+        let mut var_filters = <crate::LibraryFilterDto>::sse_decode(deserializer);
+        let mut var_sort = <crate::LibrarySortDto>::sse_decode(deserializer);
+        let mut var_cursor = <Option<String>>::sse_decode(deserializer);
+        let mut var_pageSize = <u32>::sse_decode(deserializer);
+        return crate::ListGamesRequestDto {
+            scope: var_scope,
+            search_text: var_searchText,
+            filters: var_filters,
+            sort: var_sort,
+            cursor: var_cursor,
+            page_size: var_pageSize,
+        };
     }
 }
 
@@ -1909,6 +2392,32 @@ impl SseDecode for crate::ListJobsScopeDto {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for Vec<crate::LibraryAvailabilityStateDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::LibraryAvailabilityStateDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::LibraryHydrationStateDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::LibraryHydrationStateDto>::sse_decode(deserializer));
+        }
+        return ans_;
     }
 }
 
@@ -2188,6 +2697,18 @@ impl SseDecode for crate::LocalFilesystemRootSelectionDto {
     }
 }
 
+impl SseDecode for crate::MembershipRelationshipDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::MembershipRelationshipDto::Primary,
+            1 => crate::MembershipRelationshipDto::Secondary,
+            _ => unreachable!("Invalid variant for MembershipRelationshipDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::MountedLocalFilesystemVolumeDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2261,6 +2782,30 @@ impl SseDecode for Option<crate::BoundedTerminalFailureDto> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::BoundedTerminalFailureDto>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::ContentIdentitySummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::ContentIdentitySummaryDto>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::ContentProvenanceSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::ContentProvenanceSummaryDto>::sse_decode(
+                deserializer,
+            ));
         } else {
             return None;
         }
@@ -2354,6 +2899,19 @@ impl SseDecode for Option<u64> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for crate::PlatformIdDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::PlatformIdDto::NintendoGb,
+            1 => crate::PlatformIdDto::NintendoGbc,
+            2 => crate::PlatformIdDto::NintendoGba,
+            _ => unreachable!("Invalid variant for PlatformIdDto: {}", inner),
+        };
     }
 }
 
@@ -2967,49 +3525,51 @@ fn pde_ffi_dispatcher_primary_impl(
         9 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
         10 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         11 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__initialize_with_standard_data_directory_impl(
+        12 => wire__crate__get_game_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__initialize_with_standard_data_directory_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        20 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__list_local_filesystem_browse_directories_impl(
+        21 => wire__crate__list_games_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__list_local_filesystem_browse_directories_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        23 => {
+        25 => {
             wire__crate__list_local_filesystem_browse_roots_impl(port, ptr, rust_vec_len, data_len)
         }
-        24 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
+        26 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        37 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3196,6 +3756,106 @@ impl flutter_rust_bridge::IntoIntoDart<crate::CancelJobResultDto> for crate::Can
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ContentIdentitySummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.scheme_id.into_into_dart().into_dart(),
+            self.revision.into_into_dart().into_dart(),
+            self.digest.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ContentIdentitySummaryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ContentIdentitySummaryDto>
+    for crate::ContentIdentitySummaryDto
+{
+    fn into_into_dart(self) -> crate::ContentIdentitySummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ContentPresenceDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Available => 0.into_dart(),
+            Self::PartiallyUnavailable => 1.into_dart(),
+            Self::Unavailable => 2.into_dart(),
+            Self::Orphaned => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ContentPresenceDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ContentPresenceDto> for crate::ContentPresenceDto {
+    fn into_into_dart(self) -> crate::ContentPresenceDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ContentProvenanceSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.source_entry_id.into_into_dart().into_dart(),
+            self.association_key.into_into_dart().into_dart(),
+            self.source_fingerprint.into_into_dart().into_dart(),
+            self.last_observed_scan_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ContentProvenanceSummaryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ContentProvenanceSummaryDto>
+    for crate::ContentProvenanceSummaryDto
+{
+    fn into_into_dart(self) -> crate::ContentProvenanceSummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ContentSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.game_content_id.into_into_dart().into_dart(),
+            self.platform_id.into_into_dart().into_dart(),
+            self.content_type.into_into_dart().into_dart(),
+            self.presence.into_into_dart().into_dart(),
+            self.identification.into_into_dart().into_dart(),
+            self.source_count.into_into_dart().into_dart(),
+            self.identity.into_into_dart().into_dart(),
+            self.provenance.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ContentSummaryDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ContentSummaryDto> for crate::ContentSummaryDto {
+    fn into_into_dart(self) -> crate::ContentSummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ContentTypeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::CartridgeImage => 0.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ContentTypeDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ContentTypeDto> for crate::ContentTypeDto {
+    fn into_into_dart(self) -> crate::ContentTypeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::DiagnosticsExportDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3269,6 +3929,206 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ExecutionHostStopReasonDto>
     for crate::ExecutionHostStopReasonDto
 {
     fn into_into_dart(self) -> crate::ExecutionHostStopReasonDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GameAvailabilityStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Available => 0.into_dart(),
+            Self::PartiallyUnavailable => 1.into_dart(),
+            Self::Unavailable => 2.into_dart(),
+            Self::InactiveOrphan => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::GameAvailabilityStateDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::GameAvailabilityStateDto>
+    for crate::GameAvailabilityStateDto
+{
+    fn into_into_dart(self) -> crate::GameAvailabilityStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GameDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.game_id.into_into_dart().into_dart(),
+            self.platform_id.into_into_dart().into_dart(),
+            self.lifecycle.into_into_dart().into_dart(),
+            self.hydration_state.into_into_dart().into_dart(),
+            self.fallback_title.into_into_dart().into_dart(),
+            self.memberships.into_into_dart().into_dart(),
+            self.content.into_into_dart().into_dart(),
+            self.availability_state.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::GameDetailDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::GameDetailDto> for crate::GameDetailDto {
+    fn into_into_dart(self) -> crate::GameDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GameLibraryRowDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.game_id.into_into_dart().into_dart(),
+            self.display_title.into_into_dart().into_dart(),
+            self.platform_id.into_into_dart().into_dart(),
+            self.hydration_state.into_into_dart().into_dart(),
+            self.content_count.into_into_dart().into_dart(),
+            self.source_count.into_into_dart().into_dart(),
+            self.availability_state.into_into_dart().into_dart(),
+            self.updated_at_ms.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::GameLibraryRowDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::GameLibraryRowDto> for crate::GameLibraryRowDto {
+    fn into_into_dart(self) -> crate::GameLibraryRowDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GameLifecycleDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Active => 0.into_dart(),
+            Self::InactiveOrphan => 1.into_dart(),
+            Self::Redirected => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::GameLifecycleDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::GameLifecycleDto> for crate::GameLifecycleDto {
+    fn into_into_dart(self) -> crate::GameLifecycleDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GameMembershipSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.game_content_id.into_into_dart().into_dart(),
+            self.relationship.into_into_dart().into_dart(),
+            self.grouping_basis.into_into_dart().into_dart(),
+            self.grouping_revision.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::GameMembershipSummaryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::GameMembershipSummaryDto>
+    for crate::GameMembershipSummaryDto
+{
+    fn into_into_dart(self) -> crate::GameMembershipSummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GamePageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.items.into_into_dart().into_dart(),
+            self.next_cursor.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::GamePageDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::GamePageDto> for crate::GamePageDto {
+    fn into_into_dart(self) -> crate::GamePageDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GetGameResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::GetGameResultDto::Found(field0) => {
+                [0.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::GetGameResultDto::Redirected { canonical_game_id } => [
+                1.into_dart(),
+                canonical_game_id.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::GetGameResultDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::GetGameResultDto> for crate::GetGameResultDto {
+    fn into_into_dart(self) -> crate::GetGameResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GroupingBasisDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::ExactContentIdentity => 0.into_dart(),
+            Self::Provisional => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::GroupingBasisDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::GroupingBasisDto> for crate::GroupingBasisDto {
+    fn into_into_dart(self) -> crate::GroupingBasisDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::HydrationStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Hydrated => 0.into_dart(),
+            Self::PartiallyHydrated => 1.into_dart(),
+            Self::Unmatched => 2.into_dart(),
+            Self::Refreshing => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::HydrationStateDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::HydrationStateDto> for crate::HydrationStateDto {
+    fn into_into_dart(self) -> crate::HydrationStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::IdentificationStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Identified => 0.into_dart(),
+            Self::NeedsReidentification => 1.into_dart(),
+            Self::Unidentified => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::IdentificationStateDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::IdentificationStateDto>
+    for crate::IdentificationStateDto
+{
+    fn into_into_dart(self) -> crate::IdentificationStateDto {
         self
     }
 }
@@ -3397,6 +4257,70 @@ impl flutter_rust_bridge::IntoDart for crate::JobSummaryPageDto {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::JobSummaryPageDto {}
 impl flutter_rust_bridge::IntoIntoDart<crate::JobSummaryPageDto> for crate::JobSummaryPageDto {
     fn into_into_dart(self) -> crate::JobSummaryPageDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryAvailabilityStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Available => 0.into_dart(),
+            Self::PartiallyUnavailable => 1.into_dart(),
+            Self::Unavailable => 2.into_dart(),
+            Self::InactiveOrphan => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryAvailabilityStateDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryAvailabilityStateDto>
+    for crate::LibraryAvailabilityStateDto
+{
+    fn into_into_dart(self) -> crate::LibraryAvailabilityStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryFilterDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.platform_ids.into_into_dart().into_dart(),
+            self.regions.into_into_dart().into_dart(),
+            self.hydration_states.into_into_dart().into_dart(),
+            self.availability_states.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibraryFilterDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryFilterDto> for crate::LibraryFilterDto {
+    fn into_into_dart(self) -> crate::LibraryFilterDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryHydrationStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Hydrated => 0.into_dart(),
+            Self::PartiallyHydrated => 1.into_dart(),
+            Self::Unmatched => 2.into_dart(),
+            Self::Refreshing => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryHydrationStateDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryHydrationStateDto>
+    for crate::LibraryHydrationStateDto
+{
+    fn into_into_dart(self) -> crate::LibraryHydrationStateDto {
         self
     }
 }
@@ -3692,6 +4616,107 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryScanRootSummaryDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryScopeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::LibraryScopeDto::All => [0.into_dart()].into_dart(),
+            crate::LibraryScopeDto::Platform { platform_id } => {
+                [1.into_dart(), platform_id.into_into_dart().into_dart()].into_dart()
+            }
+            crate::LibraryScopeDto::Source { source_id } => {
+                [2.into_dart(), source_id.into_into_dart().into_dart()].into_dart()
+            }
+            crate::LibraryScopeDto::LibraryRoot { library_root_id } => {
+                [3.into_dart(), library_root_id.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibraryScopeDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryScopeDto> for crate::LibraryScopeDto {
+    fn into_into_dart(self) -> crate::LibraryScopeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibrarySortDirectionDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Ascending => 0.into_dart(),
+            Self::Descending => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibrarySortDirectionDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibrarySortDirectionDto>
+    for crate::LibrarySortDirectionDto
+{
+    fn into_into_dart(self) -> crate::LibrarySortDirectionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibrarySortDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.field.into_into_dart().into_dart(),
+            self.direction.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibrarySortDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibrarySortDto> for crate::LibrarySortDto {
+    fn into_into_dart(self) -> crate::LibrarySortDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibrarySortFieldDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::DisplayTitle => 0.into_dart(),
+            Self::Platform => 1.into_dart(),
+            Self::ReleaseDate => 2.into_dart(),
+            Self::UpdatedAt => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibrarySortFieldDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibrarySortFieldDto> for crate::LibrarySortFieldDto {
+    fn into_into_dart(self) -> crate::LibrarySortFieldDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ListGamesRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.scope.into_into_dart().into_dart(),
+            self.search_text.into_into_dart().into_dart(),
+            self.filters.into_into_dart().into_dart(),
+            self.sort.into_into_dart().into_dart(),
+            self.cursor.into_into_dart().into_dart(),
+            self.page_size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ListGamesRequestDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ListGamesRequestDto> for crate::ListGamesRequestDto {
+    fn into_into_dart(self) -> crate::ListGamesRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ListJobsRequestDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.scope.into_into_dart().into_dart()].into_dart()
@@ -3913,6 +4938,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemRootSelectionDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::MembershipRelationshipDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Primary => 0.into_dart(),
+            Self::Secondary => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::MembershipRelationshipDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::MembershipRelationshipDto>
+    for crate::MembershipRelationshipDto
+{
+    fn into_into_dart(self) -> crate::MembershipRelationshipDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::MountedLocalFilesystemVolumeDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -3968,6 +5014,23 @@ impl flutter_rust_bridge::IntoDart for crate::OperationHandleDto {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::OperationHandleDto {}
 impl flutter_rust_bridge::IntoIntoDart<crate::OperationHandleDto> for crate::OperationHandleDto {
     fn into_into_dart(self) -> crate::OperationHandleDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::PlatformIdDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::NintendoGb => 0.into_dart(),
+            Self::NintendoGbc => 1.into_dart(),
+            Self::NintendoGba => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::PlatformIdDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::PlatformIdDto> for crate::PlatformIdDto {
+    fn into_into_dart(self) -> crate::PlatformIdDto {
         self
     }
 }
@@ -4780,6 +5843,72 @@ impl SseEncode for crate::CancelJobResultDto {
     }
 }
 
+impl SseEncode for crate::ContentIdentitySummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.scheme_id, serializer);
+        <u32>::sse_encode(self.revision, serializer);
+        <String>::sse_encode(self.digest, serializer);
+    }
+}
+
+impl SseEncode for crate::ContentPresenceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::ContentPresenceDto::Available => 0,
+                crate::ContentPresenceDto::PartiallyUnavailable => 1,
+                crate::ContentPresenceDto::Unavailable => 2,
+                crate::ContentPresenceDto::Orphaned => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::ContentProvenanceSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.source_entry_id, serializer);
+        <String>::sse_encode(self.association_key, serializer);
+        <Option<String>>::sse_encode(self.source_fingerprint, serializer);
+        <String>::sse_encode(self.last_observed_scan_id, serializer);
+    }
+}
+
+impl SseEncode for crate::ContentSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.game_content_id, serializer);
+        <crate::PlatformIdDto>::sse_encode(self.platform_id, serializer);
+        <crate::ContentTypeDto>::sse_encode(self.content_type, serializer);
+        <crate::ContentPresenceDto>::sse_encode(self.presence, serializer);
+        <crate::IdentificationStateDto>::sse_encode(self.identification, serializer);
+        <u32>::sse_encode(self.source_count, serializer);
+        <Option<crate::ContentIdentitySummaryDto>>::sse_encode(self.identity, serializer);
+        <Option<crate::ContentProvenanceSummaryDto>>::sse_encode(self.provenance, serializer);
+    }
+}
+
+impl SseEncode for crate::ContentTypeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::ContentTypeDto::CartridgeImage => 0,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::DiagnosticsExportDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4827,6 +5956,140 @@ impl SseEncode for crate::ExecutionHostStopReasonDto {
     }
 }
 
+impl SseEncode for crate::GameAvailabilityStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::GameAvailabilityStateDto::Available => 0,
+                crate::GameAvailabilityStateDto::PartiallyUnavailable => 1,
+                crate::GameAvailabilityStateDto::Unavailable => 2,
+                crate::GameAvailabilityStateDto::InactiveOrphan => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::GameDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.game_id, serializer);
+        <crate::PlatformIdDto>::sse_encode(self.platform_id, serializer);
+        <crate::GameLifecycleDto>::sse_encode(self.lifecycle, serializer);
+        <crate::HydrationStateDto>::sse_encode(self.hydration_state, serializer);
+        <String>::sse_encode(self.fallback_title, serializer);
+        <Vec<crate::GameMembershipSummaryDto>>::sse_encode(self.memberships, serializer);
+        <Vec<crate::ContentSummaryDto>>::sse_encode(self.content, serializer);
+        <crate::GameAvailabilityStateDto>::sse_encode(self.availability_state, serializer);
+    }
+}
+
+impl SseEncode for crate::GameLibraryRowDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.game_id, serializer);
+        <String>::sse_encode(self.display_title, serializer);
+        <crate::PlatformIdDto>::sse_encode(self.platform_id, serializer);
+        <crate::HydrationStateDto>::sse_encode(self.hydration_state, serializer);
+        <u32>::sse_encode(self.content_count, serializer);
+        <u32>::sse_encode(self.source_count, serializer);
+        <crate::GameAvailabilityStateDto>::sse_encode(self.availability_state, serializer);
+        <i64>::sse_encode(self.updated_at_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::GameLifecycleDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::GameLifecycleDto::Active => 0,
+                crate::GameLifecycleDto::InactiveOrphan => 1,
+                crate::GameLifecycleDto::Redirected => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::GameMembershipSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.game_content_id, serializer);
+        <crate::MembershipRelationshipDto>::sse_encode(self.relationship, serializer);
+        <crate::GroupingBasisDto>::sse_encode(self.grouping_basis, serializer);
+        <u32>::sse_encode(self.grouping_revision, serializer);
+    }
+}
+
+impl SseEncode for crate::GamePageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::GameLibraryRowDto>>::sse_encode(self.items, serializer);
+        <Option<String>>::sse_encode(self.next_cursor, serializer);
+    }
+}
+
+impl SseEncode for crate::GetGameResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::GetGameResultDto::Found(field0) => {
+                <i32>::sse_encode(0, serializer);
+                <crate::GameDetailDto>::sse_encode(field0, serializer);
+            }
+            crate::GetGameResultDto::Redirected { canonical_game_id } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(canonical_game_id, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::GroupingBasisDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::GroupingBasisDto::ExactContentIdentity => 0,
+                crate::GroupingBasisDto::Provisional => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::HydrationStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::HydrationStateDto::Hydrated => 0,
+                crate::HydrationStateDto::PartiallyHydrated => 1,
+                crate::HydrationStateDto::Unmatched => 2,
+                crate::HydrationStateDto::Refreshing => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4838,6 +6101,23 @@ impl SseEncode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::IdentificationStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::IdentificationStateDto::Identified => 0,
+                crate::IdentificationStateDto::NeedsReidentification => 1,
+                crate::IdentificationStateDto::Unidentified => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -4924,6 +6204,52 @@ impl SseEncode for crate::JobSummaryPageDto {
         <Vec<crate::JobSummaryDto>>::sse_encode(self.items, serializer);
         <u32>::sse_encode(self.total_count, serializer);
         <Option<u32>>::sse_encode(self.next_offset, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryAvailabilityStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibraryAvailabilityStateDto::Available => 0,
+                crate::LibraryAvailabilityStateDto::PartiallyUnavailable => 1,
+                crate::LibraryAvailabilityStateDto::Unavailable => 2,
+                crate::LibraryAvailabilityStateDto::InactiveOrphan => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::LibraryFilterDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.platform_ids, serializer);
+        <Vec<String>>::sse_encode(self.regions, serializer);
+        <Vec<crate::LibraryHydrationStateDto>>::sse_encode(self.hydration_states, serializer);
+        <Vec<crate::LibraryAvailabilityStateDto>>::sse_encode(self.availability_states, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryHydrationStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibraryHydrationStateDto::Hydrated => 0,
+                crate::LibraryHydrationStateDto::PartiallyHydrated => 1,
+                crate::LibraryHydrationStateDto::Unmatched => 2,
+                crate::LibraryHydrationStateDto::Refreshing => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -5096,6 +6422,74 @@ impl SseEncode for crate::LibraryScanRootSummaryDto {
     }
 }
 
+impl SseEncode for crate::LibraryScopeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::LibraryScopeDto::All => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::LibraryScopeDto::Platform { platform_id } => {
+                <i32>::sse_encode(1, serializer);
+                <String>::sse_encode(platform_id, serializer);
+            }
+            crate::LibraryScopeDto::Source { source_id } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(source_id, serializer);
+            }
+            crate::LibraryScopeDto::LibraryRoot { library_root_id } => {
+                <i32>::sse_encode(3, serializer);
+                <String>::sse_encode(library_root_id, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::LibrarySortDirectionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibrarySortDirectionDto::Ascending => 0,
+                crate::LibrarySortDirectionDto::Descending => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::LibrarySortDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::LibrarySortFieldDto>::sse_encode(self.field, serializer);
+        <crate::LibrarySortDirectionDto>::sse_encode(self.direction, serializer);
+    }
+}
+
+impl SseEncode for crate::LibrarySortFieldDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibrarySortFieldDto::DisplayTitle => 0,
+                crate::LibrarySortFieldDto::Platform => 1,
+                crate::LibrarySortFieldDto::ReleaseDate => 2,
+                crate::LibrarySortFieldDto::UpdatedAt => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5103,6 +6497,48 @@ impl SseEncode for Vec<String> {
         for item in self {
             <String>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for Vec<crate::ContentSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::ContentSummaryDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::GameLibraryRowDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::GameLibraryRowDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::GameMembershipSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::GameMembershipSummaryDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::ListGamesRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::LibraryScopeDto>::sse_encode(self.scope, serializer);
+        <Option<String>>::sse_encode(self.search_text, serializer);
+        <crate::LibraryFilterDto>::sse_encode(self.filters, serializer);
+        <crate::LibrarySortDto>::sse_encode(self.sort, serializer);
+        <Option<String>>::sse_encode(self.cursor, serializer);
+        <u32>::sse_encode(self.page_size, serializer);
     }
 }
 
@@ -5138,6 +6574,26 @@ impl SseEncode for crate::ListJobsScopeDto {
             _ => {
                 unimplemented!("");
             }
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::LibraryAvailabilityStateDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::LibraryAvailabilityStateDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::LibraryHydrationStateDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::LibraryHydrationStateDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -5345,6 +6801,22 @@ impl SseEncode for crate::LocalFilesystemRootSelectionDto {
     }
 }
 
+impl SseEncode for crate::MembershipRelationshipDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::MembershipRelationshipDto::Primary => 0,
+                crate::MembershipRelationshipDto::Secondary => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::MountedLocalFilesystemVolumeDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -5405,6 +6877,26 @@ impl SseEncode for Option<crate::BoundedTerminalFailureDto> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::BoundedTerminalFailureDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::ContentIdentitySummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::ContentIdentitySummaryDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::ContentProvenanceSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::ContentProvenanceSummaryDto>::sse_encode(value, serializer);
         }
     }
 }
@@ -5486,6 +6978,23 @@ impl SseEncode for Option<u64> {
         if let Some(value) = self {
             <u64>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::PlatformIdDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::PlatformIdDto::NintendoGb => 0,
+                crate::PlatformIdDto::NintendoGbc => 1,
+                crate::PlatformIdDto::NintendoGba => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 

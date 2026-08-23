@@ -11,9 +11,9 @@ with concrete evidence; nothing is inferred from host command success alone.
 - `just check-android-contract` and `just check-android-package`: PASS. The
   debug APK has package `com.argusromtoolkit.argus`, minSdk 30, and
   `lib/arm64-v8a/libargus_bridge.so` only.
-- Hosted GitHub CI: the "Android ARM64 build and package verification" job is
-  added to `.github/workflows/ci.yml`; an actual GitHub-hosted run is NOT RUN
-  from this workspace. The job performs build/package verification only and
+- Hosted GitHub CI: PASS on 2026-08-22. The "Android ARM64 build and package
+  verification" job in `.github/workflows/ci.yml` completed successfully on a
+  GitHub-hosted runner. The job performs build/package verification only and
   does not claim emulator/native execution.
 
 ## 2. ARM64 API 36 native qualification
@@ -91,15 +91,16 @@ material and signing values remained external to the repository.
    package/metadata/ARM64 contents and release signature verified.
 7. Architecture/specifications/templates treat Android as first-class and
    enforce applicability: PASS.
-8. No known MVP blocker hidden behind undocumented exclusion: PASS with the
-   explicit NOT RUN/UNVERIFIED entries above.
+8. No known MVP blocker hidden behind undocumented exclusion: PASS. Predictive
+   Back remains explicitly UNVERIFIED because the current Flutter/native test
+   surfaces cannot assert the nested callback; IME remains NOT APPLICABLE
+   because the product exposes no text-input surface.
 9. Android 10/Google Play/non-local providers deferred; non-ARM64 Android
    ABIs explicitly unsupported: PASS.
 
 ## Blocker summary
 
-- The repository-owned hosted Android ARM64 build/package CI job has not yet
-  executed on GitHub from this uncommitted workspace. Local-equivalent build,
-  package, native, physical-device, signed-release, and desktop regression
-  evidence is green; hosted CI execution remains the final external evidence
-  to observe after integration.
+No Phase 002 exit-criteria blockers remain. Repository validation, hosted
+Android ARM64 build/package CI, ARM64 API 36 native qualification, physical
+ARM64 device qualification, signed direct-distribution verification, and
+desktop regression evidence are recorded above.

@@ -23,11 +23,14 @@ use argus_application::{
     ListJobsQuery, ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
     LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
     LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MembershipRelationship,
+    MetadataFieldProvenance, MetadataProviderReadiness, MetadataProviderReadinessProjection,
     MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
-    PersistedSettingsReason, PlatformClass, PlatformId, Recoverability, RemoveLibraryRootResult,
-    RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext,
-    SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus,
-    SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
+    PersistedSettingsReason, PlatformClass, PlatformId, ProviderCapability,
+    ProviderCapabilityReadiness, ProviderId, ProviderReadinessState, Recoverability,
+    RemoveLibraryRootResult, ResolvedArtwork, ResolvedMetadata, RetryJobResult,
+    RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext, SafeContextField,
+    SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus, SettingsDomain,
+    SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
     SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
     SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, ThemeMode,
@@ -515,14 +518,122 @@ pub struct GameDetailDto {
     pub memberships: Vec<GameMembershipSummaryDto>,
     pub content: Vec<ContentSummaryDto>,
     pub availability_state: GameAvailabilityStateDto,
+    pub resolved_metadata: Option<ResolvedMetadataDto>,
+    pub resolved_artwork: Option<Vec<ResolvedArtworkDto>>,
+}
+
+/// Safe field-level provenance for resolved Game metadata.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataFieldProvenanceDto {
+    pub field: String,
+    pub provider_id: Option<String>,
+    pub external_game_id: Option<String>,
+    pub source: String,
+}
+
+/// Game-level derived metadata without provider transport details.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedMetadataDto {
+    pub display_title: Option<String>,
+    pub sort_title: Option<String>,
+    pub description: Option<String>,
+    pub release_date: Option<String>,
+    pub developers: Vec<String>,
+    pub publishers: Vec<String>,
+    pub genres: Vec<String>,
+    pub presentation_region: Option<String>,
+    pub presentation_languages: Vec<String>,
+    pub field_provenance: Vec<MetadataFieldProvenanceDto>,
+    pub resolution_revision: u64,
+    pub resolved_at: i64,
+    pub provider_id: Option<String>,
+}
+
+/// Game-level artwork selection with an optional local asset identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedArtworkDto {
+    pub artwork_type: String,
+    pub reference_id: String,
+    pub asset_id: Option<String>,
+    pub ordering: u32,
+    pub selection_reason: String,
+    pub resolution_revision: u64,
+    pub resolved_at: i64,
+}
+
+/// Safe provider capability readiness projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProviderCapabilityReadinessDto {
+    pub capability: String,
+    pub state: String,
+}
+
+/// Safe provider readiness projection used by the focused readiness query.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataProviderReadinessDto {
+    pub provider_id: String,
+    pub enabled: bool,
+    pub capability_readiness: Vec<ProviderCapabilityReadinessDto>,
+    pub credential_configured: bool,
+}
+
+/// Safe credential mutation result. It contains no secret-bearing field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProviderCredentialReadinessDto {
+    pub provider_id: String,
+    pub state: String,
+    pub credential_configured: bool,
+}
+
+/// Write-only provider credential command input.
+///
+/// `credential_input` is a transient bridge value. Rust consumes it on a
+/// backend worker and delegates it immediately to the application secure
+/// credential gateway; it is never returned in a DTO or persisted by the
+/// bridge.
+#[derive(Clone, Eq, PartialEq)]
+pub struct SetMetadataProviderCredentialRequestDto {
+    pub provider_id: String,
+    pub credential_input: Vec<u8>,
+}
+
+impl fmt::Debug for SetMetadataProviderCredentialRequestDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SetMetadataProviderCredentialRequestDto")
+            .field("provider_id", &self.provider_id)
+            .field("credential_input_len", &self.credential_input.len())
+            .finish()
+    }
+}
+
+/// Write-only provider credential removal command input.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RemoveMetadataProviderCredentialRequestDto {
+    pub provider_id: String,
+}
+
+/// Bounded original artwork bytes and validated media metadata.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtworkAssetBytesDto {
+    pub asset_id: String,
+    pub bytes: Vec<u8>,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Focused lookup result. A missing game is returned as the published
 /// GAME_NOT_FOUND application error rather than a nullable DTO.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum GetGameResultDto {
+    /// The value-owned enriched game projection preserves the established
+    /// bridge contract without introducing an indirection in the wire DTO.
     Found(GameDetailDto),
-    Redirected { canonical_game_id: String },
+    Redirected {
+        canonical_game_id: String,
+    },
 }
 
 /// Application-owned source-entry kind vocabulary.
@@ -1370,6 +1481,71 @@ pub fn get_game(game_id: String) -> Result<GetGameResultDto, ApplicationErrorDto
     }
 }
 
+/// Reads provider enablement and safe readiness without starting hydration.
+#[allow(clippy::result_large_err)]
+pub fn list_metadata_provider_readiness()
+-> Result<Vec<MetadataProviderReadinessDto>, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("metadata", "provider_readiness")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .metadata_provider_readiness_with_context(&context)
+        .map(|values| values.iter().map(metadata_provider_readiness_dto).collect())
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Writes and validates a provider credential without returning its bytes.
+#[allow(clippy::result_large_err)]
+pub fn set_metadata_provider_credential(
+    request: SetMetadataProviderCredentialRequestDto,
+) -> Result<ProviderCredentialReadinessDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("metadata", "set_provider_credential")
+        .map_err(|error| application_error_dto(&error))?;
+    let provider_id = ProviderId::try_from(request.provider_id.as_str())
+        .map_err(|_| validation_failure(context.trace_id()))?;
+    host()
+        .set_metadata_provider_credential_with_context(
+            provider_id,
+            request.credential_input,
+            &context,
+        )
+        .map(provider_credential_readiness_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Removes a provider credential without exposing prior secret state.
+#[allow(clippy::result_large_err)]
+pub fn remove_metadata_provider_credential(
+    request: RemoveMetadataProviderCredentialRequestDto,
+) -> Result<ProviderCredentialReadinessDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("metadata", "remove_provider_credential")
+        .map_err(|error| application_error_dto(&error))?;
+    let provider_id = ProviderId::try_from(request.provider_id.as_str())
+        .map_err(|_| validation_failure(context.trace_id()))?;
+    host()
+        .remove_metadata_provider_credential_with_context(provider_id, &context)
+        .map(provider_credential_readiness_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads one bounded immutable artwork object by content address.
+#[allow(clippy::result_large_err)]
+pub fn get_artwork_asset_bytes(
+    asset_id: String,
+) -> Result<ArtworkAssetBytesDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("artwork", "get_asset_bytes")
+        .map_err(|error| application_error_dto(&error))?;
+    let asset_id = argus_application::ArtworkAssetId::try_from(asset_id.as_str())
+        .map_err(|_| validation_failure(context.trace_id()))?;
+    host()
+        .get_artwork_asset_bytes_with_context(asset_id, &context)
+        .map(artwork_asset_bytes_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
 /// Replaces the transient native mounted-volume registry and reconciles
 /// persisted root availability. Native mount facts are ingress-only.
 #[allow(clippy::result_large_err)]
@@ -1852,7 +2028,8 @@ fn classify_subscribe_error(error: &ApplicationError) -> Option<BridgeTransportE
 #[cfg(test)]
 mod tests {
     use super::{
-        ExecutionHostStopReasonDto, ReportExecutionHostStopRequestDto, classify_subscribe_error,
+        ExecutionHostStopReasonDto, ReportExecutionHostStopRequestDto,
+        SetMetadataProviderCredentialRequestDto, classify_subscribe_error,
     };
     use argus_application::{
         ApplicationError, BackgroundOperationStopReason, ErrorCode, SafeContext,
@@ -1953,6 +2130,20 @@ mod tests {
                 .code,
             ErrorCode::ValidationInvalidArgument.as_str()
         );
+    }
+
+    #[test]
+    fn credential_request_debug_reports_only_provider_and_input_length() {
+        let request = SetMetadataProviderCredentialRequestDto {
+            provider_id: "steamgriddb".to_owned(),
+            credential_input: b"secret".to_vec(),
+        };
+
+        let debug = format!("{request:?}");
+
+        assert!(debug.contains("steamgriddb"));
+        assert!(debug.contains("credential_input_len"));
+        assert!(!debug.contains("secret"));
     }
 }
 
@@ -2269,6 +2460,126 @@ pub fn game_detail_dto(detail: &GameDetail) -> GameDetailDto {
             .collect(),
         content: detail.content().iter().map(content_summary_dto).collect(),
         availability_state: game_availability_state_dto(detail.availability_state()),
+        resolved_metadata: detail.resolved_metadata().map(resolved_metadata_dto),
+        resolved_artwork: Some(
+            detail
+                .resolved_artwork()
+                .iter()
+                .map(resolved_artwork_dto)
+                .collect(),
+        ),
+    }
+}
+
+fn metadata_provider_readiness_dto(
+    readiness: &MetadataProviderReadinessProjection,
+) -> MetadataProviderReadinessDto {
+    MetadataProviderReadinessDto {
+        provider_id: readiness.provider_id().as_str().to_owned(),
+        enabled: readiness.enabled(),
+        capability_readiness: readiness
+            .capability_readiness()
+            .iter()
+            .map(provider_capability_readiness_dto)
+            .collect(),
+        credential_configured: readiness.credential_configured(),
+    }
+}
+
+fn provider_credential_readiness_dto(
+    readiness: MetadataProviderReadiness,
+) -> ProviderCredentialReadinessDto {
+    ProviderCredentialReadinessDto {
+        provider_id: readiness.provider_id().as_str().to_owned(),
+        state: provider_readiness_state_str(readiness.state()).to_owned(),
+        credential_configured: readiness.credential_configured(),
+    }
+}
+
+fn provider_capability_readiness_dto(
+    readiness: &ProviderCapabilityReadiness,
+) -> ProviderCapabilityReadinessDto {
+    ProviderCapabilityReadinessDto {
+        capability: provider_capability_str(readiness.capability()).to_owned(),
+        state: provider_readiness_state_str(readiness.state()).to_owned(),
+    }
+}
+
+fn resolved_metadata_dto(metadata: &ResolvedMetadata) -> ResolvedMetadataDto {
+    ResolvedMetadataDto {
+        display_title: metadata.display_title().map(str::to_owned),
+        sort_title: metadata.sort_title().map(str::to_owned),
+        description: metadata.description().map(str::to_owned),
+        release_date: metadata.release_date().map(str::to_owned),
+        developers: metadata.developers().to_vec(),
+        publishers: metadata.publishers().to_vec(),
+        genres: metadata.genres().to_vec(),
+        presentation_region: metadata.presentation_region().map(str::to_owned),
+        presentation_languages: metadata.presentation_languages().to_vec(),
+        field_provenance: metadata
+            .field_provenance()
+            .iter()
+            .map(metadata_field_provenance_dto)
+            .collect(),
+        resolution_revision: metadata.resolution_revision(),
+        resolved_at: metadata.resolved_at(),
+        provider_id: metadata
+            .provider_id()
+            .map(|value| value.as_str().to_owned()),
+    }
+}
+
+fn metadata_field_provenance_dto(
+    provenance: &MetadataFieldProvenance,
+) -> MetadataFieldProvenanceDto {
+    MetadataFieldProvenanceDto {
+        field: provenance.field().to_owned(),
+        provider_id: provenance
+            .provider_id()
+            .map(|value| value.as_str().to_owned()),
+        external_game_id: provenance.external_game_id().map(str::to_owned),
+        source: provenance.source().to_owned(),
+    }
+}
+
+fn resolved_artwork_dto(artwork: &ResolvedArtwork) -> ResolvedArtworkDto {
+    ResolvedArtworkDto {
+        artwork_type: artwork.artwork_type().as_str().to_owned(),
+        reference_id: artwork.reference_id().to_owned(),
+        asset_id: artwork.asset_id().map(|value| value.to_string()),
+        ordering: artwork.ordering(),
+        selection_reason: artwork.selection_reason().to_owned(),
+        resolution_revision: artwork.resolution_revision(),
+        resolved_at: artwork.resolved_at(),
+    }
+}
+
+fn artwork_asset_bytes_dto(bytes: argus_runtime::ArtworkAssetBytes) -> ArtworkAssetBytesDto {
+    ArtworkAssetBytesDto {
+        asset_id: bytes.asset_id().to_string(),
+        bytes: bytes.bytes().to_vec(),
+        mime_type: bytes.mime_type().to_owned(),
+        width: bytes.width(),
+        height: bytes.height(),
+    }
+}
+
+fn provider_capability_str(capability: ProviderCapability) -> &'static str {
+    match capability {
+        ProviderCapability::ContentMatching => "content_matching",
+        ProviderCapability::MetadataRefresh => "metadata_refresh",
+        ProviderCapability::ArtworkDiscovery => "artwork_discovery",
+    }
+}
+
+fn provider_readiness_state_str(state: ProviderReadinessState) -> &'static str {
+    match state {
+        ProviderReadinessState::Ready => "ready",
+        ProviderReadinessState::Disabled => "disabled",
+        ProviderReadinessState::MissingCredentials => "missing_credentials",
+        ProviderReadinessState::InvalidCredentials => "invalid_credentials",
+        ProviderReadinessState::Misconfigured => "misconfigured",
+        ProviderReadinessState::Unavailable => "unavailable",
     }
 }
 

@@ -5,7 +5,10 @@ use argus_domain::{
     HydrationState, IdentificationState, MembershipRelationship, PlatformId,
 };
 
-use crate::{ErrorCode, GameContentId, IdentityDigest, PersistenceError, ScanRunId, SourceEntryId};
+use crate::{
+    ErrorCode, GameContentId, IdentityDigest, PersistenceError, ResolvedArtwork, ResolvedMetadata,
+    ScanRunId, SourceEntryId,
+};
 
 /// The only library scope activated by the current slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -443,6 +446,8 @@ pub struct GameDetail {
     memberships: Vec<GameMembershipSummary>,
     content: Vec<GameContentSummary>,
     availability_state: AvailabilityState,
+    resolved_metadata: Option<ResolvedMetadata>,
+    resolved_artwork: Vec<ResolvedArtwork>,
 }
 
 impl GameDetail {
@@ -467,7 +472,23 @@ impl GameDetail {
             memberships,
             content,
             availability_state,
+            resolved_metadata: None,
+            resolved_artwork: Vec::new(),
         }
+    }
+
+    /// Attaches the latest committed Game-level enrichment projection.
+    ///
+    /// The projection is optional because canonical logical-library reads must
+    /// remain useful when no provider has supplied metadata or artwork.
+    pub fn with_enrichment(
+        mut self,
+        resolved_metadata: Option<ResolvedMetadata>,
+        resolved_artwork: Vec<ResolvedArtwork>,
+    ) -> Self {
+        self.resolved_metadata = resolved_metadata;
+        self.resolved_artwork = resolved_artwork;
+        self
     }
 
     /// Returns the game identity.
@@ -509,12 +530,24 @@ impl GameDetail {
     pub const fn availability_state(&self) -> AvailabilityState {
         self.availability_state
     }
+
+    /// Returns the latest committed Game-level metadata, if available.
+    pub fn resolved_metadata(&self) -> Option<&ResolvedMetadata> {
+        self.resolved_metadata.as_ref()
+    }
+
+    /// Returns committed artwork selections in deterministic ordering.
+    pub fn resolved_artwork(&self) -> &[ResolvedArtwork] {
+        &self.resolved_artwork
+    }
 }
 
 /// Result of a focused game lookup.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum GetGameResult {
-    /// The requested ID is canonical and has durable detail.
+    /// The requested ID is canonical and has durable detail. The value-owned
+    /// projection preserves the existing application and bridge contract.
     Found(GameDetail),
     /// The requested ID is redirected to another game.
     Redirected(GameId),

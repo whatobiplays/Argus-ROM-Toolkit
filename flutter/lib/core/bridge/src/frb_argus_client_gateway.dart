@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:argus/core/bridge/generated/frb_generated.dart' as frb;
 import 'package:argus/core/bridge/generated/lib.dart' as dto;
@@ -28,7 +29,12 @@ final class MountedLocalFilesystemVolumeFact {
 /// FRB 2.12 adapter translating generated transport types into pure-Dart
 /// client models and typed application/transport failures.
 final class FrbArgusClientGateway
-    implements ArgusClientGateway, DiagnosticsSharingGateway, LibraryGateway {
+    implements
+        ArgusClientGateway,
+        DiagnosticsSharingGateway,
+        LibraryGateway,
+        MetadataProvidersGateway,
+        ArtworkGateway {
   FrbArgusClientGateway({
     frb.RustLibApi? api,
     Future<void> Function()? initializeNative,
@@ -225,6 +231,49 @@ final class FrbArgusClientGateway
   Future<GetGameResult> getGame(GameId gameId) => _call(
     () async =>
         getGameResultFromDto(await _rustApi.crateGetGame(gameId: gameId.value)),
+  );
+
+  @override
+  Future<List<MetadataProviderReadiness>> listMetadataProviderReadiness() =>
+      _call(
+        () async => (await _rustApi.crateListMetadataProviderReadiness())
+            .map(metadataProviderReadinessFromDto)
+            .toList(growable: false),
+      );
+
+  @override
+  Future<ProviderCredentialReadiness> setMetadataProviderCredential({
+    required String providerId,
+    required List<int> credentialInput,
+  }) => _call(
+    () async => providerCredentialReadinessFromDto(
+      await _rustApi.crateSetMetadataProviderCredential(
+        request: dto.SetMetadataProviderCredentialRequestDto(
+          providerId: providerId,
+          credentialInput: Uint8List.fromList(credentialInput),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Future<ProviderCredentialReadiness> removeMetadataProviderCredential(
+    String providerId,
+  ) => _call(
+    () async => providerCredentialReadinessFromDto(
+      await _rustApi.crateRemoveMetadataProviderCredential(
+        request: dto.RemoveMetadataProviderCredentialRequestDto(
+          providerId: providerId,
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Future<ArtworkAssetBytes> getArtworkAssetBytes(String assetId) => _call(
+    () async => artworkAssetBytesFromDto(
+      await _rustApi.crateGetArtworkAssetBytes(assetId: assetId),
+    ),
   );
 
   @override
@@ -984,7 +1033,83 @@ GameDetail gameDetailFromDto(dto.GameDetailDto value) => GameDetail(
     for (final summary in value.content) contentSummaryFromDto(summary),
   ],
   availabilityState: availabilityStateFromDto(value.availabilityState),
+  resolvedMetadata: value.resolvedMetadata == null
+      ? null
+      : resolvedMetadataFromDto(value.resolvedMetadata!),
+  resolvedArtwork: [
+    for (final artwork
+        in value.resolvedArtwork ?? const <dto.ResolvedArtworkDto>[])
+      resolvedArtworkFromDto(artwork),
+  ],
 );
+
+MetadataProviderReadiness metadataProviderReadinessFromDto(
+  dto.MetadataProviderReadinessDto value,
+) => MetadataProviderReadiness(
+  providerId: value.providerId,
+  enabled: value.enabled,
+  capabilityReadiness: [
+    for (final readiness in value.capabilityReadiness)
+      ProviderCapabilityReadiness(
+        capability: ProviderCapability.fromWire(readiness.capability),
+        state: ProviderReadinessState.fromWire(readiness.state),
+      ),
+  ],
+  credentialConfigured: value.credentialConfigured,
+);
+
+ProviderCredentialReadiness providerCredentialReadinessFromDto(
+  dto.ProviderCredentialReadinessDto value,
+) => ProviderCredentialReadiness(
+  providerId: value.providerId,
+  state: ProviderReadinessState.fromWire(value.state),
+  credentialConfigured: value.credentialConfigured,
+);
+
+ResolvedMetadata resolvedMetadataFromDto(dto.ResolvedMetadataDto value) =>
+    ResolvedMetadata(
+      displayTitle: value.displayTitle,
+      sortTitle: value.sortTitle,
+      description: value.description,
+      releaseDate: value.releaseDate,
+      developers: value.developers,
+      publishers: value.publishers,
+      genres: value.genres,
+      presentationRegion: value.presentationRegion,
+      presentationLanguages: value.presentationLanguages,
+      fieldProvenance: [
+        for (final provenance in value.fieldProvenance)
+          MetadataFieldProvenance(
+            field: provenance.field,
+            providerId: provenance.providerId,
+            externalGameId: provenance.externalGameId,
+            source: provenance.source,
+          ),
+      ],
+      resolutionRevision: value.resolutionRevision.toInt(),
+      resolvedAt: value.resolvedAt.toInt(),
+      providerId: value.providerId,
+    );
+
+ResolvedArtwork resolvedArtworkFromDto(dto.ResolvedArtworkDto value) =>
+    ResolvedArtwork(
+      artworkType: value.artworkType,
+      referenceId: value.referenceId,
+      assetId: value.assetId,
+      ordering: value.ordering,
+      selectionReason: value.selectionReason,
+      resolutionRevision: value.resolutionRevision.toInt(),
+      resolvedAt: value.resolvedAt.toInt(),
+    );
+
+ArtworkAssetBytes artworkAssetBytesFromDto(dto.ArtworkAssetBytesDto value) =>
+    ArtworkAssetBytes(
+      assetId: value.assetId,
+      bytes: value.bytes,
+      mimeType: value.mimeType,
+      width: value.width,
+      height: value.height,
+    );
 
 ContentSummary contentSummaryFromDto(dto.ContentSummaryDto value) =>
     ContentSummary(

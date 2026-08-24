@@ -6,7 +6,7 @@ use crate::jobs::{
 };
 use crate::settings::AppearanceSettingsRepository;
 use crate::sources::{LibraryRootRepository, LibrarySourceRepository};
-use crate::{ApplicationPortError, OperationContext};
+use crate::{ApplicationPortError, ArtworkRepository, MetadataRepository, OperationContext};
 
 /// One active transaction scope.
 pub trait UnitOfWork: Sized {
@@ -81,6 +81,29 @@ pub trait UnitOfWork: Sized {
 
     /// Explicitly rolls back and consumes this scope.
     fn rollback(self) -> Result<(), ApplicationPortError>;
+}
+
+/// Additive enrichment capability layered on the existing transaction scope.
+///
+/// Keeping this as a focused extension avoids forcing unrelated test doubles and
+/// future persistence implementations to expose metadata/artwork repositories
+/// before they support the enrichment slice.
+pub trait EnrichmentUnitOfWork: UnitOfWork {
+    /// Metadata persistence for this transaction.
+    type MetadataRepository<'scope>: MetadataRepository + 'scope
+    where
+        Self: 'scope;
+
+    /// Artwork persistence for this transaction.
+    type ArtworkRepository<'scope>: ArtworkRepository + 'scope
+    where
+        Self: 'scope;
+
+    /// Borrows the metadata repository from the active transaction.
+    fn metadata(&mut self) -> Self::MetadataRepository<'_>;
+
+    /// Borrows the artwork repository from the active transaction.
+    fn artwork(&mut self) -> Self::ArtworkRepository<'_>;
 }
 
 /// Creates one transaction scope on the implementation's execution boundary.

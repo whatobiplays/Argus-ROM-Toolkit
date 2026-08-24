@@ -4,26 +4,34 @@
 //! application handlers, and infrastructure adapters. It intentionally does not
 //! expose persistence-driver, bridge, filesystem, or asynchronous-runtime types.
 
+mod artwork;
 mod content;
 mod diagnostics;
 mod errors;
 mod events;
 mod grouping;
+mod hydration;
 mod jobs;
 mod library;
 mod logical;
+mod metadata;
 mod observability;
 mod settings;
 mod sources;
 mod unit_of_work;
 
 pub use argus_domain::{
-    AppearanceSettings, AvailabilityState, ContentType, Game, GameContent, GameContentId,
-    GameContentIdError, GameContentPresence, GameContentSource, GameId, GameIdError, GameLifecycle,
-    GameMembership, GameRedirect, GroupingBasis, HydrationState, IdentificationState,
-    InvalidContentType, InvalidPlatformId, JobRunId, JobRunIdError, LibraryRootId,
-    LibraryRootIdError, LibrarySourceId, LibrarySourceIdError, MembershipRelationship, PlatformId,
-    ScanRunId, ScanRunIdError, SourceEntryId, SourceEntryIdError, ThemeMode, ThemeModeParseError,
+    AppearanceSettings, ArtworkAssetId, ArtworkAssetIdError, AvailabilityState, ContentType, Game,
+    GameContent, GameContentId, GameContentIdError, GameContentPresence, GameContentSource, GameId,
+    GameIdError, GameLifecycle, GameMembership, GameRedirect, GroupingBasis, HydrationState,
+    IdentificationState, InvalidContentType, InvalidPlatformId, JobRunId, JobRunIdError,
+    LibraryRootId, LibraryRootIdError, LibrarySourceId, LibrarySourceIdError,
+    MembershipRelationship, PlatformId, ScanRunId, ScanRunIdError, SourceEntryId,
+    SourceEntryIdError, ThemeMode, ThemeModeParseError,
+};
+pub use artwork::{
+    ArtworkAsset, ArtworkCandidate, ArtworkReference, ArtworkRepository, ArtworkResolutionPolicy,
+    ArtworkSource, ArtworkType, ResolvedArtwork, ResolvedArtworkSet, resolve_artwork,
 };
 pub use content::{
     IdentityDigest, IdentitySchemeCatalog, IdentitySchemeDescriptor, TransformationDescriptor,
@@ -45,6 +53,11 @@ pub use events::{
 };
 pub use grouping::{
     GroupingValidationError, RedirectGraph, validate_continuity_anchor, validate_memberships,
+};
+pub use hydration::{
+    ArtworkAssetStore, ArtworkAssetStoreError, EnrichmentProviderSession, HydrationCoordinator,
+    HydrationIssue, HydrationIssueKind, HydrationMappingCandidate, HydrationPlanner,
+    HydrationProviderError, HydrationReport, HydrationTarget, HydrationTargetValidationError,
 };
 pub use jobs::{
     ActiveScanOwnership, AdmittedLibraryScanJob, AdmittedScan, ApplicationEventSink,
@@ -79,6 +92,16 @@ pub use logical::{
     ContentIdentity, ConvergenceOutcome, IdentificationService, IdentityConvergenceStore,
     LogicalContentRepository, LogicalContentUnitOfWork, SourceVersionEvidence,
     ValidatedContentDerivation,
+};
+pub use metadata::{
+    CredentialMutationError, CredentialValidationError, CredentialValidator, ExactMatchEvidence,
+    ExternalIdentityMapping, MappingState, MatchBasis, MetadataCandidate, MetadataFieldProvenance,
+    MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderRegistry,
+    MetadataProviderService, MetadataProviderSettings, MetadataRepository,
+    MetadataResolutionPolicy, MetadataSettings, ProviderCapability, ProviderCapabilityReadiness,
+    ProviderDescriptor, ProviderId, ProviderMetadata, ProviderReadinessState, ResolvedMetadata,
+    SecureCredentialStore, accept_exact_mapping, accept_exact_mappings, resolve_metadata,
+    resolve_provider_metadata,
 };
 pub use observability::{
     ArchitectureClass, DiagnosticStage, EventName, FailureRole, LogEvent, LogLevel,
@@ -117,4 +140,4 @@ pub use sources::{
     StartLibraryScanAllCommand, StartLibraryScanAllHandler, StartLibraryScanCommand,
     StartLibraryScanHandler, SyncLocalFilesystemMountedVolumesCommand, ValidatedLocalRoot,
 };
-pub use unit_of_work::{UnitOfWork, UnitOfWorkFactory};
+pub use unit_of_work::{EnrichmentUnitOfWork, UnitOfWork, UnitOfWorkFactory};

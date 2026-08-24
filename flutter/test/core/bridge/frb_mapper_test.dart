@@ -4,8 +4,83 @@ import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:async';
+import 'dart:typed_data';
 
 void main() {
+  test(
+    'enrichment DTOs map provenance, readiness, and bounded artwork bytes',
+    () {
+      final metadata = resolvedMetadataFromDto(
+        dto.ResolvedMetadataDto(
+          displayTitle: 'Resolved Game',
+          sortTitle: 'resolved game',
+          description: 'Description',
+          releaseDate: null,
+          developers: const <String>['Developer'],
+          publishers: const <String>['Publisher'],
+          genres: const <String>['Action'],
+          presentationRegion: 'us',
+          presentationLanguages: const <String>['en'],
+          fieldProvenance: const <dto.MetadataFieldProvenanceDto>[
+            dto.MetadataFieldProvenanceDto(
+              field: 'display_title',
+              providerId: 'gametdb',
+              externalGameId: 'tdb-1',
+              source: 'fixture:gametdb',
+            ),
+          ],
+          resolutionRevision: BigInt.from(2),
+          resolvedAt: 100,
+          providerId: 'gametdb',
+        ),
+      );
+      final readiness = metadataProviderReadinessFromDto(
+        const dto.MetadataProviderReadinessDto(
+          providerId: 'gametdb',
+          enabled: true,
+          capabilityReadiness: <dto.ProviderCapabilityReadinessDto>[
+            dto.ProviderCapabilityReadinessDto(
+              capability: 'metadata_refresh',
+              state: 'ready',
+            ),
+          ],
+          credentialConfigured: false,
+        ),
+      );
+      final artwork = resolvedArtworkFromDto(
+        dto.ResolvedArtworkDto(
+          artworkType: 'cover_front',
+          referenceId: 'gametdb:tdb-1:cover',
+          assetId: 'aa' * 32,
+          ordering: 0,
+          selectionReason: 'deterministic_policy',
+          resolutionRevision: BigInt.from(2),
+          resolvedAt: 100,
+        ),
+      );
+      final bytes = artworkAssetBytesFromDto(
+        dto.ArtworkAssetBytesDto(
+          assetId: 'aa' * 32,
+          bytes: Uint8List.fromList(<int>[1, 2, 3]),
+          mimeType: 'image/png',
+          width: 1,
+          height: 1,
+        ),
+      );
+
+      expect(metadata.displayTitle, 'Resolved Game');
+      expect(metadata.fieldProvenance.single.source, 'fixture:gametdb');
+      expect(readiness.providerId, 'gametdb');
+      expect(
+        readiness.capabilityReadiness.single.state,
+        ProviderReadinessState.ready,
+      );
+      expect(artwork.assetId, 'aa' * 32);
+      expect(bytes.bytes, <int>[1, 2, 3]);
+      expect(bytes.mimeType, 'image/png');
+    },
+  );
+
   test('logical-library row DTO maps durable fallback facts', () {
     final row = gameLibraryRowFromDto(
       const dto.GameLibraryRowDto(

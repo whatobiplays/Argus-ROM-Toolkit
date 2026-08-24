@@ -864,10 +864,13 @@ void main() {
   });
 
   test('no later-phase implementation concept has leaked into production', () {
-    // Phase 002+ families (game-content parsing, hashing, metadata/artwork
-    // enrichment, RetroAchievements, filesystem watching, additional source
-    // providers) must not appear in production sources. Tokens are chosen to
-    // avoid false positives from ordinary prose or generated output.
+    // Phase 002+ families that remain deferred (game-content parsing, hashing,
+    // RetroAchievements, filesystem watching, and additional source providers)
+    // must not appear in production sources. P03-002 explicitly authorizes the
+    // artwork vocabulary in the focused core bridge/client boundary; it stays
+    // forbidden in feature and app layers so those layers cannot become
+    // enrichment authorities. Tokens are chosen to avoid false positives from
+    // ordinary prose or generated output.
     const forbiddenConcepts = <String>[
       'RetroAchievements',
       'achievement',
@@ -883,6 +886,7 @@ void main() {
     ];
     for (final entry in sources.entries) {
       for (final concept in forbiddenConcepts) {
+        if (_isApprovedP03EnrichmentConcept(entry.key, concept)) continue;
         expect(entry.value, isNot(contains(concept)), reason: entry.key);
       }
     }
@@ -971,6 +975,11 @@ String _relativeToLib(String filePath, String libPath) {
       .substring(libPath.length + 1)
       .replaceAll(Platform.pathSeparator, '/');
 }
+
+bool _isApprovedP03EnrichmentConcept(String relativePath, String concept) =>
+    concept == 'artwork' &&
+    (relativePath.startsWith('core/bridge/') ||
+        relativePath.startsWith('core/client/'));
 
 void _expectNoForbiddenImports(
   Map<String, String> sources, {

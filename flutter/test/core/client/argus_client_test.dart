@@ -156,6 +156,31 @@ void main() {
     await client.dispose();
   });
 
+  test('provider readiness and artwork capabilities remain bounded', () async {
+    final gateway = FakeGateway(RuntimeInstanceId('p' * 32));
+    final client = ArgusClient(gateway: gateway);
+
+    final readiness = await client.metadataProviders
+        .listMetadataProviderReadiness();
+    final credential = await client.metadataProviders.setSteamgriddbCredential(
+      const <int>[1, 2, 3],
+    );
+    final removed = await client.metadataProviders
+        .removeSteamgriddbCredential();
+    final asset = await client.artwork.getArtworkAssetBytes('aa' * 32);
+
+    expect(readiness.single.providerId, 'gametdb');
+    expect(credential.credentialConfigured, isTrue);
+    expect(removed.state, ProviderReadinessState.missingCredentials);
+    expect(asset.bytes, <int>[1, 2, 3]);
+    expect(gateway.metadataReadinessCalls, 1);
+    expect(gateway.setCredentialCalls, 1);
+    expect(gateway.lastCredentialLength, 3);
+    expect(gateway.removeCredentialCalls, 1);
+    expect(gateway.artworkBytesCalls, 1);
+    await client.dispose();
+  });
+
   test(
     'Android diagnostics sharing is additive to the desktop exporter',
     () async {
@@ -234,7 +259,11 @@ RuntimeEvent _event(RuntimeInstanceId id, int sequence) => RuntimeEvent(
 
 final class FakeGateway
     with SourcesGatewayStub, JobsGatewayStub
-    implements ArgusClientGateway, DiagnosticsSharingGateway {
+    implements
+        ArgusClientGateway,
+        DiagnosticsSharingGateway,
+        MetadataProvidersGateway,
+        ArtworkGateway {
   FakeGateway(this.id) : nextState = RuntimeState.ready(runtimeInstanceId: id);
 
   final RuntimeInstanceId id;
@@ -249,6 +278,11 @@ final class FakeGateway
   @override
   bool supportsDiagnosticsSharing = false;
   int sharingCalls = 0;
+  int metadataReadinessCalls = 0;
+  int setCredentialCalls = 0;
+  int removeCredentialCalls = 0;
+  int lastCredentialLength = 0;
+  int artworkBytesCalls = 0;
   final destinations = <String>[];
   int subscribeCount = 0;
   int activeSubscriptions = 0;
@@ -315,6 +349,70 @@ final class FakeGateway
     updateCalls++;
     if (updateFailure case final Object error) throw error;
     return _result(null);
+  }
+
+  @override
+  Future<List<MetadataProviderReadiness>> listMetadataProviderReadiness() {
+    metadataReadinessCalls++;
+    return _result(const <MetadataProviderReadiness>[
+      MetadataProviderReadiness(
+        providerId: 'gametdb',
+        enabled: true,
+        capabilityReadiness: <ProviderCapabilityReadiness>[
+          ProviderCapabilityReadiness(
+            capability: ProviderCapability.metadataRefresh,
+            state: ProviderReadinessState.ready,
+          ),
+        ],
+        credentialConfigured: false,
+      ),
+    ]);
+  }
+
+  @override
+  Future<ProviderCredentialReadiness> setMetadataProviderCredential({
+    required String providerId,
+    required List<int> credentialInput,
+  }) {
+    expect(providerId, 'steamgriddb');
+    setCredentialCalls++;
+    lastCredentialLength = credentialInput.length;
+    return _result(
+      const ProviderCredentialReadiness(
+        providerId: 'steamgriddb',
+        state: ProviderReadinessState.ready,
+        credentialConfigured: true,
+      ),
+    );
+  }
+
+  @override
+  Future<ProviderCredentialReadiness> removeMetadataProviderCredential(
+    String providerId,
+  ) {
+    expect(providerId, 'steamgriddb');
+    removeCredentialCalls++;
+    return _result(
+      const ProviderCredentialReadiness(
+        providerId: 'steamgriddb',
+        state: ProviderReadinessState.missingCredentials,
+        credentialConfigured: false,
+      ),
+    );
+  }
+
+  @override
+  Future<ArtworkAssetBytes> getArtworkAssetBytes(String assetId) {
+    artworkBytesCalls++;
+    return _result(
+      ArtworkAssetBytes(
+        assetId: assetId,
+        bytes: const <int>[1, 2, 3],
+        mimeType: 'image/png',
+        width: 1,
+        height: 1,
+      ),
+    );
   }
 
   @override

@@ -305,6 +305,29 @@ impl SqliteDatabaseExecutor {
         )
     }
 
+    /// Runs bounded backend I/O on the dedicated worker without opening a
+    /// SQLite write transaction.
+    ///
+    /// Provider HTTP and artwork-object reads use this seam so the caller can
+    /// preserve the invariant that external I/O never occurs while a database
+    /// write transaction is held.
+    pub fn execute_on_worker<T, F>(
+        &self,
+        context: OperationContext,
+        callback: F,
+    ) -> Result<T, SqliteExecutorError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, SqliteExecutorError> + Send + 'static,
+    {
+        self.submit_job(
+            context,
+            Box::new(move |_connection, _operation_context| {
+                callback().map(|value| Box::new(value) as Box<dyn Any + Send>)
+            }),
+        )
+    }
+
     /// Closes admission, drains accepted work, retires the worker connection,
     /// and joins it. Repeated calls are deterministic and harmless.
     pub fn shutdown(&self) -> Result<(), SqliteExecutorError> {

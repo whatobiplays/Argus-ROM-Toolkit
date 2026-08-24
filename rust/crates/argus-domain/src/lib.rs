@@ -12,7 +12,7 @@ pub use content::{
     IdentificationState, InvalidContentType, InvalidPlatformId, MembershipRelationship, PlatformId,
 };
 pub use jobs::{
-    GameContentId, GameContentIdError, GameId, GameIdError, JobRunId, JobRunIdError, ScanRunId,
-    ScanRunIdError, SourceEntryId, SourceEntryIdError,
+    ArtworkAssetId, ArtworkAssetIdError, GameContentId, GameContentIdError, GameId, GameIdError,
+    JobRunId, JobRunIdError, ScanRunId, ScanRunIdError, SourceEntryId, SourceEntryIdError,
 };
 pub use sources::{LibraryRootId, LibraryRootIdError, LibrarySourceId, LibrarySourceIdError};

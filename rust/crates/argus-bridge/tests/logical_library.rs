@@ -1,9 +1,9 @@
 use argus_application::{
-    AvailabilityState, ContentIdentitySummary, ContentProvenanceSummary, ContentType,
+    ArtworkType, AvailabilityState, ContentIdentitySummary, ContentProvenanceSummary, ContentType,
     GameContentPresence, GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow,
     GameLifecycle, GameListCursor, GameMembershipSummary, GroupingBasis, HydrationState,
-    IdentificationState, IdentityDigest, MembershipRelationship, PlatformId, ScanRunId,
-    SourceEntryId,
+    IdentificationState, IdentityDigest, MembershipRelationship, MetadataFieldProvenance,
+    PlatformId, ResolvedArtwork, ResolvedMetadata, ScanRunId, SourceEntryId,
 };
 use argus_bridge::{game_detail_dto, game_library_row_dto, game_page_dto};
 
@@ -108,4 +108,72 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
             .as_deref()
             .is_some_and(|value| value.starts_with("v1:"))
     );
+}
+
+#[test]
+fn enriched_game_bridge_dto_contains_provenance_without_provider_locators() {
+    let game_id = game_id(8);
+    let content_id = content_id(9);
+    let detail = GameDetail::new(
+        game_id,
+        PlatformId::NintendoGb,
+        GameLifecycle::Active,
+        HydrationState::PartiallyHydrated,
+        "Fallback",
+        vec![GameMembershipSummary::new(
+            content_id,
+            MembershipRelationship::Primary,
+            GroupingBasis::ExactContentIdentity,
+            1,
+        )],
+        Vec::new(),
+        AvailabilityState::Available,
+    )
+    .with_enrichment(
+        Some(ResolvedMetadata::from_persisted(
+            Some("Resolved".to_owned()),
+            Some("resolved".to_owned()),
+            Some("description".to_owned()),
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Some("us".to_owned()),
+            vec!["en".to_owned()],
+            vec![MetadataFieldProvenance::new(
+                "display_title",
+                Some(argus_application::ProviderId::GameTdb),
+                Some("tdb-1".to_owned()),
+                "fixture:gametdb",
+            )],
+            2,
+            100,
+            Some(argus_application::ProviderId::GameTdb),
+        )),
+        vec![ResolvedArtwork::new(
+            game_id,
+            ArtworkType::CoverFront,
+            "gametdb:tdb-1:cover",
+            None,
+            0,
+            "deterministic_policy",
+            1,
+            100,
+        )],
+    );
+
+    let dto = game_detail_dto(&detail);
+    assert_eq!(
+        dto.resolved_metadata
+            .as_ref()
+            .expect("metadata")
+            .display_title,
+        Some("Resolved".to_owned())
+    );
+    assert_eq!(dto.resolved_artwork.as_ref().expect("artwork").len(), 1);
+    assert_eq!(
+        dto.resolved_artwork.as_ref().expect("artwork")[0].asset_id,
+        None
+    );
+    assert!(!format!("{:?}", dto).contains("https://"));
 }

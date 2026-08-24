@@ -17,18 +17,18 @@ use argus_application::{
     AddLocalLibraryRootAndScanCommand, AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult,
     AdmittedLibraryScanJob, AdmittedScan, AppearanceSettingsSubscriber, ApplicationError,
     CancelJobResult, ErrorCode, EventSubscriberError, GameId, GameLibraryPage, GetGameResult,
-    JobDetail, JobProgressChanged, JobRunId, JobRunRepository, JobRunState, JobStateChanged,
-    JobSummaryPage, LibraryRootId, LibraryRootPage, LibraryRootProjection,
-    LibraryScanAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanChildAdmission,
-    LibraryScanChildCompletion, LibraryScanExecutionPlan, ListGamesQuery, ListJobsQuery,
-    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor,
-    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot,
-    LocalFilesystemRootSelection, OperationCompletion, OperationContext, OperationName,
-    RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference,
-    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryChildrenPage,
-    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult, StartLibraryScanResult,
-    SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId, UnitOfWork,
-    UnitOfWorkFactory, aggregate_library_scan_state,
+    HydrationReport, HydrationTarget, JobDetail, JobProgressChanged, JobRunId, JobRunRepository,
+    JobRunState, JobStateChanged, JobSummaryPage, LibraryRootId, LibraryRootPage,
+    LibraryRootProjection, LibraryScanAdmissionResult, LibraryScanAllRequestIdentity,
+    LibraryScanChildAdmission, LibraryScanChildCompletion, LibraryScanExecutionPlan,
+    ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, OperationCompletion, OperationContext,
+    OperationName, RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand,
+    ScanAdmissionReference, SourceEntriesChangeScope, SourceEntriesChanged,
+    SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult,
+    StartLibraryScanResult, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId,
+    UnitOfWork, UnitOfWorkFactory, aggregate_library_scan_state,
 };
 
 use crate::{
@@ -1832,6 +1832,164 @@ impl ApplicationHost {
         }
         self.with_ready_kernel(context, move |kernel| {
             kernel.get_game_with_context(game_id, context)
+        })
+    }
+
+    /// Reads provider readiness through the currently ready generation.
+    pub fn metadata_provider_readiness(
+        &self,
+    ) -> Result<Vec<argus_application::MetadataProviderReadinessProjection>, ApplicationError> {
+        let (context, _guard) = self.begin_operation("metadata", "provider_readiness")?;
+        self.metadata_provider_readiness_with_context(&context)
+    }
+
+    /// Reads provider readiness under an existing query context.
+    pub fn metadata_provider_readiness_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<argus_application::MetadataProviderReadinessProjection>, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.metadata_provider_readiness_with_context(context)
+        })
+    }
+
+    /// Hydrates one already identified content target through the reusable
+    /// enrichment capability without admitting a JobRun or reacting to a
+    /// settings mutation. This runtime entry point is intentionally internal
+    /// to the backend composition surface; no bridge command exposes it.
+    pub fn hydrate_game_content_with_context(
+        &self,
+        target: HydrationTarget,
+        context: &OperationContext,
+        now: i64,
+    ) -> Result<HydrationReport, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.hydrate_game_content_with_context(target, context, now)
+        })
+    }
+
+    /// Writes and validates a provider credential without returning secret
+    /// bytes or activating any enrichment work.
+    pub fn set_metadata_provider_credential(
+        &self,
+        provider_id: argus_application::ProviderId,
+        secret: Vec<u8>,
+    ) -> Result<argus_application::MetadataProviderReadiness, ApplicationError> {
+        let (context, _guard) = self.begin_operation("metadata", "set_provider_credential")?;
+        self.set_metadata_provider_credential_with_context(provider_id, secret, &context)
+    }
+
+    /// Writes and validates a provider credential under an admitted command.
+    pub fn set_metadata_provider_credential_with_context(
+        &self,
+        provider_id: argus_application::ProviderId,
+        secret: Vec<u8>,
+        context: &OperationContext,
+    ) -> Result<argus_application::MetadataProviderReadiness, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.set_metadata_provider_credential_with_context(provider_id, secret, context)
+        })
+    }
+
+    /// Writes and validates a SteamGridDB credential without returning secret
+    /// bytes. Kept as a typed convenience for existing in-process callers.
+    pub fn set_steamgriddb_credential(
+        &self,
+        secret: Vec<u8>,
+    ) -> Result<argus_application::MetadataProviderReadiness, ApplicationError> {
+        self.set_metadata_provider_credential(argus_application::ProviderId::SteamGridDb, secret)
+    }
+
+    /// Removes a provider credential without exposing prior secret state.
+    pub fn remove_metadata_provider_credential(
+        &self,
+        provider_id: argus_application::ProviderId,
+    ) -> Result<argus_application::MetadataProviderReadiness, ApplicationError> {
+        let (context, _guard) = self.begin_operation("metadata", "remove_provider_credential")?;
+        self.remove_metadata_provider_credential_with_context(provider_id, &context)
+    }
+
+    /// Removes a provider credential under an admitted command.
+    pub fn remove_metadata_provider_credential_with_context(
+        &self,
+        provider_id: argus_application::ProviderId,
+        context: &OperationContext,
+    ) -> Result<argus_application::MetadataProviderReadiness, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::ImmediateCommand)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.remove_metadata_provider_credential_with_context(provider_id, context)
+        })
+    }
+
+    /// Removes the SteamGridDB credential without exposing prior secret state.
+    /// Kept as a typed convenience for existing in-process callers.
+    pub fn remove_steamgriddb_credential(
+        &self,
+    ) -> Result<argus_application::MetadataProviderReadiness, ApplicationError> {
+        self.remove_metadata_provider_credential(argus_application::ProviderId::SteamGridDb)
+    }
+
+    /// Reads bounded artwork bytes through the backend worker.
+    pub fn get_artwork_asset_bytes(
+        &self,
+        asset_id: argus_domain::ArtworkAssetId,
+    ) -> Result<crate::ArtworkAssetBytes, ApplicationError> {
+        let (context, _guard) = self.begin_operation("artwork", "get_asset_bytes")?;
+        self.get_artwork_asset_bytes_with_context(asset_id, &context)
+    }
+
+    /// Reads one artwork asset under an admitted query context.
+    pub fn get_artwork_asset_bytes_with_context(
+        &self,
+        asset_id: argus_domain::ArtworkAssetId,
+        context: &OperationContext,
+    ) -> Result<crate::ArtworkAssetBytes, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, |kernel| {
+            kernel.get_artwork_asset_bytes_with_context(asset_id, context)
         })
     }
 

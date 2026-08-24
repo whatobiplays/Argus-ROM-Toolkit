@@ -16,6 +16,8 @@ final class ArgusClient implements ClientBootstrap {
     settings = _SettingsApi(this);
     sources = _SourcesApi(this);
     library = _LibraryReads(this);
+    metadataProviders = _MetadataProvidersApi(this);
+    artwork = _ArtworkApi(this);
     jobs = _JobsApi(this);
     diagnostics = _DiagnosticsApi(this);
     final DiagnosticsSharingGateway? sharingGateway =
@@ -44,6 +46,12 @@ final class ArgusClient implements ClientBootstrap {
 
   /// Durable logical-library reads owned by this root client.
   late final LibraryReads library;
+
+  /// Optional provider readiness and write-only credential operations.
+  late final MetadataProvidersApi metadataProviders;
+
+  /// Optional bounded artwork-byte reads.
+  late final ArtworkApi artwork;
 
   /// Durable job observation and control operations owned by this root client.
   late final JobsApi jobs;
@@ -221,6 +229,62 @@ final class ArgusClient implements ClientBootstrap {
     }
     return (gateway as LibraryGateway).getGame(gameId);
   });
+
+  Future<List<MetadataProviderReadiness>> _listMetadataProviderReadiness() =>
+      _request(() {
+        final gateway = _gateway;
+        if (gateway is! MetadataProvidersGateway) {
+          throw const TransportFailure(
+            'Metadata-provider capability is unavailable',
+            kind: TransportFailureKind.contractMismatch,
+          );
+        }
+        return (gateway as MetadataProvidersGateway)
+            .listMetadataProviderReadiness();
+      });
+
+  Future<ProviderCredentialReadiness> _setMetadataProviderCredential({
+    required String providerId,
+    required List<int> credentialInput,
+  }) => _request(() {
+    final gateway = _gateway;
+    if (gateway is! MetadataProvidersGateway) {
+      throw const TransportFailure(
+        'Metadata-provider capability is unavailable',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    return (gateway as MetadataProvidersGateway).setMetadataProviderCredential(
+      providerId: providerId,
+      credentialInput: credentialInput,
+    );
+  });
+
+  Future<ProviderCredentialReadiness> _removeMetadataProviderCredential(
+    String providerId,
+  ) => _request(() {
+    final gateway = _gateway;
+    if (gateway is! MetadataProvidersGateway) {
+      throw const TransportFailure(
+        'Metadata-provider capability is unavailable',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    return (gateway as MetadataProvidersGateway)
+        .removeMetadataProviderCredential(providerId);
+  });
+
+  Future<ArtworkAssetBytes> _getArtworkAssetBytes(String assetId) =>
+      _request(() {
+        final gateway = _gateway;
+        if (gateway is! ArtworkGateway) {
+          throw const TransportFailure(
+            'Artwork capability is unavailable',
+            kind: TransportFailureKind.contractMismatch,
+          );
+        }
+        return (gateway as ArtworkGateway).getArtworkAssetBytes(assetId);
+      });
 
   Future<AddLocalLibraryRootResult> _addLocalLibraryRoot(
     LocalFilesystemRootSelection selection,
@@ -733,6 +797,40 @@ final class _LibraryReads implements LibraryReads {
 
   @override
   Future<GetGameResult> getGame(GameId gameId) => _client._getGame(gameId);
+}
+
+final class _MetadataProvidersApi implements MetadataProvidersApi {
+  _MetadataProvidersApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<List<MetadataProviderReadiness>> listMetadataProviderReadiness() =>
+      _client._listMetadataProviderReadiness();
+
+  @override
+  Future<ProviderCredentialReadiness> setMetadataProviderCredential({
+    required String providerId,
+    required List<int> credentialInput,
+  }) => _client._setMetadataProviderCredential(
+    providerId: providerId,
+    credentialInput: credentialInput,
+  );
+
+  @override
+  Future<ProviderCredentialReadiness> removeMetadataProviderCredential(
+    String providerId,
+  ) => _client._removeMetadataProviderCredential(providerId);
+}
+
+final class _ArtworkApi implements ArtworkApi {
+  _ArtworkApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<ArtworkAssetBytes> getArtworkAssetBytes(String assetId) =>
+      _client._getArtworkAssetBytes(assetId);
 }
 
 final class _JobsApi implements JobsApi {

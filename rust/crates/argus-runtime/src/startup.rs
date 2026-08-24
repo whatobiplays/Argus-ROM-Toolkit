@@ -10,6 +10,8 @@ use argus_application::{
     OperationContext, PathClass, PlatformClass, RetryPolicy, SafeContext, SafeContextField,
     SafeContextValue, SettingsService, StartupCollector, TraceEventPhase, TraceId,
 };
+use argus_infrastructure::artwork_store::ArtworkObjectStore;
+use argus_infrastructure::credentials::initialize_secure_store;
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     DEFAULT_QUEUE_CAPACITY, SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor,
@@ -116,6 +118,7 @@ struct StartupResources {
     >,
     jobs_service: Option<JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>>,
     unit_of_work: Option<KernelUnitOfWorkFactory>,
+    artwork_store: Option<Arc<ArtworkObjectStore>>,
     event_bus: Option<Arc<EventBus>>,
     diagnostics_ready: bool,
     data_directory_ready: bool,
@@ -399,12 +402,25 @@ impl StartupCoordinator {
         let executor =
             SqliteDatabaseExecutor::open_with_capacity(&database_path, DEFAULT_QUEUE_CAPACITY)
                 .map_err(|error| persistence_error(self.trace_id, error))?;
+        // Android's native keyring adapter is initialized here, inside Rust
+        // infrastructure. A temporary adapter failure is surfaced later by
+        // the readiness query; startup does not turn it into a plaintext
+        // fallback or a runtime-wide failure.
+        let _ = initialize_secure_store();
+        let artwork_store = ArtworkObjectStore::new(data_directory.join("artwork-assets"))
+            .map_err(|_| {
+                persistence_error(
+                    self.trace_id,
+                    argus_infrastructure::sqlite::SqliteExecutorError::Internal,
+                )
+            })?;
         let migration_summary = KernelMigrationSummary::from(executor.migration_summary());
         let settings_service = SettingsService::new(
             SqliteAppearanceSettingsQueries::new(executor.clone()),
             executor.clone(),
         );
         self.resources.executor = Some(executor);
+        self.resources.artwork_store = Some(Arc::new(artwork_store));
         self.resources.settings_service = Some(settings_service);
         self.resources.migration_summary = Some(migration_summary);
         self.cleanups.push(Box::new(|resources| {
@@ -501,6 +517,7 @@ impl StartupCoordinator {
             || self.resources.library_service.is_none()
             || self.resources.jobs_service.is_none()
             || self.resources.unit_of_work.is_none()
+            || self.resources.artwork_store.is_none()
             || self.resources.event_bus.is_none()
             || !self.resources.core_services_ready
         {
@@ -543,6 +560,11 @@ impl StartupCoordinator {
             .unit_of_work
             .take()
             .expect("readiness validated unit of work");
+        let artwork_store = self
+            .resources
+            .artwork_store
+            .take()
+            .expect("readiness validated artwork store");
         let event_bus = self
             .resources
             .event_bus
@@ -570,6 +592,7 @@ impl StartupCoordinator {
             settings_service,
             library_service,
             jobs_service,
+            artwork_store,
             event_bus,
             self.collector,
         );

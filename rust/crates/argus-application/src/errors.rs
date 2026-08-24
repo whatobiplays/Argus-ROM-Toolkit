@@ -87,6 +87,9 @@ pub enum ErrorCode {
     ConfigurationSourceEntryNotFound,
     ConfigurationGameNotFound,
     OperationSourceChangedDuringProcessing,
+    FilesystemArtworkAssetNotFound,
+    ProviderConfigurationInvalid,
+    ConfigurationCredentialStoreUnavailable,
 }
 
 /// Central policy metadata for one published code.
@@ -232,7 +235,7 @@ impl ErrorCode {
     }
 
     /// Returns the additive catalog required by the logical-content foundation.
-    pub const fn phase_003_all() -> &'static [Self; 25] {
+    pub const fn phase_003_all() -> &'static [Self; 28] {
         &[
             Self::ValidationInvalidArgument,
             Self::ConfigurationInvalid,
@@ -259,6 +262,9 @@ impl ErrorCode {
             Self::ConfigurationSourceEntryNotFound,
             Self::ConfigurationGameNotFound,
             Self::OperationSourceChangedDuringProcessing,
+            Self::FilesystemArtworkAssetNotFound,
+            Self::ProviderConfigurationInvalid,
+            Self::ConfigurationCredentialStoreUnavailable,
         ]
     }
 
@@ -301,6 +307,11 @@ impl ErrorCode {
             Self::ConfigurationGameNotFound => "ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND",
             Self::OperationSourceChangedDuringProcessing => {
                 "ARGUS.V1.OPERATION.SOURCE_CHANGED_DURING_PROCESSING"
+            }
+            Self::FilesystemArtworkAssetNotFound => "ARGUS.V1.FILESYSTEM.ARTWORK_ASSET_NOT_FOUND",
+            Self::ProviderConfigurationInvalid => "ARGUS.V1.PROVIDER.CONFIGURATION_INVALID",
+            Self::ConfigurationCredentialStoreUnavailable => {
+                "ARGUS.V1.CONFIGURATION.CREDENTIAL_STORE_UNAVAILABLE"
             }
         }
     }
@@ -506,6 +517,30 @@ impl ErrorCode {
                 Recoverability::Retry,
                 RetryPolicy::Immediate,
                 "errors.operation.source_changed_during_processing",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::FilesystemArtworkAssetNotFound => policy(
+                ErrorCategory::Filesystem,
+                ApplicationSeverity::Warning,
+                Recoverability::Retry,
+                RetryPolicy::UserInitiated,
+                "errors.artwork.asset_not_found",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ProviderConfigurationInvalid => policy(
+                ErrorCategory::Provider,
+                ApplicationSeverity::Error,
+                Recoverability::UserAction,
+                RetryPolicy::UserInitiated,
+                "errors.provider.configuration_invalid",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ConfigurationCredentialStoreUnavailable => policy(
+                ErrorCategory::Configuration,
+                ApplicationSeverity::Error,
+                Recoverability::UserAction,
+                RetryPolicy::UserInitiated,
+                "errors.configuration.credential_store_unavailable",
                 COMMON_FAILURE_FIELDS,
             ),
         }

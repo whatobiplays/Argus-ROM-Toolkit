@@ -15,8 +15,15 @@ workspace = true
 [dependencies]
 argus-application = { path = "../argus-application" }
 argus-domain = { path = "../argus-domain" }
+blake3.workspace = true
+image.workspace = true
+keyring.workspace = true
+keyring-core.workspace = true
 rusqlite.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
+ureq.workspace = true
+zeroize.workspace = true
 zip.workspace = true
 
 [dev-dependencies]

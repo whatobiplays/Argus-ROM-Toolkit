@@ -129,6 +129,11 @@ impl MigrationRegistry {
                 "0008_logical_library",
                 include_bytes!("sql/0008_logical_library.sql"),
             ),
+            Migration::sql(
+                9,
+                "0009_metadata_providers_and_artwork",
+                include_bytes!("sql/0009_metadata_providers_and_artwork.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

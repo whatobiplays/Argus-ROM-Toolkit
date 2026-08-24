@@ -1073,6 +1073,46 @@ enum GameLifecycle { active, inactiveOrphan, redirected }
 /// Local fallback hydration state.
 enum HydrationState { hydrated, partiallyHydrated, unmatched, refreshing }
 
+/// Provider readiness state projected by Rust without secret material.
+enum ProviderReadinessState {
+  ready,
+  disabled,
+  missingCredentials,
+  invalidCredentials,
+  misconfigured,
+  unavailable;
+
+  static ProviderReadinessState fromWire(String value) => switch (value) {
+    'ready' => ProviderReadinessState.ready,
+    'disabled' => ProviderReadinessState.disabled,
+    'missing_credentials' => ProviderReadinessState.missingCredentials,
+    'invalid_credentials' => ProviderReadinessState.invalidCredentials,
+    'misconfigured' => ProviderReadinessState.misconfigured,
+    'unavailable' => ProviderReadinessState.unavailable,
+    _ => throw const TransportFailure(
+      'Unknown provider readiness state',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Provider capability vocabulary used by readiness projections.
+enum ProviderCapability {
+  contentMatching,
+  metadataRefresh,
+  artworkDiscovery;
+
+  static ProviderCapability fromWire(String value) => switch (value) {
+    'content_matching' => ProviderCapability.contentMatching,
+    'metadata_refresh' => ProviderCapability.metadataRefresh,
+    'artwork_discovery' => ProviderCapability.artworkDiscovery,
+    _ => throw const TransportFailure(
+      'Unknown provider capability',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
 /// Local fallback availability state.
 enum AvailabilityState {
   available,
@@ -1195,6 +1235,8 @@ final class GameDetail {
     required this.memberships,
     required this.content,
     required this.availabilityState,
+    this.resolvedMetadata,
+    this.resolvedArtwork = const <ResolvedArtwork>[],
   });
 
   final GameId gameId;
@@ -1205,6 +1247,133 @@ final class GameDetail {
   final List<GameMembershipSummary> memberships;
   final List<ContentSummary> content;
   final AvailabilityState availabilityState;
+  final ResolvedMetadata? resolvedMetadata;
+  final List<ResolvedArtwork> resolvedArtwork;
+}
+
+/// Safe field-level provenance for resolved metadata.
+final class MetadataFieldProvenance {
+  const MetadataFieldProvenance({
+    required this.field,
+    required this.providerId,
+    required this.externalGameId,
+    required this.source,
+  });
+
+  final String field;
+  final String? providerId;
+  final String? externalGameId;
+  final String source;
+}
+
+/// Game-level derived metadata returned with focused detail reads.
+final class ResolvedMetadata {
+  const ResolvedMetadata({
+    required this.displayTitle,
+    required this.sortTitle,
+    required this.description,
+    required this.releaseDate,
+    required this.developers,
+    required this.publishers,
+    required this.genres,
+    required this.presentationRegion,
+    required this.presentationLanguages,
+    required this.fieldProvenance,
+    required this.resolutionRevision,
+    required this.resolvedAt,
+    required this.providerId,
+  });
+
+  final String? displayTitle;
+  final String? sortTitle;
+  final String? description;
+  final String? releaseDate;
+  final List<String> developers;
+  final List<String> publishers;
+  final List<String> genres;
+  final String? presentationRegion;
+  final List<String> presentationLanguages;
+  final List<MetadataFieldProvenance> fieldProvenance;
+  final int resolutionRevision;
+  final int resolvedAt;
+  final String? providerId;
+}
+
+/// Game-level artwork selection. Provider locators are deliberately absent.
+final class ResolvedArtwork {
+  const ResolvedArtwork({
+    required this.artworkType,
+    required this.referenceId,
+    required this.assetId,
+    required this.ordering,
+    required this.selectionReason,
+    required this.resolutionRevision,
+    required this.resolvedAt,
+  });
+
+  final String artworkType;
+  final String referenceId;
+  final String? assetId;
+  final int ordering;
+  final String selectionReason;
+  final int resolutionRevision;
+  final int resolvedAt;
+}
+
+/// Safe provider readiness projection for capability inspection.
+final class MetadataProviderReadiness {
+  const MetadataProviderReadiness({
+    required this.providerId,
+    required this.enabled,
+    required this.capabilityReadiness,
+    required this.credentialConfigured,
+  });
+
+  final String providerId;
+  final bool enabled;
+  final List<ProviderCapabilityReadiness> capabilityReadiness;
+  final bool credentialConfigured;
+}
+
+/// Readiness of one provider capability.
+final class ProviderCapabilityReadiness {
+  const ProviderCapabilityReadiness({
+    required this.capability,
+    required this.state,
+  });
+
+  final ProviderCapability capability;
+  final ProviderReadinessState state;
+}
+
+/// Safe result of a write-only credential mutation.
+final class ProviderCredentialReadiness {
+  const ProviderCredentialReadiness({
+    required this.providerId,
+    required this.state,
+    required this.credentialConfigured,
+  });
+
+  final String providerId;
+  final ProviderReadinessState state;
+  final bool credentialConfigured;
+}
+
+/// Original validated artwork bytes addressed by their content digest.
+final class ArtworkAssetBytes {
+  const ArtworkAssetBytes({
+    required this.assetId,
+    required this.bytes,
+    required this.mimeType,
+    required this.width,
+    required this.height,
+  });
+
+  final String assetId;
+  final List<int> bytes;
+  final String mimeType;
+  final int width;
+  final int height;
 }
 
 /// Focused logical-game lookup result.

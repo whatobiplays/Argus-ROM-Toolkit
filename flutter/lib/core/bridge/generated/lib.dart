@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `category_name`, `classify_subscribe_error`, `content_identity_summary_dto`, `content_presence_dto`, `content_provenance_summary_dto`, `content_summary_dto`, `content_type_dto`, `digest_hex`, `exclusion_dto`, `game_availability_state_dto`, `game_lifecycle_dto`, `game_membership_summary_dto`, `grouping_basis_dto`, `host_with_options`, `host`, `hydration_state_dto`, `identification_state_dto`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `list_games_query_from_dto`, `membership_relationship_dto`, `parse_runtime_id`, `pending_event_subscription`, `platform_id_dto`, `recoverability_name`, `recovery_action_kind_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
+// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `artwork_asset_bytes_dto`, `category_name`, `classify_subscribe_error`, `content_identity_summary_dto`, `content_presence_dto`, `content_provenance_summary_dto`, `content_summary_dto`, `content_type_dto`, `digest_hex`, `exclusion_dto`, `game_availability_state_dto`, `game_lifecycle_dto`, `game_membership_summary_dto`, `grouping_basis_dto`, `host_with_options`, `host`, `hydration_state_dto`, `identification_state_dto`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `list_games_query_from_dto`, `membership_relationship_dto`, `metadata_field_provenance_dto`, `metadata_provider_readiness_dto`, `parse_runtime_id`, `pending_event_subscription`, `platform_id_dto`, `provider_capability_readiness_dto`, `provider_capability_str`, `provider_credential_readiness_dto`, `provider_readiness_state_str`, `recoverability_name`, `recovery_action_kind_dto`, `resolved_artwork_dto`, `resolved_metadata_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `game_detail_dto`, `game_library_row_dto`, `game_page_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_execution_host_stop_request`, `parse_game_id`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
@@ -99,6 +99,26 @@ Future<GamePageDto> listGames({required ListGamesRequestDto request}) =>
 /// missing canonical games use the published typed application error.
 Future<GetGameResultDto> getGame({required String gameId}) =>
     RustLib.instance.api.crateGetGame(gameId: gameId);
+
+/// Reads provider enablement and safe readiness without starting hydration.
+Future<List<MetadataProviderReadinessDto>> listMetadataProviderReadiness() =>
+    RustLib.instance.api.crateListMetadataProviderReadiness();
+
+/// Writes and validates a provider credential without returning its bytes.
+Future<ProviderCredentialReadinessDto> setMetadataProviderCredential({
+  required SetMetadataProviderCredentialRequestDto request,
+}) => RustLib.instance.api.crateSetMetadataProviderCredential(request: request);
+
+/// Removes a provider credential without exposing prior secret state.
+Future<ProviderCredentialReadinessDto> removeMetadataProviderCredential({
+  required RemoveMetadataProviderCredentialRequestDto request,
+}) => RustLib.instance.api.crateRemoveMetadataProviderCredential(
+  request: request,
+);
+
+/// Reads one bounded immutable artwork object by content address.
+Future<ArtworkAssetBytesDto> getArtworkAssetBytes({required String assetId}) =>
+    RustLib.instance.api.crateGetArtworkAssetBytes(assetId: assetId);
 
 /// Replaces the transient native mounted-volume registry and reconciles
 /// persisted root availability. Native mount facts are ingress-only.
@@ -344,6 +364,42 @@ class ApplicationErrorDto implements FrbException {
           safeContext == other.safeContext;
 }
 
+/// Bounded original artwork bytes and validated media metadata.
+class ArtworkAssetBytesDto {
+  final String assetId;
+  final Uint8List bytes;
+  final String mimeType;
+  final int width;
+  final int height;
+
+  const ArtworkAssetBytesDto({
+    required this.assetId,
+    required this.bytes,
+    required this.mimeType,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  int get hashCode =>
+      assetId.hashCode ^
+      bytes.hashCode ^
+      mimeType.hashCode ^
+      width.hashCode ^
+      height.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ArtworkAssetBytesDto &&
+          runtimeType == other.runtimeType &&
+          assetId == other.assetId &&
+          bytes == other.bytes &&
+          mimeType == other.mimeType &&
+          width == other.width &&
+          height == other.height;
+}
+
 /// Bounded terminal failure projection.
 class BoundedTerminalFailureDto {
   final String? errorCode;
@@ -555,6 +611,8 @@ class GameDetailDto {
   final List<GameMembershipSummaryDto> memberships;
   final List<ContentSummaryDto> content;
   final GameAvailabilityStateDto availabilityState;
+  final ResolvedMetadataDto? resolvedMetadata;
+  final List<ResolvedArtworkDto>? resolvedArtwork;
 
   const GameDetailDto({
     required this.gameId,
@@ -565,6 +623,8 @@ class GameDetailDto {
     required this.memberships,
     required this.content,
     required this.availabilityState,
+    this.resolvedMetadata,
+    this.resolvedArtwork,
   });
 
   @override
@@ -576,7 +636,9 @@ class GameDetailDto {
       fallbackTitle.hashCode ^
       memberships.hashCode ^
       content.hashCode ^
-      availabilityState.hashCode;
+      availabilityState.hashCode ^
+      resolvedMetadata.hashCode ^
+      resolvedArtwork.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -590,7 +652,9 @@ class GameDetailDto {
           fallbackTitle == other.fallbackTitle &&
           memberships == other.memberships &&
           content == other.content &&
-          availabilityState == other.availabilityState;
+          availabilityState == other.availabilityState &&
+          resolvedMetadata == other.resolvedMetadata &&
+          resolvedArtwork == other.resolvedArtwork;
 }
 
 /// Bounded logical-library list row.
@@ -699,6 +763,8 @@ class GamePageDto {
 sealed class GetGameResultDto with _$GetGameResultDto {
   const GetGameResultDto._();
 
+  /// The value-owned enriched game projection preserves the established
+  /// bridge contract without introducing an indirection in the wire DTO.
   const factory GetGameResultDto.found(GameDetailDto field0) =
       GetGameResultDto_Found;
   const factory GetGameResultDto.redirected({required String canonicalGameId}) =
@@ -1587,6 +1653,70 @@ sealed class LocalFilesystemRootSelectionDto
 /// Membership role in a durable game aggregate.
 enum MembershipRelationshipDto { primary, secondary }
 
+/// Safe field-level provenance for resolved Game metadata.
+class MetadataFieldProvenanceDto {
+  final String field;
+  final String? providerId;
+  final String? externalGameId;
+  final String source;
+
+  const MetadataFieldProvenanceDto({
+    required this.field,
+    this.providerId,
+    this.externalGameId,
+    required this.source,
+  });
+
+  @override
+  int get hashCode =>
+      field.hashCode ^
+      providerId.hashCode ^
+      externalGameId.hashCode ^
+      source.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MetadataFieldProvenanceDto &&
+          runtimeType == other.runtimeType &&
+          field == other.field &&
+          providerId == other.providerId &&
+          externalGameId == other.externalGameId &&
+          source == other.source;
+}
+
+/// Safe provider readiness projection used by the focused readiness query.
+class MetadataProviderReadinessDto {
+  final String providerId;
+  final bool enabled;
+  final List<ProviderCapabilityReadinessDto> capabilityReadiness;
+  final bool credentialConfigured;
+
+  const MetadataProviderReadinessDto({
+    required this.providerId,
+    required this.enabled,
+    required this.capabilityReadiness,
+    required this.credentialConfigured,
+  });
+
+  @override
+  int get hashCode =>
+      providerId.hashCode ^
+      enabled.hashCode ^
+      capabilityReadiness.hashCode ^
+      credentialConfigured.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MetadataProviderReadinessDto &&
+          runtimeType == other.runtimeType &&
+          providerId == other.providerId &&
+          enabled == other.enabled &&
+          capabilityReadiness == other.capabilityReadiness &&
+          credentialConfigured == other.credentialConfigured;
+}
+
 /// One native mounted-volume fact supplied only to the synchronization ingress.
 class MountedLocalFilesystemVolumeDto {
   final String providerVolumeId;
@@ -1656,6 +1786,54 @@ class OperationHandleDto {
 /// Stable platform vocabulary in logical-library projections.
 enum PlatformIdDto { nintendoGb, nintendoGbc, nintendoGba }
 
+/// Safe provider capability readiness projection.
+class ProviderCapabilityReadinessDto {
+  final String capability;
+  final String state;
+
+  const ProviderCapabilityReadinessDto({
+    required this.capability,
+    required this.state,
+  });
+
+  @override
+  int get hashCode => capability.hashCode ^ state.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProviderCapabilityReadinessDto &&
+          runtimeType == other.runtimeType &&
+          capability == other.capability &&
+          state == other.state;
+}
+
+/// Safe credential mutation result. It contains no secret-bearing field.
+class ProviderCredentialReadinessDto {
+  final String providerId;
+  final String state;
+  final bool credentialConfigured;
+
+  const ProviderCredentialReadinessDto({
+    required this.providerId,
+    required this.state,
+    required this.credentialConfigured,
+  });
+
+  @override
+  int get hashCode =>
+      providerId.hashCode ^ state.hashCode ^ credentialConfigured.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProviderCredentialReadinessDto &&
+          runtimeType == other.runtimeType &&
+          providerId == other.providerId &&
+          state == other.state &&
+          credentialConfigured == other.credentialConfigured;
+}
+
 /// One declarative failed-startup action.
 class RecoveryActionDto {
   final RecoveryActionKindDto kind;
@@ -1697,6 +1875,23 @@ sealed class RemoveLibraryRootResultDto with _$RemoveLibraryRootResultDto {
   }) = RemoveLibraryRootResultDto_RootHasActiveScan;
 }
 
+/// Write-only provider credential removal command input.
+class RemoveMetadataProviderCredentialRequestDto {
+  final String providerId;
+
+  const RemoveMetadataProviderCredentialRequestDto({required this.providerId});
+
+  @override
+  int get hashCode => providerId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RemoveMetadataProviderCredentialRequestDto &&
+          runtimeType == other.runtimeType &&
+          providerId == other.providerId;
+}
+
 /// Bounded report of foreground-host stops for already-admitted runs.
 class ReportExecutionHostStopRequestDto {
   /// Durable job-run identities whose live host stopped.
@@ -1720,6 +1915,118 @@ class ReportExecutionHostStopRequestDto {
           runtimeType == other.runtimeType &&
           jobRunIds == other.jobRunIds &&
           reason == other.reason;
+}
+
+/// Game-level artwork selection with an optional local asset identity.
+class ResolvedArtworkDto {
+  final String artworkType;
+  final String referenceId;
+  final String? assetId;
+  final int ordering;
+  final String selectionReason;
+  final BigInt resolutionRevision;
+  final PlatformInt64 resolvedAt;
+
+  const ResolvedArtworkDto({
+    required this.artworkType,
+    required this.referenceId,
+    this.assetId,
+    required this.ordering,
+    required this.selectionReason,
+    required this.resolutionRevision,
+    required this.resolvedAt,
+  });
+
+  @override
+  int get hashCode =>
+      artworkType.hashCode ^
+      referenceId.hashCode ^
+      assetId.hashCode ^
+      ordering.hashCode ^
+      selectionReason.hashCode ^
+      resolutionRevision.hashCode ^
+      resolvedAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ResolvedArtworkDto &&
+          runtimeType == other.runtimeType &&
+          artworkType == other.artworkType &&
+          referenceId == other.referenceId &&
+          assetId == other.assetId &&
+          ordering == other.ordering &&
+          selectionReason == other.selectionReason &&
+          resolutionRevision == other.resolutionRevision &&
+          resolvedAt == other.resolvedAt;
+}
+
+/// Game-level derived metadata without provider transport details.
+class ResolvedMetadataDto {
+  final String? displayTitle;
+  final String? sortTitle;
+  final String? description;
+  final String? releaseDate;
+  final List<String> developers;
+  final List<String> publishers;
+  final List<String> genres;
+  final String? presentationRegion;
+  final List<String> presentationLanguages;
+  final List<MetadataFieldProvenanceDto> fieldProvenance;
+  final BigInt resolutionRevision;
+  final PlatformInt64 resolvedAt;
+  final String? providerId;
+
+  const ResolvedMetadataDto({
+    this.displayTitle,
+    this.sortTitle,
+    this.description,
+    this.releaseDate,
+    required this.developers,
+    required this.publishers,
+    required this.genres,
+    this.presentationRegion,
+    required this.presentationLanguages,
+    required this.fieldProvenance,
+    required this.resolutionRevision,
+    required this.resolvedAt,
+    this.providerId,
+  });
+
+  @override
+  int get hashCode =>
+      displayTitle.hashCode ^
+      sortTitle.hashCode ^
+      description.hashCode ^
+      releaseDate.hashCode ^
+      developers.hashCode ^
+      publishers.hashCode ^
+      genres.hashCode ^
+      presentationRegion.hashCode ^
+      presentationLanguages.hashCode ^
+      fieldProvenance.hashCode ^
+      resolutionRevision.hashCode ^
+      resolvedAt.hashCode ^
+      providerId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ResolvedMetadataDto &&
+          runtimeType == other.runtimeType &&
+          displayTitle == other.displayTitle &&
+          sortTitle == other.sortTitle &&
+          description == other.description &&
+          releaseDate == other.releaseDate &&
+          developers == other.developers &&
+          publishers == other.publishers &&
+          genres == other.genres &&
+          presentationRegion == other.presentationRegion &&
+          presentationLanguages == other.presentationLanguages &&
+          fieldProvenance == other.fieldProvenance &&
+          resolutionRevision == other.resolutionRevision &&
+          resolvedAt == other.resolvedAt &&
+          providerId == other.providerId;
 }
 
 @freezed
@@ -1989,6 +2296,33 @@ enum ScanRunStatusDto {
   failed,
   cancelled,
   abandoned,
+}
+
+/// Write-only provider credential command input.
+///
+/// `credential_input` is a transient bridge value. Rust consumes it on a
+/// backend worker and delegates it immediately to the application secure
+/// credential gateway; it is never returned in a DTO or persisted by the
+/// bridge.
+class SetMetadataProviderCredentialRequestDto {
+  final String providerId;
+  final Uint8List credentialInput;
+
+  const SetMetadataProviderCredentialRequestDto({
+    required this.providerId,
+    required this.credentialInput,
+  });
+
+  @override
+  int get hashCode => providerId.hashCode ^ credentialInput.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SetMetadataProviderCredentialRequestDto &&
+          runtimeType == other.runtimeType &&
+          providerId == other.providerId &&
+          credentialInput == other.credentialInput;
 }
 
 @freezed

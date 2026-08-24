@@ -83,6 +83,67 @@ hex_identity!(
     "Stable identity of one logical library game entity."
 );
 
+/// Stable identity of immutable artwork bytes, represented by a BLAKE3 digest.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ArtworkAssetId([u8; 32]);
+
+/// Failure while constructing an artwork asset identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ArtworkAssetIdError;
+
+impl fmt::Display for ArtworkAssetIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("invalid artwork asset identity")
+    }
+}
+
+impl std::error::Error for ArtworkAssetIdError {}
+
+impl ArtworkAssetId {
+    /// Creates an asset identity from one non-zero BLAKE3 digest.
+    pub const fn from_bytes(bytes: [u8; 32]) -> Result<Self, ArtworkAssetIdError> {
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] != 0 {
+                return Ok(Self(bytes));
+            }
+            index += 1;
+        }
+        Err(ArtworkAssetIdError)
+    }
+
+    /// Returns the exact digest bytes.
+    pub const fn as_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl TryFrom<&str> for ArtworkAssetId {
+    type Error = ArtworkAssetIdError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.len() != 64 {
+            return Err(ArtworkAssetIdError);
+        }
+        let mut bytes = [0_u8; 32];
+        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+            let high = hex_digit(pair[0]).ok_or(ArtworkAssetIdError)?;
+            let low = hex_digit(pair[1]).ok_or(ArtworkAssetIdError)?;
+            bytes[index] = (high << 4) | low;
+        }
+        Self::from_bytes(bytes)
+    }
+}
+
+impl fmt::Display for ArtworkAssetId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
 const fn all_zero(bytes: &[u8; 16]) -> bool {
     let mut index = 0;
     while index < bytes.len() {

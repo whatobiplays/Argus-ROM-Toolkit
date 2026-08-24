@@ -171,6 +171,72 @@ abstract interface class LibraryReads {
   Future<GetGameResult> getGame(GameId gameId);
 }
 
+/// Optional metadata-provider capability. Implementations expose readiness and
+/// write-only credential mutations; they never provide secret reads.
+abstract interface class MetadataProvidersGateway {
+  Future<List<MetadataProviderReadiness>> listMetadataProviderReadiness();
+
+  Future<ProviderCredentialReadiness> setMetadataProviderCredential({
+    required String providerId,
+    required List<int> credentialInput,
+  });
+
+  Future<ProviderCredentialReadiness> removeMetadataProviderCredential(
+    String providerId,
+  );
+}
+
+/// Convenience extension for the only credentialed provider in the current
+/// production roster. The generic gateway remains the authoritative seam.
+extension MetadataProvidersGatewaySteamGridDb on MetadataProvidersGateway {
+  Future<ProviderCredentialReadiness> setSteamgriddbCredential(
+    List<int> secret,
+  ) => setMetadataProviderCredential(
+    providerId: 'steamgriddb',
+    credentialInput: secret,
+  );
+
+  Future<ProviderCredentialReadiness> removeSteamgriddbCredential() =>
+      removeMetadataProviderCredential('steamgriddb');
+}
+
+/// Optional bounded artwork-byte capability.
+abstract interface class ArtworkGateway {
+  Future<ArtworkAssetBytes> getArtworkAssetBytes(String assetId);
+}
+
+/// Focused metadata-provider capability exposed to application consumers.
+abstract interface class MetadataProvidersApi {
+  Future<List<MetadataProviderReadiness>> listMetadataProviderReadiness();
+
+  Future<ProviderCredentialReadiness> setMetadataProviderCredential({
+    required String providerId,
+    required List<int> credentialInput,
+  });
+
+  Future<ProviderCredentialReadiness> removeMetadataProviderCredential(
+    String providerId,
+  );
+}
+
+/// Convenience extension for SteamGridDB credential callers.
+extension MetadataProvidersApiSteamGridDb on MetadataProvidersApi {
+  Future<ProviderCredentialReadiness> setSteamgriddbCredential(
+    List<int> secret,
+  ) => setMetadataProviderCredential(
+    providerId: 'steamgriddb',
+    credentialInput: secret,
+  );
+
+  Future<ProviderCredentialReadiness> removeSteamgriddbCredential() =>
+      removeMetadataProviderCredential('steamgriddb');
+}
+
+/// Focused artwork-byte capability exposed to application consumers.
+abstract interface class ArtworkApi {
+  Future<ArtworkAssetBytes> getArtworkAssetBytes(String assetId);
+}
+
 /// Framework-neutral durable job observation and control operations.
 abstract interface class JobsGateway {
   Future<JobSummaryPage> listActiveJobs();

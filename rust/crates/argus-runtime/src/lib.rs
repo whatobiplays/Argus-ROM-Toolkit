@@ -24,8 +24,10 @@ use std::sync::{Arc, Mutex};
 use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
-    CancelJobResult, DiagnosticStage, ErrorCode, EventName, FailureRole, GameId, GameLibraryPage,
-    GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery, GetSourceEntryQuery,
+    ArtworkRepository, ArtworkResolutionPolicy, CancelJobResult, CredentialMutationError,
+    DiagnosticStage, EnrichmentUnitOfWork, ErrorCode, EventName, FailureRole, GameId,
+    GameLibraryPage, GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery,
+    GetSourceEntryQuery, HydrationCoordinator, HydrationReport, HydrationTarget,
     IdentityConvergenceStore, JobDetail, JobRunId, JobSummaryPage, JobsService, LibraryRootId,
     LibraryRootPage, LibraryRootProjection, LibraryRootRepository, LibraryScanAdmissionResult,
     LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
@@ -33,25 +35,32 @@ use argus_application::{
     ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
     LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent,
     LogLevel, LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries,
-    MigrationOutcome, NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext,
-    OperationName, PathClass, PersistenceError, PlatformClass, ProviderError,
-    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
-    SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
-    SourceEntryId, SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
-    StartLibraryScanCommand, StartupCollector, SubsystemName,
-    SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, TraceEvent, TraceEventPhase, TraceId,
-    UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand, ValidatedContentDerivation,
-    Version,
+    MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderRegistry,
+    MetadataProviderService, MetadataRepository, MetadataResolutionPolicy, MigrationOutcome,
+    NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationName, PathClass,
+    PersistenceError, PlatformClass, ProviderError, ProviderId, RemoveLibraryRootCommand,
+    RemoveLibraryRootResult, SafeContext, SafeContextField, SafeContextValue, SettingsService,
+    SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId, SourceVersionEvidence,
+    StartLibraryScanAllCommand, StartLibraryScanAllResult, StartLibraryScanCommand,
+    StartupCollector, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TechnicalClass,
+    TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
+    UpdateAppearanceSettingsCommand, ValidatedContentDerivation, Version,
 };
+use argus_infrastructure::artwork_store::ArtworkObjectStore;
+use argus_infrastructure::credentials::{KeyringSecureCredentialStore, initialize_secure_store};
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
+use argus_infrastructure::providers::{
+    ProductionProviderSessionFactory, SteamGridDbCredentialValidator, UreqTransport,
+};
 use argus_infrastructure::sqlite::{
     MigrationOutcome as InfrastructureMigrationOutcome, MigrationSummary,
-    SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteDatabaseExecutor,
-    SqliteExecutorError, SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryRootQueries,
-    SqliteLibraryRootRepository, SqliteLibraryScanAdmissionContextRepository,
-    SqliteLibraryScanTargetRepository, SqliteLibrarySourceRepository,
-    SqliteLogicalContentRepository, SqliteScanRunRepository, SqliteSourceEntryQueries,
-    SqliteSourceEntryRepository, SqliteUnitOfWork,
+    SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRepository, SqliteArtworkRepository,
+    SqliteDatabaseExecutor, SqliteExecutorError, SqliteJobRunRepository, SqliteJobsQueries,
+    SqliteLibraryRootQueries, SqliteLibraryRootRepository,
+    SqliteLibraryScanAdmissionContextRepository, SqliteLibraryScanTargetRepository,
+    SqliteLibrarySourceRepository, SqliteLogicalContentRepository, SqliteMetadataRepository,
+    SqliteScanRunRepository, SqliteSourceEntryQueries, SqliteSourceEntryRepository,
+    SqliteUnitOfWork,
 };
 
 pub mod background;
@@ -72,6 +81,13 @@ pub(crate) use runtime::RuntimeEventSubscriber;
 pub use runtime::*;
 pub(crate) use startup::StartupPhaseObserver;
 pub use startup::{Clock, StartupCoordinator, StartupResult, SystemClock};
+
+const STEAMGRIDDB_API_BASE_URL: &str = "https://www.steamgriddb.com/api/v2";
+
+type RuntimeCredentialService = MetadataProviderService<
+    KeyringSecureCredentialStore,
+    SteamGridDbCredentialValidator<UreqTransport>,
+>;
 
 /// Platform naming policy used by the private path-resolution seam.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -355,11 +371,52 @@ pub struct KernelBootstrap {
     >,
     jobs_service: JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>,
     unit_of_work: KernelUnitOfWorkFactory,
+    metadata_provider_registry: MetadataProviderRegistry,
+    credential_service: Arc<Mutex<RuntimeCredentialService>>,
+    artwork_store: Arc<ArtworkObjectStore>,
     event_bus: Arc<EventBus>,
     publication_diagnostics: Mutex<PublicationDiagnostics>,
     collector: StartupCollector,
     #[cfg(test)]
     fail_shutdown: bool,
+}
+
+/// Bounded artwork bytes returned by the runtime without storage paths or
+/// provider locators.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtworkAssetBytes {
+    asset_id: argus_domain::ArtworkAssetId,
+    bytes: Vec<u8>,
+    mime_type: String,
+    width: u32,
+    height: u32,
+}
+
+impl ArtworkAssetBytes {
+    /// Returns the immutable content-addressed asset identity.
+    pub const fn asset_id(&self) -> argus_domain::ArtworkAssetId {
+        self.asset_id
+    }
+
+    /// Returns the original validated bytes.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Returns the validated media type.
+    pub fn mime_type(&self) -> &str {
+        &self.mime_type
+    }
+
+    /// Returns the decoded width.
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Returns the decoded height.
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
 }
 
 /// Technology-neutral transaction scope exposed by the runtime boundary.
@@ -685,6 +742,126 @@ impl LogicalContentRepository for KernelLogicalContentRepository<'_, '_> {
     }
 }
 
+/// Technology-neutral transaction-scoped metadata repository wrapper.
+pub struct KernelMetadataRepository<'scope, 'connection> {
+    inner: SqliteMetadataRepository<'scope, 'connection>,
+}
+
+impl argus_application::MetadataRepository for KernelMetadataRepository<'_, '_> {
+    fn save_mapping(
+        &mut self,
+        mapping: &argus_application::ExternalIdentityMapping,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_mapping(mapping)
+    }
+
+    fn save_provider_metadata(
+        &mut self,
+        metadata: &argus_application::ProviderMetadata,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_provider_metadata(metadata)
+    }
+
+    fn save_resolved_metadata(
+        &mut self,
+        game_id: argus_domain::GameId,
+        metadata: &argus_application::ResolvedMetadata,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_resolved_metadata(game_id, metadata)
+    }
+
+    fn save_settings(
+        &mut self,
+        settings: &argus_application::MetadataSettings,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_settings(settings)
+    }
+
+    fn settings(&mut self) -> Result<argus_application::MetadataSettings, PersistenceError> {
+        self.inner.settings()
+    }
+
+    fn save_provider_settings(
+        &mut self,
+        settings: &argus_application::MetadataProviderSettings,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_provider_settings(settings)
+    }
+
+    fn provider_settings(
+        &mut self,
+    ) -> Result<argus_application::MetadataProviderSettings, PersistenceError> {
+        self.inner.provider_settings()
+    }
+
+    fn provider_metadata_for_content(
+        &mut self,
+        game_content_id: argus_domain::GameContentId,
+    ) -> Result<Vec<argus_application::ProviderMetadata>, PersistenceError> {
+        self.inner.provider_metadata_for_content(game_content_id)
+    }
+
+    fn resolved_metadata_for_game(
+        &mut self,
+        game_id: argus_domain::GameId,
+    ) -> Result<Option<argus_application::ResolvedMetadata>, PersistenceError> {
+        self.inner.resolved_metadata_for_game(game_id)
+    }
+}
+
+/// Technology-neutral transaction-scoped artwork repository wrapper.
+pub struct KernelArtworkRepository<'scope, 'connection> {
+    inner: SqliteArtworkRepository<'scope, 'connection>,
+}
+
+impl argus_application::ArtworkRepository for KernelArtworkRepository<'_, '_> {
+    fn save_reference(
+        &mut self,
+        reference: &argus_application::ArtworkReference,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_reference(reference)
+    }
+
+    fn save_resolved_artwork(
+        &mut self,
+        resolved: &argus_application::ResolvedArtwork,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_resolved_artwork(resolved)
+    }
+
+    fn replace_resolved_artwork_for_game(
+        &mut self,
+        game_id: argus_domain::GameId,
+        resolved: &[argus_application::ResolvedArtwork],
+    ) -> Result<(), PersistenceError> {
+        self.inner
+            .replace_resolved_artwork_for_game(game_id, resolved)
+    }
+
+    fn save_asset(
+        &mut self,
+        asset: &argus_application::ArtworkAsset,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_asset(asset)
+    }
+
+    fn references_for_external_game(
+        &mut self,
+        provider_id: argus_application::ProviderId,
+        external_game_id: &str,
+    ) -> Result<Vec<argus_application::ArtworkReference>, PersistenceError> {
+        self.inner
+            .references_for_external_game(provider_id, external_game_id)
+    }
+
+    fn resolved_artwork_for_game(
+        &mut self,
+        game_id: argus_domain::GameId,
+    ) -> Result<Vec<argus_application::ResolvedArtwork>, PersistenceError> {
+        self.inner.resolved_artwork_for_game(game_id)
+    }
+}
+
 /// Technology-neutral transaction-scoped admission-target repository wrapper.
 pub struct KernelLibraryScanTargetRepository<'scope, 'connection> {
     inner: SqliteLibraryScanTargetRepository<'scope, 'connection>,
@@ -885,6 +1062,30 @@ impl<'connection> LogicalContentUnitOfWork for KernelUnitOfWork<'connection> {
     }
 }
 
+impl<'connection> argus_application::EnrichmentUnitOfWork for KernelUnitOfWork<'connection> {
+    type MetadataRepository<'scope>
+        = KernelMetadataRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    type ArtworkRepository<'scope>
+        = KernelArtworkRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn metadata(&mut self) -> Self::MetadataRepository<'_> {
+        KernelMetadataRepository {
+            inner: self.inner.metadata(),
+        }
+    }
+
+    fn artwork(&mut self) -> Self::ArtworkRepository<'_> {
+        KernelArtworkRepository {
+            inner: self.inner.artwork(),
+        }
+    }
+}
+
 impl KernelBootstrap {
     /// Assembles a kernel from coordinator-owned startup resources.
     #[allow(clippy::too_many_arguments)]
@@ -901,6 +1102,7 @@ impl KernelBootstrap {
             InfraLocalFilesystemProvider,
         >,
         jobs_service: JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>,
+        artwork_store: Arc<ArtworkObjectStore>,
         event_bus: Arc<EventBus>,
         collector: StartupCollector,
     ) -> Self {
@@ -913,6 +1115,12 @@ impl KernelBootstrap {
             library_service,
             jobs_service,
             unit_of_work,
+            metadata_provider_registry: MetadataProviderRegistry::production(),
+            credential_service: Arc::new(Mutex::new(MetadataProviderService::new(
+                KeyringSecureCredentialStore::new(),
+                SteamGridDbCredentialValidator::new(UreqTransport::new(), STEAMGRIDDB_API_BASE_URL),
+            ))),
+            artwork_store,
             event_bus,
             publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
             collector,
@@ -956,6 +1164,10 @@ impl KernelBootstrap {
             settings_service,
             library_service,
             jobs_service,
+            Arc::new(
+                ArtworkObjectStore::new(directory.join("artwork-assets"))
+                    .expect("fixture artwork store"),
+            ),
             Arc::new(EventBus::new(
                 Vec::new(),
                 Vec::new(),
@@ -1111,14 +1323,266 @@ impl KernelBootstrap {
         context: &OperationContext,
     ) -> Result<GetGameResult, ApplicationError> {
         self.execute(context, move |mut work| {
-            let mut logical = work.logical_content();
-            let result = logical
-                .get_game(game_id)
-                .map_err(ApplicationPortError::Persistence)?;
+            let result = {
+                let mut logical = work.logical_content();
+                logical
+                    .get_game(game_id)
+                    .map_err(ApplicationPortError::Persistence)?
+            };
+            let result = match result {
+                GetGameResult::Found(detail) => {
+                    let canonical_game_id = detail.game_id();
+                    let resolved_metadata = {
+                        let mut metadata = work.metadata();
+                        metadata
+                            .resolved_metadata_for_game(canonical_game_id)
+                            .map_err(ApplicationPortError::Persistence)?
+                    };
+                    let resolved_artwork = {
+                        let mut artwork = work.artwork();
+                        artwork
+                            .resolved_artwork_for_game(canonical_game_id)
+                            .map_err(ApplicationPortError::Persistence)?
+                    };
+                    GetGameResult::Found(
+                        detail.with_enrichment(resolved_metadata, resolved_artwork),
+                    )
+                }
+                other => other,
+            };
             work.commit()?;
             Ok(result)
         })
         .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads provider enablement and safe credential readiness without
+    /// resolving metadata or starting provider work.
+    pub fn metadata_provider_readiness_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<MetadataProviderReadinessProjection>, ApplicationError> {
+        let executor = self.executor.clone().ok_or_else(|| {
+            application_error_from_code(ErrorCode::RuntimeStopped, context.trace_id())
+        })?;
+        let credential_service = Arc::clone(&self.credential_service);
+        let credential_readiness = executor
+            .execute_on_worker(context.clone(), move || {
+                let mut service = credential_service
+                    .lock()
+                    .map_err(|_| SqliteExecutorError::Internal)?;
+                // A secure-store read failure is a provider readiness fact,
+                // not permission to fall back to normal application storage.
+                // The service retains the safe Unavailable projection so the
+                // readiness query can report it without exposing a native
+                // storage error or secret material.
+                match service.refresh_readiness_from_store() {
+                    Ok(_) | Err(_) => Ok(service.readiness()),
+                }
+            })
+            .map_err(|error| map_sqlite_executor_error(context.trace_id(), error))?;
+
+        let settings = self
+            .unit_of_work
+            .execute(context, |mut work| {
+                let settings = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .provider_settings()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(settings)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        Ok(self
+            .metadata_provider_registry
+            .readiness_projection(&settings, credential_readiness))
+    }
+
+    /// Hydrates one already identified target on a dedicated backend worker.
+    ///
+    /// This is an internal reusable capability for a later composed workflow;
+    /// it does not admit a JobRun, publish a job event, or react to settings
+    /// mutations. Provider I/O is kept off the SQLite worker and therefore off
+    /// any Flutter/UI caller. Settings are read once to build local policies,
+    /// then the application coordinator owns the short persistence commits.
+    pub fn hydrate_game_content_with_context(
+        &self,
+        target: HydrationTarget,
+        context: &OperationContext,
+        now: i64,
+    ) -> Result<HydrationReport, ApplicationError> {
+        let validation_target = target.clone();
+        let target_is_current = self
+            .unit_of_work
+            .execute(context, move |mut work| {
+                let game = {
+                    let mut logical = work.logical_content();
+                    logical
+                        .get_game(validation_target.game_id())
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                let valid = match game {
+                    GetGameResult::Found(detail) => {
+                        validation_target.validate_against_game(&detail).is_ok()
+                    }
+                    GetGameResult::Redirected(_) | GetGameResult::NotFound => false,
+                };
+                work.commit()?;
+                Ok(valid)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        if !target_is_current {
+            return Err(application_error_from_code(
+                ErrorCode::ValidationInvalidArgument,
+                context.trace_id(),
+            ));
+        }
+        let trace_id = context.trace_id();
+        let unit_of_work = self.unit_of_work.clone();
+        let registry = self.metadata_provider_registry.clone();
+        let credential_service = Arc::clone(&self.credential_service);
+        let artwork_store = Arc::clone(&self.artwork_store);
+        let worker_context = context.clone();
+        let worker = std::thread::Builder::new()
+            .name("argus-enrichment-worker".to_owned())
+            .spawn(move || {
+                let (metadata_settings, provider_settings) =
+                    unit_of_work.execute(&worker_context, |mut work| {
+                        let metadata_settings = {
+                            let mut metadata = work.metadata();
+                            metadata
+                                .settings()
+                                .map_err(ApplicationPortError::Persistence)?
+                        };
+                        let provider_settings = {
+                            let mut metadata = work.metadata();
+                            metadata
+                                .provider_settings()
+                                .map_err(ApplicationPortError::Persistence)?
+                        };
+                        work.commit()?;
+                        Ok((metadata_settings, provider_settings))
+                    })?;
+
+                let credential_readiness = {
+                    let mut service = credential_service.lock().map_err(|_| {
+                        ApplicationPortError::Persistence(PersistenceError::Internal)
+                    })?;
+                    match service.refresh_readiness_from_store() {
+                        Ok(readiness) => readiness,
+                        Err(_) => service.readiness(),
+                    }
+                };
+                let readiness =
+                    registry.readiness_projection(&provider_settings, credential_readiness);
+                let metadata_policy = MetadataResolutionPolicy::new(
+                    provider_settings.enabled().clone(),
+                    metadata_settings.preferred_regions().to_vec(),
+                    metadata_settings.preferred_languages().to_vec(),
+                );
+                let mut artwork_policy = ArtworkResolutionPolicy::default();
+                for provider_id in registry.provider_ids() {
+                    artwork_policy.set_enabled(
+                        provider_id,
+                        provider_settings.enabled().contains(&provider_id),
+                    );
+                }
+                artwork_policy.set_locale_preferences(
+                    metadata_settings.preferred_regions().to_vec(),
+                    metadata_settings.preferred_languages().to_vec(),
+                );
+                let session_factory = ProductionProviderSessionFactory::new();
+                let mut sessions = session_factory.create_sessions();
+                HydrationCoordinator::new(unit_of_work).hydrate(
+                    &worker_context,
+                    target,
+                    metadata_policy,
+                    artwork_policy,
+                    &registry,
+                    &readiness,
+                    &mut sessions,
+                    artwork_store.as_ref(),
+                    now,
+                )
+            })
+            .map_err(|_| application_error_from_code(ErrorCode::InternalUnexpected, trace_id))?;
+        let result = worker
+            .join()
+            .map_err(|_| application_error_from_code(ErrorCode::InternalUnexpected, trace_id))?;
+        result.map_err(|error| map_application_port_error(trace_id, error))
+    }
+
+    /// Securely stores and validates a provider credential. The secret is
+    /// consumed on a backend worker and no secret-bearing value is returned.
+    pub fn set_metadata_provider_credential_with_context(
+        &self,
+        provider_id: ProviderId,
+        secret: Vec<u8>,
+        context: &OperationContext,
+    ) -> Result<MetadataProviderReadiness, ApplicationError> {
+        let executor = self.executor.clone().ok_or_else(|| {
+            application_error_from_code(ErrorCode::RuntimeStopped, context.trace_id())
+        })?;
+        let credential_service = Arc::clone(&self.credential_service);
+        let secret = zeroize::Zeroizing::new(secret);
+        executor
+            .execute_on_worker(context.clone(), move || {
+                let mut service = credential_service
+                    .lock()
+                    .map_err(|_| SqliteExecutorError::Internal)?;
+                Ok(service.set_credential(provider_id, secret.as_slice()))
+            })
+            .map_err(|error| map_sqlite_executor_error(context.trace_id(), error))?
+            .map_err(|error| map_credential_mutation_error(context.trace_id(), error))
+    }
+
+    /// Removes a provider credential without exposing prior secret state.
+    pub fn remove_metadata_provider_credential_with_context(
+        &self,
+        provider_id: ProviderId,
+        context: &OperationContext,
+    ) -> Result<MetadataProviderReadiness, ApplicationError> {
+        let executor = self.executor.clone().ok_or_else(|| {
+            application_error_from_code(ErrorCode::RuntimeStopped, context.trace_id())
+        })?;
+        let credential_service = Arc::clone(&self.credential_service);
+        executor
+            .execute_on_worker(context.clone(), move || {
+                let mut service = credential_service
+                    .lock()
+                    .map_err(|_| SqliteExecutorError::Internal)?;
+                Ok(service.remove_credential(provider_id))
+            })
+            .map_err(|error| map_sqlite_executor_error(context.trace_id(), error))?
+            .map_err(|error| map_credential_mutation_error(context.trace_id(), error))
+    }
+
+    /// Reads one validated immutable artwork object on the backend worker.
+    pub fn get_artwork_asset_bytes_with_context(
+        &self,
+        asset_id: argus_domain::ArtworkAssetId,
+        context: &OperationContext,
+    ) -> Result<ArtworkAssetBytes, ApplicationError> {
+        let executor = self.executor.clone().ok_or_else(|| {
+            application_error_from_code(ErrorCode::RuntimeStopped, context.trace_id())
+        })?;
+        let artwork_store = Arc::clone(&self.artwork_store);
+        let result = executor
+            .execute_on_worker(context.clone(), move || {
+                Ok(artwork_store.read_asset(asset_id))
+            })
+            .map_err(|error| map_sqlite_executor_error(context.trace_id(), error))?;
+        let (asset, bytes) =
+            result.map_err(|error| map_artwork_store_error(context.trace_id(), error))?;
+        Ok(ArtworkAssetBytes {
+            asset_id: asset.asset_id(),
+            bytes,
+            mime_type: asset.mime_type().to_owned(),
+            width: asset.width(),
+            height: asset.height(),
+        })
     }
 
     /// Synchronizes current native LocalFilesystem mounts and reconciles root
@@ -1610,6 +2074,22 @@ pub fn bootstrap_kernel_with_event_bus(
             collector.clone(),
         )
     })?;
+    // Secure-store initialization is an infrastructure adapter concern. It
+    // does not expose a secret or provide a plaintext fallback to the runtime.
+    let _ = initialize_secure_store();
+    let artwork_store =
+        ArtworkObjectStore::new(data_directory.join("artwork-assets")).map_err(|_| {
+            failure(
+                trace_id,
+                KernelBootstrapStage::Persistence,
+                ErrorCode::ConfigurationInvalid,
+                TechnicalClass::ConfigurationInvalid,
+                path_class,
+                platform_class,
+                architecture,
+                collector.clone(),
+            )
+        })?;
     let summary = KernelMigrationSummary::from(executor.migration_summary());
     let settings_service = SettingsService::new(
         SqliteAppearanceSettingsQueries::new(executor.clone()),
@@ -1674,6 +2154,12 @@ pub fn bootstrap_kernel_with_event_bus(
         library_service,
         jobs_service,
         unit_of_work,
+        metadata_provider_registry: MetadataProviderRegistry::production(),
+        credential_service: Arc::new(Mutex::new(MetadataProviderService::new(
+            KeyringSecureCredentialStore::new(),
+            SteamGridDbCredentialValidator::new(UreqTransport::new(), STEAMGRIDDB_API_BASE_URL),
+        ))),
+        artwork_store: Arc::new(artwork_store),
         event_bus: Arc::new(event_bus),
         publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
         collector,
@@ -1761,6 +2247,49 @@ pub(crate) fn map_application_port_error(
     };
     ApplicationError::from_code(code, trace_id, SafeContext::new())
         .expect("runtime recovery error uses an allowlisted empty context")
+}
+
+fn application_error_from_code(code: ErrorCode, trace_id: TraceId) -> ApplicationError {
+    ApplicationError::from_code(code, trace_id, SafeContext::new())
+        .expect("runtime bridge error uses an allowlisted empty context")
+}
+
+fn map_sqlite_executor_error(trace_id: TraceId, error: SqliteExecutorError) -> ApplicationError {
+    let (code, _) = error_class(&error);
+    application_error_from_code(code, trace_id)
+}
+
+fn map_credential_mutation_error(
+    trace_id: TraceId,
+    error: CredentialMutationError,
+) -> ApplicationError {
+    let code = match error {
+        CredentialMutationError::StoreUnavailable => {
+            ErrorCode::ConfigurationCredentialStoreUnavailable
+        }
+        CredentialMutationError::UnsupportedProvider => ErrorCode::ProviderConfigurationInvalid,
+    };
+    application_error_from_code(code, trace_id)
+}
+
+fn map_artwork_store_error(
+    trace_id: TraceId,
+    error: argus_infrastructure::artwork_store::ArtworkObjectStoreError,
+) -> ApplicationError {
+    let code = match error {
+        argus_infrastructure::artwork_store::ArtworkObjectStoreError::NotFound => {
+            ErrorCode::FilesystemArtworkAssetNotFound
+        }
+        argus_infrastructure::artwork_store::ArtworkObjectStoreError::TooLarge
+        | argus_infrastructure::artwork_store::ArtworkObjectStoreError::InvalidImage
+        | argus_infrastructure::artwork_store::ArtworkObjectStoreError::DimensionsTooLarge
+        | argus_infrastructure::artwork_store::ArtworkObjectStoreError::Corrupt
+        | argus_infrastructure::artwork_store::ArtworkObjectStoreError::Io
+        | argus_infrastructure::artwork_store::ArtworkObjectStoreError::InvalidConfiguration => {
+            ErrorCode::InternalUnexpected
+        }
+    };
+    application_error_from_code(code, trace_id)
 }
 
 /// Runs the targeted appearance reset through a narrow recovery executor.

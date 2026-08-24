@@ -45,6 +45,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApplicationErrorDto dco_decode_application_error_dto(dynamic raw);
 
   @protected
+  ArtworkAssetBytesDto dco_decode_artwork_asset_bytes_dto(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -135,12 +138,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   OperationHandleDto dco_decode_box_autoadd_operation_handle_dto(dynamic raw);
 
   @protected
+  RemoveMetadataProviderCredentialRequestDto
+  dco_decode_box_autoadd_remove_metadata_provider_credential_request_dto(
+    dynamic raw,
+  );
+
+  @protected
   ReportExecutionHostStopRequestDto
   dco_decode_box_autoadd_report_execution_host_stop_request_dto(dynamic raw);
 
   @protected
+  ResolvedMetadataDto dco_decode_box_autoadd_resolved_metadata_dto(dynamic raw);
+
+  @protected
   RetryNotAdmittedReasonDto
   dco_decode_box_autoadd_retry_not_admitted_reason_dto(dynamic raw);
+
+  @protected
+  SetMetadataProviderCredentialRequestDto
+  dco_decode_box_autoadd_set_metadata_provider_credential_request_dto(
+    dynamic raw,
+  );
 
   @protected
   SourceEntriesChangeScopeDto
@@ -405,6 +423,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_local_filesystem_browse_root_dto(dynamic raw);
 
   @protected
+  List<MetadataFieldProvenanceDto>
+  dco_decode_list_metadata_field_provenance_dto(dynamic raw);
+
+  @protected
+  List<MetadataProviderReadinessDto>
+  dco_decode_list_metadata_provider_readiness_dto(dynamic raw);
+
+  @protected
   List<MountedLocalFilesystemVolumeDto>
   dco_decode_list_mounted_local_filesystem_volume_dto(dynamic raw);
 
@@ -412,7 +438,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<ProviderCapabilityReadinessDto>
+  dco_decode_list_provider_capability_readiness_dto(dynamic raw);
+
+  @protected
   List<RecoveryActionDto> dco_decode_list_recovery_action_dto(dynamic raw);
+
+  @protected
+  List<ResolvedArtworkDto> dco_decode_list_resolved_artwork_dto(dynamic raw);
 
   @protected
   List<SafeContextEntryDto> dco_decode_list_safe_context_entry_dto(dynamic raw);
@@ -451,6 +484,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MembershipRelationshipDto dco_decode_membership_relationship_dto(dynamic raw);
+
+  @protected
+  MetadataFieldProvenanceDto dco_decode_metadata_field_provenance_dto(
+    dynamic raw,
+  );
+
+  @protected
+  MetadataProviderReadinessDto dco_decode_metadata_provider_readiness_dto(
+    dynamic raw,
+  );
 
   @protected
   MountedLocalFilesystemVolumeDto
@@ -501,6 +544,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ResolvedMetadataDto? dco_decode_opt_box_autoadd_resolved_metadata_dto(
+    dynamic raw,
+  );
+
+  @protected
   StartupFailureDto? dco_decode_opt_box_autoadd_startup_failure_dto(
     dynamic raw,
   );
@@ -515,7 +563,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
+  List<ResolvedArtworkDto>? dco_decode_opt_list_resolved_artwork_dto(
+    dynamic raw,
+  );
+
+  @protected
   PlatformIdDto dco_decode_platform_id_dto(dynamic raw);
+
+  @protected
+  ProviderCapabilityReadinessDto dco_decode_provider_capability_readiness_dto(
+    dynamic raw,
+  );
+
+  @protected
+  ProviderCredentialReadinessDto dco_decode_provider_credential_readiness_dto(
+    dynamic raw,
+  );
 
   @protected
   RecoveryActionDto dco_decode_recovery_action_dto(dynamic raw);
@@ -529,8 +592,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RemoveMetadataProviderCredentialRequestDto
+  dco_decode_remove_metadata_provider_credential_request_dto(dynamic raw);
+
+  @protected
   ReportExecutionHostStopRequestDto
   dco_decode_report_execution_host_stop_request_dto(dynamic raw);
+
+  @protected
+  ResolvedArtworkDto dco_decode_resolved_artwork_dto(dynamic raw);
+
+  @protected
+  ResolvedMetadataDto dco_decode_resolved_metadata_dto(dynamic raw);
 
   @protected
   RetryJobResultDto dco_decode_retry_job_result_dto(dynamic raw);
@@ -566,6 +639,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScanRunStatusDto dco_decode_scan_run_status_dto(dynamic raw);
+
+  @protected
+  SetMetadataProviderCredentialRequestDto
+  dco_decode_set_metadata_provider_credential_request_dto(dynamic raw);
 
   @protected
   SourceEntriesChangeScopeDto dco_decode_source_entries_change_scope_dto(
@@ -662,6 +739,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApplicationErrorDto sse_decode_application_error_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ArtworkAssetBytesDto sse_decode_artwork_asset_bytes_dto(
     SseDeserializer deserializer,
   );
 
@@ -780,14 +862,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RemoveMetadataProviderCredentialRequestDto
+  sse_decode_box_autoadd_remove_metadata_provider_credential_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ReportExecutionHostStopRequestDto
   sse_decode_box_autoadd_report_execution_host_stop_request_dto(
     SseDeserializer deserializer,
   );
 
   @protected
+  ResolvedMetadataDto sse_decode_box_autoadd_resolved_metadata_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RetryNotAdmittedReasonDto
   sse_decode_box_autoadd_retry_not_admitted_reason_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SetMetadataProviderCredentialRequestDto
+  sse_decode_box_autoadd_set_metadata_provider_credential_request_dto(
     SseDeserializer deserializer,
   );
 
@@ -1126,6 +1225,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MetadataFieldProvenanceDto>
+  sse_decode_list_metadata_field_provenance_dto(SseDeserializer deserializer);
+
+  @protected
+  List<MetadataProviderReadinessDto>
+  sse_decode_list_metadata_provider_readiness_dto(SseDeserializer deserializer);
+
+  @protected
   List<MountedLocalFilesystemVolumeDto>
   sse_decode_list_mounted_local_filesystem_volume_dto(
     SseDeserializer deserializer,
@@ -1135,7 +1242,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<ProviderCapabilityReadinessDto>
+  sse_decode_list_provider_capability_readiness_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<RecoveryActionDto> sse_decode_list_recovery_action_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ResolvedArtworkDto> sse_decode_list_resolved_artwork_dto(
     SseDeserializer deserializer,
   );
 
@@ -1186,6 +1304,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MembershipRelationshipDto sse_decode_membership_relationship_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MetadataFieldProvenanceDto sse_decode_metadata_field_provenance_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MetadataProviderReadinessDto sse_decode_metadata_provider_readiness_dto(
     SseDeserializer deserializer,
   );
 
@@ -1250,6 +1378,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ResolvedMetadataDto? sse_decode_opt_box_autoadd_resolved_metadata_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   StartupFailureDto? sse_decode_opt_box_autoadd_startup_failure_dto(
     SseDeserializer deserializer,
   );
@@ -1266,7 +1399,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  List<ResolvedArtworkDto>? sse_decode_opt_list_resolved_artwork_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PlatformIdDto sse_decode_platform_id_dto(SseDeserializer deserializer);
+
+  @protected
+  ProviderCapabilityReadinessDto sse_decode_provider_capability_readiness_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ProviderCredentialReadinessDto sse_decode_provider_credential_readiness_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   RecoveryActionDto sse_decode_recovery_action_dto(
@@ -1284,8 +1432,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RemoveMetadataProviderCredentialRequestDto
+  sse_decode_remove_metadata_provider_credential_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ReportExecutionHostStopRequestDto
   sse_decode_report_execution_host_stop_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ResolvedArtworkDto sse_decode_resolved_artwork_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ResolvedMetadataDto sse_decode_resolved_metadata_dto(
     SseDeserializer deserializer,
   );
 
@@ -1335,6 +1499,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ScanRunStatusDto sse_decode_scan_run_status_dto(SseDeserializer deserializer);
+
+  @protected
+  SetMetadataProviderCredentialRequestDto
+  sse_decode_set_metadata_provider_credential_request_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SourceEntriesChangeScopeDto sse_decode_source_entries_change_scope_dto(
@@ -1450,6 +1620,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_application_error_dto(
     ApplicationErrorDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_artwork_asset_bytes_dto(
+    ArtworkAssetBytesDto self,
     SseSerializer serializer,
   );
 
@@ -1584,14 +1760,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_remove_metadata_provider_credential_request_dto(
+    RemoveMetadataProviderCredentialRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_report_execution_host_stop_request_dto(
     ReportExecutionHostStopRequestDto self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_box_autoadd_resolved_metadata_dto(
+    ResolvedMetadataDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_retry_not_admitted_reason_dto(
     RetryNotAdmittedReasonDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_set_metadata_provider_credential_request_dto(
+    SetMetadataProviderCredentialRequestDto self,
     SseSerializer serializer,
   );
 
@@ -2004,6 +2198,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_metadata_field_provenance_dto(
+    List<MetadataFieldProvenanceDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_metadata_provider_readiness_dto(
+    List<MetadataProviderReadinessDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_mounted_local_filesystem_volume_dto(
     List<MountedLocalFilesystemVolumeDto> self,
     SseSerializer serializer,
@@ -2016,8 +2222,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_provider_capability_readiness_dto(
+    List<ProviderCapabilityReadinessDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_recovery_action_dto(
     List<RecoveryActionDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_resolved_artwork_dto(
+    List<ResolvedArtworkDto> self,
     SseSerializer serializer,
   );
 
@@ -2078,6 +2296,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_membership_relationship_dto(
     MembershipRelationshipDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_metadata_field_provenance_dto(
+    MetadataFieldProvenanceDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_metadata_provider_readiness_dto(
+    MetadataProviderReadinessDto self,
     SseSerializer serializer,
   );
 
@@ -2151,6 +2381,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_resolved_metadata_dto(
+    ResolvedMetadataDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_startup_failure_dto(
     StartupFailureDto? self,
     SseSerializer serializer,
@@ -2169,7 +2405,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_list_resolved_artwork_dto(
+    List<ResolvedArtworkDto>? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_platform_id_dto(PlatformIdDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_provider_capability_readiness_dto(
+    ProviderCapabilityReadinessDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_provider_credential_readiness_dto(
+    ProviderCredentialReadinessDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_recovery_action_dto(
@@ -2190,8 +2444,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_remove_metadata_provider_credential_request_dto(
+    RemoveMetadataProviderCredentialRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_report_execution_host_stop_request_dto(
     ReportExecutionHostStopRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_resolved_artwork_dto(
+    ResolvedArtworkDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_resolved_metadata_dto(
+    ResolvedMetadataDto self,
     SseSerializer serializer,
   );
 
@@ -2255,6 +2527,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_scan_run_status_dto(
     ScanRunStatusDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_set_metadata_provider_credential_request_dto(
+    SetMetadataProviderCredentialRequestDto self,
     SseSerializer serializer,
   );
 

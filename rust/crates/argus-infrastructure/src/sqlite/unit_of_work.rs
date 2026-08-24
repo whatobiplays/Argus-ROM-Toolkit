@@ -8,6 +8,7 @@ use argus_application::{
 };
 
 use super::appearance::SqliteAppearanceSettingsRepository;
+use super::artwork::SqliteArtworkRepository;
 use super::connection::SqliteValue;
 use super::errors::{SqliteOperationError, operation_error};
 use super::jobs::{
@@ -15,6 +16,7 @@ use super::jobs::{
     SqliteLibraryScanTargetRepository, SqliteScanRunRepository, SqliteSourceEntryRepository,
 };
 use super::logical::SqliteLogicalContentRepository;
+use super::metadata::SqliteMetadataRepository;
 use super::sources::{SqliteLibraryRootRepository, SqliteLibrarySourceRepository};
 
 /// One top-level transaction that cannot be reused after terminal completion.
@@ -368,6 +370,26 @@ impl<'connection> LogicalContentUnitOfWork for SqliteUnitOfWork<'connection> {
 
     fn logical_content(&mut self) -> Self::LogicalContentRepository<'_> {
         SqliteLogicalContentRepository::new(self)
+    }
+}
+
+impl<'connection> argus_application::EnrichmentUnitOfWork for SqliteUnitOfWork<'connection> {
+    type MetadataRepository<'scope>
+        = SqliteMetadataRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    type ArtworkRepository<'scope>
+        = SqliteArtworkRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn metadata(&mut self) -> Self::MetadataRepository<'_> {
+        SqliteMetadataRepository::new(self)
+    }
+
+    fn artwork(&mut self) -> Self::ArtworkRepository<'_> {
+        SqliteArtworkRepository::new(self)
     }
 }
 

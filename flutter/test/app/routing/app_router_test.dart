@@ -15,9 +15,29 @@ import '../../features/settings/appearance_settings_test_fakes.dart';
 import '../../features/sources/sources_test_fakes.dart';
 
 void main() {
-  test('typed Settings route and semantic mapping are canonical', () {
+  test('typed production routes and semantic mappings are canonical', () {
+    expect(const LibraryRoute().location, '/library');
+    expect(
+      const LibraryPlatformRoute(platformId: 'nintendo_gb').location,
+      '/library/platforms/nintendo_gb',
+    );
+    expect(
+      const LibrarySourceRoute(sourceId: 'source-1').location,
+      '/library/sources/source-1',
+    );
+    expect(
+      const LibraryRootScopeRoute(
+        libraryRootId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ).location,
+      '/library/library-roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
     expect(const SettingsRoute().location, '/settings');
     expect(const SourcesRoute().location, '/sources');
+    expect(destinationForUri(Uri.parse('/library')), AppDestination.library);
+    expect(
+      destinationForUri(Uri.parse('/games/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')),
+      AppDestination.library,
+    );
     expect(destinationForUri(Uri.parse('/settings')), AppDestination.settings);
     expect(destinationForUri(Uri.parse('/sources')), AppDestination.sources);
     expect(
@@ -70,13 +90,14 @@ void main() {
 
   Future<void> loadAppearance(WidgetTester tester, FakeSettingsApi api) async {
     await tester.pump();
+    if (api.readRequests.isEmpty) return;
     api.readRequests.single.complete(
       const AppearanceSettings(themeMode: ThemeMode.light),
     );
     await tester.pumpAndSettle();
   }
 
-  testWidgets('root redirects to Settings and renders the Settings page', (
+  testWidgets('root redirects to Library and renders the Library shell', (
     tester,
   ) async {
     final host = createHost();
@@ -90,8 +111,8 @@ void main() {
     );
     await loadAppearance(tester, host.api);
 
-    expect(router.routeInformationProvider.value.uri.path, '/settings');
-    expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+    expect(router.routeInformationProvider.value.uri.path, '/library');
+    expect(find.bySemanticsLabel('Library'), findsOneWidget);
   });
 
   testWidgets('direct Settings navigation renders Settings', (tester) async {
@@ -109,6 +130,62 @@ void main() {
 
     expect(router.routeInformationProvider.value.uri.path, '/settings');
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+  });
+
+  testWidgets(
+    'valid scoped Library routes preserve scope without querying All',
+    (tester) async {
+      final host = createHost();
+      final router = host.container.read(appRouterProvider);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: host.container,
+          child: const _RouterHost(),
+        ),
+      );
+      await loadAppearance(tester, host.api);
+
+      for (final path in <String>[
+        '/library/platforms/nintendo_gb',
+        '/library/sources/source-1',
+        '/library/library-roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ]) {
+        router.go(path);
+        await tester.pumpAndSettle();
+        expect(router.routeInformationProvider.value.uri.path, path);
+        expect(
+          find.text('Scoped Library browsing is not available yet'),
+          findsOneWidget,
+          reason: path,
+        );
+        expect(find.text('View All Library Games'), findsOneWidget);
+      }
+    },
+  );
+
+  testWidgets('invalid scoped Library route data remains a controlled error', (
+    tester,
+  ) async {
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: host.container,
+        child: const _RouterHost(),
+      ),
+    );
+    await loadAppearance(tester, host.api);
+    router.go('/library/platforms/not-a-platform');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid Library scope'), findsOneWidget);
+    expect(find.text('Page not found'), findsNothing);
+    expect(
+      router.routeInformationProvider.value.uri.path,
+      '/library/platforms/not-a-platform',
+    );
   });
 
   testWidgets('unknown paths use a bounded sanitized not-found surface', (
@@ -133,9 +210,9 @@ void main() {
     expect(find.textContaining('fragment'), findsNothing);
     expect(find.textContaining('Exception'), findsNothing);
 
-    await tester.tap(find.text('Go to Settings'));
+    await tester.tap(find.text('Go to Library'));
     await tester.pumpAndSettle();
-    expect(router.routeInformationProvider.value.uri.path, '/settings');
+    expect(router.routeInformationProvider.value.uri.path, '/library');
   });
 
   testWidgets('unimplemented future paths still use the controlled not-found '
@@ -154,7 +231,6 @@ void main() {
     for (final path in <String>[
       '/more',
       '/startup',
-      '/library',
       '/collections',
       '/games',
       '/game-detail',
@@ -197,6 +273,13 @@ void main() {
     expect(router.routeInformationProvider.value.uri.path, rootPath);
 
     await tester.tap(find.text('Settings'));
+    await tester.pump();
+    if (host.api.readRequests.isNotEmpty &&
+        !host.api.readRequests.last.isCompleted) {
+      host.api.readRequests.last.complete(
+        const AppearanceSettings(themeMode: ThemeMode.light),
+      );
+    }
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/settings');
 
@@ -351,9 +434,9 @@ void main() {
       ]) {
         tester.view.physicalSize = Size(testCase.width, 800);
         await tester.pumpAndSettle();
-        expect(router.routeInformationProvider.value.uri.path, '/settings');
+        expect(router.routeInformationProvider.value.uri.path, '/library');
         expect(find.byKey(testCase.key), findsOneWidget);
-        expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+        expect(find.bySemanticsLabel('Library'), findsOneWidget);
       }
     },
   );
@@ -385,7 +468,7 @@ void main() {
         await loadAppearance(tester, host.api);
 
         expect(find.byKey(ValueKey<String>(testCase.key)), findsOneWidget);
-        expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+        expect(find.bySemanticsLabel('Library'), findsOneWidget);
         expect(tester.takeException(), isNull);
       }
     }

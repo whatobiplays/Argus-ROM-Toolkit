@@ -14,17 +14,22 @@ use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argus_application::{
-    AddLocalLibraryRootAndScanCommand, AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult,
-    AdmittedLibraryScanJob, AdmittedScan, AppearanceSettingsSubscriber, ApplicationError,
-    CancelJobResult, ErrorCode, EventSubscriberError, GameId, GameLibraryPage, GetGameResult,
-    HydrationReport, HydrationTarget, JobDetail, JobProgressChanged, JobRunId, JobRunRepository,
-    JobRunState, JobStateChanged, JobSummaryPage, LibraryRootId, LibraryRootPage,
-    LibraryRootProjection, LibraryScanAdmissionResult, LibraryScanAllRequestIdentity,
-    LibraryScanChildAdmission, LibraryScanChildCompletion, LibraryScanExecutionPlan,
-    ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
-    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, OperationCompletion, OperationContext,
-    OperationName, RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand,
+    AddLibraryRootAndRefreshResult, AddLocalLibraryRootAndScanCommand,
+    AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult, AdmittedLibraryScanJob,
+    AdmittedScan, AppearanceSettingsSubscriber, ApplicationError, BackgroundOperationHandler,
+    BackgroundOperationStopReason, CancelJobResult, CompleteLibraryOnboardingAndRefreshResult,
+    ErrorCode, EventSubscriberError, GameId, GameLibraryPage, GetGameResult, HydrationReport,
+    HydrationTarget, JobDetail, JobProgress, JobProgressChanged, JobProgressReporter, JobRunId,
+    JobRunRepository, JobRunState, JobStateChanged, JobSummaryPage, LibraryOnboardingState,
+    LibraryProviderSetupDecision, LibraryRefreshAdmissionOutcome, LibraryRefreshTrigger,
+    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionResult,
+    LibraryScanAllRequestIdentity, LibraryScanChildAdmission, LibraryScanChildCompletion,
+    LibraryScanExecutionPlan, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
+    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
+    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
+    MetadataProviderSettings, MetadataProviderSettingsUpdateResult, MetadataSettings,
+    MetadataSettingsUpdateResult, OperationCompletion, OperationContext, OperationName,
+    PrivacyConsent, RefreshMode, RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand,
     ScanAdmissionReference, SourceEntriesChangeScope, SourceEntriesChanged,
     SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult,
     StartLibraryScanResult, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId,
@@ -42,9 +47,7 @@ use crate::{
     startup::SettingsReadPort,
 };
 use argus_application::LocalFilesystemProvider;
-use argus_application::{
-    BackgroundOperationStopReason, LibraryScanOperationHandler, OperationHandle,
-};
+use argus_application::{LibraryScanOperationHandler, OperationHandle};
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 
@@ -1070,6 +1073,24 @@ impl ApplicationHost {
         operation(kernel)
     }
 
+    fn with_admitted_kernel<T>(
+        &self,
+        context: &OperationContext,
+        class: OperationClass,
+        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
+    ) -> Result<T, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, class)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, operation)
+    }
+
     /// Publishes one outward runtime payload through the injected sink route.
     pub(crate) fn publish_outward(&self, payload: RuntimeEventPayload) {
         let _ = self.inner.notification_sink.publish(payload);
@@ -1835,6 +1856,166 @@ impl ApplicationHost {
         })
     }
 
+    /// Reads the durable onboarding projection under a query admission.
+    pub fn library_onboarding_state_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<LibraryOnboardingState, ApplicationError> {
+        self.with_admitted_kernel(context, OperationClass::Query, |kernel| {
+            kernel.library_onboarding_state_with_context(context)
+        })
+    }
+
+    /// Reads the Settings-owned privacy-consent projection.
+    pub fn privacy_consent_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<PrivacyConsent, ApplicationError> {
+        self.with_admitted_kernel(context, OperationClass::Query, |kernel| {
+            kernel.privacy_consent_with_context(context)
+        })
+    }
+
+    /// Accepts the backend-advertised current privacy-terms version.
+    pub fn accept_privacy_terms_with_context(
+        &self,
+        context: &OperationContext,
+        terms_version: String,
+    ) -> Result<PrivacyConsent, ApplicationError> {
+        self.with_admitted_kernel(context, OperationClass::ImmediateCommand, |kernel| {
+            kernel.accept_privacy_terms_with_context(context, terms_version, crate::now_millis())
+        })
+    }
+
+    /// Commits onboarding metadata preferences without admitting refresh work.
+    pub fn confirm_library_metadata_preferences_with_context(
+        &self,
+        context: &OperationContext,
+        settings: MetadataSettings,
+    ) -> Result<LibraryOnboardingState, ApplicationError> {
+        self.with_admitted_kernel(context, OperationClass::ImmediateCommand, |kernel| {
+            kernel.confirm_library_metadata_preferences_with_context(context, settings)
+        })
+    }
+
+    /// Records the provider setup decision after the kernel validates readiness.
+    pub fn record_library_provider_setup_with_context(
+        &self,
+        context: &OperationContext,
+        decision: LibraryProviderSetupDecision,
+    ) -> Result<LibraryOnboardingState, ApplicationError> {
+        self.with_admitted_kernel(context, OperationClass::ImmediateCommand, |kernel| {
+            kernel.record_library_provider_setup_with_context(context, decision)
+        })
+    }
+
+    /// Commits onboarding completion, then independently admits the initial
+    /// refresh. A committed completion is retained when child admission fails.
+    pub fn complete_library_onboarding_and_refresh_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<CompleteLibraryOnboardingAndRefreshResult, ApplicationError> {
+        let state =
+            self.with_admitted_kernel(context, OperationClass::ImmediateCommand, |kernel| {
+                kernel.complete_library_onboarding_with_context(context)
+            })?;
+        match self.refresh_library_with_trigger_with_context(
+            context,
+            LibraryRefreshTrigger::InitialOnboarding,
+        ) {
+            Ok(operation_handle) => Ok(
+                CompleteLibraryOnboardingAndRefreshResult::OnboardingCompletedAndRefreshAdmitted(
+                    state,
+                    operation_handle,
+                ),
+            ),
+            Err(error) => Ok(
+                CompleteLibraryOnboardingAndRefreshResult::OnboardingCompletedButRefreshNotAdmitted(
+                    state, error,
+                ),
+            ),
+        }
+    }
+
+    /// Reads local metadata preferences without starting resolution.
+    pub fn metadata_settings_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<MetadataSettings, ApplicationError> {
+        self.with_admitted_kernel(context, OperationClass::Query, |kernel| {
+            kernel.metadata_settings_with_context(context)
+        })
+    }
+
+    /// Commits metadata preferences and admits local-only resolution when the
+    /// durable value changed. The commit is never rolled back by admission.
+    pub fn update_metadata_settings_with_context(
+        &self,
+        context: &OperationContext,
+        settings: MetadataSettings,
+    ) -> Result<MetadataSettingsUpdateResult, ApplicationError> {
+        let (settings, changed) =
+            self.with_admitted_kernel(context, OperationClass::ImmediateCommand, |kernel| {
+                kernel.update_metadata_settings_with_context(context, settings)
+            })?;
+        if !changed {
+            return Ok(MetadataSettingsUpdateResult::CommittedNoResolutionWork(
+                settings,
+            ));
+        }
+        let revision = self.with_admitted_kernel(context, OperationClass::Query, |kernel| {
+            kernel.metadata_settings_revision_with_context(context)
+        })?;
+        match self.start_library_resolution_refresh_with_context(revision, context) {
+            Ok(handle) => {
+                Ok(MetadataSettingsUpdateResult::CommittedAndResolutionAdmitted(settings, handle))
+            }
+            Err(error) => Ok(
+                MetadataSettingsUpdateResult::CommittedButResolutionNotAdmitted(settings, error),
+            ),
+        }
+    }
+
+    /// Reads provider enablement without starting resolution.
+    pub fn metadata_provider_settings_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<MetadataProviderSettings, ApplicationError> {
+        self.with_admitted_kernel(context, OperationClass::Query, |kernel| {
+            kernel.metadata_provider_settings_with_context(context)
+        })
+    }
+
+    /// Commits provider enablement and independently admits local resolution.
+    pub fn update_metadata_provider_settings_with_context(
+        &self,
+        context: &OperationContext,
+        settings: MetadataProviderSettings,
+    ) -> Result<MetadataProviderSettingsUpdateResult, ApplicationError> {
+        let (settings, changed) =
+            self.with_admitted_kernel(context, OperationClass::ImmediateCommand, |kernel| {
+                kernel.update_metadata_provider_settings_with_context(context, settings)
+            })?;
+        if !changed {
+            return Ok(MetadataProviderSettingsUpdateResult::CommittedNoResolutionWork(settings));
+        }
+        let revision = self.with_admitted_kernel(context, OperationClass::Query, |kernel| {
+            kernel.metadata_settings_revision_with_context(context)
+        })?;
+        match self.start_library_resolution_refresh_with_context(revision, context) {
+            Ok(handle) => Ok(
+                MetadataProviderSettingsUpdateResult::CommittedAndResolutionAdmitted(
+                    settings, handle,
+                ),
+            ),
+            Err(error) => Ok(
+                MetadataProviderSettingsUpdateResult::CommittedButResolutionNotAdmitted(
+                    settings, error,
+                ),
+            ),
+        }
+    }
+
     /// Reads provider readiness through the currently ready generation.
     pub fn metadata_provider_readiness(
         &self,
@@ -2264,6 +2445,12 @@ impl ApplicationHost {
         self.start_library_scan_with_context(root_id, &context)
     }
 
+    /// Admits one normal user-requested Library refresh.
+    pub fn refresh_library(&self) -> Result<OperationHandle, ApplicationError> {
+        let (context, _guard) = self.begin_operation("library", "refresh_library")?;
+        self.refresh_library_with_context(&context)
+    }
+
     /// Admits one durable multi-root Scan All and registers one job-level
     /// background operation for every admitted child plan.
     pub fn start_library_scan_all(
@@ -2344,6 +2531,74 @@ impl ApplicationHost {
         Ok(admission.outcome().clone())
     }
 
+    /// Admits one normal Library refresh under an existing top-level context.
+    pub fn refresh_library_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<OperationHandle, ApplicationError> {
+        self.refresh_library_with_trigger_with_context(context, LibraryRefreshTrigger::Manual)
+    }
+
+    /// Admits a composed Library refresh with its product-owned trigger.
+    ///
+    /// The root-plan admission and operation registration remain delegated to
+    /// the focused scan capabilities. This method only owns the top-level
+    /// operation boundary and maps the canonical admission to its handle.
+    pub fn refresh_library_with_trigger_with_context(
+        &self,
+        context: &OperationContext,
+        trigger: LibraryRefreshTrigger,
+    ) -> Result<OperationHandle, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::BackgroundOperation)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        {
+            let generation = self.lock_generation_with_context(context)?;
+            let manager = generation.background.clone().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let handle = generation.kernel_handle().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let kernel_guard = handle.lock().map_err(|_| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let kernel = kernel_guard.as_ref().ok_or_else(|| {
+                runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            let admission = kernel.start_library_refresh_with_context(
+                context,
+                Arc::new(move || guard.token().is_cancelled()),
+                trigger,
+            )?;
+            if let Some(admitted) = admission.admitted_job() {
+                register_library_refresh(
+                    &manager,
+                    Arc::clone(&handle),
+                    kernel,
+                    context,
+                    admitted,
+                    admission.admitted_job_exclusion_count(),
+                )?;
+            }
+            match admission.outcome() {
+                LibraryRefreshAdmissionOutcome::Admitted(handle) => Ok(handle.clone()),
+                LibraryRefreshAdmissionOutcome::NothingEligible { .. } => {
+                    Err(runtime_error_with_trace(
+                        ErrorCode::OperationCapacityUnavailable,
+                        context.trace_id(),
+                    ))
+                }
+            }
+        }
+    }
+
     /// Admits one multi-root Scan All under an existing top-level context and
     /// registers one job-level background operation for its admitted payload.
     pub fn start_library_scan_all_with_context(
@@ -2391,6 +2646,89 @@ impl ApplicationHost {
             admission
         };
         Ok(admission.outcome().clone())
+    }
+
+    /// Admits one bounded Game refresh and registers its focused handler.
+    pub fn start_game_refresh_with_context(
+        &self,
+        game_ids: Vec<GameId>,
+        mode: RefreshMode,
+        context: &OperationContext,
+    ) -> Result<OperationHandle, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::BackgroundOperation)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let generation = self.lock_generation_with_context(context)?;
+        let manager = generation.background.clone().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel_handle = generation.kernel_handle().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel_guard = kernel_handle.lock().map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel = kernel_guard.as_ref().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let operation_handle =
+            kernel.admit_game_refresh_with_context(context, game_ids.clone(), mode)?;
+        register_phase003_refresh(
+            &manager,
+            Arc::clone(&kernel_handle),
+            kernel,
+            context,
+            operation_handle.clone(),
+            Phase003RefreshKind::Game { game_ids },
+        )?;
+        Ok(operation_handle)
+    }
+
+    /// Admits one local-only metadata-resolution refresh.
+    pub fn start_library_resolution_refresh_with_context(
+        &self,
+        settings_revision: u64,
+        context: &OperationContext,
+    ) -> Result<OperationHandle, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::BackgroundOperation)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        let generation = self.lock_generation_with_context(context)?;
+        let manager = generation.background.clone().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel_handle = generation.kernel_handle().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel_guard = kernel_handle.lock().map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel = kernel_guard.as_ref().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let operation_handle =
+            kernel.admit_library_resolution_refresh_with_context(context, settings_revision)?;
+        register_phase003_refresh(
+            &manager,
+            Arc::clone(&kernel_handle),
+            kernel,
+            context,
+            operation_handle.clone(),
+            Phase003RefreshKind::LibraryResolution { settings_revision },
+        )?;
+        Ok(operation_handle)
     }
 
     /// Executes the Add & Scan composite workflow through the ready kernel.
@@ -2447,6 +2785,40 @@ impl ApplicationHost {
         )
     }
 
+    /// Adds the first onboarding root, then independently admits its composed
+    /// Adds one configured root through the existing Sources authority and
+    /// admits its composed Library refresh independently. Product onboarding
+    /// uses root-only admission followed by its own completion command.
+    pub fn add_library_root_and_refresh_with_context(
+        &self,
+        context: &OperationContext,
+        selection: LocalFilesystemRootSelection,
+    ) -> Result<AddLibraryRootAndRefreshResult, ApplicationError> {
+        let added = self.add_local_library_root_with_context(context, selection)?;
+        match added {
+            AddLocalLibraryRootResult::Added(root) => {
+                let refresh = self.refresh_library_with_trigger_with_context(
+                    context,
+                    LibraryRefreshTrigger::AddedRoot(root.root_id()),
+                );
+                match refresh {
+                    Ok(handle) => Ok(AddLibraryRootAndRefreshResult::AddedAndRefreshAdmitted(
+                        root, handle,
+                    )),
+                    Err(error) => Ok(AddLibraryRootAndRefreshResult::AddedButRefreshNotAdmitted(
+                        root, error,
+                    )),
+                }
+            }
+            AddLocalLibraryRootResult::AlreadyConfigured(root_id) => {
+                Ok(AddLibraryRootAndRefreshResult::AlreadyConfigured(root_id))
+            }
+            AddLocalLibraryRootResult::OverlapsExisting(root_id, relationship) => Ok(
+                AddLibraryRootAndRefreshResult::OverlapsExisting(root_id, relationship),
+            ),
+        }
+    }
+
     /// Retries one eligible historical LibraryScan into a new durable run.
     ///
     /// A registration failure after durable application admission preserves
@@ -2489,16 +2861,43 @@ impl ApplicationHost {
                 context.clone(),
                 recorder.clone(),
             )?;
+            let retry_operation_type = match admission.outcome() {
+                argus_application::RetryJobResult::Admitted(handle)
+                    if handle.operation_type()
+                        == argus_application::OPERATION_TYPE_LIBRARY_REFRESH =>
+                {
+                    argus_application::OPERATION_TYPE_LIBRARY_REFRESH
+                }
+                _ => argus_application::OPERATION_TYPE_LIBRARY_SCAN,
+            };
             if let Some(admitted) = admission.admitted_scan() {
-                register_library_scan(&manager, kernel, context, admitted)?;
-            } else if let Some(admitted_job) = admission.admitted_job() {
-                register_library_scan_all(
+                register_library_scan_with_operation_type(
                     &manager,
                     kernel,
                     context,
-                    admitted_job,
-                    admission.admitted_job_exclusion_count(),
+                    admitted,
+                    retry_operation_type,
                 )?;
+            } else if let Some(admitted_job) = admission.admitted_job() {
+                if retry_operation_type == argus_application::OPERATION_TYPE_LIBRARY_REFRESH {
+                    register_library_refresh(
+                        &manager,
+                        Arc::clone(&handle),
+                        kernel,
+                        context,
+                        admitted_job,
+                        admission.admitted_job_exclusion_count(),
+                    )?;
+                } else {
+                    register_library_scan_all_with_operation_type(
+                        &manager,
+                        kernel,
+                        context,
+                        admitted_job,
+                        admission.admitted_job_exclusion_count(),
+                        retry_operation_type,
+                    )?;
+                }
             }
             Ok::<_, ApplicationError>(admission)
         })();
@@ -2957,6 +3356,22 @@ fn register_library_scan(
     context: &OperationContext,
     admitted: &AdmittedScan,
 ) -> Result<(), ApplicationError> {
+    register_library_scan_with_operation_type(
+        manager,
+        kernel,
+        context,
+        admitted,
+        argus_application::OPERATION_TYPE_LIBRARY_SCAN,
+    )
+}
+
+fn register_library_scan_with_operation_type(
+    manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
+    kernel: &KernelBootstrap,
+    context: &OperationContext,
+    admitted: &AdmittedScan,
+    operation_type: &'static str,
+) -> Result<(), ApplicationError> {
     let access = InfraLocalFilesystemProvider::default()
         .open_access(admitted.plan().root_locator())
         .map_err(|_| runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id()))?;
@@ -2967,10 +3382,7 @@ fn register_library_scan(
         crate::events::EventBusSink::new(kernel.event_bus().clone()),
         100,
     );
-    let handle = OperationHandle::new(
-        admitted.job_run_id(),
-        argus_application::OPERATION_TYPE_LIBRARY_SCAN,
-    );
+    let handle = OperationHandle::new(admitted.job_run_id(), operation_type);
     match manager.register(
         &handle,
         Arc::new(handler),
@@ -2987,7 +3399,10 @@ fn register_library_scan(
                 admitted.job_run_id(),
             );
             let code = match registration_error {
-                crate::background::ManagerAdmissionError::Internal => ErrorCode::InternalUnexpected,
+                crate::background::ManagerAdmissionError::Internal
+                | crate::background::ManagerAdmissionError::InvalidOperationType => {
+                    ErrorCode::InternalUnexpected
+                }
                 crate::background::ManagerAdmissionError::ShuttingDown
                 | crate::background::ManagerAdmissionError::CapacityExceeded => {
                     ErrorCode::OperationCapacityUnavailable
@@ -3007,12 +3422,83 @@ fn register_library_scan(
 ///
 /// A registration failure terminalizes every admitted child plus the parent
 /// coherently and returns a definite application error.
+fn register_library_refresh(
+    manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
+    kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    kernel: &KernelBootstrap,
+    context: &OperationContext,
+    admitted: &AdmittedLibraryScanJob,
+    exclusion_count: usize,
+) -> Result<(), ApplicationError> {
+    let handler = LibraryRefreshOperationHandler::new(
+        admitted.plans().to_vec(),
+        kernel.unit_of_work_factory().clone(),
+        crate::events::EventBusSink::new(kernel.event_bus().clone()),
+        kernel_handle,
+        admitted.job_run_id(),
+        100,
+        exclusion_count,
+    );
+    let handle = OperationHandle::new(
+        admitted.job_run_id(),
+        argus_application::OPERATION_TYPE_LIBRARY_REFRESH,
+    );
+    match manager.register(
+        &handle,
+        Arc::new(handler),
+        &[
+            ResourceClass::FilesystemRead,
+            ResourceClass::MetadataProviderNetwork,
+            ResourceClass::PersistenceWrite,
+        ],
+    ) {
+        Ok(()) => Ok(()),
+        Err(registration_error) => {
+            terminalize_unregistered_scan_all(kernel, context, admitted);
+            let code = match registration_error {
+                crate::background::ManagerAdmissionError::Internal
+                | crate::background::ManagerAdmissionError::InvalidOperationType => {
+                    ErrorCode::InternalUnexpected
+                }
+                crate::background::ManagerAdmissionError::ShuttingDown
+                | crate::background::ManagerAdmissionError::CapacityExceeded => {
+                    ErrorCode::OperationCapacityUnavailable
+                }
+            };
+            Err(ApplicationError::from_code(
+                code,
+                context.trace_id(),
+                argus_application::SafeContext::new(),
+            )
+            .expect("background admission error follows the published catalog"))
+        }
+    }
+}
+
 fn register_library_scan_all(
     manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
     kernel: &KernelBootstrap,
     context: &OperationContext,
     admitted: &AdmittedLibraryScanJob,
     exclusion_count: usize,
+) -> Result<(), ApplicationError> {
+    register_library_scan_all_with_operation_type(
+        manager,
+        kernel,
+        context,
+        admitted,
+        exclusion_count,
+        argus_application::OPERATION_TYPE_LIBRARY_SCAN,
+    )
+}
+
+fn register_library_scan_all_with_operation_type(
+    manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
+    kernel: &KernelBootstrap,
+    context: &OperationContext,
+    admitted: &AdmittedLibraryScanJob,
+    exclusion_count: usize,
+    operation_type: &'static str,
 ) -> Result<(), ApplicationError> {
     let handler = LibraryScanAllOperationHandler::new(
         admitted.plans().to_vec(),
@@ -3021,10 +3507,7 @@ fn register_library_scan_all(
         100,
         exclusion_count,
     );
-    let handle = OperationHandle::new(
-        admitted.job_run_id(),
-        argus_application::OPERATION_TYPE_LIBRARY_SCAN,
-    );
+    let handle = OperationHandle::new(admitted.job_run_id(), operation_type);
     match manager.register(
         &handle,
         Arc::new(handler),
@@ -3037,7 +3520,10 @@ fn register_library_scan_all(
         Err(registration_error) => {
             terminalize_unregistered_scan_all(kernel, context, admitted);
             let code = match registration_error {
-                crate::background::ManagerAdmissionError::Internal => ErrorCode::InternalUnexpected,
+                crate::background::ManagerAdmissionError::Internal
+                | crate::background::ManagerAdmissionError::InvalidOperationType => {
+                    ErrorCode::InternalUnexpected
+                }
                 crate::background::ManagerAdmissionError::ShuttingDown
                 | crate::background::ManagerAdmissionError::CapacityExceeded => {
                     ErrorCode::OperationCapacityUnavailable
@@ -3084,6 +3570,427 @@ fn terminalize_unregistered_scan_all(
             scope.commit()?;
             Ok::<_, argus_application::ApplicationPortError>(())
         });
+}
+
+/// Composes the existing scan executor with committed identification and
+/// hydration while retaining one parent `library_refresh` JobRun.
+struct LibraryRefreshOperationHandler {
+    plans: Vec<LibraryScanExecutionPlan>,
+    unit_of_work: KernelUnitOfWorkFactory,
+    event_sink: crate::events::EventBusSink,
+    kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+    job_run_id: JobRunId,
+    checkpoint_size: usize,
+    exclusion_count: usize,
+}
+
+impl LibraryRefreshOperationHandler {
+    fn new(
+        plans: Vec<LibraryScanExecutionPlan>,
+        unit_of_work: KernelUnitOfWorkFactory,
+        event_sink: crate::events::EventBusSink,
+        kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+        job_run_id: JobRunId,
+        checkpoint_size: usize,
+        exclusion_count: usize,
+    ) -> Self {
+        Self {
+            plans,
+            unit_of_work,
+            event_sink,
+            kernel,
+            job_run_id,
+            checkpoint_size: checkpoint_size.max(1),
+            exclusion_count,
+        }
+    }
+
+    fn with_kernel<T>(
+        &self,
+        context: &OperationContext,
+        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
+    ) -> Result<T, ApplicationError> {
+        let guard = self.kernel.lock().map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel = guard.as_ref().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::RuntimeStopped, context.trace_id())
+        })?;
+        operation(kernel)
+    }
+
+    fn child_completion_state(completion: &OperationCompletion) -> LibraryScanChildCompletion {
+        match completion.state() {
+            JobRunState::Completed => LibraryScanChildCompletion::Complete,
+            JobRunState::CompletedWithIssues => LibraryScanChildCompletion::Partial,
+            JobRunState::Failed | JobRunState::Interrupted => LibraryScanChildCompletion::Failed,
+            JobRunState::Cancelled => LibraryScanChildCompletion::Cancelled,
+            JobRunState::Abandoned => LibraryScanChildCompletion::Abandoned,
+            JobRunState::Queued | JobRunState::Preparing | JobRunState::Running => {
+                LibraryScanChildCompletion::Failed
+            }
+        }
+    }
+}
+
+impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
+    fn execute(
+        &self,
+        context: &OperationContext,
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
+        progress: &dyn JobProgressReporter,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        let total = u64::try_from(self.plans.len()).unwrap_or(u64::MAX);
+        let initial = JobProgress::new(
+            self.job_run_id,
+            "library_refresh.scanning",
+            Some(0),
+            Some(total),
+            Some("scanning_committed_roots"),
+            crate::now_millis(),
+        )
+        .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+        progress.report(initial)?;
+
+        let mut sessions =
+            self.with_kernel(context, |kernel| Ok(kernel.create_enrichment_sessions()))?;
+        let mut child_states = Vec::with_capacity(self.plans.len());
+        let mut issue_count = 0_u64;
+
+        for (index, plan) in self.plans.iter().enumerate() {
+            let child = LibraryScanOperationHandler::new(
+                plan.clone(),
+                LocalFilesystemSourceAccess::new(plan.root_locator()),
+                self.unit_of_work.clone(),
+                self.event_sink.clone(),
+                self.checkpoint_size,
+            );
+            let completion = if let Some(reason) = stop_reason() {
+                child.stopped_before_execution(context, reason)?;
+                OperationCompletion::new(
+                    match reason {
+                        BackgroundOperationStopReason::CancellationRequested => {
+                            JobRunState::Cancelled
+                        }
+                        BackgroundOperationStopReason::ExecutionHostTimeout
+                        | BackgroundOperationStopReason::ExecutionHostLost => JobRunState::Failed,
+                    },
+                    None,
+                    None,
+                )
+            } else {
+                child.execute(context, stop_reason, progress)?
+            };
+            let child_state = Self::child_completion_state(&completion);
+            child_states.push(child_state);
+
+            if !matches!(completion.state(), JobRunState::Cancelled) && stop_reason().is_none() {
+                match self.with_kernel(context, |kernel| {
+                    kernel.refresh_committed_root_with_context(
+                        plan,
+                        context,
+                        &mut sessions,
+                        crate::now_millis(),
+                    )
+                }) {
+                    Ok((_, root_issues)) => {
+                        issue_count = issue_count.saturating_add(root_issues);
+                    }
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                    }
+                }
+            }
+
+            let completed = u64::try_from(index + 1).unwrap_or(u64::MAX);
+            let facts = JobProgress::new(
+                self.job_run_id,
+                "library_refresh.hydrating",
+                Some(completed),
+                Some(total),
+                Some(if issue_count == 0 {
+                    "refreshing_committed_content"
+                } else {
+                    "refreshing_with_issues"
+                }),
+                crate::now_millis(),
+            )
+            .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+            progress.report(facts)?;
+        }
+
+        let scan_state = aggregate_library_scan_state(
+            self.plans.len() + self.exclusion_count,
+            self.plans.len(),
+            &child_states,
+        );
+        let state = match scan_state {
+            JobRunState::Completed if issue_count > 0 => JobRunState::CompletedWithIssues,
+            JobRunState::CompletedWithIssues => JobRunState::CompletedWithIssues,
+            other => other,
+        };
+        let status_key = match state {
+            JobRunState::Completed => "completed",
+            JobRunState::CompletedWithIssues => "completed_with_issues",
+            JobRunState::Cancelled => "cancelled",
+            JobRunState::Failed | JobRunState::Interrupted | JobRunState::Abandoned => "failed",
+            JobRunState::Queued | JobRunState::Preparing | JobRunState::Running => "failed",
+        };
+        let terminal = JobProgress::new(
+            self.job_run_id,
+            "library_refresh.completed",
+            Some(total),
+            Some(total),
+            Some(status_key),
+            crate::now_millis(),
+        )
+        .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+        progress.report(terminal)?;
+        Ok(OperationCompletion::new(state, None, None))
+    }
+
+    fn stopped_before_execution(
+        &self,
+        context: &OperationContext,
+        reason: BackgroundOperationStopReason,
+    ) -> Result<(), ApplicationError> {
+        for plan in &self.plans {
+            let child = LibraryScanOperationHandler::new(
+                plan.clone(),
+                LocalFilesystemSourceAccess::new(plan.root_locator()),
+                self.unit_of_work.clone(),
+                self.event_sink.clone(),
+                self.checkpoint_size,
+            );
+            child.stopped_before_execution(context, reason)?;
+        }
+        Ok(())
+    }
+}
+
+enum Phase003RefreshKind {
+    Game { game_ids: Vec<GameId> },
+    LibraryResolution { settings_revision: u64 },
+}
+
+struct Phase003RefreshHandler {
+    kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+    job_run_id: JobRunId,
+    kind: Phase003RefreshKind,
+}
+
+impl Phase003RefreshHandler {
+    fn new(
+        kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+        job_run_id: JobRunId,
+        kind: Phase003RefreshKind,
+    ) -> Self {
+        Self {
+            kernel,
+            job_run_id,
+            kind,
+        }
+    }
+
+    fn with_kernel<T>(
+        &self,
+        context: &OperationContext,
+        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
+    ) -> Result<T, ApplicationError> {
+        let guard = self.kernel.lock().map_err(|_| {
+            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
+        })?;
+        let kernel = guard.as_ref().ok_or_else(|| {
+            runtime_error_with_trace(ErrorCode::RuntimeStopped, context.trace_id())
+        })?;
+        operation(kernel)
+    }
+
+    fn execute_game_refresh(
+        &self,
+        context: &OperationContext,
+        game_ids: &[GameId],
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
+        progress: &dyn JobProgressReporter,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        let total = u64::try_from(game_ids.len()).unwrap_or(u64::MAX);
+        let mut issue_count = 0_u64;
+        for (index, game_id) in game_ids.iter().copied().enumerate() {
+            if let Some(reason) = stop_reason() {
+                return Ok(refresh_stop_completion(reason));
+            }
+            let completed = u64::try_from(index).unwrap_or(u64::MAX);
+            let facts = JobProgress::new(
+                self.job_run_id,
+                "game_refresh.hydrating",
+                Some(completed),
+                Some(total),
+                Some("refreshing"),
+                crate::now_millis(),
+            )
+            .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+            progress.report(facts)?;
+            issue_count = issue_count.saturating_add(self.with_kernel(context, |kernel| {
+                kernel.refresh_game_with_context(game_id, context, crate::now_millis())
+            })?);
+        }
+        let facts = JobProgress::new(
+            self.job_run_id,
+            "game_refresh.completed",
+            Some(total),
+            Some(total),
+            Some(if issue_count == 0 {
+                "completed"
+            } else {
+                "completed_with_issues"
+            }),
+            crate::now_millis(),
+        )
+        .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+        progress.report(facts)?;
+        Ok(OperationCompletion::new(
+            if issue_count == 0 {
+                JobRunState::Completed
+            } else {
+                JobRunState::CompletedWithIssues
+            },
+            None,
+            None,
+        ))
+    }
+
+    fn execute_library_resolution(
+        &self,
+        context: &OperationContext,
+        settings_revision: u64,
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
+        progress: &dyn JobProgressReporter,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        if let Some(reason) = stop_reason() {
+            return Ok(refresh_stop_completion(reason));
+        }
+        let (game_ids, current_settings_revision) = self.with_kernel(context, |kernel| {
+            Ok((
+                kernel.list_game_ids_with_context(context)?,
+                kernel.metadata_settings_revision_with_context(context)?,
+            ))
+        })?;
+        let total = u64::try_from(game_ids.len()).unwrap_or(u64::MAX);
+        let status_key = if current_settings_revision == settings_revision {
+            "resolving_committed_records"
+        } else {
+            "resolving_latest_committed_records"
+        };
+        let mut issue_count = 0_u64;
+        for (index, game_id) in game_ids.into_iter().enumerate() {
+            if let Some(reason) = stop_reason() {
+                return Ok(refresh_stop_completion(reason));
+            }
+            let completed = u64::try_from(index).unwrap_or(u64::MAX);
+            let facts = JobProgress::new(
+                self.job_run_id,
+                "library_resolution_refresh.local_only",
+                Some(completed),
+                Some(total),
+                Some(status_key),
+                crate::now_millis(),
+            )
+            .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+            progress.report(facts)?;
+            issue_count = issue_count.saturating_add(self.with_kernel(context, |kernel| {
+                kernel.resolve_game_with_context(game_id, context, crate::now_millis())
+            })?);
+        }
+        let facts = JobProgress::new(
+            self.job_run_id,
+            "library_resolution_refresh.completed",
+            Some(total),
+            Some(total),
+            Some(if issue_count == 0 {
+                "completed"
+            } else {
+                "completed_with_issues"
+            }),
+            crate::now_millis(),
+        )
+        .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+        progress.report(facts)?;
+        Ok(OperationCompletion::new(
+            if issue_count == 0 {
+                JobRunState::Completed
+            } else {
+                JobRunState::CompletedWithIssues
+            },
+            None,
+            None,
+        ))
+    }
+}
+
+impl BackgroundOperationHandler for Phase003RefreshHandler {
+    fn execute(
+        &self,
+        context: &OperationContext,
+        stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
+        progress: &dyn JobProgressReporter,
+    ) -> Result<OperationCompletion, ApplicationError> {
+        match &self.kind {
+            Phase003RefreshKind::Game { game_ids } => {
+                self.execute_game_refresh(context, game_ids, stop_reason, progress)
+            }
+            Phase003RefreshKind::LibraryResolution { settings_revision } => {
+                self.execute_library_resolution(context, *settings_revision, stop_reason, progress)
+            }
+        }
+    }
+}
+
+fn refresh_stop_completion(reason: BackgroundOperationStopReason) -> OperationCompletion {
+    let state = match reason {
+        BackgroundOperationStopReason::CancellationRequested => JobRunState::Cancelled,
+        BackgroundOperationStopReason::ExecutionHostTimeout
+        | BackgroundOperationStopReason::ExecutionHostLost => JobRunState::Failed,
+    };
+    OperationCompletion::new(state, None, None)
+}
+
+fn register_phase003_refresh(
+    manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
+    kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    kernel: &KernelBootstrap,
+    context: &OperationContext,
+    operation_handle: OperationHandle,
+    kind: Phase003RefreshKind,
+) -> Result<(), ApplicationError> {
+    let resources: &[ResourceClass] = match &kind {
+        Phase003RefreshKind::Game { .. } => [
+            ResourceClass::MetadataProviderNetwork,
+            ResourceClass::PersistenceWrite,
+        ]
+        .as_slice(),
+        Phase003RefreshKind::LibraryResolution { .. } => {
+            [ResourceClass::PersistenceWrite].as_slice()
+        }
+    };
+    let job_run_id = operation_handle.job_run_id();
+    let handler = Phase003RefreshHandler::new(kernel_handle, job_run_id, kind);
+    match manager.register(&operation_handle, Arc::new(handler), resources) {
+        Ok(()) => Ok(()),
+        Err(registration_error) => {
+            let code = match registration_error {
+                crate::background::ManagerAdmissionError::Internal
+                | crate::background::ManagerAdmissionError::InvalidOperationType => {
+                    ErrorCode::InternalUnexpected
+                }
+                crate::background::ManagerAdmissionError::ShuttingDown
+                | crate::background::ManagerAdmissionError::CapacityExceeded => {
+                    ErrorCode::OperationCapacityUnavailable
+                }
+            };
+            let _ = kernel.fail_unregistered_job_with_context(context, job_run_id, code);
+            Err(runtime_error_with_trace(code, context.trace_id()))
+        }
+    }
 }
 
 struct LibraryScanAllOperationHandler {

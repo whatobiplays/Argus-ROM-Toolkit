@@ -329,10 +329,10 @@ void main() {
 
       // Retry remains interactive during uncertainty and issues only a read.
       final retryButton = tester.widget<TextButton>(
-        find.widgetWithText(TextButton, 'Retry'),
+        find.widgetWithText(TextButton, 'Retry').first,
       );
       expect(retryButton.onPressed, isNotNull);
-      await tester.tap(find.text('Retry'));
+      await tester.tap(find.widgetWithText(TextButton, 'Retry').first);
       await tester.pump();
       expect(api.readRequests, hasLength(3));
       expect(api.updateRequests, hasLength(1));

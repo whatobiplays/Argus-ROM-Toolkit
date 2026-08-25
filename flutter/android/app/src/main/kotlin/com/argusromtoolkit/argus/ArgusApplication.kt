@@ -6,6 +6,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugins.GeneratedPluginRegistrant
+import io.crates.keyring.Keyring
 
 /**
  * Application-scoped owner of the single cached Flutter engine.
@@ -37,6 +38,8 @@ class ArgusApplication : Application() {
 
     lateinit var qualificationBridge: ArgusQualificationBridge
         private set
+
+    private var nativeKeyringInitialized = false
 
     /**
      * One app-private data root shared by the Android readiness bridge and the
@@ -73,6 +76,19 @@ class ArgusApplication : Application() {
             DartExecutor.DartEntrypoint.createDefault(),
         )
         FlutterEngineCache.getInstance().put(ENGINE_ID, flutterEngine)
+    }
+
+    /**
+     * Supplies the Android application context required by the Rust-owned
+     * Keystore-backed credential store before the Flutter engine can start
+     * runtime initialization.
+     */
+    @Synchronized
+    fun initializeNativeKeyring() {
+        if (nativeKeyringInitialized) return
+        System.loadLibrary("android_native_keyring_store")
+        Keyring.initializeNdkContext(applicationContext)
+        nativeKeyringInitialized = true
     }
 
     companion object {

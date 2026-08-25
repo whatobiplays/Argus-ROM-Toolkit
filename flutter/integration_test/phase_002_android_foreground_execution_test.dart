@@ -13,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_002_android_test_support.dart';
+
 /// Repository-owned real Android P02-004 foreground-execution milestone.
 ///
 /// The shell harness controls Activity backgrounding, screen-off, notification
@@ -58,6 +60,7 @@ void main() {
         '$evidencePath.notification-prompt',
       );
     }
+    await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
       find.byKey(const ValueKey<String>('compact-navigation-bar')),
@@ -208,8 +211,16 @@ Future<void> _runNotificationCancel(
   String fixtureName,
 ) async {
   final jobRunId = await _startFixtureScan(sources, fixtureName);
-  await _waitForActiveJob(jobs, jobRunId);
-  _writeEvidence(evidencePath, jobRunId.value);
+  final active = await _waitForActiveJob(jobs, jobRunId);
+  expect(
+    active.job.controls.canCancel,
+    isTrue,
+    reason: 'An active foreground scan must expose authoritative cancellation',
+  );
+  _writeEvidence(
+    evidencePath,
+    '${jobRunId.value}|canCancel=${active.job.controls.canCancel}',
+  );
   final cancelMarker = '$evidencePath.cancel-invoked';
   await _waitForFile(cancelMarker);
   final terminal = await _waitForTerminal(jobs, jobRunId);
@@ -367,6 +378,7 @@ Future<RuntimeInstanceId> _readGeneration(ArgusClient client) async {
 
 int? _entriesCommitted(JobDetail detail) => switch (detail.operationDetail) {
   OperationDetailLibraryScan(:final detail) => detail.progress.entriesCommitted,
+  _ => null,
 };
 
 void _writeEvidence(String path, String value) {

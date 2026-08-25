@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_002_android_test_support.dart';
+
 /// Repository-owned P02-006 Android qualification scenario.
 ///
 /// The host harness performs real Activity/window and system-overlay actions
@@ -43,6 +45,7 @@ void main() {
     addTearDown(() => tester.binding.removeObserver(lifecycle));
 
     await tester.pumpWidget(const ArgusBootstrap());
+    await completePhase002LibraryOnboarding(tester);
     await _pumpUntilShell(tester);
 
     final container = ProviderScope.containerOf(

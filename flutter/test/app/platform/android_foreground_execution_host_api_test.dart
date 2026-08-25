@@ -52,6 +52,7 @@ void main() {
         'totalUnits': 10,
         'phase': 'indexing',
         'statusKey': 'scan.indexing',
+        'operationLabel': null,
         'cancellableJobRunId': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       });
       expect(handler.calls[2].arguments, {'leaseId': 'lease-1'});

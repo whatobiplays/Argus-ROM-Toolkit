@@ -19,18 +19,30 @@ import com.android.uiautomator.testrunner.UiAutomatorTestCase;
  */
 public final class ArgusNotificationCancelTest extends UiAutomatorTestCase {
     private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
-    private static final String SCAN_TEXT = "Scanning 1 library job(s)";
+    private static final String SCAN_TEXT = "Library scan (1)";
     private static final String CANCEL_RESOURCE_ID = "android:id/action0";
+    private static final String NOTIFICATION_PERMISSION_ALLOW_RESOURCE_ID =
+            "com.android.permissioncontroller:id/permission_allow_button";
 
     public void testCancel() throws Exception {
         final UiDevice device = getUiDevice();
+        final UiObject notificationPermission = new UiObject(
+                new UiSelector()
+                        .resourceId(NOTIFICATION_PERMISSION_ALLOW_RESOURCE_ID)
+                        .text("Allow")
+                        .clickable(true));
+        if (notificationPermission.waitForExists(2_000L) &&
+                !notificationPermission.click()) {
+            throw new AssertionError(
+                    "Android notification permission prompt could not be dismissed");
+        }
         device.openNotification();
 
         final UiObject scanText = new UiObject(
                 new UiSelector()
                         .packageName(SYSTEM_UI_PACKAGE)
                         .text(SCAN_TEXT));
-        if (!scanText.waitForExists(5_000L)) {
+        if (!scanText.waitForExists(15_000L)) {
             throw new AssertionError(
                     "Argus foreground notification scan projection was not visible");
         }

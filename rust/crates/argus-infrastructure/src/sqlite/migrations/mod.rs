@@ -134,6 +134,16 @@ impl MigrationRegistry {
                 "0009_metadata_providers_and_artwork",
                 include_bytes!("sql/0009_metadata_providers_and_artwork.sql"),
             ),
+            Migration::sql(
+                10,
+                "0010_phase_003_product_state",
+                include_bytes!("sql/0010_phase_003_product_state.sql"),
+            ),
+            Migration::sql(
+                11,
+                "0011_phase_003_refresh_invocation",
+                include_bytes!("sql/0011_phase_003_refresh_invocation.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

@@ -71,7 +71,7 @@ final class JobDetailControllerProvider
 }
 
 String _$jobDetailControllerHash() =>
-    r'cb6acffa4c387937c57596f405dbfa9466cea503';
+    r'99ebeb82ccc6aeeed99ef8cff6134bc031d1ec0b';
 
 /// One identity-parameterized owner of authoritative job-detail state.
 ///

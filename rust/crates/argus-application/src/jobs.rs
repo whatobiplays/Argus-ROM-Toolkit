@@ -7,16 +7,133 @@
 
 use crate::unit_of_work::UnitOfWork;
 use crate::{
-    ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, JobRunId, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootRepository, OperationContext,
-    PersistenceError, SafeContext, SafeContextField, SafeContextValue, ScanRunId, SourceEntryId,
-    TraceId,
+    ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, GameId, JobRunId,
+    LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootRepository,
+    OperationContext, PersistenceError, SafeContext, SafeContextField, SafeContextValue, ScanRunId,
+    SourceEntryId, TraceId,
 };
 
 use crate::sources::{RelativeSourceLocator, RootLocator, SourceLocatorKey};
 
 /// Stable logical operation type for the built-in library scan.
 pub const OPERATION_TYPE_LIBRARY_SCAN: &str = "library_scan";
+
+/// Stable logical operation type for the composed Library refresh.
+pub const OPERATION_TYPE_LIBRARY_REFRESH: &str = "library_refresh";
+
+/// Stable logical operation type for a bounded Game refresh.
+pub const OPERATION_TYPE_GAME_REFRESH: &str = "game_refresh";
+
+/// Stable logical operation type for local-only preference re-resolution.
+pub const OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH: &str = "library_resolution_refresh";
+
+/// User-visible trigger retained by one composed Library refresh.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryRefreshTrigger {
+    /// A user explicitly requested a Library refresh.
+    Manual,
+    /// A configured root was added and requested its first refresh.
+    AddedRoot(LibraryRootId),
+    /// Onboarding completed and admitted the initial refresh.
+    InitialOnboarding,
+}
+
+impl LibraryRefreshTrigger {
+    /// Returns the stable trigger category used by persistence and Jobs UI.
+    pub const fn kind(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::AddedRoot(_) => "added_root",
+            Self::InitialOnboarding => "initial_onboarding",
+        }
+    }
+
+    /// Returns the root identity carried by an AddedRoot trigger.
+    pub const fn root_id(self) -> Option<LibraryRootId> {
+        match self {
+            Self::AddedRoot(root_id) => Some(root_id),
+            Self::Manual | Self::InitialOnboarding => None,
+        }
+    }
+}
+
+/// Freshness policy accepted by Library and Game refresh commands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RefreshMode {
+    /// Refresh only records eligible under current freshness policy.
+    EligibleOnly,
+    /// Bypass freshness for one bounded Game target only.
+    Force,
+}
+
+impl RefreshMode {
+    /// Returns the stable serialized mode.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EligibleOnly => "eligible_only",
+            Self::Force => "force",
+        }
+    }
+}
+
+/// Bounded progress facts for one Phase 003 refresh operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefreshProgressFacts {
+    phase: Option<String>,
+    completed_units: Option<u64>,
+    total_units: Option<u64>,
+    status_key: Option<String>,
+    issue_count: Option<u64>,
+}
+
+impl RefreshProgressFacts {
+    /// Creates truthful progress facts without fabricating a total.
+    pub fn new(
+        phase: Option<String>,
+        completed_units: Option<u64>,
+        total_units: Option<u64>,
+        status_key: Option<String>,
+        issue_count: Option<u64>,
+    ) -> Result<Self, JobProgressError> {
+        if let (Some(completed), Some(total)) = (completed_units, total_units)
+            && completed > total
+        {
+            return Err(JobProgressError);
+        }
+        Ok(Self {
+            phase,
+            completed_units,
+            total_units,
+            status_key,
+            issue_count,
+        })
+    }
+
+    /// Returns the current phase, if known.
+    pub fn phase(&self) -> Option<&str> {
+        self.phase.as_deref()
+    }
+
+    /// Returns completed work, if determinate.
+    pub const fn completed_units(&self) -> Option<u64> {
+        self.completed_units
+    }
+
+    /// Returns total work, if known.
+    pub const fn total_units(&self) -> Option<u64> {
+        self.total_units
+    }
+
+    /// Returns the presentation status key, if known.
+    pub fn status_key(&self) -> Option<&str> {
+        self.status_key.as_deref()
+    }
+
+    /// Returns the bounded issue count, if known.
+    pub const fn issue_count(&self) -> Option<u64> {
+        self.issue_count
+    }
+}
 
 /// Canonical persisted lifecycle vocabulary for one job execution attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -883,6 +1000,192 @@ impl ScanProgressFacts {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperationDetail {
     LibraryScan(LibraryScanJobDetail),
+    LibraryRefresh(LibraryRefreshJobDetail),
+    GameRefresh(GameRefreshJobDetail),
+    LibraryResolutionRefresh(LibraryResolutionRefreshJobDetail),
+}
+
+/// Typed detail for one composed Library refresh.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRefreshJobDetail {
+    trigger: LibraryRefreshTrigger,
+    mode: RefreshMode,
+    requested_root_ids: Vec<LibraryRootId>,
+    scan_runs: Vec<ScanRunProjection>,
+    progress: RefreshProgressFacts,
+    retry_source_job_run_id: Option<JobRunId>,
+    retry_successor_job_run_id: Option<JobRunId>,
+}
+
+impl LibraryRefreshJobDetail {
+    /// Creates one typed composed-refresh detail.
+    pub fn new(
+        trigger: LibraryRefreshTrigger,
+        mode: RefreshMode,
+        requested_root_ids: Vec<LibraryRootId>,
+        progress: RefreshProgressFacts,
+        retry_source_job_run_id: Option<JobRunId>,
+        retry_successor_job_run_id: Option<JobRunId>,
+    ) -> Self {
+        Self {
+            trigger,
+            mode,
+            requested_root_ids,
+            scan_runs: Vec::new(),
+            progress,
+            retry_source_job_run_id,
+            retry_successor_job_run_id,
+        }
+    }
+
+    /// Attaches the committed scan-run projections owned by this refresh.
+    pub fn with_scan_runs(mut self, scan_runs: Vec<ScanRunProjection>) -> Self {
+        self.scan_runs = scan_runs;
+        self
+    }
+
+    /// Returns the retained trigger intent.
+    pub const fn trigger(&self) -> LibraryRefreshTrigger {
+        self.trigger
+    }
+
+    /// Returns the freshness policy.
+    pub const fn mode(&self) -> RefreshMode {
+        self.mode
+    }
+
+    /// Returns the requested root identities in admission order.
+    pub fn requested_root_ids(&self) -> &[LibraryRootId] {
+        &self.requested_root_ids
+    }
+
+    /// Returns the committed scan-run projections.
+    pub fn scan_runs(&self) -> &[ScanRunProjection] {
+        &self.scan_runs
+    }
+
+    /// Returns the latest bounded progress facts.
+    pub const fn progress(&self) -> &RefreshProgressFacts {
+        &self.progress
+    }
+
+    /// Returns the source retry identity, when this is a retry successor.
+    pub const fn retry_source_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_source_job_run_id
+    }
+
+    /// Returns the direct retry successor, when one exists.
+    pub const fn retry_successor_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_successor_job_run_id
+    }
+}
+
+/// Typed detail for one bounded Game refresh.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameRefreshJobDetail {
+    game_ids: Vec<GameId>,
+    mode: RefreshMode,
+    progress: RefreshProgressFacts,
+    retry_source_job_run_id: Option<JobRunId>,
+    retry_successor_job_run_id: Option<JobRunId>,
+}
+
+impl GameRefreshJobDetail {
+    /// Creates one typed Game refresh detail.
+    pub fn new(
+        game_ids: Vec<GameId>,
+        mode: RefreshMode,
+        progress: RefreshProgressFacts,
+        retry_source_job_run_id: Option<JobRunId>,
+        retry_successor_job_run_id: Option<JobRunId>,
+    ) -> Self {
+        Self {
+            game_ids,
+            mode,
+            progress,
+            retry_source_job_run_id,
+            retry_successor_job_run_id,
+        }
+    }
+
+    /// Returns the bounded target set.
+    pub fn game_ids(&self) -> &[GameId] {
+        &self.game_ids
+    }
+
+    /// Returns the freshness policy.
+    pub const fn mode(&self) -> RefreshMode {
+        self.mode
+    }
+
+    /// Returns the latest bounded progress facts.
+    pub const fn progress(&self) -> &RefreshProgressFacts {
+        &self.progress
+    }
+
+    /// Returns the source retry identity, when this is a retry successor.
+    pub const fn retry_source_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_source_job_run_id
+    }
+
+    /// Returns the direct retry successor, when one exists.
+    pub const fn retry_successor_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_successor_job_run_id
+    }
+}
+
+/// Typed detail for one local-only Library preference re-resolution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryResolutionRefreshJobDetail {
+    job_run_id: JobRunId,
+    settings_revision: u64,
+    progress: RefreshProgressFacts,
+    retry_source_job_run_id: Option<JobRunId>,
+    retry_successor_job_run_id: Option<JobRunId>,
+}
+
+impl LibraryResolutionRefreshJobDetail {
+    /// Creates one typed local-resolution detail.
+    pub fn new(
+        job_run_id: JobRunId,
+        settings_revision: u64,
+        progress: RefreshProgressFacts,
+        retry_source_job_run_id: Option<JobRunId>,
+        retry_successor_job_run_id: Option<JobRunId>,
+    ) -> Self {
+        Self {
+            job_run_id,
+            settings_revision,
+            progress,
+            retry_source_job_run_id,
+            retry_successor_job_run_id,
+        }
+    }
+
+    /// Returns the owning execution identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the committed settings revision captured by the intent.
+    pub const fn settings_revision(&self) -> u64 {
+        self.settings_revision
+    }
+
+    /// Returns the latest bounded progress facts.
+    pub const fn progress(&self) -> &RefreshProgressFacts {
+        &self.progress
+    }
+
+    /// Returns the source retry identity, when this is a retry successor.
+    pub const fn retry_source_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_source_job_run_id
+    }
+
+    /// Returns the direct retry successor, when one exists.
+    pub const fn retry_successor_job_run_id(&self) -> Option<JobRunId> {
+        self.retry_successor_job_run_id
+    }
 }
 
 /// Typed LibraryScan operation detail derived from durable admission context.
@@ -1273,6 +1576,71 @@ pub struct LibraryScanAllAdmissionResult {
     admitted: Option<AdmittedLibraryScanJob>,
 }
 
+/// Application-owned admission result for one composed Library refresh.
+///
+/// A refresh is one top-level `library_refresh` operation. Its internal scan
+/// plans are retained only so the runtime can register the already-admitted
+/// work; callers receive the canonical operation handle and never a
+/// Scan-All-shaped result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRefreshAdmissionResult {
+    outcome: LibraryRefreshAdmissionOutcome,
+    admitted: Option<AdmittedLibraryScanJob>,
+    admitted_job_exclusion_count: usize,
+}
+
+impl LibraryRefreshAdmissionResult {
+    /// Creates a successful refresh admission with its frozen child plans.
+    pub fn admitted(
+        handle: OperationHandle,
+        admitted: AdmittedLibraryScanJob,
+        exclusion_count: usize,
+    ) -> Self {
+        Self {
+            outcome: LibraryRefreshAdmissionOutcome::Admitted(handle),
+            admitted: Some(admitted),
+            admitted_job_exclusion_count: exclusion_count,
+        }
+    }
+
+    /// Creates a definite no-admission outcome with its authoritative
+    /// exclusions. The runtime maps this to a published application error at
+    /// the public handle boundary.
+    pub fn not_admitted(exclusions: Vec<LibraryScanAdmissionExclusion>) -> Self {
+        Self {
+            outcome: LibraryRefreshAdmissionOutcome::NothingEligible { exclusions },
+            admitted: None,
+            admitted_job_exclusion_count: 0,
+        }
+    }
+
+    /// Returns the application-owned refresh outcome.
+    pub const fn outcome(&self) -> &LibraryRefreshAdmissionOutcome {
+        &self.outcome
+    }
+
+    /// Returns the newly admitted internal child plans, when present.
+    pub fn admitted_job(&self) -> Option<&AdmittedLibraryScanJob> {
+        self.admitted.as_ref()
+    }
+
+    /// Returns the count of requested roots excluded during admission.
+    pub const fn admitted_job_exclusion_count(&self) -> usize {
+        self.admitted_job_exclusion_count
+    }
+}
+
+/// Closed application outcome for one composed refresh admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LibraryRefreshAdmissionOutcome {
+    /// One top-level refresh operation was durably admitted.
+    Admitted(OperationHandle),
+    /// No root could be admitted under the shared root-operation boundary.
+    NothingEligible {
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    },
+}
+
 impl LibraryScanAllAdmissionResult {
     /// Creates a non-admitted or replay-only Scan All outcome.
     pub fn not_admitted(outcome: StartLibraryScanAllResult) -> Self {
@@ -1576,6 +1944,37 @@ pub trait JobRunRepository {
         terminal_safe_context: Option<String>,
         timestamp_ms: i64,
     ) -> Result<bool, PersistenceError>;
+
+    /// Persists the immutable intent for a composed Library refresh. The
+    /// default keeps older application test doubles source-compatible.
+    fn insert_library_refresh_intent(
+        &mut self,
+        _job_run_id: JobRunId,
+        _trigger: LibraryRefreshTrigger,
+        _mode: RefreshMode,
+    ) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+
+    /// Persists the bounded Game target set for one Game refresh.
+    fn insert_game_refresh_intent(
+        &mut self,
+        _job_run_id: JobRunId,
+        _game_ids: &[GameId],
+        _mode: RefreshMode,
+    ) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+
+    /// Persists the settings revision captured by one local-only resolution
+    /// refresh.
+    fn insert_library_resolution_refresh_intent(
+        &mut self,
+        _job_run_id: JobRunId,
+        _settings_revision: u64,
+    ) -> Result<(), PersistenceError> {
+        Ok(())
+    }
 }
 
 /// One new root-specific scan execution record.
@@ -1880,6 +2279,10 @@ pub enum LibraryScanInvocationKind {
     InitialScanAll,
     /// A retry that reconstructs one original multi-root Scan All request.
     RetryScanAll,
+    /// The internal source-discovery stage of one composed Library refresh.
+    InitialLibraryRefresh,
+    /// A retry that reconstructs one composed Library refresh.
+    RetryLibraryRefresh,
 }
 
 impl LibraryScanInvocationKind {
@@ -1890,6 +2293,8 @@ impl LibraryScanInvocationKind {
             Self::RetrySingleRoot => "retry_single_root",
             Self::InitialScanAll => "initial_scan_all",
             Self::RetryScanAll => "retry_scan_all",
+            Self::InitialLibraryRefresh => "initial_library_refresh",
+            Self::RetryLibraryRefresh => "retry_library_refresh",
         }
     }
 }
@@ -1915,6 +2320,8 @@ impl TryFrom<&str> for LibraryScanInvocationKind {
             "retry_single_root" => Ok(Self::RetrySingleRoot),
             "initial_scan_all" => Ok(Self::InitialScanAll),
             "retry_scan_all" => Ok(Self::RetryScanAll),
+            "initial_library_refresh" => Ok(Self::InitialLibraryRefresh),
+            "retry_library_refresh" => Ok(Self::RetryLibraryRefresh),
             _ => Err(LibraryScanInvocationKindParseError),
         }
     }
@@ -2963,7 +3370,7 @@ where
         }
     }
 
-    /// Retries one eligible historical LibraryScan into a new durable run.
+    /// Retries one eligible historical Library execution into a new durable run.
     pub fn retry_job<R>(
         &self,
         command: RetryJobCommand,
@@ -2978,7 +3385,7 @@ where
     }
 }
 
-/// Handles one durable LibraryScan retry admission.
+/// Handles one durable Library execution retry admission.
 pub struct RetryJobHandler<Q, U> {
     queries: Q,
     unit_of_work: U,
@@ -3003,7 +3410,8 @@ where
     ///
     /// Check order: the source job must exist; an existing direct successor
     /// returns `AlreadyRetried` without branching; the operation must be a
-    /// LibraryScan; the source state must be terminal and retryable; the
+    /// LibraryScan or composed Library refresh; the source state must be
+    /// terminal and retryable; the
     /// original requested targets are then revalidated through the shared
     /// eligibility seam. Every admitted retry creates a fresh JobRunId and
     /// ScanRunId and records a durable linear source/successor relationship.
@@ -3054,6 +3462,20 @@ where
                 RetryJobResult::NotAdmitted(RetryNotAdmittedReason::OperationNotRetryable),
             ));
         }
+        let is_library_refresh = source.job().operation_type() == OPERATION_TYPE_LIBRARY_REFRESH;
+        let refresh_intent = if is_library_refresh {
+            match source.operation_detail() {
+                OperationDetail::LibraryRefresh(detail) => Some((detail.trigger(), detail.mode())),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if is_library_refresh && refresh_intent.is_none() {
+            return Ok(RetryJobAdmissionResult::not_admitted(
+                RetryJobResult::NotAdmitted(RetryNotAdmittedReason::OperationNotRetryable),
+            ));
+        }
         let requested_targets = self
             .queries
             .list_requested_library_scan_targets(&context, source_job_run_id)
@@ -3073,7 +3495,7 @@ where
         let is_scan_all = matches!(
             invocation_kind,
             LibraryScanInvocationKind::InitialScanAll | LibraryScanInvocationKind::RetryScanAll
-        );
+        ) || is_library_refresh;
 
         #[derive(Clone, Debug, Eq, PartialEq)]
         enum RetryWork {
@@ -3136,10 +3558,22 @@ where
                     });
                 }
 
+                let operation_type = if is_library_refresh {
+                    OPERATION_TYPE_LIBRARY_REFRESH
+                } else {
+                    OPERATION_TYPE_LIBRARY_SCAN
+                };
                 let job_run_id = scope
                     .job_runs()
-                    .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
-                let invocation_kind = if is_scan_all {
+                    .insert(NewJobRun::new(operation_type, created_at_ms))?;
+                if let Some((trigger, mode)) = refresh_intent {
+                    scope
+                        .job_runs()
+                        .insert_library_refresh_intent(job_run_id, trigger, mode)?;
+                }
+                let invocation_kind = if is_library_refresh {
+                    LibraryScanInvocationKind::RetryLibraryRefresh
+                } else if is_scan_all {
                     LibraryScanInvocationKind::RetryScanAll
                 } else {
                     LibraryScanInvocationKind::RetrySingleRoot
@@ -3282,7 +3716,12 @@ where
                 scan_run_id,
                 plan,
             } => {
-                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                let operation_type = if is_library_refresh {
+                    OPERATION_TYPE_LIBRARY_REFRESH
+                } else {
+                    OPERATION_TYPE_LIBRARY_SCAN
+                };
+                let handle = OperationHandle::new(job_run_id, operation_type);
                 Ok(RetryJobAdmissionResult::admitted(
                     handle,
                     AdmittedScan::new(job_run_id, scan_run_id, plan),
@@ -3293,7 +3732,12 @@ where
                 plans,
                 exclusions_len,
             } => {
-                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                let operation_type = if is_library_refresh {
+                    OPERATION_TYPE_LIBRARY_REFRESH
+                } else {
+                    OPERATION_TYPE_LIBRARY_SCAN
+                };
+                let handle = OperationHandle::new(job_run_id, operation_type);
                 Ok(RetryJobAdmissionResult::admitted_scan_all(
                     handle,
                     AdmittedLibraryScanJob::new(job_run_id, plans),

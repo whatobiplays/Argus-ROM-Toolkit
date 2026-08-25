@@ -3,22 +3,25 @@
 
 use argus_application::{
     ActiveScanOwnership, ApplicationError, ApplicationPortError, ArchitectureClass,
-    DiagnosticStage, ErrorCode, FailureRole, JobControlAvailability, JobDetail, JobProgress,
-    JobRunId, JobRunProjection, JobRunRepository, JobRunState, JobSummary, JobSummaryPage,
-    JobsQueries, LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
-    LibraryScanAdmissionContext, LibraryScanAdmissionContextRepository,
-    LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
-    LibraryScanInvocationKind, LibraryScanJobDetail, LibraryScanRootSummary, LibraryScanTarget,
-    LibraryScanTargetEligibility, LibraryScanTargetExclusionReason, LibraryScanTargetKind,
-    LibraryScanTargetRepository, MigrationOutcome, NativeIdentityMatch, NewJobRun,
-    NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, NewSourceEntry,
+    DiagnosticStage, ErrorCode, FailureRole, GameId, JobControlAvailability, JobDetail,
+    JobProgress, JobRunId, JobRunProjection, JobRunRepository, JobRunState, JobSummary,
+    JobSummaryPage, JobsQueries, LibraryRefreshJobDetail, LibraryRefreshTrigger, LibraryRootId,
+    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryScanAdmissionContext,
+    LibraryScanAdmissionContextRepository, LibraryScanAdmissionExclusion,
+    LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup, LibraryScanInvocationKind,
+    LibraryScanJobDetail, LibraryScanRootSummary, LibraryScanTarget, LibraryScanTargetEligibility,
+    LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
+    MigrationOutcome, NativeIdentityMatch, NewJobRun, NewLibraryScanAdmissionContext,
+    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OPERATION_TYPE_GAME_REFRESH,
+    OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
     OPERATION_TYPE_LIBRARY_SCAN, OperationContext, OperationHandle, PathClass,
-    PersistedSettingsReason, PersistenceError, PlatformClass, RelativeSourceLocator, SafeContext,
-    SafeContextField, SafeContextValue, ScanAdmissionReference, ScanProgressFacts, ScanRunId,
-    ScanRunProjection, ScanRunRepository, ScanRunStatus, SettingsDomain, SourceEntryClassification,
-    SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
-    StaleLibraryScanJob, StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
-    TechnicalClass, TraceId, Version, evaluate_retry_eligibility,
+    PersistedSettingsReason, PersistenceError, PlatformClass, RefreshMode, RefreshProgressFacts,
+    RelativeSourceLocator, SafeContext, SafeContextField, SafeContextValue, ScanAdmissionReference,
+    ScanProgressFacts, ScanRunId, ScanRunProjection, ScanRunRepository, ScanRunStatus,
+    SettingsDomain, SourceEntryClassification, SourceEntryId, SourceEntryKind, SourceEntryRecord,
+    SourceEntryRepository, SourceLocatorKey, StaleLibraryScanJob, StaleLibraryScanQueries,
+    StaleLibraryScanRun, StartLibraryScanAllResult, TechnicalClass, TraceId, Version,
+    evaluate_retry_eligibility,
 };
 use rusqlite::OptionalExtension;
 
@@ -62,6 +65,68 @@ impl JobRunRepository for SqliteJobRunRepository<'_, '_> {
             )
             .map_err(map_persistence_operation_error)?;
         parse_job_run_id(created)
+    }
+
+    fn insert_library_refresh_intent(
+        &mut self,
+        job_run_id: JobRunId,
+        trigger: LibraryRefreshTrigger,
+        mode: RefreshMode,
+    ) -> Result<(), PersistenceError> {
+        self.work
+            .transaction_mut()?
+            .execute(
+                "INSERT INTO library_refresh_intent
+                    (job_run_id, trigger_kind, trigger_root_id, mode)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![
+                    job_run_id.to_string(),
+                    trigger.kind(),
+                    trigger.root_id().map(|root_id| root_id.to_string()),
+                    mode.as_str(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(())
+    }
+
+    fn insert_game_refresh_intent(
+        &mut self,
+        job_run_id: JobRunId,
+        game_ids: &[GameId],
+        mode: RefreshMode,
+    ) -> Result<(), PersistenceError> {
+        let game_ids = game_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        self.work
+            .transaction_mut()?
+            .execute(
+                "INSERT INTO game_refresh_intent (job_run_id, game_ids, mode)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![job_run_id.to_string(), game_ids, mode.as_str()],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(())
+    }
+
+    fn insert_library_resolution_refresh_intent(
+        &mut self,
+        job_run_id: JobRunId,
+        settings_revision: u64,
+    ) -> Result<(), PersistenceError> {
+        self.work
+            .transaction_mut()?
+            .execute(
+                "INSERT INTO library_resolution_refresh_intent
+                    (job_run_id, settings_revision)
+                 VALUES (?1, ?2)",
+                rusqlite::params![job_run_id.to_string(), settings_revision as i64],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(())
     }
 
     fn insert_retry_link(
@@ -966,6 +1031,8 @@ impl LibraryScanAdmissionContextRepository for SqliteLibraryScanAdmissionContext
             "retry_single_root" => LibraryScanInvocationKind::RetrySingleRoot,
             "initial_scan_all" => LibraryScanInvocationKind::InitialScanAll,
             "retry_scan_all" => LibraryScanInvocationKind::RetryScanAll,
+            "initial_library_refresh" => LibraryScanInvocationKind::InitialLibraryRefresh,
+            "retry_library_refresh" => LibraryScanInvocationKind::RetryLibraryRefresh,
             _ => return Err(PersistenceError::CorruptOrIncompatible),
         };
         let retry_source = retry_source.map(parse_job_run_id).transpose()?;
@@ -1244,7 +1311,7 @@ impl JobsQueries for SqliteJobsQueries {
                          FROM library_scan_admission_context c
                          JOIN job_run j ON j.job_run_id = c.job_run_id
                          WHERE c.job_run_id = ?1
-                           AND j.operation_type = 'library_scan'",
+                           AND j.operation_type IN ('library_scan', 'library_refresh')",
                         [job_run_id.to_string()],
                         |row| row.get(0),
                     )
@@ -1255,6 +1322,10 @@ impl JobsQueries for SqliteJobsQueries {
                     "retry_single_root" => Ok(LibraryScanInvocationKind::RetrySingleRoot),
                     "initial_scan_all" => Ok(LibraryScanInvocationKind::InitialScanAll),
                     "retry_scan_all" => Ok(LibraryScanInvocationKind::RetryScanAll),
+                    "initial_library_refresh" => {
+                        Ok(LibraryScanInvocationKind::InitialLibraryRefresh)
+                    }
+                    "retry_library_refresh" => Ok(LibraryScanInvocationKind::RetryLibraryRefresh),
                     _ => Err(PersistenceError::CorruptOrIncompatible),
                 })
                 .transpose()
@@ -1564,7 +1635,12 @@ fn read_job_detail(
     let job_run_id = parse_job_run_id(job).map_err(corrupt_sqlite)?;
     let state = parse_job_state(&state).map_err(corrupt_sqlite)?;
     let cancellation_requested = cancellation != 0;
-    if operation != "library_scan" {
+    let is_library_scan = operation == OPERATION_TYPE_LIBRARY_SCAN;
+    let is_library_refresh = operation == OPERATION_TYPE_LIBRARY_REFRESH;
+    let is_game_refresh = operation == OPERATION_TYPE_GAME_REFRESH;
+    let is_library_resolution_refresh = operation == OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH;
+    if !is_library_scan && !is_library_refresh && !is_game_refresh && !is_library_resolution_refresh
+    {
         return Ok(None);
     }
 
@@ -1598,6 +1674,110 @@ fn read_job_detail(
         .map(parse_job_run_id)
         .transpose()
         .map_err(corrupt_sqlite)?;
+
+    // Refresh operations that do not embed a LibraryScan keep their bounded
+    // intent in a focused table. Read those rows before the scan-specific
+    // projection below so they cannot accidentally inherit scan authority.
+    if is_game_refresh || is_library_resolution_refresh {
+        let controls = JobControlAvailability::new(
+            state.is_active() && !cancellation_requested,
+            matches!(
+                state,
+                JobRunState::CompletedWithIssues
+                    | JobRunState::Failed
+                    | JobRunState::Cancelled
+                    | JobRunState::Abandoned
+            ) && successor.is_none(),
+        );
+        let job_projection = JobRunProjection::new(
+            job_run_id,
+            operation.clone(),
+            state,
+            phase.clone(),
+            completed.map(|value| value as u64),
+            total.map(|value| value as u64),
+            status_key.clone(),
+            created,
+            queued,
+            started,
+            terminal,
+            cancellation_requested,
+            controls,
+            error_code,
+            safe_context,
+        );
+        let progress = RefreshProgressFacts::new(
+            phase,
+            completed.map(|value| value as u64),
+            total.map(|value| value as u64),
+            status_key,
+            None,
+        )
+        .map_err(|_| {
+            SqliteOperationError::Application(ApplicationPortError::Persistence(
+                PersistenceError::CorruptOrIncompatible,
+            ))
+        })?;
+        let detail = if is_game_refresh {
+            let raw: Option<(String, String)> = connection
+                .connection
+                .query_row(
+                    "SELECT game_ids, mode FROM game_refresh_intent WHERE job_run_id = ?1",
+                    [job_run_id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|error| super::errors::operation_error(&error))?;
+            let Some((game_ids, mode)) = raw else {
+                return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+            };
+            let game_ids = game_ids
+                .split(',')
+                .filter(|value| !value.is_empty())
+                .map(|value| {
+                    GameId::try_from(value)
+                        .map_err(|_| corrupt_sqlite(PersistenceError::CorruptOrIncompatible))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if game_ids.is_empty() {
+                return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+            }
+            let mode = parse_refresh_mode(&mode).map_err(corrupt_sqlite)?;
+            argus_application::OperationDetail::GameRefresh(
+                argus_application::GameRefreshJobDetail::new(
+                    game_ids,
+                    mode,
+                    progress,
+                    retry_source,
+                    successor,
+                ),
+            )
+        } else {
+            let settings_revision: i64 = connection
+                .connection
+                .query_row(
+                    "SELECT settings_revision
+                     FROM library_resolution_refresh_intent WHERE job_run_id = ?1",
+                    [job_run_id.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| super::errors::operation_error(&error))?
+                .ok_or_else(|| corrupt_sqlite(PersistenceError::CorruptOrIncompatible))?;
+            let settings_revision = u64::try_from(settings_revision)
+                .map_err(|_| corrupt_sqlite(PersistenceError::CorruptOrIncompatible))?;
+            argus_application::OperationDetail::LibraryResolutionRefresh(
+                argus_application::LibraryResolutionRefreshJobDetail::new(
+                    job_run_id,
+                    settings_revision,
+                    progress,
+                    retry_source,
+                    successor,
+                ),
+            )
+        };
+        return Ok(Some(JobDetail::new(job_projection, detail)));
+    }
 
     let mut scan_runs = Vec::new();
     let mut observed_counts = Vec::new();
@@ -1774,19 +1954,83 @@ fn read_job_detail(
         aggregate_scan_counter(&committed_counts),
         aggregate_scan_counter(&issue_counts),
     );
-    let detail = LibraryScanJobDetail::new(
-        requested_roots,
-        admitted_roots,
-        exclusions,
-        scan_runs,
-        progress,
-        retry_source,
-        successor,
-    );
-    Ok(Some(JobDetail::new(
-        job_projection,
-        argus_application::OperationDetail::LibraryScan(detail),
-    )))
+    let detail = if is_library_scan {
+        argus_application::OperationDetail::LibraryScan(LibraryScanJobDetail::new(
+            requested_roots,
+            admitted_roots,
+            exclusions,
+            scan_runs,
+            progress,
+            retry_source,
+            successor,
+        ))
+    } else {
+        let requested_root_ids: Vec<LibraryRootId> = requested_targets
+            .iter()
+            .map(LibraryScanTarget::library_root_id)
+            .collect();
+        let persisted_intent: Option<(String, Option<String>, String)> = connection
+            .connection
+            .query_row(
+                "SELECT trigger_kind, trigger_root_id, mode
+                 FROM library_refresh_intent WHERE job_run_id = ?1",
+                [job_run_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(|error| super::errors::operation_error(&error))?;
+        let (trigger, mode) = match persisted_intent {
+            Some((kind, root_id, mode)) => {
+                let trigger = match kind.as_str() {
+                    "manual" => LibraryRefreshTrigger::Manual,
+                    "initial_onboarding" => LibraryRefreshTrigger::InitialOnboarding,
+                    "added_root" => LibraryRefreshTrigger::AddedRoot(
+                        root_id
+                            .ok_or_else(|| corrupt_sqlite(PersistenceError::CorruptOrIncompatible))
+                            .and_then(|value| {
+                                LibraryRootId::try_from(value.as_str()).map_err(|_| {
+                                    corrupt_sqlite(PersistenceError::CorruptOrIncompatible)
+                                })
+                            })?,
+                    ),
+                    _ => return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible)),
+                };
+                (trigger, parse_refresh_mode(&mode).map_err(corrupt_sqlite)?)
+            }
+            None => {
+                let trigger = if requested_root_ids.len() == 1 {
+                    LibraryRefreshTrigger::AddedRoot(requested_root_ids[0])
+                } else {
+                    LibraryRefreshTrigger::Manual
+                };
+                (trigger, RefreshMode::EligibleOnly)
+            }
+        };
+        let refresh_progress = RefreshProgressFacts::new(
+            progress.phase().map(str::to_owned),
+            progress.completed_units(),
+            progress.total_units(),
+            progress.status_key().map(str::to_owned),
+            progress.issue_count(),
+        )
+        .map_err(|_| {
+            SqliteOperationError::Application(ApplicationPortError::Persistence(
+                PersistenceError::CorruptOrIncompatible,
+            ))
+        })?;
+        argus_application::OperationDetail::LibraryRefresh(
+            LibraryRefreshJobDetail::new(
+                trigger,
+                mode,
+                requested_root_ids,
+                refresh_progress,
+                retry_source,
+                successor,
+            )
+            .with_scan_runs(scan_runs),
+        )
+    };
+    Ok(Some(JobDetail::new(job_projection, detail)))
 }
 
 /// Aggregates nullable scan-run counters into one truthful projection.
@@ -1802,6 +2046,14 @@ fn aggregate_scan_counter(values: &[Option<u64>]) -> Option<u64> {
         total = total.checked_add((*value)?)?;
     }
     Some(total)
+}
+
+fn parse_refresh_mode(value: &str) -> Result<RefreshMode, PersistenceError> {
+    match value {
+        "eligible_only" => Ok(RefreshMode::EligibleOnly),
+        "force" => Ok(RefreshMode::Force),
+        _ => Err(PersistenceError::CorruptOrIncompatible),
+    }
 }
 
 /// Encodes one bounded application error into its durable column tuple.

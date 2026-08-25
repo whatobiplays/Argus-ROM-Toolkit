@@ -10,29 +10,33 @@ use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
-    AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult, ApplicationError,
-    ApplicationSeverity, ArchitectureClass, AvailabilityState, BackgroundOperationStopReason,
+    AddLibraryRootAndRefreshResult, AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult,
+    ApplicationError, ApplicationSeverity, ArchitectureClass, AvailabilityState,
+    BackgroundOperationStopReason, CompleteLibraryOnboardingAndRefreshResult,
     ContentIdentitySummary, ContentProvenanceSummary, ContentType, DiagnosticStage, ErrorCategory,
     ErrorCode, FailureRole, GameContentPresence, GameContentSummary, GameDetail, GameId,
     GameLibraryPage, GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary,
     GetGameResult, GroupingBasis, HydrationState, IdentificationState, IdentityDigest, JobDetail,
-    JobRunId, JobRunProjection, JobRunState, JobSummary, JobSummaryPage, LibraryRootAvailability,
-    LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
+    JobRunId, JobRunProjection, JobRunState, JobSummary, JobSummaryPage, LibraryOnboardingProgress,
+    LibraryOnboardingState, LibraryProviderSetupDecision, LibraryRefreshJobDetail,
+    LibraryResolutionRefreshJobDetail, LibraryRootAvailability, LibraryRootId,
+    LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
     LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanChildAdmissionIssue,
     LibraryScanJobDetail, LibraryScanRootSummary, LibraryScope, LibrarySort, ListGamesQuery,
     ListJobsQuery, ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
     LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
     LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MembershipRelationship,
     MetadataFieldProvenance, MetadataProviderReadiness, MetadataProviderReadinessProjection,
-    MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
-    PersistedSettingsReason, PlatformClass, PlatformId, ProviderCapability,
-    ProviderCapabilityReadiness, ProviderId, ProviderReadinessState, Recoverability,
-    RemoveLibraryRootResult, ResolvedArtwork, ResolvedMetadata, RetryJobResult,
-    RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext, SafeContextField,
-    SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus, SettingsDomain,
-    SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
-    SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
-    SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
+    MetadataProviderSettings, MetadataProviderSettingsUpdateResult, MetadataSettings,
+    MetadataSettingsUpdateResult, MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail,
+    PathClass, PersistedSettingsReason, PlatformClass, PlatformId, PrivacyConsent,
+    ProviderCapability, ProviderCapabilityReadiness, ProviderId, ProviderReadinessState,
+    Recoverability, RefreshMode, RefreshProgressFacts, RemoveLibraryRootResult, ResolvedArtwork,
+    ResolvedMetadata, RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship,
+    SafeContext, SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection,
+    ScanRunStatus, SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage,
+    SourceEntryClassification, SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId,
+    SourceEntryKind, SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
@@ -174,6 +178,112 @@ pub struct AppearanceSettingsDto {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UpdateAppearanceSettingsRequestDto {
     pub theme_mode: ThemeModeDto,
+}
+
+/// Safe Settings-owned privacy-consent projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PrivacyConsentDto {
+    pub accepted_terms_version: Option<String>,
+    pub accepted_at_ms: Option<i64>,
+    pub required_terms_version: String,
+    pub satisfies_current_required_terms: bool,
+}
+
+/// Versioned privacy-consent mutation request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AcceptPrivacyTermsRequestDto {
+    pub terms_version: String,
+}
+
+/// Local metadata preferences owned by the settings capability.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataSettingsDto {
+    pub preferred_regions: Vec<String>,
+    pub preferred_languages: Vec<String>,
+}
+
+/// Provider enablement preferences owned by the metadata capability.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataProviderSettingsDto {
+    pub enabled_providers: Vec<String>,
+}
+
+/// Closed onboarding provider decision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryProviderSetupDecisionDto {
+    Configured,
+    Skipped,
+}
+
+/// Durable onboarding progress facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryOnboardingProgressDto {
+    pub accepted_privacy_terms_version: Option<String>,
+    pub accepted_privacy_at_ms: Option<i64>,
+    pub metadata_preferences_confirmed: bool,
+    pub provider_setup_outcome: String,
+    pub completed_at_ms: Option<i64>,
+}
+
+/// Query-authoritative onboarding projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryOnboardingStateDto {
+    pub progress: LibraryOnboardingProgressDto,
+    pub required_privacy_terms_version: String,
+    pub requires_privacy_acceptance: bool,
+    pub requires_root_selection: bool,
+    pub credential_configured: bool,
+    pub complete: bool,
+}
+
+/// Closed refresh freshness policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RefreshModeDto {
+    EligibleOnly,
+    Force,
+}
+
+/// Bounded Game refresh admission request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StartGameRefreshRequestDto {
+    pub game_ids: Vec<String>,
+    pub mode: RefreshModeDto,
+}
+
+/// Result of committing metadata settings and independently admitting local
+/// resolution work.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MetadataSettingsUpdateResultDto {
+    CommittedNoResolutionWork(MetadataSettingsDto),
+    CommittedAndResolutionAdmitted(MetadataSettingsDto, OperationHandleDto),
+    CommittedButResolutionNotAdmitted(MetadataSettingsDto, ApplicationErrorDto),
+}
+
+/// Result of committing provider enablement and independently admitting local
+/// resolution work.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MetadataProviderSettingsUpdateResultDto {
+    CommittedNoResolutionWork(MetadataProviderSettingsDto),
+    CommittedAndResolutionAdmitted(MetadataProviderSettingsDto, OperationHandleDto),
+    CommittedButResolutionNotAdmitted(MetadataProviderSettingsDto, ApplicationErrorDto),
+}
+
+/// Result of committing onboarding completion and independently admitting the
+/// initial refresh.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompleteLibraryOnboardingAndRefreshResultDto {
+    OnboardingCompletedAndRefreshAdmitted(LibraryOnboardingStateDto, OperationHandleDto),
+    OnboardingCompletedButRefreshNotAdmitted(LibraryOnboardingStateDto, ApplicationErrorDto),
+}
+
+/// Result of adding the first onboarding root and independently admitting its
+/// composed refresh.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AddLibraryRootAndRefreshResultDto {
+    AddedAndRefreshAdmitted(LibraryRootDto, OperationHandleDto),
+    AddedButRefreshNotAdmitted(LibraryRootDto, ApplicationErrorDto),
+    AlreadyConfigured(String),
+    OverlapsExisting(String, RootRelationshipDto),
 }
 
 /// Untrusted typed local-folder selection supplied by the native picker seam.
@@ -870,10 +980,56 @@ pub struct LibraryScanJobDetailDto {
     pub retry_successor_job_run_id: Option<String>,
 }
 
+/// Shared progress facts for a composed refresh operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefreshProgressFactsDto {
+    pub phase: Option<String>,
+    pub completed_units: Option<u64>,
+    pub total_units: Option<u64>,
+    pub status_key: Option<String>,
+    pub issue_count: Option<u64>,
+}
+
+/// Typed composed Library refresh detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryRefreshJobDetailDto {
+    pub trigger: String,
+    pub trigger_root_id: Option<String>,
+    pub mode: String,
+    pub requested_root_ids: Vec<String>,
+    pub scan_runs: Vec<ScanRunDto>,
+    pub progress: RefreshProgressFactsDto,
+    pub retry_source_job_run_id: Option<String>,
+    pub retry_successor_job_run_id: Option<String>,
+}
+
+/// Typed bounded Game refresh detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameRefreshJobDetailDto {
+    pub game_ids: Vec<String>,
+    pub mode: String,
+    pub progress: RefreshProgressFactsDto,
+    pub retry_source_job_run_id: Option<String>,
+    pub retry_successor_job_run_id: Option<String>,
+}
+
+/// Typed local-only Library resolution refresh detail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryResolutionRefreshJobDetailDto {
+    pub job_run_id: String,
+    pub settings_revision: u64,
+    pub progress: RefreshProgressFactsDto,
+    pub retry_source_job_run_id: Option<String>,
+    pub retry_successor_job_run_id: Option<String>,
+}
+
 /// Closed typed operation-detail union.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperationDetailDto {
     LibraryScan(LibraryScanJobDetailDto),
+    LibraryRefresh(LibraryRefreshJobDetailDto),
+    GameRefresh(GameRefreshJobDetailDto),
+    LibraryResolutionRefresh(LibraryResolutionRefreshJobDetailDto),
 }
 
 /// Authoritative job detail with typed operation detail.
@@ -1406,6 +1562,206 @@ pub fn update_appearance_settings(
             &context,
             appearance_settings_from_dto(request.theme_mode),
         )
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads the query-authoritative Library onboarding projection.
+#[allow(clippy::result_large_err)]
+pub fn get_library_onboarding_state() -> Result<LibraryOnboardingStateDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "get_library_onboarding_state")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .library_onboarding_state_with_context(&context)
+        .map(|state| library_onboarding_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads the Settings-owned privacy-consent projection.
+#[allow(clippy::result_large_err)]
+pub fn get_privacy_consent() -> Result<PrivacyConsentDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("settings", "get_privacy_consent")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .privacy_consent_with_context(&context)
+        .map(|consent| privacy_consent_dto(&consent))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Accepts the backend-advertised current privacy-terms version.
+#[allow(clippy::result_large_err)]
+pub fn accept_privacy_terms(
+    request: AcceptPrivacyTermsRequestDto,
+) -> Result<PrivacyConsentDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("settings", "accept_privacy_terms")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .accept_privacy_terms_with_context(&context, request.terms_version)
+        .map(|consent| privacy_consent_dto(&consent))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Commits onboarding metadata preferences.
+#[allow(clippy::result_large_err)]
+pub fn confirm_library_metadata_preferences(
+    settings: MetadataSettingsDto,
+) -> Result<LibraryOnboardingStateDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "confirm_library_metadata_preferences")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .confirm_library_metadata_preferences_with_context(
+            &context,
+            metadata_settings_from_dto(settings),
+        )
+        .map(|state| library_onboarding_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Records the onboarding provider setup decision.
+#[allow(clippy::result_large_err)]
+pub fn record_library_provider_setup(
+    decision: LibraryProviderSetupDecisionDto,
+) -> Result<LibraryOnboardingStateDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "record_library_provider_setup")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .record_library_provider_setup_with_context(
+            &context,
+            library_provider_setup_decision_from_dto(decision),
+        )
+        .map(|state| library_onboarding_state_dto(&state))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Commits onboarding completion and independently admits the initial refresh.
+#[allow(clippy::result_large_err)]
+pub fn complete_library_onboarding_and_refresh()
+-> Result<CompleteLibraryOnboardingAndRefreshResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "complete_library_onboarding_and_refresh")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .complete_library_onboarding_and_refresh_with_context(&context)
+        .map(|result| complete_library_onboarding_and_refresh_dto(&result))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Adds the first onboarding root and independently admits its initial
+/// composed refresh.
+#[allow(clippy::result_large_err)]
+pub fn add_library_root_and_refresh(
+    selection: LocalFilesystemRootSelectionDto,
+) -> Result<AddLibraryRootAndRefreshResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "add_library_root_and_refresh")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .add_library_root_and_refresh_with_context(
+            &context,
+            local_filesystem_root_selection_from_dto(selection),
+        )
+        .map(add_library_root_and_refresh_result_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads local metadata preferences.
+#[allow(clippy::result_large_err)]
+pub fn get_metadata_settings() -> Result<MetadataSettingsDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("metadata", "get_metadata_settings")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .metadata_settings_with_context(&context)
+        .map(metadata_settings_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads provider enablement preferences.
+#[allow(clippy::result_large_err)]
+pub fn get_metadata_provider_settings() -> Result<MetadataProviderSettingsDto, ApplicationErrorDto>
+{
+    let (context, _guard) = host()
+        .begin_operation("metadata", "get_metadata_provider_settings")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .metadata_provider_settings_with_context(&context)
+        .map(metadata_provider_settings_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Commits metadata preferences and reports independent local-resolution
+/// admission.
+#[allow(clippy::result_large_err)]
+pub fn update_metadata_settings(
+    settings: MetadataSettingsDto,
+) -> Result<MetadataSettingsUpdateResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("metadata", "update_metadata_settings")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .update_metadata_settings_with_context(&context, metadata_settings_from_dto(settings))
+        .map(metadata_settings_update_result_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Commits provider enablement and reports independent local-resolution
+/// admission.
+#[allow(clippy::result_large_err)]
+pub fn update_metadata_provider_settings(
+    settings: MetadataProviderSettingsDto,
+) -> Result<MetadataProviderSettingsUpdateResultDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("metadata", "update_metadata_provider_settings")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .update_metadata_provider_settings_with_context(
+            &context,
+            metadata_provider_settings_from_dto(settings, context.trace_id())?,
+        )
+        .map(metadata_provider_settings_update_result_dto)
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Admits one bounded Game refresh.
+#[allow(clippy::result_large_err)]
+pub fn start_game_refresh(
+    request: StartGameRefreshRequestDto,
+) -> Result<OperationHandleDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "start_game_refresh")
+        .map_err(|error| application_error_dto(&error))?;
+    let game_ids = request
+        .game_ids
+        .iter()
+        .map(|value| {
+            GameId::try_from(value.as_str()).map_err(|_| validation_failure(context.trace_id()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    host()
+        .start_game_refresh_with_context(game_ids, refresh_mode_from_dto(request.mode), &context)
+        .map(|handle| OperationHandleDto {
+            job_run_id: handle.job_run_id().to_string(),
+            operation_type: handle.operation_type().to_owned(),
+        })
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Admits one normal composed Library refresh.
+#[allow(clippy::result_large_err)]
+pub fn refresh_library() -> Result<OperationHandleDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "refresh_library")
+        .map_err(|error| application_error_dto(&error))?;
+    host()
+        .refresh_library_with_context(&context)
+        .map(|handle| OperationHandleDto {
+            job_run_id: handle.job_run_id().to_string(),
+            operation_type: handle.operation_type().to_owned(),
+        })
         .map_err(|error| application_error_dto(&error))
 }
 
@@ -2471,6 +2827,211 @@ pub fn game_detail_dto(detail: &GameDetail) -> GameDetailDto {
     }
 }
 
+fn operation_handle_dto(handle: &argus_application::OperationHandle) -> OperationHandleDto {
+    OperationHandleDto {
+        job_run_id: handle.job_run_id().to_string(),
+        operation_type: handle.operation_type().to_owned(),
+    }
+}
+
+fn root_relationship_dto(relationship: RootRelationship) -> RootRelationshipDto {
+    match relationship {
+        RootRelationship::Same => RootRelationshipDto::Same,
+        RootRelationship::Ancestor => RootRelationshipDto::Ancestor,
+        RootRelationship::Descendant => RootRelationshipDto::Descendant,
+        RootRelationship::Disjoint => RootRelationshipDto::Disjoint,
+        RootRelationship::Unknown => RootRelationshipDto::Unknown,
+    }
+}
+
+fn metadata_settings_dto(settings: MetadataSettings) -> MetadataSettingsDto {
+    MetadataSettingsDto {
+        preferred_regions: settings.preferred_regions().to_vec(),
+        preferred_languages: settings.preferred_languages().to_vec(),
+    }
+}
+
+fn metadata_settings_from_dto(settings: MetadataSettingsDto) -> MetadataSettings {
+    MetadataSettings::new(settings.preferred_regions, settings.preferred_languages)
+}
+
+fn metadata_provider_settings_dto(
+    settings: MetadataProviderSettings,
+) -> MetadataProviderSettingsDto {
+    MetadataProviderSettingsDto {
+        enabled_providers: settings
+            .enabled()
+            .iter()
+            .map(|provider| provider.as_str().to_owned())
+            .collect(),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn metadata_provider_settings_from_dto(
+    settings: MetadataProviderSettingsDto,
+    trace_id: argus_application::TraceId,
+) -> Result<MetadataProviderSettings, ApplicationErrorDto> {
+    for provider in &settings.enabled_providers {
+        if ProviderId::try_from(provider.as_str()).is_err() {
+            return Err(validation_failure(trace_id));
+        }
+    }
+    Ok(MetadataProviderSettings::from_enabled(
+        settings.enabled_providers,
+    ))
+}
+
+fn library_provider_setup_decision_from_dto(
+    decision: LibraryProviderSetupDecisionDto,
+) -> argus_application::LibraryProviderSetupDecision {
+    match decision {
+        LibraryProviderSetupDecisionDto::Configured => LibraryProviderSetupDecision::Configured,
+        LibraryProviderSetupDecisionDto::Skipped => LibraryProviderSetupDecision::Skipped,
+    }
+}
+
+fn library_onboarding_progress_dto(
+    progress: &LibraryOnboardingProgress,
+) -> LibraryOnboardingProgressDto {
+    LibraryOnboardingProgressDto {
+        accepted_privacy_terms_version: progress
+            .accepted_privacy_terms_version()
+            .map(str::to_owned),
+        accepted_privacy_at_ms: progress.accepted_privacy_at_ms(),
+        metadata_preferences_confirmed: progress.metadata_preferences_confirmed(),
+        provider_setup_outcome: progress.provider_setup_outcome().as_str().to_owned(),
+        completed_at_ms: progress.completed_at_ms(),
+    }
+}
+
+fn privacy_consent_dto(consent: &PrivacyConsent) -> PrivacyConsentDto {
+    PrivacyConsentDto {
+        accepted_terms_version: consent.accepted_terms_version().map(str::to_owned),
+        accepted_at_ms: consent.accepted_at_ms(),
+        required_terms_version: consent.required_terms_version().to_owned(),
+        satisfies_current_required_terms: consent.satisfies_current_required_terms(),
+    }
+}
+
+fn library_onboarding_state_dto(state: &LibraryOnboardingState) -> LibraryOnboardingStateDto {
+    LibraryOnboardingStateDto {
+        progress: library_onboarding_progress_dto(state.progress()),
+        required_privacy_terms_version: state.required_privacy_terms_version().to_owned(),
+        requires_privacy_acceptance: state.requires_privacy_acceptance(),
+        requires_root_selection: state.requires_root_selection(),
+        credential_configured: state.credential_configured(),
+        complete: state.complete(),
+    }
+}
+
+fn complete_library_onboarding_and_refresh_dto(
+    result: &CompleteLibraryOnboardingAndRefreshResult,
+) -> CompleteLibraryOnboardingAndRefreshResultDto {
+    match result {
+        CompleteLibraryOnboardingAndRefreshResult::OnboardingCompletedAndRefreshAdmitted(
+            state,
+            handle,
+        ) => CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedAndRefreshAdmitted(
+            library_onboarding_state_dto(state),
+            operation_handle_dto(handle),
+        ),
+        CompleteLibraryOnboardingAndRefreshResult::OnboardingCompletedButRefreshNotAdmitted(
+            state,
+            error,
+        ) => {
+            CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedButRefreshNotAdmitted(
+                library_onboarding_state_dto(state),
+                application_error_dto(error),
+            )
+        }
+    }
+}
+
+fn add_library_root_and_refresh_result_dto(
+    result: AddLibraryRootAndRefreshResult,
+) -> AddLibraryRootAndRefreshResultDto {
+    match result {
+        AddLibraryRootAndRefreshResult::AddedAndRefreshAdmitted(root, handle) => {
+            AddLibraryRootAndRefreshResultDto::AddedAndRefreshAdmitted(
+                library_root_dto(&root),
+                operation_handle_dto(&handle),
+            )
+        }
+        AddLibraryRootAndRefreshResult::AddedButRefreshNotAdmitted(root, error) => {
+            AddLibraryRootAndRefreshResultDto::AddedButRefreshNotAdmitted(
+                library_root_dto(&root),
+                application_error_dto(&error),
+            )
+        }
+        AddLibraryRootAndRefreshResult::AlreadyConfigured(root_id) => {
+            AddLibraryRootAndRefreshResultDto::AlreadyConfigured(root_id.to_string())
+        }
+        AddLibraryRootAndRefreshResult::OverlapsExisting(root_id, relationship) => {
+            AddLibraryRootAndRefreshResultDto::OverlapsExisting(
+                root_id.to_string(),
+                root_relationship_dto(relationship),
+            )
+        }
+    }
+}
+
+fn metadata_settings_update_result_dto(
+    result: MetadataSettingsUpdateResult,
+) -> MetadataSettingsUpdateResultDto {
+    match result {
+        MetadataSettingsUpdateResult::CommittedNoResolutionWork(settings) => {
+            MetadataSettingsUpdateResultDto::CommittedNoResolutionWork(metadata_settings_dto(
+                settings,
+            ))
+        }
+        MetadataSettingsUpdateResult::CommittedAndResolutionAdmitted(settings, handle) => {
+            MetadataSettingsUpdateResultDto::CommittedAndResolutionAdmitted(
+                metadata_settings_dto(settings),
+                operation_handle_dto(&handle),
+            )
+        }
+        MetadataSettingsUpdateResult::CommittedButResolutionNotAdmitted(settings, error) => {
+            MetadataSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(
+                metadata_settings_dto(settings),
+                application_error_dto(&error),
+            )
+        }
+    }
+}
+
+fn metadata_provider_settings_update_result_dto(
+    result: MetadataProviderSettingsUpdateResult,
+) -> MetadataProviderSettingsUpdateResultDto {
+    match result {
+        MetadataProviderSettingsUpdateResult::CommittedNoResolutionWork(settings) => {
+            MetadataProviderSettingsUpdateResultDto::CommittedNoResolutionWork(
+                metadata_provider_settings_dto(settings),
+            )
+        }
+        MetadataProviderSettingsUpdateResult::CommittedAndResolutionAdmitted(settings, handle) => {
+            MetadataProviderSettingsUpdateResultDto::CommittedAndResolutionAdmitted(
+                metadata_provider_settings_dto(settings),
+                operation_handle_dto(&handle),
+            )
+        }
+        MetadataProviderSettingsUpdateResult::CommittedButResolutionNotAdmitted(
+            settings,
+            error,
+        ) => MetadataProviderSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(
+            metadata_provider_settings_dto(settings),
+            application_error_dto(&error),
+        ),
+    }
+}
+
+fn refresh_mode_from_dto(mode: RefreshModeDto) -> RefreshMode {
+    match mode {
+        RefreshModeDto::EligibleOnly => RefreshMode::EligibleOnly,
+        RefreshModeDto::Force => RefreshMode::Force,
+    }
+}
+
 fn metadata_provider_readiness_dto(
     readiness: &MetadataProviderReadinessProjection,
 ) -> MetadataProviderReadinessDto {
@@ -2994,6 +3555,17 @@ pub fn job_detail_dto(detail: &JobDetail) -> JobDetailDto {
             OperationDetail::LibraryScan(scan_detail) => {
                 OperationDetailDto::LibraryScan(library_scan_job_detail_dto(scan_detail))
             }
+            OperationDetail::LibraryRefresh(refresh_detail) => {
+                OperationDetailDto::LibraryRefresh(library_refresh_job_detail_dto(refresh_detail))
+            }
+            OperationDetail::GameRefresh(refresh_detail) => {
+                OperationDetailDto::GameRefresh(game_refresh_job_detail_dto(refresh_detail))
+            }
+            OperationDetail::LibraryResolutionRefresh(refresh_detail) => {
+                OperationDetailDto::LibraryResolutionRefresh(
+                    library_resolution_refresh_job_detail_dto(refresh_detail),
+                )
+            }
         },
     }
 }
@@ -3055,6 +3627,57 @@ fn library_scan_job_detail_dto(detail: &LibraryScanJobDetail) -> LibraryScanJobD
         exclusions: detail.exclusions().iter().map(exclusion_dto).collect(),
         scan_runs: detail.scan_runs().iter().map(scan_run_dto).collect(),
         progress: scan_progress_dto(detail.progress()),
+        retry_source_job_run_id: detail.retry_source_job_run_id().map(|id| id.to_string()),
+        retry_successor_job_run_id: detail.retry_successor_job_run_id().map(|id| id.to_string()),
+    }
+}
+
+fn refresh_progress_facts_dto(progress: &RefreshProgressFacts) -> RefreshProgressFactsDto {
+    RefreshProgressFactsDto {
+        phase: progress.phase().map(str::to_owned),
+        completed_units: progress.completed_units(),
+        total_units: progress.total_units(),
+        status_key: progress.status_key().map(str::to_owned),
+        issue_count: progress.issue_count(),
+    }
+}
+
+fn library_refresh_job_detail_dto(detail: &LibraryRefreshJobDetail) -> LibraryRefreshJobDetailDto {
+    LibraryRefreshJobDetailDto {
+        trigger: detail.trigger().kind().to_owned(),
+        trigger_root_id: detail.trigger().root_id().map(|id| id.to_string()),
+        mode: detail.mode().as_str().to_owned(),
+        requested_root_ids: detail
+            .requested_root_ids()
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        scan_runs: detail.scan_runs().iter().map(scan_run_dto).collect(),
+        progress: refresh_progress_facts_dto(detail.progress()),
+        retry_source_job_run_id: detail.retry_source_job_run_id().map(|id| id.to_string()),
+        retry_successor_job_run_id: detail.retry_successor_job_run_id().map(|id| id.to_string()),
+    }
+}
+
+fn game_refresh_job_detail_dto(
+    detail: &argus_application::GameRefreshJobDetail,
+) -> GameRefreshJobDetailDto {
+    GameRefreshJobDetailDto {
+        game_ids: detail.game_ids().iter().map(ToString::to_string).collect(),
+        mode: detail.mode().as_str().to_owned(),
+        progress: refresh_progress_facts_dto(detail.progress()),
+        retry_source_job_run_id: detail.retry_source_job_run_id().map(|id| id.to_string()),
+        retry_successor_job_run_id: detail.retry_successor_job_run_id().map(|id| id.to_string()),
+    }
+}
+
+fn library_resolution_refresh_job_detail_dto(
+    detail: &LibraryResolutionRefreshJobDetail,
+) -> LibraryResolutionRefreshJobDetailDto {
+    LibraryResolutionRefreshJobDetailDto {
+        job_run_id: detail.job_run_id().to_string(),
+        settings_revision: detail.settings_revision(),
+        progress: refresh_progress_facts_dto(detail.progress()),
         retry_source_job_run_id: detail.retry_source_job_run_id().map(|id| id.to_string()),
         retry_successor_job_run_id: detail.retry_successor_job_run_id().map(|id| id.to_string()),
     }

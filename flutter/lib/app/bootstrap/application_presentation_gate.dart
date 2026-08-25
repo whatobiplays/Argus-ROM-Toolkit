@@ -1,3 +1,4 @@
+import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/startup/startup.dart';
@@ -20,6 +21,14 @@ class ApplicationPresentationGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<ApplicationPresentationReadiness>(
+      applicationPresentationReadinessProvider,
+      (previous, next) {
+        if (next == ApplicationPresentationReadiness.ready) {
+          ref.read(appRouterProvider).refresh();
+        }
+      },
+    );
     final readiness = ref.watch(applicationPresentationReadinessProvider);
     return switch (readiness) {
       ApplicationPresentationReadiness.preReady => const SizedBox.shrink(),

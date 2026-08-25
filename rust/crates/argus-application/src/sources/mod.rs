@@ -24,9 +24,9 @@ pub use library::{
     LibraryRootQueries, LibraryRootRepository, LibraryRootScanConfiguration,
     LibraryScanChildAdmission, LibraryScanChildAdmissionIssue, LibraryService,
     LibrarySourceRepository, ListLibraryRootsHandler, ListLibraryRootsQuery, NewLibraryRoot,
-    RemoveLibraryRootCommand, RemoveLibraryRootHandler, RemoveLibraryRootResult,
-    StartLibraryScanAllCommand, StartLibraryScanAllHandler, StartLibraryScanCommand,
-    StartLibraryScanHandler, SyncLocalFilesystemMountedVolumesCommand,
+    RefreshLibraryCommand, RemoveLibraryRootCommand, RemoveLibraryRootHandler,
+    RemoveLibraryRootResult, StartLibraryScanAllCommand, StartLibraryScanAllHandler,
+    StartLibraryScanCommand, StartLibraryScanHandler, SyncLocalFilesystemMountedVolumesCommand,
 };
 pub use provider::{
     DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, LibrarySourceAccess,

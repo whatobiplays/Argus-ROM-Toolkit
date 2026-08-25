@@ -105,7 +105,9 @@ fn scan_all_admits_multiple_roots_in_one_sequential_job() {
     assert_eq!(terminal_state(&host, job_run_id), JobRunState::Completed);
 
     let detail = host.get_job(job_run_id).expect("job detail");
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     let scan_order: Vec<LibraryRootId> = operation
         .scan_runs()
         .iter()
@@ -155,7 +157,9 @@ fn scan_all_continues_after_a_failed_child_and_aggregates_with_issues() {
     );
 
     let detail = host.get_job(job_run_id).expect("job detail");
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     let statuses: Vec<_> = operation
         .scan_runs()
         .iter()
@@ -215,7 +219,9 @@ fn scan_all_registration_failure_terminalizes_every_admitted_child_and_parent() 
     assert_eq!(recent.items()[0].state(), JobRunState::Failed);
     let job_run_id = recent.items()[0].job_run_id();
     let detail = host.get_job(job_run_id).expect("job detail");
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     assert_eq!(operation.scan_runs().len(), 2);
     assert!(
         operation
@@ -254,7 +260,9 @@ fn scan_all_cancellation_is_job_scoped_and_terminalizes_children() {
     assert_eq!(terminal_state(&host, job_run_id), JobRunState::Cancelled);
 
     let detail = host.get_job(job_run_id).expect("job detail");
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     assert!(
         operation
             .scan_runs()
@@ -310,7 +318,9 @@ fn scan_all_retry_preserves_multi_root_intent_and_current_exclusions() {
     );
 
     let detail = host.get_job(retry_job).expect("retry detail");
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     assert_eq!(operation.requested_roots().len(), 2);
     assert_eq!(operation.admitted_roots().len(), 1);
     assert_eq!(operation.admitted_roots()[0].library_root_id(), root_b);

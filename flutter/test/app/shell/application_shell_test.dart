@@ -79,10 +79,12 @@ GoRouter shellRouter(String initialLocation) {
 void main() {
   test('production exposes the implemented semantic destinations', () {
     expect(AppDestination.values, <AppDestination>[
-      AppDestination.settings,
+      AppDestination.library,
       AppDestination.sources,
       AppDestination.jobs,
+      AppDestination.settings,
     ]);
+    expect(destinationForUri(Uri.parse('/library')), AppDestination.library);
     expect(destinationForUri(Uri.parse('/settings')), AppDestination.settings);
     expect(destinationForUri(Uri.parse('/sources')), AppDestination.sources);
     expect(destinationForUri(Uri.parse('/jobs')), AppDestination.jobs);

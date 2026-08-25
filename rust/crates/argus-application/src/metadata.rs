@@ -443,6 +443,13 @@ pub trait MetadataRepository {
     /// Reads typed metadata preferences from this transaction.
     fn settings(&mut self) -> Result<MetadataSettings, PersistenceError>;
 
+    /// Reads the monotonic metadata-preference revision captured by settings
+    /// commits. Implementations without revisioned storage retain a stable
+    /// zero for source compatibility with focused test doubles.
+    fn settings_revision(&mut self) -> Result<u64, PersistenceError> {
+        Ok(0)
+    }
+
     /// Persists provider enablement without starting local resolution.
     fn save_provider_settings(
         &mut self,
@@ -461,12 +468,39 @@ pub trait MetadataRepository {
         Err(PersistenceError::Internal)
     }
 
+    /// Reads durable identity mappings for one canonical content unit. The
+    /// local-resolution pass filters these records to current mappings before
+    /// consulting already committed provider metadata or artwork references.
+    fn mappings_for_content(
+        &mut self,
+        _game_content_id: GameContentId,
+    ) -> Result<Vec<ExternalIdentityMapping>, PersistenceError> {
+        Err(PersistenceError::Internal)
+    }
+
     /// Reads the latest Game-level resolved metadata projection.
     fn resolved_metadata_for_game(
         &mut self,
         _game_id: argus_domain::GameId,
     ) -> Result<Option<ResolvedMetadata>, PersistenceError> {
         Ok(None)
+    }
+
+    /// Reads durable product-onboarding progress. Implementations that do not
+    /// activate Phase 003 return the incomplete default without affecting
+    /// existing metadata test doubles.
+    fn library_onboarding_progress(
+        &mut self,
+    ) -> Result<crate::LibraryOnboardingProgress, PersistenceError> {
+        Ok(crate::LibraryOnboardingProgress::default())
+    }
+
+    /// Persists durable product-onboarding progress in the current transaction.
+    fn save_library_onboarding_progress(
+        &mut self,
+        _progress: &crate::LibraryOnboardingProgress,
+    ) -> Result<(), PersistenceError> {
+        Ok(())
     }
 }
 

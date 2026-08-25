@@ -31,6 +31,9 @@ abstract final class JobsMessages {
   static const String entriesCommitted = 'Entries committed';
   static const String issues = 'Issues';
   static const String libraryScan = 'Library Scan';
+  static const String libraryRefresh = 'Library Refresh';
+  static const String gameRefresh = 'Game Refresh';
+  static const String libraryResolutionRefresh = 'Metadata Resolution';
   static const String retryJob = 'Retry';
   static const String retryConfirmationTitle = 'Retry this job?';
   static const String retryConfirmationBody =

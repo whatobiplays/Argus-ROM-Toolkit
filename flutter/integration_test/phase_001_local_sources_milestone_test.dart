@@ -537,6 +537,7 @@ Future<List<SourceEntry>> _rootChildren(
 LibraryScanJobDetail _scanDetail(JobDetail job) =>
     switch (job.operationDetail) {
       OperationDetailLibraryScan(:final detail) => detail,
+      _ => throw StateError('Expected a library_scan operation detail'),
     };
 
 SourceEntry _entryById(List<SourceEntry> entries, String name) =>

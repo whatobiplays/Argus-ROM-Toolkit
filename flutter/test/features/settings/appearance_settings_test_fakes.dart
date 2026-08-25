@@ -33,6 +33,27 @@ final class FakeSettingsApi implements SettingsApi {
     updateRequests.add((settings: settings, completer: completer));
     return completer.future;
   }
+
+  @override
+  Future<PrivacyConsent> getPrivacyConsent() => Future.value(
+    const PrivacyConsent(
+      acceptedTermsVersion: null,
+      acceptedAtMs: null,
+      requiredTermsVersion: PrivacyTermsVersion('phase-003-v1'),
+      satisfiesCurrentRequiredTerms: false,
+    ),
+  );
+
+  @override
+  Future<PrivacyConsent> acceptPrivacyTerms(PrivacyTermsVersion termsVersion) =>
+      Future.value(
+        PrivacyConsent(
+          acceptedTermsVersion: termsVersion,
+          acceptedAtMs: 0,
+          requiredTermsVersion: termsVersion,
+          satisfiesCurrentRequiredTerms: true,
+        ),
+      );
 }
 
 /// Test-owned holder for the injected [AppearanceRuntimeContext].

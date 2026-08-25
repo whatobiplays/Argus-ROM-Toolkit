@@ -17,6 +17,7 @@ ForegroundExecutionCoordinator foregroundExecutionCoordinator(Ref ref) {
   final coordinator = ForegroundExecutionCoordinator(
     sources: client.sources,
     jobs: client.jobs,
+    refresh: client.refresh,
     events: client.events,
     host: ref.watch(foregroundExecutionHostApiProvider),
   );
@@ -24,7 +25,8 @@ ForegroundExecutionCoordinator foregroundExecutionCoordinator(Ref ref) {
   return coordinator;
 }
 
-/// App-composition decorator that hosts qualifying LibraryScan admissions.
+/// App-composition decorator that hosts qualifying Library and composed-refresh
+/// admissions.
 ///
 /// The coordinator owns only transient native leases. Jobs and Sources remain
 /// the authoritative product APIs, and every reconciliation reads current
@@ -34,12 +36,14 @@ final class ForegroundExecutionCoordinator {
   factory ForegroundExecutionCoordinator({
     required SourcesApi sources,
     required JobsApi jobs,
+    required LibraryRefreshApi refresh,
     required EventsApi events,
     ForegroundExecutionHostApi? host,
     FrbExecutionHostControl? executionHostControl,
   }) => ForegroundExecutionCoordinator._(
     sources,
     jobs,
+    refresh,
     events,
     host,
     executionHostControl,
@@ -48,6 +52,7 @@ final class ForegroundExecutionCoordinator {
   ForegroundExecutionCoordinator._(
     this._sources,
     this._jobs,
+    this._refresh,
     this._events,
     this._host,
     FrbExecutionHostControl? executionHostControl,
@@ -65,6 +70,7 @@ final class ForegroundExecutionCoordinator {
 
   final SourcesApi _sources;
   final JobsApi _jobs;
+  final LibraryRefreshApi _refresh;
   final EventsApi _events;
   final ForegroundExecutionHostApi? _host;
   final FrbExecutionHostControl _executionHostControl;
@@ -81,6 +87,12 @@ final class ForegroundExecutionCoordinator {
 
   /// Jobs API decorated with authoritative retry qualification and hosting.
   late final JobsApi jobsApi = ForegroundHostedJobsApi(this, _jobs);
+
+  /// Library refresh admissions decorated with the existing native lease.
+  late final LibraryRefreshApi refreshApi = ForegroundHostedLibraryRefreshApi(
+    this,
+    _refresh,
+  );
 
   /// Releases transient native state and detaches event listeners.
   Future<void> dispose() async {
@@ -134,7 +146,7 @@ final class ForegroundExecutionCoordinator {
     // Retry qualification is authoritative and must precede lease acquisition.
     final detail = await _jobs.getJob(jobRunId);
     final qualifies =
-        detail.job.operationType == 'library_scan' &&
+        _foregroundOperationTypes.contains(detail.job.operationType) &&
         detail.job.controls.canRetry;
     if (!qualifies) return _jobs.retryJob(jobRunId);
     return admit(() => _jobs.retryJob(jobRunId));
@@ -212,7 +224,7 @@ final class ForegroundExecutionCoordinator {
     final page = await _jobs.listActiveJobs();
     return [
       for (final item in page.items)
-        if (item.operationType == 'library_scan' &&
+        if (_foregroundOperationTypes.contains(item.operationType) &&
             !item.lifecycleState.isTerminal)
           item,
     ];
@@ -266,6 +278,9 @@ final class ForegroundExecutionCoordinator {
       return const ForegroundExecutionProjection(activeJobCount: 0);
     }
     var phase = active.length == 1 ? active.single.phase : null;
+    final operationLabel = active.length == 1
+        ? _foregroundOperationLabel(active.single.operationType)
+        : 'Library work';
     int? completedUnits;
     int? totalUnits;
     String? statusKey;
@@ -283,6 +298,20 @@ final class ForegroundExecutionCoordinator {
           completedUnits = detail.progress.completedUnits;
           totalUnits = detail.progress.totalUnits;
           statusKey = detail.progress.statusKey;
+        } else {
+          final progress = switch (detail.operationDetail) {
+            OperationDetailLibraryRefresh(:final detail) => detail.progress,
+            OperationDetailGameRefresh(:final detail) => detail.progress,
+            OperationDetailLibraryResolutionRefresh(:final detail) =>
+              detail.progress,
+            OperationDetailLibraryScan() => null,
+          };
+          if (progress != null) {
+            phase ??= progress.phase;
+            completedUnits = progress.completedUnits;
+            totalUnits = progress.totalUnits;
+            statusKey = progress.statusKey;
+          }
         }
       } catch (_) {
         // A bounded list read remains useful for count/projection even when a
@@ -295,6 +324,7 @@ final class ForegroundExecutionCoordinator {
       totalUnits: totalUnits,
       phase: phase,
       statusKey: statusKey,
+      operationLabel: operationLabel,
       cancellableJobRunId: cancellableJobRunId,
     );
   }
@@ -338,6 +368,22 @@ final class ForegroundExecutionCoordinator {
     }
   }
 }
+
+const Set<String> _foregroundOperationTypes = <String>{
+  'library_scan',
+  'library_refresh',
+  'game_refresh',
+  'library_resolution_refresh',
+};
+
+String _foregroundOperationLabel(String operationType) =>
+    switch (operationType) {
+      'library_scan' => 'Library scan',
+      'library_refresh' => 'Library refresh',
+      'game_refresh' => 'Game refresh',
+      'library_resolution_refresh' => 'Metadata resolution',
+      _ => 'Library work',
+    };
 
 /// Sources forwarding wrapper owned exclusively by app composition.
 final class ForegroundHostedSourcesApi implements SourcesApi {
@@ -413,6 +459,26 @@ final class ForegroundHostedSourcesApi implements SourcesApi {
     cursor: cursor,
     pageSize: pageSize,
   );
+}
+
+/// Library refresh forwarding wrapper owned exclusively by app composition.
+final class ForegroundHostedLibraryRefreshApi implements LibraryRefreshApi {
+  const ForegroundHostedLibraryRefreshApi(this._coordinator, this._delegate);
+
+  final ForegroundExecutionCoordinator _coordinator;
+  final LibraryRefreshApi _delegate;
+
+  @override
+  Future<OperationHandle> startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  }) => _coordinator.admit(
+    () => _delegate.startGameRefresh(gameIds: gameIds, mode: mode),
+  );
+
+  @override
+  Future<OperationHandle> refreshLibrary() =>
+      _coordinator.admit(_delegate.refreshLibrary);
 }
 
 /// Jobs forwarding wrapper owned exclusively by app composition.

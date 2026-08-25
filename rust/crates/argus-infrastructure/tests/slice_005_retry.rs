@@ -117,8 +117,8 @@ fn migration_0006_upgrades_a_slice_004_database_with_representative_history() {
     drop(connection);
 
     let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 9);
-    assert_eq!(fresh.migration_summary().applied_count, 4);
+    assert_eq!(fresh.migration_summary().current_version, 11);
+    assert_eq!(fresh.migration_summary().applied_count, 6);
 
     fresh
         .execute(&context(), move |mut scope| {
@@ -149,7 +149,10 @@ fn migration_0006_upgrades_a_slice_004_database_with_representative_history() {
         .expect("known job");
     assert!(!detail.job().controls().can_cancel());
     assert!(!detail.job().controls().can_retry());
-    let argus_application::OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let argus_application::OperationDetail::LibraryScan(operation) = detail.operation_detail()
+    else {
+        panic!("expected library scan operation detail");
+    };
     assert_eq!(operation.retry_source_job_run_id(), None);
     assert_eq!(operation.retry_successor_job_run_id(), None);
     assert_eq!(operation.progress().entries_observed(), None);
@@ -267,7 +270,10 @@ fn retry_link_and_progress_facts_round_trip_with_integrity() {
         "a terminal failed retry without successor and with an eligible root is retryable"
     );
     let argus_application::OperationDetail::LibraryScan(operation) =
-        retry_detail.operation_detail();
+        retry_detail.operation_detail()
+    else {
+        panic!("expected library scan operation detail");
+    };
     assert_eq!(operation.retry_source_job_run_id(), Some(source_job));
     assert_eq!(operation.retry_successor_job_run_id(), None);
     assert_eq!(operation.progress().entries_observed(), Some(12));

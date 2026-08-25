@@ -3,12 +3,13 @@
 use std::sync::Arc;
 
 use crate::jobs::{
-    AdmittedLibraryScanJob, AdmittedScan, JobRunRepository, LibraryScanAdmissionContextRepository,
-    LibraryScanAdmissionExclusion, LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity,
-    LibraryScanAllRequestLookup, LibraryScanExecutionPlan, LibraryScanInvocationKind,
-    LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
-    OPERATION_TYPE_LIBRARY_SCAN, OperationHandle, ScanRunRepository, SourceEntryRepository,
-    StartLibraryScanAllResult,
+    AdmittedLibraryScanJob, AdmittedScan, JobRunRepository, LibraryRefreshAdmissionResult,
+    LibraryRefreshTrigger, LibraryScanAdmissionContextRepository, LibraryScanAdmissionExclusion,
+    LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
+    LibraryScanExecutionPlan, LibraryScanInvocationKind, LibraryScanTargetExclusionReason,
+    LibraryScanTargetKind, LibraryScanTargetRepository, OPERATION_TYPE_LIBRARY_REFRESH,
+    OPERATION_TYPE_LIBRARY_SCAN, OperationHandle, RefreshMode, ScanRunRepository,
+    SourceEntryRepository, StartLibraryScanAllResult,
 };
 use crate::{
     ApplicationError, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder,
@@ -704,6 +705,28 @@ pub struct StartLibraryScanAllCommand {
     request_identity: LibraryScanAllRequestIdentity,
 }
 
+/// One public composed Library refresh admission request.
+///
+/// The normal Library action is always `EligibleOnly`. The mode remains in
+/// the application command so the bridge contract cannot accidentally grow a
+/// public Scan-All request identity or a per-root refresh parameter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefreshLibraryCommand {
+    mode: RefreshMode,
+}
+
+impl RefreshLibraryCommand {
+    /// Creates a bounded Library refresh request.
+    pub const fn new(mode: RefreshMode) -> Self {
+        Self { mode }
+    }
+
+    /// Returns the requested freshness mode.
+    pub const fn mode(self) -> RefreshMode {
+        self.mode
+    }
+}
+
 impl StartLibraryScanAllCommand {
     /// Creates a Scan All request carrying the durable client request identity.
     pub fn new(request_identity: LibraryScanAllRequestIdentity) -> Self {
@@ -1173,6 +1196,23 @@ where
     where
         R: EventRecorder + Clone + Send + Sync + 'static,
     {
+        self.handle_with_operation_type(command, context, recorder, OPERATION_TYPE_LIBRARY_SCAN)
+    }
+
+    /// Admits the same focused scan plan under a composed parent operation.
+    ///
+    /// The scan planner and execution handler remain shared with the ordinary
+    /// LibraryScan path; only the durable parent operation identity changes.
+    pub fn handle_with_operation_type<R>(
+        &self,
+        command: StartLibraryScanCommand,
+        context: OperationContext,
+        recorder: R,
+        operation_type: &'static str,
+    ) -> Result<LibraryScanAdmissionResult, ApplicationError>
+    where
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
         let root_id = command.root_id();
         let configuration = self
             .queries
@@ -1213,7 +1253,14 @@ where
                 }
                 let job_run_id = scope
                     .job_runs()
-                    .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
+                    .insert(NewJobRun::new(operation_type, created_at_ms))?;
+                if operation_type == OPERATION_TYPE_LIBRARY_REFRESH {
+                    scope.job_runs().insert_library_refresh_intent(
+                        job_run_id,
+                        LibraryRefreshTrigger::AddedRoot(root_id),
+                        RefreshMode::EligibleOnly,
+                    )?;
+                }
                 scope.library_scan_admission_context().insert(
                     NewLibraryScanAdmissionContext::new(
                         job_run_id,
@@ -1298,7 +1345,7 @@ where
                     discovery_policy_revision,
                     created_at_ms,
                 );
-                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                let handle = OperationHandle::new(job_run_id, operation_type);
                 let admitted = AdmittedScan::new(job_run_id, scan_run_id, plan);
                 Ok(LibraryScanAdmissionResult::admitted(handle, admitted))
             }
@@ -1341,8 +1388,139 @@ where
         L: LibraryScanAllRequestLookup,
         R: EventRecorder + Clone + Send + Sync + 'static,
     {
+        self.handle_with_operation_type(
+            command,
+            context,
+            lookup,
+            recorder,
+            OPERATION_TYPE_LIBRARY_SCAN,
+        )
+    }
+
+    /// Admits the same bounded multi-root plan under a composed parent
+    /// operation while retaining the ordinary Scan All admission authority.
+    pub fn handle_with_operation_type<L, R>(
+        &self,
+        command: StartLibraryScanAllCommand,
+        context: OperationContext,
+        lookup: &L,
+        recorder: R,
+        operation_type: &'static str,
+    ) -> Result<LibraryScanAllAdmissionResult, ApplicationError>
+    where
+        L: LibraryScanAllRequestLookup,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        self.handle_with_operation_type_and_trigger(
+            command,
+            context,
+            lookup,
+            recorder,
+            operation_type,
+            None,
+        )
+    }
+
+    /// Admits a multi-root refresh while retaining the user-visible trigger
+    /// in the same transaction as the generic JobRun and scan targets.
+    pub fn handle_with_operation_type_and_trigger<L, R>(
+        &self,
+        command: StartLibraryScanAllCommand,
+        context: OperationContext,
+        lookup: &L,
+        recorder: R,
+        operation_type: &'static str,
+        refresh_trigger: Option<LibraryRefreshTrigger>,
+    ) -> Result<LibraryScanAllAdmissionResult, ApplicationError>
+    where
+        L: LibraryScanAllRequestLookup,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        self.handle_multi_root(
+            Some(command.request_identity().clone()),
+            LibraryScanInvocationKind::InitialScanAll,
+            context,
+            Some(lookup),
+            recorder,
+            operation_type,
+            refresh_trigger,
+        )
+    }
+
+    /// Admits one composed refresh without a public Scan-All request
+    /// identity. The same root admission/planning transaction is reused, but
+    /// the durable context records the refresh invocation kind instead of a
+    /// standalone Scan-All intent.
+    pub fn handle_library_refresh<R>(
+        &self,
+        command: RefreshLibraryCommand,
+        context: OperationContext,
+        recorder: R,
+        refresh_trigger: LibraryRefreshTrigger,
+    ) -> Result<LibraryRefreshAdmissionResult, ApplicationError>
+    where
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        if command.mode() != RefreshMode::EligibleOnly {
+            return Err(application_error(
+                context.trace_id(),
+                ErrorCode::ValidationInvalidArgument,
+            ));
+        }
+        let result = self.handle_multi_root(
+            None,
+            LibraryScanInvocationKind::InitialLibraryRefresh,
+            context,
+            None::<&NoLibraryScanAllRequestLookup>,
+            recorder,
+            OPERATION_TYPE_LIBRARY_REFRESH,
+            Some(refresh_trigger),
+        )?;
+        match result.outcome() {
+            StartLibraryScanAllResult::Admitted { exclusions, .. } => {
+                let admitted = result
+                    .admitted_job()
+                    .cloned()
+                    .expect("fresh refresh admission has execution plans");
+                let handle = result
+                    .outcome()
+                    .operation_handle()
+                    .cloned()
+                    .expect("admitted refresh has an operation handle");
+                Ok(LibraryRefreshAdmissionResult::admitted(
+                    handle,
+                    admitted,
+                    exclusions.len(),
+                ))
+            }
+            StartLibraryScanAllResult::NothingEligible { exclusions } => Ok(
+                LibraryRefreshAdmissionResult::not_admitted(exclusions.clone()),
+            ),
+        }
+    }
+
+    // The arguments remain separate because each is an independent admission
+    // boundary: public request identity, invocation kind, operation type,
+    // trigger, lookup authority, and event recorder are not interchangeable.
+    #[allow(clippy::too_many_arguments)]
+    fn handle_multi_root<L, R>(
+        &self,
+        request_identity: Option<LibraryScanAllRequestIdentity>,
+        invocation_kind: LibraryScanInvocationKind,
+        context: OperationContext,
+        lookup: Option<&L>,
+        recorder: R,
+        operation_type: &'static str,
+        refresh_trigger: Option<LibraryRefreshTrigger>,
+    ) -> Result<LibraryScanAllAdmissionResult, ApplicationError>
+    where
+        L: LibraryScanAllRequestLookup,
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
         let trace_id = context.trace_id();
-        if let Some(existing) = lookup.find_existing(&context, command.request_identity())? {
+        if let (Some(lookup), Some(request_identity)) = (lookup, request_identity.as_ref())
+            && let Some(existing) = lookup.find_existing(&context, request_identity)?
+        {
             return Ok(LibraryScanAllAdmissionResult::not_admitted(existing));
         }
 
@@ -1440,15 +1618,28 @@ where
 
                 let job_run_id = scope
                     .job_runs()
-                    .insert(NewJobRun::new(OPERATION_TYPE_LIBRARY_SCAN, created_at_ms))?;
-                scope.library_scan_admission_context().insert(
-                    NewLibraryScanAdmissionContext::with_scan_all_request_identity(
+                    .insert(NewJobRun::new(operation_type, created_at_ms))?;
+                if operation_type == OPERATION_TYPE_LIBRARY_REFRESH {
+                    scope.job_runs().insert_library_refresh_intent(
                         job_run_id,
-                        LibraryScanInvocationKind::InitialScanAll,
-                        None,
-                        command.request_identity().clone(),
-                    ),
-                )?;
+                        refresh_trigger.unwrap_or(LibraryRefreshTrigger::Manual),
+                        RefreshMode::EligibleOnly,
+                    )?;
+                }
+                let admission_context = match request_identity {
+                    Some(request_identity) => {
+                        NewLibraryScanAdmissionContext::with_scan_all_request_identity(
+                            job_run_id,
+                            invocation_kind,
+                            None,
+                            request_identity,
+                        )
+                    }
+                    None => NewLibraryScanAdmissionContext::new(job_run_id, invocation_kind, None),
+                };
+                scope
+                    .library_scan_admission_context()
+                    .insert(admission_context)?;
 
                 let mut admitted_plans = Vec::with_capacity(eligible_count);
                 let mut admitted_root_ids = Vec::with_capacity(eligible_count);
@@ -1549,7 +1740,7 @@ where
                 admitted_roots,
                 exclusions,
             } => {
-                let handle = OperationHandle::new(job_run_id, OPERATION_TYPE_LIBRARY_SCAN);
+                let handle = OperationHandle::new(job_run_id, operation_type);
                 let admitted = AdmittedLibraryScanJob::new(job_run_id, admitted_plans);
                 Ok(LibraryScanAllAdmissionResult::admitted(
                     handle,
@@ -1559,6 +1750,20 @@ where
                 ))
             }
         }
+    }
+}
+
+/// Empty lookup used to share the multi-root admission implementation without
+/// fabricating a Scan-All request identity for composed refreshes.
+struct NoLibraryScanAllRequestLookup;
+
+impl LibraryScanAllRequestLookup for NoLibraryScanAllRequestLookup {
+    fn find_existing(
+        &self,
+        _context: &OperationContext,
+        _request_identity: &LibraryScanAllRequestIdentity,
+    ) -> Result<Option<StartLibraryScanAllResult>, ApplicationError> {
+        Ok(None)
     }
 }
 
@@ -1816,6 +2021,21 @@ where
     {
         StartLibraryScanHandler::new(self.queries.clone(), self.unit_of_work.clone())
             .handle(command, context, recorder)
+    }
+
+    /// Admits one composed Library refresh using the shared multi-root plan.
+    pub fn start_library_refresh<R>(
+        &self,
+        command: RefreshLibraryCommand,
+        context: OperationContext,
+        recorder: R,
+        trigger: LibraryRefreshTrigger,
+    ) -> Result<LibraryRefreshAdmissionResult, ApplicationError>
+    where
+        R: EventRecorder + Clone + Send + Sync + 'static,
+    {
+        StartLibraryScanAllHandler::new(self.queries.clone(), self.unit_of_work.clone())
+            .handle_library_refresh(command, context, recorder, trigger)
     }
 
     /// Admit one durable multi-root Scan All through the supplied request

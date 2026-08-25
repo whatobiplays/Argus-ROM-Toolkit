@@ -73,6 +73,8 @@ check_apk() {
   entries="$(unzip -Z1 "${apk_path}")"
   printf '%s\n' "${entries}" | grep -qx 'lib/arm64-v8a/libargus_bridge.so' ||
     fail "APK is missing lib/arm64-v8a/libargus_bridge.so"
+  printf '%s\n' "${entries}" | grep -qx 'lib/arm64-v8a/libandroid_native_keyring_store.so' ||
+    fail "APK is missing lib/arm64-v8a/libandroid_native_keyring_store.so"
   unsupported="$(printf '%s\n' "${entries}" | awk -F/ '
     NF >= 3 && $1 == "lib" && $2 != "arm64-v8a" {
       print $1 "/" $2 "/"

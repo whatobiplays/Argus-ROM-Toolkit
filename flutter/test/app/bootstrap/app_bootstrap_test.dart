@@ -408,7 +408,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.bySemanticsLabel('Settings'), findsOneWidget);
+    expect(find.bySemanticsLabel('Library'), findsOneWidget);
   });
 
   testWidgets('ArgusApp accepts a test router through the provider seam', (

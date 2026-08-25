@@ -175,9 +175,15 @@ fn failed_scan_retries_into_a_new_identity_with_a_linear_link() {
     let source_job_detail = host.get_job(scan_again).expect("source detail");
     let retry_job_detail = host.get_job(retry_job_run_id).expect("retry detail");
     let argus_application::OperationDetail::LibraryScan(source_operation) =
-        source_job_detail.operation_detail();
+        source_job_detail.operation_detail()
+    else {
+        panic!("expected library scan operation detail");
+    };
     let argus_application::OperationDetail::LibraryScan(retry_operation) =
-        retry_job_detail.operation_detail();
+        retry_job_detail.operation_detail()
+    else {
+        panic!("expected library scan operation detail");
+    };
     assert_eq!(
         source_operation.retry_successor_job_run_id(),
         Some(retry_job_run_id)
@@ -286,7 +292,10 @@ fn retry_registration_failure_preserves_identity_and_terminalizes_coherently() {
 
     let failed_detail = host.get_job(failed).expect("source operation");
     let argus_application::OperationDetail::LibraryScan(source_operation) =
-        failed_detail.operation_detail();
+        failed_detail.operation_detail()
+    else {
+        panic!("expected library scan operation detail");
+    };
     let successor = source_operation
         .retry_successor_job_run_id()
         .expect("successor identity preserved");

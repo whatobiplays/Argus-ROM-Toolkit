@@ -18,6 +18,7 @@ final class ForegroundExecutionProjection {
     this.totalUnits,
     this.phase,
     this.statusKey,
+    this.operationLabel,
     this.cancellableJobRunId,
   });
 
@@ -26,6 +27,7 @@ final class ForegroundExecutionProjection {
   final int? totalUnits;
   final String? phase;
   final String? statusKey;
+  final String? operationLabel;
   final JobRunId? cancellableJobRunId;
 }
 

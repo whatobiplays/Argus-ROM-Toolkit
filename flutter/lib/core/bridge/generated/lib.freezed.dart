@@ -12,6 +12,448 @@ part of 'lib.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
+mixin _$AddLibraryRootAndRefreshResultDto {
+
+ Object get field0;
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLibraryRootAndRefreshResultDto&&const DeepCollectionEquality().equals(other.field0, field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(field0));
+
+@override
+String toString() {
+  return 'AddLibraryRootAndRefreshResultDto(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+class $AddLibraryRootAndRefreshResultDtoCopyWith<$Res>  {
+$AddLibraryRootAndRefreshResultDtoCopyWith(AddLibraryRootAndRefreshResultDto _, $Res Function(AddLibraryRootAndRefreshResultDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [AddLibraryRootAndRefreshResultDto].
+extension AddLibraryRootAndRefreshResultDtoPatterns on AddLibraryRootAndRefreshResultDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted value)?  addedAndRefreshAdmitted,TResult Function( AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted value)?  addedButRefreshNotAdmitted,TResult Function( AddLibraryRootAndRefreshResultDto_AlreadyConfigured value)?  alreadyConfigured,TResult Function( AddLibraryRootAndRefreshResultDto_OverlapsExisting value)?  overlapsExisting,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted() when addedAndRefreshAdmitted != null:
+return addedAndRefreshAdmitted(_that);case AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted() when addedButRefreshNotAdmitted != null:
+return addedButRefreshNotAdmitted(_that);case AddLibraryRootAndRefreshResultDto_AlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that);case AddLibraryRootAndRefreshResultDto_OverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted value)  addedAndRefreshAdmitted,required TResult Function( AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted value)  addedButRefreshNotAdmitted,required TResult Function( AddLibraryRootAndRefreshResultDto_AlreadyConfigured value)  alreadyConfigured,required TResult Function( AddLibraryRootAndRefreshResultDto_OverlapsExisting value)  overlapsExisting,}){
+final _that = this;
+switch (_that) {
+case AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted():
+return addedAndRefreshAdmitted(_that);case AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted():
+return addedButRefreshNotAdmitted(_that);case AddLibraryRootAndRefreshResultDto_AlreadyConfigured():
+return alreadyConfigured(_that);case AddLibraryRootAndRefreshResultDto_OverlapsExisting():
+return overlapsExisting(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted value)?  addedAndRefreshAdmitted,TResult? Function( AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted value)?  addedButRefreshNotAdmitted,TResult? Function( AddLibraryRootAndRefreshResultDto_AlreadyConfigured value)?  alreadyConfigured,TResult? Function( AddLibraryRootAndRefreshResultDto_OverlapsExisting value)?  overlapsExisting,}){
+final _that = this;
+switch (_that) {
+case AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted() when addedAndRefreshAdmitted != null:
+return addedAndRefreshAdmitted(_that);case AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted() when addedButRefreshNotAdmitted != null:
+return addedButRefreshNotAdmitted(_that);case AddLibraryRootAndRefreshResultDto_AlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that);case AddLibraryRootAndRefreshResultDto_OverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryRootDto field0,  OperationHandleDto field1)?  addedAndRefreshAdmitted,TResult Function( LibraryRootDto field0,  ApplicationErrorDto field1)?  addedButRefreshNotAdmitted,TResult Function( String field0)?  alreadyConfigured,TResult Function( String field0,  RootRelationshipDto field1)?  overlapsExisting,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted() when addedAndRefreshAdmitted != null:
+return addedAndRefreshAdmitted(_that.field0,_that.field1);case AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted() when addedButRefreshNotAdmitted != null:
+return addedButRefreshNotAdmitted(_that.field0,_that.field1);case AddLibraryRootAndRefreshResultDto_AlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that.field0);case AddLibraryRootAndRefreshResultDto_OverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that.field0,_that.field1);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryRootDto field0,  OperationHandleDto field1)  addedAndRefreshAdmitted,required TResult Function( LibraryRootDto field0,  ApplicationErrorDto field1)  addedButRefreshNotAdmitted,required TResult Function( String field0)  alreadyConfigured,required TResult Function( String field0,  RootRelationshipDto field1)  overlapsExisting,}) {final _that = this;
+switch (_that) {
+case AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted():
+return addedAndRefreshAdmitted(_that.field0,_that.field1);case AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted():
+return addedButRefreshNotAdmitted(_that.field0,_that.field1);case AddLibraryRootAndRefreshResultDto_AlreadyConfigured():
+return alreadyConfigured(_that.field0);case AddLibraryRootAndRefreshResultDto_OverlapsExisting():
+return overlapsExisting(_that.field0,_that.field1);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryRootDto field0,  OperationHandleDto field1)?  addedAndRefreshAdmitted,TResult? Function( LibraryRootDto field0,  ApplicationErrorDto field1)?  addedButRefreshNotAdmitted,TResult? Function( String field0)?  alreadyConfigured,TResult? Function( String field0,  RootRelationshipDto field1)?  overlapsExisting,}) {final _that = this;
+switch (_that) {
+case AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted() when addedAndRefreshAdmitted != null:
+return addedAndRefreshAdmitted(_that.field0,_that.field1);case AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted() when addedButRefreshNotAdmitted != null:
+return addedButRefreshNotAdmitted(_that.field0,_that.field1);case AddLibraryRootAndRefreshResultDto_AlreadyConfigured() when alreadyConfigured != null:
+return alreadyConfigured(_that.field0);case AddLibraryRootAndRefreshResultDto_OverlapsExisting() when overlapsExisting != null:
+return overlapsExisting(_that.field0,_that.field1);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted extends AddLibraryRootAndRefreshResultDto {
+  const AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted(this.field0, this.field1): super._();
+
+
+@override final  LibraryRootDto field0;
+ final  OperationHandleDto field1;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWith<AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted> get copyWith => _$AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWithImpl<AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'AddLibraryRootAndRefreshResultDto.addedAndRefreshAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWith<$Res> implements $AddLibraryRootAndRefreshResultDtoCopyWith<$Res> {
+  factory $AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWith(AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted value, $Res Function(AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted) _then) = _$AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootDto field0, OperationHandleDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWithImpl<$Res>
+    implements $AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWith<$Res> {
+  _$AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmittedCopyWithImpl(this._self, this._then);
+
+  final AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted _self;
+  final $Res Function(AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted) _then;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryRootDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as OperationHandleDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted extends AddLibraryRootAndRefreshResultDto {
+  const AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted(this.field0, this.field1): super._();
+
+
+@override final  LibraryRootDto field0;
+ final  ApplicationErrorDto field1;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWith<AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted> get copyWith => _$AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWithImpl<AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'AddLibraryRootAndRefreshResultDto.addedButRefreshNotAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWith<$Res> implements $AddLibraryRootAndRefreshResultDtoCopyWith<$Res> {
+  factory $AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWith(AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted value, $Res Function(AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted) _then) = _$AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRootDto field0, ApplicationErrorDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWithImpl<$Res>
+    implements $AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWith<$Res> {
+  _$AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmittedCopyWithImpl(this._self, this._then);
+
+  final AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted _self;
+  final $Res Function(AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted) _then;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryRootDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as ApplicationErrorDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class AddLibraryRootAndRefreshResultDto_AlreadyConfigured extends AddLibraryRootAndRefreshResultDto {
+  const AddLibraryRootAndRefreshResultDto_AlreadyConfigured(this.field0): super._();
+
+
+@override final  String field0;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWith<AddLibraryRootAndRefreshResultDto_AlreadyConfigured> get copyWith => _$AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWithImpl<AddLibraryRootAndRefreshResultDto_AlreadyConfigured>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLibraryRootAndRefreshResultDto_AlreadyConfigured&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'AddLibraryRootAndRefreshResultDto.alreadyConfigured(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWith<$Res> implements $AddLibraryRootAndRefreshResultDtoCopyWith<$Res> {
+  factory $AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWith(AddLibraryRootAndRefreshResultDto_AlreadyConfigured value, $Res Function(AddLibraryRootAndRefreshResultDto_AlreadyConfigured) _then) = _$AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWithImpl;
+@useResult
+$Res call({
+ String field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWithImpl<$Res>
+    implements $AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWith<$Res> {
+  _$AddLibraryRootAndRefreshResultDto_AlreadyConfiguredCopyWithImpl(this._self, this._then);
+
+  final AddLibraryRootAndRefreshResultDto_AlreadyConfigured _self;
+  final $Res Function(AddLibraryRootAndRefreshResultDto_AlreadyConfigured) _then;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(AddLibraryRootAndRefreshResultDto_AlreadyConfigured(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class AddLibraryRootAndRefreshResultDto_OverlapsExisting extends AddLibraryRootAndRefreshResultDto {
+  const AddLibraryRootAndRefreshResultDto_OverlapsExisting(this.field0, this.field1): super._();
+
+
+@override final  String field0;
+ final  RootRelationshipDto field1;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWith<AddLibraryRootAndRefreshResultDto_OverlapsExisting> get copyWith => _$AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWithImpl<AddLibraryRootAndRefreshResultDto_OverlapsExisting>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AddLibraryRootAndRefreshResultDto_OverlapsExisting&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'AddLibraryRootAndRefreshResultDto.overlapsExisting(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWith<$Res> implements $AddLibraryRootAndRefreshResultDtoCopyWith<$Res> {
+  factory $AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWith(AddLibraryRootAndRefreshResultDto_OverlapsExisting value, $Res Function(AddLibraryRootAndRefreshResultDto_OverlapsExisting) _then) = _$AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWithImpl;
+@useResult
+$Res call({
+ String field0, RootRelationshipDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWithImpl<$Res>
+    implements $AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWith<$Res> {
+  _$AddLibraryRootAndRefreshResultDto_OverlapsExistingCopyWithImpl(this._self, this._then);
+
+  final AddLibraryRootAndRefreshResultDto_OverlapsExisting _self;
+  final $Res Function(AddLibraryRootAndRefreshResultDto_OverlapsExisting) _then;
+
+/// Create a copy of AddLibraryRootAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(AddLibraryRootAndRefreshResultDto_OverlapsExisting(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as String,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as RootRelationshipDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$AddLocalLibraryRootAndScanResultDto {
 
  Object get field0;
@@ -822,6 +1264,333 @@ class _$AddLocalLibraryRootResultDto_OverlapsExistingCopyWithImpl<$Res>
 null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
 as String,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
 as RootRelationshipDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$CompleteLibraryOnboardingAndRefreshResultDto {
+
+ LibraryOnboardingStateDto get field0; Object get field1;
+/// Create a copy of CompleteLibraryOnboardingAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$CompleteLibraryOnboardingAndRefreshResultDtoCopyWith<CompleteLibraryOnboardingAndRefreshResultDto> get copyWith => _$CompleteLibraryOnboardingAndRefreshResultDtoCopyWithImpl<CompleteLibraryOnboardingAndRefreshResultDto>(this as CompleteLibraryOnboardingAndRefreshResultDto, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CompleteLibraryOnboardingAndRefreshResultDto&&(identical(other.field0, field0) || other.field0 == field0)&&const DeepCollectionEquality().equals(other.field1, field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,const DeepCollectionEquality().hash(field1));
+
+@override
+String toString() {
+  return 'CompleteLibraryOnboardingAndRefreshResultDto(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $CompleteLibraryOnboardingAndRefreshResultDtoCopyWith<$Res>  {
+  factory $CompleteLibraryOnboardingAndRefreshResultDtoCopyWith(CompleteLibraryOnboardingAndRefreshResultDto value, $Res Function(CompleteLibraryOnboardingAndRefreshResultDto) _then) = _$CompleteLibraryOnboardingAndRefreshResultDtoCopyWithImpl;
+@useResult
+$Res call({
+ LibraryOnboardingStateDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$CompleteLibraryOnboardingAndRefreshResultDtoCopyWithImpl<$Res>
+    implements $CompleteLibraryOnboardingAndRefreshResultDtoCopyWith<$Res> {
+  _$CompleteLibraryOnboardingAndRefreshResultDtoCopyWithImpl(this._self, this._then);
+
+  final CompleteLibraryOnboardingAndRefreshResultDto _self;
+  final $Res Function(CompleteLibraryOnboardingAndRefreshResultDto) _then;
+
+/// Create a copy of CompleteLibraryOnboardingAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? field0 = null,}) {
+  return _then(_self.copyWith(
+field0: null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryOnboardingStateDto,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [CompleteLibraryOnboardingAndRefreshResultDto].
+extension CompleteLibraryOnboardingAndRefreshResultDtoPatterns on CompleteLibraryOnboardingAndRefreshResultDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted value)?  onboardingCompletedAndRefreshAdmitted,TResult Function( CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted value)?  onboardingCompletedButRefreshNotAdmitted,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted() when onboardingCompletedAndRefreshAdmitted != null:
+return onboardingCompletedAndRefreshAdmitted(_that);case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted() when onboardingCompletedButRefreshNotAdmitted != null:
+return onboardingCompletedButRefreshNotAdmitted(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted value)  onboardingCompletedAndRefreshAdmitted,required TResult Function( CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted value)  onboardingCompletedButRefreshNotAdmitted,}){
+final _that = this;
+switch (_that) {
+case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted():
+return onboardingCompletedAndRefreshAdmitted(_that);case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted():
+return onboardingCompletedButRefreshNotAdmitted(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted value)?  onboardingCompletedAndRefreshAdmitted,TResult? Function( CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted value)?  onboardingCompletedButRefreshNotAdmitted,}){
+final _that = this;
+switch (_that) {
+case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted() when onboardingCompletedAndRefreshAdmitted != null:
+return onboardingCompletedAndRefreshAdmitted(_that);case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted() when onboardingCompletedButRefreshNotAdmitted != null:
+return onboardingCompletedButRefreshNotAdmitted(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryOnboardingStateDto field0,  OperationHandleDto field1)?  onboardingCompletedAndRefreshAdmitted,TResult Function( LibraryOnboardingStateDto field0,  ApplicationErrorDto field1)?  onboardingCompletedButRefreshNotAdmitted,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted() when onboardingCompletedAndRefreshAdmitted != null:
+return onboardingCompletedAndRefreshAdmitted(_that.field0,_that.field1);case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted() when onboardingCompletedButRefreshNotAdmitted != null:
+return onboardingCompletedButRefreshNotAdmitted(_that.field0,_that.field1);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryOnboardingStateDto field0,  OperationHandleDto field1)  onboardingCompletedAndRefreshAdmitted,required TResult Function( LibraryOnboardingStateDto field0,  ApplicationErrorDto field1)  onboardingCompletedButRefreshNotAdmitted,}) {final _that = this;
+switch (_that) {
+case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted():
+return onboardingCompletedAndRefreshAdmitted(_that.field0,_that.field1);case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted():
+return onboardingCompletedButRefreshNotAdmitted(_that.field0,_that.field1);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryOnboardingStateDto field0,  OperationHandleDto field1)?  onboardingCompletedAndRefreshAdmitted,TResult? Function( LibraryOnboardingStateDto field0,  ApplicationErrorDto field1)?  onboardingCompletedButRefreshNotAdmitted,}) {final _that = this;
+switch (_that) {
+case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted() when onboardingCompletedAndRefreshAdmitted != null:
+return onboardingCompletedAndRefreshAdmitted(_that.field0,_that.field1);case CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted() when onboardingCompletedButRefreshNotAdmitted != null:
+return onboardingCompletedButRefreshNotAdmitted(_that.field0,_that.field1);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted extends CompleteLibraryOnboardingAndRefreshResultDto {
+  const CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted(this.field0, this.field1): super._();
+
+
+@override final  LibraryOnboardingStateDto field0;
+@override final  OperationHandleDto field1;
+
+/// Create a copy of CompleteLibraryOnboardingAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWith<CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted> get copyWith => _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWithImpl<CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'CompleteLibraryOnboardingAndRefreshResultDto.onboardingCompletedAndRefreshAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWith<$Res> implements $CompleteLibraryOnboardingAndRefreshResultDtoCopyWith<$Res> {
+  factory $CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWith(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted value, $Res Function(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted) _then) = _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ LibraryOnboardingStateDto field0, OperationHandleDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWithImpl<$Res>
+    implements $CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWith<$Res> {
+  _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmittedCopyWithImpl(this._self, this._then);
+
+  final CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted _self;
+  final $Res Function(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted) _then;
+
+/// Create a copy of CompleteLibraryOnboardingAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryOnboardingStateDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as OperationHandleDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted extends CompleteLibraryOnboardingAndRefreshResultDto {
+  const CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted(this.field0, this.field1): super._();
+
+
+@override final  LibraryOnboardingStateDto field0;
+@override final  ApplicationErrorDto field1;
+
+/// Create a copy of CompleteLibraryOnboardingAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWith<CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted> get copyWith => _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWithImpl<CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'CompleteLibraryOnboardingAndRefreshResultDto.onboardingCompletedButRefreshNotAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWith<$Res> implements $CompleteLibraryOnboardingAndRefreshResultDtoCopyWith<$Res> {
+  factory $CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWith(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted value, $Res Function(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted) _then) = _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ LibraryOnboardingStateDto field0, ApplicationErrorDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWithImpl<$Res>
+    implements $CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWith<$Res> {
+  _$CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmittedCopyWithImpl(this._self, this._then);
+
+  final CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted _self;
+  final $Res Function(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted) _then;
+
+/// Create a copy of CompleteLibraryOnboardingAndRefreshResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryOnboardingStateDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as ApplicationErrorDto,
   ));
 }
 
@@ -2645,20 +3414,20 @@ as String,
 }
 
 /// @nodoc
-mixin _$OperationDetailDto {
+mixin _$MetadataProviderSettingsUpdateResultDto {
 
- LibraryScanJobDetailDto get field0;
-/// Create a copy of OperationDetailDto
+ MetadataProviderSettingsDto get field0;
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$OperationDetailDtoCopyWith<OperationDetailDto> get copyWith => _$OperationDetailDtoCopyWithImpl<OperationDetailDto>(this as OperationDetailDto, _$identity);
+$MetadataProviderSettingsUpdateResultDtoCopyWith<MetadataProviderSettingsUpdateResultDto> get copyWith => _$MetadataProviderSettingsUpdateResultDtoCopyWithImpl<MetadataProviderSettingsUpdateResultDto>(this as MetadataProviderSettingsUpdateResultDto, _$identity);
 
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is OperationDetailDto&&(identical(other.field0, field0) || other.field0 == field0));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataProviderSettingsUpdateResultDto&&(identical(other.field0, field0) || other.field0 == field0));
 }
 
 
@@ -2667,18 +3436,18 @@ int get hashCode => Object.hash(runtimeType,field0);
 
 @override
 String toString() {
-  return 'OperationDetailDto(field0: $field0)';
+  return 'MetadataProviderSettingsUpdateResultDto(field0: $field0)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $OperationDetailDtoCopyWith<$Res>  {
-  factory $OperationDetailDtoCopyWith(OperationDetailDto value, $Res Function(OperationDetailDto) _then) = _$OperationDetailDtoCopyWithImpl;
+abstract mixin class $MetadataProviderSettingsUpdateResultDtoCopyWith<$Res>  {
+  factory $MetadataProviderSettingsUpdateResultDtoCopyWith(MetadataProviderSettingsUpdateResultDto value, $Res Function(MetadataProviderSettingsUpdateResultDto) _then) = _$MetadataProviderSettingsUpdateResultDtoCopyWithImpl;
 @useResult
 $Res call({
- LibraryScanJobDetailDto field0
+ MetadataProviderSettingsDto field0
 });
 
 
@@ -2686,27 +3455,27 @@ $Res call({
 
 }
 /// @nodoc
-class _$OperationDetailDtoCopyWithImpl<$Res>
-    implements $OperationDetailDtoCopyWith<$Res> {
-  _$OperationDetailDtoCopyWithImpl(this._self, this._then);
+class _$MetadataProviderSettingsUpdateResultDtoCopyWithImpl<$Res>
+    implements $MetadataProviderSettingsUpdateResultDtoCopyWith<$Res> {
+  _$MetadataProviderSettingsUpdateResultDtoCopyWithImpl(this._self, this._then);
 
-  final OperationDetailDto _self;
-  final $Res Function(OperationDetailDto) _then;
+  final MetadataProviderSettingsUpdateResultDto _self;
+  final $Res Function(MetadataProviderSettingsUpdateResultDto) _then;
 
-/// Create a copy of OperationDetailDto
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
 /// with the given fields replaced by the non-null parameter values.
 @pragma('vm:prefer-inline') @override $Res call({Object? field0 = null,}) {
   return _then(_self.copyWith(
 field0: null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
-as LibraryScanJobDetailDto,
+as MetadataProviderSettingsDto,
   ));
 }
 
 }
 
 
-/// Adds pattern-matching-related methods to [OperationDetailDto].
-extension OperationDetailDtoPatterns on OperationDetailDto {
+/// Adds pattern-matching-related methods to [MetadataProviderSettingsUpdateResultDto].
+extension MetadataProviderSettingsUpdateResultDtoPatterns on MetadataProviderSettingsUpdateResultDto {
 /// A variant of `map` that fallback to returning `orElse`.
 ///
 /// It is equivalent to doing:
@@ -2719,11 +3488,13 @@ extension OperationDetailDtoPatterns on OperationDetailDto {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( OperationDetailDto_LibraryScan value)?  libraryScan,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork value)?  committedNoResolutionWork,TResult Function( MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted value)?  committedAndResolutionAdmitted,TResult Function( MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value)?  committedButResolutionNotAdmitted,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case OperationDetailDto_LibraryScan() when libraryScan != null:
-return libraryScan(_that);case _:
+case MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that);case MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that);case MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that);case _:
   return orElse();
 
 }
@@ -2741,11 +3512,13 @@ return libraryScan(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( OperationDetailDto_LibraryScan value)  libraryScan,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork value)  committedNoResolutionWork,required TResult Function( MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted value)  committedAndResolutionAdmitted,required TResult Function( MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value)  committedButResolutionNotAdmitted,}){
 final _that = this;
 switch (_that) {
-case OperationDetailDto_LibraryScan():
-return libraryScan(_that);}
+case MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork():
+return committedNoResolutionWork(_that);case MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted():
+return committedAndResolutionAdmitted(_that);case MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted():
+return committedButResolutionNotAdmitted(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2759,11 +3532,13 @@ return libraryScan(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( OperationDetailDto_LibraryScan value)?  libraryScan,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork value)?  committedNoResolutionWork,TResult? Function( MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted value)?  committedAndResolutionAdmitted,TResult? Function( MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value)?  committedButResolutionNotAdmitted,}){
 final _that = this;
 switch (_that) {
-case OperationDetailDto_LibraryScan() when libraryScan != null:
-return libraryScan(_that);case _:
+case MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that);case MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that);case MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that);case _:
   return null;
 
 }
@@ -2780,10 +3555,12 @@ return libraryScan(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryScanJobDetailDto field0)?  libraryScan,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( MetadataProviderSettingsDto field0)?  committedNoResolutionWork,TResult Function( MetadataProviderSettingsDto field0,  OperationHandleDto field1)?  committedAndResolutionAdmitted,TResult Function( MetadataProviderSettingsDto field0,  ApplicationErrorDto field1)?  committedButResolutionNotAdmitted,required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case OperationDetailDto_LibraryScan() when libraryScan != null:
-return libraryScan(_that.field0);case _:
+case MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that.field0);case MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that.field0,_that.field1);case MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that.field0,_that.field1);case _:
   return orElse();
 
 }
@@ -2801,10 +3578,12 @@ return libraryScan(_that.field0);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryScanJobDetailDto field0)  libraryScan,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( MetadataProviderSettingsDto field0)  committedNoResolutionWork,required TResult Function( MetadataProviderSettingsDto field0,  OperationHandleDto field1)  committedAndResolutionAdmitted,required TResult Function( MetadataProviderSettingsDto field0,  ApplicationErrorDto field1)  committedButResolutionNotAdmitted,}) {final _that = this;
 switch (_that) {
-case OperationDetailDto_LibraryScan():
-return libraryScan(_that.field0);}
+case MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork():
+return committedNoResolutionWork(_that.field0);case MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted():
+return committedAndResolutionAdmitted(_that.field0,_that.field1);case MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted():
+return committedButResolutionNotAdmitted(_that.field0,_that.field1);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2818,10 +3597,785 @@ return libraryScan(_that.field0);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryScanJobDetailDto field0)?  libraryScan,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( MetadataProviderSettingsDto field0)?  committedNoResolutionWork,TResult? Function( MetadataProviderSettingsDto field0,  OperationHandleDto field1)?  committedAndResolutionAdmitted,TResult? Function( MetadataProviderSettingsDto field0,  ApplicationErrorDto field1)?  committedButResolutionNotAdmitted,}) {final _that = this;
+switch (_that) {
+case MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that.field0);case MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that.field0,_that.field1);case MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that.field0,_that.field1);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork extends MetadataProviderSettingsUpdateResultDto {
+  const MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork(this.field0): super._();
+
+
+@override final  MetadataProviderSettingsDto field0;
+
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith<MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork> get copyWith => _$MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl<MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'MetadataProviderSettingsUpdateResultDto.committedNoResolutionWork(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith<$Res> implements $MetadataProviderSettingsUpdateResultDtoCopyWith<$Res> {
+  factory $MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith(MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork value, $Res Function(MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork) _then) = _$MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl;
+@override @useResult
+$Res call({
+ MetadataProviderSettingsDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl<$Res>
+    implements $MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith<$Res> {
+  _$MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl(this._self, this._then);
+
+  final MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork _self;
+  final $Res Function(MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork) _then;
+
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as MetadataProviderSettingsDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted extends MetadataProviderSettingsUpdateResultDto {
+  const MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted(this.field0, this.field1): super._();
+
+
+@override final  MetadataProviderSettingsDto field0;
+ final  OperationHandleDto field1;
+
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith<MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted> get copyWith => _$MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl<MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'MetadataProviderSettingsUpdateResultDto.committedAndResolutionAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith<$Res> implements $MetadataProviderSettingsUpdateResultDtoCopyWith<$Res> {
+  factory $MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith(MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted value, $Res Function(MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted) _then) = _$MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ MetadataProviderSettingsDto field0, OperationHandleDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl<$Res>
+    implements $MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith<$Res> {
+  _$MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl(this._self, this._then);
+
+  final MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted _self;
+  final $Res Function(MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted) _then;
+
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as MetadataProviderSettingsDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as OperationHandleDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted extends MetadataProviderSettingsUpdateResultDto {
+  const MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted(this.field0, this.field1): super._();
+
+
+@override final  MetadataProviderSettingsDto field0;
+ final  ApplicationErrorDto field1;
+
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith<MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted> get copyWith => _$MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl<MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'MetadataProviderSettingsUpdateResultDto.committedButResolutionNotAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith<$Res> implements $MetadataProviderSettingsUpdateResultDtoCopyWith<$Res> {
+  factory $MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith(MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value, $Res Function(MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted) _then) = _$MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ MetadataProviderSettingsDto field0, ApplicationErrorDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl<$Res>
+    implements $MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith<$Res> {
+  _$MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl(this._self, this._then);
+
+  final MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted _self;
+  final $Res Function(MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted) _then;
+
+/// Create a copy of MetadataProviderSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as MetadataProviderSettingsDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as ApplicationErrorDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$MetadataSettingsUpdateResultDto {
+
+ MetadataSettingsDto get field0;
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MetadataSettingsUpdateResultDtoCopyWith<MetadataSettingsUpdateResultDto> get copyWith => _$MetadataSettingsUpdateResultDtoCopyWithImpl<MetadataSettingsUpdateResultDto>(this as MetadataSettingsUpdateResultDto, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataSettingsUpdateResultDto&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'MetadataSettingsUpdateResultDto(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MetadataSettingsUpdateResultDtoCopyWith<$Res>  {
+  factory $MetadataSettingsUpdateResultDtoCopyWith(MetadataSettingsUpdateResultDto value, $Res Function(MetadataSettingsUpdateResultDto) _then) = _$MetadataSettingsUpdateResultDtoCopyWithImpl;
+@useResult
+$Res call({
+ MetadataSettingsDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$MetadataSettingsUpdateResultDtoCopyWithImpl<$Res>
+    implements $MetadataSettingsUpdateResultDtoCopyWith<$Res> {
+  _$MetadataSettingsUpdateResultDtoCopyWithImpl(this._self, this._then);
+
+  final MetadataSettingsUpdateResultDto _self;
+  final $Res Function(MetadataSettingsUpdateResultDto) _then;
+
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? field0 = null,}) {
+  return _then(_self.copyWith(
+field0: null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as MetadataSettingsDto,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [MetadataSettingsUpdateResultDto].
+extension MetadataSettingsUpdateResultDtoPatterns on MetadataSettingsUpdateResultDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MetadataSettingsUpdateResultDto_CommittedNoResolutionWork value)?  committedNoResolutionWork,TResult Function( MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted value)?  committedAndResolutionAdmitted,TResult Function( MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value)?  committedButResolutionNotAdmitted,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case MetadataSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that);case MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that);case MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MetadataSettingsUpdateResultDto_CommittedNoResolutionWork value)  committedNoResolutionWork,required TResult Function( MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted value)  committedAndResolutionAdmitted,required TResult Function( MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value)  committedButResolutionNotAdmitted,}){
+final _that = this;
+switch (_that) {
+case MetadataSettingsUpdateResultDto_CommittedNoResolutionWork():
+return committedNoResolutionWork(_that);case MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted():
+return committedAndResolutionAdmitted(_that);case MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted():
+return committedButResolutionNotAdmitted(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MetadataSettingsUpdateResultDto_CommittedNoResolutionWork value)?  committedNoResolutionWork,TResult? Function( MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted value)?  committedAndResolutionAdmitted,TResult? Function( MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value)?  committedButResolutionNotAdmitted,}){
+final _that = this;
+switch (_that) {
+case MetadataSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that);case MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that);case MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( MetadataSettingsDto field0)?  committedNoResolutionWork,TResult Function( MetadataSettingsDto field0,  OperationHandleDto field1)?  committedAndResolutionAdmitted,TResult Function( MetadataSettingsDto field0,  ApplicationErrorDto field1)?  committedButResolutionNotAdmitted,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case MetadataSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that.field0);case MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that.field0,_that.field1);case MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that.field0,_that.field1);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( MetadataSettingsDto field0)  committedNoResolutionWork,required TResult Function( MetadataSettingsDto field0,  OperationHandleDto field1)  committedAndResolutionAdmitted,required TResult Function( MetadataSettingsDto field0,  ApplicationErrorDto field1)  committedButResolutionNotAdmitted,}) {final _that = this;
+switch (_that) {
+case MetadataSettingsUpdateResultDto_CommittedNoResolutionWork():
+return committedNoResolutionWork(_that.field0);case MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted():
+return committedAndResolutionAdmitted(_that.field0,_that.field1);case MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted():
+return committedButResolutionNotAdmitted(_that.field0,_that.field1);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( MetadataSettingsDto field0)?  committedNoResolutionWork,TResult? Function( MetadataSettingsDto field0,  OperationHandleDto field1)?  committedAndResolutionAdmitted,TResult? Function( MetadataSettingsDto field0,  ApplicationErrorDto field1)?  committedButResolutionNotAdmitted,}) {final _that = this;
+switch (_that) {
+case MetadataSettingsUpdateResultDto_CommittedNoResolutionWork() when committedNoResolutionWork != null:
+return committedNoResolutionWork(_that.field0);case MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted() when committedAndResolutionAdmitted != null:
+return committedAndResolutionAdmitted(_that.field0,_that.field1);case MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted() when committedButResolutionNotAdmitted != null:
+return committedButResolutionNotAdmitted(_that.field0,_that.field1);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class MetadataSettingsUpdateResultDto_CommittedNoResolutionWork extends MetadataSettingsUpdateResultDto {
+  const MetadataSettingsUpdateResultDto_CommittedNoResolutionWork(this.field0): super._();
+
+
+@override final  MetadataSettingsDto field0;
+
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith<MetadataSettingsUpdateResultDto_CommittedNoResolutionWork> get copyWith => _$MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl<MetadataSettingsUpdateResultDto_CommittedNoResolutionWork>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataSettingsUpdateResultDto_CommittedNoResolutionWork&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'MetadataSettingsUpdateResultDto.committedNoResolutionWork(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith<$Res> implements $MetadataSettingsUpdateResultDtoCopyWith<$Res> {
+  factory $MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith(MetadataSettingsUpdateResultDto_CommittedNoResolutionWork value, $Res Function(MetadataSettingsUpdateResultDto_CommittedNoResolutionWork) _then) = _$MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl;
+@override @useResult
+$Res call({
+ MetadataSettingsDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl<$Res>
+    implements $MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWith<$Res> {
+  _$MetadataSettingsUpdateResultDto_CommittedNoResolutionWorkCopyWithImpl(this._self, this._then);
+
+  final MetadataSettingsUpdateResultDto_CommittedNoResolutionWork _self;
+  final $Res Function(MetadataSettingsUpdateResultDto_CommittedNoResolutionWork) _then;
+
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(MetadataSettingsUpdateResultDto_CommittedNoResolutionWork(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as MetadataSettingsDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted extends MetadataSettingsUpdateResultDto {
+  const MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted(this.field0, this.field1): super._();
+
+
+@override final  MetadataSettingsDto field0;
+ final  OperationHandleDto field1;
+
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith<MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted> get copyWith => _$MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl<MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'MetadataSettingsUpdateResultDto.committedAndResolutionAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith<$Res> implements $MetadataSettingsUpdateResultDtoCopyWith<$Res> {
+  factory $MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith(MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted value, $Res Function(MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted) _then) = _$MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ MetadataSettingsDto field0, OperationHandleDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl<$Res>
+    implements $MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWith<$Res> {
+  _$MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmittedCopyWithImpl(this._self, this._then);
+
+  final MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted _self;
+  final $Res Function(MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted) _then;
+
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as MetadataSettingsDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as OperationHandleDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted extends MetadataSettingsUpdateResultDto {
+  const MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted(this.field0, this.field1): super._();
+
+
+@override final  MetadataSettingsDto field0;
+ final  ApplicationErrorDto field1;
+
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith<MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted> get copyWith => _$MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl<MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted&&(identical(other.field0, field0) || other.field0 == field0)&&(identical(other.field1, field1) || other.field1 == field1));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0,field1);
+
+@override
+String toString() {
+  return 'MetadataSettingsUpdateResultDto.committedButResolutionNotAdmitted(field0: $field0, field1: $field1)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith<$Res> implements $MetadataSettingsUpdateResultDtoCopyWith<$Res> {
+  factory $MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith(MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted value, $Res Function(MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted) _then) = _$MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl;
+@override @useResult
+$Res call({
+ MetadataSettingsDto field0, ApplicationErrorDto field1
+});
+
+
+
+
+}
+/// @nodoc
+class _$MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl<$Res>
+    implements $MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWith<$Res> {
+  _$MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmittedCopyWithImpl(this._self, this._then);
+
+  final MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted _self;
+  final $Res Function(MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted) _then;
+
+/// Create a copy of MetadataSettingsUpdateResultDto
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,Object? field1 = null,}) {
+  return _then(MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as MetadataSettingsDto,null == field1 ? _self.field1 : field1 // ignore: cast_nullable_to_non_nullable
+as ApplicationErrorDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+mixin _$OperationDetailDto {
+
+ Object get field0;
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OperationDetailDto&&const DeepCollectionEquality().equals(other.field0, field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(field0));
+
+@override
+String toString() {
+  return 'OperationDetailDto(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+class $OperationDetailDtoCopyWith<$Res>  {
+$OperationDetailDtoCopyWith(OperationDetailDto _, $Res Function(OperationDetailDto) __);
+}
+
+
+/// Adds pattern-matching-related methods to [OperationDetailDto].
+extension OperationDetailDtoPatterns on OperationDetailDto {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( OperationDetailDto_LibraryScan value)?  libraryScan,TResult Function( OperationDetailDto_LibraryRefresh value)?  libraryRefresh,TResult Function( OperationDetailDto_GameRefresh value)?  gameRefresh,TResult Function( OperationDetailDto_LibraryResolutionRefresh value)?  libraryResolutionRefresh,required TResult orElse(),}){
+final _that = this;
 switch (_that) {
 case OperationDetailDto_LibraryScan() when libraryScan != null:
-return libraryScan(_that.field0);case _:
+return libraryScan(_that);case OperationDetailDto_LibraryRefresh() when libraryRefresh != null:
+return libraryRefresh(_that);case OperationDetailDto_GameRefresh() when gameRefresh != null:
+return gameRefresh(_that);case OperationDetailDto_LibraryResolutionRefresh() when libraryResolutionRefresh != null:
+return libraryResolutionRefresh(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( OperationDetailDto_LibraryScan value)  libraryScan,required TResult Function( OperationDetailDto_LibraryRefresh value)  libraryRefresh,required TResult Function( OperationDetailDto_GameRefresh value)  gameRefresh,required TResult Function( OperationDetailDto_LibraryResolutionRefresh value)  libraryResolutionRefresh,}){
+final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan():
+return libraryScan(_that);case OperationDetailDto_LibraryRefresh():
+return libraryRefresh(_that);case OperationDetailDto_GameRefresh():
+return gameRefresh(_that);case OperationDetailDto_LibraryResolutionRefresh():
+return libraryResolutionRefresh(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( OperationDetailDto_LibraryScan value)?  libraryScan,TResult? Function( OperationDetailDto_LibraryRefresh value)?  libraryRefresh,TResult? Function( OperationDetailDto_GameRefresh value)?  gameRefresh,TResult? Function( OperationDetailDto_LibraryResolutionRefresh value)?  libraryResolutionRefresh,}){
+final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan() when libraryScan != null:
+return libraryScan(_that);case OperationDetailDto_LibraryRefresh() when libraryRefresh != null:
+return libraryRefresh(_that);case OperationDetailDto_GameRefresh() when gameRefresh != null:
+return gameRefresh(_that);case OperationDetailDto_LibraryResolutionRefresh() when libraryResolutionRefresh != null:
+return libraryResolutionRefresh(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( LibraryScanJobDetailDto field0)?  libraryScan,TResult Function( LibraryRefreshJobDetailDto field0)?  libraryRefresh,TResult Function( GameRefreshJobDetailDto field0)?  gameRefresh,TResult Function( LibraryResolutionRefreshJobDetailDto field0)?  libraryResolutionRefresh,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan() when libraryScan != null:
+return libraryScan(_that.field0);case OperationDetailDto_LibraryRefresh() when libraryRefresh != null:
+return libraryRefresh(_that.field0);case OperationDetailDto_GameRefresh() when gameRefresh != null:
+return gameRefresh(_that.field0);case OperationDetailDto_LibraryResolutionRefresh() when libraryResolutionRefresh != null:
+return libraryResolutionRefresh(_that.field0);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( LibraryScanJobDetailDto field0)  libraryScan,required TResult Function( LibraryRefreshJobDetailDto field0)  libraryRefresh,required TResult Function( GameRefreshJobDetailDto field0)  gameRefresh,required TResult Function( LibraryResolutionRefreshJobDetailDto field0)  libraryResolutionRefresh,}) {final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan():
+return libraryScan(_that.field0);case OperationDetailDto_LibraryRefresh():
+return libraryRefresh(_that.field0);case OperationDetailDto_GameRefresh():
+return gameRefresh(_that.field0);case OperationDetailDto_LibraryResolutionRefresh():
+return libraryResolutionRefresh(_that.field0);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( LibraryScanJobDetailDto field0)?  libraryScan,TResult? Function( LibraryRefreshJobDetailDto field0)?  libraryRefresh,TResult? Function( GameRefreshJobDetailDto field0)?  gameRefresh,TResult? Function( LibraryResolutionRefreshJobDetailDto field0)?  libraryResolutionRefresh,}) {final _that = this;
+switch (_that) {
+case OperationDetailDto_LibraryScan() when libraryScan != null:
+return libraryScan(_that.field0);case OperationDetailDto_LibraryRefresh() when libraryRefresh != null:
+return libraryRefresh(_that.field0);case OperationDetailDto_GameRefresh() when gameRefresh != null:
+return gameRefresh(_that.field0);case OperationDetailDto_LibraryResolutionRefresh() when libraryResolutionRefresh != null:
+return libraryResolutionRefresh(_that.field0);case _:
   return null;
 
 }
@@ -2840,7 +4394,7 @@ class OperationDetailDto_LibraryScan extends OperationDetailDto {
 
 /// Create a copy of OperationDetailDto
 /// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
+@JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
 $OperationDetailDto_LibraryScanCopyWith<OperationDetailDto_LibraryScan> get copyWith => _$OperationDetailDto_LibraryScanCopyWithImpl<OperationDetailDto_LibraryScan>(this, _$identity);
 
@@ -2866,7 +4420,7 @@ String toString() {
 /// @nodoc
 abstract mixin class $OperationDetailDto_LibraryScanCopyWith<$Res> implements $OperationDetailDtoCopyWith<$Res> {
   factory $OperationDetailDto_LibraryScanCopyWith(OperationDetailDto_LibraryScan value, $Res Function(OperationDetailDto_LibraryScan) _then) = _$OperationDetailDto_LibraryScanCopyWithImpl;
-@override @useResult
+@useResult
 $Res call({
  LibraryScanJobDetailDto field0
 });
@@ -2885,10 +4439,208 @@ class _$OperationDetailDto_LibraryScanCopyWithImpl<$Res>
 
 /// Create a copy of OperationDetailDto
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
   return _then(OperationDetailDto_LibraryScan(
 null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
 as LibraryScanJobDetailDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class OperationDetailDto_LibraryRefresh extends OperationDetailDto {
+  const OperationDetailDto_LibraryRefresh(this.field0): super._();
+
+
+@override final  LibraryRefreshJobDetailDto field0;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$OperationDetailDto_LibraryRefreshCopyWith<OperationDetailDto_LibraryRefresh> get copyWith => _$OperationDetailDto_LibraryRefreshCopyWithImpl<OperationDetailDto_LibraryRefresh>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OperationDetailDto_LibraryRefresh&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'OperationDetailDto.libraryRefresh(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $OperationDetailDto_LibraryRefreshCopyWith<$Res> implements $OperationDetailDtoCopyWith<$Res> {
+  factory $OperationDetailDto_LibraryRefreshCopyWith(OperationDetailDto_LibraryRefresh value, $Res Function(OperationDetailDto_LibraryRefresh) _then) = _$OperationDetailDto_LibraryRefreshCopyWithImpl;
+@useResult
+$Res call({
+ LibraryRefreshJobDetailDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$OperationDetailDto_LibraryRefreshCopyWithImpl<$Res>
+    implements $OperationDetailDto_LibraryRefreshCopyWith<$Res> {
+  _$OperationDetailDto_LibraryRefreshCopyWithImpl(this._self, this._then);
+
+  final OperationDetailDto_LibraryRefresh _self;
+  final $Res Function(OperationDetailDto_LibraryRefresh) _then;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(OperationDetailDto_LibraryRefresh(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryRefreshJobDetailDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class OperationDetailDto_GameRefresh extends OperationDetailDto {
+  const OperationDetailDto_GameRefresh(this.field0): super._();
+
+
+@override final  GameRefreshJobDetailDto field0;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$OperationDetailDto_GameRefreshCopyWith<OperationDetailDto_GameRefresh> get copyWith => _$OperationDetailDto_GameRefreshCopyWithImpl<OperationDetailDto_GameRefresh>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OperationDetailDto_GameRefresh&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'OperationDetailDto.gameRefresh(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $OperationDetailDto_GameRefreshCopyWith<$Res> implements $OperationDetailDtoCopyWith<$Res> {
+  factory $OperationDetailDto_GameRefreshCopyWith(OperationDetailDto_GameRefresh value, $Res Function(OperationDetailDto_GameRefresh) _then) = _$OperationDetailDto_GameRefreshCopyWithImpl;
+@useResult
+$Res call({
+ GameRefreshJobDetailDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$OperationDetailDto_GameRefreshCopyWithImpl<$Res>
+    implements $OperationDetailDto_GameRefreshCopyWith<$Res> {
+  _$OperationDetailDto_GameRefreshCopyWithImpl(this._self, this._then);
+
+  final OperationDetailDto_GameRefresh _self;
+  final $Res Function(OperationDetailDto_GameRefresh) _then;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(OperationDetailDto_GameRefresh(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as GameRefreshJobDetailDto,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class OperationDetailDto_LibraryResolutionRefresh extends OperationDetailDto {
+  const OperationDetailDto_LibraryResolutionRefresh(this.field0): super._();
+
+
+@override final  LibraryResolutionRefreshJobDetailDto field0;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$OperationDetailDto_LibraryResolutionRefreshCopyWith<OperationDetailDto_LibraryResolutionRefresh> get copyWith => _$OperationDetailDto_LibraryResolutionRefreshCopyWithImpl<OperationDetailDto_LibraryResolutionRefresh>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OperationDetailDto_LibraryResolutionRefresh&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,field0);
+
+@override
+String toString() {
+  return 'OperationDetailDto.libraryResolutionRefresh(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $OperationDetailDto_LibraryResolutionRefreshCopyWith<$Res> implements $OperationDetailDtoCopyWith<$Res> {
+  factory $OperationDetailDto_LibraryResolutionRefreshCopyWith(OperationDetailDto_LibraryResolutionRefresh value, $Res Function(OperationDetailDto_LibraryResolutionRefresh) _then) = _$OperationDetailDto_LibraryResolutionRefreshCopyWithImpl;
+@useResult
+$Res call({
+ LibraryResolutionRefreshJobDetailDto field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$OperationDetailDto_LibraryResolutionRefreshCopyWithImpl<$Res>
+    implements $OperationDetailDto_LibraryResolutionRefreshCopyWith<$Res> {
+  _$OperationDetailDto_LibraryResolutionRefreshCopyWithImpl(this._self, this._then);
+
+  final OperationDetailDto_LibraryResolutionRefresh _self;
+  final $Res Function(OperationDetailDto_LibraryResolutionRefresh) _then;
+
+/// Create a copy of OperationDetailDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(OperationDetailDto_LibraryResolutionRefresh(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as LibraryResolutionRefreshJobDetailDto,
   ));
 }
 

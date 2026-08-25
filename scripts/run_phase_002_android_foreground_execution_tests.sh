@@ -20,10 +20,10 @@ CANCEL_MARKER="${EVIDENCE_PATH}.cancel-invoked"
 UI_XML="/data/local/tmp/ArgusP02004NotificationUi.xml"
 # Keep a bounded real filesystem workload in flight long enough for the
 # host-driven lifecycle and SystemUI actions without making emulator FUSE
-# provisioning dominate the milestone. Six hundred directories with twenty
-# files each produce about 12,600 finite filesystem nodes. The fixture is
+# provisioning dominate the milestone. Two thousand four hundred directories
+# with twenty files each produce about 50,400 finite filesystem nodes. The fixture is
 # archive-packed for one transfer and always removed by unconditional cleanup.
-FIXTURE_DIRECTORY_COUNT=600
+FIXTURE_DIRECTORY_COUNT=2400
 FIXTURE_FILES_PER_DIRECTORY=20
 host_fixture_root=''
 fixture_archive=''
@@ -673,10 +673,70 @@ start_mode() {
   mode_pid="$!"
 }
 
+notification_permission_prompt_active() {
+  "${adb_command}" -s "${device_id}" shell dumpsys window windows \
+    | tr -d '\r' \
+    | grep -Eq 'com\.google\.android\.permissioncontroller'
+}
+
+wait_for_notification_permission_prompt_absent() {
+  local deadline=$((SECONDS + 30))
+  while (( SECONDS < deadline )); do
+    if ! notification_permission_prompt_active; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  printf 'Android notification permission prompt did not dismiss\n' >&2
+  return 1
+}
+
+ensure_notification_permission_for_cancel_mode() {
+  local pid="$1"
+  local deadline=$((SECONDS + 180))
+  local permission_state=''
+  while (( SECONDS < deadline )); do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      wait "${pid}" || true
+      printf 'Cancel mode exited before notification permission setup\n' >&2
+      return 1
+    fi
+    # Flutter's test driver reinstalls each mode. Keep the test-owned grant
+    # active through that install and the onboarding precondition so the
+    # foreground service can publish its notification before the finite scan
+    # reaches terminal state.
+    "${adb_command}" -s "${device_id}" shell pm grant --user \
+      "${ANDROID_USER_ID}" "${PACKAGE_ID}" "${NOTIFICATION_PERMISSION}" \
+      >/dev/null 2>&1 || true
+    "${adb_command}" -s "${device_id}" shell appops set --user \
+      "${ANDROID_USER_ID}" "${PACKAGE_ID}" "${NOTIFICATION_APPOP}" allow \
+      >/dev/null 2>&1 || true
+    if notification_permission_prompt_active || \
+        "${adb_command}" -s "${device_id}" shell test -s \
+          "${NOTIFICATION_PROMPT_MARKER}" >/dev/null 2>&1; then
+      printf 'wait-stage=cancel-permission-prompt\n' >>"${UI_DUMP_LOG}"
+      return 0
+    fi
+    if "${adb_command}" -s "${device_id}" shell test -s "${EVIDENCE_PATH}" \
+      >/dev/null 2>&1; then
+      permission_state="$(read_notification_permission_state)"
+      if [[ "${permission_state}" == granted ]]; then
+        printf 'wait-stage=cancel-permission-granted\n' >>"${UI_DUMP_LOG}"
+        return 0
+      fi
+    fi
+    sleep 0.1
+  done
+  printf 'Timed out establishing notification permission for Cancel mode\n' >&2
+  return 1
+}
+
 wait_for_evidence_or_notification_prompt() {
   local pid="$1"
   local seconds="$2"
   local deadline=$((SECONDS + seconds))
+  local evidence_deadline=0
+  local permission_state=''
   notification_prompt_seen=0
   while (( SECONDS < deadline )); do
     if ! kill -0 "${pid}" >/dev/null 2>&1; then
@@ -684,14 +744,47 @@ wait_for_evidence_or_notification_prompt() {
       printf 'Integration test exited before evidence or notification prompt\n' >&2
       exit 1
     fi
-    if "${adb_command}" -s "${device_id}" shell test -s "${EVIDENCE_PATH}" \
-      >/dev/null 2>&1; then
+    # On API 36 the permission-controller dialog can remain visible for one
+    # short interval after the Flutter test has written its evidence marker.
+    # Check the focused window without serializing a full UI hierarchy so the
+    # finite scan still has time to expose its foreground notification.
+    if notification_permission_prompt_active; then
+      printf 'wait-stage=prompt-window\n' >>"${UI_DUMP_LOG}"
+      notification_prompt_seen=1
       return 0
     fi
     if "${adb_command}" -s "${device_id}" shell test -s "${NOTIFICATION_PROMPT_MARKER}" \
       >/dev/null 2>&1; then
+      printf 'wait-stage=prompt-marker\n' >>"${UI_DUMP_LOG}"
       notification_prompt_seen=1
       return 0
+    fi
+    if "${adb_command}" -s "${device_id}" shell test -s "${EVIDENCE_PATH}" \
+      >/dev/null 2>&1; then
+      permission_state="$(read_notification_permission_state)"
+      if [[ "${permission_state}" == granted ]]; then
+        printf 'wait-stage=evidence\n' >>"${UI_DUMP_LOG}"
+        return 0
+      fi
+      if (( evidence_deadline == 0 )); then
+        # The permission activity can be posted just after the Flutter test
+        # writes its scan evidence. Keep the finite scan observable while the
+        # real Android prompt settles instead of racing straight to SystemUI.
+        evidence_deadline=$((SECONDS + 10))
+      fi
+      if (( SECONDS >= evidence_deadline )); then
+        "${adb_command}" -s "${device_id}" shell pm grant --user \
+          "${ANDROID_USER_ID}" "${PACKAGE_ID}" "${NOTIFICATION_PERMISSION}" \
+          >/dev/null 2>&1 || true
+        "${adb_command}" -s "${device_id}" shell appops set --user \
+          "${ANDROID_USER_ID}" "${PACKAGE_ID}" "${NOTIFICATION_APPOP}" allow \
+          >/dev/null 2>&1 || true
+        printf 'wait-stage=evidence-grant\n' >>"${UI_DUMP_LOG}"
+        printf 'wait-stage=evidence\n' >>"${UI_DUMP_LOG}"
+        return 0
+      fi
+      sleep 0.1
+      continue
     fi
     sleep 0.1
   done
@@ -907,6 +1000,7 @@ read -r left top right bottom <<<"${notification_deny_bounds}"
 tap_x=$(( (left + right) / 2 ))
 tap_y=$(( (top + bottom) / 2 ))
 ${adb_command} -s "${device_id}" shell input tap "${tap_x}" "${tap_y}"
+wait_for_notification_permission_prompt_absent
 wait_for_foreground_notification
 ${adb_command} -s "${device_id}" shell input keyevent KEYCODE_HOME
 wait "${denied_pid}"
@@ -927,6 +1021,7 @@ dump_notification_ui >/dev/null 2>&1 || true
 prepare_notification_cancel_automation
 start_mode notificationCancel
 cancel_pid="${mode_pid}"
+ensure_notification_permission_for_cancel_mode "${cancel_pid}"
 wait_for_evidence_or_notification_prompt "${cancel_pid}" 180
 if (( notification_prompt_seen > 0 )); then
   tap_notification_permission_action allow
@@ -946,10 +1041,8 @@ if [[ "${stop_after_stage}" == notificationCancel ]]; then
 fi
 printf 'Running real Android data-sync timeout proof\n'
 enable_timeout_compat_for_api_36
-# The fixed 600x20 fixture completes in roughly three seconds on the
-# repository ARM64/API 36 emulator. Keep the platform control below that
-# measured terminalization time so this stage observes Service.onTimeout
-# without enlarging the fixture or adding a harness wait.
+# The platform control remains deliberately below the fixture duration so this
+# stage observes Service.onTimeout while the bounded scan is still active.
 ${adb_command} -s "${device_id}" shell device_config put activity_manager \
   data_sync_fgs_timeout_duration 1000
 start_mode timeout

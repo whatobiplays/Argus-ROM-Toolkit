@@ -10,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_002_android_test_support.dart';
+
 /// Focused All files access revoke/regrant scenario. Permission loss is an
 /// availability transition only; the authoritative root identity and durable
 /// state are checked after explicit regrant, with no automatic job restart.
@@ -47,6 +49,7 @@ void main() {
     }
 
     await tester.pumpWidget(const ArgusBootstrap());
+    await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
       find.byKey(const ValueKey<String>('compact-navigation-bar')),

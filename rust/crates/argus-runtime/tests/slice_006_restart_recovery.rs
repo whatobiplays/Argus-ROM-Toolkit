@@ -149,7 +149,9 @@ fn recovery_abandons_running_children_without_cancellation_and_preserves_complet
         .expect("get job")
         .expect("known job");
     assert_eq!(detail.job().state(), JobRunState::Abandoned);
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     let statuses: Vec<ScanRunStatus> = operation
         .scan_runs()
         .iter()
@@ -185,7 +187,9 @@ fn recovery_honors_accepted_cancellation_and_derives_parent_from_terminal_childr
         .expect("get job")
         .expect("known job");
     assert_eq!(detail.job().state(), JobRunState::Cancelled);
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     assert!(
         operation
             .scan_runs()

@@ -4,6 +4,7 @@ import 'package:argus/app/bootstrap/app_bootstrap.dart';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
+import 'package:argus/features/library/presentation/library_onboarding_page.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart' hide ThemeMode;
@@ -12,12 +13,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_002_android_test_support.dart';
+
 /// P02-001 granted real-stack scenario: with All files access granted (and
 /// notifications pre-granted on API 33+), the real Android composition must
 /// reach Ready through the packaged FRB/Rust/SQLite stack, persist
-/// appearance settings in the host-standard app-private database, expose
-/// Compact Sources/Jobs/Settings navigation, and keep exactly one root
-/// client/runtime generation.
+/// appearance settings in the host-standard app-private database, expose the
+/// completed-onboarding Library/Sources/Jobs/Settings shell, and keep exactly
+/// one root client/runtime generation.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -27,15 +30,25 @@ void main() {
     const channel = MethodChannel('argus/platform_readiness');
 
     await tester.pumpWidget(const ArgusBootstrap());
+    await waitForPhase002PlatformReady(tester);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArgusApp)),
+      listen: false,
+    );
+    final client = container.read(argusClientProvider);
+    await waitForPhase002RuntimeReady(tester, client: client);
+    await _pumpUntilFound(tester, find.byType(LibraryOnboardingPage));
+    final initialOnboarding = await client.onboarding.getState();
+    expect(initialOnboarding.complete, isFalse);
+    expect(initialOnboarding.requiresRootSelection, isTrue);
+    expect(find.byType(LibraryOnboardingPage), findsOneWidget);
+
+    await completePhase002LibraryOnboarding(tester);
     await _pumpUntilFound(
       tester,
       find.byKey(const ValueKey<String>('compact-navigation-bar')),
     );
 
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(ArgusApp)),
-      listen: false,
-    );
     final snapshot = (await channel.invokeMapMethod<Object?, Object?>(
       'readSnapshot',
     ))!;
@@ -53,7 +66,7 @@ void main() {
       const ValueKey<String>('compact-navigation-bar'),
     );
     expect(navigationBar, findsOneWidget);
-    for (final label in <String>['Sources', 'Jobs', 'Settings']) {
+    for (final label in <String>['Library', 'Sources', 'Jobs', 'Settings']) {
       expect(
         find.descendant(of: navigationBar, matching: find.text(label)),
         findsOneWidget,

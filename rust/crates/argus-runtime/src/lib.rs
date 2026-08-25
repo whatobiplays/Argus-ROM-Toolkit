@@ -24,31 +24,40 @@ use std::sync::{Arc, Mutex};
 use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
-    ArtworkRepository, ArtworkResolutionPolicy, CancelJobResult, CredentialMutationError,
-    DiagnosticStage, EnrichmentUnitOfWork, ErrorCode, EventName, FailureRole, GameId,
-    GameLibraryPage, GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery,
-    GetSourceEntryQuery, HydrationCoordinator, HydrationReport, HydrationTarget,
-    IdentityConvergenceStore, JobDetail, JobRunId, JobSummaryPage, JobsService, LibraryRootId,
-    LibraryRootPage, LibraryRootProjection, LibraryRootRepository, LibraryScanAdmissionResult,
-    LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
-    LibraryService, LibrarySourceRepository, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
+    ArtworkRepository, ArtworkResolutionPolicy, CancelJobResult, ConvergenceOutcome,
+    CredentialMutationError, DiagnosticStage, EnrichmentProviderSession, EnrichmentUnitOfWork,
+    ErrorCode, EventName, FailureRole, GameId, GameLibraryPage, GetAppearanceSettingsQuery,
+    GetGameResult, GetLibraryRootQuery, GetSourceEntryQuery, HydrationReport, HydrationTarget,
+    IdentificationService, IdentityConvergenceStore, IdentitySchemeCatalog, JobDetail, JobRunId,
+    JobRunRepository, JobRunState, JobSummaryPage, JobsService, LibraryOnboardingState,
+    LibraryProviderSetupDecision, LibraryRefreshAdmissionResult, LibraryRefreshCoordinator,
+    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryRootRepository,
+    LibraryScanAdmissionResult, LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity,
+    LibraryScanAllRequestLookup, LibraryScope, LibraryService, LibrarySort, LibrarySourceAccess,
+    LibrarySourceRepository, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
     ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
     LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent,
     LogLevel, LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries,
     MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderRegistry,
-    MetadataProviderService, MetadataRepository, MetadataResolutionPolicy, MigrationOutcome,
-    NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationName, PathClass,
-    PersistenceError, PlatformClass, ProviderError, ProviderId, RemoveLibraryRootCommand,
-    RemoveLibraryRootResult, SafeContext, SafeContextField, SafeContextValue, SettingsService,
-    SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId, SourceVersionEvidence,
-    StartLibraryScanAllCommand, StartLibraryScanAllResult, StartLibraryScanCommand,
-    StartupCollector, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TechnicalClass,
-    TraceEvent, TraceEventPhase, TraceId, UnitOfWork, UnitOfWorkFactory,
-    UpdateAppearanceSettingsCommand, ValidatedContentDerivation, Version,
+    MetadataProviderService, MetadataProviderSettings, MetadataRepository,
+    MetadataResolutionPolicy, MetadataSettings, MigrationOutcome, NewJobRun,
+    NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationHandle,
+    OperationName, PathClass, PersistenceError, PlatformClass, PrivacyConsent, ProviderError,
+    ProviderId, ProviderReadinessState, RefreshLibraryCommand, RefreshMode,
+    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
+    SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
+    SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository,
+    SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
+    StartLibraryScanCommand, StartupCollector, SubsystemName,
+    SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, TraceEvent, TraceEventPhase, TraceId,
+    UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand, ValidatedContentDerivation,
+    Version,
 };
 use argus_infrastructure::artwork_store::ArtworkObjectStore;
-use argus_infrastructure::credentials::{KeyringSecureCredentialStore, initialize_secure_store};
-use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
+use argus_infrastructure::credentials::KeyringSecureCredentialStore;
+use argus_infrastructure::local_filesystem::{
+    LocalFilesystemProvider as InfraLocalFilesystemProvider, LocalFilesystemSourceAccess,
+};
 use argus_infrastructure::providers::{
     ProductionProviderSessionFactory, SteamGridDbCredentialValidator, UreqTransport,
 };
@@ -88,6 +97,20 @@ type RuntimeCredentialService = MetadataProviderService<
     KeyringSecureCredentialStore,
     SteamGridDbCredentialValidator<UreqTransport>,
 >;
+
+type EnrichmentSessionFactory =
+    dyn Fn() -> Vec<Box<dyn EnrichmentProviderSession>> + Send + Sync + 'static;
+
+fn production_enrichment_session_factory() -> Arc<EnrichmentSessionFactory> {
+    Arc::new(|| ProductionProviderSessionFactory::new().create_sessions())
+}
+
+#[cfg(feature = "test-support")]
+// Keep this registry outside the public options struct so existing embedding
+// callers that construct the two public fields directly remain source-compatible.
+static TEST_ENRICHMENT_SESSION_FACTORIES: std::sync::OnceLock<
+    Mutex<std::collections::HashMap<PathBuf, Arc<EnrichmentSessionFactory>>>,
+> = std::sync::OnceLock::new();
 
 /// Platform naming policy used by the private path-resolution seam.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -225,6 +248,37 @@ impl KernelBootstrapOptions {
             data_directory_override: None,
             standard_data_directory: Some(directory.into()),
         }
+    }
+
+    /// Installs a deterministic provider-session factory for integration tests.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn with_provider_session_factory_for_tests<F>(self, factory: F) -> Self
+    where
+        F: Fn() -> Vec<Box<dyn EnrichmentProviderSession>> + Send + Sync + 'static,
+    {
+        if let Some(directory) = &self.data_directory_override {
+            TEST_ENRICHMENT_SESSION_FACTORIES
+                .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+                .lock()
+                .expect("test provider-session registry lock")
+                .insert(directory.clone(), Arc::new(factory));
+        }
+        self
+    }
+
+    pub(crate) fn enrichment_session_factory(&self) -> Arc<EnrichmentSessionFactory> {
+        #[cfg(feature = "test-support")]
+        if let Some(directory) = &self.data_directory_override
+            && let Some(factory) = TEST_ENRICHMENT_SESSION_FACTORIES
+                .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+                .lock()
+                .ok()
+                .and_then(|factories| factories.get(directory).cloned())
+        {
+            return factory;
+        }
+        production_enrichment_session_factory()
     }
 }
 
@@ -372,6 +426,7 @@ pub struct KernelBootstrap {
     jobs_service: JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>,
     unit_of_work: KernelUnitOfWorkFactory,
     metadata_provider_registry: MetadataProviderRegistry,
+    provider_session_factory: Arc<EnrichmentSessionFactory>,
     credential_service: Arc<Mutex<RuntimeCredentialService>>,
     artwork_store: Arc<ArtworkObjectStore>,
     event_bus: Arc<EventBus>,
@@ -781,6 +836,10 @@ impl argus_application::MetadataRepository for KernelMetadataRepository<'_, '_> 
         self.inner.settings()
     }
 
+    fn settings_revision(&mut self) -> Result<u64, PersistenceError> {
+        self.inner.settings_revision()
+    }
+
     fn save_provider_settings(
         &mut self,
         settings: &argus_application::MetadataProviderSettings,
@@ -801,11 +860,31 @@ impl argus_application::MetadataRepository for KernelMetadataRepository<'_, '_> 
         self.inner.provider_metadata_for_content(game_content_id)
     }
 
+    fn mappings_for_content(
+        &mut self,
+        game_content_id: argus_domain::GameContentId,
+    ) -> Result<Vec<argus_application::ExternalIdentityMapping>, PersistenceError> {
+        self.inner.mappings_for_content(game_content_id)
+    }
+
     fn resolved_metadata_for_game(
         &mut self,
         game_id: argus_domain::GameId,
     ) -> Result<Option<argus_application::ResolvedMetadata>, PersistenceError> {
         self.inner.resolved_metadata_for_game(game_id)
+    }
+
+    fn library_onboarding_progress(
+        &mut self,
+    ) -> Result<argus_application::LibraryOnboardingProgress, PersistenceError> {
+        self.inner.library_onboarding_progress()
+    }
+
+    fn save_library_onboarding_progress(
+        &mut self,
+        progress: &argus_application::LibraryOnboardingProgress,
+    ) -> Result<(), PersistenceError> {
+        self.inner.save_library_onboarding_progress(progress)
     }
 }
 
@@ -1105,6 +1184,7 @@ impl KernelBootstrap {
         artwork_store: Arc<ArtworkObjectStore>,
         event_bus: Arc<EventBus>,
         collector: StartupCollector,
+        provider_session_factory: Arc<EnrichmentSessionFactory>,
     ) -> Self {
         Self {
             trace_id,
@@ -1116,6 +1196,7 @@ impl KernelBootstrap {
             jobs_service,
             unit_of_work,
             metadata_provider_registry: MetadataProviderRegistry::production(),
+            provider_session_factory,
             credential_service: Arc::new(Mutex::new(MetadataProviderService::new(
                 KeyringSecureCredentialStore::new(),
                 SteamGridDbCredentialValidator::new(UreqTransport::new(), STEAMGRIDDB_API_BASE_URL),
@@ -1175,6 +1256,7 @@ impl KernelBootstrap {
                 Vec::new(),
             )),
             StartupCollector::new(),
+            production_enrichment_session_factory(),
         );
         kernel.fail_next_shutdown_for_tests();
         kernel
@@ -1316,6 +1398,39 @@ impl KernelBootstrap {
         .map_err(|error| map_application_port_error(context.trace_id(), error))
     }
 
+    /// Enumerates canonical Game identities through the bounded Library
+    /// projection for a background local-resolution pass.
+    pub fn list_game_ids_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<GameId>, ApplicationError> {
+        let mut game_ids = Vec::new();
+        let mut cursor = None;
+        loop {
+            let query = ListGamesQuery::builder()
+                .scope(LibraryScope::All)
+                .search(None)
+                .filters_empty(true)
+                .sort(LibrarySort::DisplayTitleAscending)
+                .cursor(cursor.clone())
+                .page_size(500)
+                .build()
+                .map_err(|_| {
+                    application_error_from_code(
+                        ErrorCode::ValidationInvalidArgument,
+                        context.trace_id(),
+                    )
+                })?;
+            let page = self.list_games_with_context(&query, context)?;
+            game_ids.extend(page.items().iter().map(|row| row.game_id()));
+            cursor = page.next_cursor().cloned();
+            if cursor.is_none() {
+                break;
+            }
+        }
+        Ok(game_ids)
+    }
+
     /// Reads one focused durable logical-game result in a short transaction.
     pub fn get_game_with_context(
         &self,
@@ -1354,6 +1469,405 @@ impl KernelBootstrap {
             Ok(result)
         })
         .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads the durable onboarding record and composes it with the current
+    /// root and credential facts owned by their focused capabilities.
+    pub fn library_onboarding_state_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<LibraryOnboardingState, ApplicationError> {
+        let progress = self
+            .unit_of_work
+            .execute(context, |mut work| {
+                let progress = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .library_onboarding_progress()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(progress)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        let roots = self
+            .library_service
+            .list_library_roots(ListLibraryRootsQuery::new(0, 1), context.clone())?;
+        let readiness = self.metadata_provider_readiness_with_context(context)?;
+        let credential_configured = readiness.iter().any(|provider| {
+            provider.provider_id() == ProviderId::SteamGridDb && provider.credential_configured()
+        });
+        Ok(LibraryOnboardingState::new(
+            progress,
+            argus_application::CURRENT_PRIVACY_TERMS_VERSION,
+            roots.items().is_empty(),
+            credential_configured,
+        ))
+    }
+
+    /// Reads the one Settings-owned privacy-consent projection.
+    pub fn privacy_consent_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<PrivacyConsent, ApplicationError> {
+        self.unit_of_work
+            .execute(context, |mut work| {
+                let progress = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .library_onboarding_progress()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                let consent = PrivacyConsent::new(
+                    progress.accepted_privacy_terms_version().map(str::to_owned),
+                    progress.accepted_privacy_at_ms(),
+                    argus_application::CURRENT_PRIVACY_TERMS_VERSION,
+                );
+                work.commit()?;
+                Ok(consent)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Accepts only the backend-advertised current privacy-terms version.
+    pub fn accept_privacy_terms_with_context(
+        &self,
+        context: &OperationContext,
+        terms_version: String,
+        accepted_at_ms: i64,
+    ) -> Result<PrivacyConsent, ApplicationError> {
+        if terms_version != argus_application::CURRENT_PRIVACY_TERMS_VERSION {
+            return Err(application_error_from_code(
+                ErrorCode::ValidationInvalidArgument,
+                context.trace_id(),
+            ));
+        }
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let mut progress = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .library_onboarding_progress()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                progress.accept_privacy_terms(terms_version, accepted_at_ms);
+                {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .save_library_onboarding_progress(&progress)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                work.commit()?;
+                Ok(())
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        self.privacy_consent_with_context(context)
+    }
+
+    /// Persists metadata preferences and marks the onboarding preference step
+    /// complete in one transaction.
+    pub fn confirm_library_metadata_preferences_with_context(
+        &self,
+        context: &OperationContext,
+        settings: MetadataSettings,
+    ) -> Result<LibraryOnboardingState, ApplicationError> {
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .save_settings(&settings)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                let mut progress = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .library_onboarding_progress()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                progress.confirm_metadata_preferences();
+                {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .save_library_onboarding_progress(&progress)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                work.commit()?;
+                Ok(())
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        self.library_onboarding_state_with_context(context)
+    }
+
+    /// Records a validated provider-setup decision. Configured is accepted
+    /// only when the credential readiness authority confirms the credential.
+    pub fn record_library_provider_setup_with_context(
+        &self,
+        context: &OperationContext,
+        decision: LibraryProviderSetupDecision,
+    ) -> Result<LibraryOnboardingState, ApplicationError> {
+        let readiness = self.metadata_provider_readiness_with_context(context)?;
+        let steamgriddb = readiness
+            .iter()
+            .find(|provider| provider.provider_id() == ProviderId::SteamGridDb);
+        let credential_configured =
+            steamgriddb.is_some_and(|provider| provider.credential_configured());
+        let credential_accepted = steamgriddb.is_some_and(|provider| {
+            provider.credential_configured()
+                && provider.capability_readiness().iter().all(|capability| {
+                    matches!(
+                        capability.state(),
+                        ProviderReadinessState::Ready | ProviderReadinessState::Unavailable
+                    )
+                })
+        });
+        if (matches!(decision, LibraryProviderSetupDecision::Configured) && !credential_accepted)
+            || (matches!(decision, LibraryProviderSetupDecision::Skipped) && credential_configured)
+        {
+            return Err(application_error_from_code(
+                ErrorCode::ValidationInvalidArgument,
+                context.trace_id(),
+            ));
+        }
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let mut progress = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .library_onboarding_progress()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                progress.record_provider_setup(decision);
+                {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .save_library_onboarding_progress(&progress)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                work.commit()?;
+                Ok(())
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        self.library_onboarding_state_with_context(context)
+    }
+
+    /// Commits onboarding completion only after all prerequisite facts are
+    /// already present. Refresh admission is intentionally a separate child.
+    pub fn complete_library_onboarding_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<LibraryOnboardingState, ApplicationError> {
+        let state = self.library_onboarding_state_with_context(context)?;
+        let progress = state.progress();
+        let provider_ready = matches!(
+            progress.provider_setup_outcome(),
+            argus_application::LibraryProviderSetupOutcome::Configured
+                | argus_application::LibraryProviderSetupOutcome::Skipped
+        );
+        if state.requires_privacy_acceptance()
+            || state.requires_root_selection()
+            || !progress.metadata_preferences_confirmed()
+            || !provider_ready
+        {
+            return Err(application_error_from_code(
+                ErrorCode::ValidationInvalidArgument,
+                context.trace_id(),
+            ));
+        }
+        let completed_at_ms = crate::now_millis();
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let mut progress = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .library_onboarding_progress()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                progress.complete(completed_at_ms);
+                {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .save_library_onboarding_progress(&progress)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                work.commit()?;
+                Ok(())
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        self.library_onboarding_state_with_context(context)
+    }
+
+    /// Reads local metadata preferences without starting resolution work.
+    pub fn metadata_settings_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<MetadataSettings, ApplicationError> {
+        self.unit_of_work
+            .execute(context, |mut work| {
+                let settings = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .settings()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(settings)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads provider enablement without starting provider or resolution work.
+    pub fn metadata_provider_settings_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<MetadataProviderSettings, ApplicationError> {
+        self.unit_of_work
+            .execute(context, |mut work| {
+                let settings = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .provider_settings()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(settings)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Commits local metadata preferences and reports whether the durable value
+    /// changed. Resolution admission is owned by the host-level coordinator.
+    pub fn update_metadata_settings_with_context(
+        &self,
+        context: &OperationContext,
+        settings: MetadataSettings,
+    ) -> Result<(MetadataSettings, bool), ApplicationError> {
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let current = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .settings()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                let changed = current != settings;
+                if changed {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .save_settings(&settings)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                work.commit()?;
+                Ok((settings, changed))
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads the committed metadata-settings revision used by resolution jobs.
+    pub fn metadata_settings_revision_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<u64, ApplicationError> {
+        self.unit_of_work
+            .execute(context, |mut work| {
+                let revision = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .settings_revision()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(revision)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Commits provider enablement and reports whether the durable value
+    /// changed. The host admits local-only resolution after commit.
+    pub fn update_metadata_provider_settings_with_context(
+        &self,
+        context: &OperationContext,
+        settings: MetadataProviderSettings,
+    ) -> Result<(MetadataProviderSettings, bool), ApplicationError> {
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let current = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .provider_settings()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                let changed = current != settings;
+                if changed {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .save_provider_settings(&settings)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                work.commit()?;
+                Ok((settings, changed))
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Durably admits a bounded Game refresh intent. The execution handler is
+    /// registered by the runtime; no generic workflow graph is introduced.
+    pub fn admit_game_refresh_with_context(
+        &self,
+        context: &OperationContext,
+        game_ids: Vec<GameId>,
+        mode: RefreshMode,
+    ) -> Result<OperationHandle, ApplicationError> {
+        if game_ids.is_empty() || (matches!(mode, RefreshMode::Force) && game_ids.len() != 1) {
+            return Err(application_error_from_code(
+                ErrorCode::ValidationInvalidArgument,
+                context.trace_id(),
+            ));
+        }
+        let created_at_ms = crate::now_millis();
+        let job_run_id = self
+            .unit_of_work
+            .execute(context, move |mut work| {
+                let job_run_id = work.job_runs().insert(NewJobRun::new(
+                    argus_application::OPERATION_TYPE_GAME_REFRESH,
+                    created_at_ms,
+                ))?;
+                work.job_runs()
+                    .insert_game_refresh_intent(job_run_id, &game_ids, mode)?;
+                work.commit()?;
+                Ok(job_run_id)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        Ok(OperationHandle::new(
+            job_run_id,
+            argus_application::OPERATION_TYPE_GAME_REFRESH,
+        ))
+    }
+
+    /// Durably admits one local-only metadata-resolution intent.
+    pub fn admit_library_resolution_refresh_with_context(
+        &self,
+        context: &OperationContext,
+        settings_revision: u64,
+    ) -> Result<OperationHandle, ApplicationError> {
+        let created_at_ms = crate::now_millis();
+        let job_run_id = self
+            .unit_of_work
+            .execute(context, move |mut work| {
+                let job_run_id = work.job_runs().insert(NewJobRun::new(
+                    argus_application::OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
+                    created_at_ms,
+                ))?;
+                work.job_runs()
+                    .insert_library_resolution_refresh_intent(job_run_id, settings_revision)?;
+                work.commit()?;
+                Ok(job_run_id)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        Ok(OperationHandle::new(
+            job_run_id,
+            argus_application::OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
+        ))
     }
 
     /// Reads provider enablement and safe credential readiness without
@@ -1495,7 +2009,7 @@ impl KernelBootstrap {
                 );
                 let session_factory = ProductionProviderSessionFactory::new();
                 let mut sessions = session_factory.create_sessions();
-                HydrationCoordinator::new(unit_of_work).hydrate(
+                LibraryRefreshCoordinator::new(unit_of_work).hydrate(
                     &worker_context,
                     target,
                     metadata_policy,
@@ -1512,6 +2026,477 @@ impl KernelBootstrap {
             .join()
             .map_err(|_| application_error_from_code(ErrorCode::InternalUnexpected, trace_id))?;
         result.map_err(|error| map_application_port_error(trace_id, error))
+    }
+
+    /// Hydrates one already identified target with sessions owned by the
+    /// enclosing composed refresh.
+    ///
+    /// The public single-content API keeps its worker boundary and production
+    /// session construction. This internal variant is used only after a
+    /// committed scan checkpoint and lets the parent refresh reuse one
+    /// deterministic session set across all affected content.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn hydrate_game_content_with_sessions_with_context(
+        &self,
+        target: HydrationTarget,
+        context: &OperationContext,
+        now: i64,
+        sessions: &mut [Box<dyn EnrichmentProviderSession>],
+    ) -> Result<HydrationReport, ApplicationError> {
+        let validation_target = target.clone();
+        let target_is_current = self
+            .unit_of_work
+            .execute(context, move |mut work| {
+                let game = {
+                    let mut logical = work.logical_content();
+                    logical
+                        .get_game(validation_target.game_id())
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                let valid = match game {
+                    GetGameResult::Found(detail) => {
+                        validation_target.validate_against_game(&detail).is_ok()
+                    }
+                    GetGameResult::Redirected(_) | GetGameResult::NotFound => false,
+                };
+                work.commit()?;
+                Ok(valid)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+        if !target_is_current {
+            return Err(application_error_from_code(
+                ErrorCode::ValidationInvalidArgument,
+                context.trace_id(),
+            ));
+        }
+
+        let (metadata_settings, provider_settings) = self
+            .unit_of_work
+            .execute(context, |mut work| {
+                let metadata_settings = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .settings()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                let provider_settings = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .provider_settings()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok((metadata_settings, provider_settings))
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+
+        let credential_readiness = {
+            let mut service = self.credential_service.lock().map_err(|_| {
+                application_error_from_code(ErrorCode::InternalUnexpected, context.trace_id())
+            })?;
+            match service.refresh_readiness_from_store() {
+                Ok(readiness) => readiness,
+                Err(_) => service.readiness(),
+            }
+        };
+        let readiness = self
+            .metadata_provider_registry
+            .readiness_projection(&provider_settings, credential_readiness);
+        let metadata_policy = MetadataResolutionPolicy::new(
+            provider_settings.enabled().clone(),
+            metadata_settings.preferred_regions().to_vec(),
+            metadata_settings.preferred_languages().to_vec(),
+        );
+        let mut artwork_policy = ArtworkResolutionPolicy::default();
+        for provider_id in self.metadata_provider_registry.provider_ids() {
+            artwork_policy.set_enabled(
+                provider_id,
+                provider_settings.enabled().contains(&provider_id),
+            );
+        }
+        artwork_policy.set_locale_preferences(
+            metadata_settings.preferred_regions().to_vec(),
+            metadata_settings.preferred_languages().to_vec(),
+        );
+
+        LibraryRefreshCoordinator::new(self.unit_of_work.clone())
+            .hydrate(
+                context,
+                target,
+                metadata_policy,
+                artwork_policy,
+                &self.metadata_provider_registry,
+                &readiness,
+                sessions,
+                self.artwork_store.as_ref(),
+                now,
+            )
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Consumes only source entries committed by the supplied scan checkpoint.
+    ///
+    /// Filesystem reads and representation recognition happen outside the
+    /// transaction. Identification rechecks the persisted source version in
+    /// its own short transaction, and hydration then commits each content unit
+    /// through the existing coordinator.
+    pub(crate) fn refresh_committed_root_with_context(
+        &self,
+        plan: &argus_application::LibraryScanExecutionPlan,
+        context: &OperationContext,
+        sessions: &mut [Box<dyn EnrichmentProviderSession>],
+        now: i64,
+    ) -> Result<(usize, u64), ApplicationError> {
+        let access = LocalFilesystemSourceAccess::new(plan.root_locator());
+        let resolved_root = access.resolve_root().map_err(|_| {
+            application_error_from_code(
+                ErrorCode::FilesystemInvalidRootSelection,
+                context.trace_id(),
+            )
+        })?;
+        let entries = self.list_committed_scan_files_with_context(plan, context)?;
+        let catalog = IdentitySchemeCatalog::production();
+        let mut game_ids = Vec::new();
+        let mut issue_count = 0_u64;
+
+        for entry in entries {
+            let bytes = match access.read_entry_bytes(
+                &resolved_root,
+                entry.relative_locator(),
+                argus_infrastructure::content::DEFAULT_CONTENT_PROCESSING_BUDGET_BYTES,
+            ) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
+            let recognized = match argus_infrastructure::content::recognize_raw_cartridge(&bytes) {
+                Ok(recognized) => recognized,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
+            let Some(identity) = catalog.select_identity(
+                recognized.platform(),
+                recognized.content_type(),
+                recognized.identity_digest(),
+            ) else {
+                issue_count = issue_count.saturating_add(1);
+                continue;
+            };
+            let derivation = ValidatedContentDerivation::new(
+                entry.source_entry_id(),
+                SourceVersionEvidence::new(
+                    entry.source_entry_id(),
+                    entry.source_fingerprint().map(str::to_owned),
+                    entry.last_observed_scan_id(),
+                ),
+                recognized.platform(),
+                recognized.content_type(),
+                identity,
+                "raw".to_owned(),
+                entry.display_name().to_owned(),
+            );
+            let outcome =
+                match self.identify_committed_source_entry_with_context(derivation, context) {
+                    Ok(outcome) => outcome,
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                };
+            let game_id = match outcome {
+                ConvergenceOutcome::Created { game_id, .. }
+                | ConvergenceOutcome::Attached { game_id, .. } => game_id,
+            };
+            if !game_ids.contains(&game_id) {
+                game_ids.push(game_id);
+            }
+        }
+
+        for game_id in &game_ids {
+            match self.hydrate_committed_game_with_context(*game_id, context, sessions, now) {
+                Ok(game_issues) => {
+                    issue_count = issue_count.saturating_add(game_issues);
+                }
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                }
+            }
+        }
+        Ok((game_ids.len(), issue_count))
+    }
+
+    pub(crate) fn create_enrichment_sessions(&self) -> Vec<Box<dyn EnrichmentProviderSession>> {
+        (self.provider_session_factory)()
+    }
+
+    fn list_committed_scan_files_with_context(
+        &self,
+        plan: &argus_application::LibraryScanExecutionPlan,
+        context: &OperationContext,
+    ) -> Result<Vec<SourceEntryRecord>, ApplicationError> {
+        let root_id = plan.library_root_id();
+        let scan_id = plan.scan_run_id();
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let mut pending = std::collections::VecDeque::from([None]);
+                let mut files = Vec::new();
+                while let Some(parent) = pending.pop_front() {
+                    let mut offset = 0_u32;
+                    loop {
+                        let page = {
+                            let mut source_entries = work.source_entries();
+                            source_entries
+                                .list_children(root_id, parent, offset, 500)
+                                .map_err(ApplicationPortError::Persistence)?
+                        };
+                        let page_len = page.len();
+                        for entry in page {
+                            if entry.kind() == SourceEntryKind::Directory {
+                                pending.push_back(Some(entry.source_entry_id()));
+                            } else if entry.kind() == SourceEntryKind::File
+                                && entry.last_observed_scan_id() == scan_id
+                            {
+                                files.push(entry);
+                            }
+                        }
+                        if page_len < 500 {
+                            break;
+                        }
+                        offset = offset.saturating_add(page_len as u32);
+                    }
+                }
+                work.commit()?;
+                Ok(files)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    fn identify_committed_source_entry_with_context(
+        &self,
+        derivation: ValidatedContentDerivation,
+        context: &OperationContext,
+    ) -> Result<ConvergenceOutcome, ApplicationError> {
+        let identification_context = context.clone();
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let outcome = {
+                    let mut logical = work.logical_content();
+                    IdentificationService::converge(
+                        &mut logical,
+                        derivation,
+                        identification_context,
+                    )
+                    .map_err(|error| {
+                        if error.code == ErrorCode::OperationSourceChangedDuringProcessing {
+                            ApplicationPortError::Persistence(PersistenceError::Conflict)
+                        } else {
+                            ApplicationPortError::Persistence(PersistenceError::Internal)
+                        }
+                    })?
+                };
+                work.commit()?;
+                Ok(outcome)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    fn hydrate_committed_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+        sessions: &mut [Box<dyn EnrichmentProviderSession>],
+        now: i64,
+    ) -> Result<u64, ApplicationError> {
+        let detail = match self.get_game_with_context(game_id, context)? {
+            GetGameResult::Found(detail) => detail,
+            GetGameResult::Redirected(_) | GetGameResult::NotFound => {
+                return Err(application_error_from_code(
+                    ErrorCode::ConfigurationGameNotFound,
+                    context.trace_id(),
+                ));
+            }
+        };
+        let mut issue_count = 0_u64;
+        for content in detail.content() {
+            if content.identification() != argus_domain::IdentificationState::Identified {
+                continue;
+            }
+            let Some(identity) = content.identity() else {
+                continue;
+            };
+            let target = HydrationTarget::new(
+                detail.game_id(),
+                content.game_content_id(),
+                content.platform_id(),
+                hex_encode_bytes(&identity.digest().as_bytes()),
+                content.platform_id().as_str(),
+            )
+            .with_observed_at(now);
+            match self
+                .hydrate_game_content_with_sessions_with_context(target, context, now, sessions)
+            {
+                Ok(report) => {
+                    issue_count = issue_count.saturating_add(report.issues().len() as u64);
+                }
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                }
+            }
+        }
+        Ok(issue_count)
+    }
+
+    /// Refreshes every currently identified content member of one bounded
+    /// logical Game through the existing hydration capability. The method only
+    /// assembles committed target facts; provider matching, metadata policy,
+    /// and artwork policy remain owned by the hydration subsystem.
+    pub fn refresh_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+        now: i64,
+    ) -> Result<u64, ApplicationError> {
+        let detail = match self.get_game_with_context(game_id, context)? {
+            GetGameResult::Found(detail) => detail,
+            GetGameResult::Redirected(_) | GetGameResult::NotFound => {
+                return Err(application_error_from_code(
+                    ErrorCode::ConfigurationGameNotFound,
+                    context.trace_id(),
+                ));
+            }
+        };
+        let mut issue_count = 0_u64;
+        for content in detail.content() {
+            if content.identification() != argus_domain::IdentificationState::Identified {
+                continue;
+            }
+            let Some(identity) = content.identity() else {
+                continue;
+            };
+            let target = HydrationTarget::new(
+                detail.game_id(),
+                content.game_content_id(),
+                content.platform_id(),
+                hex_encode_bytes(&identity.digest().as_bytes()),
+                content.platform_id().as_str(),
+            )
+            .with_observed_at(now);
+            let report = self.hydrate_game_content_with_context(target, context, now)?;
+            issue_count = issue_count.saturating_add(report.issues().len() as u64);
+        }
+        Ok(issue_count)
+    }
+
+    /// Resolves every identified content member of one logical Game from
+    /// committed mappings, provider metadata, and artwork references.
+    ///
+    /// This pass deliberately stops at local persistence. It does not create
+    /// provider sessions, perform matching, fetch metadata, or download
+    /// artwork. The existing hydration coordinator remains the authority for
+    /// deterministic metadata and artwork selection.
+    pub fn resolve_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+        now: i64,
+    ) -> Result<u64, ApplicationError> {
+        let detail = match self.get_game_with_context(game_id, context)? {
+            GetGameResult::Found(detail) => detail,
+            GetGameResult::Redirected(_) | GetGameResult::NotFound => {
+                return Err(application_error_from_code(
+                    ErrorCode::ConfigurationGameNotFound,
+                    context.trace_id(),
+                ));
+            }
+        };
+        let content_facts = detail
+            .content()
+            .iter()
+            .filter_map(|content| {
+                if content.identification() != argus_domain::IdentificationState::Identified {
+                    return None;
+                }
+                let identity = content.identity()?;
+                Some((
+                    content.game_content_id(),
+                    content.platform_id(),
+                    hex_encode_bytes(&identity.digest().as_bytes()),
+                ))
+            })
+            .collect::<Vec<_>>();
+
+        let content_facts_for_mappings = content_facts.clone();
+        let (metadata_settings, provider_settings, mappings) = self
+            .unit_of_work
+            .execute(context, move |mut work| {
+                let mut metadata = work.metadata();
+                let metadata_settings = metadata
+                    .settings()
+                    .map_err(ApplicationPortError::Persistence)?;
+                let provider_settings = metadata
+                    .provider_settings()
+                    .map_err(ApplicationPortError::Persistence)?;
+                let mappings = content_facts_for_mappings
+                    .iter()
+                    .map(|(game_content_id, _, _)| {
+                        metadata
+                            .mappings_for_content(*game_content_id)
+                            .map(|mappings| (*game_content_id, mappings))
+                            .map_err(ApplicationPortError::Persistence)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                work.commit()?;
+                Ok((metadata_settings, provider_settings, mappings))
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+
+        let metadata_policy = MetadataResolutionPolicy::new(
+            provider_settings.enabled().clone(),
+            metadata_settings.preferred_regions().to_vec(),
+            metadata_settings.preferred_languages().to_vec(),
+        );
+        let mut artwork_policy = ArtworkResolutionPolicy::default();
+        for provider_id in self.metadata_provider_registry.provider_ids() {
+            artwork_policy.set_enabled(
+                provider_id,
+                provider_settings.enabled().contains(&provider_id),
+            );
+        }
+        artwork_policy.set_locale_preferences(
+            metadata_settings.preferred_regions().to_vec(),
+            metadata_settings.preferred_languages().to_vec(),
+        );
+
+        let coordinator = LibraryRefreshCoordinator::new(self.unit_of_work.clone());
+        let mut issue_count = 0_u64;
+        for ((game_content_id, platform_id, submitted_identity), (_, existing_mappings)) in
+            content_facts.into_iter().zip(mappings)
+        {
+            let target = HydrationTarget::new(
+                detail.game_id(),
+                game_content_id,
+                platform_id,
+                submitted_identity,
+                platform_id.as_str(),
+            )
+            .with_existing_mappings(existing_mappings)
+            .with_observed_at(now);
+            let report = coordinator
+                .resolve_existing(
+                    context,
+                    target,
+                    metadata_policy.clone(),
+                    artwork_policy.clone(),
+                    now,
+                )
+                .map_err(|error| map_application_port_error(context.trace_id(), error))?;
+            issue_count = issue_count.saturating_add(report.issues().len() as u64);
+        }
+        Ok(issue_count)
     }
 
     /// Securely stores and validates a provider credential. The secret is
@@ -1768,6 +2753,34 @@ impl KernelBootstrap {
         )
     }
 
+    /// Admits one composed Library refresh under the shared focused root-plan
+    /// admission boundary. No public Scan-All identity is involved.
+    pub fn start_library_refresh_with_context(
+        &self,
+        context: &OperationContext,
+        is_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
+        trigger: argus_application::LibraryRefreshTrigger,
+    ) -> Result<LibraryRefreshAdmissionResult, ApplicationError> {
+        if is_cancelled() {
+            return Err(cancelled_sources_error(context.trace_id()));
+        }
+        let collector = PendingEventCollector::new();
+        let recorder = collector.recorder();
+        let result = self.library_service.start_library_refresh(
+            RefreshLibraryCommand::new(RefreshMode::EligibleOnly),
+            context.clone(),
+            recorder,
+            trigger,
+        );
+        finalize_library_roots_update(
+            result,
+            context,
+            collector,
+            &self.event_bus,
+            &self.publication_diagnostics,
+        )
+    }
+
     /// Admits one durable multi-root Scan All under an admitted context.
     pub fn start_library_scan_all_with_context(
         &self,
@@ -1836,6 +2849,29 @@ impl KernelBootstrap {
             &self.event_bus,
             &self.publication_diagnostics,
         )
+    }
+
+    /// Terminalizes a durably admitted non-scan run when background-manager
+    /// registration fails before its focused handler can execute.
+    pub fn fail_unregistered_job_with_context(
+        &self,
+        context: &OperationContext,
+        job_run_id: JobRunId,
+        error_code: ErrorCode,
+    ) -> Result<(), ApplicationError> {
+        self.unit_of_work
+            .clone()
+            .execute(context, move |mut work| {
+                work.job_runs().set_terminal_failure(
+                    job_run_id,
+                    JobRunState::Failed,
+                    Some(error_code.as_str().to_owned()),
+                    None,
+                    crate::now_millis(),
+                )?;
+                work.commit()
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
     }
 
     /// Reads one authoritative job detail under an admitted context.
@@ -1971,6 +3007,7 @@ pub fn bootstrap_kernel_with_event_bus(
     options: KernelBootstrapOptions,
     event_bus: EventBus,
 ) -> Result<KernelBootstrap, KernelBootstrapFailure> {
+    let provider_session_factory = options.enrichment_session_factory();
     let trace_id = new_trace_id();
     let context = startup_context(trace_id);
     // Host-standard data (including the Android production root) remains
@@ -2074,9 +3111,6 @@ pub fn bootstrap_kernel_with_event_bus(
             collector.clone(),
         )
     })?;
-    // Secure-store initialization is an infrastructure adapter concern. It
-    // does not expose a secret or provide a plaintext fallback to the runtime.
-    let _ = initialize_secure_store();
     let artwork_store =
         ArtworkObjectStore::new(data_directory.join("artwork-assets")).map_err(|_| {
             failure(
@@ -2155,6 +3189,7 @@ pub fn bootstrap_kernel_with_event_bus(
         jobs_service,
         unit_of_work,
         metadata_provider_registry: MetadataProviderRegistry::production(),
+        provider_session_factory,
         credential_service: Arc::new(Mutex::new(MetadataProviderService::new(
             KeyringSecureCredentialStore::new(),
             SteamGridDbCredentialValidator::new(UreqTransport::new(), STEAMGRIDDB_API_BASE_URL),
@@ -2542,6 +3577,15 @@ pub(crate) fn now_millis() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
         .unwrap_or(0)
+}
+
+fn hex_encode_bytes(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
 }
 
 #[cfg(test)]

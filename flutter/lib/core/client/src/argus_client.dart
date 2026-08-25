@@ -16,6 +16,10 @@ final class ArgusClient implements ClientBootstrap {
     settings = _SettingsApi(this);
     sources = _SourcesApi(this);
     library = _LibraryReads(this);
+    onboarding = _LibraryOnboardingApi(this);
+    metadataSettings = _MetadataSettingsApi(this);
+    refresh = _LibraryRefreshApi(this);
+    games = _GamesApi(this);
     metadataProviders = _MetadataProvidersApi(this);
     artwork = _ArtworkApi(this);
     jobs = _JobsApi(this);
@@ -46,6 +50,18 @@ final class ArgusClient implements ClientBootstrap {
 
   /// Durable logical-library reads owned by this root client.
   late final LibraryReads library;
+
+  /// Query-authoritative Library onboarding capability.
+  late final LibraryOnboardingApi onboarding;
+
+  /// Local metadata and provider enablement preferences.
+  late final MetadataSettingsApi metadataSettings;
+
+  /// Composed Library and bounded Game refresh admissions.
+  late final LibraryRefreshApi refresh;
+
+  /// Game detail reads and bounded single-game refresh admission.
+  late final GamesApi games;
 
   /// Optional provider readiness and write-only credential operations.
   late final MetadataProvidersApi metadataProviders;
@@ -78,6 +94,10 @@ final class ArgusClient implements ClientBootstrap {
 
   /// The currently bound runtime generation, if initialization has completed.
   RuntimeInstanceId? get boundGeneration => _boundGeneration;
+
+  /// Whether this gateway exposes the Phase 003 Library capability. Legacy
+  /// embedding/test gateways can remain functional without it.
+  bool get supportsLibraryPhase003 => _gateway is LibraryPhase003Gateway;
 
   @override
   Future<RuntimeState> initialize() async {
@@ -204,6 +224,30 @@ final class ArgusClient implements ClientBootstrap {
   Future<void> _updateAppearanceSettings(AppearanceSettings settings) =>
       _requestVoid(() => _gateway.updateAppearanceSettings(settings));
 
+  Future<PrivacyConsent> _getPrivacyConsent() => _request(() {
+    final gateway = _gateway;
+    if (gateway is! PrivacyGateway) {
+      throw const TransportFailure(
+        'Privacy-consent capability is unavailable',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    return (gateway as PrivacyGateway).getPrivacyConsent();
+  });
+
+  Future<PrivacyConsent> _acceptPrivacyTerms(
+    PrivacyTermsVersion termsVersion,
+  ) => _request(() {
+    final gateway = _gateway;
+    if (gateway is! PrivacyGateway) {
+      throw const TransportFailure(
+        'Privacy-consent capability is unavailable',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    return (gateway as PrivacyGateway).acceptPrivacyTerms(termsVersion);
+  });
+
   Future<LibraryRootPage> _listLibraryRoots({
     required int offset,
     required int pageSize,
@@ -229,6 +273,64 @@ final class ArgusClient implements ClientBootstrap {
     }
     return (gateway as LibraryGateway).getGame(gameId);
   });
+
+  LibraryPhase003Gateway _phase003Gateway() {
+    final gateway = _gateway;
+    if (gateway is! LibraryPhase003Gateway) {
+      throw const TransportFailure(
+        'Phase 003 Library capability is unavailable',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    return gateway as LibraryPhase003Gateway;
+  }
+
+  Future<LibraryOnboardingState> _getLibraryOnboardingState() =>
+      _request(() => _phase003Gateway().getLibraryOnboardingState());
+
+  Future<LibraryOnboardingState> _confirmLibraryMetadataPreferences(
+    MetadataSettings settings,
+  ) => _request(
+    () => _phase003Gateway().confirmLibraryMetadataPreferences(settings),
+  );
+
+  Future<LibraryOnboardingState> _recordLibraryProviderSetup(
+    LibraryProviderSetupDecision decision,
+  ) => _request(() => _phase003Gateway().recordLibraryProviderSetup(decision));
+
+  Future<CompleteLibraryOnboardingAndRefreshResult>
+  _completeLibraryOnboardingAndRefresh() =>
+      _request(() => _phase003Gateway().completeLibraryOnboardingAndRefresh());
+
+  Future<AddLibraryRootAndRefreshResult> _addLibraryRootAndRefresh(
+    LocalFilesystemRootSelection selection,
+  ) => _request(() => _phase003Gateway().addLibraryRootAndRefresh(selection));
+
+  Future<MetadataSettings> _getMetadataSettings() =>
+      _request(() => _phase003Gateway().getMetadataSettings());
+
+  Future<MetadataProviderSettings> _getMetadataProviderSettings() =>
+      _request(() => _phase003Gateway().getMetadataProviderSettings());
+
+  Future<MetadataSettingsUpdateResult> _updateMetadataSettings(
+    MetadataSettings settings,
+  ) => _request(() => _phase003Gateway().updateMetadataSettings(settings));
+
+  Future<MetadataProviderSettingsUpdateResult> _updateMetadataProviderSettings(
+    MetadataProviderSettings settings,
+  ) => _request(
+    () => _phase003Gateway().updateMetadataProviderSettings(settings),
+  );
+
+  Future<OperationHandle> _startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  }) => _request(
+    () => _phase003Gateway().startGameRefresh(gameIds: gameIds, mode: mode),
+  );
+
+  Future<OperationHandle> _refreshLibrary() =>
+      _request(() => _phase003Gateway().refreshLibrary());
 
   Future<List<MetadataProviderReadiness>> _listMetadataProviderReadiness() =>
       _request(() {
@@ -711,6 +813,13 @@ final class _SettingsApi implements SettingsApi {
   @override
   Future<void> updateAppearanceSettings(AppearanceSettings settings) =>
       _client._updateAppearanceSettings(settings);
+
+  @override
+  Future<PrivacyConsent> getPrivacyConsent() => _client._getPrivacyConsent();
+
+  @override
+  Future<PrivacyConsent> acceptPrivacyTerms(PrivacyTermsVersion termsVersion) =>
+      _client._acceptPrivacyTerms(termsVersion);
 }
 
 final class _SourcesApi implements SourcesApi {
@@ -797,6 +906,89 @@ final class _LibraryReads implements LibraryReads {
 
   @override
   Future<GetGameResult> getGame(GameId gameId) => _client._getGame(gameId);
+}
+
+final class _LibraryOnboardingApi implements LibraryOnboardingApi {
+  _LibraryOnboardingApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<LibraryOnboardingState> getState() =>
+      _client._getLibraryOnboardingState();
+
+  @override
+  Future<LibraryOnboardingState> confirmMetadataPreferences(
+    MetadataSettings settings,
+  ) => _client._confirmLibraryMetadataPreferences(settings);
+
+  @override
+  Future<LibraryOnboardingState> recordProviderSetup(
+    LibraryProviderSetupDecision decision,
+  ) => _client._recordLibraryProviderSetup(decision);
+
+  @override
+  Future<CompleteLibraryOnboardingAndRefreshResult> completeAndRefresh() =>
+      _client._completeLibraryOnboardingAndRefresh();
+
+  @override
+  Future<AddLibraryRootAndRefreshResult> addLibraryRootAndRefresh(
+    LocalFilesystemRootSelection selection,
+  ) => _client._addLibraryRootAndRefresh(selection);
+}
+
+final class _MetadataSettingsApi implements MetadataSettingsApi {
+  _MetadataSettingsApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<MetadataSettings> getMetadataSettings() =>
+      _client._getMetadataSettings();
+
+  @override
+  Future<MetadataProviderSettings> getMetadataProviderSettings() =>
+      _client._getMetadataProviderSettings();
+
+  @override
+  Future<MetadataSettingsUpdateResult> updateMetadataSettings(
+    MetadataSettings settings,
+  ) => _client._updateMetadataSettings(settings);
+
+  @override
+  Future<MetadataProviderSettingsUpdateResult> updateMetadataProviderSettings(
+    MetadataProviderSettings settings,
+  ) => _client._updateMetadataProviderSettings(settings);
+}
+
+final class _LibraryRefreshApi implements LibraryRefreshApi {
+  _LibraryRefreshApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<OperationHandle> startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  }) => _client._startGameRefresh(gameIds: gameIds, mode: mode);
+
+  @override
+  Future<OperationHandle> refreshLibrary() => _client._refreshLibrary();
+}
+
+final class _GamesApi implements GamesApi {
+  _GamesApi(this._client);
+
+  final ArgusClient _client;
+
+  @override
+  Future<GetGameResult> getGame(GameId gameId) => _client._getGame(gameId);
+
+  @override
+  Future<OperationHandle> refreshGame({
+    required GameId gameId,
+    required RefreshMode mode,
+  }) => _client._startGameRefresh(gameIds: [gameId], mode: mode);
 }
 
 final class _MetadataProvidersApi implements MetadataProvidersApi {

@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_002_android_test_support.dart';
+
 /// Focused production-composition proof for the Android-applicable feature
 /// surface. Shared Rust Sources/Jobs authority is exercised through the real
 /// client; this scenario does not duplicate admission or recovery logic.
@@ -18,6 +20,7 @@ void main() {
     'Android enables the existing Sources, Jobs, and diagnostics surface',
     (tester) async {
       await tester.pumpWidget(const ArgusBootstrap());
+      await completePhase002LibraryOnboarding(tester);
       await _pumpUntil(
         tester,
         find.byKey(const ValueKey<String>('compact-navigation-bar')),

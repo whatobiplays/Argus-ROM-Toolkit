@@ -61,6 +61,7 @@ class ArgusForegroundExecutionBridge(
         val totalUnits = (arguments["totalUnits"] as? Number)?.toLong()
         val phase = arguments["phase"] as? String
         val statusKey = arguments["statusKey"] as? String
+        val operationLabel = arguments["operationLabel"] as? String
         val cancellableJobRunId = arguments["cancellableJobRunId"] as? String
         val invalidUnits = completedUnits?.let { completed ->
             completed < 0 || totalUnits != null && completed > totalUnits
@@ -70,6 +71,7 @@ class ArgusForegroundExecutionBridge(
             invalidUnits ||
             phase?.length ?: 0 > MAX_TEXT_LENGTH ||
             statusKey?.length ?: 0 > MAX_TEXT_LENGTH ||
+            operationLabel?.length ?: 0 > MAX_TEXT_LENGTH ||
             cancellableJobRunId?.length ?: 0 > ArgusForegroundExecutionHost.MAX_JOB_RUN_ID_LENGTH
         ) {
             result.error(ArgusForegroundExecutionHost.ERROR_MALFORMED_REQUEST, null, null)
@@ -82,6 +84,7 @@ class ArgusForegroundExecutionBridge(
                 totalUnits = totalUnits,
                 phase = phase,
                 statusKey = statusKey,
+                operationLabel = operationLabel,
                 cancellableJobRunId = cancellableJobRunId,
             ),
         )

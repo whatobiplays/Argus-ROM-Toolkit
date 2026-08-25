@@ -11,6 +11,7 @@ class ApplicationShell extends ConsumerWidget {
   /// Creates the persistent adaptive shell.
   const ApplicationShell({
     required this.currentDestination,
+    this.onLibrarySelected,
     required this.onSettingsSelected,
     required this.onSourcesSelected,
     required this.onJobsSelected,
@@ -20,6 +21,10 @@ class ApplicationShell extends ConsumerWidget {
 
   /// The destination derived from the current router location.
   final AppDestination? currentDestination;
+
+  /// Navigates to the typed Library route. A null value keeps legacy direct
+  /// shell fixtures on the pre-Phase-003 three-destination presentation.
+  final VoidCallback? onLibrarySelected;
 
   /// Navigates to the typed Settings route at the composition boundary.
   final VoidCallback onSettingsSelected;
@@ -44,6 +49,7 @@ class ApplicationShell extends ConsumerWidget {
       WindowSizeClass.compact => _CompactShell(
         currentDestination: currentDestination,
         activeSummary: activeSummary,
+        onLibrarySelected: onLibrarySelected,
         onJobsSelected: onJobsSelected,
         onSettingsSelected: onSettingsSelected,
         onSourcesSelected: onSourcesSelected,
@@ -54,6 +60,7 @@ class ApplicationShell extends ConsumerWidget {
         extended: false,
         activeSummary: activeSummary,
         key: const ValueKey<String>('medium-navigation-rail'),
+        onLibrarySelected: onLibrarySelected,
         onSettingsSelected: onSettingsSelected,
         onSourcesSelected: onSourcesSelected,
         onJobsSelected: onJobsSelected,
@@ -64,6 +71,7 @@ class ApplicationShell extends ConsumerWidget {
         extended: true,
         activeSummary: activeSummary,
         key: const ValueKey<String>('expanded-navigation-sidebar'),
+        onLibrarySelected: onLibrarySelected,
         onSettingsSelected: onSettingsSelected,
         onSourcesSelected: onSourcesSelected,
         onJobsSelected: onJobsSelected,
@@ -74,6 +82,7 @@ class ApplicationShell extends ConsumerWidget {
         extended: true,
         activeSummary: activeSummary,
         key: const ValueKey<String>('large-navigation-sidebar'),
+        onLibrarySelected: onLibrarySelected,
         onSettingsSelected: onSettingsSelected,
         onSourcesSelected: onSourcesSelected,
         onJobsSelected: onJobsSelected,
@@ -94,6 +103,7 @@ class BranchAwareShell extends ConsumerStatefulWidget {
     required this.currentUri,
     required this.currentDestination,
     required this.child,
+    this.includeLibrary = false,
     super.key,
   });
 
@@ -105,6 +115,10 @@ class BranchAwareShell extends ConsumerStatefulWidget {
 
   /// The routed destination content.
   final Widget child;
+
+  /// Production routes opt into the Phase 003 Library branch. The default
+  /// preserves older embedding shells that have no Library route.
+  final bool includeLibrary;
 
   @override
   ConsumerState<BranchAwareShell> createState() => _BranchAwareShellState();
@@ -144,6 +158,9 @@ class _BranchAwareShellState extends ConsumerState<BranchAwareShell> {
         const ActiveJobSummary(activeCount: 0);
     return ApplicationShell(
       currentDestination: widget.currentDestination,
+      onLibrarySelected: widget.includeLibrary
+          ? () => _selectDestination(AppDestination.library, '/library')
+          : null,
       onSettingsSelected: () =>
           _selectDestination(AppDestination.settings, '/settings'),
       onSourcesSelected: () =>
@@ -158,6 +175,7 @@ class _CompactShell extends StatelessWidget {
   const _CompactShell({
     required this.currentDestination,
     required this.activeSummary,
+    required this.onLibrarySelected,
     required this.onJobsSelected,
     required this.onSettingsSelected,
     required this.onSourcesSelected,
@@ -166,6 +184,7 @@ class _CompactShell extends StatelessWidget {
 
   final AppDestination? currentDestination;
   final ActiveJobSummary activeSummary;
+  final VoidCallback? onLibrarySelected;
   final VoidCallback onJobsSelected;
   final VoidCallback onSettingsSelected;
   final VoidCallback onSourcesSelected;
@@ -173,40 +192,72 @@ class _CompactShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedIndex = switch (currentDestination) {
-      AppDestination.sources => 0,
-      AppDestination.jobs => 1,
-      AppDestination.settings => 2,
-      null => 0,
-    };
+    final legacy = onLibrarySelected == null;
+    final selectedIndex = legacy
+        ? switch (currentDestination) {
+            AppDestination.sources => 0,
+            AppDestination.jobs => 1,
+            AppDestination.settings => 2,
+            _ => 0,
+          }
+        : switch (currentDestination) {
+            AppDestination.library => 0,
+            AppDestination.sources => 1,
+            AppDestination.jobs => 2,
+            AppDestination.settings => 3,
+            null => 0,
+          };
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
         key: const ValueKey<String>('compact-navigation-bar'),
         selectedIndex: selectedIndex,
-        onDestinationSelected: (index) {
-          switch (index) {
-            case 0:
-              onSourcesSelected();
-            case 1:
-              onJobsSelected();
-            case 2:
-              onSettingsSelected();
-          }
-        },
-        destinations: <NavigationDestination>[
-          const NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: 'Sources',
-          ),
-          jobsNavigationDestination(activeSummary),
-          const NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
+        onDestinationSelected: (index) => legacy
+            ? switch (index) {
+                0 => onSourcesSelected(),
+                1 => onJobsSelected(),
+                2 => onSettingsSelected(),
+                _ => null,
+              }
+            : switch (index) {
+                0 => onLibrarySelected!(),
+                1 => onSourcesSelected(),
+                2 => onJobsSelected(),
+                3 => onSettingsSelected(),
+                _ => null,
+              },
+        destinations: legacy
+            ? <NavigationDestination>[
+                const NavigationDestination(
+                  icon: Icon(Icons.folder_outlined),
+                  selectedIcon: Icon(Icons.folder),
+                  label: 'Sources',
+                ),
+                jobsNavigationDestination(activeSummary),
+                const NavigationDestination(
+                  icon: Icon(Icons.settings_outlined),
+                  selectedIcon: Icon(Icons.settings),
+                  label: 'Settings',
+                ),
+              ]
+            : <NavigationDestination>[
+                const NavigationDestination(
+                  icon: Icon(Icons.grid_view_outlined),
+                  selectedIcon: Icon(Icons.grid_view),
+                  label: 'Library',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.folder_outlined),
+                  selectedIcon: Icon(Icons.folder),
+                  label: 'Sources',
+                ),
+                jobsNavigationDestination(activeSummary),
+                const NavigationDestination(
+                  icon: Icon(Icons.settings_outlined),
+                  selectedIcon: Icon(Icons.settings),
+                  label: 'Settings',
+                ),
+              ],
       ),
     );
   }
@@ -218,6 +269,7 @@ class _RailShell extends StatelessWidget {
     required this.currentDestination,
     required this.extended,
     required this.activeSummary,
+    required this.onLibrarySelected,
     required this.onSettingsSelected,
     required this.onSourcesSelected,
     required this.onJobsSelected,
@@ -228,18 +280,28 @@ class _RailShell extends StatelessWidget {
   final AppDestination? currentDestination;
   final bool extended;
   final ActiveJobSummary activeSummary;
+  final VoidCallback? onLibrarySelected;
   final VoidCallback onSettingsSelected;
   final VoidCallback onSourcesSelected;
   final VoidCallback onJobsSelected;
 
   @override
   Widget build(BuildContext context) {
-    final selectedIndex = switch (currentDestination) {
-      AppDestination.jobs => 0,
-      AppDestination.sources => 1,
-      AppDestination.settings => 2,
-      null => null,
-    };
+    final legacy = onLibrarySelected == null;
+    final selectedIndex = legacy
+        ? switch (currentDestination) {
+            AppDestination.jobs => 0,
+            AppDestination.sources => 1,
+            AppDestination.settings => 2,
+            _ => null,
+          }
+        : switch (currentDestination) {
+            AppDestination.library => 0,
+            AppDestination.jobs => 2,
+            AppDestination.sources => 1,
+            AppDestination.settings => 3,
+            null => null,
+          };
 
     return Scaffold(
       body: Row(
@@ -248,29 +310,52 @@ class _RailShell extends StatelessWidget {
             extended: extended,
             labelType: extended ? null : NavigationRailLabelType.none,
             selectedIndex: selectedIndex,
-            onDestinationSelected: (index) {
-              switch (index) {
-                case 0:
-                  onJobsSelected();
-                case 1:
-                  onSourcesSelected();
-                case 2:
-                  onSettingsSelected();
-              }
-            },
-            destinations: [
-              _jobsRailDestination(activeSummary),
-              const NavigationRailDestination(
-                icon: Icon(Icons.folder_outlined),
-                selectedIcon: Icon(Icons.folder),
-                label: Text('Sources'),
-              ),
-              const NavigationRailDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
-                label: Text('Settings'),
-              ),
-            ],
+            onDestinationSelected: (index) => legacy
+                ? switch (index) {
+                    0 => onJobsSelected(),
+                    1 => onSourcesSelected(),
+                    2 => onSettingsSelected(),
+                    _ => null,
+                  }
+                : switch (index) {
+                    0 => onLibrarySelected!(),
+                    1 => onSourcesSelected(),
+                    2 => onJobsSelected(),
+                    3 => onSettingsSelected(),
+                    _ => null,
+                  },
+            destinations: legacy
+                ? <NavigationRailDestination>[
+                    _jobsRailDestination(activeSummary),
+                    const NavigationRailDestination(
+                      icon: Icon(Icons.folder_outlined),
+                      selectedIcon: Icon(Icons.folder),
+                      label: Text('Sources'),
+                    ),
+                    const NavigationRailDestination(
+                      icon: Icon(Icons.settings_outlined),
+                      selectedIcon: Icon(Icons.settings),
+                      label: Text('Settings'),
+                    ),
+                  ]
+                : <NavigationRailDestination>[
+                    const NavigationRailDestination(
+                      icon: Icon(Icons.grid_view_outlined),
+                      selectedIcon: Icon(Icons.grid_view),
+                      label: Text('Library'),
+                    ),
+                    const NavigationRailDestination(
+                      icon: Icon(Icons.folder_outlined),
+                      selectedIcon: Icon(Icons.folder),
+                      label: Text('Sources'),
+                    ),
+                    _jobsRailDestination(activeSummary),
+                    const NavigationRailDestination(
+                      icon: Icon(Icons.settings_outlined),
+                      selectedIcon: Icon(Icons.settings),
+                      label: Text('Settings'),
+                    ),
+                  ],
           ),
           const VerticalDivider(width: 1),
           Expanded(child: child),

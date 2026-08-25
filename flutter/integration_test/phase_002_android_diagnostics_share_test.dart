@@ -30,11 +30,12 @@ void main() {
           shareChannel.invokeMethod<void>('shareCompletedStartupDiagnostics'),
     );
     final client = ArgusClient(gateway: gateway);
+    RuntimeState? initialized;
 
     try {
-      final state = await client.initialize();
-      expect(state, isA<RuntimeStateStartupFailed>());
-      final failed = state as RuntimeStateStartupFailed;
+      initialized = await client.initialize();
+      expect(initialized, isA<RuntimeStateStartupFailed>());
+      final failed = initialized as RuntimeStateStartupFailed;
       final sharing = client.diagnosticsSharing;
       expect(sharing, isNotNull);
 
@@ -44,9 +45,9 @@ void main() {
       expect(export.outcome, DiagnosticsExportOutcome.created);
       expect(export.destinationClassification, 'backend_owned_diagnostics');
     } finally {
-      await client.runtime.exitFailedRuntime(
-        (await client.runtime.getRuntimeState()).runtimeInstanceId,
-      );
+      if (initialized case final RuntimeStateStartupFailed failed) {
+        await client.runtime.exitFailedRuntime(failed.runtimeInstanceId);
+      }
       await client.dispose();
     }
   });

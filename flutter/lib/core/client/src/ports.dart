@@ -52,12 +52,25 @@ abstract interface class AppearanceGateway {
   Future<void> updateAppearanceSettings(AppearanceSettings settings);
 }
 
+/// Settings-owned privacy-consent capability. It is separate from the
+/// appearance gateway so legacy clients can continue to implement appearance
+/// without fabricating a consent projection.
+abstract interface class PrivacyGateway {
+  Future<PrivacyConsent> getPrivacyConsent();
+
+  Future<PrivacyConsent> acceptPrivacyTerms(PrivacyTermsVersion termsVersion);
+}
+
 /// Focused appearance-settings capability. The complete aggregate is the
 /// only mutation input and successful updates do not echo a state snapshot.
 abstract interface class SettingsApi {
   Future<AppearanceSettings> getAppearanceSettings();
 
   Future<void> updateAppearanceSettings(AppearanceSettings settings);
+
+  Future<PrivacyConsent> getPrivacyConsent();
+
+  Future<PrivacyConsent> acceptPrivacyTerms(PrivacyTermsVersion termsVersion);
 }
 
 /// Framework-neutral configured library-root operations.
@@ -169,6 +182,104 @@ abstract interface class LibraryReads {
   Future<GamePage> listGames(ListGamesRequest request);
 
   Future<GetGameResult> getGame(GameId gameId);
+}
+
+/// Framework-neutral onboarding, metadata-preference, and refresh commands
+/// introduced by the Phase 003 Library experience. This is an optional
+/// additive capability so older test gateways can continue to exercise the
+/// existing client seams.
+abstract interface class LibraryPhase003Gateway {
+  Future<LibraryOnboardingState> getLibraryOnboardingState();
+
+  Future<LibraryOnboardingState> confirmLibraryMetadataPreferences(
+    MetadataSettings settings,
+  );
+
+  Future<LibraryOnboardingState> recordLibraryProviderSetup(
+    LibraryProviderSetupDecision decision,
+  );
+
+  Future<CompleteLibraryOnboardingAndRefreshResult>
+  completeLibraryOnboardingAndRefresh();
+
+  Future<AddLibraryRootAndRefreshResult> addLibraryRootAndRefresh(
+    LocalFilesystemRootSelection selection,
+  );
+
+  Future<MetadataSettings> getMetadataSettings();
+
+  Future<MetadataProviderSettings> getMetadataProviderSettings();
+
+  Future<MetadataSettingsUpdateResult> updateMetadataSettings(
+    MetadataSettings settings,
+  );
+
+  Future<MetadataProviderSettingsUpdateResult> updateMetadataProviderSettings(
+    MetadataProviderSettings settings,
+  );
+
+  Future<OperationHandle> startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  });
+
+  Future<OperationHandle> refreshLibrary();
+}
+
+/// Focused query-authoritative onboarding capability.
+abstract interface class LibraryOnboardingApi {
+  Future<LibraryOnboardingState> getState();
+
+  Future<LibraryOnboardingState> confirmMetadataPreferences(
+    MetadataSettings settings,
+  );
+
+  Future<LibraryOnboardingState> recordProviderSetup(
+    LibraryProviderSetupDecision decision,
+  );
+
+  Future<CompleteLibraryOnboardingAndRefreshResult> completeAndRefresh();
+
+  Future<AddLibraryRootAndRefreshResult> addLibraryRootAndRefresh(
+    LocalFilesystemRootSelection selection,
+  );
+}
+
+/// Focused metadata-preference capability. Credential mutations remain on
+/// [MetadataProvidersApi] and never expose secret material.
+abstract interface class MetadataSettingsApi {
+  Future<MetadataSettings> getMetadataSettings();
+
+  Future<MetadataProviderSettings> getMetadataProviderSettings();
+
+  Future<MetadataSettingsUpdateResult> updateMetadataSettings(
+    MetadataSettings settings,
+  );
+
+  Future<MetadataProviderSettingsUpdateResult> updateMetadataProviderSettings(
+    MetadataProviderSettings settings,
+  );
+}
+
+/// Focused composed-refresh admissions. Execution and lifecycle remain native
+/// and are observed through [JobsApi].
+abstract interface class LibraryRefreshApi {
+  Future<OperationHandle> startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  });
+
+  Future<OperationHandle> refreshLibrary();
+}
+
+/// Focused Game commands paired with the existing logical-library reads.
+abstract interface class GamesApi {
+  Future<GetGameResult> getGame(GameId gameId);
+
+  Future<OperationHandle> refreshGame({
+    required GameId gameId,
+    required RefreshMode mode,
+  });
 }
 
 /// Optional metadata-provider capability. Implementations expose readiness and

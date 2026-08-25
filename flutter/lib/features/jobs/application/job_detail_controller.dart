@@ -212,6 +212,12 @@ class JobDetailController extends _$JobDetailController {
           final successor = switch (reconciled.detail.operationDetail) {
             OperationDetailLibraryScan(:final detail) =>
               detail.retrySuccessorJobRunId,
+            OperationDetailLibraryRefresh(:final detail) =>
+              detail.retrySuccessorJobRunId,
+            OperationDetailGameRefresh(:final detail) =>
+              detail.retrySuccessorJobRunId,
+            OperationDetailLibraryResolutionRefresh(:final detail) =>
+              detail.retrySuccessorJobRunId,
           };
           if (successor != null) {
             onAdmitted(successor);

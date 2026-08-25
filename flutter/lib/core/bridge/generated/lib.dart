@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `appearance_settings_dto`, `appearance_settings_from_dto`, `artwork_asset_bytes_dto`, `category_name`, `classify_subscribe_error`, `content_identity_summary_dto`, `content_presence_dto`, `content_provenance_summary_dto`, `content_summary_dto`, `content_type_dto`, `digest_hex`, `exclusion_dto`, `game_availability_state_dto`, `game_lifecycle_dto`, `game_membership_summary_dto`, `grouping_basis_dto`, `host_with_options`, `host`, `hydration_state_dto`, `identification_state_dto`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `list_games_query_from_dto`, `membership_relationship_dto`, `metadata_field_provenance_dto`, `metadata_provider_readiness_dto`, `parse_runtime_id`, `pending_event_subscription`, `platform_id_dto`, `provider_capability_readiness_dto`, `provider_capability_str`, `provider_credential_readiness_dto`, `provider_readiness_state_str`, `recoverability_name`, `recovery_action_kind_dto`, `resolved_artwork_dto`, `resolved_metadata_dto`, `retry_policy_name`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
+// These functions are ignored because they are not marked as `pub`: `add_library_root_and_refresh_result_dto`, `appearance_settings_dto`, `appearance_settings_from_dto`, `artwork_asset_bytes_dto`, `category_name`, `classify_subscribe_error`, `complete_library_onboarding_and_refresh_dto`, `content_identity_summary_dto`, `content_presence_dto`, `content_provenance_summary_dto`, `content_summary_dto`, `content_type_dto`, `digest_hex`, `exclusion_dto`, `game_availability_state_dto`, `game_lifecycle_dto`, `game_membership_summary_dto`, `game_refresh_job_detail_dto`, `grouping_basis_dto`, `host_with_options`, `host`, `hydration_state_dto`, `identification_state_dto`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_onboarding_progress_dto`, `library_onboarding_state_dto`, `library_provider_setup_decision_from_dto`, `library_refresh_job_detail_dto`, `library_resolution_refresh_job_detail_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `list_games_query_from_dto`, `membership_relationship_dto`, `metadata_field_provenance_dto`, `metadata_provider_readiness_dto`, `metadata_provider_settings_dto`, `metadata_provider_settings_from_dto`, `metadata_provider_settings_update_result_dto`, `metadata_settings_dto`, `metadata_settings_from_dto`, `metadata_settings_update_result_dto`, `operation_handle_dto`, `parse_runtime_id`, `pending_event_subscription`, `platform_id_dto`, `privacy_consent_dto`, `provider_capability_readiness_dto`, `provider_capability_str`, `provider_credential_readiness_dto`, `provider_readiness_state_str`, `recoverability_name`, `recovery_action_kind_dto`, `refresh_mode_from_dto`, `refresh_progress_facts_dto`, `resolved_artwork_dto`, `resolved_metadata_dto`, `retry_policy_name`, `root_relationship_dto`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `game_detail_dto`, `game_library_row_dto`, `game_page_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_execution_host_stop_request`, `parse_game_id`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
@@ -79,6 +79,73 @@ Future<AppearanceSettingsDto> getAppearanceSettings() =>
 Future<void> updateAppearanceSettings({
   required UpdateAppearanceSettingsRequestDto request,
 }) => RustLib.instance.api.crateUpdateAppearanceSettings(request: request);
+
+/// Reads the query-authoritative Library onboarding projection.
+Future<LibraryOnboardingStateDto> getLibraryOnboardingState() =>
+    RustLib.instance.api.crateGetLibraryOnboardingState();
+
+/// Reads the Settings-owned privacy-consent projection.
+Future<PrivacyConsentDto> getPrivacyConsent() =>
+    RustLib.instance.api.crateGetPrivacyConsent();
+
+/// Accepts the backend-advertised current privacy-terms version.
+Future<PrivacyConsentDto> acceptPrivacyTerms({
+  required AcceptPrivacyTermsRequestDto request,
+}) => RustLib.instance.api.crateAcceptPrivacyTerms(request: request);
+
+/// Commits onboarding metadata preferences.
+Future<LibraryOnboardingStateDto> confirmLibraryMetadataPreferences({
+  required MetadataSettingsDto settings,
+}) => RustLib.instance.api.crateConfirmLibraryMetadataPreferences(
+  settings: settings,
+);
+
+/// Records the onboarding provider setup decision.
+Future<LibraryOnboardingStateDto> recordLibraryProviderSetup({
+  required LibraryProviderSetupDecisionDto decision,
+}) => RustLib.instance.api.crateRecordLibraryProviderSetup(decision: decision);
+
+/// Commits onboarding completion and independently admits the initial refresh.
+Future<CompleteLibraryOnboardingAndRefreshResultDto>
+completeLibraryOnboardingAndRefresh() =>
+    RustLib.instance.api.crateCompleteLibraryOnboardingAndRefresh();
+
+/// Adds the first onboarding root and independently admits its initial
+/// composed refresh.
+Future<AddLibraryRootAndRefreshResultDto> addLibraryRootAndRefresh({
+  required LocalFilesystemRootSelectionDto selection,
+}) => RustLib.instance.api.crateAddLibraryRootAndRefresh(selection: selection);
+
+/// Reads local metadata preferences.
+Future<MetadataSettingsDto> getMetadataSettings() =>
+    RustLib.instance.api.crateGetMetadataSettings();
+
+/// Reads provider enablement preferences.
+Future<MetadataProviderSettingsDto> getMetadataProviderSettings() =>
+    RustLib.instance.api.crateGetMetadataProviderSettings();
+
+/// Commits metadata preferences and reports independent local-resolution
+/// admission.
+Future<MetadataSettingsUpdateResultDto> updateMetadataSettings({
+  required MetadataSettingsDto settings,
+}) => RustLib.instance.api.crateUpdateMetadataSettings(settings: settings);
+
+/// Commits provider enablement and reports independent local-resolution
+/// admission.
+Future<MetadataProviderSettingsUpdateResultDto> updateMetadataProviderSettings({
+  required MetadataProviderSettingsDto settings,
+}) => RustLib.instance.api.crateUpdateMetadataProviderSettings(
+  settings: settings,
+);
+
+/// Admits one bounded Game refresh.
+Future<OperationHandleDto> startGameRefresh({
+  required StartGameRefreshRequestDto request,
+}) => RustLib.instance.api.crateStartGameRefresh(request: request);
+
+/// Admits one normal composed Library refresh.
+Future<OperationHandleDto> refreshLibrary() =>
+    RustLib.instance.api.crateRefreshLibrary();
 
 /// Lists a bounded authoritative configured-root page.
 Future<LibraryRootPageDto> listLibraryRoots({
@@ -263,6 +330,45 @@ Future<bool> attachEventSubscription({required BigInt attachEpoch}) =>
 Stream<RuntimeEventDto> subscribeEvents({required BigInt attachEpoch}) =>
     RustLib.instance.api.crateSubscribeEvents(attachEpoch: attachEpoch);
 
+/// Versioned privacy-consent mutation request.
+class AcceptPrivacyTermsRequestDto {
+  final String termsVersion;
+
+  const AcceptPrivacyTermsRequestDto({required this.termsVersion});
+
+  @override
+  int get hashCode => termsVersion.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AcceptPrivacyTermsRequestDto &&
+          runtimeType == other.runtimeType &&
+          termsVersion == other.termsVersion;
+}
+
+@freezed
+sealed class AddLibraryRootAndRefreshResultDto
+    with _$AddLibraryRootAndRefreshResultDto {
+  const AddLibraryRootAndRefreshResultDto._();
+
+  const factory AddLibraryRootAndRefreshResultDto.addedAndRefreshAdmitted(
+    LibraryRootDto field0,
+    OperationHandleDto field1,
+  ) = AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted;
+  const factory AddLibraryRootAndRefreshResultDto.addedButRefreshNotAdmitted(
+    LibraryRootDto field0,
+    ApplicationErrorDto field1,
+  ) = AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted;
+  const factory AddLibraryRootAndRefreshResultDto.alreadyConfigured(
+    String field0,
+  ) = AddLibraryRootAndRefreshResultDto_AlreadyConfigured;
+  const factory AddLibraryRootAndRefreshResultDto.overlapsExisting(
+    String field0,
+    RootRelationshipDto field1,
+  ) = AddLibraryRootAndRefreshResultDto_OverlapsExisting;
+}
+
 @freezed
 sealed class AddLocalLibraryRootAndScanResultDto
     with _$AddLocalLibraryRootAndScanResultDto {
@@ -424,6 +530,21 @@ enum BridgeTransportError { eventStreamClosed }
 
 /// Typed outcome of one cancel request.
 enum CancelJobResultDto { cancellationRequested, noLongerCancellable }
+
+@freezed
+sealed class CompleteLibraryOnboardingAndRefreshResultDto
+    with _$CompleteLibraryOnboardingAndRefreshResultDto {
+  const CompleteLibraryOnboardingAndRefreshResultDto._();
+
+  const factory CompleteLibraryOnboardingAndRefreshResultDto.onboardingCompletedAndRefreshAdmitted(
+    LibraryOnboardingStateDto field0,
+    OperationHandleDto field1,
+  ) = CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted;
+  const factory CompleteLibraryOnboardingAndRefreshResultDto.onboardingCompletedButRefreshNotAdmitted(
+    LibraryOnboardingStateDto field0,
+    ApplicationErrorDto field1,
+  ) = CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted;
+}
 
 /// Safe current identity summary.
 class ContentIdentitySummaryDto {
@@ -759,6 +880,42 @@ class GamePageDto {
           nextCursor == other.nextCursor;
 }
 
+/// Typed bounded Game refresh detail.
+class GameRefreshJobDetailDto {
+  final List<String> gameIds;
+  final String mode;
+  final RefreshProgressFactsDto progress;
+  final String? retrySourceJobRunId;
+  final String? retrySuccessorJobRunId;
+
+  const GameRefreshJobDetailDto({
+    required this.gameIds,
+    required this.mode,
+    required this.progress,
+    this.retrySourceJobRunId,
+    this.retrySuccessorJobRunId,
+  });
+
+  @override
+  int get hashCode =>
+      gameIds.hashCode ^
+      mode.hashCode ^
+      progress.hashCode ^
+      retrySourceJobRunId.hashCode ^
+      retrySuccessorJobRunId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GameRefreshJobDetailDto &&
+          runtimeType == other.runtimeType &&
+          gameIds == other.gameIds &&
+          mode == other.mode &&
+          progress == other.progress &&
+          retrySourceJobRunId == other.retrySourceJobRunId &&
+          retrySuccessorJobRunId == other.retrySuccessorJobRunId;
+}
+
 @freezed
 sealed class GetGameResultDto with _$GetGameResultDto {
   const GetGameResultDto._();
@@ -1031,6 +1188,169 @@ enum LibraryHydrationStateDto {
   partiallyHydrated,
   unmatched,
   refreshing,
+}
+
+/// Durable onboarding progress facts.
+class LibraryOnboardingProgressDto {
+  final String? acceptedPrivacyTermsVersion;
+  final PlatformInt64? acceptedPrivacyAtMs;
+  final bool metadataPreferencesConfirmed;
+  final String providerSetupOutcome;
+  final PlatformInt64? completedAtMs;
+
+  const LibraryOnboardingProgressDto({
+    this.acceptedPrivacyTermsVersion,
+    this.acceptedPrivacyAtMs,
+    required this.metadataPreferencesConfirmed,
+    required this.providerSetupOutcome,
+    this.completedAtMs,
+  });
+
+  @override
+  int get hashCode =>
+      acceptedPrivacyTermsVersion.hashCode ^
+      acceptedPrivacyAtMs.hashCode ^
+      metadataPreferencesConfirmed.hashCode ^
+      providerSetupOutcome.hashCode ^
+      completedAtMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryOnboardingProgressDto &&
+          runtimeType == other.runtimeType &&
+          acceptedPrivacyTermsVersion == other.acceptedPrivacyTermsVersion &&
+          acceptedPrivacyAtMs == other.acceptedPrivacyAtMs &&
+          metadataPreferencesConfirmed == other.metadataPreferencesConfirmed &&
+          providerSetupOutcome == other.providerSetupOutcome &&
+          completedAtMs == other.completedAtMs;
+}
+
+/// Query-authoritative onboarding projection.
+class LibraryOnboardingStateDto {
+  final LibraryOnboardingProgressDto progress;
+  final String requiredPrivacyTermsVersion;
+  final bool requiresPrivacyAcceptance;
+  final bool requiresRootSelection;
+  final bool credentialConfigured;
+  final bool complete;
+
+  const LibraryOnboardingStateDto({
+    required this.progress,
+    required this.requiredPrivacyTermsVersion,
+    required this.requiresPrivacyAcceptance,
+    required this.requiresRootSelection,
+    required this.credentialConfigured,
+    required this.complete,
+  });
+
+  @override
+  int get hashCode =>
+      progress.hashCode ^
+      requiredPrivacyTermsVersion.hashCode ^
+      requiresPrivacyAcceptance.hashCode ^
+      requiresRootSelection.hashCode ^
+      credentialConfigured.hashCode ^
+      complete.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryOnboardingStateDto &&
+          runtimeType == other.runtimeType &&
+          progress == other.progress &&
+          requiredPrivacyTermsVersion == other.requiredPrivacyTermsVersion &&
+          requiresPrivacyAcceptance == other.requiresPrivacyAcceptance &&
+          requiresRootSelection == other.requiresRootSelection &&
+          credentialConfigured == other.credentialConfigured &&
+          complete == other.complete;
+}
+
+/// Closed onboarding provider decision.
+enum LibraryProviderSetupDecisionDto { configured, skipped }
+
+/// Typed composed Library refresh detail.
+class LibraryRefreshJobDetailDto {
+  final String trigger;
+  final String? triggerRootId;
+  final String mode;
+  final List<String> requestedRootIds;
+  final List<ScanRunDto> scanRuns;
+  final RefreshProgressFactsDto progress;
+  final String? retrySourceJobRunId;
+  final String? retrySuccessorJobRunId;
+
+  const LibraryRefreshJobDetailDto({
+    required this.trigger,
+    this.triggerRootId,
+    required this.mode,
+    required this.requestedRootIds,
+    required this.scanRuns,
+    required this.progress,
+    this.retrySourceJobRunId,
+    this.retrySuccessorJobRunId,
+  });
+
+  @override
+  int get hashCode =>
+      trigger.hashCode ^
+      triggerRootId.hashCode ^
+      mode.hashCode ^
+      requestedRootIds.hashCode ^
+      scanRuns.hashCode ^
+      progress.hashCode ^
+      retrySourceJobRunId.hashCode ^
+      retrySuccessorJobRunId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryRefreshJobDetailDto &&
+          runtimeType == other.runtimeType &&
+          trigger == other.trigger &&
+          triggerRootId == other.triggerRootId &&
+          mode == other.mode &&
+          requestedRootIds == other.requestedRootIds &&
+          scanRuns == other.scanRuns &&
+          progress == other.progress &&
+          retrySourceJobRunId == other.retrySourceJobRunId &&
+          retrySuccessorJobRunId == other.retrySuccessorJobRunId;
+}
+
+/// Typed local-only Library resolution refresh detail.
+class LibraryResolutionRefreshJobDetailDto {
+  final String jobRunId;
+  final BigInt settingsRevision;
+  final RefreshProgressFactsDto progress;
+  final String? retrySourceJobRunId;
+  final String? retrySuccessorJobRunId;
+
+  const LibraryResolutionRefreshJobDetailDto({
+    required this.jobRunId,
+    required this.settingsRevision,
+    required this.progress,
+    this.retrySourceJobRunId,
+    this.retrySuccessorJobRunId,
+  });
+
+  @override
+  int get hashCode =>
+      jobRunId.hashCode ^
+      settingsRevision.hashCode ^
+      progress.hashCode ^
+      retrySourceJobRunId.hashCode ^
+      retrySuccessorJobRunId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LibraryResolutionRefreshJobDetailDto &&
+          runtimeType == other.runtimeType &&
+          jobRunId == other.jobRunId &&
+          settingsRevision == other.settingsRevision &&
+          progress == other.progress &&
+          retrySourceJobRunId == other.retrySourceJobRunId &&
+          retrySuccessorJobRunId == other.retrySuccessorJobRunId;
 }
 
 /// Bounded active scan-ownership summary carried by a root projection.
@@ -1717,6 +2037,81 @@ class MetadataProviderReadinessDto {
           credentialConfigured == other.credentialConfigured;
 }
 
+/// Provider enablement preferences owned by the metadata capability.
+class MetadataProviderSettingsDto {
+  final List<String> enabledProviders;
+
+  const MetadataProviderSettingsDto({required this.enabledProviders});
+
+  @override
+  int get hashCode => enabledProviders.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MetadataProviderSettingsDto &&
+          runtimeType == other.runtimeType &&
+          enabledProviders == other.enabledProviders;
+}
+
+@freezed
+sealed class MetadataProviderSettingsUpdateResultDto
+    with _$MetadataProviderSettingsUpdateResultDto {
+  const MetadataProviderSettingsUpdateResultDto._();
+
+  const factory MetadataProviderSettingsUpdateResultDto.committedNoResolutionWork(
+    MetadataProviderSettingsDto field0,
+  ) = MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork;
+  const factory MetadataProviderSettingsUpdateResultDto.committedAndResolutionAdmitted(
+    MetadataProviderSettingsDto field0,
+    OperationHandleDto field1,
+  ) = MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted;
+  const factory MetadataProviderSettingsUpdateResultDto.committedButResolutionNotAdmitted(
+    MetadataProviderSettingsDto field0,
+    ApplicationErrorDto field1,
+  ) = MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted;
+}
+
+/// Local metadata preferences owned by the settings capability.
+class MetadataSettingsDto {
+  final List<String> preferredRegions;
+  final List<String> preferredLanguages;
+
+  const MetadataSettingsDto({
+    required this.preferredRegions,
+    required this.preferredLanguages,
+  });
+
+  @override
+  int get hashCode => preferredRegions.hashCode ^ preferredLanguages.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MetadataSettingsDto &&
+          runtimeType == other.runtimeType &&
+          preferredRegions == other.preferredRegions &&
+          preferredLanguages == other.preferredLanguages;
+}
+
+@freezed
+sealed class MetadataSettingsUpdateResultDto
+    with _$MetadataSettingsUpdateResultDto {
+  const MetadataSettingsUpdateResultDto._();
+
+  const factory MetadataSettingsUpdateResultDto.committedNoResolutionWork(
+    MetadataSettingsDto field0,
+  ) = MetadataSettingsUpdateResultDto_CommittedNoResolutionWork;
+  const factory MetadataSettingsUpdateResultDto.committedAndResolutionAdmitted(
+    MetadataSettingsDto field0,
+    OperationHandleDto field1,
+  ) = MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted;
+  const factory MetadataSettingsUpdateResultDto.committedButResolutionNotAdmitted(
+    MetadataSettingsDto field0,
+    ApplicationErrorDto field1,
+  ) = MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted;
+}
+
 /// One native mounted-volume fact supplied only to the synchronization ingress.
 class MountedLocalFilesystemVolumeDto {
   final String providerVolumeId;
@@ -1759,6 +2154,14 @@ sealed class OperationDetailDto with _$OperationDetailDto {
 
   const factory OperationDetailDto.libraryScan(LibraryScanJobDetailDto field0) =
       OperationDetailDto_LibraryScan;
+  const factory OperationDetailDto.libraryRefresh(
+    LibraryRefreshJobDetailDto field0,
+  ) = OperationDetailDto_LibraryRefresh;
+  const factory OperationDetailDto.gameRefresh(GameRefreshJobDetailDto field0) =
+      OperationDetailDto_GameRefresh;
+  const factory OperationDetailDto.libraryResolutionRefresh(
+    LibraryResolutionRefreshJobDetailDto field0,
+  ) = OperationDetailDto_LibraryResolutionRefresh;
 }
 
 /// Minimal identity-only handle returned by successful background admission.
@@ -1785,6 +2188,38 @@ class OperationHandleDto {
 
 /// Stable platform vocabulary in logical-library projections.
 enum PlatformIdDto { nintendoGb, nintendoGbc, nintendoGba }
+
+/// Safe Settings-owned privacy-consent projection.
+class PrivacyConsentDto {
+  final String? acceptedTermsVersion;
+  final PlatformInt64? acceptedAtMs;
+  final String requiredTermsVersion;
+  final bool satisfiesCurrentRequiredTerms;
+
+  const PrivacyConsentDto({
+    this.acceptedTermsVersion,
+    this.acceptedAtMs,
+    required this.requiredTermsVersion,
+    required this.satisfiesCurrentRequiredTerms,
+  });
+
+  @override
+  int get hashCode =>
+      acceptedTermsVersion.hashCode ^
+      acceptedAtMs.hashCode ^
+      requiredTermsVersion.hashCode ^
+      satisfiesCurrentRequiredTerms.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PrivacyConsentDto &&
+          runtimeType == other.runtimeType &&
+          acceptedTermsVersion == other.acceptedTermsVersion &&
+          acceptedAtMs == other.acceptedAtMs &&
+          requiredTermsVersion == other.requiredTermsVersion &&
+          satisfiesCurrentRequiredTerms == other.satisfiesCurrentRequiredTerms;
+}
 
 /// Safe provider capability readiness projection.
 class ProviderCapabilityReadinessDto {
@@ -1859,6 +2294,45 @@ enum RecoveryActionKindDto {
   copyTechnicalDetails,
   openDataDirectory,
   exit,
+}
+
+/// Closed refresh freshness policy.
+enum RefreshModeDto { eligibleOnly, force }
+
+/// Shared progress facts for a composed refresh operation.
+class RefreshProgressFactsDto {
+  final String? phase;
+  final BigInt? completedUnits;
+  final BigInt? totalUnits;
+  final String? statusKey;
+  final BigInt? issueCount;
+
+  const RefreshProgressFactsDto({
+    this.phase,
+    this.completedUnits,
+    this.totalUnits,
+    this.statusKey,
+    this.issueCount,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      completedUnits.hashCode ^
+      totalUnits.hashCode ^
+      statusKey.hashCode ^
+      issueCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RefreshProgressFactsDto &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          completedUnits == other.completedUnits &&
+          totalUnits == other.totalUnits &&
+          statusKey == other.statusKey &&
+          issueCount == other.issueCount;
 }
 
 @freezed
@@ -2470,6 +2944,25 @@ class SourceEntryDto {
 
 /// Application-owned source-entry kind vocabulary.
 enum SourceEntryKindDto { directory, file, linkLike, unknown }
+
+/// Bounded Game refresh admission request.
+class StartGameRefreshRequestDto {
+  final List<String> gameIds;
+  final RefreshModeDto mode;
+
+  const StartGameRefreshRequestDto({required this.gameIds, required this.mode});
+
+  @override
+  int get hashCode => gameIds.hashCode ^ mode.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StartGameRefreshRequestDto &&
+          runtimeType == other.runtimeType &&
+          gameIds == other.gameIds &&
+          mode == other.mode;
+}
 
 @freezed
 sealed class StartLibraryScanAllResultDto with _$StartLibraryScanAllResultDto {

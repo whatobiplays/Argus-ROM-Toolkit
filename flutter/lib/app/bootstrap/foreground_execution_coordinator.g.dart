@@ -65,4 +65,4 @@ final class ForegroundExecutionCoordinatorProvider
 }
 
 String _$foregroundExecutionCoordinatorHash() =>
-    r'ac936e7432767ab3ec89df52c7c2b96a65fd5b76';
+    r'9f7547f45272ebd0dc51fc1a596d35fb280eea0a';

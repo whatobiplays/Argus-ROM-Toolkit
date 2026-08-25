@@ -1,11 +1,10 @@
-import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/app_bootstrap.dart';
-import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+import 'phase_002_android_test_support.dart';
 
 /// P02-002 Android root-management proof.
 ///
@@ -29,14 +28,14 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(const ArgusBootstrap());
+    final client = await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
       find.byKey(const ValueKey<String>('compact-navigation-bar')),
       message: 'Android application shell did not become ready',
     );
 
-    final container = _container(tester);
-    final client = container.read(argusClientProvider);
+    final baselineJobCount = await _jobCount(client);
     await _goToSources(tester);
     if (mode == 'seed') {
       _assertNoScanControls(tester);
@@ -50,14 +49,18 @@ void main() {
 
     switch (mode) {
       case 'seed':
-        await _runSeedScenario(tester, client);
+        await _runSeedScenario(tester, client, baselineJobCount);
       case 'verify':
-        await _runVerifyScenario(tester, client);
+        await _runVerifyScenario(tester, client, baselineJobCount);
     }
   });
 }
 
-Future<void> _runSeedScenario(WidgetTester tester, ArgusClient client) async {
+Future<void> _runSeedScenario(
+  WidgetTester tester,
+  ArgusClient client,
+  int baselineJobCount,
+) async {
   final browseRoots = await client.sources.listLocalFilesystemBrowseRoots();
   expect(browseRoots, isNotEmpty, reason: 'StorageManager found no roots');
   final primary = browseRoots.first;
@@ -116,10 +119,18 @@ Future<void> _runSeedScenario(WidgetTester tester, ArgusClient client) async {
     find.byKey(const ValueKey<String>('sources-scan-all')),
     message: 'Scan All did not appear on the Sources landing',
   );
-  expect(await _jobCount(client), 0, reason: 'root-only add created a job');
+  expect(
+    await _jobCount(client),
+    baselineJobCount,
+    reason: 'root-only add created a job',
+  );
 }
 
-Future<void> _runVerifyScenario(WidgetTester tester, ArgusClient client) async {
+Future<void> _runVerifyScenario(
+  WidgetTester tester,
+  ArgusClient client,
+  int baselineJobCount,
+) async {
   var roots = await _waitForRoots(client, 1);
   final rootId = roots.single.id;
   expect(roots.single.id, rootId);
@@ -215,13 +226,12 @@ Future<void> _runVerifyScenario(WidgetTester tester, ArgusClient client) async {
   );
   await tester.tap(find.byKey(const ValueKey<String>('remove-root-confirm')));
   await _waitForRoots(client, 0);
-  expect(await _jobCount(client), 0, reason: 'root management created a job');
+  expect(
+    await _jobCount(client),
+    baselineJobCount,
+    reason: 'root management created a job',
+  );
 }
-
-ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(
-  tester.element(find.byType(ArgusApp)),
-  listen: false,
-);
 
 Future<void> _goToSources(WidgetTester tester) async {
   final addButton = find

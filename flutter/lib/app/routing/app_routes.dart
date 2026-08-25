@@ -1,10 +1,13 @@
 import 'package:argus/app/routing/app_destination.dart';
 import 'package:argus/app/shell/application_shell.dart';
+import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/jobs/jobs.dart';
+import 'package:argus/features/library/library.dart';
 import 'package:argus/features/settings/settings.dart';
 import 'package:argus/features/sources/sources.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'not_found_page.dart';
@@ -13,6 +16,11 @@ part 'app_routes.g.dart';
 
 /// Derives shell selection from the typed route location.
 AppDestination? destinationForUri(Uri uri) {
+  if (uri.path == '/library' ||
+      uri.path.startsWith('/library/') ||
+      uri.path.startsWith('/games/')) {
+    return AppDestination.library;
+  }
   if (uri.path == '/settings') {
     return AppDestination.settings;
   }
@@ -33,13 +41,51 @@ class RootRoute extends GoRouteData with $RootRoute {
 
   @override
   String? redirect(BuildContext context, GoRouterState state) {
-    return const SettingsRoute().location;
+    try {
+      final client = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(argusClientProvider);
+      return client.supportsLibraryPhase003
+          ? const LibraryRoute().location
+          : const SettingsRoute().location;
+    } on Object {
+      return const SettingsRoute().location;
+    }
+  }
+}
+
+/// Product onboarding is outside the ready-state shell and is driven by the
+/// query-authoritative native onboarding projection.
+@TypedGoRoute<LibraryOnboardingRoute>(path: '/onboarding/library')
+class LibraryOnboardingRoute extends GoRouteData with $LibraryOnboardingRoute {
+  const LibraryOnboardingRoute();
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    return LibraryOnboardingPage(
+      onOpenLibrary: () => const LibraryRoute().go(context),
+      onOpenSources: () => const SourcesRoute().go(context),
+      onOpenJob: (jobRunId) =>
+          JobsDetailRoute(jobRunId: jobRunId.value).go(context),
+    );
   }
 }
 
 /// Hosts the production semantic destinations in the persistent shell.
 @TypedShellRoute<ApplicationShellRoute>(
   routes: <TypedRoute<RouteData>>[
+    TypedGoRoute<LibraryRoute>(
+      path: '/library',
+      routes: <TypedRoute<RouteData>>[
+        TypedGoRoute<LibraryPlatformRoute>(path: 'platforms/:platformId'),
+        TypedGoRoute<LibrarySourceRoute>(path: 'sources/:sourceId'),
+        TypedGoRoute<LibraryRootScopeRoute>(
+          path: 'library-roots/:libraryRootId',
+        ),
+      ],
+    ),
+    TypedGoRoute<GameDetailRoute>(path: '/games/:gameId'),
     TypedGoRoute<SettingsRoute>(path: '/settings'),
     TypedGoRoute<SourcesRoute>(
       path: '/sources',
@@ -64,6 +110,7 @@ class ApplicationShellRoute extends ShellRouteData {
     return BranchAwareShell(
       currentUri: state.uri,
       currentDestination: destinationForUri(state.uri),
+      includeLibrary: true,
       child: navigator,
     );
   }
@@ -76,7 +123,122 @@ class SettingsRoute extends GoRouteData with $SettingsRoute {
 
   @override
   Widget build(BuildContext context, GoRouterState state) {
-    return const SettingsPage();
+    return SettingsPage(
+      onOpenJob: (jobRunId) =>
+          JobsDetailRoute(jobRunId: jobRunId.value).go(context),
+    );
+  }
+}
+
+/// Typed unscoped Library destination.
+class LibraryRoute extends GoRouteData with $LibraryRoute {
+  const LibraryRoute();
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) => LibraryPage(
+    scope: const LibraryScopeAll(),
+    onOpenAll: () => const LibraryRoute().go(context),
+    onOpenGame: (gameId) => GameDetailRoute(gameId: gameId.value).go(context),
+    onOpenSources: () => const SourcesRoute().go(context),
+    onOpenJob: (jobRunId) =>
+        JobsDetailRoute(jobRunId: jobRunId.value).go(context),
+  );
+}
+
+/// Platform scope route. The raw parameter is retained in [LibraryScope] and
+/// is never downgraded to the unscoped Library query.
+class LibraryPlatformRoute extends GoRouteData with $LibraryPlatformRoute {
+  const LibraryPlatformRoute({required this.platformId});
+
+  final String platformId;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    try {
+      PlatformId.fromWire(platformId);
+    } on ClientFailure {
+      return _invalidLibraryScope(context, state.uri.path);
+    }
+    return _scopedLibrary(context, LibraryScope.platform(platformId));
+  }
+}
+
+/// Logical source scope route. It is intentionally distinct from operational
+/// Sources hierarchy routes.
+class LibrarySourceRoute extends GoRouteData with $LibrarySourceRoute {
+  const LibrarySourceRoute({required this.sourceId});
+
+  final String sourceId;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    if (!_isValidScopeToken(sourceId)) {
+      return _invalidLibraryScope(context, state.uri.path);
+    }
+    return _scopedLibrary(context, LibraryScope.source(sourceId));
+  }
+}
+
+/// Configured-root scope route for logical Game browsing.
+class LibraryRootScopeRoute extends GoRouteData with $LibraryRootScopeRoute {
+  const LibraryRootScopeRoute({required this.libraryRootId});
+
+  final String libraryRootId;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    final id = LibraryRootId.tryParse(libraryRootId);
+    if (id == null) {
+      return _invalidLibraryScope(context, state.uri.path);
+    }
+    return _scopedLibrary(context, LibraryScope.libraryRoot(id.value));
+  }
+}
+
+Widget _scopedLibrary(BuildContext context, LibraryScope scope) => LibraryPage(
+  scope: scope,
+  onOpenAll: () => const LibraryRoute().go(context),
+  onOpenGame: (gameId) => GameDetailRoute(gameId: gameId.value).go(context),
+  onOpenSources: () => const SourcesRoute().go(context),
+  onOpenJob: (jobRunId) =>
+      JobsDetailRoute(jobRunId: jobRunId.value).go(context),
+);
+
+Widget _invalidLibraryScope(BuildContext context, String path) =>
+    AppRouteErrorPage(
+      kind: RouteLocationFailure.invalidRouteData,
+      path: path,
+      title: 'Invalid Library scope',
+      message: 'The requested Library scope is not a valid canonical identity.',
+      actionLabel: 'Go to Library',
+      onAction: () => const LibraryRoute().go(context),
+    );
+
+bool _isValidScopeToken(String value) =>
+    value.isNotEmpty &&
+    value.length <= 256 &&
+    RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(value);
+
+/// Typed production Game detail route.
+class GameDetailRoute extends GoRouteData with $GameDetailRoute {
+  const GameDetailRoute({required this.gameId});
+
+  final String gameId;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    final id = GameId.tryParse(gameId);
+    if (id == null) {
+      return _invalidLibraryScope(context, state.uri.path);
+    }
+    return GameDetailPage(
+      gameId: id,
+      onMissingGame: () => const LibraryRoute().go(context),
+      onOpenGame: (canonicalId) =>
+          GameDetailRoute(gameId: canonicalId.value).go(context),
+      onOpenJob: (jobRunId) =>
+          JobsDetailRoute(jobRunId: jobRunId.value).go(context),
+    );
   }
 }
 

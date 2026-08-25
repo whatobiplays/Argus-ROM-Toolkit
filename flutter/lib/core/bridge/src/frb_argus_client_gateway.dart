@@ -33,6 +33,8 @@ final class FrbArgusClientGateway
         ArgusClientGateway,
         DiagnosticsSharingGateway,
         LibraryGateway,
+        LibraryPhase003Gateway,
+        PrivacyGateway,
         MetadataProvidersGateway,
         ArtworkGateway {
   FrbArgusClientGateway({
@@ -193,6 +195,126 @@ final class FrbArgusClientGateway
           ),
         ),
       );
+
+  @override
+  Future<PrivacyConsent> getPrivacyConsent() => _call(
+    () async => privacyConsentFromDto(await _rustApi.crateGetPrivacyConsent()),
+  );
+
+  @override
+  Future<PrivacyConsent> acceptPrivacyTerms(PrivacyTermsVersion termsVersion) =>
+      _call(
+        () async => privacyConsentFromDto(
+          await _rustApi.crateAcceptPrivacyTerms(
+            request: dto.AcceptPrivacyTermsRequestDto(
+              termsVersion: termsVersion.value,
+            ),
+          ),
+        ),
+      );
+
+  @override
+  Future<LibraryOnboardingState> getLibraryOnboardingState() => _call(
+    () async => libraryOnboardingStateFromDto(
+      await _rustApi.crateGetLibraryOnboardingState(),
+    ),
+  );
+
+  @override
+  Future<LibraryOnboardingState> confirmLibraryMetadataPreferences(
+    MetadataSettings settings,
+  ) => _call(
+    () async => libraryOnboardingStateFromDto(
+      await _rustApi.crateConfirmLibraryMetadataPreferences(
+        settings: metadataSettingsToDto(settings),
+      ),
+    ),
+  );
+
+  @override
+  Future<LibraryOnboardingState> recordLibraryProviderSetup(
+    LibraryProviderSetupDecision decision,
+  ) => _call(
+    () async => libraryOnboardingStateFromDto(
+      await _rustApi.crateRecordLibraryProviderSetup(
+        decision: libraryProviderSetupDecisionToDto(decision),
+      ),
+    ),
+  );
+
+  @override
+  Future<CompleteLibraryOnboardingAndRefreshResult>
+  completeLibraryOnboardingAndRefresh() => _call(
+    () async => completeLibraryOnboardingAndRefreshResultFromDto(
+      await _rustApi.crateCompleteLibraryOnboardingAndRefresh(),
+    ),
+  );
+
+  @override
+  Future<AddLibraryRootAndRefreshResult> addLibraryRootAndRefresh(
+    LocalFilesystemRootSelection selection,
+  ) => _call(
+    () async => addLibraryRootAndRefreshResultFromDto(
+      await _rustApi.crateAddLibraryRootAndRefresh(
+        selection: selectionToDto(selection),
+      ),
+    ),
+  );
+
+  @override
+  Future<MetadataSettings> getMetadataSettings() => _call(
+    () async =>
+        metadataSettingsFromDto(await _rustApi.crateGetMetadataSettings()),
+  );
+
+  @override
+  Future<MetadataProviderSettings> getMetadataProviderSettings() => _call(
+    () async => metadataProviderSettingsFromDto(
+      await _rustApi.crateGetMetadataProviderSettings(),
+    ),
+  );
+
+  @override
+  Future<MetadataSettingsUpdateResult> updateMetadataSettings(
+    MetadataSettings settings,
+  ) => _call(
+    () async => metadataSettingsUpdateResultFromDto(
+      await _rustApi.crateUpdateMetadataSettings(
+        settings: metadataSettingsToDto(settings),
+      ),
+    ),
+  );
+
+  @override
+  Future<MetadataProviderSettingsUpdateResult> updateMetadataProviderSettings(
+    MetadataProviderSettings settings,
+  ) => _call(
+    () async => metadataProviderSettingsUpdateResultFromDto(
+      await _rustApi.crateUpdateMetadataProviderSettings(
+        settings: metadataProviderSettingsToDto(settings),
+      ),
+    ),
+  );
+
+  @override
+  Future<OperationHandle> startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  }) => _call(
+    () async => operationHandleFromDto(
+      await _rustApi.crateStartGameRefresh(
+        request: dto.StartGameRefreshRequestDto(
+          gameIds: [for (final gameId in gameIds) gameId.value],
+          mode: refreshModeToDto(mode),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Future<OperationHandle> refreshLibrary() => _call(
+    () async => operationHandleFromDto(await _rustApi.crateRefreshLibrary()),
+  );
 
   @override
   Future<LibraryRootPage> listLibraryRoots({
@@ -829,6 +951,183 @@ dto.ThemeModeDto themeModeToDto(ThemeMode value) => switch (value) {
   ThemeMode.system => dto.ThemeModeDto.system,
   ThemeMode.light => dto.ThemeModeDto.light,
   ThemeMode.dark => dto.ThemeModeDto.dark,
+};
+
+LibraryOnboardingProgress libraryOnboardingProgressFromDto(
+  dto.LibraryOnboardingProgressDto value,
+) => LibraryOnboardingProgress(
+  acceptedPrivacyTermsVersion: value.acceptedPrivacyTermsVersion,
+  acceptedPrivacyAtMs: value.acceptedPrivacyAtMs?.toInt(),
+  metadataPreferencesConfirmed: value.metadataPreferencesConfirmed,
+  providerSetupOutcome: LibraryProviderSetupOutcome.fromWire(
+    value.providerSetupOutcome,
+  ),
+  completedAtMs: value.completedAtMs?.toInt(),
+);
+
+LibraryOnboardingState libraryOnboardingStateFromDto(
+  dto.LibraryOnboardingStateDto value,
+) => LibraryOnboardingState(
+  progress: libraryOnboardingProgressFromDto(value.progress),
+  requiredPrivacyTermsVersion: value.requiredPrivacyTermsVersion,
+  requiresPrivacyAcceptance: value.requiresPrivacyAcceptance,
+  requiresRootSelection: value.requiresRootSelection,
+  credentialConfigured: value.credentialConfigured,
+  complete: value.complete,
+);
+
+PrivacyConsent privacyConsentFromDto(dto.PrivacyConsentDto value) =>
+    PrivacyConsent(
+      acceptedTermsVersion: value.acceptedTermsVersion == null
+          ? null
+          : PrivacyTermsVersion(value.acceptedTermsVersion!),
+      acceptedAtMs: value.acceptedAtMs?.toInt(),
+      requiredTermsVersion: PrivacyTermsVersion(value.requiredTermsVersion),
+      satisfiesCurrentRequiredTerms: value.satisfiesCurrentRequiredTerms,
+    );
+
+dto.LibraryProviderSetupDecisionDto libraryProviderSetupDecisionToDto(
+  LibraryProviderSetupDecision value,
+) => switch (value) {
+  LibraryProviderSetupDecision.configured =>
+    dto.LibraryProviderSetupDecisionDto.configured,
+  LibraryProviderSetupDecision.skipped =>
+    dto.LibraryProviderSetupDecisionDto.skipped,
+};
+
+MetadataSettings metadataSettingsFromDto(dto.MetadataSettingsDto value) =>
+    MetadataSettings(
+      preferredRegions: value.preferredRegions,
+      preferredLanguages: value.preferredLanguages,
+    );
+
+dto.MetadataSettingsDto metadataSettingsToDto(MetadataSettings value) =>
+    dto.MetadataSettingsDto(
+      preferredRegions: value.preferredRegions,
+      preferredLanguages: value.preferredLanguages,
+    );
+
+MetadataProviderSettings metadataProviderSettingsFromDto(
+  dto.MetadataProviderSettingsDto value,
+) => MetadataProviderSettings(enabledProviders: value.enabledProviders);
+
+dto.MetadataProviderSettingsDto metadataProviderSettingsToDto(
+  MetadataProviderSettings value,
+) => dto.MetadataProviderSettingsDto(enabledProviders: value.enabledProviders);
+
+CompleteLibraryOnboardingAndRefreshResult
+completeLibraryOnboardingAndRefreshResultFromDto(
+  dto.CompleteLibraryOnboardingAndRefreshResultDto value,
+) => switch (value) {
+  dto.CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedAndRefreshAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    CompleteLibraryOnboardingAndRefreshResult.admitted(
+      state: libraryOnboardingStateFromDto(field0),
+      handle: operationHandleFromDto(field1),
+    ),
+  dto.CompleteLibraryOnboardingAndRefreshResultDto_OnboardingCompletedButRefreshNotAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    CompleteLibraryOnboardingAndRefreshResult.notAdmitted(
+      state: libraryOnboardingStateFromDto(field0),
+      error: applicationErrorFromDto(field1),
+    ),
+};
+
+AddLibraryRootAndRefreshResult addLibraryRootAndRefreshResultFromDto(
+  dto.AddLibraryRootAndRefreshResultDto value,
+) => switch (value) {
+  dto.AddLibraryRootAndRefreshResultDto_AddedAndRefreshAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    AddLibraryRootAndRefreshResult.addedAndRefreshAdmitted(
+      root: libraryRootFromDto(field0),
+      handle: operationHandleFromDto(field1),
+    ),
+  dto.AddLibraryRootAndRefreshResultDto_AddedButRefreshNotAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    AddLibraryRootAndRefreshResult.addedButRefreshNotAdmitted(
+      root: libraryRootFromDto(field0),
+      error: applicationErrorFromDto(field1),
+    ),
+  dto.AddLibraryRootAndRefreshResultDto_AlreadyConfigured(:final field0) =>
+    AddLibraryRootAndRefreshResult.alreadyConfigured(
+      existingLibraryRootId: libraryRootIdFromDto(field0),
+    ),
+  dto.AddLibraryRootAndRefreshResultDto_OverlapsExisting(
+    :final field0,
+    :final field1,
+  ) =>
+    AddLibraryRootAndRefreshResult.overlapsExisting(
+      existingLibraryRootId: libraryRootIdFromDto(field0),
+      relationship: rootRelationshipFromDto(field1),
+    ),
+};
+
+MetadataSettingsUpdateResult metadataSettingsUpdateResultFromDto(
+  dto.MetadataSettingsUpdateResultDto value,
+) => switch (value) {
+  dto.MetadataSettingsUpdateResultDto_CommittedNoResolutionWork(
+    :final field0,
+  ) =>
+    MetadataSettingsUpdateResult.committedNoResolutionWork(
+      metadataSettingsFromDto(field0),
+    ),
+  dto.MetadataSettingsUpdateResultDto_CommittedAndResolutionAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    MetadataSettingsUpdateResult.committedAndResolutionAdmitted(
+      metadataSettingsFromDto(field0),
+      operationHandleFromDto(field1),
+    ),
+  dto.MetadataSettingsUpdateResultDto_CommittedButResolutionNotAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    MetadataSettingsUpdateResult.committedButResolutionNotAdmitted(
+      metadataSettingsFromDto(field0),
+      applicationErrorFromDto(field1),
+    ),
+};
+
+MetadataProviderSettingsUpdateResult
+metadataProviderSettingsUpdateResultFromDto(
+  dto.MetadataProviderSettingsUpdateResultDto value,
+) => switch (value) {
+  dto.MetadataProviderSettingsUpdateResultDto_CommittedNoResolutionWork(
+    :final field0,
+  ) =>
+    MetadataProviderSettingsUpdateResult.committedNoResolutionWork(
+      metadataProviderSettingsFromDto(field0),
+    ),
+  dto.MetadataProviderSettingsUpdateResultDto_CommittedAndResolutionAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    MetadataProviderSettingsUpdateResult.committedAndResolutionAdmitted(
+      metadataProviderSettingsFromDto(field0),
+      operationHandleFromDto(field1),
+    ),
+  dto.MetadataProviderSettingsUpdateResultDto_CommittedButResolutionNotAdmitted(
+    :final field0,
+    :final field1,
+  ) =>
+    MetadataProviderSettingsUpdateResult.committedButResolutionNotAdmitted(
+      metadataProviderSettingsFromDto(field0),
+      applicationErrorFromDto(field1),
+    ),
+};
+
+dto.RefreshModeDto refreshModeToDto(RefreshMode value) => switch (value) {
+  RefreshMode.eligibleOnly => dto.RefreshModeDto.eligibleOnly,
+  RefreshMode.force => dto.RefreshModeDto.force,
 };
 
 DiagnosticsExport diagnosticsExportFromDto(
@@ -1714,6 +2013,14 @@ OperationDetail operationDetailFromDto(dto.OperationDetailDto value) =>
     switch (value) {
       dto.OperationDetailDto_LibraryScan(:final field0) =>
         OperationDetail.libraryScan(libraryScanJobDetailFromDto(field0)),
+      dto.OperationDetailDto_LibraryRefresh(:final field0) =>
+        OperationDetail.libraryRefresh(libraryRefreshJobDetailFromDto(field0)),
+      dto.OperationDetailDto_GameRefresh(:final field0) =>
+        OperationDetail.gameRefresh(gameRefreshJobDetailFromDto(field0)),
+      dto.OperationDetailDto_LibraryResolutionRefresh(:final field0) =>
+        OperationDetail.libraryResolutionRefresh(
+          libraryResolutionRefreshJobDetailFromDto(field0),
+        ),
     };
 
 LibraryScanJobDetail libraryScanJobDetailFromDto(
@@ -1770,4 +2077,72 @@ LibraryScanJobDetail libraryScanJobDetailFromDto(
   retrySuccessorJobRunId: value.retrySuccessorJobRunId == null
       ? null
       : jobRunIdFromDto(value.retrySuccessorJobRunId!),
+);
+
+LibraryRefreshJobDetail libraryRefreshJobDetailFromDto(
+  dto.LibraryRefreshJobDetailDto value,
+) => LibraryRefreshJobDetail(
+  trigger: value.trigger,
+  triggerRootId: value.triggerRootId,
+  mode: value.mode,
+  requestedRootIds: [
+    for (final rootId in value.requestedRootIds) libraryRootIdFromDto(rootId),
+  ],
+  scanRuns: [for (final scan in value.scanRuns) scanRunSummaryFromDto(scan)],
+  progress: refreshProgressFactsFromDto(value.progress),
+  retrySourceJobRunId: value.retrySourceJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySourceJobRunId!),
+  retrySuccessorJobRunId: value.retrySuccessorJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySuccessorJobRunId!),
+);
+
+GameRefreshJobDetail gameRefreshJobDetailFromDto(
+  dto.GameRefreshJobDetailDto value,
+) => GameRefreshJobDetail(
+  gameIds: [for (final gameId in value.gameIds) gameIdFromDto(gameId)],
+  mode: value.mode,
+  progress: refreshProgressFactsFromDto(value.progress),
+  retrySourceJobRunId: value.retrySourceJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySourceJobRunId!),
+  retrySuccessorJobRunId: value.retrySuccessorJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySuccessorJobRunId!),
+);
+
+LibraryResolutionRefreshJobDetail libraryResolutionRefreshJobDetailFromDto(
+  dto.LibraryResolutionRefreshJobDetailDto value,
+) => LibraryResolutionRefreshJobDetail(
+  jobRunId: jobRunIdFromDto(value.jobRunId),
+  settingsRevision: value.settingsRevision.toInt(),
+  progress: refreshProgressFactsFromDto(value.progress),
+  retrySourceJobRunId: value.retrySourceJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySourceJobRunId!),
+  retrySuccessorJobRunId: value.retrySuccessorJobRunId == null
+      ? null
+      : jobRunIdFromDto(value.retrySuccessorJobRunId!),
+);
+
+RefreshProgressFacts refreshProgressFactsFromDto(
+  dto.RefreshProgressFactsDto value,
+) => RefreshProgressFacts(
+  phase: value.phase,
+  completedUnits: value.completedUnits?.toInt(),
+  totalUnits: value.totalUnits?.toInt(),
+  statusKey: value.statusKey,
+  issueCount: value.issueCount?.toInt(),
+);
+
+ScanRunSummary scanRunSummaryFromDto(dto.ScanRunDto value) => ScanRunSummary(
+  scanRunId: scanRunIdFromDto(value.scanRunId),
+  jobRunId: jobRunIdFromDto(value.jobRunId),
+  libraryRootId: libraryRootIdFromDto(value.libraryRootId),
+  displayName: value.displayName,
+  safeLocationDisplay: value.safeLocationDisplay,
+  status: jobScanStatusFromDto(value.status),
+  startedAtMs: value.startedAtMs.toInt(),
+  completedAtMs: value.completedAtMs?.toInt(),
 );

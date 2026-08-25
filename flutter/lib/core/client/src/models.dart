@@ -181,6 +181,186 @@ final class OperationHandle {
   int get hashCode => Object.hash(jobRunId, operationType);
 }
 
+/// Durable provider setup outcome recorded by the Library onboarding flow.
+enum LibraryProviderSetupOutcome {
+  pending,
+  configured,
+  skipped;
+
+  static LibraryProviderSetupOutcome fromWire(String value) => switch (value) {
+    'pending' => LibraryProviderSetupOutcome.pending,
+    'configured' => LibraryProviderSetupOutcome.configured,
+    'skipped' => LibraryProviderSetupOutcome.skipped,
+    _ => throw const TransportFailure(
+      'Unknown Library provider setup outcome',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Explicit onboarding decision for the optional metadata provider step.
+enum LibraryProviderSetupDecision { configured, skipped }
+
+/// Durable onboarding facts returned by the native application boundary.
+@freezed
+sealed class LibraryOnboardingProgress with _$LibraryOnboardingProgress {
+  const factory LibraryOnboardingProgress({
+    String? acceptedPrivacyTermsVersion,
+    int? acceptedPrivacyAtMs,
+    required bool metadataPreferencesConfirmed,
+    required LibraryProviderSetupOutcome providerSetupOutcome,
+    int? completedAtMs,
+  }) = _LibraryOnboardingProgress;
+}
+
+/// Query-authoritative onboarding state. The UI must derive its step from this
+/// projection rather than maintaining a second completion flag.
+@freezed
+sealed class LibraryOnboardingState with _$LibraryOnboardingState {
+  const factory LibraryOnboardingState({
+    required LibraryOnboardingProgress progress,
+    required String requiredPrivacyTermsVersion,
+    required bool requiresPrivacyAcceptance,
+    required bool requiresRootSelection,
+    required bool credentialConfigured,
+    required bool complete,
+  }) = _LibraryOnboardingState;
+}
+
+/// Backend-advertised privacy terms version accepted by the Settings API.
+final class PrivacyTermsVersion {
+  const PrivacyTermsVersion(this.value);
+
+  final String value;
+
+  bool get isValid => value.isNotEmpty;
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PrivacyTermsVersion && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
+/// Safe privacy-consent projection. It contains no terms document or hidden
+/// version fallback; callers must use the backend-advertised version.
+final class PrivacyConsent {
+  const PrivacyConsent({
+    required this.acceptedTermsVersion,
+    required this.acceptedAtMs,
+    required this.requiredTermsVersion,
+    required this.satisfiesCurrentRequiredTerms,
+  });
+
+  final PrivacyTermsVersion? acceptedTermsVersion;
+  final int? acceptedAtMs;
+  final PrivacyTermsVersion requiredTermsVersion;
+  final bool satisfiesCurrentRequiredTerms;
+}
+
+/// Local metadata preferences committed independently from refresh admission.
+@freezed
+sealed class MetadataSettings with _$MetadataSettings {
+  const factory MetadataSettings({
+    required List<String> preferredRegions,
+    required List<String> preferredLanguages,
+  }) = _MetadataSettings;
+}
+
+/// Provider enablement preferences. Credential values are intentionally absent.
+@freezed
+sealed class MetadataProviderSettings with _$MetadataProviderSettings {
+  const factory MetadataProviderSettings({
+    required List<String> enabledProviders,
+  }) = _MetadataProviderSettings;
+}
+
+/// Freshness policy for bounded refresh admissions.
+enum RefreshMode { eligibleOnly, force }
+
+/// Completion state is committed even when the initial refresh cannot be
+/// admitted; callers must render both outcomes distinctly.
+@freezed
+sealed class CompleteLibraryOnboardingAndRefreshResult
+    with _$CompleteLibraryOnboardingAndRefreshResult {
+  const factory CompleteLibraryOnboardingAndRefreshResult.admitted({
+    required LibraryOnboardingState state,
+    required OperationHandle handle,
+  }) = CompleteLibraryOnboardingAndRefreshResultAdmitted;
+
+  const factory CompleteLibraryOnboardingAndRefreshResult.notAdmitted({
+    required LibraryOnboardingState state,
+    required ClientApplicationError error,
+  }) = CompleteLibraryOnboardingAndRefreshResultNotAdmitted;
+}
+
+/// Result of adding the first onboarding root and admitting its refresh.
+@freezed
+sealed class AddLibraryRootAndRefreshResult
+    with _$AddLibraryRootAndRefreshResult {
+  const factory AddLibraryRootAndRefreshResult.addedAndRefreshAdmitted({
+    required LibraryRoot root,
+    required OperationHandle handle,
+  }) = AddLibraryRootAndRefreshResultAddedAndRefreshAdmitted;
+
+  const factory AddLibraryRootAndRefreshResult.addedButRefreshNotAdmitted({
+    required LibraryRoot root,
+    required ClientApplicationError error,
+  }) = AddLibraryRootAndRefreshResultAddedButRefreshNotAdmitted;
+
+  const factory AddLibraryRootAndRefreshResult.alreadyConfigured({
+    required LibraryRootId existingLibraryRootId,
+  }) = AddLibraryRootAndRefreshResultAlreadyConfigured;
+
+  const factory AddLibraryRootAndRefreshResult.overlapsExisting({
+    required LibraryRootId existingLibraryRootId,
+    required RootRelationship relationship,
+  }) = AddLibraryRootAndRefreshResultOverlapsExisting;
+}
+
+/// Metadata preferences were committed independently of local-resolution
+/// admission.
+@freezed
+sealed class MetadataSettingsUpdateResult with _$MetadataSettingsUpdateResult {
+  const factory MetadataSettingsUpdateResult.committedNoResolutionWork(
+    MetadataSettings settings,
+  ) = MetadataSettingsUpdateResultCommittedNoResolutionWork;
+
+  const factory MetadataSettingsUpdateResult.committedAndResolutionAdmitted(
+    MetadataSettings settings,
+    OperationHandle handle,
+  ) = MetadataSettingsUpdateResultCommittedAndResolutionAdmitted;
+
+  const factory MetadataSettingsUpdateResult.committedButResolutionNotAdmitted(
+    MetadataSettings settings,
+    ClientApplicationError error,
+  ) = MetadataSettingsUpdateResultCommittedButResolutionNotAdmitted;
+}
+
+/// Provider enablement was committed independently of local-resolution
+/// admission.
+@freezed
+sealed class MetadataProviderSettingsUpdateResult
+    with _$MetadataProviderSettingsUpdateResult {
+  const factory MetadataProviderSettingsUpdateResult.committedNoResolutionWork(
+    MetadataProviderSettings settings,
+  ) = MetadataProviderSettingsUpdateResultCommittedNoResolutionWork;
+
+  const factory MetadataProviderSettingsUpdateResult.committedAndResolutionAdmitted(
+    MetadataProviderSettings settings,
+    OperationHandle handle,
+  ) = MetadataProviderSettingsUpdateResultCommittedAndResolutionAdmitted;
+
+  const factory MetadataProviderSettingsUpdateResult.committedButResolutionNotAdmitted(
+    MetadataProviderSettings settings,
+    ClientApplicationError error,
+  ) = MetadataProviderSettingsUpdateResultCommittedButResolutionNotAdmitted;
+}
+
 /// Canonical persisted job lifecycle vocabulary.
 enum JobLifecycleState {
   queued,
@@ -353,6 +533,18 @@ sealed class ScanProgressFacts with _$ScanProgressFacts {
   }) = _ScanProgressFacts;
 }
 
+/// Shared bounded progress facts for composed refresh operations.
+@freezed
+sealed class RefreshProgressFacts with _$RefreshProgressFacts {
+  const factory RefreshProgressFacts({
+    String? phase,
+    int? completedUnits,
+    int? totalUnits,
+    String? statusKey,
+    int? issueCount,
+  }) = _RefreshProgressFacts;
+}
+
 /// Typed LibraryScan operation detail.
 @freezed
 sealed class LibraryScanJobDetail with _$LibraryScanJobDetail {
@@ -367,11 +559,58 @@ sealed class LibraryScanJobDetail with _$LibraryScanJobDetail {
   }) = _LibraryScanJobDetail;
 }
 
+/// Typed composed Library refresh detail.
+@freezed
+sealed class LibraryRefreshJobDetail with _$LibraryRefreshJobDetail {
+  const factory LibraryRefreshJobDetail({
+    required String trigger,
+    String? triggerRootId,
+    required String mode,
+    required List<LibraryRootId> requestedRootIds,
+    required List<ScanRunSummary> scanRuns,
+    required RefreshProgressFacts progress,
+    JobRunId? retrySourceJobRunId,
+    JobRunId? retrySuccessorJobRunId,
+  }) = _LibraryRefreshJobDetail;
+}
+
+/// Typed bounded Game refresh detail.
+@freezed
+sealed class GameRefreshJobDetail with _$GameRefreshJobDetail {
+  const factory GameRefreshJobDetail({
+    required List<GameId> gameIds,
+    required String mode,
+    required RefreshProgressFacts progress,
+    JobRunId? retrySourceJobRunId,
+    JobRunId? retrySuccessorJobRunId,
+  }) = _GameRefreshJobDetail;
+}
+
+/// Typed local-only Library resolution refresh detail.
+@freezed
+sealed class LibraryResolutionRefreshJobDetail
+    with _$LibraryResolutionRefreshJobDetail {
+  const factory LibraryResolutionRefreshJobDetail({
+    required JobRunId jobRunId,
+    required int settingsRevision,
+    required RefreshProgressFacts progress,
+    JobRunId? retrySourceJobRunId,
+    JobRunId? retrySuccessorJobRunId,
+  }) = _LibraryResolutionRefreshJobDetail;
+}
+
 /// Closed typed operation-detail union.
 @freezed
 sealed class OperationDetail with _$OperationDetail {
   const factory OperationDetail.libraryScan(LibraryScanJobDetail detail) =
       OperationDetailLibraryScan;
+  const factory OperationDetail.libraryRefresh(LibraryRefreshJobDetail detail) =
+      OperationDetailLibraryRefresh;
+  const factory OperationDetail.gameRefresh(GameRefreshJobDetail detail) =
+      OperationDetailGameRefresh;
+  const factory OperationDetail.libraryResolutionRefresh(
+    LibraryResolutionRefreshJobDetail detail,
+  ) = OperationDetailLibraryResolutionRefresh;
 }
 
 /// Authoritative job detail with typed operation detail.

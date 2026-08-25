@@ -160,14 +160,16 @@ fn migration_0007_upgrades_0006_history_and_backfills_invalid_configuration_erro
     drop(connection);
 
     let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 9);
-    assert_eq!(fresh.migration_summary().applied_count, 3);
+    assert_eq!(fresh.migration_summary().current_version, 11);
+    assert_eq!(fresh.migration_summary().applied_count, 5);
 
     let detail = SqliteJobsQueries::new(fresh.clone())
         .get_job(&context(), job_id(JOB_A))
         .expect("get job")
         .expect("known job");
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     assert_eq!(operation.requested_roots().len(), 2);
     assert_eq!(operation.admitted_roots().len(), 1);
     assert_eq!(
@@ -379,7 +381,9 @@ fn historical_detail_survives_root_removal_and_orders_children_by_root_id() {
         .get_job(&context(), job)
         .expect("get job")
         .expect("known job");
-    let OperationDetail::LibraryScan(operation) = detail.operation_detail();
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     let ordered: Vec<LibraryRootId> = operation
         .scan_runs()
         .iter()

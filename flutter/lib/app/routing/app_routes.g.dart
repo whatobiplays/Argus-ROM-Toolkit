@@ -6,7 +6,11 @@ part of 'app_routes.dart';
 // GoRouterGenerator
 // **************************************************************************
 
-List<RouteBase> get $appRoutes => [$rootRoute, $applicationShellRoute];
+List<RouteBase> get $appRoutes => [
+  $rootRoute,
+  $libraryOnboardingRoute,
+  $applicationShellRoute,
+];
 
 RouteBase get $rootRoute => GoRouteData.$route(
   path: '/',
@@ -34,9 +38,63 @@ mixin $RootRoute on GoRouteData {
   void replace(BuildContext context) => context.replace(location);
 }
 
+RouteBase get $libraryOnboardingRoute => GoRouteData.$route(
+  path: '/onboarding/library',
+  hasOverriddenOnExit: false,
+  factory: $LibraryOnboardingRoute._fromState,
+);
+
+mixin $LibraryOnboardingRoute on GoRouteData {
+  static LibraryOnboardingRoute _fromState(GoRouterState state) =>
+      const LibraryOnboardingRoute();
+
+  @override
+  String get location => GoRouteData.$location('/onboarding/library');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
 RouteBase get $applicationShellRoute => ShellRouteData.$route(
   factory: $ApplicationShellRouteExtension._fromState,
   routes: [
+    GoRouteData.$route(
+      path: '/library',
+      hasOverriddenOnExit: false,
+      factory: $LibraryRoute._fromState,
+      routes: [
+        GoRouteData.$route(
+          path: 'platforms/:platformId',
+          hasOverriddenOnExit: false,
+          factory: $LibraryPlatformRoute._fromState,
+        ),
+        GoRouteData.$route(
+          path: 'sources/:sourceId',
+          hasOverriddenOnExit: false,
+          factory: $LibrarySourceRoute._fromState,
+        ),
+        GoRouteData.$route(
+          path: 'library-roots/:libraryRootId',
+          hasOverriddenOnExit: false,
+          factory: $LibraryRootScopeRoute._fromState,
+        ),
+      ],
+    ),
+    GoRouteData.$route(
+      path: '/games/:gameId',
+      hasOverriddenOnExit: false,
+      factory: $GameDetailRoute._fromState,
+    ),
     GoRouteData.$route(
       path: '/settings',
       hasOverriddenOnExit: false,
@@ -72,6 +130,127 @@ RouteBase get $applicationShellRoute => ShellRouteData.$route(
 extension $ApplicationShellRouteExtension on ApplicationShellRoute {
   static ApplicationShellRoute _fromState(GoRouterState state) =>
       const ApplicationShellRoute();
+}
+
+mixin $LibraryRoute on GoRouteData {
+  static LibraryRoute _fromState(GoRouterState state) => const LibraryRoute();
+
+  @override
+  String get location => GoRouteData.$location('/library');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $LibraryPlatformRoute on GoRouteData {
+  static LibraryPlatformRoute _fromState(GoRouterState state) =>
+      LibraryPlatformRoute(platformId: state.pathParameters['platformId']!);
+
+  LibraryPlatformRoute get _self => this as LibraryPlatformRoute;
+
+  @override
+  String get location => GoRouteData.$location(
+    '/library/platforms/${Uri.encodeComponent(_self.platformId)}',
+  );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $LibrarySourceRoute on GoRouteData {
+  static LibrarySourceRoute _fromState(GoRouterState state) =>
+      LibrarySourceRoute(sourceId: state.pathParameters['sourceId']!);
+
+  LibrarySourceRoute get _self => this as LibrarySourceRoute;
+
+  @override
+  String get location => GoRouteData.$location(
+    '/library/sources/${Uri.encodeComponent(_self.sourceId)}',
+  );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $LibraryRootScopeRoute on GoRouteData {
+  static LibraryRootScopeRoute _fromState(GoRouterState state) =>
+      LibraryRootScopeRoute(
+        libraryRootId: state.pathParameters['libraryRootId']!,
+      );
+
+  LibraryRootScopeRoute get _self => this as LibraryRootScopeRoute;
+
+  @override
+  String get location => GoRouteData.$location(
+    '/library/library-roots/${Uri.encodeComponent(_self.libraryRootId)}',
+  );
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
+}
+
+mixin $GameDetailRoute on GoRouteData {
+  static GameDetailRoute _fromState(GoRouterState state) =>
+      GameDetailRoute(gameId: state.pathParameters['gameId']!);
+
+  GameDetailRoute get _self => this as GameDetailRoute;
+
+  @override
+  String get location =>
+      GoRouteData.$location('/games/${Uri.encodeComponent(_self.gameId)}');
+
+  @override
+  void go(BuildContext context) => context.go(location);
+
+  @override
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  @override
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  @override
+  void replace(BuildContext context) => context.replace(location);
 }
 
 mixin $SettingsRoute on GoRouteData {

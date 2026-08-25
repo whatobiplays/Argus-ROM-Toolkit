@@ -211,6 +211,9 @@ class _LoadFailure extends StatelessWidget {
 
 String _operationLabel(String operationType) => switch (operationType) {
   'library_scan' => JobsMessages.libraryScan,
+  'library_refresh' => JobsMessages.libraryRefresh,
+  'game_refresh' => JobsMessages.gameRefresh,
+  'library_resolution_refresh' => JobsMessages.libraryResolutionRefresh,
   _ => operationType,
 };
 

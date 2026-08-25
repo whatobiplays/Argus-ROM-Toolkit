@@ -4,6 +4,7 @@ import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/core/client/client.dart';
+import 'package:argus/features/library/library.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/sources/sources.dart';
@@ -118,6 +119,39 @@ class ArgusBootstrap extends StatelessWidget {
         }),
         appearanceReconciliationDemandProvider.overrideWith(
           (ref) => ref.watch(appearanceEventCoordinatorProvider),
+        ),
+        settingsMetadataApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).metadataSettings,
+        ),
+        settingsMetadataProvidersApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).metadataProviders,
+        ),
+        libraryApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).library,
+        ),
+        librarySourcesApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).sources,
+        ),
+        libraryOnboardingApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).onboarding,
+        ),
+        libraryMetadataSettingsApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).metadataSettings,
+        ),
+        libraryMetadataProvidersApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).metadataProviders,
+        ),
+        if (platform.foregroundExecutionHostApi != null)
+          libraryRefreshApiProvider.overrideWith(
+            (ref) =>
+                ref.watch(foregroundExecutionCoordinatorProvider).refreshApi,
+          )
+        else
+          libraryRefreshApiProvider.overrideWith(
+            (ref) => ref.watch(argusClientProvider).refresh,
+          ),
+        libraryGamesApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).games,
         ),
         if (platform.foregroundExecutionHostApi != null)
           sourcesApiProvider.overrideWith(

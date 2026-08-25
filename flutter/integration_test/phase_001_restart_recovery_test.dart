@@ -356,6 +356,7 @@ void _createLargeTree(String root) {
 LibraryScanJobDetail _scanDetail(JobDetail job) =>
     switch (job.operationDetail) {
       OperationDetailLibraryScan(:final detail) => detail,
+      _ => throw StateError('Expected a library_scan operation detail'),
     };
 
 Future<void> _tapDestination(WidgetTester tester, String label) async {

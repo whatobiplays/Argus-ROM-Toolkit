@@ -177,7 +177,11 @@ class _JobDetailContent extends StatelessWidget {
     final job = detail.job;
     final scanDetail = switch (detail.operationDetail) {
       OperationDetailLibraryScan(:final detail) => detail,
+      _ => null,
     };
+    if (scanDetail == null) {
+      return _buildNonScanDetail(context, detail);
+    }
     final controls = job.controls;
     final controlsBusy = cancelling || retrying;
     return Scaffold(
@@ -377,6 +381,110 @@ class _JobDetailContent extends StatelessWidget {
     RetryNotAdmittedReasonNoEligibleTargets() =>
       JobsMessages.retryNoEligibleTargets,
   };
+
+  Widget _buildNonScanDetail(BuildContext context, JobDetail detail) {
+    final operationLabel = switch (detail.operationDetail) {
+      OperationDetailLibraryRefresh() => 'Library refresh',
+      OperationDetailGameRefresh() => 'Game refresh',
+      OperationDetailLibraryResolutionRefresh() => 'Library resolution refresh',
+      OperationDetailLibraryScan() => JobsMessages.libraryScan,
+    };
+    final progress = switch (detail.operationDetail) {
+      OperationDetailLibraryRefresh(:final detail) => detail.progress,
+      OperationDetailGameRefresh(:final detail) => detail.progress,
+      OperationDetailLibraryResolutionRefresh(:final detail) => detail.progress,
+      OperationDetailLibraryScan() => null,
+    };
+    final controls = detail.job.controls;
+    final controlsBusy = cancelling || retrying;
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ListView(
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    operationLabel,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  if (controls.canCancel && !controlsBusy && !retryAmbiguous)
+                    OutlinedButton.icon(
+                      onPressed: () => _confirmCancel(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text(JobsMessages.cancelJob),
+                    ),
+                  if (controls.canRetry && !controlsBusy && !retryAmbiguous)
+                    FilledButton.icon(
+                      onPressed: () => _confirmRetry(context),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text(JobsMessages.retryJob),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(_lifecycleLabel(detail.job.lifecycleState)),
+              if (detail.job.phase != null)
+                Text('${JobsMessages.phase}: ${detail.job.phase}'),
+              if (cancelling)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(JobsMessages.cancelling),
+                ),
+              if (cancelAmbiguous || retryAmbiguous)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'The latest action could not be confirmed. '
+                    'Refreshing authoritative state.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              if (retryNotAdmittedReason != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_retryReasonLabel(retryNotAdmittedReason!)),
+                ),
+              if (progress != null) ...[
+                const SizedBox(height: 16),
+                _RefreshProgressFacts(progress: progress),
+              ],
+              if (detail.operationDetail case OperationDetailLibraryRefresh(
+                :final detail,
+              )) ...[
+                const SizedBox(height: 16),
+                Text('Trigger: ${detail.trigger}'),
+                Text('Mode: ${detail.mode}'),
+                if (detail.triggerRootId != null)
+                  Text('Root: ${detail.triggerRootId}'),
+              ],
+              if (detail.operationDetail case OperationDetailGameRefresh(
+                :final detail,
+              )) ...[
+                const SizedBox(height: 16),
+                Text('Games: ${detail.gameIds.length}'),
+                Text('Mode: ${detail.mode}'),
+              ],
+              if (detail.operationDetail
+                  case OperationDetailLibraryResolutionRefresh(
+                    :final detail,
+                  )) ...[
+                const SizedBox(height: 16),
+                Text('Settings revision: ${detail.settingsRevision}'),
+                const Text('Local-only resolution; no provider network work.'),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ProgressFacts extends StatelessWidget {
@@ -398,6 +506,32 @@ class _ProgressFacts extends StatelessWidget {
           Text(
             '${JobsMessages.entriesCommitted}: ${progress.entriesCommitted}',
           ),
+        if (progress.issueCount != null)
+          Text('${JobsMessages.issues}: ${progress.issueCount}'),
+      ],
+    );
+  }
+}
+
+class _RefreshProgressFacts extends StatelessWidget {
+  const _RefreshProgressFacts({required this.progress});
+
+  final RefreshProgressFacts progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (progress.phase != null)
+          Text('${JobsMessages.phase}: ${progress.phase}'),
+        if (progress.completedUnits != null && progress.totalUnits != null)
+          Text('Progress: ${progress.completedUnits}/${progress.totalUnits}'),
+        if (progress.completedUnits != null && progress.totalUnits == null)
+          Text('Completed units: ${progress.completedUnits}'),
+        if (progress.completedUnits == null && progress.totalUnits != null)
+          Text('Total units: ${progress.totalUnits}'),
+        if (progress.statusKey != null) Text(progress.statusKey!),
         if (progress.issueCount != null)
           Text('${JobsMessages.issues}: ${progress.issueCount}'),
       ],

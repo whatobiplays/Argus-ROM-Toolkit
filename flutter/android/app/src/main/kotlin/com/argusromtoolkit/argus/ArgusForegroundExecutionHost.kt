@@ -267,6 +267,7 @@ data class ForegroundExecutionProjection(
     val totalUnits: Long? = null,
     val phase: String? = null,
     val statusKey: String? = null,
+    val operationLabel: String? = null,
     val cancellableJobRunId: String? = null,
 )
 

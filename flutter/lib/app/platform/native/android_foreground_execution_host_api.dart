@@ -84,6 +84,7 @@ final class MethodChannelAndroidForegroundExecutionHostApi
         'totalUnits': projection.totalUnits,
         'phase': projection.phase,
         'statusKey': projection.statusKey,
+        'operationLabel': projection.operationLabel,
         'cancellableJobRunId': projection.cancellableJobRunId?.value,
       });
     } catch (error, stackTrace) {
@@ -121,7 +122,9 @@ final class MethodChannelAndroidForegroundExecutionHostApi
         total != null && total < 0) {
       _throwContract('Malformed foreground projection');
     }
-    if (!_validText(projection.phase) || !_validText(projection.statusKey)) {
+    if (!_validText(projection.phase) ||
+        !_validText(projection.statusKey) ||
+        !_validText(projection.operationLabel)) {
       _throwContract('Malformed foreground projection');
     }
     final cancellable = projection.cancellableJobRunId;

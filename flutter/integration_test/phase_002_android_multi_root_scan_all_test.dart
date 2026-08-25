@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_002_android_test_support.dart';
+
 /// Focused real-client multi-root and Scan All admission scenario.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +39,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(const ArgusBootstrap());
+    await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
       find.byKey(const ValueKey<String>('compact-navigation-bar')),

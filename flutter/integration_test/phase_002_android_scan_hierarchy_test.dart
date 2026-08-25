@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_002_android_test_support.dart';
+
 /// P02-003 Android single-root scan, reconciliation, hierarchy, and Jobs
 /// proof.
 ///
@@ -35,6 +37,7 @@ void main() {
 
   testWidgets('Android P02-003 scan and hierarchy milestone', (tester) async {
     await tester.pumpWidget(const ArgusBootstrap());
+    await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
       find.byKey(const ValueKey<String>('compact-navigation-bar')),
@@ -493,6 +496,7 @@ Future<String> _waitForRetrySuccessor(
     final detail = await client.jobs.getJob(historicalJobRunId);
     final scanDetail = switch (detail.operationDetail) {
       OperationDetailLibraryScan(:final detail) => detail,
+      _ => throw StateError('Expected a library_scan operation detail'),
     };
     final successor = scanDetail.retrySuccessorJobRunId;
     if (successor != null) return successor.value;
@@ -518,6 +522,7 @@ Future<String> _waitForRootLastScan(
       final detail = await client.jobs.getJob(JobRunId(lastScan.jobRunId));
       final scanDetail = switch (detail.operationDetail) {
         OperationDetailLibraryScan(:final detail) => detail,
+        _ => throw StateError('Expected a library_scan operation detail'),
       };
       fail(
         'root $rootId reached last-scan ${lastScan.status} instead of '

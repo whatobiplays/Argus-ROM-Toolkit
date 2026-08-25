@@ -147,6 +147,35 @@ void main() {
     await coordinator.dispose();
   });
 
+  test('Library refresh acquires the existing foreground lease', () async {
+    final host = FakeForegroundHost();
+    final refresh = FakeLibraryRefreshApi();
+    var admissionSawLease = false;
+    refresh.onRefresh = () async {
+      admissionSawLease = host.leases.isNotEmpty;
+      return const OperationHandle(
+        jobRunId: admittedJobId,
+        operationType: 'library_refresh',
+      );
+    };
+    final coordinator = makeCoordinator(
+      host,
+      sources_fakes.FakeSourcesApi(),
+      jobs_fakes.FakeJobsApi(
+        activeJobs: [jobs_fakes.jobItem(id: admittedJobId.value)],
+      ),
+      refresh: refresh,
+    );
+
+    final result = await coordinator.refreshApi.refreshLibrary();
+
+    expect(result.operationType, 'library_refresh');
+    expect(admissionSawLease, isTrue);
+    expect(host.acquireCalls, 1);
+    expect(host.leases, hasLength(1));
+    await coordinator.dispose();
+  });
+
   test(
     'retry acquires only after authoritative LibraryScan retryability',
     () async {
@@ -346,6 +375,7 @@ ForegroundExecutionCoordinator makeCoordinator(
   FakeForegroundHost host,
   SourcesApi sources,
   JobsApi jobs, {
+  LibraryRefreshApi? refresh,
   FakeEventsApi? events,
   Future<void> Function({
     required List<JobRunId> jobRunIds,
@@ -355,6 +385,7 @@ ForegroundExecutionCoordinator makeCoordinator(
 }) => ForegroundExecutionCoordinator(
   sources: sources,
   jobs: jobs,
+  refresh: refresh ?? FakeLibraryRefreshApi(),
   events: events ?? FakeEventsApi(),
   host: host,
   executionHostControl: FrbExecutionHostControl(
@@ -412,4 +443,32 @@ final class FakeEventsApi implements EventsApi {
   Stream<RuntimeEvent> get events => controller.stream;
 
   void emit(RuntimeEvent event) => controller.add(event);
+}
+
+final class FakeLibraryRefreshApi implements LibraryRefreshApi {
+  Future<OperationHandle> Function()? onRefresh;
+  Future<OperationHandle> Function(List<GameId>, RefreshMode)? onGameRefresh;
+
+  @override
+  Future<OperationHandle> refreshLibrary() =>
+      onRefresh?.call() ??
+      Future.value(
+        OperationHandle(
+          jobRunId: JobRunId('cccccccccccccccccccccccccccccccc'),
+          operationType: 'library_refresh',
+        ),
+      );
+
+  @override
+  Future<OperationHandle> startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  }) =>
+      onGameRefresh?.call(gameIds, mode) ??
+      Future.value(
+        OperationHandle(
+          jobRunId: JobRunId('dddddddddddddddddddddddddddddddd'),
+          operationType: 'game_refresh',
+        ),
+      );
 }

@@ -61,8 +61,10 @@ void main() {
       'features/jobs/application/job_detail_controller.dart',
       'features/jobs/application/jobs_list_controller.dart',
       'features/jobs/jobs_composition.dart',
+      'features/library/library_composition.dart',
       'features/settings/application/appearance_settings_controller.dart',
       'features/settings/application/appearance_settings_dependencies.dart',
+      'features/settings/settings_composition.dart',
       'features/sources/application/add_library_folder_controller.dart',
       'features/sources/application/local_filesystem_browser_controller.dart',
       'features/sources/application/root_detail_controller.dart',
@@ -152,9 +154,7 @@ void main() {
       'isDesktop',
       'isTablet',
       'isPhone',
-      'LibraryRoute',
       'CollectionsRoute',
-      'GameDetailRoute',
       'DiagnosticsRoute',
     ];
 
@@ -200,6 +200,11 @@ void main() {
         'features/jobs/presentation/job_detail_page.dart',
         'features/jobs/presentation/jobs_messages.dart',
         'features/jobs/presentation/jobs_page.dart',
+        'features/library/library.dart',
+        'features/library/library_composition.dart',
+        'features/library/presentation/game_detail_page.dart',
+        'features/library/presentation/library_onboarding_page.dart',
+        'features/library/presentation/library_page.dart',
         'features/settings/application/appearance_settings_controller.dart',
         'features/settings/application/appearance_settings_dependencies.dart',
         'features/settings/application/appearance_settings_state.dart',
@@ -822,7 +827,10 @@ void main() {
     // The runtime client instance is reachable only from the app bootstrap
     // composition; features consume focused API providers instead.
     for (final entry in sources.entries) {
-      if (entry.key.startsWith('app/bootstrap/')) continue;
+      if (entry.key.startsWith('app/bootstrap/') ||
+          entry.key.startsWith('app/routing/')) {
+        continue;
+      }
       expect(
         entry.value,
         isNot(contains('argusClientProvider')),

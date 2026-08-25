@@ -34,6 +34,7 @@ pub const MAX_EXECUTION_HOST_STOP_JOB_RUNS: usize = 16;
 pub enum ManagerAdmissionError {
     ShuttingDown,
     CapacityExceeded,
+    InvalidOperationType,
     Internal,
 }
 
@@ -54,6 +55,7 @@ impl Default for BackgroundManagerConfig {
             pending_bound: 16,
             capacities: HashMap::from([
                 (ResourceClass::FilesystemRead, 1),
+                (ResourceClass::MetadataProviderNetwork, 1),
                 (ResourceClass::PersistenceWrite, 1),
             ]),
             drain_deadline: Duration::from_secs(5),
@@ -63,6 +65,7 @@ impl Default for BackgroundManagerConfig {
 
 struct RunningRun {
     handler: Arc<dyn BackgroundOperationHandler>,
+    operation: OperationName,
     token: BackgroundStopToken,
     required_resources: Vec<ResourceClass>,
     acquired_resources: Vec<ResourceClass>,
@@ -183,6 +186,8 @@ where
         handler: Arc<dyn BackgroundOperationHandler>,
         required_resources: &[ResourceClass],
     ) -> Result<(), ManagerAdmissionError> {
+        let operation = OperationName::try_from(handle.operation_type())
+            .map_err(|_| ManagerAdmissionError::InvalidOperationType)?;
         let mut state = self
             .state
             .lock()
@@ -198,6 +203,7 @@ where
             handle.job_run_id(),
             RunningRun {
                 handler,
+                operation,
                 token: BackgroundStopToken::new(),
                 required_resources: required_resources.to_vec(),
                 acquired_resources: Vec::new(),
@@ -307,10 +313,11 @@ where
             let Some(run) = state.active.get_mut(&job_run_id) else {
                 return;
             };
+            let operation = run.operation.clone();
             let context = OperationContext::new(
                 new_trace_id(),
                 SubsystemName::try_from("background").expect("static subsystem is valid"),
-                OperationName::try_from("library_scan").expect("static operation is valid"),
+                operation,
             );
             (
                 context,

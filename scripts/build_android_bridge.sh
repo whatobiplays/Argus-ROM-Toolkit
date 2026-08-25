@@ -50,7 +50,15 @@ mkdir -p "$JNI_DIR"
       -t arm64-v8a \
       -o "$JNI_DIR" \
       --manifest-path "$ROOT_DIR/rust/Cargo.toml" \
-      build \
+    build \
       --package argus-bridge \
       --locked
 )
+
+keyring_library="$(find "$JNI_DIR/arm64-v8a" -maxdepth 1 -type f \
+  -name 'libandroid_native_keyring_store-*.so' -print -quit)"
+[[ -n "$keyring_library" ]] || {
+  printf 'Android native keyring library was not produced\n' >&2
+  exit 1
+}
+mv "$keyring_library" "$JNI_DIR/arm64-v8a/libandroid_native_keyring_store.so"

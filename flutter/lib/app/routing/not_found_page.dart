@@ -74,15 +74,15 @@ class AppNotFoundPage extends StatelessWidget {
   /// Creates the not-found surface for a presentation-safe path summary.
   const AppNotFoundPage({
     required this.path,
-    required this.onReturnToSettings,
+    required this.onReturnToLibrary,
     super.key,
   });
 
   /// The unmatched URI path, excluding query and fragment content.
   final String path;
 
-  /// Returns the user to the one production destination.
-  final VoidCallback onReturnToSettings;
+  /// Returns the user to the canonical Library destination.
+  final VoidCallback onReturnToLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -91,8 +91,8 @@ class AppNotFoundPage extends StatelessWidget {
       path: path,
       title: 'Page not found',
       message: 'No page exists at this location.',
-      actionLabel: 'Go to Settings',
-      onAction: onReturnToSettings,
+      actionLabel: 'Go to Library',
+      onAction: onReturnToLibrary,
     );
   }
 }

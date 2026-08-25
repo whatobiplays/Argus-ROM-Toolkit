@@ -84,9 +84,11 @@ class ArgusForegroundExecutionService : Service() {
 
     private fun buildNotification(projection: ForegroundExecutionProjection): Notification {
         val text = if (projection.activeJobCount == 0) {
-            "Preparing library scan"
+            "Preparing library work"
+        } else if (projection.operationLabel != null) {
+            "${projection.operationLabel} (${projection.activeJobCount})"
         } else {
-            "Scanning ${projection.activeJobCount} library job(s)"
+            "Library work (${projection.activeJobCount})"
         }
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(applicationInfo.icon)
@@ -117,16 +119,16 @@ class ArgusForegroundExecutionService : Service() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Library scans",
+            "Library work",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Foreground execution for active library scans"
+            description = "Foreground execution for active library work"
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private companion object {
-        const val CHANNEL_ID = "argus_library_scans"
+        const val CHANNEL_ID = "argus_library_work"
         const val NOTIFICATION_ID = 4101
     }
 }

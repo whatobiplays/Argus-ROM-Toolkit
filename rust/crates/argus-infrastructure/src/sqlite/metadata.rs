@@ -1,8 +1,9 @@
 //! Transaction-bound metadata enrichment persistence.
 
 use argus_application::{
-    ExternalIdentityMapping, MappingState, MetadataProviderSettings, MetadataRepository,
-    MetadataSettings, PersistenceError, ProviderId, ProviderMetadata, ResolvedMetadata,
+    ExternalIdentityMapping, MappingState, MatchBasis, MetadataProviderSettings,
+    MetadataRepository, MetadataSettings, PersistenceError, ProviderId, ProviderMetadata,
+    ResolvedMetadata,
 };
 use argus_domain::GameContentId;
 use rusqlite::{OptionalExtension, params};
@@ -195,6 +196,23 @@ impl MetadataRepository for SqliteMetadataRepository<'_, '_> {
         ))
     }
 
+    fn settings_revision(&mut self) -> Result<u64, PersistenceError> {
+        let revision: i64 = self
+            .work
+            .transaction_mut()?
+            .query_row(
+                "SELECT revision FROM metadata_settings WHERE singleton_key = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_error)?
+            .ok_or(PersistenceError::PersistedSettingsInvalid(
+                argus_application::PersistedSettingsReason::Missing,
+            ))?;
+        u64::try_from(revision).map_err(|_| PersistenceError::CorruptOrIncompatible)
+    }
+
     fn save_provider_settings(
         &mut self,
         settings: &MetadataProviderSettings,
@@ -347,6 +365,100 @@ impl MetadataRepository for SqliteMetadataRepository<'_, '_> {
         Ok(metadata)
     }
 
+    fn mappings_for_content(
+        &mut self,
+        game_content_id: GameContentId,
+    ) -> Result<Vec<ExternalIdentityMapping>, PersistenceError> {
+        let connection = self.work.transaction_mut()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT provider_id, external_game_id, external_release_id,
+                        provider_platform_id, provider_confidence, match_basis,
+                        provider_revision, state, matched_at, last_validated_at
+                 FROM external_identity_mapping
+                 WHERE game_content_id = ?1
+                 ORDER BY provider_id, external_game_id, external_release_id",
+            )
+            .map_err(map_persistence_error)?;
+        let rows = statement
+            .query_map([game_content_id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<f64>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, String>(9)?,
+                ))
+            })
+            .map_err(map_persistence_error)?;
+        let mut mappings = Vec::new();
+        for row in rows {
+            let (
+                provider_id,
+                external_game_id,
+                external_release_id,
+                provider_platform_id,
+                provider_confidence,
+                match_basis,
+                provider_revision,
+                state,
+                matched_at,
+                last_validated_at,
+            ) = row.map_err(map_persistence_error)?;
+            let provider_id = ProviderId::try_from(provider_id.as_str())
+                .map_err(|_| PersistenceError::Internal)?;
+            let provider_confidence = provider_confidence
+                .map(|value| {
+                    if value.is_finite() && (0.0..=u16::MAX as f64).contains(&value) {
+                        Ok(value as u16)
+                    } else {
+                        Err(PersistenceError::Internal)
+                    }
+                })
+                .transpose()?;
+            let match_basis = match match_basis.as_str() {
+                "playmatch_exact_content" => MatchBasis::PlaymatchExactContent,
+                "gametdb_exact_native_identifier" => MatchBasis::GameTdbExactNativeIdentifier,
+                "existing_exact_mapping" => MatchBasis::ExistingExactMapping,
+                "rejected_by_policy" => MatchBasis::RejectedByPolicy,
+                _ => return Err(PersistenceError::Internal),
+            };
+            let state = match state.as_str() {
+                "current" => MappingState::Current,
+                "stale" => MappingState::Stale,
+                "rejected_by_policy" => MappingState::RejectedByPolicy,
+                _ => return Err(PersistenceError::Internal),
+            };
+            let provider_revision =
+                u64::try_from(provider_revision).map_err(|_| PersistenceError::Internal)?;
+            let matched_at = matched_at
+                .parse::<i64>()
+                .map_err(|_| PersistenceError::Internal)?;
+            let last_validated_at = last_validated_at
+                .parse::<i64>()
+                .map_err(|_| PersistenceError::Internal)?;
+            mappings.push(ExternalIdentityMapping::new(
+                game_content_id,
+                provider_id,
+                external_game_id,
+                external_release_id,
+                provider_platform_id,
+                provider_confidence,
+                match_basis,
+                provider_revision,
+                state,
+                matched_at,
+                last_validated_at,
+            ));
+        }
+        Ok(mappings)
+    }
+
     fn resolved_metadata_for_game(
         &mut self,
         game_id: argus_domain::GameId,
@@ -420,6 +532,72 @@ impl MetadataRepository for SqliteMetadataRepository<'_, '_> {
             resolved_at,
             provider_id,
         )))
+    }
+
+    fn library_onboarding_progress(
+        &mut self,
+    ) -> Result<argus_application::LibraryOnboardingProgress, PersistenceError> {
+        let row = self
+            .work
+            .transaction_mut()?
+            .query_row(
+                "SELECT accepted_privacy_terms_version, accepted_privacy_at_ms,
+                        metadata_preferences_confirmed, provider_setup_outcome,
+                        completed_at_ms
+                 FROM library_onboarding_progress WHERE singleton_key = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(map_persistence_error)?
+            .ok_or(PersistenceError::PersistedSettingsInvalid(
+                argus_application::PersistedSettingsReason::Missing,
+            ))?;
+        let outcome = argus_application::LibraryProviderSetupOutcome::try_from(row.3.as_str())
+            .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+        Ok(
+            argus_application::LibraryOnboardingProgress::from_persisted(
+                row.0,
+                row.1,
+                row.2 != 0,
+                outcome,
+                row.4,
+            ),
+        )
+    }
+
+    fn save_library_onboarding_progress(
+        &mut self,
+        progress: &argus_application::LibraryOnboardingProgress,
+    ) -> Result<(), PersistenceError> {
+        self.work
+            .transaction_mut()?
+            .execute(
+                "UPDATE library_onboarding_progress
+                 SET accepted_privacy_terms_version = ?1,
+                     accepted_privacy_at_ms = ?2,
+                     metadata_preferences_confirmed = ?3,
+                     provider_setup_outcome = ?4,
+                     completed_at_ms = ?5
+                 WHERE singleton_key = 1",
+                rusqlite::params![
+                    progress.accepted_privacy_terms_version(),
+                    progress.accepted_privacy_at_ms(),
+                    i64::from(progress.metadata_preferences_confirmed()),
+                    progress.provider_setup_outcome().as_str(),
+                    progress.completed_at_ms(),
+                ],
+            )
+            .map_err(map_persistence_error)?;
+        Ok(())
     }
 }
 

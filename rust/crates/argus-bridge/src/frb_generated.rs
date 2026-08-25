@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1622189120;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1253627171;
 
 // Section: executor
 
@@ -48,6 +48,73 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__accept_privacy_terms_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "accept_privacy_terms",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::AcceptPrivacyTermsRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::accept_privacy_terms(api_request)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__add_library_root_and_refresh_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "add_library_root_and_refresh",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_selection =
+                <crate::LocalFilesystemRootSelectionDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::add_library_root_and_refresh(api_selection)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__add_local_library_root_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -208,6 +275,71 @@ fn wire__crate__close_event_connection_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::close_event_connection()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__complete_library_onboarding_and_refresh_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "complete_library_onboarding_and_refresh",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::complete_library_onboarding_and_refresh()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__confirm_library_metadata_preferences_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "confirm_library_metadata_preferences",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_settings = <crate::MetadataSettingsDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::confirm_library_metadata_preferences(api_settings)?;
                     Ok(output_ok)
                 })())
             }
@@ -514,6 +646,38 @@ fn wire__crate__get_job_impl(
         },
     )
 }
+fn wire__crate__get_library_onboarding_state_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_library_onboarding_state",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_library_onboarding_state()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__get_library_root_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -541,6 +705,102 @@ fn wire__crate__get_library_root_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::get_library_root(api_library_root_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__get_metadata_provider_settings_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_metadata_provider_settings",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_metadata_provider_settings()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__get_metadata_settings_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_metadata_settings",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_metadata_settings()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__get_privacy_consent_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_privacy_consent",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_privacy_consent()?;
                     Ok(output_ok)
                 })())
             }
@@ -1010,6 +1270,72 @@ fn wire__crate__open_startup_data_directory_impl(
         },
     )
 }
+fn wire__crate__record_library_provider_setup_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "record_library_provider_setup",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_decision =
+                <crate::LibraryProviderSetupDecisionDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::record_library_provider_setup(api_decision)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__refresh_library_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "refresh_library",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::refresh_library()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__remove_library_root_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1278,6 +1604,39 @@ fn wire__crate__set_metadata_provider_credential_impl(
         },
     )
 }
+fn wire__crate__start_game_refresh_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "start_game_refresh",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::StartGameRefreshRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::start_game_refresh(api_request)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__start_library_scan_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1483,6 +1842,72 @@ fn wire__crate__update_appearance_settings_impl(
         },
     )
 }
+fn wire__crate__update_metadata_provider_settings_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "update_metadata_provider_settings",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_settings = <crate::MetadataProviderSettingsDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::update_metadata_provider_settings(api_settings)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__update_metadata_settings_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "update_metadata_settings",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_settings = <crate::MetadataSettingsDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::update_metadata_settings(api_settings)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 
 // Section: dart2rust
 
@@ -1509,6 +1934,53 @@ impl SseDecode for String {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut inner = <Vec<u8>>::sse_decode(deserializer);
         return String::from_utf8(inner).unwrap();
+    }
+}
+
+impl SseDecode for crate::AcceptPrivacyTermsRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_termsVersion = <String>::sse_decode(deserializer);
+        return crate::AcceptPrivacyTermsRequestDto {
+            terms_version: var_termsVersion,
+        };
+    }
+}
+
+impl SseDecode for crate::AddLibraryRootAndRefreshResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 = <crate::LibraryRootDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::OperationHandleDto>::sse_decode(deserializer);
+                return crate::AddLibraryRootAndRefreshResultDto::AddedAndRefreshAdmitted(
+                    var_field0, var_field1,
+                );
+            }
+            1 => {
+                let mut var_field0 = <crate::LibraryRootDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::ApplicationErrorDto>::sse_decode(deserializer);
+                return crate::AddLibraryRootAndRefreshResultDto::AddedButRefreshNotAdmitted(
+                    var_field0, var_field1,
+                );
+            }
+            2 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                return crate::AddLibraryRootAndRefreshResultDto::AlreadyConfigured(var_field0);
+            }
+            3 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                let mut var_field1 = <crate::RootRelationshipDto>::sse_decode(deserializer);
+                return crate::AddLibraryRootAndRefreshResultDto::OverlapsExisting(
+                    var_field0, var_field1,
+                );
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -1668,6 +2140,28 @@ impl SseDecode for crate::CancelJobResultDto {
             1 => crate::CancelJobResultDto::NoLongerCancellable,
             _ => unreachable!("Invalid variant for CancelJobResultDto: {}", inner),
         };
+    }
+}
+
+impl SseDecode for crate::CompleteLibraryOnboardingAndRefreshResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 = <crate::LibraryOnboardingStateDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::OperationHandleDto>::sse_decode(deserializer);
+                return crate::CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedAndRefreshAdmitted(var_field0, var_field1);
+            }
+            1 => {
+                let mut var_field0 = <crate::LibraryOnboardingStateDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::ApplicationErrorDto>::sse_decode(deserializer);
+                return crate::CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedButRefreshNotAdmitted(var_field0, var_field1);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -1902,6 +2396,24 @@ impl SseDecode for crate::GamePageDto {
         return crate::GamePageDto {
             items: var_items,
             next_cursor: var_nextCursor,
+        };
+    }
+}
+
+impl SseDecode for crate::GameRefreshJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_gameIds = <Vec<String>>::sse_decode(deserializer);
+        let mut var_mode = <String>::sse_decode(deserializer);
+        let mut var_progress = <crate::RefreshProgressFactsDto>::sse_decode(deserializer);
+        let mut var_retrySourceJobRunId = <Option<String>>::sse_decode(deserializer);
+        let mut var_retrySuccessorJobRunId = <Option<String>>::sse_decode(deserializer);
+        return crate::GameRefreshJobDetailDto {
+            game_ids: var_gameIds,
+            mode: var_mode,
+            progress: var_progress,
+            retry_source_job_run_id: var_retrySourceJobRunId,
+            retry_successor_job_run_id: var_retrySuccessorJobRunId,
         };
     }
 }
@@ -2143,6 +2655,101 @@ impl SseDecode for crate::LibraryHydrationStateDto {
             2 => crate::LibraryHydrationStateDto::Unmatched,
             3 => crate::LibraryHydrationStateDto::Refreshing,
             _ => unreachable!("Invalid variant for LibraryHydrationStateDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryOnboardingProgressDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_acceptedPrivacyTermsVersion = <Option<String>>::sse_decode(deserializer);
+        let mut var_acceptedPrivacyAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_metadataPreferencesConfirmed = <bool>::sse_decode(deserializer);
+        let mut var_providerSetupOutcome = <String>::sse_decode(deserializer);
+        let mut var_completedAtMs = <Option<i64>>::sse_decode(deserializer);
+        return crate::LibraryOnboardingProgressDto {
+            accepted_privacy_terms_version: var_acceptedPrivacyTermsVersion,
+            accepted_privacy_at_ms: var_acceptedPrivacyAtMs,
+            metadata_preferences_confirmed: var_metadataPreferencesConfirmed,
+            provider_setup_outcome: var_providerSetupOutcome,
+            completed_at_ms: var_completedAtMs,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryOnboardingStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_progress = <crate::LibraryOnboardingProgressDto>::sse_decode(deserializer);
+        let mut var_requiredPrivacyTermsVersion = <String>::sse_decode(deserializer);
+        let mut var_requiresPrivacyAcceptance = <bool>::sse_decode(deserializer);
+        let mut var_requiresRootSelection = <bool>::sse_decode(deserializer);
+        let mut var_credentialConfigured = <bool>::sse_decode(deserializer);
+        let mut var_complete = <bool>::sse_decode(deserializer);
+        return crate::LibraryOnboardingStateDto {
+            progress: var_progress,
+            required_privacy_terms_version: var_requiredPrivacyTermsVersion,
+            requires_privacy_acceptance: var_requiresPrivacyAcceptance,
+            requires_root_selection: var_requiresRootSelection,
+            credential_configured: var_credentialConfigured,
+            complete: var_complete,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryProviderSetupDecisionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibraryProviderSetupDecisionDto::Configured,
+            1 => crate::LibraryProviderSetupDecisionDto::Skipped,
+            _ => unreachable!(
+                "Invalid variant for LibraryProviderSetupDecisionDto: {}",
+                inner
+            ),
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryRefreshJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_trigger = <String>::sse_decode(deserializer);
+        let mut var_triggerRootId = <Option<String>>::sse_decode(deserializer);
+        let mut var_mode = <String>::sse_decode(deserializer);
+        let mut var_requestedRootIds = <Vec<String>>::sse_decode(deserializer);
+        let mut var_scanRuns = <Vec<crate::ScanRunDto>>::sse_decode(deserializer);
+        let mut var_progress = <crate::RefreshProgressFactsDto>::sse_decode(deserializer);
+        let mut var_retrySourceJobRunId = <Option<String>>::sse_decode(deserializer);
+        let mut var_retrySuccessorJobRunId = <Option<String>>::sse_decode(deserializer);
+        return crate::LibraryRefreshJobDetailDto {
+            trigger: var_trigger,
+            trigger_root_id: var_triggerRootId,
+            mode: var_mode,
+            requested_root_ids: var_requestedRootIds,
+            scan_runs: var_scanRuns,
+            progress: var_progress,
+            retry_source_job_run_id: var_retrySourceJobRunId,
+            retry_successor_job_run_id: var_retrySuccessorJobRunId,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryResolutionRefreshJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_jobRunId = <String>::sse_decode(deserializer);
+        let mut var_settingsRevision = <u64>::sse_decode(deserializer);
+        let mut var_progress = <crate::RefreshProgressFactsDto>::sse_decode(deserializer);
+        let mut var_retrySourceJobRunId = <Option<String>>::sse_decode(deserializer);
+        let mut var_retrySuccessorJobRunId = <Option<String>>::sse_decode(deserializer);
+        return crate::LibraryResolutionRefreshJobDetailDto {
+            job_run_id: var_jobRunId,
+            settings_revision: var_settingsRevision,
+            progress: var_progress,
+            retry_source_job_run_id: var_retrySourceJobRunId,
+            retry_successor_job_run_id: var_retrySuccessorJobRunId,
         };
     }
 }
@@ -2953,6 +3560,88 @@ impl SseDecode for crate::MetadataProviderReadinessDto {
     }
 }
 
+impl SseDecode for crate::MetadataProviderSettingsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_enabledProviders = <Vec<String>>::sse_decode(deserializer);
+        return crate::MetadataProviderSettingsDto {
+            enabled_providers: var_enabledProviders,
+        };
+    }
+}
+
+impl SseDecode for crate::MetadataProviderSettingsUpdateResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 = <crate::MetadataProviderSettingsDto>::sse_decode(deserializer);
+                return crate::MetadataProviderSettingsUpdateResultDto::CommittedNoResolutionWork(
+                    var_field0,
+                );
+            }
+            1 => {
+                let mut var_field0 = <crate::MetadataProviderSettingsDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::OperationHandleDto>::sse_decode(deserializer);
+                return crate::MetadataProviderSettingsUpdateResultDto::CommittedAndResolutionAdmitted(var_field0, var_field1);
+            }
+            2 => {
+                let mut var_field0 = <crate::MetadataProviderSettingsDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::ApplicationErrorDto>::sse_decode(deserializer);
+                return crate::MetadataProviderSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(var_field0, var_field1);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseDecode for crate::MetadataSettingsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_preferredRegions = <Vec<String>>::sse_decode(deserializer);
+        let mut var_preferredLanguages = <Vec<String>>::sse_decode(deserializer);
+        return crate::MetadataSettingsDto {
+            preferred_regions: var_preferredRegions,
+            preferred_languages: var_preferredLanguages,
+        };
+    }
+}
+
+impl SseDecode for crate::MetadataSettingsUpdateResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                let mut var_field0 = <crate::MetadataSettingsDto>::sse_decode(deserializer);
+                return crate::MetadataSettingsUpdateResultDto::CommittedNoResolutionWork(
+                    var_field0,
+                );
+            }
+            1 => {
+                let mut var_field0 = <crate::MetadataSettingsDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::OperationHandleDto>::sse_decode(deserializer);
+                return crate::MetadataSettingsUpdateResultDto::CommittedAndResolutionAdmitted(
+                    var_field0, var_field1,
+                );
+            }
+            2 => {
+                let mut var_field0 = <crate::MetadataSettingsDto>::sse_decode(deserializer);
+                let mut var_field1 = <crate::ApplicationErrorDto>::sse_decode(deserializer);
+                return crate::MetadataSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(
+                    var_field0, var_field1,
+                );
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseDecode for crate::MountedLocalFilesystemVolumeDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2979,6 +3668,19 @@ impl SseDecode for crate::OperationDetailDto {
             0 => {
                 let mut var_field0 = <crate::LibraryScanJobDetailDto>::sse_decode(deserializer);
                 return crate::OperationDetailDto::LibraryScan(var_field0);
+            }
+            1 => {
+                let mut var_field0 = <crate::LibraryRefreshJobDetailDto>::sse_decode(deserializer);
+                return crate::OperationDetailDto::LibraryRefresh(var_field0);
+            }
+            2 => {
+                let mut var_field0 = <crate::GameRefreshJobDetailDto>::sse_decode(deserializer);
+                return crate::OperationDetailDto::GameRefresh(var_field0);
+            }
+            3 => {
+                let mut var_field0 =
+                    <crate::LibraryResolutionRefreshJobDetailDto>::sse_decode(deserializer);
+                return crate::OperationDetailDto::LibraryResolutionRefresh(var_field0);
             }
             _ => {
                 unimplemented!("");
@@ -3181,6 +3883,22 @@ impl SseDecode for crate::PlatformIdDto {
     }
 }
 
+impl SseDecode for crate::PrivacyConsentDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_acceptedTermsVersion = <Option<String>>::sse_decode(deserializer);
+        let mut var_acceptedAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_requiredTermsVersion = <String>::sse_decode(deserializer);
+        let mut var_satisfiesCurrentRequiredTerms = <bool>::sse_decode(deserializer);
+        return crate::PrivacyConsentDto {
+            accepted_terms_version: var_acceptedTermsVersion,
+            accepted_at_ms: var_acceptedAtMs,
+            required_terms_version: var_requiredTermsVersion,
+            satisfies_current_required_terms: var_satisfiesCurrentRequiredTerms,
+        };
+    }
+}
+
 impl SseDecode for crate::ProviderCapabilityReadinessDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3227,6 +3945,36 @@ impl SseDecode for crate::RecoveryActionKindDto {
             4 => crate::RecoveryActionKindDto::OpenDataDirectory,
             5 => crate::RecoveryActionKindDto::Exit,
             _ => unreachable!("Invalid variant for RecoveryActionKindDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::RefreshModeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::RefreshModeDto::EligibleOnly,
+            1 => crate::RefreshModeDto::Force,
+            _ => unreachable!("Invalid variant for RefreshModeDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::RefreshProgressFactsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_phase = <Option<String>>::sse_decode(deserializer);
+        let mut var_completedUnits = <Option<u64>>::sse_decode(deserializer);
+        let mut var_totalUnits = <Option<u64>>::sse_decode(deserializer);
+        let mut var_statusKey = <Option<String>>::sse_decode(deserializer);
+        let mut var_issueCount = <Option<u64>>::sse_decode(deserializer);
+        return crate::RefreshProgressFactsDto {
+            phase: var_phase,
+            completed_units: var_completedUnits,
+            total_units: var_totalUnits,
+            status_key: var_statusKey,
+            issue_count: var_issueCount,
         };
     }
 }
@@ -3715,6 +4463,18 @@ impl SseDecode for crate::SourceEntryKindDto {
     }
 }
 
+impl SseDecode for crate::StartGameRefreshRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_gameIds = <Vec<String>>::sse_decode(deserializer);
+        let mut var_mode = <crate::RefreshModeDto>::sse_decode(deserializer);
+        return crate::StartGameRefreshRequestDto {
+            game_ids: var_gameIds,
+            mode: var_mode,
+        };
+    }
+}
+
 impl SseDecode for crate::StartLibraryScanAllResultDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3880,73 +4640,98 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__add_local_library_root_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__add_local_library_root_and_scan_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__attach_event_subscription_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__cancel_job_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__close_event_connection_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__exit_failed_runtime_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__export_startup_diagnostics_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__export_startup_diagnostics_for_sharing_impl(
+        1 => wire__crate__accept_privacy_terms_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__add_library_root_and_refresh_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__add_local_library_root_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__add_local_library_root_and_scan_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__attach_event_subscription_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__cancel_job_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__close_event_connection_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__complete_library_onboarding_and_refresh_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        9 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__get_artwork_asset_bytes_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__get_game_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__initialize_with_standard_data_directory_impl(
+        9 => wire__crate__confirm_library_metadata_preferences_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        22 => wire__crate__list_games_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__list_local_filesystem_browse_directories_impl(
+        10 => wire__crate__exit_failed_runtime_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__export_startup_diagnostics_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__export_startup_diagnostics_for_sharing_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        26 => {
+        13 => wire__crate__general_shutdown_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__get_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__get_artwork_asset_bytes_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__get_game_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__get_library_onboarding_state_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__get_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__get_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__get_privacy_consent_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__initialize_with_standard_data_directory_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        30 => wire__crate__list_games_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__list_local_filesystem_browse_directories_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        34 => {
             wire__crate__list_local_filesystem_browse_roots_impl(port, ptr, rust_vec_len, data_len)
         }
-        27 => wire__crate__list_metadata_provider_readiness_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        31 => {
+        35 => wire__crate__list_metadata_provider_readiness_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__record_library_provider_setup_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__refresh_library_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        41 => {
             wire__crate__remove_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len)
         }
-        32 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__set_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
+        42 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__set_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__start_game_refresh_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        43 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        55 => {
+            wire__crate__update_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len)
+        }
+        56 => wire__crate__update_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3965,6 +4750,68 @@ fn pde_ffi_dispatcher_sync_impl(
 
 // Section: rust2dart
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::AcceptPrivacyTermsRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.terms_version.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::AcceptPrivacyTermsRequestDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::AcceptPrivacyTermsRequestDto>
+    for crate::AcceptPrivacyTermsRequestDto
+{
+    fn into_into_dart(self) -> crate::AcceptPrivacyTermsRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::AddLibraryRootAndRefreshResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::AddLibraryRootAndRefreshResultDto::AddedAndRefreshAdmitted(field0, field1) => [
+                0.into_dart(),
+                field0.into_into_dart().into_dart(),
+                field1.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::AddLibraryRootAndRefreshResultDto::AddedButRefreshNotAdmitted(
+                field0,
+                field1,
+            ) => [
+                1.into_dart(),
+                field0.into_into_dart().into_dart(),
+                field1.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::AddLibraryRootAndRefreshResultDto::AlreadyConfigured(field0) => {
+                [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::AddLibraryRootAndRefreshResultDto::OverlapsExisting(field0, field1) => [
+                3.into_dart(),
+                field0.into_into_dart().into_dart(),
+                field1.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::AddLibraryRootAndRefreshResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::AddLibraryRootAndRefreshResultDto>
+    for crate::AddLibraryRootAndRefreshResultDto
+{
+    fn into_into_dart(self) -> crate::AddLibraryRootAndRefreshResultDto {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::AddLocalLibraryRootAndScanResultDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -4150,6 +4997,29 @@ impl flutter_rust_bridge::IntoDart for crate::CancelJobResultDto {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::CancelJobResultDto {}
 impl flutter_rust_bridge::IntoIntoDart<crate::CancelJobResultDto> for crate::CancelJobResultDto {
     fn into_into_dart(self) -> crate::CancelJobResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::CompleteLibraryOnboardingAndRefreshResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {crate::CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedAndRefreshAdmitted(field0,field1) => { [0.into_dart(),
+field0.into_into_dart().into_dart(),
+field1.into_into_dart().into_dart()].into_dart() }
+crate::CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedButRefreshNotAdmitted(field0,field1) => { [1.into_dart(),
+field0.into_into_dart().into_dart(),
+field1.into_into_dart().into_dart()].into_dart() }
+ _ => { unimplemented!(""); }}
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::CompleteLibraryOnboardingAndRefreshResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::CompleteLibraryOnboardingAndRefreshResultDto>
+    for crate::CompleteLibraryOnboardingAndRefreshResultDto
+{
+    fn into_into_dart(self) -> crate::CompleteLibraryOnboardingAndRefreshResultDto {
         self
     }
 }
@@ -4456,6 +5326,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::GamePageDto> for crate::GamePageDt
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GameRefreshJobDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.game_ids.into_into_dart().into_dart(),
+            self.mode.into_into_dart().into_dart(),
+            self.progress.into_into_dart().into_dart(),
+            self.retry_source_job_run_id.into_into_dart().into_dart(),
+            self.retry_successor_job_run_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::GameRefreshJobDetailDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::GameRefreshJobDetailDto>
+    for crate::GameRefreshJobDetailDto
+{
+    fn into_into_dart(self) -> crate::GameRefreshJobDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::GetGameResultDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -4721,6 +5615,135 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryHydrationStateDto>
     for crate::LibraryHydrationStateDto
 {
     fn into_into_dart(self) -> crate::LibraryHydrationStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryOnboardingProgressDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.accepted_privacy_terms_version
+                .into_into_dart()
+                .into_dart(),
+            self.accepted_privacy_at_ms.into_into_dart().into_dart(),
+            self.metadata_preferences_confirmed
+                .into_into_dart()
+                .into_dart(),
+            self.provider_setup_outcome.into_into_dart().into_dart(),
+            self.completed_at_ms.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryOnboardingProgressDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryOnboardingProgressDto>
+    for crate::LibraryOnboardingProgressDto
+{
+    fn into_into_dart(self) -> crate::LibraryOnboardingProgressDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryOnboardingStateDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.progress.into_into_dart().into_dart(),
+            self.required_privacy_terms_version
+                .into_into_dart()
+                .into_dart(),
+            self.requires_privacy_acceptance
+                .into_into_dart()
+                .into_dart(),
+            self.requires_root_selection.into_into_dart().into_dart(),
+            self.credential_configured.into_into_dart().into_dart(),
+            self.complete.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryOnboardingStateDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryOnboardingStateDto>
+    for crate::LibraryOnboardingStateDto
+{
+    fn into_into_dart(self) -> crate::LibraryOnboardingStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryProviderSetupDecisionDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Configured => 0.into_dart(),
+            Self::Skipped => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryProviderSetupDecisionDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryProviderSetupDecisionDto>
+    for crate::LibraryProviderSetupDecisionDto
+{
+    fn into_into_dart(self) -> crate::LibraryProviderSetupDecisionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryRefreshJobDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.trigger.into_into_dart().into_dart(),
+            self.trigger_root_id.into_into_dart().into_dart(),
+            self.mode.into_into_dart().into_dart(),
+            self.requested_root_ids.into_into_dart().into_dart(),
+            self.scan_runs.into_into_dart().into_dart(),
+            self.progress.into_into_dart().into_dart(),
+            self.retry_source_job_run_id.into_into_dart().into_dart(),
+            self.retry_successor_job_run_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryRefreshJobDetailDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryRefreshJobDetailDto>
+    for crate::LibraryRefreshJobDetailDto
+{
+    fn into_into_dart(self) -> crate::LibraryRefreshJobDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryResolutionRefreshJobDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.job_run_id.into_into_dart().into_dart(),
+            self.settings_revision.into_into_dart().into_dart(),
+            self.progress.into_into_dart().into_dart(),
+            self.retry_source_job_run_id.into_into_dart().into_dart(),
+            self.retry_successor_job_run_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryResolutionRefreshJobDetailDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryResolutionRefreshJobDetailDto>
+    for crate::LibraryResolutionRefreshJobDetailDto
+{
+    fn into_into_dart(self) -> crate::LibraryResolutionRefreshJobDetailDto {
         self
     }
 }
@@ -5405,6 +6428,123 @@ impl flutter_rust_bridge::IntoIntoDart<crate::MetadataProviderReadinessDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::MetadataProviderSettingsDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.enabled_providers.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::MetadataProviderSettingsDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::MetadataProviderSettingsDto>
+    for crate::MetadataProviderSettingsDto
+{
+    fn into_into_dart(self) -> crate::MetadataProviderSettingsDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::MetadataProviderSettingsUpdateResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::MetadataProviderSettingsUpdateResultDto::CommittedNoResolutionWork(field0) => {
+                [0.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::MetadataProviderSettingsUpdateResultDto::CommittedAndResolutionAdmitted(
+                field0,
+                field1,
+            ) => [
+                1.into_dart(),
+                field0.into_into_dart().into_dart(),
+                field1.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::MetadataProviderSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(
+                field0,
+                field1,
+            ) => [
+                2.into_dart(),
+                field0.into_into_dart().into_dart(),
+                field1.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::MetadataProviderSettingsUpdateResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::MetadataProviderSettingsUpdateResultDto>
+    for crate::MetadataProviderSettingsUpdateResultDto
+{
+    fn into_into_dart(self) -> crate::MetadataProviderSettingsUpdateResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::MetadataSettingsDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.preferred_regions.into_into_dart().into_dart(),
+            self.preferred_languages.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::MetadataSettingsDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::MetadataSettingsDto> for crate::MetadataSettingsDto {
+    fn into_into_dart(self) -> crate::MetadataSettingsDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::MetadataSettingsUpdateResultDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            crate::MetadataSettingsUpdateResultDto::CommittedNoResolutionWork(field0) => {
+                [0.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::MetadataSettingsUpdateResultDto::CommittedAndResolutionAdmitted(
+                field0,
+                field1,
+            ) => [
+                1.into_dart(),
+                field0.into_into_dart().into_dart(),
+                field1.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::MetadataSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(
+                field0,
+                field1,
+            ) => [
+                2.into_dart(),
+                field0.into_into_dart().into_dart(),
+                field1.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::MetadataSettingsUpdateResultDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::MetadataSettingsUpdateResultDto>
+    for crate::MetadataSettingsUpdateResultDto
+{
+    fn into_into_dart(self) -> crate::MetadataSettingsUpdateResultDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::MountedLocalFilesystemVolumeDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -5434,6 +6574,15 @@ impl flutter_rust_bridge::IntoDart for crate::OperationDetailDto {
         match self {
             crate::OperationDetailDto::LibraryScan(field0) => {
                 [0.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::OperationDetailDto::LibraryRefresh(field0) => {
+                [1.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::OperationDetailDto::GameRefresh(field0) => {
+                [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            crate::OperationDetailDto::LibraryResolutionRefresh(field0) => {
+                [3.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -5477,6 +6626,26 @@ impl flutter_rust_bridge::IntoDart for crate::PlatformIdDto {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::PlatformIdDto {}
 impl flutter_rust_bridge::IntoIntoDart<crate::PlatformIdDto> for crate::PlatformIdDto {
     fn into_into_dart(self) -> crate::PlatformIdDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::PrivacyConsentDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.accepted_terms_version.into_into_dart().into_dart(),
+            self.accepted_at_ms.into_into_dart().into_dart(),
+            self.required_terms_version.into_into_dart().into_dart(),
+            self.satisfies_current_required_terms
+                .into_into_dart()
+                .into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::PrivacyConsentDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::PrivacyConsentDto> for crate::PrivacyConsentDto {
+    fn into_into_dart(self) -> crate::PrivacyConsentDto {
         self
     }
 }
@@ -5554,6 +6723,46 @@ impl flutter_rust_bridge::IntoIntoDart<crate::RecoveryActionKindDto>
     for crate::RecoveryActionKindDto
 {
     fn into_into_dart(self) -> crate::RecoveryActionKindDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::RefreshModeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::EligibleOnly => 0.into_dart(),
+            Self::Force => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::RefreshModeDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::RefreshModeDto> for crate::RefreshModeDto {
+    fn into_into_dart(self) -> crate::RefreshModeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::RefreshProgressFactsDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.phase.into_into_dart().into_dart(),
+            self.completed_units.into_into_dart().into_dart(),
+            self.total_units.into_into_dart().into_dart(),
+            self.status_key.into_into_dart().into_dart(),
+            self.issue_count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::RefreshProgressFactsDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::RefreshProgressFactsDto>
+    for crate::RefreshProgressFactsDto
+{
+    fn into_into_dart(self) -> crate::RefreshProgressFactsDto {
         self
     }
 }
@@ -6102,6 +7311,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::SourceEntryKindDto> for crate::Sou
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::StartGameRefreshRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.game_ids.into_into_dart().into_dart(),
+            self.mode.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::StartGameRefreshRequestDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::StartGameRefreshRequestDto>
+    for crate::StartGameRefreshRequestDto
+{
+    fn into_into_dart(self) -> crate::StartGameRefreshRequestDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::StartLibraryScanAllResultDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -6297,6 +7527,46 @@ impl SseEncode for String {
     }
 }
 
+impl SseEncode for crate::AcceptPrivacyTermsRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.terms_version, serializer);
+    }
+}
+
+impl SseEncode for crate::AddLibraryRootAndRefreshResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::AddLibraryRootAndRefreshResultDto::AddedAndRefreshAdmitted(field0, field1) => {
+                <i32>::sse_encode(0, serializer);
+                <crate::LibraryRootDto>::sse_encode(field0, serializer);
+                <crate::OperationHandleDto>::sse_encode(field1, serializer);
+            }
+            crate::AddLibraryRootAndRefreshResultDto::AddedButRefreshNotAdmitted(
+                field0,
+                field1,
+            ) => {
+                <i32>::sse_encode(1, serializer);
+                <crate::LibraryRootDto>::sse_encode(field0, serializer);
+                <crate::ApplicationErrorDto>::sse_encode(field1, serializer);
+            }
+            crate::AddLibraryRootAndRefreshResultDto::AlreadyConfigured(field0) => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(field0, serializer);
+            }
+            crate::AddLibraryRootAndRefreshResultDto::OverlapsExisting(field0, field1) => {
+                <i32>::sse_encode(3, serializer);
+                <String>::sse_encode(field0, serializer);
+                <crate::RootRelationshipDto>::sse_encode(field1, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseEncode for crate::AddLocalLibraryRootAndScanResultDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -6426,6 +7696,19 @@ impl SseEncode for crate::CancelJobResultDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::CompleteLibraryOnboardingAndRefreshResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {crate::CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedAndRefreshAdmitted(field0,field1) => { <i32>::sse_encode(0, serializer); <crate::LibraryOnboardingStateDto>::sse_encode(field0, serializer);
+<crate::OperationHandleDto>::sse_encode(field1, serializer);
+ }
+crate::CompleteLibraryOnboardingAndRefreshResultDto::OnboardingCompletedButRefreshNotAdmitted(field0,field1) => { <i32>::sse_encode(1, serializer); <crate::LibraryOnboardingStateDto>::sse_encode(field0, serializer);
+<crate::ApplicationErrorDto>::sse_encode(field1, serializer);
+ }
+ _ => { unimplemented!(""); }}
     }
 }
 
@@ -6622,6 +7905,17 @@ impl SseEncode for crate::GamePageDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<crate::GameLibraryRowDto>>::sse_encode(self.items, serializer);
         <Option<String>>::sse_encode(self.next_cursor, serializer);
+    }
+}
+
+impl SseEncode for crate::GameRefreshJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.game_ids, serializer);
+        <String>::sse_encode(self.mode, serializer);
+        <crate::RefreshProgressFactsDto>::sse_encode(self.progress, serializer);
+        <Option<String>>::sse_encode(self.retry_source_job_run_id, serializer);
+        <Option<String>>::sse_encode(self.retry_successor_job_run_id, serializer);
     }
 }
 
@@ -6838,6 +8132,70 @@ impl SseEncode for crate::LibraryHydrationStateDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::LibraryOnboardingProgressDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.accepted_privacy_terms_version, serializer);
+        <Option<i64>>::sse_encode(self.accepted_privacy_at_ms, serializer);
+        <bool>::sse_encode(self.metadata_preferences_confirmed, serializer);
+        <String>::sse_encode(self.provider_setup_outcome, serializer);
+        <Option<i64>>::sse_encode(self.completed_at_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryOnboardingStateDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::LibraryOnboardingProgressDto>::sse_encode(self.progress, serializer);
+        <String>::sse_encode(self.required_privacy_terms_version, serializer);
+        <bool>::sse_encode(self.requires_privacy_acceptance, serializer);
+        <bool>::sse_encode(self.requires_root_selection, serializer);
+        <bool>::sse_encode(self.credential_configured, serializer);
+        <bool>::sse_encode(self.complete, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryProviderSetupDecisionDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibraryProviderSetupDecisionDto::Configured => 0,
+                crate::LibraryProviderSetupDecisionDto::Skipped => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::LibraryRefreshJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.trigger, serializer);
+        <Option<String>>::sse_encode(self.trigger_root_id, serializer);
+        <String>::sse_encode(self.mode, serializer);
+        <Vec<String>>::sse_encode(self.requested_root_ids, serializer);
+        <Vec<crate::ScanRunDto>>::sse_encode(self.scan_runs, serializer);
+        <crate::RefreshProgressFactsDto>::sse_encode(self.progress, serializer);
+        <Option<String>>::sse_encode(self.retry_source_job_run_id, serializer);
+        <Option<String>>::sse_encode(self.retry_successor_job_run_id, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryResolutionRefreshJobDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.job_run_id, serializer);
+        <u64>::sse_encode(self.settings_revision, serializer);
+        <crate::RefreshProgressFactsDto>::sse_encode(self.progress, serializer);
+        <Option<String>>::sse_encode(self.retry_source_job_run_id, serializer);
+        <Option<String>>::sse_encode(self.retry_successor_job_run_id, serializer);
     }
 }
 
@@ -7468,6 +8826,83 @@ impl SseEncode for crate::MetadataProviderReadinessDto {
     }
 }
 
+impl SseEncode for crate::MetadataProviderSettingsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.enabled_providers, serializer);
+    }
+}
+
+impl SseEncode for crate::MetadataProviderSettingsUpdateResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::MetadataProviderSettingsUpdateResultDto::CommittedNoResolutionWork(field0) => {
+                <i32>::sse_encode(0, serializer);
+                <crate::MetadataProviderSettingsDto>::sse_encode(field0, serializer);
+            }
+            crate::MetadataProviderSettingsUpdateResultDto::CommittedAndResolutionAdmitted(
+                field0,
+                field1,
+            ) => {
+                <i32>::sse_encode(1, serializer);
+                <crate::MetadataProviderSettingsDto>::sse_encode(field0, serializer);
+                <crate::OperationHandleDto>::sse_encode(field1, serializer);
+            }
+            crate::MetadataProviderSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(
+                field0,
+                field1,
+            ) => {
+                <i32>::sse_encode(2, serializer);
+                <crate::MetadataProviderSettingsDto>::sse_encode(field0, serializer);
+                <crate::ApplicationErrorDto>::sse_encode(field1, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
+impl SseEncode for crate::MetadataSettingsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.preferred_regions, serializer);
+        <Vec<String>>::sse_encode(self.preferred_languages, serializer);
+    }
+}
+
+impl SseEncode for crate::MetadataSettingsUpdateResultDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::MetadataSettingsUpdateResultDto::CommittedNoResolutionWork(field0) => {
+                <i32>::sse_encode(0, serializer);
+                <crate::MetadataSettingsDto>::sse_encode(field0, serializer);
+            }
+            crate::MetadataSettingsUpdateResultDto::CommittedAndResolutionAdmitted(
+                field0,
+                field1,
+            ) => {
+                <i32>::sse_encode(1, serializer);
+                <crate::MetadataSettingsDto>::sse_encode(field0, serializer);
+                <crate::OperationHandleDto>::sse_encode(field1, serializer);
+            }
+            crate::MetadataSettingsUpdateResultDto::CommittedButResolutionNotAdmitted(
+                field0,
+                field1,
+            ) => {
+                <i32>::sse_encode(2, serializer);
+                <crate::MetadataSettingsDto>::sse_encode(field0, serializer);
+                <crate::ApplicationErrorDto>::sse_encode(field1, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+
 impl SseEncode for crate::MountedLocalFilesystemVolumeDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7486,6 +8921,18 @@ impl SseEncode for crate::OperationDetailDto {
             crate::OperationDetailDto::LibraryScan(field0) => {
                 <i32>::sse_encode(0, serializer);
                 <crate::LibraryScanJobDetailDto>::sse_encode(field0, serializer);
+            }
+            crate::OperationDetailDto::LibraryRefresh(field0) => {
+                <i32>::sse_encode(1, serializer);
+                <crate::LibraryRefreshJobDetailDto>::sse_encode(field0, serializer);
+            }
+            crate::OperationDetailDto::GameRefresh(field0) => {
+                <i32>::sse_encode(2, serializer);
+                <crate::GameRefreshJobDetailDto>::sse_encode(field0, serializer);
+            }
+            crate::OperationDetailDto::LibraryResolutionRefresh(field0) => {
+                <i32>::sse_encode(3, serializer);
+                <crate::LibraryResolutionRefreshJobDetailDto>::sse_encode(field0, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -7669,6 +9116,16 @@ impl SseEncode for crate::PlatformIdDto {
     }
 }
 
+impl SseEncode for crate::PrivacyConsentDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.accepted_terms_version, serializer);
+        <Option<i64>>::sse_encode(self.accepted_at_ms, serializer);
+        <String>::sse_encode(self.required_terms_version, serializer);
+        <bool>::sse_encode(self.satisfies_current_required_terms, serializer);
+    }
+}
+
 impl SseEncode for crate::ProviderCapabilityReadinessDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7710,6 +9167,33 @@ impl SseEncode for crate::RecoveryActionKindDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::RefreshModeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::RefreshModeDto::EligibleOnly => 0,
+                crate::RefreshModeDto::Force => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::RefreshProgressFactsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<String>>::sse_encode(self.phase, serializer);
+        <Option<u64>>::sse_encode(self.completed_units, serializer);
+        <Option<u64>>::sse_encode(self.total_units, serializer);
+        <Option<String>>::sse_encode(self.status_key, serializer);
+        <Option<u64>>::sse_encode(self.issue_count, serializer);
     }
 }
 
@@ -8100,6 +9584,14 @@ impl SseEncode for crate::SourceEntryKindDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::StartGameRefreshRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.game_ids, serializer);
+        <crate::RefreshModeDto>::sse_encode(self.mode, serializer);
     }
 }
 

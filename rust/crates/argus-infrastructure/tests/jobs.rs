@@ -171,7 +171,9 @@ fn job_scan_target_and_entry_records_persist_and_survive_restart() {
     assert_eq!(detail.job().state(), JobRunState::Completed);
     assert_eq!(detail.job().completed_units(), Some(1));
     assert!(!detail.job().controls().can_cancel());
-    let OperationDetail::LibraryScan(scan_detail) = detail.operation_detail();
+    let OperationDetail::LibraryScan(scan_detail) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
     assert_eq!(scan_detail.scan_runs().len(), 1);
     assert_eq!(scan_detail.requested_roots().len(), 1);
     assert_eq!(scan_detail.admitted_roots().len(), 1);

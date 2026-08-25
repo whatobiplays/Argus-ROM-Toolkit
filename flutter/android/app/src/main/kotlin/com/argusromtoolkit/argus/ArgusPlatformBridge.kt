@@ -82,14 +82,19 @@ class ArgusPlatformBridge(
         )
     }
 
-    private fun readSnapshot(): Map<String, Any> =
-        mapOf(
+    private fun readSnapshot(): Map<String, Any> {
+        val allFilesAccessGranted = Environment.isExternalStorageManager()
+        if (allFilesAccessGranted) {
+            application.initializeNativeKeyring()
+        }
+        return mapOf(
             "allFilesAccessRequired" to true,
-            "allFilesAccessGranted" to Environment.isExternalStorageManager(),
+            "allFilesAccessGranted" to allFilesAccessGranted,
             "notificationAuthorization" to notificationAuthorizationWireValue(),
             "standardApplicationDataDirectory" to
                 application.standardApplicationDataDirectory.absolutePath,
         )
+    }
 
     private fun notificationAuthorizationWireValue(): String {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {

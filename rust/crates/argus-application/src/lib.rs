@@ -16,6 +16,7 @@ mod library;
 mod logical;
 mod metadata;
 mod observability;
+mod phase_003;
 mod settings;
 mod sources;
 mod unit_of_work;
@@ -62,9 +63,11 @@ pub use hydration::{
 pub use jobs::{
     ActiveScanOwnership, AdmittedLibraryScanJob, AdmittedScan, ApplicationEventSink,
     BackgroundOperationHandler, BackgroundOperationStopReason, CancelJobResult,
-    JobControlAvailability, JobDetail, JobProgress, JobProgressError, JobProgressReporter,
-    JobRunProjection, JobRunRepository, JobRunState, JobRunStateParseError, JobSummary,
-    JobSummaryPage, JobsQueries, JobsService, LibraryScanAdmissionContext,
+    GameRefreshJobDetail, JobControlAvailability, JobDetail, JobProgress, JobProgressError,
+    JobProgressReporter, JobRunProjection, JobRunRepository, JobRunState, JobRunStateParseError,
+    JobSummary, JobSummaryPage, JobsQueries, JobsService, LibraryRefreshAdmissionOutcome,
+    LibraryRefreshAdmissionResult, LibraryRefreshJobDetail, LibraryRefreshTrigger,
+    LibraryResolutionRefreshJobDetail, LibraryScanAdmissionContext,
     LibraryScanAdmissionContextRepository, LibraryScanAdmissionExclusion,
     LibraryScanAdmissionResult, LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity,
     LibraryScanAllRequestIdentityError, LibraryScanAllRequestLookup, LibraryScanChildCompletion,
@@ -73,13 +76,15 @@ pub use jobs::{
     LibraryScanRootSummary, LibraryScanTarget, LibraryScanTargetEligibility,
     LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
     ListJobsQuery, ListJobsScope, NativeIdentityMatch, NewJobRun, NewLibraryScanAdmissionContext,
-    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OPERATION_TYPE_LIBRARY_SCAN,
-    OperationCompletion, OperationDetail, OperationHandle, RetryJobAdmissionResult,
-    RetryJobCommand, RetryJobHandler, RetryJobResult, RetryNotAdmittedReason,
-    ScanAdmissionReference, ScanProgressFacts, ScanRunProjection, ScanRunRepository, ScanRunStatus,
-    ScanRunStatusParseError, SourceEntryRecord, SourceEntryRepository, StaleLibraryScanJob,
-    StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
-    StartLibraryScanResult, aggregate_library_scan_state, evaluate_retry_eligibility,
+    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OPERATION_TYPE_GAME_REFRESH,
+    OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
+    OPERATION_TYPE_LIBRARY_SCAN, OperationCompletion, OperationDetail, OperationHandle,
+    RefreshMode, RefreshProgressFacts, RetryJobAdmissionResult, RetryJobCommand, RetryJobHandler,
+    RetryJobResult, RetryNotAdmittedReason, ScanAdmissionReference, ScanProgressFacts,
+    ScanRunProjection, ScanRunRepository, ScanRunStatus, ScanRunStatusParseError,
+    SourceEntryRecord, SourceEntryRepository, StaleLibraryScanJob, StaleLibraryScanQueries,
+    StaleLibraryScanRun, StartLibraryScanAllResult, StartLibraryScanResult,
+    aggregate_library_scan_state, evaluate_retry_eligibility,
     evaluate_retry_eligibility_with_trace,
 };
 pub use library::{
@@ -110,6 +115,12 @@ pub use observability::{
     SafeContextError, SafeContextField, SafeContextValue, SettingsDomain, StartupCollector,
     SubsystemName, TechnicalClass, TraceEvent, TraceEventPhase, TraceId, TraceIdError, Version,
 };
+pub use phase_003::{
+    AddLibraryRootAndRefreshResult, CURRENT_PRIVACY_TERMS_VERSION,
+    CompleteLibraryOnboardingAndRefreshResult, LibraryOnboardingProgress, LibraryOnboardingState,
+    LibraryProviderSetupDecision, LibraryProviderSetupOutcome, LibraryRefreshCoordinator,
+    MetadataProviderSettingsUpdateResult, MetadataSettingsUpdateResult, PrivacyConsent,
+};
 pub use settings::{
     AppearanceSettingsQueries, AppearanceSettingsRepository, GetAppearanceSettingsHandler,
     GetAppearanceSettingsQuery, SettingsService, UpdateAppearanceSettingsCommand,
@@ -132,12 +143,13 @@ pub use sources::{
     LocalFilesystemBrowseRoot, LocalFilesystemProvider, LocalFilesystemRootSelection,
     MAX_LOCAL_FILESYSTEM_BROWSE_PAGE_SIZE, MAX_MOUNTED_LOCAL_FILESYSTEM_VOLUMES,
     MountedLocalFilesystemVolume, NewLibraryRoot, ObservedEntryKind, ProviderError,
-    RelativeSourceLocator, RemoveLibraryRootCommand, RemoveLibraryRootHandler,
-    RemoveLibraryRootResult, ResolvedRoot, RootLocator, RootRelationship, SourceAccessError,
-    SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor, SourceEntryCursorError,
-    SourceEntryDetailProjection, SourceEntryKind, SourceEntryProjection, SourceEntryQueries,
-    SourceLocatorKey, SourceObservation, SourceProviderType, SourceProviderTypeError,
-    StartLibraryScanAllCommand, StartLibraryScanAllHandler, StartLibraryScanCommand,
-    StartLibraryScanHandler, SyncLocalFilesystemMountedVolumesCommand, ValidatedLocalRoot,
+    RefreshLibraryCommand, RelativeSourceLocator, RemoveLibraryRootCommand,
+    RemoveLibraryRootHandler, RemoveLibraryRootResult, ResolvedRoot, RootLocator, RootRelationship,
+    SourceAccessError, SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor,
+    SourceEntryCursorError, SourceEntryDetailProjection, SourceEntryKind, SourceEntryProjection,
+    SourceEntryQueries, SourceLocatorKey, SourceObservation, SourceProviderType,
+    SourceProviderTypeError, StartLibraryScanAllCommand, StartLibraryScanAllHandler,
+    StartLibraryScanCommand, StartLibraryScanHandler, SyncLocalFilesystemMountedVolumesCommand,
+    ValidatedLocalRoot,
 };
 pub use unit_of_work::{EnrichmentUnitOfWork, UnitOfWork, UnitOfWorkFactory};

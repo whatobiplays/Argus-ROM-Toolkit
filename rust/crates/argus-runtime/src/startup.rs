@@ -11,7 +11,6 @@ use argus_application::{
     SafeContextValue, SettingsService, StartupCollector, TraceEventPhase, TraceId,
 };
 use argus_infrastructure::artwork_store::ArtworkObjectStore;
-use argus_infrastructure::credentials::initialize_secure_store;
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::sqlite::{
     DEFAULT_QUEUE_CAPACITY, SqliteAppearanceSettingsQueries, SqliteDatabaseExecutor,
@@ -402,11 +401,6 @@ impl StartupCoordinator {
         let executor =
             SqliteDatabaseExecutor::open_with_capacity(&database_path, DEFAULT_QUEUE_CAPACITY)
                 .map_err(|error| persistence_error(self.trace_id, error))?;
-        // Android's native keyring adapter is initialized here, inside Rust
-        // infrastructure. A temporary adapter failure is surfaced later by
-        // the readiness query; startup does not turn it into a plaintext
-        // fallback or a runtime-wide failure.
-        let _ = initialize_secure_store();
         let artwork_store = ArtworkObjectStore::new(data_directory.join("artwork-assets"))
             .map_err(|_| {
                 persistence_error(
@@ -595,6 +589,7 @@ impl StartupCoordinator {
             artwork_store,
             event_bus,
             self.collector,
+            self.options.enrichment_session_factory(),
         );
         StartupResult {
             trace_id: self.trace_id,

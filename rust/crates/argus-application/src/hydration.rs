@@ -482,6 +482,116 @@ where
         Self { unit_of_work }
     }
 
+    /// Re-resolves only committed provider records for one identified target.
+    ///
+    /// This is the local half of hydration used by settings-driven refreshes:
+    /// it never creates provider sessions, performs network I/O, or downloads
+    /// artwork bytes. Selection remains owned by the same metadata and artwork
+    /// policy functions used by the full hydration path.
+    pub fn resolve_existing(
+        &self,
+        context: &OperationContext,
+        target: HydrationTarget,
+        metadata_policy: MetadataResolutionPolicy,
+        artwork_policy: ArtworkResolutionPolicy,
+        now: i64,
+    ) -> Result<HydrationReport, ApplicationPortError> {
+        let mappings = target.existing_mappings().to_vec();
+        let mappings_for_resolution = mappings.clone();
+        let settings_for_resolution = metadata_policy;
+        let artwork_policy_for_resolution = artwork_policy;
+        let target_for_resolution = target;
+        let (resolved_metadata, resolved_artwork) =
+            self.unit_of_work.execute(context, move |mut scope| {
+                let provider_metadata = {
+                    let mut metadata = scope.metadata();
+                    metadata
+                        .provider_metadata_for_content(target_for_resolution.game_content_id())
+                        .map_err(ApplicationPortError::from)?
+                };
+                let references = {
+                    let mut artwork = scope.artwork();
+                    let mut references = Vec::new();
+                    let mut seen_reference_ids = BTreeSet::new();
+                    for mapping in &mappings_for_resolution {
+                        if mapping.state() != MappingState::Current {
+                            continue;
+                        }
+                        let providers = [mapping.provider_id(), ProviderId::SteamGridDb];
+                        for provider_id in providers {
+                            for reference in artwork
+                                .references_for_external_game(
+                                    provider_id,
+                                    mapping.external_game_id(),
+                                )
+                                .map_err(ApplicationPortError::from)?
+                            {
+                                if seen_reference_ids.insert(reference.reference_id().to_owned()) {
+                                    references.push(reference);
+                                }
+                            }
+                        }
+                    }
+                    references
+                };
+                let resolved_metadata =
+                    resolve_provider_metadata(&provider_metadata, &settings_for_resolution, now);
+                let artwork_candidates = references
+                    .iter()
+                    .map(artwork_candidate_from_reference)
+                    .collect::<Vec<_>>();
+                let selected = resolve_artwork(&artwork_candidates, &artwork_policy_for_resolution);
+                let mut resolved_artwork = Vec::new();
+                {
+                    let mut metadata = scope.metadata();
+                    metadata
+                        .save_resolved_metadata(target_for_resolution.game_id(), &resolved_metadata)
+                        .map_err(ApplicationPortError::from)?;
+                }
+                {
+                    let mut artwork = scope.artwork();
+                    for artwork_type in selected.artwork_types() {
+                        for (ordering, candidate) in
+                            selected.gallery(artwork_type).iter().enumerate()
+                        {
+                            let Some(reference) = references.iter().find(|reference| {
+                                reference.provider_id() == candidate.provider_id()
+                                    && reference.artwork_type() == artwork_type
+                                    && reference.source().kind_and_value().1 == candidate.source()
+                            }) else {
+                                continue;
+                            };
+                            resolved_artwork.push(ResolvedArtwork::new(
+                                target_for_resolution.game_id(),
+                                artwork_type,
+                                reference.reference_id(),
+                                None,
+                                u32::try_from(ordering).unwrap_or(u32::MAX),
+                                "deterministic_policy",
+                                1,
+                                now,
+                            ));
+                        }
+                    }
+                    artwork
+                        .replace_resolved_artwork_for_game(
+                            target_for_resolution.game_id(),
+                            &resolved_artwork,
+                        )
+                        .map_err(ApplicationPortError::from)?;
+                }
+                scope.commit()?;
+                Ok((resolved_metadata, resolved_artwork))
+            })?;
+
+        Ok(HydrationReport {
+            mappings,
+            resolved_metadata,
+            resolved_artwork,
+            issues: Vec::new(),
+        })
+    }
+
     /// Hydrates one identified target through independently eligible sessions.
     ///
     /// The method is intentionally explicit and synchronous at this application

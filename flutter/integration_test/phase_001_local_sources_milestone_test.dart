@@ -15,7 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'phase_001_native_test_support.dart';
+import 'native_onboarding_test_support.dart';
 
 /// Test-owned environment inputs for the Phase 001 native milestone.
 const String _dataDirectoryEnvironment = 'ARGUS_PHASE_001_DATA_DIR';
@@ -92,7 +92,7 @@ Future<void> _runMilestone(
   StackTrace? bodyStack;
   try {
     final client = container.read(argusClientProvider);
-    await completePhase001LibraryOnboarding(tester, temporaryRootPath: rootOne);
+    await completeNativeLibraryOnboarding(tester, temporaryRootPath: rootOne);
     await _waitForShell(tester, container);
     await _goToSources(tester, container);
 

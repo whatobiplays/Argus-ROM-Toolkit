@@ -12,7 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'phase_001_native_test_support.dart';
+import 'native_onboarding_test_support.dart';
 
 /// Test-owned environment inputs for the Phase 001 restart proof.
 const String _restartModeEnvironment = 'ARGUS_PHASE_001_RESTART_MODE';
@@ -106,7 +106,7 @@ Future<void> _runSeedPhase(
 
   final container = await _pumpRealApp(tester, dataDirectory, rootOne);
   final client = container.read(argusClientProvider);
-  await completePhase001LibraryOnboarding(tester, temporaryRootPath: rootOne);
+  await completeNativeLibraryOnboarding(tester, temporaryRootPath: rootOne);
   await _waitForShell(tester, container);
   await _goToSources(tester, container);
 

@@ -37,7 +37,8 @@ if [[ ! -d "$app_container_dir" ]]; then
   mkdir -p "$app_container_dir"
 fi
 data_dir="$(mktemp -d "$app_container_dir/argus-phase-000.XXXXXX")"
-trap 'rm -rf "$data_dir"' EXIT
+onboarding_root="$(mktemp -d "$app_container_dir/argus-phase-000-root.XXXXXX")"
+trap 'rm -rf "$data_dir" "$onboarding_root"' EXIT
 
 printf 'Rebuilding argus-bridge with locked inputs\n'
 bash "$ROOT_DIR/scripts/run_rust.sh" cargo build \
@@ -68,6 +69,7 @@ bash "$ROOT_DIR/scripts/run_rust.sh" cargo build \
   printf 'Running restart restoration seed phase\n'
   ARGUS_PHASE_000_RESTART_MODE=seed \
   ARGUS_PHASE_000_DATA_DIR="$data_dir" \
+  ARGUS_PHASE_000_ONBOARDING_ROOT="$onboarding_root" \
     fvm flutter test integration_test/phase_000_restart_restoration_test.dart \
       -d macos
 

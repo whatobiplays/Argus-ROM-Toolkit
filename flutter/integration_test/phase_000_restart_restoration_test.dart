@@ -14,11 +14,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'native_onboarding_test_support.dart';
+
 /// Test-owned environment input selecting the restart phase.
 const String _restartModeEnvironment = 'ARGUS_PHASE_000_RESTART_MODE';
 
 /// Test-owned environment input selecting the shared isolated data directory.
 const String _dataDirectoryEnvironment = 'ARGUS_PHASE_000_DATA_DIR';
+
+/// Test-owned root used to complete Library onboarding before the appearance
+/// workflow begins.
+const String _onboardingRootEnvironment = 'ARGUS_PHASE_000_ONBOARDING_ROOT';
 
 /// Real two-native-process Phase 000 restart proof.
 ///
@@ -39,6 +45,7 @@ void main() {
 
   final mode = Platform.environment[_restartModeEnvironment];
   final dataDirectory = Platform.environment[_dataDirectoryEnvironment];
+  final onboardingRoot = Platform.environment[_onboardingRootEnvironment];
   if (mode != 'seed' && mode != 'verify') {
     throw StateError(
       '$_restartModeEnvironment must be "seed" or "verify", got: $mode',
@@ -51,6 +58,15 @@ void main() {
       '$_dataDirectoryEnvironment must be an absolute directory path',
     );
   }
+  if (mode == 'seed' &&
+      (onboardingRoot == null ||
+          onboardingRoot.isEmpty ||
+          !onboardingRoot.startsWith('/') ||
+          !Directory(onboardingRoot).existsSync())) {
+    throw StateError(
+      '$_onboardingRootEnvironment must be an existing absolute directory path',
+    );
+  }
   final directory = Directory(dataDirectory);
   if (!directory.existsSync()) {
     directory.createSync(recursive: true);
@@ -58,13 +74,13 @@ void main() {
 
   switch (mode) {
     case 'seed':
-      _runSeedPhase(dataDirectory);
+      _runSeedPhase(dataDirectory, onboardingRoot!);
     case 'verify':
       _runVerifyPhase(dataDirectory);
   }
 }
 
-void _runSeedPhase(String dataDirectory) {
+void _runSeedPhase(String dataDirectory, String onboardingRoot) {
   testWidgets('seed process persists Dark through the real Settings workflow', (
     tester,
   ) async {
@@ -72,6 +88,11 @@ void _runSeedPhase(String dataDirectory) {
       tester,
       dataDirectory,
       assertions: (tester, container) async {
+        await completeNativeLibraryOnboarding(
+          tester,
+          temporaryRootPath: onboardingRoot,
+        );
+        await _goToSettings(tester, container);
         await _pumpUntil(
           tester,
           condition: () => _shellVisible(tester),
@@ -113,6 +134,7 @@ void _runVerifyPhase(String dataDirectory) {
         tester,
         dataDirectory,
         assertions: (tester, container) async {
+          await _goToSettings(tester, container);
           // Inspect the frame produced by the initial pumpWidget first, then
           // inspect immediately after every individual pump. Every frame with
           // a normal shell must already be Dark; the timeout only guards
@@ -162,6 +184,10 @@ Future<void> _runPhase(
   )
   assertions,
 }) async {
+  tester.view.physicalSize = const Size(1200, 900);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
   final container = await _pumpRealApp(tester, dataDirectory);
   Object? bodyError;
   StackTrace? bodyStack;
@@ -254,6 +280,43 @@ bool _shellVisible(WidgetTester tester) =>
 
 bool _rootThemeIs(WidgetTester tester, ThemeMode mode) =>
     tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode == mode;
+
+/// Opens Settings from the active shell after onboarding admission.
+///
+/// The current Phase 003 default destination is Library, while this legacy
+/// regression specifically exercises Settings appearance persistence. Tapping
+/// the real destination control keeps that distinction explicit and preserves
+/// the production route guard.
+Future<void> _goToSettings(
+  WidgetTester tester,
+  ProviderContainer container,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 60));
+  while (!_shellVisible(tester)) {
+    for (final containerType in <Type>[NavigationBar, NavigationRail]) {
+      final candidate = find
+          .descendant(
+            of: find.byType(containerType),
+            matching: find.text('Settings'),
+          )
+          .hitTestable();
+      if (candidate.evaluate().isNotEmpty) {
+        await tester.tap(candidate.first);
+        await tester.pump(const Duration(milliseconds: 200));
+        break;
+      }
+    }
+    if (!_shellVisible(tester) && find.text('Settings').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Settings').first);
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    if (DateTime.now().isAfter(deadline)) {
+      _dumpVisibleState(tester, container);
+      fail('could not navigate to the Settings page');
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+}
 
 /// Shuts the native runtime down, disposes the root client, then detaches.
 ///

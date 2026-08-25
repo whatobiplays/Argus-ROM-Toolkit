@@ -3,11 +3,12 @@ import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/routing/app_routes.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/presentation/library_onboarding_page.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Returns the single application client composed by [ArgusBootstrap].
-ArgusClient phase001RootClient(WidgetTester tester) {
+ArgusClient nativeTestRootClient(WidgetTester tester) {
   final app = find.byType(ArgusApp);
   expect(app, findsOneWidget);
   final container = ProviderScope.containerOf(
@@ -19,18 +20,17 @@ ArgusClient phase001RootClient(WidgetTester tester) {
 
 /// Completes Library onboarding through the durable client authority.
 ///
-/// Native Phase 001 scenarios exercise Sources and restart recovery rather than
-/// onboarding itself. Each fresh process therefore establishes the durable
-/// onboarding fact first, using [temporaryRootPath] as the required root, waits
-/// for the admitted refreshes, and removes that root through the Sources API.
-/// The test never mutates onboarding state in Flutter memory or bypasses the
-/// production route guard.
-Future<ArgusClient> completePhase001LibraryOnboarding(
+/// Native scenarios exercise capabilities other than onboarding. Each fresh
+/// process therefore establishes the durable onboarding fact first, using
+/// [temporaryRootPath] as the required root, waits for the admitted refreshes,
+/// and removes that root through the Sources API. The test never mutates
+/// onboarding state in Flutter memory or bypasses the production route guard.
+Future<ArgusClient> completeNativeLibraryOnboarding(
   WidgetTester tester, {
   required String temporaryRootPath,
 }) async {
-  final client = phase001RootClient(tester);
-  await _waitForPhase001RuntimeReady(tester, client);
+  final client = nativeTestRootClient(tester);
+  await _waitForNativeRuntimeReady(tester, client);
 
   var state = await client.onboarding.getState();
   if (!state.complete && state.requiresPrivacyAcceptance) {
@@ -66,7 +66,7 @@ Future<ArgusClient> completePhase001LibraryOnboarding(
           :final handle,
         ):
           temporaryRoot = root;
-          final terminal = await _waitForPhase001TerminalJob(
+          final terminal = await _waitForNativeTerminalJob(
             tester,
             client,
             handle.jobRunId,
@@ -99,7 +99,7 @@ Future<ArgusClient> completePhase001LibraryOnboarding(
       final result = await client.onboarding.completeAndRefresh();
       switch (result) {
         case CompleteLibraryOnboardingAndRefreshResultAdmitted(:final handle):
-          final terminal = await _waitForPhase001TerminalJob(
+          final terminal = await _waitForNativeTerminalJob(
             tester,
             client,
             handle.jobRunId,
@@ -134,16 +134,40 @@ Future<ArgusClient> completePhase001LibraryOnboarding(
     isTrue,
     reason: 'onboarding completion must come from durable backend state',
   );
-  final onboardingPage = find.byType(LibraryOnboardingPage);
-  if (onboardingPage.evaluate().isNotEmpty) {
-    final context = tester.element(onboardingPage);
-    const LibraryRoute().go(context);
-    await tester.pump(const Duration(milliseconds: 200));
-  }
+  await _leaveNativeOnboarding(tester);
   return client;
 }
 
-Future<void> _waitForPhase001RuntimeReady(
+Future<void> _leaveNativeOnboarding(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 90),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  var routeRequested = false;
+  while (DateTime.now().isBefore(deadline)) {
+    final onboardingPage = find.byType(LibraryOnboardingPage);
+    if (onboardingPage.evaluate().isEmpty) {
+      if (_nativeShellVisible(tester)) return;
+    } else {
+      final openLibrary = find.text('Open Library').hitTestable();
+      if (openLibrary.evaluate().isNotEmpty) {
+        await tester.tap(openLibrary.first);
+      } else if (!routeRequested) {
+        final context = tester.element(onboardingPage);
+        const LibraryRoute().go(context);
+        routeRequested = true;
+      }
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+  fail('native Library onboarding did not open the ready shell');
+}
+
+bool _nativeShellVisible(WidgetTester tester) =>
+    find.byType(NavigationBar).evaluate().isNotEmpty ||
+    find.byType(NavigationRail).evaluate().isNotEmpty;
+
+Future<void> _waitForNativeRuntimeReady(
   WidgetTester tester,
   ArgusClient client, {
   Duration timeout = const Duration(seconds: 90),
@@ -166,7 +190,7 @@ Future<void> _waitForPhase001RuntimeReady(
   fail('macOS runtime did not reach Ready; state=$lastState error=$lastError');
 }
 
-Future<JobDetail> _waitForPhase001TerminalJob(
+Future<JobDetail> _waitForNativeTerminalJob(
   WidgetTester tester,
   ArgusClient client,
   JobRunId jobRunId, {

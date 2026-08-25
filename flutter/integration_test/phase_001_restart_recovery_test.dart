@@ -12,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'phase_001_native_test_support.dart';
+
 /// Test-owned environment inputs for the Phase 001 restart proof.
 const String _restartModeEnvironment = 'ARGUS_PHASE_001_RESTART_MODE';
 const String _dataDirectoryEnvironment = 'ARGUS_PHASE_001_DATA_DIR';
@@ -104,8 +106,14 @@ Future<void> _runSeedPhase(
 
   final container = await _pumpRealApp(tester, dataDirectory, rootOne);
   final client = container.read(argusClientProvider);
+  await completePhase001LibraryOnboarding(tester, temporaryRootPath: rootOne);
   await _waitForShell(tester, container);
   await _goToSources(tester, container);
+
+  final onboardingJobs = await client.jobs.listRecentTerminalJobs(
+    offset: 0,
+    pageSize: 100,
+  );
 
   // Configure root one without scanning, then start one scan over a tree
   // large enough that it observably remains Running.
@@ -128,7 +136,9 @@ Future<void> _runSeedPhase(
   await _waitUntilRunning(client, jobRunId.value);
   final committed = await _waitForFirstCommittedChildren(client);
   File('$dataDirectory/$_sentinelFileName').writeAsStringSync(
-    'job_run_id=${jobRunId.value}\ncommitted=${committed.join(',')}\n',
+    'job_run_id=${jobRunId.value}\n'
+    'committed=${committed.join(',')}\n'
+    'baseline_job_run_ids=${onboardingJobs.items.map((job) => job.jobRunId.value).join(',')}\n',
   );
   // Intentional interruption: terminate the native process now without
   // generalShutdown, CancelJob, scan completion, or any other
@@ -149,6 +159,7 @@ Future<void> _runVerifyPhase(WidgetTester tester, String dataDirectory) async {
   final sentinelLines = sentinel.readAsStringSync().split('\n');
   String jobRunId = '';
   final committed = <String>[];
+  final baselineJobRunIds = <String>[];
   for (final line in sentinelLines) {
     if (line.startsWith('job_run_id=')) {
       jobRunId = line.substring('job_run_id='.length);
@@ -159,9 +170,16 @@ Future<void> _runVerifyPhase(WidgetTester tester, String dataDirectory) async {
             .split(',')
             .where((name) => name.isNotEmpty),
       );
+    } else if (line.startsWith('baseline_job_run_ids=')) {
+      baselineJobRunIds.addAll(
+        line
+            .substring('baseline_job_run_ids='.length)
+            .split(',')
+            .where((id) => id.isNotEmpty),
+      );
     }
   }
-  if (jobRunId.isEmpty || committed.isEmpty) {
+  if (jobRunId.isEmpty || committed.isEmpty || baselineJobRunIds.isEmpty) {
     fail('restart seed sentinel is malformed');
   }
 
@@ -211,13 +229,16 @@ Future<void> _runVerifyPhase(WidgetTester tester, String dataDirectory) async {
       expect(names, contains(committedName));
     }
 
-    // Exactly the one interrupted job exists in history: recovery performed
-    // no new admission and the process never resumed the scan.
+    // Recovery preserves the onboarding refresh history and adds no new job:
+    // the only new terminal execution is the interrupted scan itself.
     final terminal = await client.jobs.listRecentTerminalJobs(
       offset: 0,
       pageSize: 10,
     );
-    expect(terminal.items.map((item) => item.jobRunId.value), [jobRunId]);
+    expect(
+      terminal.items.map((item) => item.jobRunId.value),
+      unorderedEquals(<String>{...baselineJobRunIds, jobRunId}),
+    );
   } catch (error, stackTrace) {
     bodyError = error;
     bodyStack = stackTrace;

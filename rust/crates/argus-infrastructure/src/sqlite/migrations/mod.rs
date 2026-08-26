@@ -149,6 +149,11 @@ impl MigrationRegistry {
                 "0012_content_identity_catalog_expansion",
                 include_bytes!("sql/0012_content_identity_catalog_expansion.sql"),
             ),
+            Migration::sql(
+                13,
+                "0013_optical_content_and_provenance",
+                include_bytes!("sql/0013_optical_content_and_provenance.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

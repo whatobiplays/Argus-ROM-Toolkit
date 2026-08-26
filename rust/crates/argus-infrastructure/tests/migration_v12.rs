@@ -126,6 +126,15 @@ fn v11_rows_and_relationships_survive_content_catalog_expansion() {
                     'argus.content.identity.nintendo-gb.cartridge.v1', 1,
                     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1,
                     'entry-v11', 'raw', 'v1:file:32768:1', 'scan-v11', '1', '1');
+            INSERT INTO content_identity
+                (content_identity_id, game_content_id, scheme_id, identity_revision,
+                 identity_value, is_current, proving_source_entry_id,
+                 proving_association_key, proving_source_fingerprint, proving_scan_run_id,
+                 created_at, updated_at)
+            VALUES ('identity-v11-retained', 'content-v11',
+                    'argus.content.identity.nintendo-gb.cartridge.v1', 1,
+                    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 0,
+                    'entry-v11', 'retained', 'v1:file:32768:1', 'scan-v11', '1', '1');
             INSERT INTO game_content_source
                 (game_content_source_id, game_content_id, source_entry_id, association_key,
                  source_fingerprint, last_observed_scan_id, is_current, created_at, updated_at)
@@ -188,13 +197,13 @@ fn v11_rows_and_relationships_survive_content_catalog_expansion() {
     old.shutdown().expect("shutdown v11");
 
     let current = SqliteDatabaseExecutor::open(&database).expect("v12 upgrade");
-    assert_eq!(current.migration_summary().current_version, 12);
-    assert_eq!(current.migration_summary().applied_count, 1);
+    assert_eq!(current.migration_summary().current_version, 13);
+    assert_eq!(current.migration_summary().applied_count, 2);
     current
         .with_connection_for_tests(context(), |connection| {
             for (table, expected) in [
                 ("game_content", 1),
-                ("content_identity", 1),
+                ("content_identity", 2),
                 ("game_content_source", 1),
                 ("game_membership", 1),
                 ("game_redirect", 1),
@@ -214,6 +223,24 @@ fn v11_rows_and_relationships_survive_content_catalog_expansion() {
             assert_eq!(
                 connection.scalar_text("SELECT game_content_id FROM content_identity")?,
                 "content-v11"
+            );
+            assert_eq!(
+                connection.scalar_i64("SELECT count(*) FROM content_identity_provenance")?,
+                2
+            );
+            assert_eq!(
+                connection.scalar_i64(
+                    "SELECT count(*) FROM content_identity_provenance
+                     WHERE identity_is_current = 1",
+                )?,
+                1
+            );
+            assert_eq!(
+                connection.scalar_i64(
+                    "SELECT count(*) FROM content_identity_provenance
+                     WHERE identity_is_current = 0",
+                )?,
+                1
             );
             assert_eq!(
                 connection.scalar_text("SELECT game_id FROM resolved_metadata")?,

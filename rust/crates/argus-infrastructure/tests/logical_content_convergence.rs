@@ -3,10 +3,10 @@
 use argus_application::{
     ContentIdentity, ContentType, GameListCursor, GetGameResult, IdentificationService,
     IdentityConvergenceStore, IdentityDigest, LibraryRootAvailability, LibraryRootRepository,
-    LibrarySourceAccess, ListGamesQuery, LogicalContentUnitOfWork, LogicalLibraryQueries,
-    OperationContext, OperationName, PlatformId, RelativeSourceLocator, RootLocator,
-    SourceEntryRepository, SourceVersionEvidence, SubsystemName, TraceId, UnitOfWork,
-    ValidatedContentDerivation,
+    LibrarySourceAccess, ListGamesQuery, LogicalContentRepository, LogicalContentUnitOfWork,
+    LogicalLibraryQueries, M3uGroupingMember, OperationContext, OperationName, PlatformId,
+    RelativeSourceLocator, RootLocator, SourceEntryRepository, SourceVersionEvidence,
+    SubsystemName, TraceId, UnitOfWork, ValidatedContentDerivation, ValidatedM3uGrouping,
 };
 use argus_infrastructure::content::ContentReader;
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
@@ -49,6 +49,32 @@ fn derivation_with_digest(
         ),
         "raw".to_owned(),
         display_title.to_owned(),
+    )
+}
+
+fn optical_derivation(
+    source: &str,
+    scan: &str,
+    fingerprint: &str,
+    digest_byte: u8,
+) -> ValidatedContentDerivation {
+    let source_entry_id = argus_application::SourceEntryId::try_from(source).expect("source");
+    ValidatedContentDerivation::new(
+        source_entry_id,
+        SourceVersionEvidence::new(
+            source_entry_id,
+            Some(fingerprint.to_owned()),
+            argus_application::ScanRunId::try_from(scan).expect("scan"),
+        ),
+        PlatformId::SegaCd,
+        ContentType::OpticalDiscCd,
+        ContentIdentity::new(
+            "argus.content.identity.sega-cd.disc.v1",
+            1,
+            IdentityDigest::from_bytes([digest_byte; 32]),
+        ),
+        "disc".to_owned(),
+        format!("Disc {digest_byte}"),
     )
 }
 
@@ -195,7 +221,7 @@ fn duplicate_identity_converges_to_one_content_and_game_with_two_sources() {
         .expect("duplicate convergence");
 
     let counts = executor
-        .with_connection_for_tests(context(), |connection| {
+        .with_connection_for_tests(context(), move |connection| {
             Ok((
                 connection.scalar_i64("SELECT COUNT(*) FROM game_content")?,
                 connection.scalar_i64("SELECT COUNT(*) FROM game")?,
@@ -232,6 +258,157 @@ fn duplicate_identity_converges_to_one_content_and_game_with_two_sources() {
             .expect("current identity has proving source")
             .source_entry_id(),
         argus_application::SourceEntryId::try_from(source_one).expect("first source")
+    );
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn m3u_order_controls_primary_and_disc_without_selecting_game_survivor() {
+    let directory = tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("m3u.sqlite3")).expect("database");
+    let root = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let job = "cccccccccccccccccccccccccccccccc";
+    let scan = "dddddddddddddddddddddddddddddddd";
+    let playlist = "11111111111111111111111111111111";
+    let first_source = "22222222222222222222222222222222";
+    let second_source = "33333333333333333333333333333333";
+    seed_source(&executor, root, job, scan, playlist, "playlist-v1");
+    seed_source(&executor, root, job, scan, first_source, "disc-1-v1");
+    seed_source(&executor, root, job, scan, second_source, "disc-2-v1");
+
+    let first = optical_derivation(first_source, scan, "disc-1-v1", 1);
+    let second = optical_derivation(second_source, scan, "disc-2-v1", 2);
+    let (first_content, first_game) = match converge(&executor, first) {
+        argus_application::ConvergenceOutcome::Created {
+            game_content_id,
+            game_id,
+        }
+        | argus_application::ConvergenceOutcome::Attached {
+            game_content_id,
+            game_id,
+        } => (game_content_id, game_id),
+    };
+    let (second_content, second_game) = match converge(&executor, second) {
+        argus_application::ConvergenceOutcome::Created {
+            game_content_id,
+            game_id,
+        }
+        | argus_application::ConvergenceOutcome::Attached {
+            game_content_id,
+            game_id,
+        } => (game_content_id, game_id),
+    };
+    executor
+        .with_connection_for_tests(context(), move |connection| {
+            connection.execute_with_values(
+                "UPDATE game SET created_at = CASE
+                    WHEN game_id = ?1 THEN '2026-01-02 00:00:00'
+                    WHEN game_id = ?2 THEN '2026-01-01 00:00:00'
+                    ELSE created_at END",
+                &[
+                    SqliteValue::Text(first_game.to_string()),
+                    SqliteValue::Text(second_game.to_string()),
+                ],
+            )?;
+            Ok(())
+        })
+        .expect("created-at ordering");
+
+    let grouping = ValidatedM3uGrouping::new(
+        SourceVersionEvidence::new(
+            argus_application::SourceEntryId::try_from(playlist).expect("playlist"),
+            Some("playlist-v1".to_owned()),
+            argus_application::ScanRunId::try_from(scan).expect("scan"),
+        ),
+        vec![
+            M3uGroupingMember::new(
+                first_content,
+                SourceVersionEvidence::new(
+                    argus_application::SourceEntryId::try_from(first_source).expect("source"),
+                    Some("disc-1-v1".to_owned()),
+                    argus_application::ScanRunId::try_from(scan).expect("scan"),
+                ),
+                0,
+            ),
+            M3uGroupingMember::new(
+                second_content,
+                SourceVersionEvidence::new(
+                    argus_application::SourceEntryId::try_from(second_source).expect("source"),
+                    Some("disc-2-v1".to_owned()),
+                    argus_application::ScanRunId::try_from(scan).expect("scan"),
+                ),
+                1,
+            ),
+        ],
+    )
+    .expect("grouping");
+    let survivor = executor
+        .with_unit_of_work(context(), move |mut work| {
+            let game_id = {
+                let mut logical = work.logical_content();
+                logical
+                    .apply_m3u_grouping(&grouping)
+                    .map_err(argus_application::ApplicationPortError::from)?
+            };
+            work.commit()?;
+            Ok(game_id)
+        })
+        .expect("m3u grouping");
+    assert_eq!(survivor, second_game);
+
+    let rows = executor
+        .with_connection_for_tests(context(), move |connection| {
+            let sql = "SELECT group_concat(game_content_id || ':' || relationship, '|')
+                 FROM (
+                     SELECT game_content_id, relationship
+                     FROM game_membership
+                     WHERE game_id = '"
+                .to_owned()
+                + &survivor.to_string()
+                + "' AND is_current = 1
+                     ORDER BY CASE relationship
+                        WHEN 'primary_content' THEN 0 ELSE 1 END
+                 )";
+            let rows = connection.scalar_text(&sql)?;
+            Ok(rows
+                .split('|')
+                .map(|row| {
+                    let (content, relationship) = row.split_once(':').expect("membership row");
+                    (content.to_owned(), relationship.to_owned())
+                })
+                .collect::<Vec<_>>())
+        })
+        .expect("membership rows");
+    assert_eq!(rows[0].0, first_content.to_string());
+    assert_eq!(rows[0].1, "primary_content");
+    assert_eq!(rows[1].0, second_content.to_string());
+    assert_eq!(rows[1].1, "disc");
+    let evidence = executor
+        .with_connection_for_tests(context(), |connection| {
+            let rows = connection.scalar_text(
+                "SELECT group_concat(member_game_content_id || ':' || ordinal, '|')
+                 FROM (
+                     SELECT member_game_content_id, ordinal
+                     FROM grouping_evidence_member
+                     ORDER BY ordinal
+                 )",
+            )?;
+            Ok(rows
+                .split('|')
+                .map(|row| {
+                    let (content, ordinal) = row.split_once(':').expect("evidence row");
+                    (content.to_owned(), ordinal.parse::<i64>().expect("ordinal"))
+                })
+                .collect::<Vec<_>>())
+        })
+        .expect("evidence");
+    assert_eq!(
+        evidence,
+        vec![
+            (first_content.to_string(), 0),
+            (second_content.to_string(), 1),
+        ]
     );
     executor.shutdown().expect("shutdown");
 }

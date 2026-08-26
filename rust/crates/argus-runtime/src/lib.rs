@@ -24,39 +24,41 @@ use std::sync::{Arc, Mutex};
 use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
-    ArtworkRepository, ArtworkResolutionPolicy, CancelJobResult, ConvergenceOutcome,
-    CredentialMutationError, DiagnosticStage, EnrichmentProviderSession, EnrichmentUnitOfWork,
-    ErrorCode, EventName, FailureRole, GameId, GameLibraryPage, GetAppearanceSettingsQuery,
-    GetGameResult, GetLibraryRootQuery, GetSourceEntryQuery, HydrationReport, HydrationTarget,
-    IdentificationService, IdentityConvergenceStore, IdentitySchemeCatalog, JobDetail, JobRunId,
-    JobRunRepository, JobRunState, JobSummaryPage, JobsService, LibraryOnboardingState,
-    LibraryProviderSetupDecision, LibraryRefreshAdmissionResult, LibraryRefreshCoordinator,
-    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryRootRepository,
-    LibraryScanAdmissionResult, LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity,
-    LibraryScanAllRequestLookup, LibraryScope, LibraryService, LibrarySort, LibrarySourceAccess,
-    LibrarySourceRepository, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
-    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
-    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent,
-    LogLevel, LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries,
+    ArtworkRepository, ArtworkResolutionPolicy, CancelJobResult, ContentProvenanceRole,
+    ConvergenceOutcome, CredentialMutationError, DiagnosticStage, EnrichmentProviderSession,
+    EnrichmentUnitOfWork, ErrorCode, EventName, FailureRole, GameContentId, GameId,
+    GameLibraryPage, GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery,
+    GetSourceEntryQuery, HydrationReport, HydrationTarget, IdentificationService,
+    IdentityConvergenceStore, IdentitySchemeCatalog, JobDetail, JobRunId, JobRunRepository,
+    JobRunState, JobSummaryPage, JobsService, LibraryOnboardingState, LibraryProviderSetupDecision,
+    LibraryRefreshAdmissionResult, LibraryRefreshCoordinator, LibraryRootId, LibraryRootPage,
+    LibraryRootProjection, LibraryRootRepository, LibraryScanAdmissionResult,
+    LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
+    LibraryScope, LibraryService, LibrarySort, LibrarySourceAccess, LibrarySourceRepository,
+    ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent, LogLevel,
+    LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries, M3uGroupingMember,
     MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderRegistry,
     MetadataProviderService, MetadataProviderSettings, MetadataRepository,
     MetadataResolutionPolicy, MetadataSettings, MigrationOutcome, NewJobRun,
     NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationHandle,
-    OperationName, PathClass, PersistenceError, PlatformClass, PrivacyConsent, ProviderError,
-    ProviderId, ProviderReadinessState, RefreshLibraryCommand, RefreshMode,
-    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
+    OperationName, PathClass, PersistenceError, PlatformClass, PlatformId, PrivacyConsent,
+    ProvenanceMember, ProviderError, ProviderId, ProviderReadinessState, RefreshLibraryCommand,
+    RefreshMode, RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
     SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
     SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository,
     SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
     StartLibraryScanCommand, StartupCollector, SubsystemName,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, TraceEvent, TraceEventPhase, TraceId,
     UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand, ValidatedContentDerivation,
-    Version,
+    ValidatedM3uGrouping, Version,
 };
 use argus_infrastructure::artwork_store::ArtworkObjectStore;
 use argus_infrastructure::credentials::KeyringSecureCredentialStore;
 use argus_infrastructure::local_filesystem::{
-    LocalFilesystemProvider as InfraLocalFilesystemProvider, LocalFilesystemSourceAccess,
+    LocalContentReader, LocalFilesystemProvider as InfraLocalFilesystemProvider,
+    LocalFilesystemSourceAccess,
 };
 use argus_infrastructure::providers::{
     ProductionProviderSessionFactory, SteamGridDbCredentialValidator, UreqTransport,
@@ -794,6 +796,21 @@ impl LogicalContentRepository for KernelLogicalContentRepository<'_, '_> {
         source_entry_ids: &[SourceEntryId],
     ) -> Result<u64, PersistenceError> {
         self.inner.finalize_source_absence(source_entry_ids)
+    }
+
+    fn apply_m3u_grouping(
+        &mut self,
+        grouping: &argus_application::ValidatedM3uGrouping,
+    ) -> Result<GameId, PersistenceError> {
+        self.inner.apply_m3u_grouping(grouping)
+    }
+
+    fn reconcile_m3u_grouping_evidence(
+        &mut self,
+        active_playlist_source_ids: &[SourceEntryId],
+    ) -> Result<(), PersistenceError> {
+        self.inner
+            .reconcile_m3u_grouping_evidence(active_playlist_source_ids)
     }
 }
 
@@ -2146,7 +2163,11 @@ impl KernelBootstrap {
         context: &OperationContext,
         sessions: &mut [Box<dyn EnrichmentProviderSession>],
         now: i64,
+        is_cancelled: &dyn Fn() -> bool,
     ) -> Result<(usize, u64), ApplicationError> {
+        if is_cancelled() {
+            return Err(cancelled_sources_error(context.trace_id()));
+        }
         let access = LocalFilesystemSourceAccess::new(plan.root_locator());
         let resolved_root = access.resolve_root().map_err(|_| {
             application_error_from_code(
@@ -2157,9 +2178,180 @@ impl KernelBootstrap {
         let entries = self.list_committed_scan_files_with_context(plan, context)?;
         let catalog = IdentitySchemeCatalog::production();
         let mut game_ids = Vec::new();
+        let mut optical_sources = Vec::new();
+        let mut playlist_entries = Vec::new();
         let mut issue_count = 0_u64;
 
-        for entry in entries {
+        for entry in &entries {
+            if is_cancelled() {
+                return Err(cancelled_sources_error(context.trace_id()));
+            }
+            if is_m3u_entry(entry) {
+                playlist_entries.push(entry.clone());
+                continue;
+            }
+
+            if is_optical_descriptor_entry(entry) {
+                let descriptor_bytes = match access.read_entry_bytes(
+                    &resolved_root,
+                    entry.relative_locator(),
+                    1024 * 1024,
+                ) {
+                    Ok(bytes) => bytes,
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                };
+                let descriptor =
+                    match argus_infrastructure::content::parse_descriptor(&descriptor_bytes) {
+                        Ok(descriptor) => descriptor,
+                        Err(_) => {
+                            if is_cancelled() {
+                                return Err(cancelled_sources_error(context.trace_id()));
+                            }
+                            issue_count = issue_count.saturating_add(1);
+                            continue;
+                        }
+                    };
+                let resolved_dependencies = match argus_application::resolve_optical_dependencies(
+                    entry.relative_locator(),
+                    descriptor.dependencies(),
+                    &entries,
+                ) {
+                    Ok(dependencies) => dependencies,
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                };
+                let descriptor_reader =
+                    match access.open_entry_reader(&resolved_root, entry.relative_locator()) {
+                        Ok(reader) => reader,
+                        Err(_) => {
+                            issue_count = issue_count.saturating_add(1);
+                            continue;
+                        }
+                    };
+                let mut readers: Vec<LocalContentReader> =
+                    Vec::with_capacity(resolved_dependencies.len());
+                let mut opened = true;
+                for dependency in &resolved_dependencies {
+                    match access.open_entry_reader(&resolved_root, dependency.relative_locator()) {
+                        Ok(reader) => readers.push(reader),
+                        Err(_) => {
+                            opened = false;
+                            break;
+                        }
+                    }
+                }
+                if !opened {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+                let recognition = {
+                    let mut sources = Vec::with_capacity(readers.len());
+                    for (name, reader) in descriptor.dependencies().iter().zip(readers.iter_mut()) {
+                        sources.push(argus_infrastructure::content::OpticalSource::new(
+                            name.clone(),
+                            reader,
+                        ));
+                    }
+                    match argus_infrastructure::content::canonicalize_descriptor_with_cancel(
+                        &descriptor,
+                        &mut sources,
+                        is_cancelled,
+                    ) {
+                        Ok(recognition) => recognition,
+                        Err(argus_infrastructure::content::OpticalError::Cancelled) => {
+                            return Err(cancelled_sources_error(context.trace_id()));
+                        }
+                        Err(_) => {
+                            issue_count = issue_count.saturating_add(1);
+                            continue;
+                        }
+                    }
+                };
+                if !descriptor_reader
+                    .source_version_is_unchanged()
+                    .unwrap_or(false)
+                    || readers
+                        .iter()
+                        .any(|reader| !reader.source_version_is_unchanged().unwrap_or(false))
+                {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+                let Some(identity) = catalog.select_identity(
+                    recognition.platform(),
+                    recognition.content_type(),
+                    recognition.source_representation(),
+                    recognition.identity_digest(),
+                ) else {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                };
+                let mut provenance = Vec::with_capacity(readers.len() + 1);
+                for (index, (dependency, reader)) in
+                    resolved_dependencies.iter().zip(readers.iter()).enumerate()
+                {
+                    let role = if index == 0 {
+                        ContentProvenanceRole::Primary
+                    } else {
+                        ContentProvenanceRole::RequiredData
+                    };
+                    provenance.push(ProvenanceMember::new(
+                        role,
+                        Some("disc".to_owned()),
+                        SourceVersionEvidence::new(
+                            dependency.source_entry_id(),
+                            Some(reader.source_fingerprint().to_owned()),
+                            dependency.last_observed_scan_id(),
+                        ),
+                    ));
+                }
+                provenance.push(ProvenanceMember::new(
+                    ContentProvenanceRole::Descriptor,
+                    Some("disc".to_owned()),
+                    SourceVersionEvidence::new(
+                        entry.source_entry_id(),
+                        Some(descriptor_reader.source_fingerprint().to_owned()),
+                        entry.last_observed_scan_id(),
+                    ),
+                ));
+                let derivation = ValidatedContentDerivation::try_with_provenance(
+                    provenance,
+                    recognition.platform(),
+                    recognition.content_type(),
+                    identity,
+                    entry.display_name().to_owned(),
+                )
+                .expect("descriptor provenance is non-empty");
+                let outcome =
+                    match self.identify_committed_source_entry_with_context(derivation, context) {
+                        Ok(outcome) => outcome,
+                        Err(_) => {
+                            issue_count = issue_count.saturating_add(1);
+                            continue;
+                        }
+                    };
+                let (game_content_id, game_id) = convergence_ids(outcome);
+                add_game_id(&mut game_ids, game_id);
+                for source_id in std::iter::once(entry.source_entry_id()).chain(
+                    resolved_dependencies
+                        .iter()
+                        .map(SourceEntryRecord::source_entry_id),
+                ) {
+                    add_optical_source(
+                        &mut optical_sources,
+                        source_id,
+                        game_content_id,
+                        recognition.platform(),
+                    );
+                }
+                continue;
+            }
+
             let mut reader =
                 match access.open_entry_reader(&resolved_root, entry.relative_locator()) {
                     Ok(reader) => reader,
@@ -2168,6 +2360,66 @@ impl KernelBootstrap {
                         continue;
                     }
                 };
+            let native_optical =
+                match argus_infrastructure::content::recognize_native_optical_with_cancel(
+                    &mut reader,
+                    is_cancelled,
+                ) {
+                    Ok(recognized) => Some(recognized),
+                    Err(argus_infrastructure::content::OpticalError::Cancelled) => {
+                        return Err(cancelled_sources_error(context.trace_id()));
+                    }
+                    Err(_) => None,
+                };
+            if let Some(recognized) = native_optical {
+                if !reader.source_version_is_unchanged().unwrap_or(false) {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+                let Some(identity) = catalog.select_identity(
+                    recognized.platform(),
+                    recognized.content_type(),
+                    recognized.source_representation(),
+                    recognized.identity_digest(),
+                ) else {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                };
+                let derivation = ValidatedContentDerivation::try_with_provenance(
+                    vec![ProvenanceMember::new(
+                        ContentProvenanceRole::Primary,
+                        Some("raw".to_owned()),
+                        SourceVersionEvidence::new(
+                            entry.source_entry_id(),
+                            Some(reader.source_fingerprint().to_owned()),
+                            entry.last_observed_scan_id(),
+                        ),
+                    )],
+                    recognized.platform(),
+                    recognized.content_type(),
+                    identity,
+                    entry.display_name().to_owned(),
+                )
+                .expect("raw optical provenance is non-empty");
+                let outcome =
+                    match self.identify_committed_source_entry_with_context(derivation, context) {
+                        Ok(outcome) => outcome,
+                        Err(_) => {
+                            issue_count = issue_count.saturating_add(1);
+                            continue;
+                        }
+                    };
+                let (game_content_id, game_id) = convergence_ids(outcome);
+                add_game_id(&mut game_ids, game_id);
+                add_optical_source(
+                    &mut optical_sources,
+                    entry.source_entry_id(),
+                    game_content_id,
+                    recognized.platform(),
+                );
+                continue;
+            }
+
             let recognized = match argus_infrastructure::content::recognize_content(&mut reader) {
                 Ok(recognized) => recognized,
                 Err(_) => {
@@ -2209,16 +2461,171 @@ impl KernelBootstrap {
                         continue;
                     }
                 };
-            let game_id = match outcome {
-                ConvergenceOutcome::Created { game_id, .. }
-                | ConvergenceOutcome::Attached { game_id, .. } => game_id,
+            let (_, game_id) = convergence_ids(outcome);
+            add_game_id(&mut game_ids, game_id);
+        }
+
+        let mut active_playlists = Vec::new();
+        for playlist in &playlist_entries {
+            if is_cancelled() {
+                return Err(cancelled_sources_error(context.trace_id()));
+            }
+            let bytes = match access.read_entry_bytes(
+                &resolved_root,
+                playlist.relative_locator(),
+                1024 * 1024,
+            ) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
             };
-            if !game_ids.contains(&game_id) {
-                game_ids.push(game_id);
+            let parsed = match argus_infrastructure::content::parse_m3u(&bytes) {
+                Ok(parsed) => parsed,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
+            let resolved_members = match argus_application::resolve_optical_dependencies(
+                playlist.relative_locator(),
+                parsed.members(),
+                &entries,
+            ) {
+                Ok(members) => members,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
+            let mut member_platform = None;
+            let mut grouping_members = Vec::with_capacity(resolved_members.len());
+            let mut valid = true;
+            for (ordinal, member_entry) in resolved_members.iter().enumerate() {
+                let Some(source) = optical_sources
+                    .iter()
+                    .find(|source| source.source_entry_id == member_entry.source_entry_id())
+                else {
+                    valid = false;
+                    break;
+                };
+                if let Some(expected) = member_platform {
+                    if expected != source.platform {
+                        valid = false;
+                        break;
+                    }
+                } else {
+                    member_platform = Some(source.platform);
+                }
+                grouping_members.push(M3uGroupingMember::new(
+                    source.game_content_id,
+                    SourceVersionEvidence::new(
+                        member_entry.source_entry_id(),
+                        member_entry.source_fingerprint().map(str::to_owned),
+                        member_entry.last_observed_scan_id(),
+                    ),
+                    ordinal as u32,
+                ));
+            }
+            if !valid {
+                issue_count = issue_count.saturating_add(1);
+                continue;
+            }
+            let playlist_reader =
+                match access.open_entry_reader(&resolved_root, playlist.relative_locator()) {
+                    Ok(reader) => reader,
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                };
+            if !playlist_reader
+                .source_version_is_unchanged()
+                .unwrap_or(false)
+            {
+                issue_count = issue_count.saturating_add(1);
+                continue;
+            }
+            let grouping = match ValidatedM3uGrouping::new(
+                SourceVersionEvidence::new(
+                    playlist.source_entry_id(),
+                    Some(playlist_reader.source_fingerprint().to_owned()),
+                    playlist.last_observed_scan_id(),
+                ),
+                grouping_members,
+            ) {
+                Ok(grouping) => grouping,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
+            let grouping_result = self.unit_of_work.execute(context, move |mut work| {
+                let game_id = {
+                    let mut logical = work.logical_content();
+                    logical
+                        .apply_m3u_grouping(&grouping)
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(game_id)
+            });
+            match grouping_result {
+                Ok(game_id) => {
+                    add_game_id(&mut game_ids, game_id);
+                    active_playlists.push(playlist.source_entry_id());
+                }
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                }
             }
         }
 
-        for game_id in &game_ids {
+        let active_playlists_for_reconcile = active_playlists.clone();
+        if self
+            .unit_of_work
+            .execute(context, move |mut work| {
+                {
+                    let mut logical = work.logical_content();
+                    logical
+                        .reconcile_m3u_grouping_evidence(&active_playlists_for_reconcile)
+                        .map_err(ApplicationPortError::Persistence)?;
+                }
+                work.commit()?;
+                Ok(())
+            })
+            .is_err()
+        {
+            issue_count = issue_count.saturating_add(1);
+        }
+
+        // Grouping may redirect one or more provisional Games to the stable
+        // survivor. Resolve those identities before hydration so every
+        // identified optical Game reaches the existing provider path exactly
+        // once and redirected historical IDs do not become false issues.
+        let mut hydration_game_ids = Vec::new();
+        for game_id in game_ids {
+            if is_cancelled() {
+                return Err(cancelled_sources_error(context.trace_id()));
+            }
+            match self.get_game_with_context(game_id, context) {
+                Ok(GetGameResult::Found(detail)) => {
+                    add_game_id(&mut hydration_game_ids, detail.game_id());
+                }
+                Ok(GetGameResult::Redirected(canonical_game_id)) => {
+                    add_game_id(&mut hydration_game_ids, canonical_game_id);
+                }
+                Ok(GetGameResult::NotFound) | Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                }
+            }
+        }
+
+        for game_id in &hydration_game_ids {
+            if is_cancelled() {
+                return Err(cancelled_sources_error(context.trace_id()));
+            }
             match self.hydrate_committed_game_with_context(*game_id, context, sessions, now) {
                 Ok(game_issues) => {
                     issue_count = issue_count.saturating_add(game_issues);
@@ -2228,7 +2635,7 @@ impl KernelBootstrap {
                 }
             }
         }
-        Ok((game_ids.len(), issue_count))
+        Ok((hydration_game_ids.len(), issue_count))
     }
 
     pub(crate) fn create_enrichment_sessions(&self) -> Vec<Box<dyn EnrichmentProviderSession>> {
@@ -3237,6 +3644,66 @@ pub(crate) fn sources_operation_context(
         SubsystemName::try_from("sources").expect("static subsystem is valid"),
         OperationName::try_from(operation).expect("static operation is valid"),
     )
+}
+
+#[derive(Clone, Copy)]
+struct OpticalSourceLink {
+    source_entry_id: SourceEntryId,
+    game_content_id: GameContentId,
+    platform: PlatformId,
+}
+
+fn convergence_ids(outcome: ConvergenceOutcome) -> (GameContentId, GameId) {
+    match outcome {
+        ConvergenceOutcome::Created {
+            game_content_id,
+            game_id,
+        }
+        | ConvergenceOutcome::Attached {
+            game_content_id,
+            game_id,
+        } => (game_content_id, game_id),
+    }
+}
+
+fn add_game_id(game_ids: &mut Vec<GameId>, game_id: GameId) {
+    if !game_ids.contains(&game_id) {
+        game_ids.push(game_id);
+    }
+}
+
+fn add_optical_source(
+    sources: &mut Vec<OpticalSourceLink>,
+    source_entry_id: SourceEntryId,
+    game_content_id: GameContentId,
+    platform: PlatformId,
+) {
+    if sources
+        .iter()
+        .any(|source| source.source_entry_id == source_entry_id)
+    {
+        return;
+    }
+    sources.push(OpticalSourceLink {
+        source_entry_id,
+        game_content_id,
+        platform,
+    });
+}
+
+fn entry_extension(entry: &SourceEntryRecord) -> Option<String> {
+    entry
+        .display_name()
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+}
+
+fn is_optical_descriptor_entry(entry: &SourceEntryRecord) -> bool {
+    matches!(entry_extension(entry).as_deref(), Some("cue" | "gdi"))
+}
+
+fn is_m3u_entry(entry: &SourceEntryRecord) -> bool {
+    matches!(entry_extension(entry).as_deref(), Some("m3u" | "m3u8"))
 }
 
 fn cancelled_sources_error(trace_id: TraceId) -> ApplicationError {

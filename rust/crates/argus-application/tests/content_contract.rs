@@ -89,7 +89,7 @@ fn production_identity_catalog_maps_each_supported_platform_to_one_scheme() {
         ),
     ];
 
-    assert_eq!(catalog.len(), expected.len());
+    assert_eq!(catalog.len(), expected.len() + 9);
     for (platform, content_type, representations, scheme_id) in expected {
         let descriptor = catalog.select(platform, content_type).expect("catalog row");
         assert_eq!(descriptor.id(), scheme_id);
@@ -106,8 +106,8 @@ fn transformation_registry_is_distinct_from_identity_scheme_catalog() {
     let registry = TransformationRegistry::production();
     let catalog = IdentitySchemeCatalog::production();
 
-    assert_eq!(registry.len(), 19);
-    assert_eq!(catalog.len(), 13);
+    assert_eq!(registry.len(), 33);
+    assert_eq!(catalog.len(), 22);
     assert!(
         registry
             .descriptors()
@@ -172,6 +172,111 @@ fn identity_policy_maps_typed_transformation_output_after_recognition() {
         "argus.content.identity.nintendo-gba.cartridge.v1"
     );
     assert_eq!(identity.revision(), 1);
+}
+
+#[test]
+fn production_catalog_activates_native_optical_rows_without_deferred_forms() {
+    let catalog = IdentitySchemeCatalog::production();
+    let expected = [
+        (
+            PlatformId::SegaCd,
+            ContentType::OpticalDiscCd,
+            &["cue-bin", "iso-2048-cd"][..],
+            "argus.content.identity.sega-cd.disc.v1",
+        ),
+        (
+            PlatformId::SegaSaturn,
+            ContentType::OpticalDiscCd,
+            &["cue-bin", "iso-2048-cd"][..],
+            "argus.content.identity.sega-saturn.disc.v1",
+        ),
+        (
+            PlatformId::SegaDreamcast,
+            ContentType::OpticalDiscGd,
+            &["gdi", "cue-bin"][..],
+            "argus.content.identity.sega-dreamcast.gdrom.v1",
+        ),
+        (
+            PlatformId::SonyPlaystation,
+            ContentType::OpticalDiscCd,
+            &["cue-bin", "iso-2048-cd"][..],
+            "argus.content.identity.sony-playstation.disc.v1",
+        ),
+        (
+            PlatformId::SonyPlaystation2,
+            ContentType::OpticalDiscCd,
+            &["cue-bin", "iso-2048-cd"][..],
+            "argus.content.identity.sony-playstation2.cd.v1",
+        ),
+        (
+            PlatformId::SonyPlaystation2,
+            ContentType::OpticalDiscDvd,
+            &["iso-2048"][..],
+            "argus.content.identity.sony-playstation2.dvd.v1",
+        ),
+        (
+            PlatformId::SonyPsp,
+            ContentType::OpticalDiscUmd,
+            &["iso-2048"][..],
+            "argus.content.identity.sony-psp.umd.v1",
+        ),
+        (
+            PlatformId::NintendoGameCube,
+            ContentType::OpticalDiscGameCube,
+            &["raw-disc-image"][..],
+            "argus.content.identity.nintendo-gamecube.disc.v1",
+        ),
+        (
+            PlatformId::NintendoWii,
+            ContentType::OpticalDiscWii,
+            &["raw-disc-image"][..],
+            "argus.content.identity.nintendo-wii.disc.v1",
+        ),
+    ];
+
+    for (platform, content_type, representations, scheme_id) in expected {
+        let descriptor = catalog.select(platform, content_type).expect("catalog row");
+        assert_eq!(descriptor.id(), scheme_id);
+        assert_eq!(descriptor.representations(), representations);
+        assert!(
+            representations
+                .iter()
+                .all(|representation| descriptor.accepts_representation(representation))
+        );
+        assert!(
+            !representations
+                .iter()
+                .any(|representation| representation.starts_with("chd")
+                    || representation == &"rvz"
+                    || representation == &"cso"
+                    || representation == &"wbfs")
+        );
+    }
+}
+
+#[test]
+fn provider_mapping_catalog_covers_activated_optical_platforms() {
+    let platforms = [
+        PlatformId::SegaCd,
+        PlatformId::SegaSaturn,
+        PlatformId::SegaDreamcast,
+        PlatformId::SonyPlaystation,
+        PlatformId::SonyPlaystation2,
+        PlatformId::SonyPsp,
+        PlatformId::NintendoGameCube,
+        PlatformId::NintendoWii,
+    ];
+
+    for platform in platforms {
+        assert_eq!(
+            ProviderId::Playmatch.platform_mapping(platform).mapped_id(),
+            Some(platform.as_str())
+        );
+        assert_eq!(
+            ProviderId::GameTdb.platform_mapping(platform).mapped_id(),
+            Some(platform.as_str())
+        );
+    }
 }
 
 #[test]

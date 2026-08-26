@@ -46,7 +46,7 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
         "Fallback GBA",
         vec![GameMembershipSummary::new(
             content_id,
-            MembershipRelationship::Primary,
+            MembershipRelationship::PrimaryContent,
             GroupingBasis::Provisional,
             1,
         )],
@@ -122,7 +122,7 @@ fn enriched_game_bridge_dto_contains_provenance_without_provider_locators() {
         "Fallback",
         vec![GameMembershipSummary::new(
             content_id,
-            MembershipRelationship::Primary,
+            MembershipRelationship::PrimaryContent,
             GroupingBasis::ExactContentIdentity,
             1,
         )],

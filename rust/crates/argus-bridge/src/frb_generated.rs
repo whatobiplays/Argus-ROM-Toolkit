@@ -2193,6 +2193,24 @@ impl SseDecode for crate::ContentPresenceDto {
     }
 }
 
+impl SseDecode for crate::ContentProvenanceMemberDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_role = <String>::sse_decode(deserializer);
+        let mut var_associationKey = <Option<String>>::sse_decode(deserializer);
+        let mut var_sourceEntryId = <String>::sse_decode(deserializer);
+        let mut var_sourceFingerprint = <Option<String>>::sse_decode(deserializer);
+        let mut var_lastObservedScanId = <String>::sse_decode(deserializer);
+        return crate::ContentProvenanceMemberDto {
+            role: var_role,
+            association_key: var_associationKey,
+            source_entry_id: var_sourceEntryId,
+            source_fingerprint: var_sourceFingerprint,
+            last_observed_scan_id: var_lastObservedScanId,
+        };
+    }
+}
+
 impl SseDecode for crate::ContentProvenanceSummaryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2200,11 +2218,13 @@ impl SseDecode for crate::ContentProvenanceSummaryDto {
         let mut var_associationKey = <String>::sse_decode(deserializer);
         let mut var_sourceFingerprint = <Option<String>>::sse_decode(deserializer);
         let mut var_lastObservedScanId = <String>::sse_decode(deserializer);
+        let mut var_members = <Vec<crate::ContentProvenanceMemberDto>>::sse_decode(deserializer);
         return crate::ContentProvenanceSummaryDto {
             source_entry_id: var_sourceEntryId,
             association_key: var_associationKey,
             source_fingerprint: var_sourceFingerprint,
             last_observed_scan_id: var_lastObservedScanId,
+            members: var_members,
         };
     }
 }
@@ -2241,6 +2261,12 @@ impl SseDecode for crate::ContentTypeDto {
         return match inner {
             0 => crate::ContentTypeDto::CartridgeImage,
             1 => crate::ContentTypeDto::MagneticDiskImage,
+            2 => crate::ContentTypeDto::OpticalDiscCd,
+            3 => crate::ContentTypeDto::OpticalDiscGd,
+            4 => crate::ContentTypeDto::OpticalDiscDvd,
+            5 => crate::ContentTypeDto::OpticalDiscGameCube,
+            6 => crate::ContentTypeDto::OpticalDiscWii,
+            7 => crate::ContentTypeDto::OpticalDiscUmd,
             _ => unreachable!("Invalid variant for ContentTypeDto: {}", inner),
         };
     }
@@ -2448,6 +2474,7 @@ impl SseDecode for crate::GroupingBasisDto {
         return match inner {
             0 => crate::GroupingBasisDto::ExactContentIdentity,
             1 => crate::GroupingBasisDto::Provisional,
+            2 => crate::GroupingBasisDto::ExplicitRelationshipEvidence,
             _ => unreachable!("Invalid variant for GroupingBasisDto: {}", inner),
         };
     }
@@ -3061,6 +3088,20 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::ContentProvenanceMemberDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::ContentProvenanceMemberDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::ContentSummaryDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3523,6 +3564,12 @@ impl SseDecode for crate::MembershipRelationshipDto {
         return match inner {
             0 => crate::MembershipRelationshipDto::Primary,
             1 => crate::MembershipRelationshipDto::Secondary,
+            2 => crate::MembershipRelationshipDto::PrimaryContent,
+            3 => crate::MembershipRelationshipDto::RegionalVariant,
+            4 => crate::MembershipRelationshipDto::LanguageVariant,
+            5 => crate::MembershipRelationshipDto::RevisionVariant,
+            6 => crate::MembershipRelationshipDto::Disc,
+            7 => crate::MembershipRelationshipDto::EquivalentReleaseRepresentation,
             _ => unreachable!("Invalid variant for MembershipRelationshipDto: {}", inner),
         };
     }
@@ -3889,6 +3936,14 @@ impl SseDecode for crate::PlatformIdDto {
             10 => crate::PlatformIdDto::SegaGameGear,
             11 => crate::PlatformIdDto::SegaGenesis,
             12 => crate::PlatformIdDto::Sega32x,
+            13 => crate::PlatformIdDto::NintendoGameCube,
+            14 => crate::PlatformIdDto::NintendoWii,
+            15 => crate::PlatformIdDto::SegaCd,
+            16 => crate::PlatformIdDto::SegaSaturn,
+            17 => crate::PlatformIdDto::SegaDreamcast,
+            18 => crate::PlatformIdDto::SonyPlaystation,
+            19 => crate::PlatformIdDto::SonyPlaystation2,
+            20 => crate::PlatformIdDto::SonyPsp,
             _ => unreachable!("Invalid variant for PlatformIdDto: {}", inner),
         };
     }
@@ -5075,6 +5130,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ContentPresenceDto> for crate::Con
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ContentProvenanceMemberDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.role.into_into_dart().into_dart(),
+            self.association_key.into_into_dart().into_dart(),
+            self.source_entry_id.into_into_dart().into_dart(),
+            self.source_fingerprint.into_into_dart().into_dart(),
+            self.last_observed_scan_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ContentProvenanceMemberDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ContentProvenanceMemberDto>
+    for crate::ContentProvenanceMemberDto
+{
+    fn into_into_dart(self) -> crate::ContentProvenanceMemberDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ContentProvenanceSummaryDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -5082,6 +5161,7 @@ impl flutter_rust_bridge::IntoDart for crate::ContentProvenanceSummaryDto {
             self.association_key.into_into_dart().into_dart(),
             self.source_fingerprint.into_into_dart().into_dart(),
             self.last_observed_scan_id.into_into_dart().into_dart(),
+            self.members.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5125,6 +5205,12 @@ impl flutter_rust_bridge::IntoDart for crate::ContentTypeDto {
         match self {
             Self::CartridgeImage => 0.into_dart(),
             Self::MagneticDiskImage => 1.into_dart(),
+            Self::OpticalDiscCd => 2.into_dart(),
+            Self::OpticalDiscGd => 3.into_dart(),
+            Self::OpticalDiscDvd => 4.into_dart(),
+            Self::OpticalDiscGameCube => 5.into_dart(),
+            Self::OpticalDiscWii => 6.into_dart(),
+            Self::OpticalDiscUmd => 7.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -5391,6 +5477,7 @@ impl flutter_rust_bridge::IntoDart for crate::GroupingBasisDto {
         match self {
             Self::ExactContentIdentity => 0.into_dart(),
             Self::Provisional => 1.into_dart(),
+            Self::ExplicitRelationshipEvidence => 2.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -6378,6 +6465,12 @@ impl flutter_rust_bridge::IntoDart for crate::MembershipRelationshipDto {
         match self {
             Self::Primary => 0.into_dart(),
             Self::Secondary => 1.into_dart(),
+            Self::PrimaryContent => 2.into_dart(),
+            Self::RegionalVariant => 3.into_dart(),
+            Self::LanguageVariant => 4.into_dart(),
+            Self::RevisionVariant => 5.into_dart(),
+            Self::Disc => 6.into_dart(),
+            Self::EquivalentReleaseRepresentation => 7.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -6641,6 +6734,14 @@ impl flutter_rust_bridge::IntoDart for crate::PlatformIdDto {
             Self::SegaGameGear => 10.into_dart(),
             Self::SegaGenesis => 11.into_dart(),
             Self::Sega32x => 12.into_dart(),
+            Self::NintendoGameCube => 13.into_dart(),
+            Self::NintendoWii => 14.into_dart(),
+            Self::SegaCd => 15.into_dart(),
+            Self::SegaSaturn => 16.into_dart(),
+            Self::SegaDreamcast => 17.into_dart(),
+            Self::SonyPlaystation => 18.into_dart(),
+            Self::SonyPlaystation2 => 19.into_dart(),
+            Self::SonyPsp => 20.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -7761,6 +7862,17 @@ impl SseEncode for crate::ContentPresenceDto {
     }
 }
 
+impl SseEncode for crate::ContentProvenanceMemberDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.role, serializer);
+        <Option<String>>::sse_encode(self.association_key, serializer);
+        <String>::sse_encode(self.source_entry_id, serializer);
+        <Option<String>>::sse_encode(self.source_fingerprint, serializer);
+        <String>::sse_encode(self.last_observed_scan_id, serializer);
+    }
+}
+
 impl SseEncode for crate::ContentProvenanceSummaryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7768,6 +7880,7 @@ impl SseEncode for crate::ContentProvenanceSummaryDto {
         <String>::sse_encode(self.association_key, serializer);
         <Option<String>>::sse_encode(self.source_fingerprint, serializer);
         <String>::sse_encode(self.last_observed_scan_id, serializer);
+        <Vec<crate::ContentProvenanceMemberDto>>::sse_encode(self.members, serializer);
     }
 }
 
@@ -7792,6 +7905,12 @@ impl SseEncode for crate::ContentTypeDto {
             match self {
                 crate::ContentTypeDto::CartridgeImage => 0,
                 crate::ContentTypeDto::MagneticDiskImage => 1,
+                crate::ContentTypeDto::OpticalDiscCd => 2,
+                crate::ContentTypeDto::OpticalDiscGd => 3,
+                crate::ContentTypeDto::OpticalDiscDvd => 4,
+                crate::ContentTypeDto::OpticalDiscGameCube => 5,
+                crate::ContentTypeDto::OpticalDiscWii => 6,
+                crate::ContentTypeDto::OpticalDiscUmd => 7,
                 _ => {
                     unimplemented!("");
                 }
@@ -7968,6 +8087,7 @@ impl SseEncode for crate::GroupingBasisDto {
             match self {
                 crate::GroupingBasisDto::ExactContentIdentity => 0,
                 crate::GroupingBasisDto::Provisional => 1,
+                crate::GroupingBasisDto::ExplicitRelationshipEvidence => 2,
                 _ => {
                     unimplemented!("");
                 }
@@ -8469,6 +8589,16 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::ContentProvenanceMemberDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::ContentProvenanceMemberDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::ContentSummaryDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8817,6 +8947,12 @@ impl SseEncode for crate::MembershipRelationshipDto {
             match self {
                 crate::MembershipRelationshipDto::Primary => 0,
                 crate::MembershipRelationshipDto::Secondary => 1,
+                crate::MembershipRelationshipDto::PrimaryContent => 2,
+                crate::MembershipRelationshipDto::RegionalVariant => 3,
+                crate::MembershipRelationshipDto::LanguageVariant => 4,
+                crate::MembershipRelationshipDto::RevisionVariant => 5,
+                crate::MembershipRelationshipDto::Disc => 6,
+                crate::MembershipRelationshipDto::EquivalentReleaseRepresentation => 7,
                 _ => {
                     unimplemented!("");
                 }
@@ -9140,6 +9276,14 @@ impl SseEncode for crate::PlatformIdDto {
                 crate::PlatformIdDto::SegaGameGear => 10,
                 crate::PlatformIdDto::SegaGenesis => 11,
                 crate::PlatformIdDto::Sega32x => 12,
+                crate::PlatformIdDto::NintendoGameCube => 13,
+                crate::PlatformIdDto::NintendoWii => 14,
+                crate::PlatformIdDto::SegaCd => 15,
+                crate::PlatformIdDto::SegaSaturn => 16,
+                crate::PlatformIdDto::SegaDreamcast => 17,
+                crate::PlatformIdDto::SonyPlaystation => 18,
+                crate::PlatformIdDto::SonyPlaystation2 => 19,
+                crate::PlatformIdDto::SonyPsp => 20,
                 _ => {
                     unimplemented!("");
                 }

@@ -225,6 +225,7 @@ void main() {
           associationKey: 'raw',
           sourceFingerprint: 'v1:32:1',
           lastObservedScanId: 'dddddddddddddddddddddddddddddddd',
+          members: [],
         ),
       ),
     );

@@ -1,4 +1,4 @@
-//! Production raw-cartridge recognition and identity hashing.
+//! Production native/raw content recognition and identity hashing.
 
 use argus_application::{ContentType, IdentityDigest, PlatformId};
 use sha2::{Digest, Sha256};
@@ -6,11 +6,19 @@ use std::fmt;
 
 #[path = "content_nintendo.rs"]
 mod content_nintendo;
+#[path = "content_optical.rs"]
+mod content_optical;
 #[path = "content_sega.rs"]
 mod content_sega;
 #[path = "content_stream.rs"]
 mod content_stream;
 
+pub use content_optical::{
+    CueDescriptor, CueTrack, CueTrackMode, GdiDescriptor, GdiTrack, M3uDescriptor, M3uError,
+    OpticalDescriptor, OpticalError, OpticalRecognition, OpticalSource, canonicalize_descriptor,
+    canonicalize_descriptor_with_cancel, parse_cue, parse_descriptor, parse_gdi, parse_m3u,
+    recognize_native_optical, recognize_native_optical_with_cancel,
+};
 pub use content_stream::{
     ContentProcessingLimits, ContentReadError, ContentReader, ContentRecognitionError,
     StreamRecognizedContent, recognize_content, recognize_content_with_budget,

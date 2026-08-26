@@ -322,6 +322,14 @@ String _platformLabel(PlatformId platform) => switch (platform) {
   PlatformId.segaGameGear => 'Sega Game Gear',
   PlatformId.segaGenesis => 'Sega Genesis',
   PlatformId.sega32x => 'Sega 32X',
+  PlatformId.nintendoGameCube => 'Nintendo GameCube',
+  PlatformId.nintendoWii => 'Nintendo Wii',
+  PlatformId.segaCd => 'Sega CD',
+  PlatformId.segaSaturn => 'Sega Saturn',
+  PlatformId.segaDreamcast => 'Sega Dreamcast',
+  PlatformId.sonyPlaystation => 'Sony PlayStation',
+  PlatformId.sonyPlaystation2 => 'Sony PlayStation 2',
+  PlatformId.sonyPsp => 'Sony PSP',
 };
 
 String _hydrationLabel(HydrationState state) => switch (state) {

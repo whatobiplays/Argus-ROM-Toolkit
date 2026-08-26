@@ -190,6 +190,90 @@ impl TransformationRegistry {
                     ContentType::CartridgeImage,
                     "genesis-linear-be",
                 ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-cd.cue-bin.v1",
+                    PlatformId::SegaCd,
+                    ContentType::OpticalDiscCd,
+                    "cue-bin",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-cd.iso-2048-cd.v1",
+                    PlatformId::SegaCd,
+                    ContentType::OpticalDiscCd,
+                    "iso-2048-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-saturn.cue-bin.v1",
+                    PlatformId::SegaSaturn,
+                    ContentType::OpticalDiscCd,
+                    "cue-bin",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-saturn.iso-2048-cd.v1",
+                    PlatformId::SegaSaturn,
+                    ContentType::OpticalDiscCd,
+                    "iso-2048-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-dreamcast.gdi.v1",
+                    PlatformId::SegaDreamcast,
+                    ContentType::OpticalDiscGd,
+                    "gdi",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-dreamcast.cue-bin.v1",
+                    PlatformId::SegaDreamcast,
+                    ContentType::OpticalDiscGd,
+                    "cue-bin",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation.cue-bin.v1",
+                    PlatformId::SonyPlaystation,
+                    ContentType::OpticalDiscCd,
+                    "cue-bin",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation.iso-2048-cd.v1",
+                    PlatformId::SonyPlaystation,
+                    ContentType::OpticalDiscCd,
+                    "iso-2048-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation2.cd-cue-bin.v1",
+                    PlatformId::SonyPlaystation2,
+                    ContentType::OpticalDiscCd,
+                    "cue-bin",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation2.cd-iso-2048.v1",
+                    PlatformId::SonyPlaystation2,
+                    ContentType::OpticalDiscCd,
+                    "iso-2048-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation2.dvd-iso-2048.v1",
+                    PlatformId::SonyPlaystation2,
+                    ContentType::OpticalDiscDvd,
+                    "iso-2048",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-psp.umd-iso-2048.v1",
+                    PlatformId::SonyPsp,
+                    ContentType::OpticalDiscUmd,
+                    "iso-2048",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-gamecube.raw-disc.v1",
+                    PlatformId::NintendoGameCube,
+                    ContentType::OpticalDiscGameCube,
+                    "raw-disc-image",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-wii.raw-disc.v1",
+                    PlatformId::NintendoWii,
+                    ContentType::OpticalDiscWii,
+                    "raw-disc-image",
+                ),
             ],
         }
     }
@@ -291,7 +375,8 @@ pub struct IdentitySchemeCatalog {
 }
 
 impl IdentitySchemeCatalog {
-    /// Returns exactly the thirteen approved production schemes.
+    /// Returns the approved production schemes for cartridge and native/raw
+    /// optical content.
     pub fn production() -> Self {
         Self {
             descriptors: vec![
@@ -372,6 +457,60 @@ impl IdentitySchemeCatalog {
                     PlatformId::Sega32x,
                     ContentType::CartridgeImage,
                     &["genesis-linear-be"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sega-cd.disc.v1",
+                    PlatformId::SegaCd,
+                    ContentType::OpticalDiscCd,
+                    &["cue-bin", "iso-2048-cd"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sega-saturn.disc.v1",
+                    PlatformId::SegaSaturn,
+                    ContentType::OpticalDiscCd,
+                    &["cue-bin", "iso-2048-cd"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sega-dreamcast.gdrom.v1",
+                    PlatformId::SegaDreamcast,
+                    ContentType::OpticalDiscGd,
+                    &["gdi", "cue-bin"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sony-playstation.disc.v1",
+                    PlatformId::SonyPlaystation,
+                    ContentType::OpticalDiscCd,
+                    &["cue-bin", "iso-2048-cd"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sony-playstation2.cd.v1",
+                    PlatformId::SonyPlaystation2,
+                    ContentType::OpticalDiscCd,
+                    &["cue-bin", "iso-2048-cd"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sony-playstation2.dvd.v1",
+                    PlatformId::SonyPlaystation2,
+                    ContentType::OpticalDiscDvd,
+                    &["iso-2048"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sony-psp.umd.v1",
+                    PlatformId::SonyPsp,
+                    ContentType::OpticalDiscUmd,
+                    &["iso-2048"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-gamecube.disc.v1",
+                    PlatformId::NintendoGameCube,
+                    ContentType::OpticalDiscGameCube,
+                    &["raw-disc-image"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-wii.disc.v1",
+                    PlatformId::NintendoWii,
+                    ContentType::OpticalDiscWii,
+                    &["raw-disc-image"],
                 ),
             ],
         }

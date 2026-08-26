@@ -16,19 +16,20 @@ mod library;
 mod logical;
 mod metadata;
 mod observability;
+mod optical;
 mod phase_003;
 mod settings;
 mod sources;
 mod unit_of_work;
 
 pub use argus_domain::{
-    AppearanceSettings, ArtworkAssetId, ArtworkAssetIdError, AvailabilityState, ContentType, Game,
-    GameContent, GameContentId, GameContentIdError, GameContentPresence, GameContentSource, GameId,
-    GameIdError, GameLifecycle, GameMembership, GameRedirect, GroupingBasis, HydrationState,
-    IdentificationState, InvalidContentType, InvalidPlatformId, JobRunId, JobRunIdError,
-    LibraryRootId, LibraryRootIdError, LibrarySourceId, LibrarySourceIdError,
-    MembershipRelationship, PlatformId, ScanRunId, ScanRunIdError, SourceEntryId,
-    SourceEntryIdError, ThemeMode, ThemeModeParseError,
+    AppearanceSettings, ArtworkAssetId, ArtworkAssetIdError, AvailabilityState,
+    ContentProvenanceRole, ContentType, Game, GameContent, GameContentId, GameContentIdError,
+    GameContentPresence, GameContentSource, GameId, GameIdError, GameLifecycle, GameMembership,
+    GameRedirect, GroupingBasis, HydrationState, IdentificationState, InvalidContentType,
+    InvalidPlatformId, JobRunId, JobRunIdError, LibraryRootId, LibraryRootIdError, LibrarySourceId,
+    LibrarySourceIdError, MembershipRelationship, PlatformId, ScanRunId, ScanRunIdError,
+    SourceEntryId, SourceEntryIdError, ThemeMode, ThemeModeParseError,
 };
 pub use artwork::{
     ArtworkAsset, ArtworkCandidate, ArtworkReference, ArtworkRepository, ArtworkResolutionPolicy,
@@ -88,15 +89,16 @@ pub use jobs::{
     evaluate_retry_eligibility_with_trace,
 };
 pub use library::{
-    ContentIdentitySummary, ContentProvenanceSummary, GameContentSummary, GameDetail,
-    GameLibraryPage, GameLibraryRow, GameListCursor, GameMembershipSummary, GetGameResult,
-    LibraryScope, LibrarySort, ListGamesQuery, ListGamesQueryBuilder, LogicalLibraryQueries,
-    QueryValidationError,
+    ContentIdentitySummary, ContentProvenanceMemberSummary, ContentProvenanceSummary,
+    GameContentSummary, GameDetail, GameLibraryPage, GameLibraryRow, GameListCursor,
+    GameMembershipSummary, GetGameResult, LibraryScope, LibrarySort, ListGamesQuery,
+    ListGamesQueryBuilder, LogicalLibraryQueries, QueryValidationError,
 };
 pub use logical::{
     ContentIdentity, ConvergenceOutcome, IdentificationService, IdentityConvergenceStore,
-    LogicalContentRepository, LogicalContentUnitOfWork, SourceVersionEvidence,
-    ValidatedContentDerivation,
+    LogicalContentRepository, LogicalContentUnitOfWork, M3uGroupingError, M3uGroupingMember,
+    ProvenanceBasisError, ProvenanceMember, SourceVersionEvidence, ValidatedContentDerivation,
+    ValidatedM3uGrouping,
 };
 pub use metadata::{
     CredentialMutationError, CredentialValidationError, CredentialValidator, ExactMatchEvidence,
@@ -115,6 +117,7 @@ pub use observability::{
     SafeContextError, SafeContextField, SafeContextValue, SettingsDomain, StartupCollector,
     SubsystemName, TechnicalClass, TraceEvent, TraceEventPhase, TraceId, TraceIdError, Version,
 };
+pub use optical::{MAX_OPTICAL_DEPENDENCIES, OpticalDependencyError, resolve_optical_dependencies};
 pub use phase_003::{
     AddLibraryRootAndRefreshResult, CURRENT_PRIVACY_TERMS_VERSION,
     CompleteLibraryOnboardingAndRefreshResult, LibraryOnboardingProgress, LibraryOnboardingState,

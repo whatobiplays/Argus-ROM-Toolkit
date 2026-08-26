@@ -13,30 +13,31 @@ use argus_application::{
     AddLibraryRootAndRefreshResult, AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult,
     ApplicationError, ApplicationSeverity, ArchitectureClass, AvailabilityState,
     BackgroundOperationStopReason, CompleteLibraryOnboardingAndRefreshResult,
-    ContentIdentitySummary, ContentProvenanceSummary, ContentType, DiagnosticStage, ErrorCategory,
-    ErrorCode, FailureRole, GameContentPresence, GameContentSummary, GameDetail, GameId,
-    GameLibraryPage, GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary,
-    GetGameResult, GroupingBasis, HydrationState, IdentificationState, IdentityDigest, JobDetail,
-    JobRunId, JobRunProjection, JobRunState, JobSummary, JobSummaryPage, LibraryOnboardingProgress,
-    LibraryOnboardingState, LibraryProviderSetupDecision, LibraryRefreshJobDetail,
-    LibraryResolutionRefreshJobDetail, LibraryRootAvailability, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
-    LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanChildAdmissionIssue,
-    LibraryScanJobDetail, LibraryScanRootSummary, LibraryScope, LibrarySort, ListGamesQuery,
-    ListJobsQuery, ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
-    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MembershipRelationship,
-    MetadataFieldProvenance, MetadataProviderReadiness, MetadataProviderReadinessProjection,
-    MetadataProviderSettings, MetadataProviderSettingsUpdateResult, MetadataSettings,
-    MetadataSettingsUpdateResult, MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail,
-    PathClass, PersistedSettingsReason, PlatformClass, PlatformId, PrivacyConsent,
-    ProviderCapability, ProviderCapabilityReadiness, ProviderId, ProviderReadinessState,
-    Recoverability, RefreshMode, RefreshProgressFacts, RemoveLibraryRootResult, ResolvedArtwork,
-    ResolvedMetadata, RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship,
-    SafeContext, SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection,
-    ScanRunStatus, SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage,
-    SourceEntryClassification, SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId,
-    SourceEntryKind, SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
+    ContentIdentitySummary, ContentProvenanceMemberSummary, ContentProvenanceSummary, ContentType,
+    DiagnosticStage, ErrorCategory, ErrorCode, FailureRole, GameContentPresence,
+    GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow, GameLifecycle,
+    GameListCursor, GameMembershipSummary, GetGameResult, GroupingBasis, HydrationState,
+    IdentificationState, IdentityDigest, JobDetail, JobRunId, JobRunProjection, JobRunState,
+    JobSummary, JobSummaryPage, LibraryOnboardingProgress, LibraryOnboardingState,
+    LibraryProviderSetupDecision, LibraryRefreshJobDetail, LibraryResolutionRefreshJobDetail,
+    LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage,
+    LibraryRootProjection, LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity,
+    LibraryScanChildAdmissionIssue, LibraryScanJobDetail, LibraryScanRootSummary, LibraryScope,
+    LibrarySort, ListGamesQuery, ListJobsQuery, ListJobsScope, ListLibraryRootsQuery,
+    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
+    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
+    MembershipRelationship, MetadataFieldProvenance, MetadataProviderReadiness,
+    MetadataProviderReadinessProjection, MetadataProviderSettings,
+    MetadataProviderSettingsUpdateResult, MetadataSettings, MetadataSettingsUpdateResult,
+    MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
+    PersistedSettingsReason, PlatformClass, PlatformId, PrivacyConsent, ProviderCapability,
+    ProviderCapabilityReadiness, ProviderId, ProviderReadinessState, Recoverability, RefreshMode,
+    RefreshProgressFacts, RemoveLibraryRootResult, ResolvedArtwork, ResolvedMetadata,
+    RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext,
+    SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus,
+    SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
+    SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
+    SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
@@ -506,6 +507,14 @@ pub enum PlatformIdDto {
     SegaGameGear,
     SegaGenesis,
     Sega32x,
+    NintendoGameCube,
+    NintendoWii,
+    SegaCd,
+    SegaSaturn,
+    SegaDreamcast,
+    SonyPlaystation,
+    SonyPlaystation2,
+    SonyPsp,
 }
 
 /// Stable content-type vocabulary in logical-library projections.
@@ -513,6 +522,12 @@ pub enum PlatformIdDto {
 pub enum ContentTypeDto {
     CartridgeImage,
     MagneticDiskImage,
+    OpticalDiscCd,
+    OpticalDiscGd,
+    OpticalDiscDvd,
+    OpticalDiscGameCube,
+    OpticalDiscWii,
+    OpticalDiscUmd,
 }
 
 /// Independent content presence state.
@@ -561,8 +576,16 @@ pub enum GameAvailabilityStateDto {
 /// Membership role in a durable game aggregate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MembershipRelationshipDto {
+    /// Legacy wire value retained for compatibility with older clients.
     Primary,
+    /// Legacy wire value retained for compatibility with older clients.
     Secondary,
+    PrimaryContent,
+    RegionalVariant,
+    LanguageVariant,
+    RevisionVariant,
+    Disc,
+    EquivalentReleaseRepresentation,
 }
 
 /// Grouping evidence basis for one durable membership.
@@ -570,6 +593,7 @@ pub enum MembershipRelationshipDto {
 pub enum GroupingBasisDto {
     ExactContentIdentity,
     Provisional,
+    ExplicitRelationshipEvidence,
 }
 
 /// Safe current identity summary.
@@ -586,6 +610,17 @@ pub struct ContentIdentitySummaryDto {
 pub struct ContentProvenanceSummaryDto {
     pub source_entry_id: String,
     pub association_key: String,
+    pub source_fingerprint: Option<String>,
+    pub last_observed_scan_id: String,
+    pub members: Vec<ContentProvenanceMemberDto>,
+}
+
+/// One normalized exact provenance member in a content-proof projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentProvenanceMemberDto {
+    pub role: String,
+    pub association_key: Option<String>,
+    pub source_entry_id: String,
     pub source_fingerprint: Option<String>,
     pub last_observed_scan_id: String,
 }
@@ -3188,6 +3223,23 @@ fn content_provenance_summary_dto(
         association_key: summary.association_key().to_owned(),
         source_fingerprint: summary.source_fingerprint().map(str::to_owned),
         last_observed_scan_id: summary.last_observed_scan_id().to_string(),
+        members: summary
+            .members()
+            .iter()
+            .map(content_provenance_member_dto)
+            .collect(),
+    }
+}
+
+fn content_provenance_member_dto(
+    member: &ContentProvenanceMemberSummary,
+) -> ContentProvenanceMemberDto {
+    ContentProvenanceMemberDto {
+        role: member.role().as_str().to_owned(),
+        association_key: member.association_key().map(str::to_owned),
+        source_entry_id: member.source_entry_id().to_string(),
+        source_fingerprint: member.source_fingerprint().map(str::to_owned),
+        last_observed_scan_id: member.last_observed_scan_id().to_string(),
     }
 }
 
@@ -3215,6 +3267,14 @@ fn platform_id_dto(platform: PlatformId) -> PlatformIdDto {
         PlatformId::SegaGameGear => PlatformIdDto::SegaGameGear,
         PlatformId::SegaGenesis => PlatformIdDto::SegaGenesis,
         PlatformId::Sega32x => PlatformIdDto::Sega32x,
+        PlatformId::NintendoGameCube => PlatformIdDto::NintendoGameCube,
+        PlatformId::NintendoWii => PlatformIdDto::NintendoWii,
+        PlatformId::SegaCd => PlatformIdDto::SegaCd,
+        PlatformId::SegaSaturn => PlatformIdDto::SegaSaturn,
+        PlatformId::SegaDreamcast => PlatformIdDto::SegaDreamcast,
+        PlatformId::SonyPlaystation => PlatformIdDto::SonyPlaystation,
+        PlatformId::SonyPlaystation2 => PlatformIdDto::SonyPlaystation2,
+        PlatformId::SonyPsp => PlatformIdDto::SonyPsp,
     }
 }
 
@@ -3254,6 +3314,12 @@ fn content_type_dto(content_type: ContentType) -> ContentTypeDto {
     match content_type {
         ContentType::CartridgeImage => ContentTypeDto::CartridgeImage,
         ContentType::MagneticDiskImage => ContentTypeDto::MagneticDiskImage,
+        ContentType::OpticalDiscCd => ContentTypeDto::OpticalDiscCd,
+        ContentType::OpticalDiscGd => ContentTypeDto::OpticalDiscGd,
+        ContentType::OpticalDiscDvd => ContentTypeDto::OpticalDiscDvd,
+        ContentType::OpticalDiscGameCube => ContentTypeDto::OpticalDiscGameCube,
+        ContentType::OpticalDiscWii => ContentTypeDto::OpticalDiscWii,
+        ContentType::OpticalDiscUmd => ContentTypeDto::OpticalDiscUmd,
     }
 }
 
@@ -3302,8 +3368,14 @@ fn game_availability_state_dto(state: AvailabilityState) -> GameAvailabilityStat
 
 fn membership_relationship_dto(relationship: MembershipRelationship) -> MembershipRelationshipDto {
     match relationship {
-        MembershipRelationship::Primary => MembershipRelationshipDto::Primary,
-        MembershipRelationship::Secondary => MembershipRelationshipDto::Secondary,
+        MembershipRelationship::PrimaryContent => MembershipRelationshipDto::PrimaryContent,
+        MembershipRelationship::RegionalVariant => MembershipRelationshipDto::RegionalVariant,
+        MembershipRelationship::LanguageVariant => MembershipRelationshipDto::LanguageVariant,
+        MembershipRelationship::RevisionVariant => MembershipRelationshipDto::RevisionVariant,
+        MembershipRelationship::Disc => MembershipRelationshipDto::Disc,
+        MembershipRelationship::EquivalentReleaseRepresentation => {
+            MembershipRelationshipDto::EquivalentReleaseRepresentation
+        }
     }
 }
 
@@ -3311,6 +3383,9 @@ fn grouping_basis_dto(basis: GroupingBasis) -> GroupingBasisDto {
     match basis {
         GroupingBasis::ExactContentIdentity => GroupingBasisDto::ExactContentIdentity,
         GroupingBasis::Provisional => GroupingBasisDto::Provisional,
+        GroupingBasis::ExplicitRelationshipEvidence => {
+            GroupingBasisDto::ExplicitRelationshipEvidence
+        }
     }
 }
 

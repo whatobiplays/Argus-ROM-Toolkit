@@ -8,9 +8,9 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `add_library_root_and_refresh_result_dto`, `appearance_settings_dto`, `appearance_settings_from_dto`, `artwork_asset_bytes_dto`, `category_name`, `classify_subscribe_error`, `complete_library_onboarding_and_refresh_dto`, `content_identity_summary_dto`, `content_presence_dto`, `content_provenance_summary_dto`, `content_summary_dto`, `content_type_dto`, `digest_hex`, `exclusion_dto`, `game_availability_state_dto`, `game_lifecycle_dto`, `game_membership_summary_dto`, `game_refresh_job_detail_dto`, `grouping_basis_dto`, `host_with_options`, `host`, `hydration_state_dto`, `identification_state_dto`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_onboarding_progress_dto`, `library_onboarding_state_dto`, `library_provider_setup_decision_from_dto`, `library_refresh_job_detail_dto`, `library_resolution_refresh_job_detail_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `list_games_query_from_dto`, `membership_relationship_dto`, `metadata_field_provenance_dto`, `metadata_provider_readiness_dto`, `metadata_provider_settings_dto`, `metadata_provider_settings_from_dto`, `metadata_provider_settings_update_result_dto`, `metadata_settings_dto`, `metadata_settings_from_dto`, `metadata_settings_update_result_dto`, `operation_handle_dto`, `parse_runtime_id`, `pending_event_subscription`, `platform_id_dto`, `privacy_consent_dto`, `provider_capability_readiness_dto`, `provider_capability_str`, `provider_credential_readiness_dto`, `provider_readiness_state_str`, `recoverability_name`, `recovery_action_kind_dto`, `refresh_mode_from_dto`, `refresh_progress_facts_dto`, `resolved_artwork_dto`, `resolved_metadata_dto`, `retry_policy_name`, `root_relationship_dto`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
+// These functions are ignored because they are not marked as `pub`: `add_library_root_and_refresh_result_dto`, `appearance_settings_dto`, `appearance_settings_from_dto`, `artwork_asset_bytes_dto`, `category_name`, `classify_subscribe_error`, `complete_library_onboarding_and_refresh_dto`, `content_identity_summary_dto`, `content_presence_dto`, `content_provenance_member_dto`, `content_provenance_summary_dto`, `content_summary_dto`, `content_type_dto`, `digest_hex`, `exclusion_dto`, `game_availability_state_dto`, `game_lifecycle_dto`, `game_membership_summary_dto`, `game_refresh_job_detail_dto`, `grouping_basis_dto`, `host_with_options`, `host`, `hydration_state_dto`, `identification_state_dto`, `initialize_with_options`, `job_run_dto`, `job_state_dto`, `job_summary_dto`, `library_onboarding_progress_dto`, `library_onboarding_state_dto`, `library_provider_setup_decision_from_dto`, `library_refresh_job_detail_dto`, `library_resolution_refresh_job_detail_dto`, `library_scan_job_detail_dto`, `lifecycle_dto`, `list_games_query_from_dto`, `membership_relationship_dto`, `metadata_field_provenance_dto`, `metadata_provider_readiness_dto`, `metadata_provider_settings_dto`, `metadata_provider_settings_from_dto`, `metadata_provider_settings_update_result_dto`, `metadata_settings_dto`, `metadata_settings_from_dto`, `metadata_settings_update_result_dto`, `operation_handle_dto`, `parse_runtime_id`, `pending_event_subscription`, `platform_id_dto`, `privacy_consent_dto`, `provider_capability_readiness_dto`, `provider_capability_str`, `provider_credential_readiness_dto`, `provider_readiness_state_str`, `recoverability_name`, `recovery_action_kind_dto`, `refresh_mode_from_dto`, `refresh_progress_facts_dto`, `resolved_artwork_dto`, `resolved_metadata_dto`, `retry_policy_name`, `root_relationship_dto`, `root_summary_dto`, `safe_context_entries`, `safe_context_field_name`, `safe_context_value_name`, `scan_progress_dto`, `scan_run_dto`, `severity_name`, `source_entries_scope_dto`, `source_entry_classification_dto`, `source_entry_kind_dto`, `startup_failure_dto`, `startup_phase_dto`, `validation_failure`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeNotificationSink`, `BridgeResult`, `PendingEventSubscription`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `bind`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `publish`, `validate`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `add_local_library_root_and_scan_dto`, `add_local_library_root_dto`, `application_error_dto`, `game_detail_dto`, `game_library_row_dto`, `game_page_dto`, `job_detail_dto`, `job_summary_page_dto`, `library_root_dto`, `library_root_page_dto`, `library_scan_all_request_resolution_dto`, `local_filesystem_browse_page_dto`, `local_filesystem_browse_root_dto`, `local_filesystem_root_selection_from_dto`, `parse_execution_host_stop_request`, `parse_game_id`, `parse_job_run_id`, `parse_library_root_id`, `parse_scan_all_request_identity`, `parse_source_entry_cursor`, `parse_source_entry_id`, `remove_library_root_dto`, `retry_job_result_dto`, `runtime_event_dto`, `runtime_state_dto`, `source_entry_children_page_dto`, `source_entry_detail_projection_dto`, `source_entry_projection_dto`, `start_library_scan_all_result_dto`, `start_library_scan_result_dto`, `sync_local_filesystem_mounted_volumes_command_from_dto`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
@@ -579,6 +579,42 @@ enum ContentPresenceDto {
   orphaned,
 }
 
+/// One normalized exact provenance member in a content-proof projection.
+class ContentProvenanceMemberDto {
+  final String role;
+  final String? associationKey;
+  final String sourceEntryId;
+  final String? sourceFingerprint;
+  final String lastObservedScanId;
+
+  const ContentProvenanceMemberDto({
+    required this.role,
+    this.associationKey,
+    required this.sourceEntryId,
+    this.sourceFingerprint,
+    required this.lastObservedScanId,
+  });
+
+  @override
+  int get hashCode =>
+      role.hashCode ^
+      associationKey.hashCode ^
+      sourceEntryId.hashCode ^
+      sourceFingerprint.hashCode ^
+      lastObservedScanId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ContentProvenanceMemberDto &&
+          runtimeType == other.runtimeType &&
+          role == other.role &&
+          associationKey == other.associationKey &&
+          sourceEntryId == other.sourceEntryId &&
+          sourceFingerprint == other.sourceFingerprint &&
+          lastObservedScanId == other.lastObservedScanId;
+}
+
 /// Safe exact proving-provenance summary. Raw locations and parser details
 /// remain private to infrastructure.
 class ContentProvenanceSummaryDto {
@@ -586,12 +622,14 @@ class ContentProvenanceSummaryDto {
   final String associationKey;
   final String? sourceFingerprint;
   final String lastObservedScanId;
+  final List<ContentProvenanceMemberDto> members;
 
   const ContentProvenanceSummaryDto({
     required this.sourceEntryId,
     required this.associationKey,
     this.sourceFingerprint,
     required this.lastObservedScanId,
+    required this.members,
   });
 
   @override
@@ -599,7 +637,8 @@ class ContentProvenanceSummaryDto {
       sourceEntryId.hashCode ^
       associationKey.hashCode ^
       sourceFingerprint.hashCode ^
-      lastObservedScanId.hashCode;
+      lastObservedScanId.hashCode ^
+      members.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -609,7 +648,8 @@ class ContentProvenanceSummaryDto {
           sourceEntryId == other.sourceEntryId &&
           associationKey == other.associationKey &&
           sourceFingerprint == other.sourceFingerprint &&
-          lastObservedScanId == other.lastObservedScanId;
+          lastObservedScanId == other.lastObservedScanId &&
+          members == other.members;
 }
 
 /// Focused current logical-content detail.
@@ -661,7 +701,16 @@ class ContentSummaryDto {
 }
 
 /// Stable content-type vocabulary in logical-library projections.
-enum ContentTypeDto { cartridgeImage, magneticDiskImage }
+enum ContentTypeDto {
+  cartridgeImage,
+  magneticDiskImage,
+  opticalDiscCd,
+  opticalDiscGd,
+  opticalDiscDvd,
+  opticalDiscGameCube,
+  opticalDiscWii,
+  opticalDiscUmd,
+}
 
 /// Safe terminal export summary; archive bytes never cross the bridge.
 class DiagnosticsExportDto {
@@ -929,7 +978,11 @@ sealed class GetGameResultDto with _$GetGameResultDto {
 }
 
 /// Grouping evidence basis for one durable membership.
-enum GroupingBasisDto { exactContentIdentity, provisional }
+enum GroupingBasisDto {
+  exactContentIdentity,
+  provisional,
+  explicitRelationshipEvidence,
+}
 
 /// Local logical-library hydration state.
 enum HydrationStateDto { hydrated, partiallyHydrated, unmatched, refreshing }
@@ -1971,7 +2024,19 @@ sealed class LocalFilesystemRootSelectionDto
 }
 
 /// Membership role in a durable game aggregate.
-enum MembershipRelationshipDto { primary, secondary }
+enum MembershipRelationshipDto {
+  /// Legacy wire value retained for compatibility with older clients.
+  primary,
+
+  /// Legacy wire value retained for compatibility with older clients.
+  secondary,
+  primaryContent,
+  regionalVariant,
+  languageVariant,
+  revisionVariant,
+  disc,
+  equivalentReleaseRepresentation,
+}
 
 /// Safe field-level provenance for resolved Game metadata.
 class MetadataFieldProvenanceDto {
@@ -2206,6 +2271,14 @@ enum PlatformIdDto {
   segaGameGear,
   segaGenesis,
   sega32X,
+  nintendoGameCube,
+  nintendoWii,
+  segaCd,
+  segaSaturn,
+  segaDreamcast,
+  sonyPlaystation,
+  sonyPlaystation2,
+  sonyPsp,
 }
 
 /// Safe Settings-owned privacy-consent projection.

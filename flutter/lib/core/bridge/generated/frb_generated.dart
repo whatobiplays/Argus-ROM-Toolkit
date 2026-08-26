@@ -2587,18 +2587,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ContentProvenanceMemberDto dco_decode_content_provenance_member_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return ContentProvenanceMemberDto(
+      role: dco_decode_String(arr[0]),
+      associationKey: dco_decode_opt_String(arr[1]),
+      sourceEntryId: dco_decode_String(arr[2]),
+      sourceFingerprint: dco_decode_opt_String(arr[3]),
+      lastObservedScanId: dco_decode_String(arr[4]),
+    );
+  }
+
+  @protected
   ContentProvenanceSummaryDto dco_decode_content_provenance_summary_dto(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return ContentProvenanceSummaryDto(
       sourceEntryId: dco_decode_String(arr[0]),
       associationKey: dco_decode_String(arr[1]),
       sourceFingerprint: dco_decode_opt_String(arr[2]),
       lastObservedScanId: dco_decode_String(arr[3]),
+      members: dco_decode_list_content_provenance_member_dto(arr[4]),
     );
   }
 
@@ -3232,6 +3250,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<ContentProvenanceMemberDto>
+  dco_decode_list_content_provenance_member_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_content_provenance_member_dto)
+        .toList();
   }
 
   @protected
@@ -5085,6 +5112,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ContentProvenanceMemberDto sse_decode_content_provenance_member_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_role = sse_decode_String(deserializer);
+    var var_associationKey = sse_decode_opt_String(deserializer);
+    var var_sourceEntryId = sse_decode_String(deserializer);
+    var var_sourceFingerprint = sse_decode_opt_String(deserializer);
+    var var_lastObservedScanId = sse_decode_String(deserializer);
+    return ContentProvenanceMemberDto(
+      role: var_role,
+      associationKey: var_associationKey,
+      sourceEntryId: var_sourceEntryId,
+      sourceFingerprint: var_sourceFingerprint,
+      lastObservedScanId: var_lastObservedScanId,
+    );
+  }
+
+  @protected
   ContentProvenanceSummaryDto sse_decode_content_provenance_summary_dto(
     SseDeserializer deserializer,
   ) {
@@ -5093,11 +5139,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_associationKey = sse_decode_String(deserializer);
     var var_sourceFingerprint = sse_decode_opt_String(deserializer);
     var var_lastObservedScanId = sse_decode_String(deserializer);
+    var var_members = sse_decode_list_content_provenance_member_dto(
+      deserializer,
+    );
     return ContentProvenanceSummaryDto(
       sourceEntryId: var_sourceEntryId,
       associationKey: var_associationKey,
       sourceFingerprint: var_sourceFingerprint,
       lastObservedScanId: var_lastObservedScanId,
+      members: var_members,
     );
   }
 
@@ -5875,6 +5925,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ContentProvenanceMemberDto>
+  sse_decode_list_content_provenance_member_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ContentProvenanceMemberDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_content_provenance_member_dto(deserializer));
     }
     return ans_;
   }
@@ -8106,6 +8169,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_content_provenance_member_dto(
+    ContentProvenanceMemberDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.role, serializer);
+    sse_encode_opt_String(self.associationKey, serializer);
+    sse_encode_String(self.sourceEntryId, serializer);
+    sse_encode_opt_String(self.sourceFingerprint, serializer);
+    sse_encode_String(self.lastObservedScanId, serializer);
+  }
+
+  @protected
   void sse_encode_content_provenance_summary_dto(
     ContentProvenanceSummaryDto self,
     SseSerializer serializer,
@@ -8115,6 +8191,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.associationKey, serializer);
     sse_encode_opt_String(self.sourceFingerprint, serializer);
     sse_encode_String(self.lastObservedScanId, serializer);
+    sse_encode_list_content_provenance_member_dto(self.members, serializer);
   }
 
   @protected
@@ -8745,6 +8822,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_content_provenance_member_dto(
+    List<ContentProvenanceMemberDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_content_provenance_member_dto(item, serializer);
     }
   }
 

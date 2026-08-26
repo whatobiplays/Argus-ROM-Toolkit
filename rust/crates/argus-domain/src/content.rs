@@ -1,4 +1,4 @@
-//! Stable vocabulary for canonical cartridge content.
+//! Stable vocabulary for canonical cartridge and optical content.
 
 use std::fmt;
 
@@ -33,6 +33,22 @@ pub enum PlatformId {
     SegaGenesis,
     /// Sega 32X cartridge content.
     Sega32x,
+    /// Nintendo GameCube optical-disc content.
+    NintendoGameCube,
+    /// Nintendo Wii optical-disc content.
+    NintendoWii,
+    /// Sega CD optical-disc content.
+    SegaCd,
+    /// Sega Saturn optical-disc content.
+    SegaSaturn,
+    /// Sega Dreamcast GD-ROM content.
+    SegaDreamcast,
+    /// Sony PlayStation optical-disc content.
+    SonyPlaystation,
+    /// Sony PlayStation 2 optical-disc content.
+    SonyPlaystation2,
+    /// Sony PSP UMD content.
+    SonyPsp,
 }
 
 impl PlatformId {
@@ -52,6 +68,14 @@ impl PlatformId {
             Self::SegaGameGear => "sega.gamegear",
             Self::SegaGenesis => "sega.genesis",
             Self::Sega32x => "sega.32x",
+            Self::NintendoGameCube => "nintendo.gamecube",
+            Self::NintendoWii => "nintendo.wii",
+            Self::SegaCd => "sega.sega-cd",
+            Self::SegaSaturn => "sega.saturn",
+            Self::SegaDreamcast => "sega.dreamcast",
+            Self::SonyPlaystation => "sony.playstation",
+            Self::SonyPlaystation2 => "sony.playstation2",
+            Self::SonyPsp => "sony.psp",
         }
     }
 }
@@ -80,6 +104,14 @@ impl TryFrom<&str> for PlatformId {
             "sega.gamegear" => Ok(Self::SegaGameGear),
             "sega.genesis" => Ok(Self::SegaGenesis),
             "sega.32x" => Ok(Self::Sega32x),
+            "nintendo.gamecube" => Ok(Self::NintendoGameCube),
+            "nintendo.wii" => Ok(Self::NintendoWii),
+            "sega.sega-cd" => Ok(Self::SegaCd),
+            "sega.saturn" => Ok(Self::SegaSaturn),
+            "sega.dreamcast" => Ok(Self::SegaDreamcast),
+            "sony.playstation" => Ok(Self::SonyPlaystation),
+            "sony.playstation2" => Ok(Self::SonyPlaystation2),
+            "sony.psp" => Ok(Self::SonyPsp),
             _ => Err(InvalidPlatformId),
         }
     }
@@ -104,6 +136,18 @@ pub enum ContentType {
     CartridgeImage,
     /// A validated Famicom Disk System disk image.
     MagneticDiskImage,
+    /// A validated CD optical-disc image.
+    OpticalDiscCd,
+    /// A validated Dreamcast GD-ROM image.
+    OpticalDiscGd,
+    /// A validated DVD optical-disc image.
+    OpticalDiscDvd,
+    /// A validated Nintendo GameCube optical-disc image.
+    OpticalDiscGameCube,
+    /// A validated Nintendo Wii optical-disc image.
+    OpticalDiscWii,
+    /// A validated Sony PSP UMD image.
+    OpticalDiscUmd,
 }
 
 impl ContentType {
@@ -112,6 +156,12 @@ impl ContentType {
         match self {
             Self::CartridgeImage => "CartridgeImage",
             Self::MagneticDiskImage => "MagneticDiskImage",
+            Self::OpticalDiscCd => "OpticalDiscCd",
+            Self::OpticalDiscGd => "OpticalDiscGd",
+            Self::OpticalDiscDvd => "OpticalDiscDvd",
+            Self::OpticalDiscGameCube => "OpticalDiscGameCube",
+            Self::OpticalDiscWii => "OpticalDiscWii",
+            Self::OpticalDiscUmd => "OpticalDiscUmd",
         }
     }
 }
@@ -129,6 +179,12 @@ impl TryFrom<&str> for ContentType {
         match value {
             "CartridgeImage" => Ok(Self::CartridgeImage),
             "MagneticDiskImage" => Ok(Self::MagneticDiskImage),
+            "OpticalDiscCd" => Ok(Self::OpticalDiscCd),
+            "OpticalDiscGd" => Ok(Self::OpticalDiscGd),
+            "OpticalDiscDvd" => Ok(Self::OpticalDiscDvd),
+            "OpticalDiscGameCube" => Ok(Self::OpticalDiscGameCube),
+            "OpticalDiscWii" => Ok(Self::OpticalDiscWii),
+            "OpticalDiscUmd" => Ok(Self::OpticalDiscUmd),
             _ => Err(InvalidContentType),
         }
     }
@@ -184,13 +240,46 @@ pub enum GameLifecycle {
     Redirected,
 }
 
+/// Role assigned to one exact source member in an identity proof.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ContentProvenanceRole {
+    /// The canonical source that establishes the derived content unit.
+    Primary,
+    /// A source that describes or completes the primary source.
+    Descriptor,
+    /// A source whose bytes are required to derive the identity.
+    RequiredData,
+    /// A source retained as supporting evidence but not required for identity.
+    Supporting,
+}
+
+impl ContentProvenanceRole {
+    /// Returns the stable persisted provenance-role identifier.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Descriptor => "descriptor",
+            Self::RequiredData => "required_data",
+            Self::Supporting => "supporting",
+        }
+    }
+}
+
 /// Membership role within one game aggregate.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MembershipRelationship {
     /// The deterministic continuity anchor for the game.
-    Primary,
-    /// An additional exact-content member.
-    Secondary,
+    PrimaryContent,
+    /// A release variant associated with a different region.
+    RegionalVariant,
+    /// A release variant associated with a different language.
+    LanguageVariant,
+    /// A release variant associated with a distinct revision.
+    RevisionVariant,
+    /// An independently usable disc in the same release.
+    Disc,
+    /// A verified equivalent release representation.
+    EquivalentReleaseRepresentation,
 }
 
 /// Evidence basis for one current membership.
@@ -200,6 +289,8 @@ pub enum GroupingBasis {
     ExactContentIdentity,
     /// Initial one-content provisional grouping.
     Provisional,
+    /// Explicit, versioned relationship evidence such as an M3U playlist.
+    ExplicitRelationshipEvidence,
 }
 
 /// Provider-independent hydration state used by the local library projection.
@@ -407,7 +498,7 @@ pub struct GameMembership {
 }
 
 impl GameMembership {
-    /// Creates one membership. Primary membership is the continuity anchor.
+    /// Creates one membership. PrimaryContent is the continuity anchor.
     pub const fn new(
         game_id: GameId,
         game_content_id: GameContentId,

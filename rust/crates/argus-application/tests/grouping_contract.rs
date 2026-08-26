@@ -55,8 +55,16 @@ fn redirect_graph_rejects_cycles_and_flattens_targets() {
 #[test]
 fn active_nonempty_games_have_one_primary_and_unique_members() {
     let game = Game::new(game_id(1), PlatformId::NintendoGb, GameLifecycle::Active, 1);
-    let primary = membership(game.id(), content_id(2), MembershipRelationship::Primary);
-    let secondary = membership(game.id(), content_id(3), MembershipRelationship::Secondary);
+    let primary = membership(
+        game.id(),
+        content_id(2),
+        MembershipRelationship::PrimaryContent,
+    );
+    let secondary = membership(
+        game.id(),
+        content_id(3),
+        MembershipRelationship::EquivalentReleaseRepresentation,
+    );
 
     validate_memberships(&game, &[primary.clone(), secondary.clone()]).expect("valid grouping");
     assert_eq!(
@@ -76,7 +84,7 @@ fn changed_primary_requires_the_next_primary_as_continuity_anchor() {
     let previous = content_id(2);
     let next = content_id(3);
     let game = game_id(1);
-    let next_primary = membership(game, next, MembershipRelationship::Primary);
+    let next_primary = membership(game, next, MembershipRelationship::PrimaryContent);
 
     assert_eq!(
         validate_continuity_anchor(Some(previous), std::slice::from_ref(&next_primary), None),
@@ -97,4 +105,20 @@ fn changed_primary_requires_the_next_primary_as_continuity_anchor() {
     );
     validate_continuity_anchor(Some(previous), &[next_primary], Some(next))
         .expect("explicit next primary anchor");
+}
+
+#[test]
+fn membership_relationship_vocabulary_is_closed_and_primary_is_explicit() {
+    let relationships = [
+        MembershipRelationship::PrimaryContent,
+        MembershipRelationship::RegionalVariant,
+        MembershipRelationship::LanguageVariant,
+        MembershipRelationship::RevisionVariant,
+        MembershipRelationship::Disc,
+        MembershipRelationship::EquivalentReleaseRepresentation,
+    ];
+
+    assert_eq!(relationships.len(), 6);
+    assert_eq!(relationships[0], MembershipRelationship::PrimaryContent);
+    assert_ne!(relationships[4], relationships[5]);
 }

@@ -7,8 +7,8 @@ mod sources;
 
 pub use appearance::{AppearanceSettings, ThemeMode, ThemeModeParseError};
 pub use content::{
-    AvailabilityState, ContentType, Game, GameContent, GameContentPresence, GameContentSource,
-    GameLifecycle, GameMembership, GameRedirect, GroupingBasis, HydrationState,
+    AvailabilityState, ContentProvenanceRole, ContentType, Game, GameContent, GameContentPresence,
+    GameContentSource, GameLifecycle, GameMembership, GameRedirect, GroupingBasis, HydrationState,
     IdentificationState, InvalidContentType, InvalidPlatformId, MembershipRelationship, PlatformId,
 };
 pub use jobs::{

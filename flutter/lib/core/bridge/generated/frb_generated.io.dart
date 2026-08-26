@@ -247,6 +247,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ContentPresenceDto dco_decode_content_presence_dto(dynamic raw);
 
   @protected
+  ContentProvenanceMemberDto dco_decode_content_provenance_member_dto(
+    dynamic raw,
+  );
+
+  @protected
   ContentProvenanceSummaryDto dco_decode_content_provenance_summary_dto(
     dynamic raw,
   );
@@ -428,6 +433,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<ContentProvenanceMemberDto>
+  dco_decode_list_content_provenance_member_dto(dynamic raw);
 
   @protected
   List<ContentSummaryDto> dco_decode_list_content_summary_dto(dynamic raw);
@@ -1109,6 +1118,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ContentProvenanceMemberDto sse_decode_content_provenance_member_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ContentProvenanceSummaryDto sse_decode_content_provenance_summary_dto(
     SseDeserializer deserializer,
   );
@@ -1330,6 +1344,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<ContentProvenanceMemberDto>
+  sse_decode_list_content_provenance_member_dto(SseDeserializer deserializer);
 
   @protected
   List<ContentSummaryDto> sse_decode_list_content_summary_dto(
@@ -2148,6 +2166,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_content_provenance_member_dto(
+    ContentProvenanceMemberDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_content_provenance_summary_dto(
     ContentProvenanceSummaryDto self,
     SseSerializer serializer,
@@ -2428,6 +2452,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_content_provenance_member_dto(
+    List<ContentProvenanceMemberDto> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_content_summary_dto(

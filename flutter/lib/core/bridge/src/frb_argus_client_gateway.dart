@@ -1434,6 +1434,16 @@ ContentSummary contentSummaryFromDto(dto.ContentSummaryDto value) =>
               associationKey: value.provenance!.associationKey,
               sourceFingerprint: value.provenance!.sourceFingerprint,
               lastObservedScanId: value.provenance!.lastObservedScanId,
+              members: [
+                for (final member in value.provenance!.members)
+                  ContentProvenanceMember(
+                    role: member.role,
+                    associationKey: member.associationKey,
+                    sourceEntryId: sourceEntryIdFromDto(member.sourceEntryId),
+                    sourceFingerprint: member.sourceFingerprint,
+                    lastObservedScanId: member.lastObservedScanId,
+                  ),
+              ],
             ),
     );
 
@@ -1482,11 +1492,25 @@ PlatformId platformIdFromDto(dto.PlatformIdDto value) => switch (value) {
   dto.PlatformIdDto.segaGameGear => PlatformId.segaGameGear,
   dto.PlatformIdDto.segaGenesis => PlatformId.segaGenesis,
   dto.PlatformIdDto.sega32X => PlatformId.sega32x,
+  dto.PlatformIdDto.nintendoGameCube => PlatformId.nintendoGameCube,
+  dto.PlatformIdDto.nintendoWii => PlatformId.nintendoWii,
+  dto.PlatformIdDto.segaCd => PlatformId.segaCd,
+  dto.PlatformIdDto.segaSaturn => PlatformId.segaSaturn,
+  dto.PlatformIdDto.segaDreamcast => PlatformId.segaDreamcast,
+  dto.PlatformIdDto.sonyPlaystation => PlatformId.sonyPlaystation,
+  dto.PlatformIdDto.sonyPlaystation2 => PlatformId.sonyPlaystation2,
+  dto.PlatformIdDto.sonyPsp => PlatformId.sonyPsp,
 };
 
 ContentType contentTypeFromDto(dto.ContentTypeDto value) => switch (value) {
   dto.ContentTypeDto.cartridgeImage => ContentType.cartridgeImage,
   dto.ContentTypeDto.magneticDiskImage => ContentType.magneticDiskImage,
+  dto.ContentTypeDto.opticalDiscCd => ContentType.opticalDiscCd,
+  dto.ContentTypeDto.opticalDiscGd => ContentType.opticalDiscGd,
+  dto.ContentTypeDto.opticalDiscDvd => ContentType.opticalDiscDvd,
+  dto.ContentTypeDto.opticalDiscGameCube => ContentType.opticalDiscGameCube,
+  dto.ContentTypeDto.opticalDiscWii => ContentType.opticalDiscWii,
+  dto.ContentTypeDto.opticalDiscUmd => ContentType.opticalDiscUmd,
 };
 
 ContentPresence contentPresenceFromDto(dto.ContentPresenceDto value) =>
@@ -1539,6 +1563,17 @@ MembershipRelationship membershipRelationshipFromDto(
 ) => switch (value) {
   dto.MembershipRelationshipDto.primary => MembershipRelationship.primary,
   dto.MembershipRelationshipDto.secondary => MembershipRelationship.secondary,
+  dto.MembershipRelationshipDto.primaryContent =>
+    MembershipRelationship.primaryContent,
+  dto.MembershipRelationshipDto.regionalVariant =>
+    MembershipRelationship.regionalVariant,
+  dto.MembershipRelationshipDto.languageVariant =>
+    MembershipRelationship.languageVariant,
+  dto.MembershipRelationshipDto.revisionVariant =>
+    MembershipRelationship.revisionVariant,
+  dto.MembershipRelationshipDto.disc => MembershipRelationship.disc,
+  dto.MembershipRelationshipDto.equivalentReleaseRepresentation =>
+    MembershipRelationship.equivalentReleaseRepresentation,
 };
 
 GroupingBasis groupingBasisFromDto(dto.GroupingBasisDto value) =>
@@ -1546,6 +1581,8 @@ GroupingBasis groupingBasisFromDto(dto.GroupingBasisDto value) =>
       dto.GroupingBasisDto.exactContentIdentity =>
         GroupingBasis.exactContentIdentity,
       dto.GroupingBasisDto.provisional => GroupingBasis.provisional,
+      dto.GroupingBasisDto.explicitRelationshipEvidence =>
+        GroupingBasis.explicitRelationshipEvidence,
     };
 
 SourceEntryId sourceEntryIdFromDto(String value) {

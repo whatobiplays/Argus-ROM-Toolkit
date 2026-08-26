@@ -1294,7 +1294,15 @@ enum PlatformId {
   segaSms,
   segaGameGear,
   segaGenesis,
-  sega32x;
+  sega32x,
+  nintendoGameCube,
+  nintendoWii,
+  segaCd,
+  segaSaturn,
+  segaDreamcast,
+  sonyPlaystation,
+  sonyPlaystation2,
+  sonyPsp;
 
   static PlatformId fromWire(String value) => switch (value) {
     'nintendo_nes' => PlatformId.nintendoNes,
@@ -1310,6 +1318,14 @@ enum PlatformId {
     'sega_gamegear' => PlatformId.segaGameGear,
     'sega_genesis' => PlatformId.segaGenesis,
     'sega_32x' => PlatformId.sega32x,
+    'nintendo_gamecube' => PlatformId.nintendoGameCube,
+    'nintendo_wii' => PlatformId.nintendoWii,
+    'sega_cd' => PlatformId.segaCd,
+    'sega_saturn' => PlatformId.segaSaturn,
+    'sega_dreamcast' => PlatformId.segaDreamcast,
+    'sony_playstation' => PlatformId.sonyPlaystation,
+    'sony_playstation2' => PlatformId.sonyPlaystation2,
+    'sony_psp' => PlatformId.sonyPsp,
     _ => throw const TransportFailure(
       'Unknown logical-library platform',
       kind: TransportFailureKind.contractMismatch,
@@ -1318,7 +1334,16 @@ enum PlatformId {
 }
 
 /// Content representation exposed by the focused logical-library read.
-enum ContentType { cartridgeImage, magneticDiskImage }
+enum ContentType {
+  cartridgeImage,
+  magneticDiskImage,
+  opticalDiscCd,
+  opticalDiscGd,
+  opticalDiscDvd,
+  opticalDiscGameCube,
+  opticalDiscWii,
+  opticalDiscUmd,
+}
 
 /// Content availability/presence, independent from identification proof.
 enum ContentPresence { available, partiallyUnavailable, unavailable, orphaned }
@@ -1381,10 +1406,23 @@ enum AvailabilityState {
 }
 
 /// Current game membership role.
-enum MembershipRelationship { primary, secondary }
+enum MembershipRelationship {
+  primary,
+  secondary,
+  primaryContent,
+  regionalVariant,
+  languageVariant,
+  revisionVariant,
+  disc,
+  equivalentReleaseRepresentation,
+}
 
 /// Current grouping evidence basis.
-enum GroupingBasis { exactContentIdentity, provisional }
+enum GroupingBasis {
+  exactContentIdentity,
+  provisional,
+  explicitRelationshipEvidence,
+}
 
 /// Safe current identity proof summary.
 final class ContentIdentitySummary {
@@ -1406,10 +1444,29 @@ final class ContentProvenanceSummary {
     required this.associationKey,
     required this.sourceFingerprint,
     required this.lastObservedScanId,
+    this.members = const <ContentProvenanceMember>[],
   });
 
   final SourceEntryId sourceEntryId;
   final String associationKey;
+  final String? sourceFingerprint;
+  final String lastObservedScanId;
+  final List<ContentProvenanceMember> members;
+}
+
+/// One normalized exact provenance member in a content-proof projection.
+final class ContentProvenanceMember {
+  const ContentProvenanceMember({
+    required this.role,
+    required this.associationKey,
+    required this.sourceEntryId,
+    required this.sourceFingerprint,
+    required this.lastObservedScanId,
+  });
+
+  final String role;
+  final String? associationKey;
+  final SourceEntryId sourceEntryId;
   final String? sourceFingerprint;
   final String lastObservedScanId;
 }

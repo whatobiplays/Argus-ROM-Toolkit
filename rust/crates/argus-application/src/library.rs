@@ -1,8 +1,9 @@
 //! Focused logical-library query contracts for the initial backend seam.
 
 use argus_domain::{
-    AvailabilityState, ContentType, GameContentPresence, GameId, GameLifecycle, GroupingBasis,
-    HydrationState, IdentificationState, MembershipRelationship, PlatformId,
+    AvailabilityState, ContentProvenanceRole, ContentType, GameContentPresence, GameId,
+    GameLifecycle, GroupingBasis, HydrationState, IdentificationState, MembershipRelationship,
+    PlatformId,
 };
 
 use crate::{
@@ -262,6 +263,7 @@ pub struct ContentProvenanceSummary {
     association_key: String,
     source_fingerprint: Option<String>,
     last_observed_scan_id: ScanRunId,
+    members: Vec<ContentProvenanceMemberSummary>,
 }
 
 impl ContentProvenanceSummary {
@@ -272,12 +274,38 @@ impl ContentProvenanceSummary {
         source_fingerprint: Option<String>,
         last_observed_scan_id: ScanRunId,
     ) -> Self {
+        let association_key = association_key.into();
         Self {
             source_entry_id,
-            association_key: association_key.into(),
-            source_fingerprint,
+            association_key: association_key.clone(),
+            source_fingerprint: source_fingerprint.clone(),
             last_observed_scan_id,
+            members: vec![ContentProvenanceMemberSummary::new(
+                ContentProvenanceRole::Primary,
+                Some(association_key),
+                source_entry_id,
+                source_fingerprint,
+                last_observed_scan_id,
+            )],
         }
+    }
+
+    /// Creates a projection from every normalized exact provenance member.
+    ///
+    /// The scalar accessors remain backed by the primary member so existing
+    /// consumers can upgrade without losing the older projection shape.
+    pub fn from_members(members: Vec<ContentProvenanceMemberSummary>) -> Option<Self> {
+        let primary = members
+            .iter()
+            .find(|member| member.role() == ContentProvenanceRole::Primary)
+            .or_else(|| members.first())?;
+        Some(Self {
+            source_entry_id: primary.source_entry_id(),
+            association_key: primary.association_key().unwrap_or("").to_owned(),
+            source_fingerprint: primary.source_fingerprint().map(str::to_owned),
+            last_observed_scan_id: primary.last_observed_scan_id(),
+            members,
+        })
     }
 
     /// Returns the proving source identity.
@@ -296,6 +324,65 @@ impl ContentProvenanceSummary {
     }
 
     /// Returns the scan observation version.
+    pub const fn last_observed_scan_id(&self) -> ScanRunId {
+        self.last_observed_scan_id
+    }
+
+    /// Returns all exact provenance members in persistence order.
+    pub fn members(&self) -> &[ContentProvenanceMemberSummary] {
+        &self.members
+    }
+}
+
+/// Safe read projection for one normalized identity-provenance member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentProvenanceMemberSummary {
+    role: ContentProvenanceRole,
+    association_key: Option<String>,
+    source_entry_id: SourceEntryId,
+    source_fingerprint: Option<String>,
+    last_observed_scan_id: ScanRunId,
+}
+
+impl ContentProvenanceMemberSummary {
+    /// Creates one bounded provenance-member projection.
+    pub fn new(
+        role: ContentProvenanceRole,
+        association_key: Option<String>,
+        source_entry_id: SourceEntryId,
+        source_fingerprint: Option<String>,
+        last_observed_scan_id: ScanRunId,
+    ) -> Self {
+        Self {
+            role,
+            association_key,
+            source_entry_id,
+            source_fingerprint,
+            last_observed_scan_id,
+        }
+    }
+
+    /// Returns the exact provenance role.
+    pub const fn role(&self) -> ContentProvenanceRole {
+        self.role
+    }
+
+    /// Returns the optional derived-unit association key.
+    pub fn association_key(&self) -> Option<&str> {
+        self.association_key.as_deref()
+    }
+
+    /// Returns the proving source identity.
+    pub const fn source_entry_id(&self) -> SourceEntryId {
+        self.source_entry_id
+    }
+
+    /// Returns the observed source fingerprint.
+    pub fn source_fingerprint(&self) -> Option<&str> {
+        self.source_fingerprint.as_deref()
+    }
+
+    /// Returns the scan observation used by the proof.
     pub const fn last_observed_scan_id(&self) -> ScanRunId {
         self.last_observed_scan_id
     }

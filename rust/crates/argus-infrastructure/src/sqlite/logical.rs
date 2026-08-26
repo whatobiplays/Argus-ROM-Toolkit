@@ -6,13 +6,14 @@
 //! transaction.
 
 use argus_application::{
-    ContentIdentitySummary, ContentProvenanceSummary, ContentType, ConvergenceOutcome,
-    GameContentId, GameContentPresence, GameContentSummary, GameDetail, GameId, GameLibraryPage,
-    GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary, GetGameResult,
-    GroupingBasis, HydrationState, IdentificationState, IdentityConvergenceStore, IdentityDigest,
-    LibraryRootId, ListGamesQuery, LogicalContentRepository, LogicalLibraryQueries,
-    MembershipRelationship, PersistenceError, PlatformId, ScanRunId, SourceEntryId,
-    SourceVersionEvidence, ValidatedContentDerivation,
+    ContentIdentitySummary, ContentProvenanceMemberSummary, ContentProvenanceRole,
+    ContentProvenanceSummary, ContentType, ConvergenceOutcome, GameContentId, GameContentPresence,
+    GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow, GameLifecycle,
+    GameListCursor, GameMembershipSummary, GetGameResult, GroupingBasis, HydrationState,
+    IdentificationState, IdentityConvergenceStore, IdentityDigest, LibraryRootId, ListGamesQuery,
+    LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship, PersistenceError,
+    PlatformId, ScanRunId, SourceEntryId, SourceVersionEvidence, ValidatedContentDerivation,
+    ValidatedM3uGrouping,
 };
 use rusqlite::{OptionalExtension, Row, params_from_iter};
 
@@ -129,51 +130,38 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
     ) -> Result<ConvergenceOutcome, PersistenceError> {
         validate_scheme(derivation)?;
 
-        let source_id = derivation.source_entry_id().to_string();
-        let association_key = derivation.association_key();
-        let existing_source: Option<String> = self
-            .transaction()?
-            .query_row(
-                "SELECT game_content_id
-                 FROM game_content_source
-                 WHERE source_entry_id = ?1
-                   AND association_key = ?2
-                   AND is_current = 1",
-                [&source_id, association_key],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(map_persistence_operation_error)?;
+        let existing_source = existing_source_for_derivation(self.transaction()?, derivation)?;
 
         let identity = derivation.identity();
         let digest = digest_hex(identity.digest());
-        let current_identity: Option<(String, i64)> = self
+        let current_identity: Option<(String, String, i64)> = self
             .transaction()?
             .query_row(
-                "SELECT game_content_id, identity_revision
+                "SELECT content_identity_id, game_content_id, identity_revision
                  FROM content_identity
                  WHERE scheme_id = ?1
                    AND identity_value = ?2
                    AND is_current = 1",
                 rusqlite::params![identity.scheme_id(), digest],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
             .map_err(map_persistence_operation_error)?;
 
-        if let Some((raw_content_id, persisted_revision)) = current_identity {
+        if let Some((_identity_id, raw_content_id, persisted_revision)) = current_identity {
             if persisted_revision != i64::from(identity.revision()) {
                 return Err(PersistenceError::Conflict);
             }
             let content_id = parse_game_content_id(raw_content_id.clone())?;
-            if let Some(existing_source) = existing_source.as_deref()
-                && existing_source != raw_content_id
+            if existing_source
+                .iter()
+                .any(|source| source != &raw_content_id)
             {
                 return Err(PersistenceError::Conflict);
             }
 
             let game_id = current_game_for_content(self.transaction()?, &raw_content_id)?;
-            ensure_source_association(self.transaction()?, derivation, &raw_content_id)?;
+            ensure_source_associations(self.transaction()?, derivation, &raw_content_id)?;
             refresh_content(self.transaction()?, &raw_content_id)?;
             refresh_game(self.transaction()?, &game_id.to_string())?;
             return Ok(ConvergenceOutcome::Attached {
@@ -213,8 +201,9 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
                 return Err(PersistenceError::Conflict);
             }
             let content_id = parse_game_content_id(raw_content_id.clone())?;
-            if let Some(existing_source) = existing_source.as_deref()
-                && existing_source != raw_content_id
+            if existing_source
+                .iter()
+                .any(|source| source != raw_content_id)
             {
                 return Err(PersistenceError::Conflict);
             }
@@ -231,8 +220,8 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
                  WHERE content_identity_id = ?5
                    AND is_current = 0",
                     rusqlite::params![
-                        source_id,
-                        association_key,
+                        derivation.source_entry_id().to_string(),
+                        derivation.association_key(),
                         derivation.source_version().source_fingerprint(),
                         derivation
                             .source_version()
@@ -242,7 +231,8 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
                     ],
                 )
                 .map_err(map_persistence_operation_error)?;
-            ensure_source_association(self.transaction()?, derivation, raw_content_id)?;
+            update_identity_provenance(self.transaction()?, identity_id, derivation, true)?;
+            ensure_source_associations(self.transaction()?, derivation, raw_content_id)?;
             refresh_content(self.transaction()?, raw_content_id)?;
             refresh_game(self.transaction()?, &game_id.to_string())?;
             return Ok(ConvergenceOutcome::Attached {
@@ -251,7 +241,7 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
             });
         }
 
-        if existing_source.is_some() {
+        if !existing_source.is_empty() {
             return Err(PersistenceError::Conflict);
         }
 
@@ -288,8 +278,9 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
             )
             .map_err(map_persistence_operation_error)?;
 
-        self.transaction()?
-            .execute(
+        let identity_id: String = self
+            .transaction()?
+            .query_row(
                 "INSERT INTO content_identity
                     (content_identity_id, game_content_id, scheme_id, identity_revision,
                      identity_value, is_current, proving_source_entry_id,
@@ -297,49 +288,36 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
                      proving_scan_run_id, created_at, updated_at)
                  VALUES
                     (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, 1, ?5, ?6, ?7, ?8,
-                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                 RETURNING content_identity_id",
                 rusqlite::params![
                     raw_content_id,
                     identity.scheme_id(),
                     i64::from(identity.revision()),
                     digest,
-                    source_id,
-                    association_key,
+                    derivation.source_entry_id().to_string(),
+                    derivation
+                        .provenance()
+                        .first()
+                        .and_then(|member| member.association_key()),
                     derivation.source_version().source_fingerprint(),
                     derivation
                         .source_version()
                         .last_observed_scan_id()
                         .to_string(),
                 ],
+                |row| row.get(0),
             )
             .map_err(map_persistence_operation_error)?;
-        self.transaction()?
-            .execute(
-                "INSERT INTO game_content_source
-                (game_content_source_id, game_content_id, source_entry_id, association_key,
-                 source_fingerprint, last_observed_scan_id, is_current, created_at, updated_at)
-             VALUES
-                (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, 1,
-                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                rusqlite::params![
-                    raw_content_id,
-                    source_id,
-                    association_key,
-                    derivation.source_version().source_fingerprint(),
-                    derivation
-                        .source_version()
-                        .last_observed_scan_id()
-                        .to_string(),
-                ],
-            )
-            .map_err(map_persistence_operation_error)?;
+        update_identity_provenance(self.transaction()?, &identity_id, derivation, true)?;
+        ensure_source_associations(self.transaction()?, derivation, &raw_content_id)?;
         self.transaction()?
             .execute(
                 "INSERT INTO game_membership
                 (game_membership_id, game_id, game_content_id, relationship,
                  grouping_basis, grouping_revision, is_current, created_at, updated_at)
              VALUES
-                (lower(hex(randomblob(16))), ?1, ?2, 'primary', 'provisional', 1, 1,
+                (lower(hex(randomblob(16))), ?1, ?2, 'primary_content', 'provisional', 1, 1,
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 rusqlite::params![raw_game_id, raw_content_id],
             )
@@ -456,7 +434,7 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
                     "SELECT game_content_id, relationship, grouping_basis, grouping_revision
                  FROM game_membership
                  WHERE game_id = ?1 AND is_current = 1
-                 ORDER BY CASE relationship WHEN 'primary' THEN 0 ELSE 1 END,
+                 ORDER BY CASE relationship WHEN 'primary_content' THEN 0 ELSE 1 END,
                           game_content_id ASC",
                 )
                 .map_err(map_persistence_operation_error)?;
@@ -485,31 +463,50 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
         };
 
         let content = {
-            let mut statement = self.transaction()?.prepare(
-                "SELECT gc.game_content_id, gc.platform_id, gc.content_type,
-                        gc.presence_state, gc.identification_state,
-                        COUNT(DISTINCT CASE WHEN gcs.is_current = 1 THEN gcs.game_content_source_id END),
-                        ci.scheme_id, ci.identity_revision, ci.identity_value,
-                        ci.proving_source_entry_id, ci.proving_association_key,
-                        ci.proving_source_fingerprint, ci.proving_scan_run_id
-                 FROM game_membership gm
-                 JOIN game_content gc ON gc.game_content_id = gm.game_content_id
-                 LEFT JOIN game_content_source gcs ON gcs.game_content_id = gc.game_content_id
-                 LEFT JOIN content_identity ci
-                   ON ci.game_content_id = gc.game_content_id AND ci.is_current = 1
-                 WHERE gm.game_id = ?1 AND gm.is_current = 1
-                 GROUP BY gc.game_content_id, gc.platform_id, gc.content_type,
-                          gc.presence_state, gc.identification_state,
-                          ci.content_identity_id
-                 ORDER BY gc.game_content_id ASC",
-            )
-            .map_err(map_persistence_operation_error)?;
-            let mapped = statement
-                .query_map([&raw_game_id], read_content_summary)
+            let summaries = {
+                let mut statement = self.transaction()?.prepare(
+                    "SELECT gc.game_content_id, gc.platform_id, gc.content_type,
+                            gc.presence_state, gc.identification_state,
+                            COUNT(DISTINCT CASE WHEN gcs.is_current = 1 THEN gcs.game_content_source_id END),
+                            ci.scheme_id, ci.identity_revision, ci.identity_value,
+                            ci.proving_source_entry_id, ci.proving_association_key,
+                            ci.proving_source_fingerprint, ci.proving_scan_run_id
+                     FROM game_membership gm
+                     JOIN game_content gc ON gc.game_content_id = gm.game_content_id
+                     LEFT JOIN game_content_source gcs ON gcs.game_content_id = gc.game_content_id
+                     LEFT JOIN content_identity ci
+                       ON ci.game_content_id = gc.game_content_id AND ci.is_current = 1
+                     WHERE gm.game_id = ?1 AND gm.is_current = 1
+                     GROUP BY gc.game_content_id, gc.platform_id, gc.content_type,
+                              gc.presence_state, gc.identification_state,
+                              ci.content_identity_id
+                     ORDER BY gc.game_content_id ASC",
+                )
                 .map_err(map_persistence_operation_error)?;
-            let mut values = Vec::new();
-            for row in mapped {
-                values.push(row.map_err(map_persistence_operation_error)?);
+                let mapped = statement
+                    .query_map([&raw_game_id], read_content_summary)
+                    .map_err(map_persistence_operation_error)?;
+                mapped
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(map_persistence_operation_error)?
+            };
+            let mut values = Vec::with_capacity(summaries.len());
+            for summary in summaries {
+                let provenance =
+                    read_normalized_provenance(self.transaction()?, summary.game_content_id())?;
+                values.push(match provenance {
+                    Some(provenance) => GameContentSummary::with_identity(
+                        summary.game_content_id(),
+                        summary.platform_id(),
+                        summary.content_type(),
+                        summary.presence(),
+                        summary.identification(),
+                        summary.source_count(),
+                        summary.identity().cloned(),
+                        Some(provenance),
+                    ),
+                    None => summary,
+                });
             }
             values
         };
@@ -537,6 +534,7 @@ impl LogicalContentRepository for SqliteLogicalContentRepository<'_, '_> {
         }
         let ids = Self::source_ids(source_entry_ids);
         let source_placeholders = placeholders(ids.len());
+        release_grouping_evidence_for_sources(self.transaction()?, &ids)?;
         let affected_contents: Vec<String> = {
             let sql = format!(
                 "SELECT DISTINCT game_content_id
@@ -577,15 +575,48 @@ impl LogicalContentRepository for SqliteLogicalContentRepository<'_, '_> {
                  SET is_current = 0, updated_at = CURRENT_TIMESTAMP
                  WHERE game_content_id = ?1
                    AND is_current = 1
-                   AND NOT EXISTS (
-                       SELECT 1
-                       FROM game_content_source s
-                       WHERE s.game_content_id = content_identity.game_content_id
-                         AND s.is_current = 1
-                         AND s.source_entry_id = content_identity.proving_source_entry_id
-                         AND (content_identity.proving_association_key IS NULL
-                              OR s.association_key = content_identity.proving_association_key)
+                   AND (
+                       EXISTS (
+                           SELECT 1
+                           FROM content_identity_provenance p
+                           WHERE p.content_identity_id = content_identity.content_identity_id
+                             AND p.identity_is_current = 1
+                             AND NOT EXISTS (
+                                 SELECT 1
+                                 FROM game_content_source s
+                                 WHERE s.game_content_id = content_identity.game_content_id
+                                   AND s.source_entry_id = p.source_entry_id
+                                   AND s.association_key = COALESCE(p.association_key, '')
+                                   AND s.is_current = 1
+                             )
+                       )
+                       OR (
+                           NOT EXISTS (
+                               SELECT 1 FROM content_identity_provenance p
+                               WHERE p.content_identity_id = content_identity.content_identity_id
+                           )
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM game_content_source s
+                               WHERE s.game_content_id = content_identity.game_content_id
+                                 AND s.is_current = 1
+                                 AND s.source_entry_id = content_identity.proving_source_entry_id
+                                 AND (content_identity.proving_association_key IS NULL
+                                      OR s.association_key = content_identity.proving_association_key)
+                           )
+                       )
                    )",
+                    [content_id],
+                )
+                .map_err(map_persistence_operation_error)?;
+            self.transaction()?
+                .execute(
+                    "UPDATE content_identity_provenance
+                     SET identity_is_current = 0, updated_at = CURRENT_TIMESTAMP
+                     WHERE content_identity_id IN (
+                         SELECT content_identity_id FROM content_identity
+                         WHERE game_content_id = ?1 AND is_current = 0
+                     )",
                     [content_id],
                 )
                 .map_err(map_persistence_operation_error)?;
@@ -627,6 +658,607 @@ impl LogicalContentRepository for SqliteLogicalContentRepository<'_, '_> {
             .map_err(map_persistence_operation_error)?;
         Ok(changed as u64)
     }
+
+    fn apply_m3u_grouping(
+        &mut self,
+        grouping: &ValidatedM3uGrouping,
+    ) -> Result<GameId, PersistenceError> {
+        apply_m3u_grouping_transaction(self.transaction()?, grouping)
+    }
+
+    fn reconcile_m3u_grouping_evidence(
+        &mut self,
+        active_playlist_source_ids: &[SourceEntryId],
+    ) -> Result<(), PersistenceError> {
+        let active: std::collections::BTreeSet<String> = active_playlist_source_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let playlist_ids: Vec<String> = {
+            let mut statement = self
+                .transaction()?
+                .prepare(
+                    "SELECT DISTINCT playlist_source_entry_id
+                     FROM grouping_evidence
+                     WHERE is_current = 1",
+                )
+                .map_err(map_persistence_operation_error)?;
+            let rows = statement
+                .query_map([], |row| row.get(0))
+                .map_err(map_persistence_operation_error)?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(map_persistence_operation_error)?
+        };
+        for playlist_id in playlist_ids {
+            if !active.contains(&playlist_id) {
+                release_playlist_evidence(self.transaction()?, &playlist_id, &[])?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn apply_m3u_grouping_transaction(
+    transaction: &mut rusqlite::Transaction<'_>,
+    grouping: &ValidatedM3uGrouping,
+) -> Result<GameId, PersistenceError> {
+    let playlist_evidence = grouping.playlist_source_version();
+    if !source_version_matches_transaction(transaction, playlist_evidence)? {
+        return Err(PersistenceError::Conflict);
+    }
+    for member in grouping.members() {
+        if !source_version_matches_transaction(transaction, member.source_version())? {
+            return Err(PersistenceError::Conflict);
+        }
+    }
+
+    let playlist_id = playlist_evidence.source_entry_id().to_string();
+    let member_ids: Vec<String> = grouping
+        .members()
+        .iter()
+        .map(|member| member.game_content_id().to_string())
+        .collect();
+    let mut platform = None;
+    let mut current_games = Vec::new();
+    for member in grouping.members() {
+        let content_id = member.game_content_id().to_string();
+        let content: Option<(String, String, String)> = transaction
+            .query_row(
+                "SELECT platform_id, content_type, identification_state
+                 FROM game_content
+                 WHERE game_content_id = ?1",
+                [&content_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        let Some((content_platform, content_type, identification_state)) = content else {
+            return Err(PersistenceError::Conflict);
+        };
+        if identification_state != "identified"
+            || !matches!(
+                content_type.as_str(),
+                "OpticalDiscCd"
+                    | "OpticalDiscGd"
+                    | "OpticalDiscDvd"
+                    | "OpticalDiscGameCube"
+                    | "OpticalDiscWii"
+                    | "OpticalDiscUmd"
+            )
+        {
+            return Err(PersistenceError::ConstraintViolation);
+        }
+        if let Some(expected) = &platform {
+            if expected != &content_platform {
+                return Err(PersistenceError::Conflict);
+            }
+        } else {
+            platform = Some(content_platform);
+        }
+        let source_association: Option<i64> = transaction
+            .query_row(
+                "SELECT 1
+                 FROM game_content_source
+                 WHERE game_content_id = ?1 AND source_entry_id = ?2 AND is_current = 1
+                 LIMIT 1",
+                rusqlite::params![
+                    content_id,
+                    member.source_version().source_entry_id().to_string()
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        if source_association.is_none() {
+            return Err(PersistenceError::Conflict);
+        }
+        let overlapping_playlist: Option<String> = transaction
+            .query_row(
+                "SELECT e.playlist_source_entry_id
+                 FROM grouping_evidence_member m
+                 JOIN grouping_evidence e
+                   ON e.grouping_evidence_id = m.grouping_evidence_id
+                 WHERE m.member_game_content_id = ?1
+                   AND e.is_current = 1
+                   AND e.playlist_source_entry_id <> ?2
+                 LIMIT 1",
+                [&content_id, &playlist_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        if overlapping_playlist.is_some() {
+            return Err(PersistenceError::Conflict);
+        }
+        let game_id: String = transaction
+            .query_row(
+                "SELECT game_id
+                 FROM game_membership
+                 WHERE game_content_id = ?1 AND is_current = 1
+                 LIMIT 1",
+                [&content_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?
+            .ok_or(PersistenceError::Conflict)?;
+        if !current_games.iter().any(|candidate| candidate == &game_id) {
+            current_games.push(game_id);
+        }
+    }
+
+    release_playlist_evidence(transaction, &playlist_id, &member_ids)?;
+
+    let game_placeholders = placeholders(current_games.len());
+    let survivor: String = transaction
+        .query_row(
+            &format!(
+                "SELECT g.game_id
+                 FROM game g
+                 JOIN game_membership m ON m.game_id = g.game_id
+                 WHERE m.is_current = 1
+                   AND m.game_id IN ({game_placeholders})
+                 GROUP BY g.game_id
+                 ORDER BY MIN(g.created_at) ASC, g.game_id ASC
+                 LIMIT 1"
+            ),
+            params_from_iter(current_games.iter()),
+            |row| row.get(0),
+        )
+        .map_err(map_persistence_operation_error)?;
+    let next_revision: i64 = transaction
+        .query_row(
+            "SELECT grouping_revision FROM game WHERE game_id = ?1",
+            [&survivor],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(map_persistence_operation_error)?
+        .checked_add(1)
+        .ok_or(PersistenceError::Conflict)?;
+
+    let existing_memberships: Vec<(String, String, String)> = {
+        let sql = format!(
+            "SELECT game_content_id, relationship, grouping_basis
+             FROM game_membership
+             WHERE is_current = 1 AND game_id IN ({game_placeholders})"
+        );
+        let mut statement = transaction
+            .prepare(&sql)
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map(params_from_iter(current_games.iter()), |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(map_persistence_operation_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?
+    };
+    transaction
+        .execute(
+            &format!(
+                "UPDATE game_membership
+                 SET is_current = 0, updated_at = CURRENT_TIMESTAMP
+                 WHERE is_current = 1 AND game_id IN ({game_placeholders})"
+            ),
+            params_from_iter(current_games.iter()),
+        )
+        .map_err(map_persistence_operation_error)?;
+    transaction
+        .execute(
+            "UPDATE game
+             SET grouping_revision = ?1, updated_at = CURRENT_TIMESTAMP
+             WHERE game_id = ?2",
+            rusqlite::params![next_revision, survivor],
+        )
+        .map_err(map_persistence_operation_error)?;
+
+    let mut inserted = std::collections::BTreeSet::new();
+    for (content_id, relationship, grouping_basis) in existing_memberships {
+        if member_ids.iter().any(|member| member == &content_id) {
+            continue;
+        }
+        let relationship = if relationship == "primary_content" {
+            "equivalent_release_representation"
+        } else {
+            relationship.as_str()
+        };
+        if !inserted.insert((content_id.clone(), relationship.to_owned())) {
+            continue;
+        }
+        upsert_current_membership(
+            transaction,
+            &survivor,
+            &content_id,
+            relationship,
+            &grouping_basis,
+            next_revision,
+        )?;
+    }
+    for (ordinal, member) in grouping.members().iter().enumerate() {
+        let relationship = if ordinal == 0 {
+            "primary_content"
+        } else {
+            "disc"
+        };
+        upsert_current_membership(
+            transaction,
+            &survivor,
+            &member.game_content_id().to_string(),
+            relationship,
+            "explicit_relationship_evidence",
+            next_revision,
+        )?;
+    }
+
+    for game_id in &current_games {
+        if game_id == &survivor {
+            continue;
+        }
+        transaction
+            .execute(
+                "INSERT INTO game_redirect (game_id, canonical_game_id, created_at)
+                 VALUES (?1, ?2, CURRENT_TIMESTAMP)
+                 ON CONFLICT(game_id) DO UPDATE SET
+                   canonical_game_id = excluded.canonical_game_id",
+                rusqlite::params![game_id, survivor],
+            )
+            .map_err(map_persistence_operation_error)?;
+        transaction
+            .execute(
+                "UPDATE game SET lifecycle_state = 'redirected', updated_at = CURRENT_TIMESTAMP
+                 WHERE game_id = ?1",
+                [game_id],
+            )
+            .map_err(map_persistence_operation_error)?;
+    }
+    refresh_game(transaction, &survivor)?;
+
+    let evidence_id: String = transaction
+        .query_row(
+            "INSERT INTO grouping_evidence
+                (grouping_evidence_id, evidence_kind, playlist_source_entry_id,
+                 source_fingerprint, last_observed_scan_id, is_current,
+                 created_at, updated_at)
+             VALUES
+                (lower(hex(randomblob(16))), 'm3u', ?1, ?2, ?3, 1,
+                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING grouping_evidence_id",
+            rusqlite::params![
+                playlist_id,
+                playlist_evidence.source_fingerprint(),
+                playlist_evidence.last_observed_scan_id().to_string(),
+            ],
+            |row| row.get(0),
+        )
+        .map_err(map_persistence_operation_error)?;
+    for member in grouping.members() {
+        transaction
+            .execute(
+                "INSERT INTO grouping_evidence_member
+                    (grouping_evidence_id, member_game_content_id,
+                     member_source_entry_id, member_source_fingerprint,
+                     member_last_observed_scan_id, ordinal)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    evidence_id,
+                    member.game_content_id().to_string(),
+                    member.source_version().source_entry_id().to_string(),
+                    member.source_version().source_fingerprint(),
+                    member.source_version().last_observed_scan_id().to_string(),
+                    i64::from(member.ordinal()),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+    }
+    parse_game_id(survivor)
+}
+
+fn source_version_matches_transaction(
+    transaction: &mut rusqlite::Transaction<'_>,
+    evidence: &SourceVersionEvidence,
+) -> Result<bool, PersistenceError> {
+    let persisted: Option<(Option<String>, String)> = transaction
+        .query_row(
+            "SELECT source_fingerprint, last_observed_scan_id
+             FROM source_entry
+             WHERE source_entry_id = ?1",
+            [evidence.source_entry_id().to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(map_persistence_operation_error)?;
+    Ok(persisted
+        .map(|(fingerprint, scan_id)| {
+            fingerprint.as_deref() == evidence.source_fingerprint()
+                && scan_id == evidence.last_observed_scan_id().to_string()
+        })
+        .unwrap_or(false))
+}
+
+fn upsert_current_membership(
+    transaction: &mut rusqlite::Transaction<'_>,
+    game_id: &str,
+    content_id: &str,
+    relationship: &str,
+    grouping_basis: &str,
+    grouping_revision: i64,
+) -> Result<(), PersistenceError> {
+    transaction
+        .execute(
+            "INSERT INTO game_membership
+                (game_membership_id, game_id, game_content_id, relationship,
+                 grouping_basis, grouping_revision, is_current, created_at, updated_at)
+             VALUES
+                (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, 1,
+                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             ON CONFLICT(game_id, game_content_id, relationship)
+             DO UPDATE SET grouping_basis = excluded.grouping_basis,
+                           grouping_revision = excluded.grouping_revision,
+                           is_current = 1,
+                           updated_at = CURRENT_TIMESTAMP",
+            rusqlite::params![
+                game_id,
+                content_id,
+                relationship,
+                grouping_basis,
+                grouping_revision,
+            ],
+        )
+        .map_err(map_persistence_operation_error)?;
+    Ok(())
+}
+
+fn release_playlist_evidence(
+    transaction: &mut rusqlite::Transaction<'_>,
+    playlist_source_entry_id: &str,
+    keep_content_ids: &[String],
+) -> Result<(), PersistenceError> {
+    let evidence_ids: Vec<String> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT grouping_evidence_id
+                 FROM grouping_evidence
+                 WHERE playlist_source_entry_id = ?1 AND is_current = 1",
+            )
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map([playlist_source_entry_id], |row| row.get(0))
+            .map_err(map_persistence_operation_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?
+    };
+    if evidence_ids.is_empty() {
+        return Ok(());
+    }
+    let evidence_placeholders = placeholders(evidence_ids.len());
+    let old_content_ids: Vec<String> = {
+        let sql = format!(
+            "SELECT DISTINCT member_game_content_id
+             FROM grouping_evidence_member
+             WHERE grouping_evidence_id IN ({evidence_placeholders})"
+        );
+        let mut statement = transaction
+            .prepare(&sql)
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map(params_from_iter(evidence_ids.iter()), |row| row.get(0))
+            .map_err(map_persistence_operation_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?
+    };
+    transaction
+        .execute(
+            "UPDATE grouping_evidence
+             SET is_current = 0, updated_at = CURRENT_TIMESTAMP
+             WHERE playlist_source_entry_id = ?1 AND is_current = 1",
+            [playlist_source_entry_id],
+        )
+        .map_err(map_persistence_operation_error)?;
+
+    for content_id in old_content_ids {
+        if keep_content_ids.iter().any(|keep| keep == &content_id) {
+            continue;
+        }
+        detach_content_to_provisional_game(transaction, &content_id)?;
+    }
+    Ok(())
+}
+
+fn release_grouping_evidence_for_sources(
+    transaction: &mut rusqlite::Transaction<'_>,
+    source_ids: &[String],
+) -> Result<(), PersistenceError> {
+    if source_ids.is_empty() {
+        return Ok(());
+    }
+    let source_placeholders = placeholders(source_ids.len());
+    let playlist_ids: Vec<String> = {
+        let sql = format!(
+            "SELECT DISTINCT e.playlist_source_entry_id
+             FROM grouping_evidence e
+             WHERE e.playlist_source_entry_id IN ({source_placeholders})
+                OR EXISTS (
+                    SELECT 1
+                    FROM grouping_evidence_member m
+                    WHERE m.grouping_evidence_id = e.grouping_evidence_id
+                      AND m.member_source_entry_id IN ({source_placeholders})
+                )"
+        );
+        let params: Vec<&dyn rusqlite::ToSql> = source_ids
+            .iter()
+            .map(|value| value as &dyn rusqlite::ToSql)
+            .collect();
+        let mut statement = transaction
+            .prepare(&sql)
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map(params.as_slice(), |row| row.get(0))
+            .map_err(map_persistence_operation_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?
+    };
+    for playlist_id in &playlist_ids {
+        release_playlist_evidence(transaction, playlist_id, &[])?;
+    }
+
+    let evidence_ids: Vec<String> = {
+        let sql = format!(
+            "SELECT DISTINCT e.grouping_evidence_id
+             FROM grouping_evidence e
+             WHERE e.playlist_source_entry_id IN ({source_placeholders})
+                OR EXISTS (
+                    SELECT 1
+                    FROM grouping_evidence_member m
+                    WHERE m.grouping_evidence_id = e.grouping_evidence_id
+                      AND m.member_source_entry_id IN ({source_placeholders})
+                )"
+        );
+        let params: Vec<&dyn rusqlite::ToSql> = source_ids
+            .iter()
+            .map(|value| value as &dyn rusqlite::ToSql)
+            .collect();
+        let mut statement = transaction
+            .prepare(&sql)
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map(params.as_slice(), |row| row.get(0))
+            .map_err(map_persistence_operation_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?
+    };
+    if evidence_ids.is_empty() {
+        return Ok(());
+    }
+    let evidence_placeholders = placeholders(evidence_ids.len());
+    let source_placeholders_after_evidence =
+        placeholders_from(source_ids.len(), evidence_ids.len() + 1);
+    let delete_member_sql = format!(
+        "DELETE FROM grouping_evidence_member
+         WHERE grouping_evidence_id IN ({evidence_placeholders})
+            OR member_source_entry_id IN ({source_placeholders_after_evidence})"
+    );
+    let member_params: Vec<&dyn rusqlite::ToSql> = evidence_ids
+        .iter()
+        .map(|value| value as &dyn rusqlite::ToSql)
+        .chain(source_ids.iter().map(|value| value as &dyn rusqlite::ToSql))
+        .collect();
+    transaction
+        .execute(&delete_member_sql, member_params.as_slice())
+        .map_err(map_persistence_operation_error)?;
+    let delete_evidence_sql = format!(
+        "DELETE FROM grouping_evidence
+         WHERE grouping_evidence_id IN ({evidence_placeholders})"
+    );
+    transaction
+        .execute(&delete_evidence_sql, params_from_iter(evidence_ids.iter()))
+        .map_err(map_persistence_operation_error)?;
+    Ok(())
+}
+
+fn detach_content_to_provisional_game(
+    transaction: &mut rusqlite::Transaction<'_>,
+    content_id: &str,
+) -> Result<(), PersistenceError> {
+    let current: Option<(String, String)> = transaction
+        .query_row(
+            "SELECT game_id, relationship
+             FROM game_membership
+             WHERE game_content_id = ?1 AND is_current = 1
+             LIMIT 1",
+            [content_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(map_persistence_operation_error)?;
+    let Some((old_game_id, _)) = current else {
+        return Ok(());
+    };
+    let (platform_id, fallback_title): (String, String) = transaction
+        .query_row(
+            "SELECT c.platform_id, g.fallback_title
+             FROM game_content c
+             JOIN game_membership m ON m.game_content_id = c.game_content_id
+             JOIN game g ON g.game_id = m.game_id
+             WHERE c.game_content_id = ?1 AND m.is_current = 1
+             LIMIT 1",
+            [content_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(map_persistence_operation_error)?;
+    transaction
+        .execute(
+            "UPDATE game_membership
+             SET is_current = 0, updated_at = CURRENT_TIMESTAMP
+             WHERE game_content_id = ?1 AND is_current = 1",
+            [content_id],
+        )
+        .map_err(map_persistence_operation_error)?;
+    let new_game_id: String = transaction
+        .query_row(
+            "INSERT INTO game
+                (game_id, platform_id, lifecycle_state, grouping_revision,
+                 fallback_title, fallback_title_provenance, hydration_state,
+                 created_at, updated_at)
+             VALUES
+                (lower(hex(randomblob(16))), ?1, 'active', 1, ?2, 'local_fallback',
+                 'partially_hydrated', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             RETURNING game_id",
+            rusqlite::params![platform_id, fallback_title],
+            |row| row.get(0),
+        )
+        .map_err(map_persistence_operation_error)?;
+    transaction
+        .execute(
+            "INSERT INTO game_membership
+                (game_membership_id, game_id, game_content_id, relationship,
+                 grouping_basis, grouping_revision, is_current, created_at, updated_at)
+             VALUES
+                (lower(hex(randomblob(16))), ?1, ?2, 'primary_content', 'provisional', 1, 1,
+                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            rusqlite::params![new_game_id, content_id],
+        )
+        .map_err(map_persistence_operation_error)?;
+    let source_count: i64 = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM game_content_source
+             WHERE game_content_id = ?1 AND is_current = 1",
+            [content_id],
+            |row| row.get(0),
+        )
+        .map_err(map_persistence_operation_error)?;
+    transaction
+        .execute(
+            "INSERT INTO game_library_row
+                (game_id, display_title, display_title_provenance, platform_id,
+                 hydration_state, availability_state, content_count, source_count, updated_at)
+             VALUES
+                (?1, ?2, 'local_fallback', ?3, 'partially_hydrated', 'available', 1, ?4,
+                 CURRENT_TIMESTAMP)",
+            rusqlite::params![new_game_id, fallback_title, platform_id, source_count],
+        )
+        .map_err(map_persistence_operation_error)?;
+    refresh_game(transaction, &old_game_id)?;
+    Ok(())
 }
 
 fn validate_scheme(derivation: &ValidatedContentDerivation) -> Result<(), PersistenceError> {
@@ -670,6 +1302,34 @@ fn validate_scheme(derivation: &ValidatedContentDerivation) -> Result<(), Persis
         (argus_domain::PlatformId::Sega32x, argus_domain::ContentType::CartridgeImage) => {
             "argus.content.identity.sega-32x.cartridge.v1"
         }
+        (argus_domain::PlatformId::SegaCd, argus_domain::ContentType::OpticalDiscCd) => {
+            "argus.content.identity.sega-cd.disc.v1"
+        }
+        (argus_domain::PlatformId::SegaSaturn, argus_domain::ContentType::OpticalDiscCd) => {
+            "argus.content.identity.sega-saturn.disc.v1"
+        }
+        (argus_domain::PlatformId::SegaDreamcast, argus_domain::ContentType::OpticalDiscGd) => {
+            "argus.content.identity.sega-dreamcast.gdrom.v1"
+        }
+        (argus_domain::PlatformId::SonyPlaystation, argus_domain::ContentType::OpticalDiscCd) => {
+            "argus.content.identity.sony-playstation.disc.v1"
+        }
+        (argus_domain::PlatformId::SonyPlaystation2, argus_domain::ContentType::OpticalDiscCd) => {
+            "argus.content.identity.sony-playstation2.cd.v1"
+        }
+        (argus_domain::PlatformId::SonyPlaystation2, argus_domain::ContentType::OpticalDiscDvd) => {
+            "argus.content.identity.sony-playstation2.dvd.v1"
+        }
+        (argus_domain::PlatformId::SonyPsp, argus_domain::ContentType::OpticalDiscUmd) => {
+            "argus.content.identity.sony-psp.umd.v1"
+        }
+        (
+            argus_domain::PlatformId::NintendoGameCube,
+            argus_domain::ContentType::OpticalDiscGameCube,
+        ) => "argus.content.identity.nintendo-gamecube.disc.v1",
+        (argus_domain::PlatformId::NintendoWii, argus_domain::ContentType::OpticalDiscWii) => {
+            "argus.content.identity.nintendo-wii.disc.v1"
+        }
         _ => return Err(PersistenceError::ConstraintViolation),
     };
     (derivation.identity().scheme_id() == expected && derivation.identity().revision() == 1)
@@ -677,14 +1337,45 @@ fn validate_scheme(derivation: &ValidatedContentDerivation) -> Result<(), Persis
         .ok_or(PersistenceError::ConstraintViolation)
 }
 
-fn ensure_source_association(
+fn existing_source_for_derivation(
+    transaction: &mut rusqlite::Transaction<'_>,
+    derivation: &ValidatedContentDerivation,
+) -> Result<Vec<String>, PersistenceError> {
+    let mut content_ids = Vec::new();
+    for member in derivation.provenance() {
+        let source_id = member.source_entry_id().to_string();
+        let association_key = member.association_key().unwrap_or("");
+        let existing: Option<String> = transaction
+            .query_row(
+                "SELECT game_content_id
+                 FROM game_content_source
+                 WHERE source_entry_id = ?1
+                   AND association_key = ?2
+                   AND is_current = 1",
+                [&source_id, association_key],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        if let Some(content_id) = existing
+            && !content_ids.iter().any(|candidate| candidate == &content_id)
+        {
+            content_ids.push(content_id);
+        }
+    }
+    Ok(content_ids)
+}
+
+fn ensure_source_associations(
     transaction: &mut rusqlite::Transaction<'_>,
     derivation: &ValidatedContentDerivation,
     content_id: &str,
 ) -> Result<(), PersistenceError> {
-    transaction
-        .execute(
-            "INSERT INTO game_content_source
+    for member in derivation.provenance() {
+        let association_key = member.association_key().unwrap_or("");
+        transaction
+            .execute(
+                "INSERT INTO game_content_source
                 (game_content_source_id, game_content_id, source_entry_id, association_key,
                  source_fingerprint, last_observed_scan_id, is_current, created_at, updated_at)
              VALUES
@@ -695,18 +1386,53 @@ fn ensure_source_association(
                            last_observed_scan_id = excluded.last_observed_scan_id,
                            is_current = 1,
                            updated_at = CURRENT_TIMESTAMP",
-            rusqlite::params![
-                content_id,
-                derivation.source_entry_id().to_string(),
-                derivation.association_key(),
-                derivation.source_version().source_fingerprint(),
-                derivation
-                    .source_version()
-                    .last_observed_scan_id()
-                    .to_string(),
-            ],
+                rusqlite::params![
+                    content_id,
+                    member.source_entry_id().to_string(),
+                    association_key,
+                    member.source_version().source_fingerprint(),
+                    member.source_version().last_observed_scan_id().to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+    }
+    Ok(())
+}
+
+fn update_identity_provenance(
+    transaction: &mut rusqlite::Transaction<'_>,
+    identity_id: &str,
+    derivation: &ValidatedContentDerivation,
+    identity_is_current: bool,
+) -> Result<(), PersistenceError> {
+    transaction
+        .execute(
+            "DELETE FROM content_identity_provenance WHERE content_identity_id = ?1",
+            [identity_id],
         )
         .map_err(map_persistence_operation_error)?;
+    for member in derivation.provenance() {
+        transaction
+            .execute(
+                "INSERT INTO content_identity_provenance
+                    (provenance_member_id, content_identity_id, role, association_key,
+                     source_entry_id, source_fingerprint, last_observed_scan_id,
+                     identity_is_current, created_at, updated_at)
+                 VALUES
+                    (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                rusqlite::params![
+                    identity_id,
+                    member.role().as_str(),
+                    member.association_key(),
+                    member.source_entry_id().to_string(),
+                    member.source_version().source_fingerprint(),
+                    member.source_version().last_observed_scan_id().to_string(),
+                    if identity_is_current { 1_i64 } else { 0_i64 },
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+    }
     Ok(())
 }
 
@@ -718,7 +1444,7 @@ fn current_game_for_content(
         .query_row(
             "SELECT game_id FROM game_membership
              WHERE game_content_id = ?1 AND is_current = 1
-             ORDER BY CASE relationship WHEN 'primary' THEN 0 ELSE 1 END
+             ORDER BY CASE relationship WHEN 'primary_content' THEN 0 ELSE 1 END
              LIMIT 1",
             [content_id],
             |row| row.get(0),
@@ -862,6 +1588,50 @@ fn read_library_row(row: &Row<'_>) -> rusqlite::Result<GameLibraryRow> {
     ))
 }
 
+fn read_normalized_provenance(
+    transaction: &mut rusqlite::Transaction<'_>,
+    content_id: GameContentId,
+) -> Result<Option<ContentProvenanceSummary>, PersistenceError> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT p.role, p.association_key, p.source_entry_id,
+                    p.source_fingerprint, p.last_observed_scan_id
+             FROM content_identity_provenance p
+             JOIN content_identity i ON i.content_identity_id = p.content_identity_id
+             WHERE i.game_content_id = ?1 AND i.is_current = 1
+               AND p.identity_is_current = 1
+             ORDER BY p.rowid ASC",
+        )
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map([content_id.to_string()], |row| {
+            let role = parse_provenance_role(&row.get::<_, String>(0)?)
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let association_key = row.get::<_, Option<String>>(1)?;
+            let source_entry_id = parse_source_entry_id(row.get::<_, String>(2)?)
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let source_fingerprint = row.get(3)?;
+            let scan_id = row
+                .get::<_, Option<String>>(4)?
+                .ok_or(rusqlite::Error::InvalidQuery)
+                .and_then(|value| {
+                    parse_scan_run_id(value).map_err(|_| rusqlite::Error::InvalidQuery)
+                })?;
+            Ok(ContentProvenanceMemberSummary::new(
+                role,
+                association_key,
+                source_entry_id,
+                source_fingerprint,
+                scan_id,
+            ))
+        })
+        .map_err(map_persistence_operation_error)?;
+    let members = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(map_persistence_operation_error)?;
+    Ok(ContentProvenanceSummary::from_members(members))
+}
+
 fn read_content_summary(row: &Row<'_>) -> rusqlite::Result<GameContentSummary> {
     let game_content_id = parse_game_content_id(row.get::<_, String>(0)?)
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
@@ -995,8 +1765,24 @@ fn parse_availability(value: &str) -> Result<argus_domain::AvailabilityState, Pe
 
 fn parse_relationship(value: &str) -> Result<MembershipRelationship, PersistenceError> {
     match value {
-        "primary" => Ok(MembershipRelationship::Primary),
-        "secondary" => Ok(MembershipRelationship::Secondary),
+        "primary" | "primary_content" => Ok(MembershipRelationship::PrimaryContent),
+        "regional_variant" => Ok(MembershipRelationship::RegionalVariant),
+        "language_variant" => Ok(MembershipRelationship::LanguageVariant),
+        "revision_variant" => Ok(MembershipRelationship::RevisionVariant),
+        "disc" => Ok(MembershipRelationship::Disc),
+        "equivalent_release_representation" | "secondary" => {
+            Ok(MembershipRelationship::EquivalentReleaseRepresentation)
+        }
+        _ => Err(PersistenceError::CorruptOrIncompatible),
+    }
+}
+
+fn parse_provenance_role(value: &str) -> Result<ContentProvenanceRole, PersistenceError> {
+    match value {
+        "primary" => Ok(ContentProvenanceRole::Primary),
+        "descriptor" => Ok(ContentProvenanceRole::Descriptor),
+        "required_data" => Ok(ContentProvenanceRole::RequiredData),
+        "supporting" => Ok(ContentProvenanceRole::Supporting),
         _ => Err(PersistenceError::CorruptOrIncompatible),
     }
 }
@@ -1005,6 +1791,7 @@ fn parse_grouping_basis(value: &str) -> Result<GroupingBasis, PersistenceError> 
     match value {
         "exact_content_identity" => Ok(GroupingBasis::ExactContentIdentity),
         "provisional" => Ok(GroupingBasis::Provisional),
+        "explicit_relationship_evidence" => Ok(GroupingBasis::ExplicitRelationshipEvidence),
         _ => Err(PersistenceError::CorruptOrIncompatible),
     }
 }
@@ -1056,8 +1843,12 @@ fn hex_digit(value: u8) -> Option<u8> {
 }
 
 fn placeholders(count: usize) -> String {
+    placeholders_from(count, 1)
+}
+
+fn placeholders_from(count: usize, start: usize) -> String {
     (1..=count)
-        .map(|index| format!("?{index}"))
+        .map(|index| format!("?{}", start + index - 1))
         .collect::<Vec<_>>()
         .join(", ")
 }

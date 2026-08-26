@@ -80,6 +80,18 @@ impl ProviderId {
                 PlatformId::SegaGameGear => ProviderPlatformMapping::Mapped("sega.gamegear"),
                 PlatformId::SegaGenesis => ProviderPlatformMapping::Mapped("sega.genesis"),
                 PlatformId::Sega32x => ProviderPlatformMapping::Mapped("sega.32x"),
+                PlatformId::NintendoGameCube => {
+                    ProviderPlatformMapping::Mapped("nintendo.gamecube")
+                }
+                PlatformId::NintendoWii => ProviderPlatformMapping::Mapped("nintendo.wii"),
+                PlatformId::SegaCd => ProviderPlatformMapping::Mapped("sega.sega-cd"),
+                PlatformId::SegaSaturn => ProviderPlatformMapping::Mapped("sega.saturn"),
+                PlatformId::SegaDreamcast => ProviderPlatformMapping::Mapped("sega.dreamcast"),
+                PlatformId::SonyPlaystation => ProviderPlatformMapping::Mapped("sony.playstation"),
+                PlatformId::SonyPlaystation2 => {
+                    ProviderPlatformMapping::Mapped("sony.playstation2")
+                }
+                PlatformId::SonyPsp => ProviderPlatformMapping::Mapped("sony.psp"),
             },
             Self::SteamGridDb => match platform {
                 PlatformId::NintendoNes
@@ -94,7 +106,15 @@ impl ProviderId {
                 | PlatformId::SegaSms
                 | PlatformId::SegaGameGear
                 | PlatformId::SegaGenesis
-                | PlatformId::Sega32x => ProviderPlatformMapping::Unsupported,
+                | PlatformId::Sega32x
+                | PlatformId::NintendoGameCube
+                | PlatformId::NintendoWii
+                | PlatformId::SegaCd
+                | PlatformId::SegaSaturn
+                | PlatformId::SegaDreamcast
+                | PlatformId::SonyPlaystation
+                | PlatformId::SonyPlaystation2
+                | PlatformId::SonyPsp => ProviderPlatformMapping::Unsupported,
             },
         }
     }

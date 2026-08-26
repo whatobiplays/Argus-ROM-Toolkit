@@ -188,7 +188,7 @@ pub fn validate_memberships(
                 game_content_id: membership.game_content_id(),
             });
         }
-        if membership.relationship() == MembershipRelationship::Primary {
+        if membership.relationship() == MembershipRelationship::PrimaryContent {
             primary_count += 1;
         }
     }
@@ -215,7 +215,7 @@ pub fn validate_continuity_anchor(
 ) -> Result<(), GroupingValidationError> {
     let next_primary = next_memberships
         .iter()
-        .filter(|membership| membership.relationship() == MembershipRelationship::Primary)
+        .filter(|membership| membership.relationship() == MembershipRelationship::PrimaryContent)
         .map(GameMembership::game_content_id)
         .next();
 

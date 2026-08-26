@@ -3686,16 +3686,19 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
 
             if !matches!(completion.state(), JobRunState::Cancelled) && stop_reason().is_none() {
                 match self.with_kernel(context, |kernel| {
+                    let is_cancelled = || stop_reason().is_some();
                     kernel.refresh_committed_root_with_context(
                         plan,
                         context,
                         &mut sessions,
                         crate::now_millis(),
+                        &is_cancelled,
                     )
                 }) {
                     Ok((_, root_issues)) => {
                         issue_count = issue_count.saturating_add(root_issues);
                     }
+                    Err(error) if stop_reason().is_some() => return Err(error),
                     Err(_) => {
                         issue_count = issue_count.saturating_add(1);
                     }

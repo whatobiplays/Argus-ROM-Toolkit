@@ -93,7 +93,8 @@ Phase 003 does not add:
 - Argus-hosted cloud/provider proxy infrastructure;
 - IGDB or ScreenScraper production integration;
 - silent automatic restart/resume of abandoned significant work;
-- encrypted/key-dependent platform support that cannot be authoritatively identified without user-supplied decryption material.
+- encrypted/key-dependent platform support that cannot be authoritatively identified without user-supplied decryption material;
+- RAR archive support, deferred until post-MVP because the MVP requires complete, safely qualified decoder semantics rather than partial format coverage.
 
 Manual metadata/artwork correction remains part of the MVP roadmap, but it is intentionally deferred to a later MVP phase rather than classified as post-MVP.
 
@@ -287,7 +288,6 @@ The exact support catalog is `(PlatformId, ContentType, representation)` specifi
 - WBFS;
 - ZIP;
 - 7z;
-- RAR;
 - useful single-stream/tar-family containers;
 - M3U for explicit multi-disc relationship evidence.
 
@@ -295,7 +295,7 @@ No combination is advertised until the production identity catalog defines and q
 
 ### 6.3 Single-game archive policy
 
-General archives such as ZIP/7z/RAR are supported only when their independently usable contents represent one game/content family under the applicable transformation rules.
+Supported general archives such as ZIP/7z are eligible only when their independently usable contents represent one game/content family under the applicable transformation rules. RAR remains deferred until post-MVP.
 
 A multi-game archive such as:
 
@@ -962,7 +962,7 @@ Establish canonical logical disc semantics for Sega CD, Saturn, Dreamcast, PlayS
 
 ### P03-006 — Containers and Compressed Representations
 
-Add ZIP, 7z, RAR, applicable single-stream/tar-family containers, CHD, RVZ, CSO, and WBFS on top of already-qualified logical identities. Prove equivalent-representation convergence, single-game archive enforcement, atomic multi-game rejection, nested-container policy, cumulative resource accounting, hostile-input safety, staging limits, and cancellation.
+Add ZIP, 7z, applicable single-stream/tar-family containers, CHD, RVZ, CSO, and WBFS on top of already-qualified logical identities. RAR remains deferred until post-MVP. Prove equivalent-representation convergence, single-game archive enforcement, atomic multi-game rejection, nested-container policy, cumulative resource accounting, hostile-input safety, staging limits, and cancellation.
 
 ### P03-007 — Library Browsing and Game Detail Completeness
 

@@ -4,14 +4,27 @@ use argus_application::{ContentType, IdentityDigest, PlatformId};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
-const GB_LOGO: [u8; 48] = [
+#[path = "content_nintendo.rs"]
+mod content_nintendo;
+#[path = "content_sega.rs"]
+mod content_sega;
+#[path = "content_stream.rs"]
+mod content_stream;
+
+pub use content_stream::{
+    ContentProcessingLimits, ContentReadError, ContentReader, ContentRecognitionError,
+    StreamRecognizedContent, recognize_content, recognize_content_with_budget,
+    recognize_content_with_limits,
+};
+
+pub(crate) const GB_LOGO: [u8; 48] = [
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
     0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
     0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
 ];
 
 // GBATEK's authoritative 156-byte compressed Nintendo logo for the GBA header.
-const GBA_LOGO: [u8; 156] = [
+pub(crate) const GBA_LOGO: [u8; 156] = [
     0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21, 0x3D, 0x84, 0x82, 0x0A, 0x84, 0xE4, 0x09, 0xAD,
     0x11, 0x24, 0x8B, 0x98, 0xC0, 0x81, 0x7F, 0x21, 0xA3, 0x52, 0xBE, 0x19, 0x93, 0x09, 0xCE, 0x20,
     0x10, 0x46, 0x4A, 0x4A, 0xF8, 0x27, 0x31, 0xEC, 0x58, 0xC7, 0xE8, 0x33, 0x82, 0xE3, 0xCE, 0xBF,
@@ -77,6 +90,7 @@ pub struct RecognizedContent {
     content_type: ContentType,
     canonical_bytes: Vec<u8>,
     identity_digest: IdentityDigest,
+    source_representation: &'static str,
 }
 
 impl RecognizedContent {
@@ -88,6 +102,11 @@ impl RecognizedContent {
     /// Returns the authoritative recognized content type.
     pub const fn content_type(&self) -> ContentType {
         self.content_type
+    }
+
+    /// Returns the legacy source representation accepted by this adapter.
+    pub const fn source_representation(&self) -> &'static str {
+        self.source_representation
     }
 
     /// Returns canonical bytes retained for the caller's out-of-transaction use.
@@ -136,10 +155,11 @@ pub fn recognize_raw_cartridge_with_budget(
         content_type,
         canonical_bytes,
         identity_digest: IdentityDigest::from_bytes(digest),
+        source_representation: "raw-cartridge-image",
     })
 }
 
-fn recognize_gb_family(bytes: &[u8]) -> Result<(PlatformId, Vec<u8>), RecognitionError> {
+pub(crate) fn recognize_gb_family(bytes: &[u8]) -> Result<(PlatformId, Vec<u8>), RecognitionError> {
     let cgb_flag = bytes[0x143];
     let platform = match cgb_flag {
         0x00 => PlatformId::NintendoGb,
@@ -163,7 +183,7 @@ fn recognize_gb_family(bytes: &[u8]) -> Result<(PlatformId, Vec<u8>), Recognitio
     Ok((platform, bytes.to_vec()))
 }
 
-fn recognize_gba(bytes: &[u8]) -> Result<(PlatformId, Vec<u8>), RecognitionError> {
+pub(crate) fn recognize_gba(bytes: &[u8]) -> Result<(PlatformId, Vec<u8>), RecognitionError> {
     if bytes.len() < 0xc0
         || !bytes.len().is_multiple_of(4)
         || !valid_gba_entry_point(bytes)
@@ -196,7 +216,7 @@ fn recognize_gba(bytes: &[u8]) -> Result<(PlatformId, Vec<u8>), RecognitionError
     Ok((PlatformId::NintendoGba, bytes.to_vec()))
 }
 
-fn valid_gba_entry_point(bytes: &[u8]) -> bool {
+pub(crate) fn valid_gba_entry_point(bytes: &[u8]) -> bool {
     let opcode = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
     let is_arm_branch =
         (opcode >> 28) == 0xE && ((opcode >> 25) & 0b111) == 0b101 && ((opcode >> 24) & 1) == 0;
@@ -209,7 +229,7 @@ fn valid_gba_entry_point(bytes: &[u8]) -> bool {
     target_offset >= 0 && target_offset % 4 == 0 && (target_offset as usize) < bytes.len()
 }
 
-fn gb_rom_length(code: u8) -> Option<usize> {
+pub(crate) fn gb_rom_length(code: u8) -> Option<usize> {
     match code {
         0x00 => Some(0x8000),
         0x01 => Some(0x10000),
@@ -227,7 +247,7 @@ fn gb_rom_length(code: u8) -> Option<usize> {
     }
 }
 
-fn valid_cartridge_type(value: u8) -> bool {
+pub(crate) fn valid_cartridge_type(value: u8) -> bool {
     matches!(
         value,
         0x00 | 0x01

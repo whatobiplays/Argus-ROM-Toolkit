@@ -7,7 +7,6 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/presentation/library_onboarding_page.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/startup/startup.dart';
-import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,10 +43,7 @@ void main() {
     expect(find.byType(LibraryOnboardingPage), findsOneWidget);
 
     await completePhase002LibraryOnboarding(tester);
-    await _pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('compact-navigation-bar')),
-    );
+    await _pumpUntilFound(tester, phase002ApplicationShellFinder());
 
     final snapshot = (await channel.invokeMapMethod<Object?, Object?>(
       'readSnapshot',
@@ -62,13 +58,14 @@ void main() {
       reason: 'host-standard database must exist after real startup',
     );
 
-    final navigationBar = find.byKey(
-      const ValueKey<String>('compact-navigation-bar'),
-    );
-    expect(navigationBar, findsOneWidget);
+    final applicationShellNavigation = phase002ApplicationShellFinder();
+    expect(applicationShellNavigation, findsOneWidget);
     for (final label in <String>['Library', 'Sources', 'Jobs', 'Settings']) {
       expect(
-        find.descendant(of: navigationBar, matching: find.text(label)),
+        find.descendant(
+          of: applicationShellNavigation,
+          matching: find.text(label),
+        ),
         findsOneWidget,
         reason: label,
       );

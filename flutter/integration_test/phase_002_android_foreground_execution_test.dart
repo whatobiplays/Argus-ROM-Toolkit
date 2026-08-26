@@ -8,7 +8,6 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/sources/sources.dart';
 import 'package:argus/features/startup/application/app_readiness.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -63,7 +62,7 @@ void main() {
     await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
-      find.byKey(const ValueKey<String>('compact-navigation-bar')),
+      phase002ApplicationShellFinder(),
       message: 'Android application shell did not become ready',
     );
     final client = container.read(argusClientProvider);

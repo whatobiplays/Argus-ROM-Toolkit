@@ -7,21 +7,51 @@ use crate::jobs::{GameContentId, GameId, ScanRunId, SourceEntryId};
 /// Supported native platform identity established by validated cartridge bytes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PlatformId {
+    /// Nintendo Entertainment System and Famicom cartridge content.
+    NintendoNes,
+    /// Nintendo Famicom Disk System disk content.
+    NintendoFds,
+    /// Super Nintendo Entertainment System and Super Famicom cartridge content.
+    NintendoSnes,
     /// Nintendo Game Boy monochrome-compatible cartridge content.
     NintendoGb,
     /// Nintendo Game Boy Color cartridge content.
     NintendoGbc,
     /// Nintendo Game Boy Advance cartridge content.
     NintendoGba,
+    /// Nintendo 64 cartridge content.
+    NintendoN64,
+    /// Nintendo DS cartridge content.
+    NintendoNds,
+    /// Nintendo 3DS key-free NCSD/NCCH cartridge content.
+    Nintendo3ds,
+    /// Sega Master System cartridge content.
+    SegaSms,
+    /// Sega Game Gear cartridge content.
+    SegaGameGear,
+    /// Sega Genesis and Mega Drive cartridge content.
+    SegaGenesis,
+    /// Sega 32X cartridge content.
+    Sega32x,
 }
 
 impl PlatformId {
     /// Returns the stable persisted platform identifier.
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::NintendoNes => "nintendo.nes",
+            Self::NintendoFds => "nintendo.fds",
+            Self::NintendoSnes => "nintendo.snes",
             Self::NintendoGb => "nintendo.gb",
             Self::NintendoGbc => "nintendo.gbc",
             Self::NintendoGba => "nintendo.gba",
+            Self::NintendoN64 => "nintendo.n64",
+            Self::NintendoNds => "nintendo.nds",
+            Self::Nintendo3ds => "nintendo.3ds",
+            Self::SegaSms => "sega.sms",
+            Self::SegaGameGear => "sega.gamegear",
+            Self::SegaGenesis => "sega.genesis",
+            Self::Sega32x => "sega.32x",
         }
     }
 }
@@ -37,9 +67,19 @@ impl TryFrom<&str> for PlatformId {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
+            "nintendo.nes" => Ok(Self::NintendoNes),
+            "nintendo.fds" => Ok(Self::NintendoFds),
+            "nintendo.snes" => Ok(Self::NintendoSnes),
             "nintendo.gb" => Ok(Self::NintendoGb),
             "nintendo.gbc" => Ok(Self::NintendoGbc),
             "nintendo.gba" => Ok(Self::NintendoGba),
+            "nintendo.n64" => Ok(Self::NintendoN64),
+            "nintendo.nds" => Ok(Self::NintendoNds),
+            "nintendo.3ds" => Ok(Self::Nintendo3ds),
+            "sega.sms" => Ok(Self::SegaSms),
+            "sega.gamegear" => Ok(Self::SegaGameGear),
+            "sega.genesis" => Ok(Self::SegaGenesis),
+            "sega.32x" => Ok(Self::Sega32x),
             _ => Err(InvalidPlatformId),
         }
     }
@@ -62,6 +102,8 @@ impl std::error::Error for InvalidPlatformId {}
 pub enum ContentType {
     /// A complete cartridge image.
     CartridgeImage,
+    /// A validated Famicom Disk System disk image.
+    MagneticDiskImage,
 }
 
 impl ContentType {
@@ -69,6 +111,7 @@ impl ContentType {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::CartridgeImage => "CartridgeImage",
+            Self::MagneticDiskImage => "MagneticDiskImage",
         }
     }
 }
@@ -85,6 +128,7 @@ impl TryFrom<&str> for ContentType {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "CartridgeImage" => Ok(Self::CartridgeImage),
+            "MagneticDiskImage" => Ok(Self::MagneticDiskImage),
             _ => Err(InvalidContentType),
         }
     }

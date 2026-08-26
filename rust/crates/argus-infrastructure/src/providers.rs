@@ -280,8 +280,14 @@ where
         if !is_valid_identity(identity) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
+        let Some(provider_platform_id) = ProviderId::Playmatch
+            .platform_mapping(platform_id)
+            .mapped_id()
+        else {
+            return Err(ProviderAdapterError::UnsupportedCapability);
+        };
         let body = serde_json::json!({
-            "platform": platform_id.as_str(),
+            "platform": provider_platform_id,
             "identity": identity,
         })
         .to_string()
@@ -309,7 +315,7 @@ where
             if !is_valid_identity(response_identity) {
                 return Err(ProviderAdapterError::InvalidResponse);
             }
-            if response_platform != platform_id.as_str() {
+            if response_platform != provider_platform_id {
                 continue;
             }
             evidence.push(ExactMatchEvidence::Playmatch {
@@ -372,8 +378,14 @@ where
         if !is_valid_gametdb_identifier(native_identifier) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
+        let Some(provider_platform_id) = ProviderId::GameTdb
+            .platform_mapping(platform_id)
+            .mapped_id()
+        else {
+            return Err(ProviderAdapterError::UnsupportedCapability);
+        };
         let body = serde_json::json!({
-            "platform": platform_id.as_str(),
+            "platform": provider_platform_id,
             "identifier": native_identifier,
         })
         .to_string()
@@ -405,7 +417,7 @@ where
         if game
             .get("platform")
             .and_then(Value::as_str)
-            .is_some_and(|value| value != platform_id.as_str())
+            .is_some_and(|value| value != provider_platform_id)
         {
             return Ok(None);
         }

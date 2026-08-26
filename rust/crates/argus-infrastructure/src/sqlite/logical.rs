@@ -631,6 +631,15 @@ impl LogicalContentRepository for SqliteLogicalContentRepository<'_, '_> {
 
 fn validate_scheme(derivation: &ValidatedContentDerivation) -> Result<(), PersistenceError> {
     let expected = match (derivation.platform(), derivation.content_type()) {
+        (argus_domain::PlatformId::NintendoNes, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.nintendo-nes.cartridge.v1"
+        }
+        (argus_domain::PlatformId::NintendoFds, argus_domain::ContentType::MagneticDiskImage) => {
+            "argus.content.identity.nintendo-fds.disk.v1"
+        }
+        (argus_domain::PlatformId::NintendoSnes, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.nintendo-snes.cartridge.v1"
+        }
         (argus_domain::PlatformId::NintendoGb, argus_domain::ContentType::CartridgeImage) => {
             "argus.content.identity.nintendo-gb.cartridge.v1"
         }
@@ -640,6 +649,28 @@ fn validate_scheme(derivation: &ValidatedContentDerivation) -> Result<(), Persis
         (argus_domain::PlatformId::NintendoGba, argus_domain::ContentType::CartridgeImage) => {
             "argus.content.identity.nintendo-gba.cartridge.v1"
         }
+        (argus_domain::PlatformId::NintendoN64, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.nintendo-n64.cartridge.v1"
+        }
+        (argus_domain::PlatformId::NintendoNds, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.nintendo-nds.cartridge.v1"
+        }
+        (argus_domain::PlatformId::Nintendo3ds, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.nintendo-3ds.nocrypto-ncsd.v1"
+        }
+        (argus_domain::PlatformId::SegaSms, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.sega-sms.cartridge.v1"
+        }
+        (argus_domain::PlatformId::SegaGameGear, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.sega-gamegear.cartridge.v1"
+        }
+        (argus_domain::PlatformId::SegaGenesis, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.sega-genesis.cartridge.v1"
+        }
+        (argus_domain::PlatformId::Sega32x, argus_domain::ContentType::CartridgeImage) => {
+            "argus.content.identity.sega-32x.cartridge.v1"
+        }
+        _ => return Err(PersistenceError::ConstraintViolation),
     };
     (derivation.identity().scheme_id() == expected && derivation.identity().revision() == 1)
         .then_some(())

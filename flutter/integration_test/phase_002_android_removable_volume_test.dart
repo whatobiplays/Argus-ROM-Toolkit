@@ -4,7 +4,6 @@ import 'package:argus/app/bootstrap/app_bootstrap.dart';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,7 +42,7 @@ void main() {
     await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
-      find.byKey(const ValueKey<String>('compact-navigation-bar')),
+      phase002ApplicationShellFinder(),
       message: 'Android shell did not become ready',
     );
 

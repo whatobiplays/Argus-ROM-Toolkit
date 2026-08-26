@@ -280,7 +280,7 @@ Future<void> _goToSources(WidgetTester tester) async {
   if (addButton.evaluate().isNotEmpty) return;
   final compactSources = find
       .descendant(
-        of: find.byKey(const ValueKey<String>('compact-navigation-bar')),
+        of: phase002ApplicationShellFinder(),
         matching: find.text('Sources'),
       )
       .hitTestable();

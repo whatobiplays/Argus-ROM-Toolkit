@@ -3,10 +3,13 @@
 use argus_application::{
     ContentIdentity, ContentType, GameListCursor, GetGameResult, IdentificationService,
     IdentityConvergenceStore, IdentityDigest, LibraryRootAvailability, LibraryRootRepository,
-    ListGamesQuery, LogicalContentUnitOfWork, LogicalLibraryQueries, OperationContext,
-    OperationName, PlatformId, SourceEntryRepository, SourceVersionEvidence, SubsystemName,
-    TraceId, UnitOfWork, ValidatedContentDerivation,
+    LibrarySourceAccess, ListGamesQuery, LogicalContentUnitOfWork, LogicalLibraryQueries,
+    OperationContext, OperationName, PlatformId, RelativeSourceLocator, RootLocator,
+    SourceEntryRepository, SourceVersionEvidence, SubsystemName, TraceId, UnitOfWork,
+    ValidatedContentDerivation,
 };
+use argus_infrastructure::content::ContentReader;
+use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteValue};
 use tempfile::tempdir;
 
@@ -575,6 +578,93 @@ fn source_version_mismatch_returns_published_source_changed_error_without_conver
             Ok((
                 connection.scalar_i64("SELECT COUNT(*) FROM game_content")?,
                 connection.scalar_i64("SELECT COUNT(*) FROM game")?,
+            ))
+        })
+        .expect("counts");
+    assert_eq!(counts, (0, 0));
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn changed_local_source_evidence_reaches_source_changed_error_without_persistence() {
+    let directory = tempdir().expect("tempdir");
+    let source_path = directory.path().join("changed.bin");
+    std::fs::write(&source_path, b"scan snapshot").expect("write initial source");
+
+    let locator = RootLocator::from_provider(directory.path().to_string_lossy().into_owned());
+    let access = LocalFilesystemSourceAccess::new(&locator);
+    let root = access.resolve_root().expect("resolve source root");
+    let initial_reader = access
+        .open_entry_reader(
+            &root,
+            &RelativeSourceLocator::from_provider("changed.bin".to_owned()),
+        )
+        .expect("open initial source reader");
+    let initial_fingerprint = initial_reader.source_fingerprint().to_owned();
+    drop(initial_reader);
+
+    std::fs::write(&source_path, b"source changed after the scan snapshot").expect("mutate source");
+
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("logical.sqlite3")).expect("database");
+    let root_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let job = "cccccccccccccccccccccccccccccccc";
+    let scan = "dddddddddddddddddddddddddddddddd";
+    let source = "11111111111111111111111111111111";
+    seed_source(&executor, root_id, job, scan, source, &initial_fingerprint);
+
+    let mut current_reader = access
+        .open_entry_reader(
+            &root,
+            &RelativeSourceLocator::from_provider("changed.bin".to_owned()),
+        )
+        .expect("open changed source reader");
+    let mut observed = [0_u8; 8];
+    current_reader
+        .read_at(0, &mut observed)
+        .expect("read changed source");
+    let current_fingerprint = current_reader.source_fingerprint().to_owned();
+    assert_ne!(current_fingerprint, initial_fingerprint);
+
+    let source_entry_id = argus_application::SourceEntryId::try_from(source).expect("source");
+    let derivation = ValidatedContentDerivation::new(
+        source_entry_id,
+        SourceVersionEvidence::new(
+            source_entry_id,
+            Some(current_fingerprint),
+            argus_application::ScanRunId::try_from(scan).expect("scan"),
+        ),
+        PlatformId::NintendoGb,
+        ContentType::CartridgeImage,
+        ContentIdentity::new(
+            "argus.content.identity.nintendo-gb.cartridge.v1",
+            1,
+            IdentityDigest::from_bytes([7; 32]),
+        ),
+        "raw".to_owned(),
+        "changed.bin".to_owned(),
+    );
+
+    let error_code = executor
+        .with_unit_of_work(context(), move |mut work| {
+            let result = {
+                let mut logical = work.logical_content();
+                IdentificationService::converge(&mut logical, derivation, context())
+            };
+            work.rollback()?;
+            Ok(result.expect_err("changed source must fail").code)
+        })
+        .expect("callback completes");
+    assert_eq!(
+        error_code,
+        argus_application::ErrorCode::OperationSourceChangedDuringProcessing
+    );
+
+    let counts = executor
+        .with_connection_for_tests(context(), |connection| {
+            Ok((
+                connection.scalar_i64("SELECT COUNT(*) FROM game_content")?,
+                connection.scalar_i64("SELECT COUNT(*) FROM content_identity")?,
             ))
         })
         .expect("counts");

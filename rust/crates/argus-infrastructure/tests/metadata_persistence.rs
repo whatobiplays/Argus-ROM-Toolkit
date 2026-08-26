@@ -22,7 +22,7 @@ fn enrichment_migration_is_forward_safe_and_creates_two_owned_storage_families()
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("metadata.sqlite3")).expect("open");
 
-    assert_eq!(executor.migration_summary().current_version, 11);
+    assert_eq!(executor.migration_summary().current_version, 12);
     executor
         .with_connection_for_tests(context(), |connection| {
             for table in [

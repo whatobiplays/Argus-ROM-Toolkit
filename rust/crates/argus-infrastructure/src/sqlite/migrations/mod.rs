@@ -144,6 +144,11 @@ impl MigrationRegistry {
                 "0011_phase_003_refresh_invocation",
                 include_bytes!("sql/0011_phase_003_refresh_invocation.sql"),
             ),
+            Migration::sql(
+                12,
+                "0012_content_identity_catalog_expansion",
+                include_bytes!("sql/0012_content_identity_catalog_expansion.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

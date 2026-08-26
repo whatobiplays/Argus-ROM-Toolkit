@@ -1469,13 +1469,24 @@ ContentId contentIdFromDto(String value) {
 }
 
 PlatformId platformIdFromDto(dto.PlatformIdDto value) => switch (value) {
+  dto.PlatformIdDto.nintendoNes => PlatformId.nintendoNes,
+  dto.PlatformIdDto.nintendoFds => PlatformId.nintendoFds,
+  dto.PlatformIdDto.nintendoSnes => PlatformId.nintendoSnes,
   dto.PlatformIdDto.nintendoGb => PlatformId.nintendoGb,
   dto.PlatformIdDto.nintendoGbc => PlatformId.nintendoGbc,
   dto.PlatformIdDto.nintendoGba => PlatformId.nintendoGba,
+  dto.PlatformIdDto.nintendoN64 => PlatformId.nintendoN64,
+  dto.PlatformIdDto.nintendoNds => PlatformId.nintendoNds,
+  dto.PlatformIdDto.nintendo3Ds => PlatformId.nintendo3ds,
+  dto.PlatformIdDto.segaSms => PlatformId.segaSms,
+  dto.PlatformIdDto.segaGameGear => PlatformId.segaGameGear,
+  dto.PlatformIdDto.segaGenesis => PlatformId.segaGenesis,
+  dto.PlatformIdDto.sega32X => PlatformId.sega32x,
 };
 
 ContentType contentTypeFromDto(dto.ContentTypeDto value) => switch (value) {
   dto.ContentTypeDto.cartridgeImage => ContentType.cartridgeImage,
+  dto.ContentTypeDto.magneticDiskImage => ContentType.magneticDiskImage,
 };
 
 ContentPresence contentPresenceFromDto(dto.ContentPresenceDto value) =>

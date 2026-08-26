@@ -1282,14 +1282,34 @@ final class ContentId {
 
 /// Production platform identity used by logical-library projections.
 enum PlatformId {
+  nintendoNes,
+  nintendoFds,
+  nintendoSnes,
   nintendoGb,
   nintendoGbc,
-  nintendoGba;
+  nintendoGba,
+  nintendoN64,
+  nintendoNds,
+  nintendo3ds,
+  segaSms,
+  segaGameGear,
+  segaGenesis,
+  sega32x;
 
   static PlatformId fromWire(String value) => switch (value) {
+    'nintendo_nes' => PlatformId.nintendoNes,
+    'nintendo_fds' => PlatformId.nintendoFds,
+    'nintendo_snes' => PlatformId.nintendoSnes,
     'nintendo_gb' => PlatformId.nintendoGb,
     'nintendo_gbc' => PlatformId.nintendoGbc,
     'nintendo_gba' => PlatformId.nintendoGba,
+    'nintendo_n64' => PlatformId.nintendoN64,
+    'nintendo_nds' => PlatformId.nintendoNds,
+    'nintendo_3ds' => PlatformId.nintendo3ds,
+    'sega_sms' => PlatformId.segaSms,
+    'sega_gamegear' => PlatformId.segaGameGear,
+    'sega_genesis' => PlatformId.segaGenesis,
+    'sega_32x' => PlatformId.sega32x,
     _ => throw const TransportFailure(
       'Unknown logical-library platform',
       kind: TransportFailureKind.contractMismatch,
@@ -1298,7 +1318,7 @@ enum PlatformId {
 }
 
 /// Content representation exposed by the focused logical-library read.
-enum ContentType { cartridgeImage }
+enum ContentType { cartridgeImage, magneticDiskImage }
 
 /// Content availability/presence, independent from identification proof.
 enum ContentPresence { available, partiallyUnavailable, unavailable, orphaned }

@@ -2240,6 +2240,7 @@ impl SseDecode for crate::ContentTypeDto {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
             0 => crate::ContentTypeDto::CartridgeImage,
+            1 => crate::ContentTypeDto::MagneticDiskImage,
             _ => unreachable!("Invalid variant for ContentTypeDto: {}", inner),
         };
     }
@@ -3878,6 +3879,16 @@ impl SseDecode for crate::PlatformIdDto {
             0 => crate::PlatformIdDto::NintendoGb,
             1 => crate::PlatformIdDto::NintendoGbc,
             2 => crate::PlatformIdDto::NintendoGba,
+            3 => crate::PlatformIdDto::NintendoNes,
+            4 => crate::PlatformIdDto::NintendoFds,
+            5 => crate::PlatformIdDto::NintendoSnes,
+            6 => crate::PlatformIdDto::NintendoN64,
+            7 => crate::PlatformIdDto::NintendoNds,
+            8 => crate::PlatformIdDto::Nintendo3ds,
+            9 => crate::PlatformIdDto::SegaSms,
+            10 => crate::PlatformIdDto::SegaGameGear,
+            11 => crate::PlatformIdDto::SegaGenesis,
+            12 => crate::PlatformIdDto::Sega32x,
             _ => unreachable!("Invalid variant for PlatformIdDto: {}", inner),
         };
     }
@@ -5113,6 +5124,7 @@ impl flutter_rust_bridge::IntoDart for crate::ContentTypeDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
             Self::CartridgeImage => 0.into_dart(),
+            Self::MagneticDiskImage => 1.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -6619,6 +6631,16 @@ impl flutter_rust_bridge::IntoDart for crate::PlatformIdDto {
             Self::NintendoGb => 0.into_dart(),
             Self::NintendoGbc => 1.into_dart(),
             Self::NintendoGba => 2.into_dart(),
+            Self::NintendoNes => 3.into_dart(),
+            Self::NintendoFds => 4.into_dart(),
+            Self::NintendoSnes => 5.into_dart(),
+            Self::NintendoN64 => 6.into_dart(),
+            Self::NintendoNds => 7.into_dart(),
+            Self::Nintendo3ds => 8.into_dart(),
+            Self::SegaSms => 9.into_dart(),
+            Self::SegaGameGear => 10.into_dart(),
+            Self::SegaGenesis => 11.into_dart(),
+            Self::Sega32x => 12.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -7769,6 +7791,7 @@ impl SseEncode for crate::ContentTypeDto {
         <i32>::sse_encode(
             match self {
                 crate::ContentTypeDto::CartridgeImage => 0,
+                crate::ContentTypeDto::MagneticDiskImage => 1,
                 _ => {
                     unimplemented!("");
                 }
@@ -9107,6 +9130,16 @@ impl SseEncode for crate::PlatformIdDto {
                 crate::PlatformIdDto::NintendoGb => 0,
                 crate::PlatformIdDto::NintendoGbc => 1,
                 crate::PlatformIdDto::NintendoGba => 2,
+                crate::PlatformIdDto::NintendoNes => 3,
+                crate::PlatformIdDto::NintendoFds => 4,
+                crate::PlatformIdDto::NintendoSnes => 5,
+                crate::PlatformIdDto::NintendoN64 => 6,
+                crate::PlatformIdDto::NintendoNds => 7,
+                crate::PlatformIdDto::Nintendo3ds => 8,
+                crate::PlatformIdDto::SegaSms => 9,
+                crate::PlatformIdDto::SegaGameGear => 10,
+                crate::PlatformIdDto::SegaGenesis => 11,
+                crate::PlatformIdDto::Sega32x => 12,
                 _ => {
                     unimplemented!("");
                 }

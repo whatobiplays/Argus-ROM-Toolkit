@@ -4,7 +4,6 @@ import 'package:argus/app/bootstrap/app_bootstrap.dart';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -40,10 +39,7 @@ void main() {
   ) async {
     await tester.pumpWidget(const ArgusBootstrap());
     await completePhase002LibraryOnboarding(tester);
-    await _pumpUntil(
-      tester,
-      find.byKey(const ValueKey<String>('compact-navigation-bar')),
-    );
+    await _pumpUntil(tester, phase002ApplicationShellFinder());
     final container = ProviderScope.containerOf(
       tester.element(find.byType(ArgusApp)),
       listen: false,

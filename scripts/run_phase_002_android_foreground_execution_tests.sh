@@ -923,6 +923,9 @@ prepare_notification_cancel_automation() {
     --lib "${compile_only_jar}" \
     --output "${dex_dir}" \
     "${classes_dir}/com/argusromtoolkit/androidharness/ArgusNotificationCancelTest.class" \
+    "${classes_dir}/com/argusromtoolkit/androidharness/NotificationCancelActionPlan.class" \
+    "${classes_dir}/com/argusromtoolkit/androidharness/NotificationCancelActionPlan\$Action.class" \
+    "${classes_dir}/com/argusromtoolkit/androidharness/NotificationCancelActionPlan\$DisclosureState.class" \
     "${classes_dir}/android/test/RepetitiveTest.class"
   jar cf "${ui_automation_build_dir}/notification-cancel.jar" \
     -C "${dex_dir}" classes.dex

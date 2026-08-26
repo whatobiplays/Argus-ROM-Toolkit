@@ -661,7 +661,7 @@ class ContentSummaryDto {
 }
 
 /// Stable content-type vocabulary in logical-library projections.
-enum ContentTypeDto { cartridgeImage }
+enum ContentTypeDto { cartridgeImage, magneticDiskImage }
 
 /// Safe terminal export summary; archive bytes never cross the bridge.
 class DiagnosticsExportDto {
@@ -2187,7 +2187,26 @@ class OperationHandleDto {
 }
 
 /// Stable platform vocabulary in logical-library projections.
-enum PlatformIdDto { nintendoGb, nintendoGbc, nintendoGba }
+enum PlatformIdDto {
+  /// Legacy Game Boy ordinal retained for the existing FRB wire contract.
+  nintendoGb,
+
+  /// Legacy Game Boy Color ordinal retained for the existing FRB wire contract.
+  nintendoGbc,
+
+  /// Legacy Game Boy Advance ordinal retained for the existing FRB wire contract.
+  nintendoGba,
+  nintendoNes,
+  nintendoFds,
+  nintendoSnes,
+  nintendoN64,
+  nintendoNds,
+  nintendo3Ds,
+  segaSms,
+  segaGameGear,
+  segaGenesis,
+  sega32X,
+}
 
 /// Safe Settings-owned privacy-consent projection.
 class PrivacyConsentDto {

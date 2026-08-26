@@ -2160,27 +2160,29 @@ impl KernelBootstrap {
         let mut issue_count = 0_u64;
 
         for entry in entries {
-            let bytes = match access.read_entry_bytes(
-                &resolved_root,
-                entry.relative_locator(),
-                argus_infrastructure::content::DEFAULT_CONTENT_PROCESSING_BUDGET_BYTES,
-            ) {
-                Ok(bytes) => bytes,
-                Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
-                    continue;
-                }
-            };
-            let recognized = match argus_infrastructure::content::recognize_raw_cartridge(&bytes) {
+            let mut reader =
+                match access.open_entry_reader(&resolved_root, entry.relative_locator()) {
+                    Ok(reader) => reader,
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                };
+            let recognized = match argus_infrastructure::content::recognize_content(&mut reader) {
                 Ok(recognized) => recognized,
                 Err(_) => {
                     issue_count = issue_count.saturating_add(1);
                     continue;
                 }
             };
+            if !reader.source_version_is_unchanged().unwrap_or(false) {
+                issue_count = issue_count.saturating_add(1);
+                continue;
+            }
             let Some(identity) = catalog.select_identity(
                 recognized.platform(),
                 recognized.content_type(),
+                recognized.source_representation(),
                 recognized.identity_digest(),
             ) else {
                 issue_count = issue_count.saturating_add(1);
@@ -2190,7 +2192,7 @@ impl KernelBootstrap {
                 entry.source_entry_id(),
                 SourceVersionEvidence::new(
                     entry.source_entry_id(),
-                    entry.source_fingerprint().map(str::to_owned),
+                    Some(reader.source_fingerprint().to_owned()),
                     entry.last_observed_scan_id(),
                 ),
                 recognized.platform(),

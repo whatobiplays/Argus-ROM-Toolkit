@@ -24,15 +24,22 @@ pub struct TransformationDescriptor {
     id: &'static str,
     platform: PlatformId,
     content_type: ContentType,
+    representation: &'static str,
 }
 
 impl TransformationDescriptor {
     /// Creates one stable production descriptor.
-    pub const fn new(id: &'static str, platform: PlatformId, content_type: ContentType) -> Self {
+    pub const fn new(
+        id: &'static str,
+        platform: PlatformId,
+        content_type: ContentType,
+        representation: &'static str,
+    ) -> Self {
         Self {
             id,
             platform,
             content_type,
+            representation,
         }
     }
 
@@ -50,6 +57,11 @@ impl TransformationDescriptor {
     pub const fn content_type(&self) -> ContentType {
         self.content_type
     }
+
+    /// Returns the source representation consumed by this transformation.
+    pub const fn representation(&self) -> &'static str {
+        self.representation
+    }
 }
 
 /// Registry of transformation mechanisms, intentionally separate from the
@@ -60,7 +72,7 @@ pub struct TransformationRegistry {
 }
 
 impl TransformationRegistry {
-    /// Returns the initially active raw-cartridge transformation tranche.
+    /// Returns the active transformation mechanisms in stable order.
     pub fn production() -> Self {
         Self {
             descriptors: vec![
@@ -68,16 +80,115 @@ impl TransformationRegistry {
                     "argus.transformation.nintendo-gb.raw-cartridge.v1",
                     PlatformId::NintendoGb,
                     ContentType::CartridgeImage,
+                    "raw-cartridge-image",
                 ),
                 TransformationDescriptor::new(
                     "argus.transformation.nintendo-gbc.raw-cartridge.v1",
                     PlatformId::NintendoGbc,
                     ContentType::CartridgeImage,
+                    "raw-cartridge-image",
                 ),
                 TransformationDescriptor::new(
                     "argus.transformation.nintendo-gba.raw-cartridge.v1",
                     PlatformId::NintendoGba,
                     ContentType::CartridgeImage,
+                    "raw-cartridge-image",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-nes.nes-2.v1",
+                    PlatformId::NintendoNes,
+                    ContentType::CartridgeImage,
+                    "nes-2",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-nes.nes-ines.v1",
+                    PlatformId::NintendoNes,
+                    ContentType::CartridgeImage,
+                    "nes-ines",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-fds.fds-fw.v1",
+                    PlatformId::NintendoFds,
+                    ContentType::MagneticDiskImage,
+                    "fds-fw",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-fds.fds-headerless.v1",
+                    PlatformId::NintendoFds,
+                    ContentType::MagneticDiskImage,
+                    "fds-headerless",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-snes.snes-linear.v1",
+                    PlatformId::NintendoSnes,
+                    ContentType::CartridgeImage,
+                    "snes-linear",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-snes.snes-copier-headered.v1",
+                    PlatformId::NintendoSnes,
+                    ContentType::CartridgeImage,
+                    "snes-copier-headered",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-n64.n64-native.v1",
+                    PlatformId::NintendoN64,
+                    ContentType::CartridgeImage,
+                    "n64-native",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-n64.n64-byteswapped16.v1",
+                    PlatformId::NintendoN64,
+                    ContentType::CartridgeImage,
+                    "n64-byteswapped16",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-n64.n64-byteswapped32.v1",
+                    PlatformId::NintendoN64,
+                    ContentType::CartridgeImage,
+                    "n64-byteswapped32",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-nds.raw-cartridge.v1",
+                    PlatformId::NintendoNds,
+                    ContentType::CartridgeImage,
+                    "raw-cartridge-image",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-3ds.ncsd-nocrypto.v1",
+                    PlatformId::Nintendo3ds,
+                    ContentType::CartridgeImage,
+                    "ncsd-nocrypto",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-sms.raw-cartridge.v1",
+                    PlatformId::SegaSms,
+                    ContentType::CartridgeImage,
+                    "raw-cartridge-image",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-gamegear.raw-cartridge.v1",
+                    PlatformId::SegaGameGear,
+                    ContentType::CartridgeImage,
+                    "raw-cartridge-image",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-genesis.genesis-linear-be.v1",
+                    PlatformId::SegaGenesis,
+                    ContentType::CartridgeImage,
+                    "genesis-linear-be",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-genesis.genesis-smd.v1",
+                    PlatformId::SegaGenesis,
+                    ContentType::CartridgeImage,
+                    "genesis-smd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-32x.genesis-linear-be.v1",
+                    PlatformId::Sega32x,
+                    ContentType::CartridgeImage,
+                    "genesis-linear-be",
                 ),
             ],
         }
@@ -107,18 +218,23 @@ pub struct IdentitySchemeDescriptor {
     content_type: ContentType,
     revision: u32,
     algorithm: &'static str,
-    representation: &'static str,
+    representations: &'static [&'static str],
 }
 
 impl IdentitySchemeDescriptor {
-    const fn new(id: &'static str, platform: PlatformId, content_type: ContentType) -> Self {
+    const fn new(
+        id: &'static str,
+        platform: PlatformId,
+        content_type: ContentType,
+        representations: &'static [&'static str],
+    ) -> Self {
         Self {
             id,
             platform,
             content_type,
             revision: 1,
             algorithm: "sha256",
-            representation: "raw-cartridge-image",
+            representations,
         }
     }
 
@@ -147,9 +263,19 @@ impl IdentitySchemeDescriptor {
         self.algorithm
     }
 
-    /// Returns the accepted source representation.
+    /// Returns all accepted source representations in stable order.
+    pub const fn representations(&self) -> &'static [&'static str] {
+        self.representations
+    }
+
+    /// Returns the first accepted source representation for legacy callers.
     pub const fn representation(&self) -> &'static str {
-        self.representation
+        self.representations[0]
+    }
+
+    /// Returns whether the catalog authorizes one source representation.
+    pub fn accepts_representation(&self, representation: &str) -> bool {
+        self.representations.contains(&representation)
     }
 
     /// Applies this catalog policy to a validated typed transformation result.
@@ -158,31 +284,94 @@ impl IdentitySchemeDescriptor {
     }
 }
 
-/// Production identity catalog activated for this slice.
+/// Production identity catalog for supported content identities.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IdentitySchemeCatalog {
     descriptors: Vec<IdentitySchemeDescriptor>,
 }
 
 impl IdentitySchemeCatalog {
-    /// Returns exactly the three approved production schemes.
+    /// Returns exactly the thirteen approved production schemes.
     pub fn production() -> Self {
         Self {
             descriptors: vec![
                 IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-nes.cartridge.v1",
+                    PlatformId::NintendoNes,
+                    ContentType::CartridgeImage,
+                    &["nes-2", "nes-ines"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-fds.disk.v1",
+                    PlatformId::NintendoFds,
+                    ContentType::MagneticDiskImage,
+                    &["fds-fw", "fds-headerless"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-snes.cartridge.v1",
+                    PlatformId::NintendoSnes,
+                    ContentType::CartridgeImage,
+                    &["snes-linear", "snes-copier-headered"],
+                ),
+                IdentitySchemeDescriptor::new(
                     "argus.content.identity.nintendo-gb.cartridge.v1",
                     PlatformId::NintendoGb,
                     ContentType::CartridgeImage,
+                    &["raw-cartridge-image"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.nintendo-gbc.cartridge.v1",
                     PlatformId::NintendoGbc,
                     ContentType::CartridgeImage,
+                    &["raw-cartridge-image"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.nintendo-gba.cartridge.v1",
                     PlatformId::NintendoGba,
                     ContentType::CartridgeImage,
+                    &["raw-cartridge-image"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-n64.cartridge.v1",
+                    PlatformId::NintendoN64,
+                    ContentType::CartridgeImage,
+                    &["n64-native", "n64-byteswapped16", "n64-byteswapped32"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-nds.cartridge.v1",
+                    PlatformId::NintendoNds,
+                    ContentType::CartridgeImage,
+                    &["raw-cartridge-image"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.nintendo-3ds.nocrypto-ncsd.v1",
+                    PlatformId::Nintendo3ds,
+                    ContentType::CartridgeImage,
+                    &["ncsd-nocrypto"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sega-sms.cartridge.v1",
+                    PlatformId::SegaSms,
+                    ContentType::CartridgeImage,
+                    &["raw-cartridge-image"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sega-gamegear.cartridge.v1",
+                    PlatformId::SegaGameGear,
+                    ContentType::CartridgeImage,
+                    &["raw-cartridge-image"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sega-genesis.cartridge.v1",
+                    PlatformId::SegaGenesis,
+                    ContentType::CartridgeImage,
+                    &["genesis-linear-be", "genesis-smd"],
+                ),
+                IdentitySchemeDescriptor::new(
+                    "argus.content.identity.sega-32x.cartridge.v1",
+                    PlatformId::Sega32x,
+                    ContentType::CartridgeImage,
+                    &["genesis-linear-be"],
                 ),
             ],
         }
@@ -210,9 +399,11 @@ impl IdentitySchemeCatalog {
         &self,
         platform: PlatformId,
         content_type: ContentType,
+        representation: &str,
         digest: IdentityDigest,
     ) -> Option<crate::ContentIdentity> {
         self.select(platform, content_type)
+            .filter(|descriptor| descriptor.accepts_representation(representation))
             .map(|descriptor| descriptor.identity(digest))
     }
 

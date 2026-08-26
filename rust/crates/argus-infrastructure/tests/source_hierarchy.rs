@@ -386,8 +386,8 @@ fn migration_latest_applies_fresh_and_upgrades_version_four() {
     old.shutdown().expect("old shutdown");
 
     let fresh = SqliteDatabaseExecutor::open(&path).expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 11);
-    assert_eq!(fresh.migration_summary().applied_count, 7);
+    assert_eq!(fresh.migration_summary().current_version, 12);
+    assert_eq!(fresh.migration_summary().applied_count, 8);
     let index = fresh
         .with_connection_for_tests(context(), |connection| {
             connection.scalar_i64(

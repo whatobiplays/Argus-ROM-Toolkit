@@ -488,16 +488,31 @@ pub struct ListGamesRequestDto {
 
 /// Stable platform vocabulary in logical-library projections.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i32)]
 pub enum PlatformIdDto {
+    /// Legacy Game Boy ordinal retained for the existing FRB wire contract.
     NintendoGb,
+    /// Legacy Game Boy Color ordinal retained for the existing FRB wire contract.
     NintendoGbc,
+    /// Legacy Game Boy Advance ordinal retained for the existing FRB wire contract.
     NintendoGba,
+    NintendoNes,
+    NintendoFds,
+    NintendoSnes,
+    NintendoN64,
+    NintendoNds,
+    Nintendo3ds,
+    SegaSms,
+    SegaGameGear,
+    SegaGenesis,
+    Sega32x,
 }
 
 /// Stable content-type vocabulary in logical-library projections.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContentTypeDto {
     CartridgeImage,
+    MagneticDiskImage,
 }
 
 /// Independent content presence state.
@@ -3187,15 +3202,58 @@ fn game_membership_summary_dto(summary: &GameMembershipSummary) -> GameMembershi
 
 fn platform_id_dto(platform: PlatformId) -> PlatformIdDto {
     match platform {
+        PlatformId::NintendoNes => PlatformIdDto::NintendoNes,
+        PlatformId::NintendoFds => PlatformIdDto::NintendoFds,
+        PlatformId::NintendoSnes => PlatformIdDto::NintendoSnes,
         PlatformId::NintendoGb => PlatformIdDto::NintendoGb,
         PlatformId::NintendoGbc => PlatformIdDto::NintendoGbc,
         PlatformId::NintendoGba => PlatformIdDto::NintendoGba,
+        PlatformId::NintendoN64 => PlatformIdDto::NintendoN64,
+        PlatformId::NintendoNds => PlatformIdDto::NintendoNds,
+        PlatformId::Nintendo3ds => PlatformIdDto::Nintendo3ds,
+        PlatformId::SegaSms => PlatformIdDto::SegaSms,
+        PlatformId::SegaGameGear => PlatformIdDto::SegaGameGear,
+        PlatformId::SegaGenesis => PlatformIdDto::SegaGenesis,
+        PlatformId::Sega32x => PlatformIdDto::Sega32x,
+    }
+}
+
+#[cfg(test)]
+mod platform_id_wire_tests {
+    use super::PlatformIdDto;
+
+    #[test]
+    fn platform_id_wire_ordinals_preserve_legacy_values_and_cover_new_values() {
+        let values = [
+            PlatformIdDto::NintendoGb,
+            PlatformIdDto::NintendoGbc,
+            PlatformIdDto::NintendoGba,
+            PlatformIdDto::NintendoNes,
+            PlatformIdDto::NintendoFds,
+            PlatformIdDto::NintendoSnes,
+            PlatformIdDto::NintendoN64,
+            PlatformIdDto::NintendoNds,
+            PlatformIdDto::Nintendo3ds,
+            PlatformIdDto::SegaSms,
+            PlatformIdDto::SegaGameGear,
+            PlatformIdDto::SegaGenesis,
+            PlatformIdDto::Sega32x,
+        ];
+
+        for (ordinal, value) in values.into_iter().enumerate() {
+            assert_eq!(value as i32, ordinal as i32);
+
+            let generated = include_str!("frb_generated.rs");
+            assert!(generated.contains(&format!("{} => crate::PlatformIdDto::{value:?}", ordinal)));
+            assert!(generated.contains(&format!("crate::PlatformIdDto::{value:?} => {ordinal}",)));
+        }
     }
 }
 
 fn content_type_dto(content_type: ContentType) -> ContentTypeDto {
     match content_type {
         ContentType::CartridgeImage => ContentTypeDto::CartridgeImage,
+        ContentType::MagneticDiskImage => ContentTypeDto::MagneticDiskImage,
     }
 }
 

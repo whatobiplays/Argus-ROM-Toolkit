@@ -7,13 +7,14 @@
 //! values produced here.
 
 use std::collections::BTreeMap;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 #[cfg(target_os = "android")]
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::UNIX_EPOCH;
 
+use crate::content::{ContentReadError, ContentReader};
 use argus_application::{
     DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, LibrarySourceAccess,
     LocalFilesystemBrowseBreadcrumb, LocalFilesystemBrowseCursor, LocalFilesystemBrowseDirectory,
@@ -58,6 +59,69 @@ pub struct LocalFilesystemSourceAccess {
     locator: String,
     resolved_root: Mutex<Option<std::path::PathBuf>>,
     mounted_volumes: Option<Arc<RwLock<MountedVolumeRegistry>>>,
+}
+
+/// Seek-backed bounded reader used by the general content recognizer.
+///
+/// The reader retains only the open file handle and the source metadata
+/// observed when processing began. Each request is range-bounded, and the
+/// caller can validate the source metadata again before persistence begins.
+pub struct LocalContentReader {
+    file: std::fs::File,
+    path: PathBuf,
+    length: u64,
+    initial_fingerprint: String,
+}
+
+impl LocalContentReader {
+    fn open(path: PathBuf, metadata: &std::fs::Metadata) -> Result<Self, SourceAccessError> {
+        let file = std::fs::File::open(&path).map_err(classify_entry_access_error)?;
+        Ok(Self {
+            file,
+            path,
+            length: metadata.len(),
+            initial_fingerprint: source_fingerprint(metadata, ObservedEntryKind::File),
+        })
+    }
+
+    /// Returns whether the source still has the version observed at open.
+    pub fn source_version_is_unchanged(&self) -> Result<bool, SourceAccessError> {
+        let metadata = std::fs::metadata(&self.path).map_err(classify_entry_access_error)?;
+        if !metadata.is_file() {
+            return Ok(false);
+        }
+        Ok(source_fingerprint(&metadata, ObservedEntryKind::File) == self.initial_fingerprint)
+    }
+
+    /// Returns the source-version fingerprint observed when the reader opened.
+    pub fn source_fingerprint(&self) -> &str {
+        &self.initial_fingerprint
+    }
+}
+
+impl ContentReader for LocalContentReader {
+    fn len(&self) -> Result<u64, ContentReadError> {
+        Ok(self.length)
+    }
+
+    fn read_at(&mut self, offset: u64, destination: &mut [u8]) -> Result<usize, ContentReadError> {
+        const MAX_READ_BYTES: usize = 64 * 1024;
+        if destination.len() > MAX_READ_BYTES {
+            return Err(ContentReadError::RequestTooLarge);
+        }
+        let end = offset
+            .checked_add(destination.len() as u64)
+            .ok_or(ContentReadError::OutOfRange)?;
+        if end > self.length {
+            return Err(ContentReadError::OutOfRange);
+        }
+        self.file
+            .seek(SeekFrom::Start(offset))
+            .map_err(|_| ContentReadError::Io)?;
+        self.file
+            .read(destination)
+            .map_err(|_| ContentReadError::Io)
+    }
 }
 
 impl LocalFilesystemSourceAccess {
@@ -157,6 +221,21 @@ impl LibrarySourceAccess for LocalFilesystemSourceAccess {
 }
 
 impl LocalFilesystemSourceAccess {
+    /// Opens one validated file entry for bounded range recognition.
+    pub fn open_entry_reader(
+        &self,
+        root: &ResolvedRoot,
+        relative: &RelativeSourceLocator,
+    ) -> Result<LocalContentReader, SourceAccessError> {
+        let root_path = self.current_root(root)?;
+        let entry_path = resolve_entry_path(&root_path, relative)?;
+        let metadata = std::fs::metadata(&entry_path).map_err(classify_entry_access_error)?;
+        if !metadata.is_file() {
+            return Err(SourceAccessError::UnsupportedOperation);
+        }
+        LocalContentReader::open(entry_path, &metadata)
+    }
+
     fn current_root(&self, root: &ResolvedRoot) -> Result<std::path::PathBuf, SourceAccessError> {
         let resolved = self
             .resolved_root

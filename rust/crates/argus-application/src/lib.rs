@@ -104,9 +104,9 @@ pub use metadata::{
     MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderRegistry,
     MetadataProviderService, MetadataProviderSettings, MetadataRepository,
     MetadataResolutionPolicy, MetadataSettings, ProviderCapability, ProviderCapabilityReadiness,
-    ProviderDescriptor, ProviderId, ProviderMetadata, ProviderReadinessState, ResolvedMetadata,
-    SecureCredentialStore, accept_exact_mapping, accept_exact_mappings, resolve_metadata,
-    resolve_provider_metadata,
+    ProviderDescriptor, ProviderId, ProviderMetadata, ProviderPlatformMapping,
+    ProviderReadinessState, ResolvedMetadata, SecureCredentialStore, accept_exact_mapping,
+    accept_exact_mappings, resolve_metadata, resolve_provider_metadata,
 };
 pub use observability::{
     ArchitectureClass, DiagnosticStage, EventName, FailureRole, LogEvent, LogLevel,

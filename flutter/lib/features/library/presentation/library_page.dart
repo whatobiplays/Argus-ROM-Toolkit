@@ -309,9 +309,19 @@ String _scopeLabel(LibraryScope scope) => switch (scope) {
 };
 
 String _platformLabel(PlatformId platform) => switch (platform) {
+  PlatformId.nintendoNes => 'Nintendo Entertainment System',
+  PlatformId.nintendoFds => 'Nintendo Famicom Disk System',
+  PlatformId.nintendoSnes => 'Super Nintendo Entertainment System',
   PlatformId.nintendoGb => 'Nintendo Game Boy',
   PlatformId.nintendoGbc => 'Nintendo Game Boy Color',
   PlatformId.nintendoGba => 'Nintendo Game Boy Advance',
+  PlatformId.nintendoN64 => 'Nintendo 64',
+  PlatformId.nintendoNds => 'Nintendo DS',
+  PlatformId.nintendo3ds => 'Nintendo 3DS',
+  PlatformId.segaSms => 'Sega Master System',
+  PlatformId.segaGameGear => 'Sega Game Gear',
+  PlatformId.segaGenesis => 'Sega Genesis',
+  PlatformId.sega32x => 'Sega 32X',
 };
 
 String _hydrationLabel(HydrationState state) => switch (state) {

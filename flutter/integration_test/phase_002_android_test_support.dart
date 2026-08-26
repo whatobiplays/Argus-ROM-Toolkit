@@ -4,11 +4,24 @@ import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/app/routing/app_routes.dart';
+import 'package:argus/app/shell/application_shell.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/presentation/library_onboarding_page.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// Finds the concrete adaptive navigation rendered by the gated application
+/// shell. The shell is only exposed below startup and appearance readiness
+/// gates, while its navigation is a [NavigationBar] or [NavigationRail]
+/// depending on the current supported window size class.
+Finder phase002ApplicationShellFinder() => find.descendant(
+  of: find.byType(ApplicationShell),
+  matching: find.byWidgetPredicate(
+    (widget) => widget is NavigationBar || widget is NavigationRail,
+    description: 'adaptive application shell navigation',
+  ),
+);
 
 /// Returns the single application client composed by [ArgusBootstrap].
 ArgusClient phase002RootClient(WidgetTester tester) {
@@ -241,7 +254,7 @@ Future<void> _waitForPhase002Presentation(
   Duration timeout = const Duration(seconds: 90),
 }) async {
   final deadline = DateTime.now().add(timeout);
-  final shell = find.byKey(const ValueKey<String>('compact-navigation-bar'));
+  final shell = phase002ApplicationShellFinder();
   final onboarding = find.byType(LibraryOnboardingPage);
   while (DateTime.now().isBefore(deadline)) {
     if (shell.evaluate().isNotEmpty || onboarding.evaluate().isNotEmpty) {

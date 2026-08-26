@@ -106,6 +106,48 @@ void main() {
   });
 
   test(
+    'logical-library mapper covers the complete cartridge platform matrix',
+    () {
+      const cases = <(dto.PlatformIdDto, PlatformId)>[
+        (dto.PlatformIdDto.nintendoNes, PlatformId.nintendoNes),
+        (dto.PlatformIdDto.nintendoFds, PlatformId.nintendoFds),
+        (dto.PlatformIdDto.nintendoSnes, PlatformId.nintendoSnes),
+        (dto.PlatformIdDto.nintendoGb, PlatformId.nintendoGb),
+        (dto.PlatformIdDto.nintendoGbc, PlatformId.nintendoGbc),
+        (dto.PlatformIdDto.nintendoGba, PlatformId.nintendoGba),
+        (dto.PlatformIdDto.nintendoN64, PlatformId.nintendoN64),
+        (dto.PlatformIdDto.nintendoNds, PlatformId.nintendoNds),
+        (dto.PlatformIdDto.nintendo3Ds, PlatformId.nintendo3ds),
+        (dto.PlatformIdDto.segaSms, PlatformId.segaSms),
+        (dto.PlatformIdDto.segaGameGear, PlatformId.segaGameGear),
+        (dto.PlatformIdDto.segaGenesis, PlatformId.segaGenesis),
+        (dto.PlatformIdDto.sega32X, PlatformId.sega32x),
+      ];
+
+      for (final (wire, expected) in cases) {
+        final row = gameLibraryRowFromDto(
+          dto.GameLibraryRowDto(
+            gameId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            displayTitle: 'Fixture',
+            platformId: wire,
+            hydrationState: dto.HydrationStateDto.unmatched,
+            contentCount: 1,
+            sourceCount: 1,
+            availabilityState: dto.GameAvailabilityStateDto.available,
+            updatedAtMs: 1,
+          ),
+        );
+        expect(row.platformId, expected);
+      }
+
+      expect(
+        contentTypeFromDto(dto.ContentTypeDto.magneticDiskImage),
+        ContentType.magneticDiskImage,
+      );
+    },
+  );
+
+  test(
     'logical-game DTO preserves independent content states and summaries',
     () {
       final detail = gameDetailFromDto(

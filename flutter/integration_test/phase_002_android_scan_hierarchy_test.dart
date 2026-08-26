@@ -40,7 +40,7 @@ void main() {
     await completePhase002LibraryOnboarding(tester);
     await _pumpUntil(
       tester,
-      find.byKey(const ValueKey<String>('compact-navigation-bar')),
+      phase002ApplicationShellFinder(),
       message: 'Android application shell did not become ready',
     );
 
@@ -376,7 +376,7 @@ Future<void> _goToSources(WidgetTester tester) async {
   await tester.tap(
     find
         .descendant(
-          of: find.byKey(const ValueKey<String>('compact-navigation-bar')),
+          of: phase002ApplicationShellFinder(),
           matching: find.text('Sources'),
         )
         .hitTestable(),

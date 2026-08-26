@@ -71,7 +71,7 @@ fn bootstrap_reports_sanitized_path_class_and_ordered_startup_diagnostics() {
         "00000000000000000000000000000000"
     );
     assert_eq!(kernel.path_class(), PathClass::ExplicitOverride);
-    assert_eq!(kernel.migration_summary().current_version, 11);
+    assert_eq!(kernel.migration_summary().current_version, 12);
 
     let names: Vec<_> = kernel
         .startup_events()

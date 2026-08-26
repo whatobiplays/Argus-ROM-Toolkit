@@ -12,8 +12,9 @@ use argus_application::{
     HydrationMappingCandidate, HydrationProviderError, HydrationTarget, JobRunId, JobRunState,
     LibraryRefreshTrigger, LibraryRootId, LibraryRootLastScanStatus, LibraryScope, LibrarySort,
     ListGamesQuery, ListJobsQuery, ListJobsScope, LocalFilesystemRootSelection, OperationDetail,
-    ProviderId, ProviderMetadata, RefreshMode, StartLibraryScanResult,
+    PlatformId, ProviderId, ProviderMetadata, RefreshMode, StartLibraryScanResult,
 };
+use argus_infrastructure::content::{ContentReadError, ContentReader};
 use argus_runtime::{
     ApplicationHost, KernelBootstrapOptions, RuntimeEventPayload, RuntimeLifecycle,
 };
@@ -56,9 +57,64 @@ fn gb_fixture(marker: u8) -> Vec<u8> {
     bytes
 }
 
+fn nes_fixture() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 16 + 0x4000 + 0x2000];
+    bytes[0..4].copy_from_slice(b"NES\x1a");
+    bytes[4] = 1;
+    bytes[5] = 1;
+    bytes[6] = 0x03;
+    for (index, byte) in bytes[16..].iter_mut().enumerate() {
+        *byte = (index as u8).wrapping_mul(17).wrapping_add(3);
+    }
+    bytes
+}
+
+fn genesis_fixture() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 0x8000];
+    bytes[0x100..0x110].copy_from_slice(b"SEGA GENESIS    ");
+    bytes[0x180..0x182].copy_from_slice(b"GM");
+    bytes[0x1a0..0x1a4].copy_from_slice(&0_u32.to_be_bytes());
+    bytes[0x1a4..0x1a8].copy_from_slice(&0x7fff_u32.to_be_bytes());
+    for (index, byte) in bytes[0x200..].iter_mut().enumerate() {
+        *byte = (index as u8).wrapping_mul(29).wrapping_add(11);
+    }
+    bytes
+}
+
+struct FixtureContentReader {
+    bytes: Vec<u8>,
+}
+
+impl ContentReader for FixtureContentReader {
+    fn len(&self) -> Result<u64, ContentReadError> {
+        Ok(self.bytes.len() as u64)
+    }
+
+    fn read_at(&mut self, offset: u64, destination: &mut [u8]) -> Result<usize, ContentReadError> {
+        let offset = usize::try_from(offset).map_err(|_| ContentReadError::OutOfRange)?;
+        if offset >= self.bytes.len() {
+            return Ok(0);
+        }
+        let count = destination.len().min(self.bytes.len() - offset);
+        destination[..count].copy_from_slice(&self.bytes[offset..offset + count]);
+        Ok(count)
+    }
+}
+
 fn hex_digest(bytes: &[u8]) -> String {
     argus_infrastructure::content::recognize_raw_cartridge(bytes)
         .expect("fixture recognition")
+        .identity_digest()
+        .as_bytes()
+        .into_iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn stream_hex_digest(bytes: Vec<u8>) -> String {
+    let mut reader = FixtureContentReader { bytes };
+    argus_infrastructure::content::recognize_content(&mut reader)
+        .expect("stream fixture recognition")
         .identity_digest()
         .as_bytes()
         .into_iter()
@@ -425,6 +481,103 @@ fn manual_library_refresh_composes_committed_scan_identification_grouping_and_hy
         trace.download_calls >= 1,
         "resolved artwork is downloaded and committed"
     );
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn manual_refresh_recognizes_new_nintendo_and_sega_content_with_provider_isolation() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let nes = nes_fixture();
+    let genesis = genesis_fixture();
+    let mut provider_failure = genesis.clone();
+    provider_failure[0x200] ^= 0x01;
+    let trace = Arc::new(Mutex::new(ProviderTrace {
+        failed_identity: Some(stream_hex_digest(provider_failure.clone())),
+        ..ProviderTrace::default()
+    }));
+    let provider_trace = Arc::clone(&trace);
+    let options = KernelBootstrapOptions::with_data_directory(directory.path().join("data"))
+        .with_provider_session_factory_for_tests(move || {
+            provider_trace
+                .lock()
+                .expect("provider trace")
+                .session_factory_calls += 1;
+            vec![Box::new(FixtureProviderSession {
+                trace: Arc::clone(&provider_trace),
+            }) as Box<dyn EnrichmentProviderSession>]
+        });
+    let host = ApplicationHost::new(options);
+    context_ready(&host);
+
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("nes-primary.nes"), &nes).expect("write NES content");
+    fs::write(library.join("nes-copy.bin"), &nes).expect("write duplicate NES content");
+    fs::write(library.join("genesis.bin"), &genesis).expect("write Genesis content");
+    fs::write(
+        library.join("genesis-provider-failure.bin"),
+        &provider_failure,
+    )
+    .expect("write Genesis failure content");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("manual refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+
+    let page = host
+        .list_games(
+            ListGamesQuery::builder()
+                .scope(LibraryScope::All)
+                .filters_empty(true)
+                .sort(LibrarySort::DisplayTitleAscending)
+                .page_size(50)
+                .build()
+                .expect("library query"),
+        )
+        .expect("logical library page");
+    assert_eq!(
+        page.items().len(),
+        3,
+        "duplicate NES sources must group once"
+    );
+
+    let details = page
+        .items()
+        .iter()
+        .map(
+            |row| match host.get_game(row.game_id()).expect("game detail") {
+                GetGameResult::Found(detail) => detail,
+                other => panic!("unexpected game result: {other:?}"),
+            },
+        )
+        .collect::<Vec<_>>();
+    let nes_detail = details
+        .iter()
+        .find(|detail| detail.platform_id() == PlatformId::NintendoNes)
+        .expect("NES game");
+    assert_eq!(nes_detail.content()[0].source_count(), 2);
+    assert!(
+        nes_detail.resolved_metadata().is_some(),
+        "successful Nintendo enrichment should remain committed"
+    );
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.platform_id() == PlatformId::SegaGenesis)
+    );
+    let failed = details
+        .iter()
+        .find(|detail| detail.fallback_title() == "genesis-provider-failure.bin")
+        .expect("provider failure must preserve Genesis identity");
+    assert_eq!(failed.content().len(), 1);
+
+    let trace = trace.lock().expect("provider trace");
+    assert!(trace.matching_calls >= 3);
+    assert!(trace.metadata_calls >= 2);
     host.general_shutdown().expect("shutdown");
 }
 

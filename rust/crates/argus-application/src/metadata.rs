@@ -39,6 +39,67 @@ impl TryFrom<&str> for ProviderId {
     }
 }
 
+/// Provider-specific platform mapping outcome.
+///
+/// A provider may have an explicit native identifier for a platform or may
+/// explicitly exclude that platform from a capability. The closed outcome
+/// prevents a new `PlatformId` from being silently sent to every provider.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderPlatformMapping {
+    /// Stable provider platform identifier used by the adapter request.
+    Mapped(&'static str),
+    /// The provider does not apply to this platform/capability.
+    Unsupported,
+}
+
+impl ProviderPlatformMapping {
+    /// Returns the native mapping when the provider applies.
+    pub const fn mapped_id(self) -> Option<&'static str> {
+        match self {
+            Self::Mapped(value) => Some(value),
+            Self::Unsupported => None,
+        }
+    }
+}
+
+impl ProviderId {
+    /// Returns the explicit platform mapping for this provider.
+    pub const fn platform_mapping(self, platform: PlatformId) -> ProviderPlatformMapping {
+        match self {
+            Self::Playmatch | Self::GameTdb => match platform {
+                PlatformId::NintendoNes => ProviderPlatformMapping::Mapped("nintendo.nes"),
+                PlatformId::NintendoFds => ProviderPlatformMapping::Mapped("nintendo.fds"),
+                PlatformId::NintendoSnes => ProviderPlatformMapping::Mapped("nintendo.snes"),
+                PlatformId::NintendoGb => ProviderPlatformMapping::Mapped("nintendo.gb"),
+                PlatformId::NintendoGbc => ProviderPlatformMapping::Mapped("nintendo.gbc"),
+                PlatformId::NintendoGba => ProviderPlatformMapping::Mapped("nintendo.gba"),
+                PlatformId::NintendoN64 => ProviderPlatformMapping::Mapped("nintendo.n64"),
+                PlatformId::NintendoNds => ProviderPlatformMapping::Mapped("nintendo.nds"),
+                PlatformId::Nintendo3ds => ProviderPlatformMapping::Mapped("nintendo.3ds"),
+                PlatformId::SegaSms => ProviderPlatformMapping::Mapped("sega.sms"),
+                PlatformId::SegaGameGear => ProviderPlatformMapping::Mapped("sega.gamegear"),
+                PlatformId::SegaGenesis => ProviderPlatformMapping::Mapped("sega.genesis"),
+                PlatformId::Sega32x => ProviderPlatformMapping::Mapped("sega.32x"),
+            },
+            Self::SteamGridDb => match platform {
+                PlatformId::NintendoNes
+                | PlatformId::NintendoFds
+                | PlatformId::NintendoSnes
+                | PlatformId::NintendoGb
+                | PlatformId::NintendoGbc
+                | PlatformId::NintendoGba
+                | PlatformId::NintendoN64
+                | PlatformId::NintendoNds
+                | PlatformId::Nintendo3ds
+                | PlatformId::SegaSms
+                | PlatformId::SegaGameGear
+                | PlatformId::SegaGenesis
+                | PlatformId::Sega32x => ProviderPlatformMapping::Unsupported,
+            },
+        }
+    }
+}
+
 /// Capability exposed by a production provider descriptor.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProviderCapability {

@@ -173,37 +173,39 @@ fn migration_0004_upgrades_0003_rows_and_keeps_native_identity_non_unique() {
             .expect("0003 database");
         let seeded_values = seed_source_root_and_job(&seeded);
         let (root, _, scan) = seeded_values;
+        // This fixture deliberately writes the pre-reconciliation schema. The
+        // current source-entry repository targets the migrated coordinate
+        // family, so raw SQL keeps the migration test's old-schema boundary
+        // explicit without adding a production compatibility branch.
         seeded
-            .execute(&context(), move |mut scope| {
-                scope.source_entries().upsert(entry_with_parts(
-                    root,
-                    "a.bin",
-                    None,
-                    scan,
-                    SourceEntryKind::File,
-                    SourceEntryClassification::Unknown,
-                    Some("same"),
-                ))?;
-                scope.source_entries().upsert(entry_with_parts(
-                    root,
-                    "b.bin",
-                    None,
-                    scan,
-                    SourceEntryKind::File,
-                    SourceEntryClassification::Unknown,
-                    Some("same"),
-                ))?;
-                scope.source_entries().upsert(entry_with_parts(
-                    root,
-                    "plain.bin",
-                    None,
-                    scan,
-                    SourceEntryKind::File,
-                    SourceEntryClassification::Unknown,
-                    None,
-                ))?;
-                scope.commit()?;
-                Ok::<_, argus_application::ApplicationPortError>(())
+            .with_connection_for_tests(context(), move |connection| {
+                for (id, name, native_identity) in [
+                    ("11111111111111111111111111111111", "a.bin", Some("same")),
+                    ("22222222222222222222222222222222", "b.bin", Some("same")),
+                    ("33333333333333333333333333333333", "plain.bin", None),
+                ] {
+                    connection.execute_with_values(
+                        "INSERT INTO source_entry
+                            (source_entry_id, library_root_id, parent_source_entry_id,
+                             relative_locator, locator_key, display_name, display_location,
+                             kind, classification, provider_native_identity, source_fingerprint,
+                             last_observed_scan_id, created_at, updated_at)
+                         VALUES (?1, ?2, NULL, ?3, ?3, ?4, ?4, 'file', 'unknown',
+                                 ?5, ?6, ?7, 1, 1)",
+                        &[
+                            SqliteValue::Text(id.to_owned()),
+                            SqliteValue::Text(root.to_string()),
+                            SqliteValue::Text(name.to_owned()),
+                            SqliteValue::Text(name.to_owned()),
+                            native_identity.map_or(SqliteValue::Null, |value| {
+                                SqliteValue::Text(value.to_owned())
+                            }),
+                            SqliteValue::Text(format!("fp:{name}")),
+                            SqliteValue::Text(scan.to_string()),
+                        ],
+                    )?;
+                }
+                Ok(())
             })
             .expect("seed 0003 rows");
         seeded.shutdown().expect("seeded shutdown");
@@ -942,7 +944,10 @@ fn upsert_with_exact_locator_conflict_refreshes_relative_locator_and_current_fac
         .expect("row exists");
     assert_eq!(current.source_entry_id(), first_id);
     assert_eq!(
-        current.relative_locator().as_provider_value(),
+        current
+            .relative_locator()
+            .expect("reconciled provider row has a locator")
+            .as_provider_value(),
         "new-location",
         "upsert must refresh relative_locator"
     );

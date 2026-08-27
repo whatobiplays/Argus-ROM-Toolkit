@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use argus_application::{ContentType, IdentityDigest, PlatformId};
+use argus_application::{ContentType, IdentityDigest, PlatformId, SourceReadHandle};
 use sha2::{Digest, Sha256};
 
 use super::{content_nintendo, content_sega};
@@ -33,6 +33,68 @@ pub trait ContentReader {
     /// the runtime wrapper to enforce a smaller operation-specific bound.
     fn max_read_size(&self) -> usize {
         STREAM_CHUNK_BYTES
+    }
+
+    /// Returns provider version evidence when the reader owns a mutable
+    /// source handle. In-memory decoded readers remain stable by default.
+    fn source_fingerprint(&self) -> Option<&str> {
+        None
+    }
+
+    /// Revalidates the source version captured by this reader.
+    fn source_version_is_unchanged(&self) -> Result<bool, ContentReadError> {
+        Ok(true)
+    }
+}
+
+/// Adapts an application-owned source handle to the parser-facing reader.
+///
+/// The adapter translates provider errors into the intentionally smaller
+/// content-reading vocabulary and keeps provider locators and filesystem
+/// details outside the representation recognizers.
+pub struct SourceReadContentReader<'a> {
+    source: &'a mut dyn SourceReadHandle,
+}
+
+impl<'a> SourceReadContentReader<'a> {
+    /// Borrows one operation-scoped source handle for parser use.
+    pub fn new(source: &'a mut dyn SourceReadHandle) -> Self {
+        Self { source }
+    }
+}
+
+impl ContentReader for SourceReadContentReader<'_> {
+    fn len(&self) -> Result<u64, ContentReadError> {
+        self.source.len().map_err(|_| ContentReadError::Io)
+    }
+
+    fn read_at(&mut self, offset: u64, destination: &mut [u8]) -> Result<usize, ContentReadError> {
+        if destination.len() > self.source.max_read_size() {
+            return Err(ContentReadError::RequestTooLarge);
+        }
+        let end = offset
+            .checked_add(destination.len() as u64)
+            .ok_or(ContentReadError::OutOfRange)?;
+        if end > self.len()? {
+            return Err(ContentReadError::OutOfRange);
+        }
+        self.source
+            .read_at(offset, destination)
+            .map_err(|_| ContentReadError::Io)
+    }
+
+    fn max_read_size(&self) -> usize {
+        self.source.max_read_size()
+    }
+
+    fn source_fingerprint(&self) -> Option<&str> {
+        self.source.source_fingerprint()
+    }
+
+    fn source_version_is_unchanged(&self) -> Result<bool, ContentReadError> {
+        self.source
+            .source_version_is_unchanged()
+            .map_err(|_| ContentReadError::Io)
     }
 }
 
@@ -345,37 +407,7 @@ fn is_blocked_container(
 ) -> Result<bool, ContentRecognitionError> {
     if source_length >= 4 {
         let magic = read_small(reader, 0, 4)?;
-        if matches!(
-            magic.as_slice(),
-            b"PK\x03\x04" | b"PK\x05\x06" | b"PK\x07\x08" | b"7z\xbc\xaf" | b"Rar!"
-        ) {
-            return Ok(true);
-        }
-        if magic.as_slice() == b"CISO"
-            || magic.as_slice() == b"WBFS"
-            || magic.as_slice() == b"RVZ\x01"
-        {
-            return Ok(true);
-        }
-        if source_length >= 8 && read_small(reader, 0, 8)?.as_slice() == b"MComprHD" {
-            return Ok(true);
-        }
-    }
-    if source_length >= 2 {
-        let magic = read_small(reader, 0, 2)?;
-        if magic.as_slice() == b"\x1f\x8b" || magic.as_slice() == b"BZ" {
-            return Ok(true);
-        }
-    }
-    if source_length >= 6 {
-        let magic = read_small(reader, 0, 6)?;
-        if magic.as_slice() == b"\xfd7zXZ\0" {
-            return Ok(true);
-        }
-    }
-    if source_length >= 262 {
-        let marker = read_small(reader, 257, 5)?;
-        if marker.as_slice() == b"ustar" {
+        if matches!(magic.as_slice(), b"PK\x07\x08" | b"Rar!") {
             return Ok(true);
         }
     }

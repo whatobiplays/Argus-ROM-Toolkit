@@ -106,7 +106,7 @@ fn transformation_registry_is_distinct_from_identity_scheme_catalog() {
     let registry = TransformationRegistry::production();
     let catalog = IdentitySchemeCatalog::production();
 
-    assert_eq!(registry.len(), 33);
+    assert_eq!(registry.len(), 50);
     assert_eq!(catalog.len(), 22);
     assert!(
         registry
@@ -117,6 +117,32 @@ fn transformation_registry_is_distinct_from_identity_scheme_catalog() {
     assert_ne!(
         registry.descriptors()[0].id(),
         catalog.descriptors()[0].id()
+    );
+}
+
+#[test]
+fn production_transformation_matrix_is_explicit_and_excludes_rar() {
+    let registry = TransformationRegistry::production();
+    let supported = [
+        "zip", "sevenzip", "tar", "gzip", "bzip2", "xz", "chd-cd", "chd-gd", "chd-dvd", "chd-umd",
+        "rvz", "cso", "wbfs",
+    ];
+
+    for representation in supported {
+        assert!(
+            registry.supports(representation),
+            "missing production representation: {representation}"
+        );
+    }
+    assert!(!registry.supports("rar"));
+    assert!(!registry.supports("multipart"));
+
+    let catalog = IdentitySchemeCatalog::production();
+    assert!(
+        catalog
+            .descriptors()
+            .iter()
+            .all(|descriptor| { descriptor.revision() == 1 && descriptor.algorithm() == "sha256" })
     );
 }
 
@@ -175,61 +201,61 @@ fn identity_policy_maps_typed_transformation_output_after_recognition() {
 }
 
 #[test]
-fn production_catalog_activates_native_optical_rows_without_deferred_forms() {
+fn production_catalog_activates_native_and_approved_alternate_optical_rows() {
     let catalog = IdentitySchemeCatalog::production();
     let expected = [
         (
             PlatformId::SegaCd,
             ContentType::OpticalDiscCd,
-            &["cue-bin", "iso-2048-cd"][..],
+            &["cue-bin", "iso-2048-cd", "chd-cd"][..],
             "argus.content.identity.sega-cd.disc.v1",
         ),
         (
             PlatformId::SegaSaturn,
             ContentType::OpticalDiscCd,
-            &["cue-bin", "iso-2048-cd"][..],
+            &["cue-bin", "iso-2048-cd", "chd-cd"][..],
             "argus.content.identity.sega-saturn.disc.v1",
         ),
         (
             PlatformId::SegaDreamcast,
             ContentType::OpticalDiscGd,
-            &["gdi", "cue-bin"][..],
+            &["gdi", "cue-bin", "chd-gd"][..],
             "argus.content.identity.sega-dreamcast.gdrom.v1",
         ),
         (
             PlatformId::SonyPlaystation,
             ContentType::OpticalDiscCd,
-            &["cue-bin", "iso-2048-cd"][..],
+            &["cue-bin", "iso-2048-cd", "chd-cd"][..],
             "argus.content.identity.sony-playstation.disc.v1",
         ),
         (
             PlatformId::SonyPlaystation2,
             ContentType::OpticalDiscCd,
-            &["cue-bin", "iso-2048-cd"][..],
+            &["cue-bin", "iso-2048-cd", "chd-cd"][..],
             "argus.content.identity.sony-playstation2.cd.v1",
         ),
         (
             PlatformId::SonyPlaystation2,
             ContentType::OpticalDiscDvd,
-            &["iso-2048"][..],
+            &["iso-2048", "chd-dvd"][..],
             "argus.content.identity.sony-playstation2.dvd.v1",
         ),
         (
             PlatformId::SonyPsp,
             ContentType::OpticalDiscUmd,
-            &["iso-2048"][..],
+            &["iso-2048", "cso", "chd-umd"][..],
             "argus.content.identity.sony-psp.umd.v1",
         ),
         (
             PlatformId::NintendoGameCube,
             ContentType::OpticalDiscGameCube,
-            &["raw-disc-image"][..],
+            &["raw-disc-image", "rvz"][..],
             "argus.content.identity.nintendo-gamecube.disc.v1",
         ),
         (
             PlatformId::NintendoWii,
             ContentType::OpticalDiscWii,
-            &["raw-disc-image"][..],
+            &["raw-disc-image", "rvz", "wbfs"][..],
             "argus.content.identity.nintendo-wii.disc.v1",
         ),
     ];
@@ -244,12 +270,9 @@ fn production_catalog_activates_native_optical_rows_without_deferred_forms() {
                 .all(|representation| descriptor.accepts_representation(representation))
         );
         assert!(
-            !representations
+            representations
                 .iter()
-                .any(|representation| representation.starts_with("chd")
-                    || representation == &"rvz"
-                    || representation == &"cso"
-                    || representation == &"wbfs")
+                .all(|representation| { descriptor.accepts_representation(representation) })
         );
     }
 }

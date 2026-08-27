@@ -174,7 +174,6 @@ cso
 wbfs
 zip
 sevenzip
-rar
 tar
 gzip
 bzip2
@@ -806,16 +805,17 @@ Phase 003 supports these generic wrappers as derived-container transformations, 
 ```text
 zip
 sevenzip
-rar
 tar
 gzip
 bzip2
 xz
 ```
 
-Single-stream compressors expose one decompressed child. Tar-family archives expose validated member entries. ZIP/7z/RAR expose bounded member scopes.
+Single-stream compressors expose one decompressed child. Tar-family archives expose validated member entries. ZIP/7z expose bounded member scopes. RAR is deferred until post-MVP and is not advertised as a supported Phase 003 wrapper.
 
 Archive container bytes, timestamps, compression levels, filenames, comments, directory-entry order, and compressor implementation do not enter the inner game's `ContentIdentity` except when a downstream native format itself defines some derived byte as content.
+
+RAR remains explicitly outside the Phase 003 production wrapper set and maps to unsupported representation until a later contract activates it.
 
 ### 14.2 Single-game rule
 
@@ -1027,7 +1027,7 @@ SPEC-BE-014 is satisfied when:
 7. Key-free 3DS support is restricted to structurally valid NCSD content whose identity-bearing NCCH partitions explicitly prove `NoCrypto`; encrypted/CIA inputs remain excluded.
 8. CD/GD/DVD/UMD canonical envelopes define deterministic track/sector ordering and dependency handling.
 9. Independently usable discs remain separate `GameContent` entities.
-10. Generic archives are single-game only and reject multi-game contents atomically.
+10. Supported Phase 003 generic archives are single-game only and reject multi-game contents atomically; RAR is deferred until post-MVP.
 11. CHD/RVZ/CSO/WBFS participate only through owning platform canonical representations.
 12. M3U is relationship evidence only.
 13. Nested transformations remain cumulatively bounded and cancellable under BE-012.
@@ -1039,7 +1039,7 @@ SPEC-BE-014 is satisfied when:
 ## 25. Prohibited Patterns
 
 - deriving platform from extension/folder name;
-- hashing the ZIP/7z/RAR/CHD/RVZ/CSO/WBFS container bytes as logical game identity;
+- hashing the ZIP/7z/CHD/RVZ/CSO/WBFS container bytes as logical game identity;
 - using provider/RetroAchievements IDs as `ContentIdentity`;
 - treating iNES/NES 2.0 transport headers as opaque identity bytes without semantic normalization;
 - choosing N64 byte order from filename extension;

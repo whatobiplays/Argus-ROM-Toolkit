@@ -5,10 +5,12 @@ use std::path::Path;
 use std::time::Duration;
 
 use argus_application::{
-    CancelJobResult, ErrorCode, JobRunId, JobRunState, LibraryRootId, LibraryRootLastScanStatus,
-    LibraryScanAllRequestIdentity, ListJobsQuery, ListJobsScope, LocalFilesystemRootSelection,
-    OperationDetail, RemoveLibraryRootResult, RetryJobResult, StartLibraryScanAllResult,
+    CancelJobResult, JobRunId, JobRunState, LibraryRootId, LibraryRootLastScanStatus,
+    LibraryScanAllRequestIdentity, LocalFilesystemRootSelection, OperationDetail,
+    RemoveLibraryRootResult, RetryJobResult, StartLibraryScanAllResult,
 };
+#[cfg(feature = "test-support")]
+use argus_application::{ErrorCode, ListJobsQuery, ListJobsScope};
 use argus_runtime::{ApplicationHost, KernelBootstrapOptions, RuntimeLifecycle};
 
 fn context_ready(host: &ApplicationHost) {

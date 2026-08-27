@@ -132,7 +132,10 @@ impl SourceEntryRepository for FakeSourceEntryRepository<'_> {
         let mut store = self.store.lock().expect("store lock");
         if let Some(existing) = store.entry_by_locator(
             entry.library_root_id(),
-            entry.locator_key().as_provider_value(),
+            entry
+                .locator_key()
+                .expect("provider fixture has a locator key")
+                .as_provider_value(),
         ) {
             let existing_id = existing.id;
             let order = existing.created_order;
@@ -288,8 +291,16 @@ fn stored_entry_from(
         id,
         root: entry.library_root_id(),
         parent: entry.parent_source_entry_id(),
-        relative_locator: entry.relative_locator().as_provider_value().to_owned(),
-        locator_key: entry.locator_key().as_provider_value().to_owned(),
+        relative_locator: entry
+            .relative_locator()
+            .expect("provider fixture has a relative locator")
+            .as_provider_value()
+            .to_owned(),
+        locator_key: entry
+            .locator_key()
+            .expect("provider fixture has a locator key")
+            .as_provider_value()
+            .to_owned(),
         display_name: entry.display_name().to_owned(),
         display_location: entry.display_location().to_owned(),
         kind: entry.kind(),

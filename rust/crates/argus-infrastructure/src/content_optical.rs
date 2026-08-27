@@ -21,7 +21,7 @@ const GD_PREFIX: &[u8] = b"ARGUS-GD-LOGICAL-V1";
 const PS2_DVD_PREFIX: &[u8] = b"ARGUS-PS2-DVD-V1";
 const PSP_PREFIX: &[u8] = b"ARGUS-PSP-UMD-V1";
 const GAMECUBE_PREFIX: &[u8] = b"ARGUS-GAMECUBE-DISC-V1";
-const WII_PREFIX: &[u8] = b"ARGUS-WII-DISC-V1";
+pub(crate) const WII_PREFIX: &[u8] = b"ARGUS-WII-DISC-V1";
 const MAX_ISO_DESCRIPTOR_COUNT: u64 = 64;
 const MAX_ISO_DIRECTORY_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ISO_FILE_BYTES: u64 = 16 * 1024 * 1024;
@@ -341,6 +341,16 @@ impl OpticalRecognition {
     /// Returns the canonical byte count fed to the digest.
     pub const fn canonical_length(self) -> u64 {
         self.canonical_length
+    }
+
+    pub(crate) const fn with_source_representation(
+        self,
+        source_representation: &'static str,
+    ) -> Self {
+        Self {
+            source_representation,
+            ..self
+        }
     }
 }
 
@@ -1032,7 +1042,7 @@ fn validate_raw_header(sector: &[u8], mode: u8) -> Result<(), OpticalError> {
     Ok(())
 }
 
-fn finish_recognition(
+pub(crate) fn finish_recognition(
     platform: PlatformId,
     content_type: ContentType,
     source_representation: &'static str,

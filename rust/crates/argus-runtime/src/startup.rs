@@ -363,6 +363,7 @@ impl StartupCoordinator {
                 configuration_error(self.trace_id)
             }
         })?;
+        let _ = crate::cleanup_transformation_staging(&data_directory);
         self.resources.path_class = Some(if self.options.data_directory_override.is_some() {
             PathClass::ExplicitOverride
         } else {
@@ -578,6 +579,11 @@ impl StartupCoordinator {
             .resources
             .path_class
             .expect("readiness validated path class");
+        let data_directory = self
+            .resources
+            .data_directory
+            .as_ref()
+            .expect("readiness validated data directory");
         let kernel = KernelBootstrap::from_parts(
             self.trace_id,
             path_class,
@@ -590,6 +596,7 @@ impl StartupCoordinator {
             event_bus,
             self.collector,
             self.options.enrichment_session_factory(),
+            data_directory.join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
         );
         StartupResult {
             trace_id: self.trace_id,

@@ -4,14 +4,45 @@ use argus_application::{ContentType, IdentityDigest, PlatformId};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+#[path = "content_archive.rs"]
+mod content_archive;
+#[path = "content_chd.rs"]
+mod content_chd;
+#[path = "content_cso.rs"]
+mod content_cso;
 #[path = "content_nintendo.rs"]
 mod content_nintendo;
 #[path = "content_optical.rs"]
 mod content_optical;
+#[path = "content_rvz.rs"]
+mod content_rvz;
 #[path = "content_sega.rs"]
 mod content_sega;
+#[path = "content_session.rs"]
+mod content_session;
+#[path = "content_source.rs"]
+mod content_source;
 #[path = "content_stream.rs"]
 mod content_stream;
+#[path = "content_wbfs.rs"]
+mod content_wbfs;
+
+pub use content_session::{
+    FilesystemStagingSpaceProbe, ParsingSession, STAGING_DIRECTORY_PREFIX, STAGING_MARKER_FILE,
+    STAGING_MARKER_VALUE, StagedRepresentation, StagingSpaceProbe,
+    TRANSFORMATION_STAGING_DIRECTORY, cleanup_abandoned_staging,
+};
+
+pub use content_source::ContentSourceResolver;
+
+pub use content_archive::{
+    DerivedContainerDecoder, DerivedMemberIndex, DerivedScopeResult, enumerate_derived_container,
+};
+
+pub use content_chd::recognize_chd;
+pub use content_cso::recognize_cso;
+pub use content_rvz::recognize_rvz;
+pub use content_wbfs::recognize_wbfs;
 
 pub use content_optical::{
     CueDescriptor, CueTrack, CueTrackMode, GdiDescriptor, GdiTrack, M3uDescriptor, M3uError,
@@ -21,9 +52,55 @@ pub use content_optical::{
 };
 pub use content_stream::{
     ContentProcessingLimits, ContentReadError, ContentReader, ContentRecognitionError,
-    StreamRecognizedContent, recognize_content, recognize_content_with_budget,
-    recognize_content_with_limits,
+    SourceReadContentReader, StreamRecognizedContent, recognize_content,
+    recognize_content_with_budget, recognize_content_with_limits,
 };
+
+/// Recognizes one alternate optical container without exposing format magic to
+/// the runtime composition layer.
+///
+/// A missing match returns `Ok(None)` so callers can continue with native
+/// optical recognition. Once an alternate format marker is present, the
+/// format-specific recognizer owns the result and its validation errors are
+/// returned unchanged through the infrastructure boundary.
+pub fn recognize_alternate_optical(
+    reader: &mut dyn ContentReader,
+    session: &mut ParsingSession<'_>,
+) -> Result<Option<OpticalRecognition>, OpticalError> {
+    let source_length = reader.len().map_err(|_| OpticalError::ReadFailure)?;
+    let probe_length = source_length.min(8) as usize;
+    if probe_length == 0 {
+        return Ok(None);
+    }
+    let mut probe = vec![0_u8; probe_length];
+    content_stream::read_exact(reader, 0, &mut probe).map_err(map_content_recognition_error)?;
+
+    if probe.starts_with(b"MComprHD") {
+        return recognize_chd(reader, session).map(Some);
+    }
+    if probe.starts_with(b"CISO") {
+        return recognize_cso(reader, session).map(Some);
+    }
+    if probe.starts_with(b"WBFS") {
+        return recognize_wbfs(reader, session).map(Some);
+    }
+    if probe.starts_with(b"RVZ\x01") || probe.starts_with(b"WIA\x01") {
+        return recognize_rvz(reader, session).map(Some);
+    }
+    Ok(None)
+}
+
+fn map_content_recognition_error(error: ContentRecognitionError) -> OpticalError {
+    match error {
+        ContentRecognitionError::Truncated => OpticalError::Truncated,
+        ContentRecognitionError::UnsupportedRepresentation
+        | ContentRecognitionError::Malformed
+        | ContentRecognitionError::AmbiguousContentRecognition
+        | ContentRecognitionError::EncryptedContentUnsupported => OpticalError::Malformed,
+        ContentRecognitionError::ResourceLimitExceeded => OpticalError::ResourceLimitExceeded,
+        ContentRecognitionError::ReadFailure => OpticalError::ReadFailure,
+    }
+}
 
 pub(crate) const GB_LOGO: [u8; 48] = [
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,

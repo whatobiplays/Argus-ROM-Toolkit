@@ -20,6 +20,7 @@ mod optical;
 mod phase_003;
 mod settings;
 mod sources;
+mod transformation;
 mod unit_of_work;
 
 pub use argus_domain::{
@@ -83,9 +84,9 @@ pub use jobs::{
     RefreshMode, RefreshProgressFacts, RetryJobAdmissionResult, RetryJobCommand, RetryJobHandler,
     RetryJobResult, RetryNotAdmittedReason, ScanAdmissionReference, ScanProgressFacts,
     ScanRunProjection, ScanRunRepository, ScanRunStatus, ScanRunStatusParseError,
-    SourceEntryRecord, SourceEntryRepository, StaleLibraryScanJob, StaleLibraryScanQueries,
-    StaleLibraryScanRun, StartLibraryScanAllResult, StartLibraryScanResult,
-    aggregate_library_scan_state, evaluate_retry_eligibility,
+    SourceEntryCoordinates, SourceEntryRecord, SourceEntryRepository, StaleLibraryScanJob,
+    StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
+    StartLibraryScanResult, aggregate_library_scan_state, evaluate_retry_eligibility,
     evaluate_retry_eligibility_with_trace,
 };
 pub use library::{
@@ -97,8 +98,8 @@ pub use library::{
 pub use logical::{
     ContentIdentity, ConvergenceOutcome, IdentificationService, IdentityConvergenceStore,
     LogicalContentRepository, LogicalContentUnitOfWork, M3uGroupingError, M3uGroupingMember,
-    ProvenanceBasisError, ProvenanceMember, SourceVersionEvidence, ValidatedContentDerivation,
-    ValidatedM3uGrouping,
+    ProvenanceBasisError, ProvenanceMember, SourceVersionEvidence, SourceVersionKind,
+    ValidatedContentDerivation, ValidatedM3uGrouping,
 };
 pub use metadata::{
     CredentialMutationError, CredentialValidationError, CredentialValidator, ExactMatchEvidence,
@@ -117,12 +118,16 @@ pub use observability::{
     SafeContextError, SafeContextField, SafeContextValue, SettingsDomain, StartupCollector,
     SubsystemName, TechnicalClass, TraceEvent, TraceEventPhase, TraceId, TraceIdError, Version,
 };
-pub use optical::{MAX_OPTICAL_DEPENDENCIES, OpticalDependencyError, resolve_optical_dependencies};
+pub use optical::{
+    ContentDependencyCandidate, MAX_OPTICAL_DEPENDENCIES, OpticalDependencyError,
+    resolve_content_dependencies, resolve_optical_dependencies,
+};
 pub use phase_003::{
     AddLibraryRootAndRefreshResult, CURRENT_PRIVACY_TERMS_VERSION,
     CompleteLibraryOnboardingAndRefreshResult, LibraryOnboardingProgress, LibraryOnboardingState,
     LibraryProviderSetupDecision, LibraryProviderSetupOutcome, LibraryRefreshCoordinator,
     MetadataProviderSettingsUpdateResult, MetadataSettingsUpdateResult, PrivacyConsent,
+    map_transformation_failure,
 };
 pub use settings::{
     AppearanceSettingsQueries, AppearanceSettingsRepository, GetAppearanceSettingsHandler,
@@ -151,8 +156,16 @@ pub use sources::{
     SourceAccessError, SourceEntryChildrenPage, SourceEntryClassification, SourceEntryCursor,
     SourceEntryCursorError, SourceEntryDetailProjection, SourceEntryKind, SourceEntryProjection,
     SourceEntryQueries, SourceLocatorKey, SourceObservation, SourceProviderType,
-    SourceProviderTypeError, StartLibraryScanAllCommand, StartLibraryScanAllHandler,
-    StartLibraryScanCommand, StartLibraryScanHandler, SyncLocalFilesystemMountedVolumesCommand,
-    ValidatedLocalRoot,
+    SourceProviderTypeError, SourceReadHandle, StartLibraryScanAllCommand,
+    StartLibraryScanAllHandler, StartLibraryScanCommand, StartLibraryScanHandler,
+    SyncLocalFilesystemMountedVolumesCommand, ValidatedLocalRoot,
+};
+pub use sources::{
+    ArchiveAdmissionError, ArchiveEligibility, DerivedScopeIdentity, evaluate_archive_eligibility,
+    reconcile_derived_scope,
+};
+pub use transformation::{
+    DerivedEntryKey, DerivedEntryObservation, DerivedFingerprint, DerivedLocator,
+    DerivedScopeOutcome, TransformationBudget, TransformationFailure, TransformationOutput,
 };
 pub use unit_of_work::{EnrichmentUnitOfWork, UnitOfWork, UnitOfWorkFactory};

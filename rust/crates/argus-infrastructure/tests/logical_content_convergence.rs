@@ -151,10 +151,11 @@ fn seed_source(
             )?;
             connection.execute_with_values(
                 "INSERT OR IGNORE INTO source_entry
-                    (source_entry_id, library_root_id, relative_locator, locator_key,
+                    (source_entry_id, library_root_id, coordinate_kind,
+                     relative_locator, locator_key,
                      display_name, display_location, kind, classification,
                      source_fingerprint, last_observed_scan_id, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?3, 'game.gb', 'game.gb', 'file',
+                 VALUES (?1, ?2, 'provider', ?3, ?3, 'game.gb', 'game.gb', 'file',
                          'content_candidate', ?4, ?5, 1, 1)",
                 &[
                     SqliteValue::Text(source.clone()),

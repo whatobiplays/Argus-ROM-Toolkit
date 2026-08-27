@@ -74,7 +74,7 @@ Advertised platforms are:
 
 The exact production matrix is `(PlatformId, ContentType, representation)` specific and must be qualified before a row is advertised.
 
-Applicable representations include native cartridge/file images, ISO/disc images, CUE/BIN and equivalent multi-file layouts, CHD, RVZ, CSO, WBFS, ZIP, 7z, RAR, useful single-stream/tar-family containers, and M3U relationship evidence.
+Applicable representations include native cartridge/file images, ISO/disc images, CUE/BIN and equivalent multi-file layouts, CHD, RVZ, CSO, WBFS, ZIP, 7z, useful single-stream/tar-family containers, and M3U relationship evidence. RAR is deferred until post-MVP.
 
 General archives are single-game only. Multi-game archives are rejected atomically for identification rather than expanded into multiple independent games.
 
@@ -231,7 +231,7 @@ The architecture overview must also be reconciled with the approved Phase 003 Ga
 3. **P03-003 — Library Experience and Composed Refresh**: activate Library as product home, durable product onboarding, Add Library Folder → Refresh Library, incremental scan/identify/group/hydrate composition, Refresh Game/Force Refresh, local-only `library_resolution_refresh`, Jobs integration, cancellation/retry/recovery, app-private artwork delivery, and Android foreground hosting for qualifying work.
 4. **P03-004 — Cartridge and Handheld Platform Coverage**: qualify the complete cartridge/handheld-oriented Nintendo/Sega matrix through recognition, identity, grouping, provider mapping, enrichment, and Library presentation.
 5. **P03-005 — Disc, Multi-File, and Multi-Disc Coverage**: establish canonical logical disc semantics and qualify Sega CD/Saturn/Dreamcast, PS1/PS2/PSP, GameCube/Wii, descriptor/track inputs, native ISO, independently identified discs, M3U evidence, and multi-disc grouping.
-6. **P03-006 — Containers and Compressed Representations**: add ZIP/7z/RAR/supported stream containers and CHD/RVZ/CSO/WBFS, equivalent-representation convergence, single-game archive enforcement, multi-game rejection, nested resource limits, hostile-input safety, staging, and cancellation.
+6. **P03-006 — Containers and Compressed Representations**: add ZIP/7z/supported stream containers and CHD/RVZ/CSO/WBFS, equivalent-representation convergence, single-game archive enforcement, multi-game rejection, nested resource limits, hostile-input safety, staging, and cancellation. RAR remains a post-MVP representation.
 7. **P03-007 — Library Browsing and Game Detail Completeness**: complete grid/list/search/filter/sort/pagination/scopes, adaptive selection/detail, variants/discs/copies, availability, hydration/provenance/artwork detail, orphan/reappearance, and large-Library incremental projections.
 8. **P03-008 — Cross-Platform Integration and Lifecycle Hardening**: harden the full capability set across desktop and Android storage, credentials, removable media, lifecycle/foreground execution, process loss, Back/predictive Back, adaptive behavior, accessibility, and single-runtime guarantees.
 9. **P03-009 — Full Matrix Qualification and Phase Hardening**: complete all advertised identity rows, provider qualification, desktop/API36 ARM64 native milestones, 10,000+ synthetic Library qualification, migrations, security/redaction, generated-source verification, documentation consistency, and full `just check`; no new feature scope.

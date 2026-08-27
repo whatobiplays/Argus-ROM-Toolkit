@@ -14,6 +14,7 @@ use crate::{
 };
 
 use crate::sources::{RelativeSourceLocator, RootLocator, SourceLocatorKey};
+use crate::transformation::{DerivedEntryKey, DerivedFingerprint, DerivedLocator};
 
 /// Stable logical operation type for the built-in library scan.
 pub const OPERATION_TYPE_LIBRARY_SCAN: &str = "library_scan";
@@ -2461,24 +2462,44 @@ pub trait LibraryScanAdmissionContextRepository {
     ) -> Result<Option<LibraryScanAdmissionContext>, PersistenceError>;
 }
 
+/// Mutually exclusive coordinates for a provider-native or derived source entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceEntryCoordinates {
+    /// Coordinates interpreted by the source provider.
+    Provider {
+        relative_locator: RelativeSourceLocator,
+        locator_key: SourceLocatorKey,
+        provider_native_identity: Option<String>,
+        source_fingerprint: Option<String>,
+    },
+    /// Coordinates interpreted only by the owning transformation adapter.
+    Derived {
+        derived_locator: DerivedLocator,
+        derived_entry_key: DerivedEntryKey,
+        derived_fingerprint: DerivedFingerprint,
+        transformation_id: String,
+        transformation_revision: u32,
+    },
+}
+
 /// One new persisted positive source observation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NewSourceEntry {
+    source_entry_id: Option<SourceEntryId>,
     library_root_id: LibraryRootId,
     parent_source_entry_id: Option<SourceEntryId>,
-    relative_locator: RelativeSourceLocator,
-    locator_key: SourceLocatorKey,
     display_name: String,
     display_location: String,
     kind: crate::sources::SourceEntryKind,
     classification: crate::sources::SourceEntryClassification,
-    provider_native_identity: Option<String>,
-    source_fingerprint: Option<String>,
+    coordinates: SourceEntryCoordinates,
     last_observed_scan_id: ScanRunId,
+    created_at: i64,
+    updated_at: i64,
 }
 
 impl NewSourceEntry {
-    /// Creates one positive observation insert.
+    /// Creates one provider-native positive observation insert.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         library_root_id: LibraryRootId,
@@ -2494,18 +2515,68 @@ impl NewSourceEntry {
         last_observed_scan_id: ScanRunId,
     ) -> Self {
         Self {
+            source_entry_id: None,
             library_root_id,
             parent_source_entry_id,
-            relative_locator,
-            locator_key,
             display_name: display_name.into(),
             display_location: display_location.into(),
             kind,
             classification,
-            provider_native_identity,
-            source_fingerprint,
+            coordinates: SourceEntryCoordinates::Provider {
+                relative_locator,
+                locator_key,
+                provider_native_identity,
+                source_fingerprint,
+            },
             last_observed_scan_id,
+            created_at: 0,
+            updated_at: 0,
         }
+    }
+
+    /// Creates one transformation-derived positive observation insert.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_derived(
+        source_entry_id: SourceEntryId,
+        library_root_id: LibraryRootId,
+        parent_source_entry_id: SourceEntryId,
+        display_name: String,
+        display_location: String,
+        kind: crate::sources::SourceEntryKind,
+        classification: crate::sources::SourceEntryClassification,
+        derived_locator: DerivedLocator,
+        derived_entry_key: DerivedEntryKey,
+        derived_fingerprint: DerivedFingerprint,
+        transformation_id: String,
+        transformation_revision: u32,
+        last_observed_scan_id: ScanRunId,
+        created_at: i64,
+        updated_at: i64,
+    ) -> Self {
+        Self {
+            source_entry_id: Some(source_entry_id),
+            library_root_id,
+            parent_source_entry_id: Some(parent_source_entry_id),
+            display_name,
+            display_location,
+            kind,
+            classification,
+            coordinates: SourceEntryCoordinates::Derived {
+                derived_locator,
+                derived_entry_key,
+                derived_fingerprint,
+                transformation_id,
+                transformation_revision,
+            },
+            last_observed_scan_id,
+            created_at,
+            updated_at,
+        }
+    }
+
+    /// Returns the caller-supplied source identity for a derived entry.
+    pub fn source_entry_id(&self) -> Option<SourceEntryId> {
+        self.source_entry_id
     }
 
     /// Returns the owning root identity.
@@ -2518,14 +2589,79 @@ impl NewSourceEntry {
         self.parent_source_entry_id
     }
 
-    /// Returns the opaque relative locator.
-    pub fn relative_locator(&self) -> &RelativeSourceLocator {
-        &self.relative_locator
+    /// Returns the complete provider-or-derived coordinate family.
+    pub fn coordinates(&self) -> &SourceEntryCoordinates {
+        &self.coordinates
     }
 
-    /// Returns the provider-defined location equality key.
-    pub fn locator_key(&self) -> &SourceLocatorKey {
-        &self.locator_key
+    /// Returns the provider locator, or `None` for a derived entry.
+    pub fn relative_locator(&self) -> Option<&RelativeSourceLocator> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider {
+                relative_locator, ..
+            } => Some(relative_locator),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
+    }
+
+    /// Returns the provider equality key, or `None` for a derived entry.
+    pub fn locator_key(&self) -> Option<&SourceLocatorKey> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { locator_key, .. } => Some(locator_key),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
+    }
+
+    /// Returns the derived locator, or `None` for a provider entry.
+    pub fn derived_locator(&self) -> Option<&DerivedLocator> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                derived_locator, ..
+            } => Some(derived_locator),
+        }
+    }
+
+    /// Returns the derived equality key, or `None` for a provider entry.
+    pub fn derived_entry_key(&self) -> Option<&DerivedEntryKey> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                derived_entry_key, ..
+            } => Some(derived_entry_key),
+        }
+    }
+
+    /// Returns the derived fingerprint, or `None` for a provider entry.
+    pub fn derived_fingerprint(&self) -> Option<&DerivedFingerprint> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                derived_fingerprint,
+                ..
+            } => Some(derived_fingerprint),
+        }
+    }
+
+    /// Returns the transformation identity, or `None` for a provider entry.
+    pub fn transformation_id(&self) -> Option<&str> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                transformation_id, ..
+            } => Some(transformation_id),
+        }
+    }
+
+    /// Returns the transformation revision, or `None` for a provider entry.
+    pub fn transformation_revision(&self) -> Option<u32> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                transformation_revision,
+                ..
+            } => Some(*transformation_revision),
+        }
     }
 
     /// Returns the display name.
@@ -2548,45 +2684,58 @@ impl NewSourceEntry {
         self.classification
     }
 
-    /// Returns the optional opaque native identity.
+    /// Returns the optional provider-native identity.
     pub fn provider_native_identity(&self) -> Option<&str> {
-        self.provider_native_identity.as_deref()
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider {
+                provider_native_identity,
+                ..
+            } => provider_native_identity.as_deref(),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
     }
 
-    /// Returns the optional cheap source fingerprint.
+    /// Returns the optional provider fingerprint.
     pub fn source_fingerprint(&self) -> Option<&str> {
-        self.source_fingerprint.as_deref()
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider {
+                source_fingerprint, ..
+            } => source_fingerprint.as_deref(),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
     }
 
     /// Returns the scan that positively observed this entry.
     pub fn last_observed_scan_id(&self) -> ScanRunId {
         self.last_observed_scan_id
     }
+
+    /// Returns the supplied creation timestamp for a derived entry.
+    pub fn created_at(&self) -> i64 {
+        self.created_at
+    }
+
+    /// Returns the supplied update timestamp for a derived entry.
+    pub fn updated_at(&self) -> i64 {
+        self.updated_at
+    }
 }
 
 /// One bounded persisted source-entry record used by reconciliation.
-///
-/// The record exposes provider-owned opaque locator values and optional
-/// continuity facts without parsing them. Generic application code may
-/// compare locator keys and provider-native identity tokens produced by the
-/// provider but must never interpret their text.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceEntryRecord {
     source_entry_id: SourceEntryId,
     parent_source_entry_id: Option<SourceEntryId>,
-    relative_locator: RelativeSourceLocator,
-    locator_key: SourceLocatorKey,
     display_name: String,
     display_location: String,
     kind: crate::sources::SourceEntryKind,
     classification: crate::sources::SourceEntryClassification,
-    provider_native_identity: Option<String>,
-    source_fingerprint: Option<String>,
+    coordinates: SourceEntryCoordinates,
     last_observed_scan_id: ScanRunId,
 }
 
 impl SourceEntryRecord {
-    /// Creates one persisted source-entry record.
+    /// Creates one provider-native persisted source-entry record.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         source_entry_id: SourceEntryId,
@@ -2601,17 +2750,43 @@ impl SourceEntryRecord {
         source_fingerprint: Option<String>,
         last_observed_scan_id: ScanRunId,
     ) -> Self {
+        Self::from_coordinates(
+            source_entry_id,
+            parent_source_entry_id,
+            display_name,
+            display_location,
+            kind,
+            classification,
+            SourceEntryCoordinates::Provider {
+                relative_locator,
+                locator_key,
+                provider_native_identity,
+                source_fingerprint,
+            },
+            last_observed_scan_id,
+        )
+    }
+
+    /// Creates one persisted record from an already-validated coordinate family.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_coordinates(
+        source_entry_id: SourceEntryId,
+        parent_source_entry_id: Option<SourceEntryId>,
+        display_name: impl Into<String>,
+        display_location: impl Into<String>,
+        kind: crate::sources::SourceEntryKind,
+        classification: crate::sources::SourceEntryClassification,
+        coordinates: SourceEntryCoordinates,
+        last_observed_scan_id: ScanRunId,
+    ) -> Self {
         Self {
             source_entry_id,
             parent_source_entry_id,
-            relative_locator,
-            locator_key,
             display_name: display_name.into(),
             display_location: display_location.into(),
             kind,
             classification,
-            provider_native_identity,
-            source_fingerprint,
+            coordinates,
             last_observed_scan_id,
         }
     }
@@ -2626,14 +2801,79 @@ impl SourceEntryRecord {
         self.parent_source_entry_id
     }
 
-    /// Returns the opaque relative locator.
-    pub fn relative_locator(&self) -> &RelativeSourceLocator {
-        &self.relative_locator
+    /// Returns the complete provider-or-derived coordinate family.
+    pub fn coordinates(&self) -> &SourceEntryCoordinates {
+        &self.coordinates
     }
 
-    /// Returns the provider-defined location equality key.
-    pub fn locator_key(&self) -> &SourceLocatorKey {
-        &self.locator_key
+    /// Returns the provider locator, or `None` for a derived entry.
+    pub fn relative_locator(&self) -> Option<&RelativeSourceLocator> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider {
+                relative_locator, ..
+            } => Some(relative_locator),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
+    }
+
+    /// Returns the provider equality key, or `None` for a derived entry.
+    pub fn locator_key(&self) -> Option<&SourceLocatorKey> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { locator_key, .. } => Some(locator_key),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
+    }
+
+    /// Returns the derived locator, or `None` for a provider entry.
+    pub fn derived_locator(&self) -> Option<&DerivedLocator> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                derived_locator, ..
+            } => Some(derived_locator),
+        }
+    }
+
+    /// Returns the derived equality key, or `None` for a provider entry.
+    pub fn derived_entry_key(&self) -> Option<&DerivedEntryKey> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                derived_entry_key, ..
+            } => Some(derived_entry_key),
+        }
+    }
+
+    /// Returns the derived fingerprint, or `None` for a provider entry.
+    pub fn derived_fingerprint(&self) -> Option<&DerivedFingerprint> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                derived_fingerprint,
+                ..
+            } => Some(derived_fingerprint),
+        }
+    }
+
+    /// Returns the transformation identity, or `None` for a provider entry.
+    pub fn transformation_id(&self) -> Option<&str> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                transformation_id, ..
+            } => Some(transformation_id),
+        }
+    }
+
+    /// Returns the transformation revision, or `None` for a provider entry.
+    pub fn transformation_revision(&self) -> Option<u32> {
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider { .. } => None,
+            SourceEntryCoordinates::Derived {
+                transformation_revision,
+                ..
+            } => Some(*transformation_revision),
+        }
     }
 
     /// Returns the display name.
@@ -2656,14 +2896,25 @@ impl SourceEntryRecord {
         self.classification
     }
 
-    /// Returns the optional opaque native identity.
+    /// Returns the optional provider-native identity.
     pub fn provider_native_identity(&self) -> Option<&str> {
-        self.provider_native_identity.as_deref()
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider {
+                provider_native_identity,
+                ..
+            } => provider_native_identity.as_deref(),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
     }
 
-    /// Returns the optional cheap source fingerprint.
+    /// Returns the optional provider fingerprint.
     pub fn source_fingerprint(&self) -> Option<&str> {
-        self.source_fingerprint.as_deref()
+        match &self.coordinates {
+            SourceEntryCoordinates::Provider {
+                source_fingerprint, ..
+            } => source_fingerprint.as_deref(),
+            SourceEntryCoordinates::Derived { .. } => None,
+        }
     }
 
     /// Returns the scan that positively observed this entry.
@@ -2678,6 +2929,7 @@ impl SourceEntryRecord {
 /// exist for the identity; it never materializes every duplicate. The
 /// application decides continuity only from a `Unique` candidate that has
 /// not already been positively observed by the current scan.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeIdentityMatch {
     /// No persisted entry carries this provider-native identity.
@@ -2694,12 +2946,46 @@ pub trait SourceEntryRepository {
     /// stable source identity.
     fn upsert(&mut self, entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError>;
 
+    /// Upserts one transformation-derived child by its parent and derived
+    /// coordinate family. Providers must never reuse this operation's
+    /// locator-key equality domain.
+    fn upsert_derived(&mut self, entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+        let _ = entry;
+        Err(PersistenceError::Unavailable)
+    }
+
+    /// Resolves the configured root that owns one persisted source entry.
+    ///
+    /// Derived reconciliation receives only the parent source identity so the
+    /// application does not need to duplicate root ownership in a scope
+    /// coordinate. Persistence adapters resolve that ownership from the
+    /// already-committed parent row.
+    fn library_root_id_for_entry(
+        &mut self,
+        source_entry_id: SourceEntryId,
+    ) -> Result<LibraryRootId, PersistenceError> {
+        let _ = source_entry_id;
+        Err(PersistenceError::Unavailable)
+    }
+
     /// Finds the current entry at one exact locator within one root.
     fn find_by_locator_key(
         &mut self,
         library_root_id: LibraryRootId,
         locator_key: &SourceLocatorKey,
     ) -> Result<Option<SourceEntryRecord>, PersistenceError>;
+
+    /// Finds one derived child by transformation revision and derived key.
+    fn find_derived_child(
+        &mut self,
+        parent: SourceEntryId,
+        transformation_id: &str,
+        revision: u32,
+        key: &DerivedEntryKey,
+    ) -> Result<Option<SourceEntryRecord>, PersistenceError> {
+        let _ = (parent, transformation_id, revision, key);
+        Err(PersistenceError::Unavailable)
+    }
 
     /// Classifies persisted provider-native-identity candidates in one root
     /// as none/unique/ambiguous without loading duplicate rows.
@@ -2747,6 +3033,18 @@ pub trait SourceEntryRepository {
         parent_source_entry_id: Option<SourceEntryId>,
         observed_scan_id: ScanRunId,
     ) -> Result<u64, PersistenceError>;
+
+    /// Finalizes absence for one complete derived scope only.
+    fn finalize_absent_derived_scope(
+        &mut self,
+        parent: SourceEntryId,
+        transformation_id: &str,
+        revision: u32,
+        observation_run_id: ScanRunId,
+    ) -> Result<u64, PersistenceError> {
+        let _ = (parent, transformation_id, revision, observation_run_id);
+        Err(PersistenceError::Unavailable)
+    }
 
     /// Removes all current Argus-owned entries for one root. Never touches
     /// user filesystem content.

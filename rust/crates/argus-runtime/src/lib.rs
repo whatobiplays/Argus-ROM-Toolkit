@@ -24,13 +24,14 @@ use std::sync::{Arc, Mutex};
 use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
     AppearanceSettingsRepository, ApplicationError, ApplicationPortError, ArchitectureClass,
-    ArtworkRepository, ArtworkResolutionPolicy, CancelJobResult, ContentProvenanceRole,
-    ConvergenceOutcome, CredentialMutationError, DiagnosticStage, EnrichmentProviderSession,
-    EnrichmentUnitOfWork, ErrorCode, EventName, FailureRole, GameContentId, GameId,
-    GameLibraryPage, GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery,
-    GetSourceEntryQuery, HydrationReport, HydrationTarget, IdentificationService,
-    IdentityConvergenceStore, IdentitySchemeCatalog, JobDetail, JobRunId, JobRunRepository,
-    JobRunState, JobSummaryPage, JobsService, LibraryOnboardingState, LibraryProviderSetupDecision,
+    ArtworkRepository, ArtworkResolutionPolicy, CancelJobResult, ContentIdentity,
+    ContentProvenanceRole, ContentType, ConvergenceOutcome, CredentialMutationError,
+    DerivedScopeIdentity, DiagnosticStage, EnrichmentProviderSession, EnrichmentUnitOfWork,
+    ErrorCode, EventName, FailureRole, GameContentId, GameId, GameLibraryPage,
+    GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery, GetSourceEntryQuery,
+    HydrationReport, HydrationTarget, IdentificationService, IdentityConvergenceStore,
+    IdentitySchemeCatalog, JobDetail, JobRunId, JobRunRepository, JobRunState, JobSummaryPage,
+    JobsService, LibraryOnboardingState, LibraryProviderSetupDecision,
     LibraryRefreshAdmissionResult, LibraryRefreshCoordinator, LibraryRootId, LibraryRootPage,
     LibraryRootProjection, LibraryRootRepository, LibraryScanAdmissionResult,
     LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
@@ -51,14 +52,18 @@ use argus_application::{
     SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
     StartLibraryScanCommand, StartupCollector, SubsystemName,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, TraceEvent, TraceEventPhase, TraceId,
-    UnitOfWork, UnitOfWorkFactory, UpdateAppearanceSettingsCommand, ValidatedContentDerivation,
-    ValidatedM3uGrouping, Version,
+    TransformationFailure, TransformationRegistry, UnitOfWork, UnitOfWorkFactory,
+    UpdateAppearanceSettingsCommand, ValidatedContentDerivation, ValidatedM3uGrouping, Version,
+    evaluate_archive_eligibility, map_transformation_failure, reconcile_derived_scope,
 };
 use argus_infrastructure::artwork_store::ArtworkObjectStore;
+use argus_infrastructure::content::{
+    ContentReader, ContentRecognitionError, ContentSourceResolver, OpticalError,
+    OpticalRecognition, ParsingSession,
+};
 use argus_infrastructure::credentials::KeyringSecureCredentialStore;
 use argus_infrastructure::local_filesystem::{
-    LocalContentReader, LocalFilesystemProvider as InfraLocalFilesystemProvider,
-    LocalFilesystemSourceAccess,
+    LocalFilesystemProvider as InfraLocalFilesystemProvider, LocalFilesystemSourceAccess,
 };
 use argus_infrastructure::providers::{
     ProductionProviderSessionFactory, SteamGridDbCredentialValidator, UreqTransport,
@@ -433,6 +438,8 @@ pub struct KernelBootstrap {
     artwork_store: Arc<ArtworkObjectStore>,
     event_bus: Arc<EventBus>,
     publication_diagnostics: Mutex<PublicationDiagnostics>,
+    transformation_registry: TransformationRegistry,
+    transformation_staging_root: PathBuf,
     collector: StartupCollector,
     #[cfg(test)]
     fail_shutdown: bool,
@@ -697,12 +704,37 @@ impl argus_application::SourceEntryRepository for KernelSourceEntryRepository<'_
         self.inner.upsert(entry)
     }
 
+    fn upsert_derived(
+        &mut self,
+        entry: argus_application::NewSourceEntry,
+    ) -> Result<argus_application::SourceEntryId, PersistenceError> {
+        self.inner.upsert_derived(entry)
+    }
+
+    fn library_root_id_for_entry(
+        &mut self,
+        source_entry_id: argus_application::SourceEntryId,
+    ) -> Result<argus_application::LibraryRootId, PersistenceError> {
+        self.inner.library_root_id_for_entry(source_entry_id)
+    }
+
     fn find_by_locator_key(
         &mut self,
         library_root_id: argus_application::LibraryRootId,
         locator_key: &argus_application::SourceLocatorKey,
     ) -> Result<Option<argus_application::SourceEntryRecord>, PersistenceError> {
         self.inner.find_by_locator_key(library_root_id, locator_key)
+    }
+
+    fn find_derived_child(
+        &mut self,
+        parent: argus_application::SourceEntryId,
+        transformation_id: &str,
+        revision: u32,
+        key: &argus_application::DerivedEntryKey,
+    ) -> Result<Option<argus_application::SourceEntryRecord>, PersistenceError> {
+        self.inner
+            .find_derived_child(parent, transformation_id, revision, key)
     }
 
     fn find_native_identity(
@@ -749,6 +781,21 @@ impl argus_application::SourceEntryRepository for KernelSourceEntryRepository<'_
     ) -> Result<u64, PersistenceError> {
         self.inner
             .finalize_absent_scope(library_root_id, parent_source_entry_id, observed_scan_id)
+    }
+
+    fn finalize_absent_derived_scope(
+        &mut self,
+        parent: argus_application::SourceEntryId,
+        transformation_id: &str,
+        revision: u32,
+        observation_run_id: argus_application::ScanRunId,
+    ) -> Result<u64, PersistenceError> {
+        self.inner.finalize_absent_derived_scope(
+            parent,
+            transformation_id,
+            revision,
+            observation_run_id,
+        )
     }
 
     fn delete_for_root(
@@ -1202,6 +1249,7 @@ impl KernelBootstrap {
         event_bus: Arc<EventBus>,
         collector: StartupCollector,
         provider_session_factory: Arc<EnrichmentSessionFactory>,
+        transformation_staging_root: PathBuf,
     ) -> Self {
         Self {
             trace_id,
@@ -1221,6 +1269,8 @@ impl KernelBootstrap {
             artwork_store,
             event_bus,
             publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
+            transformation_registry: TransformationRegistry::production(),
+            transformation_staging_root,
             collector,
             #[cfg(test)]
             fail_shutdown: false,
@@ -1274,6 +1324,7 @@ impl KernelBootstrap {
             )),
             StartupCollector::new(),
             production_enrichment_session_factory(),
+            directory.join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
         );
         kernel.fail_next_shutdown_for_tests();
         kernel
@@ -1302,6 +1353,17 @@ impl KernelBootstrap {
     /// Returns independently recorded startup logs for local diagnostics.
     pub fn startup_logs(&self) -> &[LogEvent] {
         self.collector.logs()
+    }
+
+    /// Returns the immutable production transformation registry used by
+    /// composed source processing and identity dispatch.
+    pub(crate) fn transformation_registry(&self) -> &TransformationRegistry {
+        &self.transformation_registry
+    }
+
+    /// Returns the application-private root for operation-scoped staging.
+    pub(crate) fn transformation_staging_root(&self) -> &Path {
+        &self.transformation_staging_root
     }
 
     /// Returns bounded structured diagnostics from post-commit publication.
@@ -2154,6 +2216,600 @@ impl KernelBootstrap {
     /// Consumes only source entries committed by the supplied scan checkpoint.
     ///
     /// Filesystem reads and representation recognition happen outside the
+    fn reconcile_derived_scope_with_context(
+        &self,
+        plan: &argus_application::LibraryScanExecutionPlan,
+        context: &OperationContext,
+        parent: &SourceEntryRecord,
+        scope: &argus_infrastructure::content::DerivedScopeResult,
+    ) -> Result<Vec<SourceEntryRecord>, ApplicationError> {
+        let transformation_id = scope.transformation_id().ok_or_else(|| {
+            application_error_from_code(ErrorCode::InternalInvariantViolation, context.trace_id())
+        })?;
+        let transformation_revision = scope.transformation_revision().ok_or_else(|| {
+            application_error_from_code(ErrorCode::InternalInvariantViolation, context.trace_id())
+        })?;
+        let registered = self
+            .transformation_registry()
+            .descriptors()
+            .iter()
+            .any(|descriptor| {
+                descriptor.id() == transformation_id
+                    && descriptor.revision() == transformation_revision
+                    && matches!(
+                        descriptor.output(),
+                        argus_application::TransformationOutput::DerivedScope
+                    )
+            });
+        if !registered {
+            return Err(application_error_from_code(
+                ErrorCode::InternalInvariantViolation,
+                context.trace_id(),
+            ));
+        }
+
+        let parent_source_entry_id = parent.source_entry_id();
+        let observations = scope.observations().to_vec();
+        let outcome = scope.outcome();
+        let observation_run_id = plan.scan_run_id();
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let mut source_entries = work.source_entries();
+                let scope_identity = DerivedScopeIdentity {
+                    parent_source_entry_id,
+                    transformation_id,
+                    transformation_revision,
+                };
+                reconcile_derived_scope(
+                    &mut source_entries,
+                    &scope_identity,
+                    &observations,
+                    observation_run_id,
+                    true,
+                    outcome,
+                )?;
+                let mut reconciled = Vec::with_capacity(observations.len());
+                for observation in &observations {
+                    if let Some(entry) = source_entries.find_derived_child(
+                        parent_source_entry_id,
+                        transformation_id,
+                        transformation_revision,
+                        observation.derived_entry_key(),
+                    )? {
+                        reconciled.push(entry);
+                    }
+                }
+                work.commit()?;
+                Ok(reconciled)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn process_source_tree(
+        &self,
+        plan: &argus_application::LibraryScanExecutionPlan,
+        context: &OperationContext,
+        access: &LocalFilesystemSourceAccess,
+        resolved_root: &argus_application::ResolvedRoot,
+        entry: &SourceEntryRecord,
+        entries: &mut Vec<SourceEntryRecord>,
+        session: &mut ParsingSession<'_>,
+        catalog: &IdentitySchemeCatalog,
+        is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<SourceTreeResult, TransformationFailure> {
+        if is_cancelled() {
+            return Err(TransformationFailure::Cancelled);
+        }
+        if entry.kind() != SourceEntryKind::File {
+            return Ok(SourceTreeResult::empty());
+        }
+
+        let parent_version = source_version_for_entry(entry)?;
+        let mut reader = {
+            let resolver = ContentSourceResolver::new(access, resolved_root, entries.as_slice());
+            resolver.open(entry, session)?
+        };
+        session.enter_container()?;
+        let scope_result = argus_infrastructure::content::enumerate_derived_container(
+            &mut *reader,
+            &parent_version,
+            session,
+        );
+        session.leave_container();
+        let scope = match scope_result {
+            Ok(Some(scope)) => scope,
+            Ok(None) => {
+                if is_m3u_entry(entry) {
+                    let playlist = self.recognize_derived_playlist(
+                        entry,
+                        access,
+                        resolved_root,
+                        entries.as_slice(),
+                        session,
+                    )?;
+                    return Ok(SourceTreeResult {
+                        candidates: Vec::new(),
+                        playlists: Vec::new(),
+                        derived_playlists: playlist.into_iter().collect(),
+                        issue_codes: Vec::new(),
+                    });
+                }
+                if is_optical_descriptor_entry(entry)
+                    && matches!(
+                        entry.coordinates(),
+                        argus_application::SourceEntryCoordinates::Derived { .. }
+                    )
+                {
+                    let candidate = self.recognize_derived_descriptor(
+                        entry,
+                        access,
+                        resolved_root,
+                        entries.as_slice(),
+                        session,
+                        catalog,
+                        is_cancelled,
+                    )?;
+                    return Ok(SourceTreeResult {
+                        candidates: candidate.into_iter().collect(),
+                        playlists: Vec::new(),
+                        derived_playlists: Vec::new(),
+                        issue_codes: Vec::new(),
+                    });
+                }
+                let candidate = self.recognize_source_reader(
+                    entry,
+                    &mut *reader,
+                    session,
+                    catalog,
+                    is_cancelled,
+                )?;
+                return Ok(SourceTreeResult {
+                    candidates: candidate.into_iter().collect(),
+                    playlists: Vec::new(),
+                    derived_playlists: Vec::new(),
+                    issue_codes: Vec::new(),
+                });
+            }
+            Err(error) => return Err(error),
+        };
+        if !reader
+            .source_version_is_unchanged()
+            .map_err(|_| TransformationFailure::ReadFailure)?
+        {
+            return Err(TransformationFailure::SourceChanged);
+        }
+
+        let children = self
+            .reconcile_derived_scope_with_context(plan, context, entry, &scope)
+            .map_err(|_| TransformationFailure::ReadFailure)?;
+        let mut candidates = Vec::new();
+        let mut playlists = Vec::new();
+        let mut derived_playlists = Vec::new();
+        let mut issue_codes = Vec::new();
+        for child in &children {
+            if child.kind() == SourceEntryKind::File
+                && !entries
+                    .iter()
+                    .any(|existing| existing.source_entry_id() == child.source_entry_id())
+            {
+                entries.push(child.clone());
+            }
+        }
+        for child in children {
+            if child.kind() != SourceEntryKind::File {
+                continue;
+            }
+            match self.process_source_tree(
+                plan,
+                context,
+                access,
+                resolved_root,
+                &child,
+                entries,
+                session,
+                catalog,
+                is_cancelled,
+            ) {
+                Ok(result) => {
+                    candidates.extend(result.candidates);
+                    playlists.extend(result.playlists);
+                    derived_playlists.extend(result.derived_playlists);
+                    issue_codes.extend(result.issue_codes);
+                }
+                Err(TransformationFailure::Cancelled) => {
+                    return Err(TransformationFailure::Cancelled);
+                }
+                Err(TransformationFailure::SourceChanged) => {
+                    return Err(TransformationFailure::SourceChanged);
+                }
+                Err(TransformationFailure::ResourceLimitExceeded) => {
+                    return Err(TransformationFailure::ResourceLimitExceeded);
+                }
+                Err(failure) => issue_codes.push(map_transformation_failure(failure)),
+            }
+        }
+
+        let mut grouped_candidate_ids = std::collections::HashSet::new();
+        let mut families = Vec::<(ContentIdentity, Vec<SourceEntryId>)>::new();
+        for playlist in &derived_playlists {
+            let group = candidates
+                .iter()
+                .filter(|candidate| {
+                    playlist
+                        .members
+                        .iter()
+                        .any(|member| member.source_entry_id() == candidate.entry.source_entry_id())
+                })
+                .collect::<Vec<_>>();
+            if let Some(first_identity) = group.first().map(|candidate| candidate.identity.clone())
+            {
+                let mut ids = Vec::with_capacity(group.len());
+                for candidate in group {
+                    grouped_candidate_ids.insert(candidate.entry.source_entry_id());
+                    ids.push(candidate.entry.source_entry_id());
+                }
+                families.push((first_identity, ids));
+            }
+        }
+        for candidate in &candidates {
+            if !grouped_candidate_ids.contains(&candidate.entry.source_entry_id()) {
+                families.push((
+                    candidate.identity.clone(),
+                    vec![candidate.entry.source_entry_id()],
+                ));
+            }
+        }
+        let family_identities: Vec<ContentIdentity> = families
+            .iter()
+            .map(|(identity, _)| identity.clone())
+            .collect();
+        let candidates = match evaluate_archive_eligibility(&family_identities) {
+            Ok(argus_application::ArchiveEligibility::NoSupportedGame) => Vec::new(),
+            Ok(argus_application::ArchiveEligibility::SingleGame(identity)) => {
+                let allowed_ids = families
+                    .iter()
+                    .filter(|(family_identity, _)| family_identity == &identity)
+                    .flat_map(|(_, ids)| ids.iter().copied())
+                    .collect::<std::collections::HashSet<_>>();
+                candidates
+                    .into_iter()
+                    .filter(|candidate| allowed_ids.contains(&candidate.entry.source_entry_id()))
+                    .collect()
+            }
+            Err(argus_application::ArchiveAdmissionError::MultiGameUnsupported) => {
+                issue_codes.push(map_transformation_failure(
+                    TransformationFailure::MultiGameUnsupported,
+                ));
+                Vec::new()
+            }
+        };
+        Ok(SourceTreeResult {
+            candidates,
+            playlists,
+            derived_playlists,
+            issue_codes,
+        })
+    }
+
+    fn recognize_derived_playlist(
+        &self,
+        entry: &SourceEntryRecord,
+        access: &LocalFilesystemSourceAccess,
+        resolved_root: &argus_application::ResolvedRoot,
+        entries: &[SourceEntryRecord],
+        session: &mut ParsingSession<'_>,
+    ) -> Result<Option<DerivedPlaylistGroup>, TransformationFailure> {
+        let resolver = ContentSourceResolver::new(access, resolved_root, entries);
+        let mut reader = resolver.open(entry, session)?;
+        let bytes = read_content_bytes(&mut *reader, 1024 * 1024, session)?;
+        let parsed =
+            argus_infrastructure::content::parse_m3u(&bytes).map_err(|error| match error {
+                argus_infrastructure::content::M3uError::ResourceLimitExceeded => {
+                    TransformationFailure::ResourceLimitExceeded
+                }
+                argus_infrastructure::content::M3uError::Malformed
+                | argus_infrastructure::content::M3uError::InvalidMember
+                | argus_infrastructure::content::M3uError::DuplicateMember => {
+                    TransformationFailure::Malformed
+                }
+            })?;
+        let parent_id = entry
+            .parent_source_entry_id()
+            .ok_or(TransformationFailure::Malformed)?;
+        let candidates = entries
+            .iter()
+            .filter(|candidate| candidate.parent_source_entry_id() == Some(parent_id))
+            .map(|candidate| {
+                argus_application::ContentDependencyCandidate::new(
+                    candidate.clone(),
+                    candidate.display_location().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let members = argus_application::resolve_content_dependencies(
+            entry.display_location(),
+            parsed.members(),
+            &candidates,
+        )
+        .map_err(|error| match error {
+            argus_application::OpticalDependencyError::ResourceLimitExceeded => {
+                TransformationFailure::ResourceLimitExceeded
+            }
+            argus_application::OpticalDependencyError::Missing
+            | argus_application::OpticalDependencyError::Ambiguous
+            | argus_application::OpticalDependencyError::Duplicate => {
+                TransformationFailure::MissingDependency
+            }
+            argus_application::OpticalDependencyError::InvalidReference
+            | argus_application::OpticalDependencyError::CrossRoot => {
+                TransformationFailure::UnsupportedFeature
+            }
+        })?;
+        Ok(Some(DerivedPlaylistGroup {
+            playlist: entry.clone(),
+            members,
+        }))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn recognize_derived_descriptor(
+        &self,
+        entry: &SourceEntryRecord,
+        access: &LocalFilesystemSourceAccess,
+        resolved_root: &argus_application::ResolvedRoot,
+        entries: &[SourceEntryRecord],
+        session: &mut ParsingSession<'_>,
+        catalog: &IdentitySchemeCatalog,
+        is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<ProcessedContentCandidate>, TransformationFailure> {
+        session.check_cancelled()?;
+        let resolver = ContentSourceResolver::new(access, resolved_root, entries);
+        let mut descriptor_reader = resolver.open(entry, session)?;
+        let descriptor_bytes = read_content_bytes(&mut *descriptor_reader, 1024 * 1024, session)?;
+        let descriptor = argus_infrastructure::content::parse_descriptor(&descriptor_bytes)
+            .map_err(map_optical_failure)?;
+
+        let parent_id = entry
+            .parent_source_entry_id()
+            .ok_or(TransformationFailure::Malformed)?;
+        let candidates: Vec<argus_application::ContentDependencyCandidate> = entries
+            .iter()
+            .filter(|candidate| candidate.parent_source_entry_id() == Some(parent_id))
+            .map(|candidate| {
+                argus_application::ContentDependencyCandidate::new(
+                    candidate.clone(),
+                    candidate.display_location().to_owned(),
+                )
+            })
+            .collect();
+        let dependencies = argus_application::resolve_content_dependencies(
+            entry.display_location(),
+            descriptor.dependencies(),
+            &candidates,
+        )
+        .map_err(|error| match error {
+            argus_application::OpticalDependencyError::ResourceLimitExceeded => {
+                TransformationFailure::ResourceLimitExceeded
+            }
+            argus_application::OpticalDependencyError::Missing
+            | argus_application::OpticalDependencyError::Ambiguous
+            | argus_application::OpticalDependencyError::Duplicate => {
+                TransformationFailure::MissingDependency
+            }
+            argus_application::OpticalDependencyError::InvalidReference
+            | argus_application::OpticalDependencyError::CrossRoot => {
+                TransformationFailure::UnsupportedFeature
+            }
+        })?;
+
+        let mut readers: Vec<Box<dyn ContentReader>> = Vec::with_capacity(dependencies.len());
+        for dependency in &dependencies {
+            readers.push(resolver.open(dependency, session)?);
+        }
+        let dependency_bytes = readers.iter().try_fold(0_u64, |total, reader| {
+            total
+                .checked_add(
+                    reader
+                        .len()
+                        .map_err(|_| TransformationFailure::ReadFailure)?,
+                )
+                .ok_or(TransformationFailure::ResourceLimitExceeded)
+        })?;
+        session.charge_parser_work(dependency_bytes)?;
+
+        let recognition = {
+            let mut sources = Vec::with_capacity(readers.len());
+            for (name, reader) in descriptor.dependencies().iter().zip(readers.iter_mut()) {
+                sources.push(argus_infrastructure::content::OpticalSource::new(
+                    name.clone(),
+                    &mut **reader,
+                ));
+            }
+            argus_infrastructure::content::canonicalize_descriptor_with_cancel(
+                &descriptor,
+                &mut sources,
+                is_cancelled,
+            )
+            .map_err(map_optical_failure)?
+        };
+        session.check_cancelled()?;
+        let Some(identity) = catalog.select_identity(
+            recognition.platform(),
+            recognition.content_type(),
+            recognition.source_representation(),
+            recognition.identity_digest(),
+        ) else {
+            return Err(TransformationFailure::UnsupportedFeature);
+        };
+
+        let mut provenance = Vec::with_capacity(dependencies.len() + 1);
+        for (index, dependency) in dependencies.iter().enumerate() {
+            let role = if index == 0 {
+                ContentProvenanceRole::Primary
+            } else {
+                ContentProvenanceRole::RequiredData
+            };
+            provenance.push(ProvenanceMember::new(
+                role,
+                Some("disc".to_owned()),
+                source_version_for_entry(dependency)?,
+            ));
+        }
+        provenance.push(ProvenanceMember::new(
+            ContentProvenanceRole::Descriptor,
+            Some("disc".to_owned()),
+            source_version_for_entry(entry)?,
+        ));
+        let derivation = ValidatedContentDerivation::try_with_provenance(
+            provenance,
+            recognition.platform(),
+            recognition.content_type(),
+            identity.clone(),
+            entry.display_name().to_owned(),
+        )
+        .map_err(|_| TransformationFailure::Malformed)?;
+        Ok(Some(ProcessedContentCandidate {
+            entry: entry.clone(),
+            identity,
+            derivation,
+            platform: recognition.platform(),
+            content_type: recognition.content_type(),
+        }))
+    }
+
+    fn recognize_source_reader(
+        &self,
+        entry: &SourceEntryRecord,
+        reader: &mut dyn ContentReader,
+        session: &mut ParsingSession<'_>,
+        catalog: &IdentitySchemeCatalog,
+        is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<Option<ProcessedContentCandidate>, TransformationFailure> {
+        let source_length = reader
+            .len()
+            .map_err(|_| TransformationFailure::ReadFailure)?;
+        session.validate_representation_length(source_length)?;
+        if let Some(recognition) =
+            argus_infrastructure::content::recognize_alternate_optical(reader, session)
+                .map_err(map_optical_failure)?
+        {
+            ensure_reader_stable(reader)?;
+            return self.make_optical_candidate(entry, recognition, catalog);
+        }
+
+        session.charge_parser_work(source_length)?;
+        let native = match argus_infrastructure::content::recognize_native_optical_with_cancel(
+            reader,
+            is_cancelled,
+        ) {
+            Ok(recognition) => Some(recognition),
+            Err(OpticalError::Cancelled) => return Err(TransformationFailure::Cancelled),
+            Err(OpticalError::ResourceLimitExceeded) => {
+                return Err(TransformationFailure::ResourceLimitExceeded);
+            }
+            Err(OpticalError::AmbiguousPlatform) => {
+                return Err(TransformationFailure::AmbiguousRecognition);
+            }
+            Err(OpticalError::ReadFailure) => return Err(TransformationFailure::ReadFailure),
+            Err(_) => None,
+        };
+        if let Some(recognition) = native {
+            ensure_reader_stable(reader)?;
+            return self.make_optical_candidate(entry, recognition, catalog);
+        }
+
+        let recognition = match argus_infrastructure::content::recognize_content(reader) {
+            Ok(recognition) => recognition,
+            Err(ContentRecognitionError::ResourceLimitExceeded) => {
+                return Err(TransformationFailure::ResourceLimitExceeded);
+            }
+            Err(ContentRecognitionError::AmbiguousContentRecognition) => {
+                return Err(TransformationFailure::AmbiguousRecognition);
+            }
+            Err(ContentRecognitionError::ReadFailure) => {
+                return Err(TransformationFailure::ReadFailure);
+            }
+            Err(_) => return Ok(None),
+        };
+        if !reader
+            .source_version_is_unchanged()
+            .map_err(|_| TransformationFailure::ReadFailure)?
+        {
+            return Err(TransformationFailure::SourceChanged);
+        }
+        let Some(identity) = catalog.select_identity(
+            recognition.platform(),
+            recognition.content_type(),
+            recognition.source_representation(),
+            recognition.identity_digest(),
+        ) else {
+            return Err(TransformationFailure::UnsupportedFeature);
+        };
+        if !self
+            .transformation_registry()
+            .supports(recognition.source_representation())
+        {
+            return Err(TransformationFailure::UnsupportedFeature);
+        }
+        let source_version = source_version_for_entry(entry)?;
+        let derivation = ValidatedContentDerivation::new(
+            entry.source_entry_id(),
+            source_version,
+            recognition.platform(),
+            recognition.content_type(),
+            identity.clone(),
+            "raw".to_owned(),
+            entry.display_name().to_owned(),
+        );
+        Ok(Some(ProcessedContentCandidate {
+            entry: entry.clone(),
+            identity,
+            derivation,
+            platform: recognition.platform(),
+            content_type: recognition.content_type(),
+        }))
+    }
+
+    fn make_optical_candidate(
+        &self,
+        entry: &SourceEntryRecord,
+        recognition: OpticalRecognition,
+        catalog: &IdentitySchemeCatalog,
+    ) -> Result<Option<ProcessedContentCandidate>, TransformationFailure> {
+        if !self
+            .transformation_registry()
+            .supports(recognition.source_representation())
+        {
+            return Err(TransformationFailure::UnsupportedFeature);
+        }
+        let Some(identity) = catalog.select_identity(
+            recognition.platform(),
+            recognition.content_type(),
+            recognition.source_representation(),
+            recognition.identity_digest(),
+        ) else {
+            return Err(TransformationFailure::UnsupportedFeature);
+        };
+        let source_version = source_version_for_entry(entry)?;
+        let derivation = ValidatedContentDerivation::new(
+            entry.source_entry_id(),
+            source_version,
+            recognition.platform(),
+            recognition.content_type(),
+            identity.clone(),
+            "optical".to_owned(),
+            entry.display_name().to_owned(),
+        );
+        Ok(Some(ProcessedContentCandidate {
+            entry: entry.clone(),
+            identity,
+            derivation,
+            platform: recognition.platform(),
+            content_type: recognition.content_type(),
+        }))
+    }
+
     /// transaction. Identification rechecks the persisted source version in
     /// its own short transaction, and hydration then commits each content unit
     /// through the existing coordinator.
@@ -2162,6 +2818,7 @@ impl KernelBootstrap {
         plan: &argus_application::LibraryScanExecutionPlan,
         context: &OperationContext,
         sessions: &mut [Box<dyn EnrichmentProviderSession>],
+        parsing_session: &mut ParsingSession<'_>,
         now: i64,
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<(usize, u64), ApplicationError> {
@@ -2175,34 +2832,125 @@ impl KernelBootstrap {
                 context.trace_id(),
             )
         })?;
-        let entries = self.list_committed_scan_files_with_context(plan, context)?;
+        let mut entries = self.list_committed_scan_files_with_context(plan, context)?;
         let catalog = IdentitySchemeCatalog::production();
         let mut game_ids = Vec::new();
         let mut optical_sources = Vec::new();
         let mut playlist_entries = Vec::new();
+        let mut derived_playlist_groups = Vec::new();
         let mut issue_count = 0_u64;
+        let mut transformation_issue_codes = Vec::new();
+        let mut transformed_source_entries = std::collections::HashSet::new();
+
+        // Process every non-relationship provider file through the same source
+        // graph. Provider-native files are identified here as well, while
+        // generic containers first reconcile their complete derived scopes and
+        // apply the single-game admission rule before convergence.
+        let provider_entries = entries.clone();
+        for entry in &provider_entries {
+            if entry.kind() != SourceEntryKind::File
+                || is_m3u_entry(entry)
+                || is_optical_descriptor_entry(entry)
+            {
+                continue;
+            }
+            transformed_source_entries.insert(entry.source_entry_id());
+            match self.process_source_tree(
+                plan,
+                context,
+                &access,
+                &resolved_root,
+                entry,
+                &mut entries,
+                parsing_session,
+                &catalog,
+                is_cancelled,
+            ) {
+                Ok(result) => {
+                    transformation_issue_codes.extend(result.issue_codes);
+                    playlist_entries.extend(result.playlists);
+                    derived_playlist_groups.extend(result.derived_playlists);
+                    for candidate in result.candidates {
+                        match self.identify_committed_source_entry_with_context(
+                            candidate.derivation.clone(),
+                            context,
+                        ) {
+                            Ok(outcome) => {
+                                let (game_content_id, game_id) = convergence_ids(outcome);
+                                add_game_id(&mut game_ids, game_id);
+                                if is_optical_content(candidate.content_type) {
+                                    add_optical_source(
+                                        &mut optical_sources,
+                                        candidate.entry.source_entry_id(),
+                                        game_content_id,
+                                        candidate.platform,
+                                    );
+                                }
+                            }
+                            Err(_) => issue_count = issue_count.saturating_add(1),
+                        }
+                    }
+                }
+                Err(TransformationFailure::Cancelled) if is_cancelled() => {
+                    return Err(cancelled_sources_error(context.trace_id()));
+                }
+                Err(failure) => {
+                    if matches!(failure, TransformationFailure::Cancelled) {
+                        return Err(cancelled_sources_error(context.trace_id()));
+                    }
+                    transformation_issue_codes.push(map_transformation_failure(failure));
+                    issue_count = issue_count.saturating_add(1);
+                }
+            }
+        }
 
         for entry in &entries {
             if is_cancelled() {
                 return Err(cancelled_sources_error(context.trace_id()));
+            }
+            if transformed_source_entries.contains(&entry.source_entry_id()) {
+                continue;
+            }
+            if matches!(
+                entry.coordinates(),
+                argus_application::SourceEntryCoordinates::Derived { .. }
+            ) {
+                continue;
             }
             if is_m3u_entry(entry) {
                 playlist_entries.push(entry.clone());
                 continue;
             }
 
+            let Some(entry_locator) = entry.relative_locator() else {
+                issue_count = issue_count.saturating_add(1);
+                continue;
+            };
+
             if is_optical_descriptor_entry(entry) {
-                let descriptor_bytes = match access.read_entry_bytes(
-                    &resolved_root,
-                    entry.relative_locator(),
-                    1024 * 1024,
-                ) {
-                    Ok(bytes) => bytes,
+                let resolver = ContentSourceResolver::new(&access, &resolved_root, &entries);
+                let mut descriptor_reader = match resolver.open(entry, parsing_session) {
+                    Ok(reader) => reader,
+                    Err(TransformationFailure::Cancelled) => {
+                        return Err(cancelled_sources_error(context.trace_id()));
+                    }
                     Err(_) => {
                         issue_count = issue_count.saturating_add(1);
                         continue;
                     }
                 };
+                let descriptor_bytes =
+                    match read_content_bytes(&mut *descriptor_reader, 1024 * 1024, parsing_session)
+                    {
+                        Ok(bytes) => bytes,
+                        Err(TransformationFailure::Cancelled) => {
+                            return Err(cancelled_sources_error(context.trace_id()));
+                        }
+                        Err(_) => {
+                            issue_count = issue_count.saturating_add(1);
+                            continue;
+                        }
+                    };
                 let descriptor =
                     match argus_infrastructure::content::parse_descriptor(&descriptor_bytes) {
                         Ok(descriptor) => descriptor,
@@ -2215,7 +2963,7 @@ impl KernelBootstrap {
                         }
                     };
                 let resolved_dependencies = match argus_application::resolve_optical_dependencies(
-                    entry.relative_locator(),
+                    entry_locator,
                     descriptor.dependencies(),
                     &entries,
                 ) {
@@ -2225,20 +2973,15 @@ impl KernelBootstrap {
                         continue;
                     }
                 };
-                let descriptor_reader =
-                    match access.open_entry_reader(&resolved_root, entry.relative_locator()) {
-                        Ok(reader) => reader,
-                        Err(_) => {
-                            issue_count = issue_count.saturating_add(1);
-                            continue;
-                        }
-                    };
-                let mut readers: Vec<LocalContentReader> =
+                let mut readers: Vec<Box<dyn ContentReader>> =
                     Vec::with_capacity(resolved_dependencies.len());
                 let mut opened = true;
                 for dependency in &resolved_dependencies {
-                    match access.open_entry_reader(&resolved_root, dependency.relative_locator()) {
+                    match resolver.open(dependency, parsing_session) {
                         Ok(reader) => readers.push(reader),
+                        Err(TransformationFailure::Cancelled) => {
+                            return Err(cancelled_sources_error(context.trace_id()));
+                        }
                         Err(_) => {
                             opened = false;
                             break;
@@ -2254,7 +2997,7 @@ impl KernelBootstrap {
                     for (name, reader) in descriptor.dependencies().iter().zip(readers.iter_mut()) {
                         sources.push(argus_infrastructure::content::OpticalSource::new(
                             name.clone(),
-                            reader,
+                            &mut **reader,
                         ));
                     }
                     match argus_infrastructure::content::canonicalize_descriptor_with_cancel(
@@ -2272,12 +3015,10 @@ impl KernelBootstrap {
                         }
                     }
                 };
-                if !descriptor_reader
-                    .source_version_is_unchanged()
-                    .unwrap_or(false)
+                if !ensure_reader_stable(&*descriptor_reader).is_ok()
                     || readers
                         .iter()
-                        .any(|reader| !reader.source_version_is_unchanged().unwrap_or(false))
+                        .any(|reader| !ensure_reader_stable(&**reader).is_ok())
                 {
                     issue_count = issue_count.saturating_add(1);
                     continue;
@@ -2292,9 +3033,7 @@ impl KernelBootstrap {
                     continue;
                 };
                 let mut provenance = Vec::with_capacity(readers.len() + 1);
-                for (index, (dependency, reader)) in
-                    resolved_dependencies.iter().zip(readers.iter()).enumerate()
-                {
+                for (index, dependency) in resolved_dependencies.iter().enumerate() {
                     let role = if index == 0 {
                         ContentProvenanceRole::Primary
                     } else {
@@ -2303,21 +3042,23 @@ impl KernelBootstrap {
                     provenance.push(ProvenanceMember::new(
                         role,
                         Some("disc".to_owned()),
-                        SourceVersionEvidence::new(
-                            dependency.source_entry_id(),
-                            Some(reader.source_fingerprint().to_owned()),
-                            dependency.last_observed_scan_id(),
-                        ),
+                        source_version_for_entry(dependency).map_err(|_| {
+                            application_error_from_code(
+                                ErrorCode::InternalInvariantViolation,
+                                context.trace_id(),
+                            )
+                        })?,
                     ));
                 }
                 provenance.push(ProvenanceMember::new(
                     ContentProvenanceRole::Descriptor,
                     Some("disc".to_owned()),
-                    SourceVersionEvidence::new(
-                        entry.source_entry_id(),
-                        Some(descriptor_reader.source_fingerprint().to_owned()),
-                        entry.last_observed_scan_id(),
-                    ),
+                    source_version_for_entry(entry).map_err(|_| {
+                        application_error_from_code(
+                            ErrorCode::InternalInvariantViolation,
+                            context.trace_id(),
+                        )
+                    })?,
                 ));
                 let derivation = ValidatedContentDerivation::try_with_provenance(
                     provenance,
@@ -2352,14 +3093,13 @@ impl KernelBootstrap {
                 continue;
             }
 
-            let mut reader =
-                match access.open_entry_reader(&resolved_root, entry.relative_locator()) {
-                    Ok(reader) => reader,
-                    Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
-                        continue;
-                    }
-                };
+            let mut reader = match access.open_entry_reader(&resolved_root, entry_locator) {
+                Ok(reader) => reader,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
             let native_optical =
                 match argus_infrastructure::content::recognize_native_optical_with_cancel(
                     &mut reader,
@@ -2470,26 +3210,45 @@ impl KernelBootstrap {
             if is_cancelled() {
                 return Err(cancelled_sources_error(context.trace_id()));
             }
-            let bytes = match access.read_entry_bytes(
-                &resolved_root,
-                playlist.relative_locator(),
-                1024 * 1024,
-            ) {
-                Ok(bytes) => bytes,
+            let Some(playlist_locator) = playlist.relative_locator() else {
+                issue_count = issue_count.saturating_add(1);
+                continue;
+            };
+            let resolver = ContentSourceResolver::new(&access, &resolved_root, &entries);
+            let mut playlist_reader = match resolver.open(playlist, parsing_session) {
+                Ok(reader) => reader,
+                Err(TransformationFailure::Cancelled) => {
+                    return Err(cancelled_sources_error(context.trace_id()));
+                }
                 Err(_) => {
                     issue_count = issue_count.saturating_add(1);
                     continue;
                 }
             };
-            let parsed = match argus_infrastructure::content::parse_m3u(&bytes) {
-                Ok(parsed) => parsed,
-                Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
-                    continue;
-                }
-            };
+            let bytes =
+                match read_content_bytes(&mut *playlist_reader, 1024 * 1024, parsing_session) {
+                    Ok(bytes) => bytes,
+                    Err(TransformationFailure::Cancelled) => {
+                        return Err(cancelled_sources_error(context.trace_id()));
+                    }
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                };
+            let parsed =
+                match argus_infrastructure::content::parse_m3u(&bytes).map_err(map_m3u_error) {
+                    Ok(parsed) => parsed,
+                    Err(TransformationFailure::Cancelled) => {
+                        return Err(cancelled_sources_error(context.trace_id()));
+                    }
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                };
             let resolved_members = match argus_application::resolve_optical_dependencies(
-                playlist.relative_locator(),
+                playlist_locator,
                 parsed.members(),
                 &entries,
             ) {
@@ -2520,11 +3279,13 @@ impl KernelBootstrap {
                 }
                 grouping_members.push(M3uGroupingMember::new(
                     source.game_content_id,
-                    SourceVersionEvidence::new(
-                        member_entry.source_entry_id(),
-                        member_entry.source_fingerprint().map(str::to_owned),
-                        member_entry.last_observed_scan_id(),
-                    ),
+                    match source_version_for_entry(member_entry) {
+                        Ok(version) => version,
+                        Err(_) => {
+                            valid = false;
+                            break;
+                        }
+                    },
                     ordinal as u32,
                 ));
             }
@@ -2532,27 +3293,18 @@ impl KernelBootstrap {
                 issue_count = issue_count.saturating_add(1);
                 continue;
             }
-            let playlist_reader =
-                match access.open_entry_reader(&resolved_root, playlist.relative_locator()) {
-                    Ok(reader) => reader,
-                    Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
-                        continue;
-                    }
-                };
-            if !playlist_reader
-                .source_version_is_unchanged()
-                .unwrap_or(false)
-            {
+            if !ensure_reader_stable(&*playlist_reader).is_ok() {
                 issue_count = issue_count.saturating_add(1);
                 continue;
             }
             let grouping = match ValidatedM3uGrouping::new(
-                SourceVersionEvidence::new(
-                    playlist.source_entry_id(),
-                    Some(playlist_reader.source_fingerprint().to_owned()),
-                    playlist.last_observed_scan_id(),
-                ),
+                match source_version_for_entry(playlist) {
+                    Ok(version) => version,
+                    Err(_) => {
+                        issue_count = issue_count.saturating_add(1);
+                        continue;
+                    }
+                },
                 grouping_members,
             ) {
                 Ok(grouping) => grouping,
@@ -2579,6 +3331,79 @@ impl KernelBootstrap {
                 Err(_) => {
                     issue_count = issue_count.saturating_add(1);
                 }
+            }
+        }
+
+        for playlist in &derived_playlist_groups {
+            if is_cancelled() {
+                return Err(cancelled_sources_error(context.trace_id()));
+            }
+            let mut member_platform = None;
+            let mut grouping_members = Vec::with_capacity(playlist.members.len());
+            let mut valid = true;
+            for (ordinal, member_entry) in playlist.members.iter().enumerate() {
+                let Some(source) = optical_sources
+                    .iter()
+                    .find(|source| source.source_entry_id == member_entry.source_entry_id())
+                else {
+                    valid = false;
+                    break;
+                };
+                if let Some(expected) = member_platform {
+                    if expected != source.platform {
+                        valid = false;
+                        break;
+                    }
+                } else {
+                    member_platform = Some(source.platform);
+                }
+                let source_version = match source_version_for_entry(member_entry) {
+                    Ok(version) => version,
+                    Err(_) => {
+                        valid = false;
+                        break;
+                    }
+                };
+                grouping_members.push(M3uGroupingMember::new(
+                    source.game_content_id,
+                    source_version,
+                    ordinal as u32,
+                ));
+            }
+            if !valid {
+                issue_count = issue_count.saturating_add(1);
+                continue;
+            }
+            let playlist_version = match source_version_for_entry(&playlist.playlist) {
+                Ok(version) => version,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
+            let grouping = match ValidatedM3uGrouping::new(playlist_version, grouping_members) {
+                Ok(grouping) => grouping,
+                Err(_) => {
+                    issue_count = issue_count.saturating_add(1);
+                    continue;
+                }
+            };
+            let grouping_result = self.unit_of_work.execute(context, move |mut work| {
+                let game_id = {
+                    let mut logical = work.logical_content();
+                    logical
+                        .apply_m3u_grouping(&grouping)
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(game_id)
+            });
+            match grouping_result {
+                Ok(game_id) => {
+                    add_game_id(&mut game_ids, game_id);
+                    active_playlists.push(playlist.playlist.source_entry_id());
+                }
+                Err(_) => issue_count = issue_count.saturating_add(1),
             }
         }
 
@@ -2635,6 +3460,7 @@ impl KernelBootstrap {
                 }
             }
         }
+        issue_count = issue_count.saturating_add(transformation_issue_codes.len() as u64);
         Ok((hydration_game_ids.len(), issue_count))
     }
 
@@ -3606,6 +4432,9 @@ pub fn bootstrap_kernel_with_event_bus(
         artwork_store: Arc::new(artwork_store),
         event_bus: Arc::new(event_bus),
         publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
+        transformation_registry: TransformationRegistry::production(),
+        transformation_staging_root: data_directory
+            .join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
         collector,
         #[cfg(test)]
         fail_shutdown: false,
@@ -3651,6 +4480,169 @@ struct OpticalSourceLink {
     source_entry_id: SourceEntryId,
     game_content_id: GameContentId,
     platform: PlatformId,
+}
+
+#[derive(Default)]
+struct SourceTreeResult {
+    candidates: Vec<ProcessedContentCandidate>,
+    playlists: Vec<SourceEntryRecord>,
+    derived_playlists: Vec<DerivedPlaylistGroup>,
+    issue_codes: Vec<ErrorCode>,
+}
+
+impl SourceTreeResult {
+    fn empty() -> Self {
+        Self {
+            candidates: Vec::new(),
+            playlists: Vec::new(),
+            derived_playlists: Vec::new(),
+            issue_codes: Vec::new(),
+        }
+    }
+}
+
+struct DerivedPlaylistGroup {
+    playlist: SourceEntryRecord,
+    members: Vec<SourceEntryRecord>,
+}
+
+#[derive(Clone)]
+struct ProcessedContentCandidate {
+    entry: SourceEntryRecord,
+    identity: ContentIdentity,
+    derivation: ValidatedContentDerivation,
+    platform: PlatformId,
+    content_type: ContentType,
+}
+
+fn source_version_for_entry(
+    entry: &SourceEntryRecord,
+) -> Result<SourceVersionEvidence, TransformationFailure> {
+    match entry.coordinates() {
+        argus_application::SourceEntryCoordinates::Provider {
+            source_fingerprint, ..
+        } => Ok(SourceVersionEvidence::provider(
+            entry.source_entry_id(),
+            source_fingerprint.clone(),
+            entry.last_observed_scan_id(),
+        )),
+        argus_application::SourceEntryCoordinates::Derived {
+            derived_fingerprint,
+            ..
+        } => Ok(SourceVersionEvidence::derived(
+            entry.source_entry_id(),
+            derived_fingerprint.clone(),
+            entry.last_observed_scan_id(),
+        )),
+    }
+}
+
+fn read_content_probe(
+    reader: &mut dyn ContentReader,
+    source_length: u64,
+    requested: usize,
+) -> Result<Vec<u8>, TransformationFailure> {
+    let length = source_length.min(requested as u64) as usize;
+    if length == 0 {
+        return Ok(Vec::new());
+    }
+    let max_read_size = reader.max_read_size();
+    if max_read_size == 0 {
+        return Err(TransformationFailure::ReadFailure);
+    }
+    let mut output = vec![0_u8; length];
+    let mut offset = 0_usize;
+    while offset < output.len() {
+        let end = (offset + max_read_size).min(output.len());
+        let count = reader
+            .read_at(offset as u64, &mut output[offset..end])
+            .map_err(|error| match error {
+                argus_infrastructure::content::ContentReadError::OutOfRange => {
+                    TransformationFailure::Malformed
+                }
+                argus_infrastructure::content::ContentReadError::RequestTooLarge => {
+                    TransformationFailure::ResourceLimitExceeded
+                }
+                argus_infrastructure::content::ContentReadError::Io => {
+                    TransformationFailure::ReadFailure
+                }
+            })?;
+        if count == 0 {
+            return Err(TransformationFailure::ReadFailure);
+        }
+        offset = offset
+            .checked_add(count)
+            .ok_or(TransformationFailure::ResourceLimitExceeded)?;
+    }
+    Ok(output)
+}
+
+fn read_content_bytes(
+    reader: &mut dyn ContentReader,
+    max_bytes: usize,
+    session: &mut ParsingSession<'_>,
+) -> Result<Vec<u8>, TransformationFailure> {
+    let length = reader
+        .len()
+        .map_err(|_| TransformationFailure::ReadFailure)?;
+    if length > max_bytes as u64 {
+        return Err(TransformationFailure::ResourceLimitExceeded);
+    }
+    let length =
+        usize::try_from(length).map_err(|_| TransformationFailure::ResourceLimitExceeded)?;
+    session.charge_parser_work(length as u64)?;
+    read_content_probe(reader, length as u64, length)
+}
+
+fn ensure_reader_stable(reader: &dyn ContentReader) -> Result<(), TransformationFailure> {
+    if reader
+        .source_version_is_unchanged()
+        .map_err(|_| TransformationFailure::ReadFailure)?
+    {
+        Ok(())
+    } else {
+        Err(TransformationFailure::SourceChanged)
+    }
+}
+
+fn map_optical_failure(error: OpticalError) -> TransformationFailure {
+    match error {
+        OpticalError::Malformed | OpticalError::Truncated => TransformationFailure::Malformed,
+        OpticalError::MissingDependency | OpticalError::ConflictingDependency => {
+            TransformationFailure::MissingDependency
+        }
+        OpticalError::Traversal => TransformationFailure::UnsupportedFeature,
+        OpticalError::UnsupportedRepresentation => TransformationFailure::UnsupportedFeature,
+        OpticalError::AmbiguousPlatform => TransformationFailure::AmbiguousRecognition,
+        OpticalError::ResourceLimitExceeded => TransformationFailure::ResourceLimitExceeded,
+        OpticalError::Cancelled => TransformationFailure::Cancelled,
+        OpticalError::ReadFailure => TransformationFailure::ReadFailure,
+    }
+}
+
+fn map_m3u_error(error: argus_infrastructure::content::M3uError) -> TransformationFailure {
+    match error {
+        argus_infrastructure::content::M3uError::Malformed
+        | argus_infrastructure::content::M3uError::InvalidMember
+        | argus_infrastructure::content::M3uError::DuplicateMember => {
+            TransformationFailure::Malformed
+        }
+        argus_infrastructure::content::M3uError::ResourceLimitExceeded => {
+            TransformationFailure::ResourceLimitExceeded
+        }
+    }
+}
+
+fn is_optical_content(content_type: ContentType) -> bool {
+    matches!(
+        content_type,
+        ContentType::OpticalDiscCd
+            | ContentType::OpticalDiscGd
+            | ContentType::OpticalDiscDvd
+            | ContentType::OpticalDiscGameCube
+            | ContentType::OpticalDiscWii
+            | ContentType::OpticalDiscUmd
+    )
 }
 
 fn convergence_ids(outcome: ConvergenceOutcome) -> (GameContentId, GameId) {

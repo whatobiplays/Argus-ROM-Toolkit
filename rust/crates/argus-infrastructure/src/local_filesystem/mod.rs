@@ -23,7 +23,7 @@ use argus_application::{
     LocalFilesystemRootSelection, MAX_LOCAL_FILESYSTEM_BROWSE_PAGE_SIZE,
     MAX_MOUNTED_LOCAL_FILESYSTEM_VOLUMES, MountedLocalFilesystemVolume, ObservedEntryKind,
     ProviderError, RelativeSourceLocator, ResolvedRoot, RootLocator, RootRelationship,
-    SourceAccessError, SourceLocatorKey, SourceObservation, ValidatedLocalRoot,
+    SourceAccessError, SourceLocatorKey, SourceObservation, SourceReadHandle, ValidatedLocalRoot,
 };
 
 const ROOT_LOCATOR_PREFIX: &str = "argus-local-root-v2";
@@ -124,6 +124,43 @@ impl ContentReader for LocalContentReader {
     }
 }
 
+impl SourceReadHandle for LocalContentReader {
+    fn len(&self) -> Result<u64, SourceAccessError> {
+        Ok(self.length)
+    }
+
+    fn read_at(&mut self, offset: u64, destination: &mut [u8]) -> Result<usize, SourceAccessError> {
+        const MAX_READ_BYTES: usize = 64 * 1024;
+        if destination.len() > MAX_READ_BYTES {
+            return Err(SourceAccessError::InvalidResponse);
+        }
+        let end = offset
+            .checked_add(destination.len() as u64)
+            .ok_or(SourceAccessError::InvalidResponse)?;
+        if end > self.length {
+            return Err(SourceAccessError::InvalidResponse);
+        }
+        self.file
+            .seek(SeekFrom::Start(offset))
+            .map_err(|_| SourceAccessError::IoFailure)?;
+        self.file
+            .read(destination)
+            .map_err(|_| SourceAccessError::IoFailure)
+    }
+
+    fn max_read_size(&self) -> usize {
+        64 * 1024
+    }
+
+    fn source_fingerprint(&self) -> Option<&str> {
+        Some(LocalContentReader::source_fingerprint(self))
+    }
+
+    fn source_version_is_unchanged(&self) -> Result<bool, SourceAccessError> {
+        LocalContentReader::source_version_is_unchanged(self)
+    }
+}
+
 impl LocalFilesystemSourceAccess {
     /// Creates access bound to one configured root locator.
     pub fn new(locator: &RootLocator) -> Self {
@@ -190,33 +227,13 @@ impl LibrarySourceAccess for LocalFilesystemSourceAccess {
         enumerate_scope(&root_path, &scope_path, &prefix, is_cancelled)
     }
 
-    fn read_entry_bytes(
+    fn open_entry_read(
         &self,
         root: &ResolvedRoot,
         relative: &RelativeSourceLocator,
-        max_bytes: usize,
-    ) -> Result<Vec<u8>, SourceAccessError> {
-        let root_path = self.current_root(root)?;
-        let entry_path = resolve_entry_path(&root_path, relative)?;
-        let metadata = std::fs::metadata(&entry_path).map_err(classify_entry_access_error)?;
-        if !metadata.is_file() {
-            return Err(SourceAccessError::UnsupportedOperation);
-        }
-        if metadata.len() > max_bytes as u64 {
-            return Err(SourceAccessError::UnsupportedOperation);
-        }
-
-        let mut file = std::fs::File::open(&entry_path).map_err(classify_entry_access_error)?;
-        let mut bytes = Vec::with_capacity(metadata.len().min(max_bytes as u64) as usize);
-        let read = file
-            .by_ref()
-            .take(max_bytes as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(classify_entry_access_error)?;
-        if read > max_bytes {
-            return Err(SourceAccessError::UnsupportedOperation);
-        }
-        Ok(bytes)
+    ) -> Result<Box<dyn SourceReadHandle>, SourceAccessError> {
+        self.open_entry_reader(root, relative)
+            .map(|reader| Box::new(reader) as Box<dyn SourceReadHandle>)
     }
 }
 
@@ -229,8 +246,9 @@ impl LocalFilesystemSourceAccess {
     ) -> Result<LocalContentReader, SourceAccessError> {
         let root_path = self.current_root(root)?;
         let entry_path = resolve_entry_path(&root_path, relative)?;
-        let metadata = std::fs::metadata(&entry_path).map_err(classify_entry_access_error)?;
-        if !metadata.is_file() {
+        let metadata =
+            std::fs::symlink_metadata(&entry_path).map_err(classify_entry_access_error)?;
+        if !metadata.file_type().is_file() {
             return Err(SourceAccessError::UnsupportedOperation);
         }
         LocalContentReader::open(entry_path, &metadata)
@@ -339,12 +357,16 @@ fn resolve_entry_path(
     }
 
     let mut candidate = root_path.to_path_buf();
-    for component in components {
+    for (index, component) in components.iter().enumerate() {
         candidate.push(component);
         let metadata =
             std::fs::symlink_metadata(&candidate).map_err(classify_entry_access_error)?;
         if is_link_like(&metadata) {
-            return Err(SourceAccessError::InvalidLocator);
+            return if index + 1 == components.len() {
+                Err(SourceAccessError::UnsupportedOperation)
+            } else {
+                Err(SourceAccessError::InvalidLocator)
+            };
         }
     }
 

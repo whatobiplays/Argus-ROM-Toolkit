@@ -197,8 +197,8 @@ fn v11_rows_and_relationships_survive_content_catalog_expansion() {
     old.shutdown().expect("shutdown v11");
 
     let current = SqliteDatabaseExecutor::open(&database).expect("v12 upgrade");
-    assert_eq!(current.migration_summary().current_version, 14);
-    assert_eq!(current.migration_summary().applied_count, 3);
+    assert_eq!(current.migration_summary().current_version, 15);
+    assert_eq!(current.migration_summary().applied_count, 4);
     current
         .with_connection_for_tests(context(), |connection| {
             for (table, expected) in [

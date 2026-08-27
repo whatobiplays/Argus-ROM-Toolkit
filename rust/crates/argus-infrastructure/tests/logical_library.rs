@@ -18,7 +18,7 @@ fn logical_schema_is_added_without_backfilling_existing_source_rows() {
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("logical.sqlite3")).expect("database");
 
-    assert_eq!(executor.migration_summary().current_version, 14);
+    assert_eq!(executor.migration_summary().current_version, 15);
     executor
         .with_connection_for_tests(context(), |connection| {
             for table in [

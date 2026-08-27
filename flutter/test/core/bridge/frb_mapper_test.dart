@@ -175,6 +175,7 @@ void main() {
               sourceCount: 0,
               identity: null,
               provenance: null,
+              sources: [],
             ),
           ],
           availabilityState: dto.GameAvailabilityStateDto.inactiveOrphan,
@@ -227,6 +228,7 @@ void main() {
           lastObservedScanId: 'dddddddddddddddddddddddddddddddd',
           members: [],
         ),
+        sources: [],
       ),
     );
 

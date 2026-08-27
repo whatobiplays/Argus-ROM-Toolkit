@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import 'application/library_state.dart';
 
 part 'library_composition.g.dart';
 
@@ -57,3 +62,23 @@ GamesApi libraryGamesApi(Ref ref) {
     'libraryGamesApiProvider must be supplied by app composition',
   );
 }
+
+/// Bounded immutable artwork-byte capability injected by app composition.
+final libraryArtworkApiProvider = Provider<ArtworkApi>((ref) {
+  throw StateError(
+    'libraryArtworkApiProvider must be supplied by app composition',
+  );
+});
+
+/// Runtime generation context injected by app composition.
+final libraryRuntimeContextProvider = Provider<LibraryRuntimeContext>(
+  (ref) => const LibraryRuntimeContext.preReady(),
+);
+
+/// App-composition-owned Library invalidation channel.
+final libraryReconciliationDemandProvider =
+    Provider<LibraryReconciliationDemandSource>(
+      (ref) => const LibraryReconciliationDemandSource(
+        Stream<LibraryReconciliationDemand>.empty(),
+      ),
+    );

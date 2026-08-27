@@ -20,20 +20,21 @@ use argus_application::{
     BackgroundOperationStopReason, CancelJobResult, CompleteLibraryOnboardingAndRefreshResult,
     ErrorCode, EventSubscriberError, GameId, GameLibraryPage, GetGameResult, HydrationReport,
     HydrationTarget, JobDetail, JobProgress, JobProgressChanged, JobProgressReporter, JobRunId,
-    JobRunRepository, JobRunState, JobStateChanged, JobSummaryPage, LibraryOnboardingState,
-    LibraryProviderSetupDecision, LibraryRefreshAdmissionOutcome, LibraryRefreshTrigger,
-    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionResult,
-    LibraryScanAllRequestIdentity, LibraryScanChildAdmission, LibraryScanChildCompletion,
-    LibraryScanExecutionPlan, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
-    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
-    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
-    MetadataProviderSettings, MetadataProviderSettingsUpdateResult, MetadataSettings,
-    MetadataSettingsUpdateResult, OperationCompletion, OperationContext, OperationName,
-    PrivacyConsent, RefreshMode, RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand,
-    ScanAdmissionReference, SourceEntriesChangeScope, SourceEntriesChanged,
-    SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult,
-    StartLibraryScanResult, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId,
-    TransformationBudget, UnitOfWork, UnitOfWorkFactory, aggregate_library_scan_state,
+    JobRunRepository, JobRunState, JobStateChanged, JobSummaryPage, LibraryFacetQuery,
+    LibraryFacets, LibraryOnboardingState, LibraryProviderSetupDecision,
+    LibraryRefreshAdmissionOutcome, LibraryRefreshTrigger, LibraryRootId, LibraryRootPage,
+    LibraryRootProjection, LibraryScanAdmissionResult, LibraryScanAllRequestIdentity,
+    LibraryScanChildAdmission, LibraryScanChildCompletion, LibraryScanExecutionPlan,
+    ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MetadataProviderSettings,
+    MetadataProviderSettingsUpdateResult, MetadataSettings, MetadataSettingsUpdateResult,
+    OperationCompletion, OperationContext, OperationName, PrivacyConsent, RefreshMode,
+    RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference,
+    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryChildrenPage,
+    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult, StartLibraryScanResult,
+    SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId, TransformationBudget,
+    UnitOfWork, UnitOfWorkFactory, aggregate_library_scan_state,
 };
 
 use crate::{
@@ -1838,6 +1839,35 @@ impl ApplicationHost {
         }
         self.with_ready_kernel(context, move |kernel| {
             kernel.list_games_with_context(&query, context)
+        })
+    }
+
+    /// Executes the backend-owned facet query for one logical-library shape.
+    pub fn get_library_facets(
+        &self,
+        query: LibraryFacetQuery,
+    ) -> Result<LibraryFacets, ApplicationError> {
+        let (context, _guard) = self.begin_operation("library", "get_library_facets")?;
+        self.get_library_facets_with_context(query, &context)
+    }
+
+    /// Executes the backend-owned facet query under an existing context.
+    pub fn get_library_facets_with_context(
+        &self,
+        query: LibraryFacetQuery,
+        context: &OperationContext,
+    ) -> Result<LibraryFacets, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.get_library_facets_with_context(&query, context)
         })
     }
 

@@ -172,6 +172,8 @@ abstract interface class SourcesApi {
 abstract interface class LibraryGateway {
   Future<GamePage> listGames(ListGamesRequest request);
 
+  Future<LibraryFacets> getLibraryFacets(LibraryFacetQuery request);
+
   Future<GetGameResult> getGame(GameId gameId);
 }
 
@@ -180,6 +182,8 @@ abstract interface class LibraryGateway {
 /// remain out.
 abstract interface class LibraryReads {
   Future<GamePage> listGames(ListGamesRequest request);
+
+  Future<LibraryFacets> getLibraryFacets(LibraryFacetQuery request);
 
   Future<GetGameResult> getGame(GameId gameId);
 }

@@ -3,8 +3,8 @@
 use argus_domain::{ContentProvenanceRole, ContentType, GameContentId, GameId, PlatformId};
 
 use crate::{
-    ApplicationError, ErrorCode, LogicalLibraryQueries, OperationContext, PersistenceError,
-    SafeContext, ScanRunId, SourceEntryId, TraceId,
+    ApplicationError, DerivedFingerprint, ErrorCode, LogicalLibraryQueries, OperationContext,
+    PersistenceError, SafeContext, ScanRunId, SourceEntryId, TraceId,
 };
 
 /// Current identity and exact source evidence produced outside a write transaction.
@@ -45,8 +45,17 @@ impl ContentIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceVersionEvidence {
     source_entry_id: SourceEntryId,
-    source_fingerprint: Option<String>,
+    version: SourceVersionKind,
     last_observed_scan_id: ScanRunId,
+}
+
+/// Distinguishes provider-native and transformation-derived version evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceVersionKind {
+    /// Version evidence owned by a source provider.
+    Provider(Option<String>),
+    /// Version evidence owned by a transformation-derived source entry.
+    Derived(DerivedFingerprint),
 }
 
 impl SourceVersionEvidence {
@@ -56,9 +65,31 @@ impl SourceVersionEvidence {
         source_fingerprint: Option<String>,
         last_observed_scan_id: ScanRunId,
     ) -> Self {
+        Self::provider(source_entry_id, source_fingerprint, last_observed_scan_id)
+    }
+
+    /// Creates provider-native version evidence explicitly.
+    pub fn provider(
+        source_entry_id: SourceEntryId,
+        source_fingerprint: Option<String>,
+        last_observed_scan_id: ScanRunId,
+    ) -> Self {
         Self {
             source_entry_id,
-            source_fingerprint,
+            version: SourceVersionKind::Provider(source_fingerprint),
+            last_observed_scan_id,
+        }
+    }
+
+    /// Creates transformation-derived version evidence explicitly.
+    pub fn derived(
+        source_entry_id: SourceEntryId,
+        derived_fingerprint: DerivedFingerprint,
+        last_observed_scan_id: ScanRunId,
+    ) -> Self {
+        Self {
+            source_entry_id,
+            version: SourceVersionKind::Derived(derived_fingerprint),
             last_observed_scan_id,
         }
     }
@@ -70,7 +101,23 @@ impl SourceVersionEvidence {
 
     /// Returns the cheap persisted fingerprint, if available.
     pub fn source_fingerprint(&self) -> Option<&str> {
-        self.source_fingerprint.as_deref()
+        match &self.version {
+            SourceVersionKind::Provider(fingerprint) => fingerprint.as_deref(),
+            SourceVersionKind::Derived(_) => None,
+        }
+    }
+
+    /// Returns the derived fingerprint, if this is derived evidence.
+    pub fn derived_fingerprint(&self) -> Option<&DerivedFingerprint> {
+        match &self.version {
+            SourceVersionKind::Provider(_) => None,
+            SourceVersionKind::Derived(fingerprint) => Some(fingerprint),
+        }
+    }
+
+    /// Returns the provider-versus-derived evidence kind.
+    pub fn version(&self) -> &SourceVersionKind {
+        &self.version
     }
 
     /// Returns the scan observation version.

@@ -33,7 +33,7 @@ use argus_application::{
     ScanAdmissionReference, SourceEntriesChangeScope, SourceEntriesChanged,
     SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult,
     StartLibraryScanResult, SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId,
-    UnitOfWork, UnitOfWorkFactory, aggregate_library_scan_state,
+    TransformationBudget, UnitOfWork, UnitOfWorkFactory, aggregate_library_scan_state,
 };
 
 use crate::{
@@ -48,8 +48,19 @@ use crate::{
 };
 use argus_application::LocalFilesystemProvider;
 use argus_application::{LibraryScanOperationHandler, OperationHandle};
+use argus_infrastructure::content::ParsingSession;
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
+
+/// Removes only recognized abandoned transformation staging directories.
+///
+/// Startup treats this cleanup as best effort: an inaccessible stale
+/// directory must not prevent the runtime from opening its durable stores.
+pub(crate) fn cleanup_transformation_staging(data_directory: &Path) -> std::io::Result<u64> {
+    let staging_root =
+        data_directory.join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY);
+    argus_infrastructure::content::cleanup_abandoned_staging(&staging_root)
+}
 
 /// Opaque identity for one runtime generation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -3654,6 +3665,21 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
 
         let mut sessions =
             self.with_kernel(context, |kernel| Ok(kernel.create_enrichment_sessions()))?;
+        let mut parsing_session = self.with_kernel(context, |kernel| {
+            ParsingSession::new(
+                TransformationBudget::production(),
+                kernel.transformation_staging_root(),
+                || stop_reason().is_some(),
+            )
+            .map_err(|failure| {
+                ApplicationError::from_code(
+                    argus_application::map_transformation_failure(failure),
+                    context.trace_id(),
+                    argus_application::SafeContext::new(),
+                )
+                .expect("transformation failure uses an allowlisted empty context")
+            })
+        })?;
         let mut child_states = Vec::with_capacity(self.plans.len());
         let mut issue_count = 0_u64;
 
@@ -3691,6 +3717,7 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
                         plan,
                         context,
                         &mut sessions,
+                        &mut parsing_session,
                         crate::now_millis(),
                         &is_cancelled,
                     )

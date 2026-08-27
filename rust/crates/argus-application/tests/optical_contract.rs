@@ -1,7 +1,8 @@
 use argus_application::{
+    ContentDependencyCandidate, DerivedEntryKey, DerivedFingerprint, DerivedLocator,
     OpticalDependencyError, RelativeSourceLocator, ScanRunId, SourceEntryClassification,
-    SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceLocatorKey,
-    resolve_optical_dependencies,
+    SourceEntryCoordinates, SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceLocatorKey,
+    resolve_content_dependencies, resolve_optical_dependencies,
 };
 
 fn id(value: &str) -> SourceEntryId {
@@ -73,4 +74,40 @@ fn rejects_traversal_missing_ambiguous_and_duplicate_dependencies() {
         ),
         Err(OpticalDependencyError::Duplicate)
     );
+}
+
+#[test]
+fn resolves_provider_neutral_derived_references_without_parsing_derived_locators() {
+    let derived = SourceEntryRecord::from_coordinates(
+        id("33333333333333333333333333333333"),
+        Some(id("44444444444444444444444444444444")),
+        "track.bin",
+        "archive-member-display/track.bin",
+        SourceEntryKind::File,
+        SourceEntryClassification::SupportingEntry,
+        SourceEntryCoordinates::Derived {
+            derived_locator: DerivedLocator::from_transformation(
+                "decoder-private-offset:untrusted-to-generic-code".to_owned(),
+            ),
+            derived_entry_key: DerivedEntryKey::from_transformation("member:track".to_owned()),
+            derived_fingerprint: DerivedFingerprint::from_transformation("track-v1".to_owned()),
+            transformation_id: "argus.transformation.zip.v1".to_owned(),
+            transformation_revision: 1,
+        },
+        scan("11111111111111111111111111111111"),
+    );
+    let candidate = ContentDependencyCandidate::new(derived, "disc/track.bin");
+    let resolved =
+        resolve_content_dependencies("disc/game.cue", &["track.bin".to_owned()], &[candidate])
+            .expect("derived dependency");
+    assert_eq!(
+        resolved[0].source_entry_id(),
+        id("33333333333333333333333333333333")
+    );
+}
+
+#[test]
+fn rejects_provider_neutral_cross_root_references() {
+    let result = resolve_content_dependencies("disc/game.cue", &["../outside.bin".to_owned()], &[]);
+    assert_eq!(result, Err(OpticalDependencyError::CrossRoot));
 }

@@ -717,6 +717,67 @@ pub enum SourceAccessError {
     Cancelled,
 }
 
+/// Bounded positional reads over one source entry.
+///
+/// The handle is operation-scoped and owns no durable source identity. Each
+/// read is range-checked by the provider, and callers must use
+/// [`SourceReadHandle::max_read_size`] when selecting a destination buffer.
+pub trait SourceReadHandle: Send {
+    /// Returns the immutable source length observed for this operation.
+    fn len(&self) -> Result<u64, SourceAccessError>;
+
+    /// Returns whether the observed source contains no bytes.
+    fn is_empty(&self) -> Result<bool, SourceAccessError> {
+        Ok(self.len()? == 0)
+    }
+
+    /// Reads a bounded range beginning at `offset` into `destination`.
+    fn read_at(&mut self, offset: u64, destination: &mut [u8]) -> Result<usize, SourceAccessError>;
+
+    /// Returns the largest destination buffer accepted by one read request.
+    fn max_read_size(&self) -> usize {
+        64 * 1024
+    }
+
+    /// Returns the provider fingerprint captured when this handle opened, if
+    /// the provider can expose one without leaking native state.
+    fn source_fingerprint(&self) -> Option<&str> {
+        None
+    }
+
+    /// Revalidates the provider version observed by this operation.
+    ///
+    /// Providers without version evidence retain the conservative-compatible
+    /// default; providers that can observe mutations must override it.
+    fn source_version_is_unchanged(&self) -> Result<bool, SourceAccessError> {
+        Ok(true)
+    }
+}
+
+fn read_exact_source(
+    reader: &mut dyn SourceReadHandle,
+    destination: &mut [u8],
+) -> Result<(), SourceAccessError> {
+    let max_read_size = reader.max_read_size();
+    if max_read_size == 0 && !destination.is_empty() {
+        return Err(SourceAccessError::InvalidResponse);
+    }
+
+    let mut offset = 0usize;
+    while offset < destination.len() {
+        let request_size = max_read_size.min(destination.len() - offset);
+        let count = reader.read_at(
+            offset as u64,
+            &mut destination[offset..offset + request_size],
+        )?;
+        if count == 0 || count > request_size {
+            return Err(SourceAccessError::IoFailure);
+        }
+        offset += count;
+    }
+    Ok(())
+}
+
 /// Operation-scoped source access for one execution attempt.
 ///
 /// The provider owns root resolution, locator interpretation, direct-child
@@ -741,6 +802,20 @@ pub trait LibrarySourceAccess: Send + Sync {
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<EnumerationResult, SourceAccessError>;
 
+    /// Opens one source entry for bounded positional reads.
+    ///
+    /// Providers that do not expose byte access retain the default unsupported
+    /// result. The returned handle is never persisted or shared across scan
+    /// generations.
+    fn open_entry_read(
+        &self,
+        root: &ResolvedRoot,
+        relative: &RelativeSourceLocator,
+    ) -> Result<Box<dyn SourceReadHandle>, SourceAccessError> {
+        let _ = (root, relative);
+        Err(SourceAccessError::UnsupportedOperation)
+    }
+
     /// Reads one source entry into a bounded, operation-scoped byte buffer.
     ///
     /// The provider owns path interpretation and returns bytes only. A
@@ -752,8 +827,15 @@ pub trait LibrarySourceAccess: Send + Sync {
         relative: &RelativeSourceLocator,
         max_bytes: usize,
     ) -> Result<Vec<u8>, SourceAccessError> {
-        let _ = (root, relative, max_bytes);
-        Err(SourceAccessError::UnsupportedOperation)
+        let mut reader = self.open_entry_read(root, relative)?;
+        let length = reader.len()?;
+        if length > max_bytes as u64 {
+            return Err(SourceAccessError::InvalidResponse);
+        }
+        let length = usize::try_from(length).map_err(|_| SourceAccessError::InvalidResponse)?;
+        let mut bytes = vec![0; length];
+        read_exact_source(&mut *reader, &mut bytes)?;
+        Ok(bytes)
     }
 }
 
@@ -777,6 +859,14 @@ impl LibrarySourceAccess for Box<dyn LibrarySourceAccess> {
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<EnumerationResult, SourceAccessError> {
         (**self).enumerate_direct_children(root, relative, is_cancelled)
+    }
+
+    fn open_entry_read(
+        &self,
+        root: &ResolvedRoot,
+        relative: &RelativeSourceLocator,
+    ) -> Result<Box<dyn SourceReadHandle>, SourceAccessError> {
+        (**self).open_entry_read(root, relative)
     }
 
     fn read_entry_bytes(

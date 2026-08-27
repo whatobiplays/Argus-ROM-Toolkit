@@ -3,17 +3,23 @@
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc;
+#[cfg(feature = "test-support")]
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use argus_application::{
-    AddLocalLibraryRootResult, ArtworkCandidate, ArtworkReference, ArtworkType, CancelJobResult,
-    EnrichmentProviderSession, ErrorCode, ExactMatchEvidence, GetGameResult,
-    HydrationMappingCandidate, HydrationProviderError, HydrationTarget, JobRunId, JobRunState,
-    LibraryRefreshTrigger, LibraryRootId, LibraryRootLastScanStatus, LibraryScope, LibrarySort,
-    ListGamesQuery, ListJobsQuery, ListJobsScope, LocalFilesystemRootSelection, OperationDetail,
-    PlatformId, ProviderId, ProviderMetadata, RefreshMode, StartLibraryScanResult,
+    AddLocalLibraryRootResult, CancelJobResult, JobRunId, JobRunState, LibraryRefreshTrigger,
+    LibraryRootId, LibraryRootLastScanStatus, ListJobsQuery, ListJobsScope,
+    LocalFilesystemRootSelection, OperationDetail, RefreshMode, StartLibraryScanResult,
 };
+#[cfg(feature = "test-support")]
+use argus_application::{
+    ArtworkCandidate, ArtworkReference, ArtworkType, EnrichmentProviderSession, ErrorCode,
+    ExactMatchEvidence, GetGameResult, HydrationMappingCandidate, HydrationProviderError,
+    HydrationTarget, LibraryScope, LibrarySort, ListGamesQuery, PlatformId, ProviderId,
+    ProviderMetadata,
+};
+#[cfg(feature = "test-support")]
 use argus_infrastructure::content::{ContentReadError, ContentReader};
 use argus_runtime::{
     ApplicationHost, KernelBootstrapOptions, RuntimeEventPayload, RuntimeLifecycle,
@@ -33,12 +39,14 @@ fn make_library(root: &Path, file_count: usize) {
     fs::write(root.join("Sub/nested.txt"), b"nested").expect("nested");
 }
 
+#[cfg(feature = "test-support")]
 const GB_LOGO: [u8; 48] = [
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
     0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
     0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC, 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
 ];
 
+#[cfg(feature = "test-support")]
 fn gb_fixture(marker: u8) -> Vec<u8> {
     let mut bytes = vec![0_u8; 0x8000];
     bytes[0x143] = 0x00;
@@ -57,6 +65,7 @@ fn gb_fixture(marker: u8) -> Vec<u8> {
     bytes
 }
 
+#[cfg(feature = "test-support")]
 fn nes_fixture() -> Vec<u8> {
     let mut bytes = vec![0_u8; 16 + 0x4000 + 0x2000];
     bytes[0..4].copy_from_slice(b"NES\x1a");
@@ -69,6 +78,7 @@ fn nes_fixture() -> Vec<u8> {
     bytes
 }
 
+#[cfg(feature = "test-support")]
 fn genesis_fixture() -> Vec<u8> {
     let mut bytes = vec![0_u8; 0x8000];
     bytes[0x100..0x110].copy_from_slice(b"SEGA GENESIS    ");
@@ -81,10 +91,12 @@ fn genesis_fixture() -> Vec<u8> {
     bytes
 }
 
+#[cfg(feature = "test-support")]
 struct FixtureContentReader {
     bytes: Vec<u8>,
 }
 
+#[cfg(feature = "test-support")]
 impl ContentReader for FixtureContentReader {
     fn len(&self) -> Result<u64, ContentReadError> {
         Ok(self.bytes.len() as u64)
@@ -101,6 +113,7 @@ impl ContentReader for FixtureContentReader {
     }
 }
 
+#[cfg(feature = "test-support")]
 fn hex_digest(bytes: &[u8]) -> String {
     argus_infrastructure::content::recognize_raw_cartridge(bytes)
         .expect("fixture recognition")
@@ -111,6 +124,7 @@ fn hex_digest(bytes: &[u8]) -> String {
         .collect()
 }
 
+#[cfg(feature = "test-support")]
 fn stream_hex_digest(bytes: Vec<u8>) -> String {
     let mut reader = FixtureContentReader { bytes };
     argus_infrastructure::content::recognize_content(&mut reader)
@@ -123,6 +137,7 @@ fn stream_hex_digest(bytes: Vec<u8>) -> String {
 }
 
 #[derive(Default)]
+#[cfg(feature = "test-support")]
 struct ProviderTrace {
     session_factory_calls: usize,
     matching_calls: usize,
@@ -132,10 +147,12 @@ struct ProviderTrace {
     failed_identity: Option<String>,
 }
 
+#[cfg(feature = "test-support")]
 struct FixtureProviderSession {
     trace: Arc<Mutex<ProviderTrace>>,
 }
 
+#[cfg(feature = "test-support")]
 impl EnrichmentProviderSession for FixtureProviderSession {
     fn provider_id(&self) -> ProviderId {
         ProviderId::GameTdb

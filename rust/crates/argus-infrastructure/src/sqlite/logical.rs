@@ -12,8 +12,8 @@ use argus_application::{
     GameListCursor, GameMembershipSummary, GetGameResult, GroupingBasis, HydrationState,
     IdentificationState, IdentityConvergenceStore, IdentityDigest, LibraryRootId, ListGamesQuery,
     LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship, PersistenceError,
-    PlatformId, ScanRunId, SourceEntryId, SourceVersionEvidence, ValidatedContentDerivation,
-    ValidatedM3uGrouping,
+    PlatformId, ScanRunId, SourceEntryId, SourceVersionEvidence, SourceVersionKind,
+    ValidatedContentDerivation, ValidatedM3uGrouping,
 };
 use rusqlite::{OptionalExtension, Row, params_from_iter};
 
@@ -105,22 +105,30 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
         &mut self,
         evidence: &SourceVersionEvidence,
     ) -> Result<bool, PersistenceError> {
-        let persisted: Option<(Option<String>, String)> = self
+        let persisted: Option<(String, Option<String>, Option<String>, String)> = self
             .transaction()?
             .query_row(
-                "SELECT source_fingerprint, last_observed_scan_id
+                "SELECT coordinate_kind, source_fingerprint, derived_fingerprint,
+                        last_observed_scan_id
                  FROM source_entry
                  WHERE source_entry_id = ?1",
                 [evidence.source_entry_id().to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
             .map_err(map_persistence_operation_error)?;
         Ok(persisted
-            .map(|(fingerprint, scan_id)| {
-                fingerprint.as_deref() == evidence.source_fingerprint()
-                    && scan_id == evidence.last_observed_scan_id().to_string()
-            })
+            .map(
+                |(coordinate_kind, provider_fingerprint, derived_fingerprint, scan_id)| {
+                    source_version_matches_values(
+                        &coordinate_kind,
+                        provider_fingerprint.as_deref(),
+                        derived_fingerprint.as_deref(),
+                        &scan_id,
+                        evidence,
+                    )
+                },
+            )
             .unwrap_or(false))
     }
 
@@ -977,22 +985,51 @@ fn source_version_matches_transaction(
     transaction: &mut rusqlite::Transaction<'_>,
     evidence: &SourceVersionEvidence,
 ) -> Result<bool, PersistenceError> {
-    let persisted: Option<(Option<String>, String)> = transaction
+    let persisted: Option<(String, Option<String>, Option<String>, String)> = transaction
         .query_row(
-            "SELECT source_fingerprint, last_observed_scan_id
+            "SELECT coordinate_kind, source_fingerprint, derived_fingerprint,
+                    last_observed_scan_id
              FROM source_entry
              WHERE source_entry_id = ?1",
             [evidence.source_entry_id().to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()
         .map_err(map_persistence_operation_error)?;
     Ok(persisted
-        .map(|(fingerprint, scan_id)| {
-            fingerprint.as_deref() == evidence.source_fingerprint()
-                && scan_id == evidence.last_observed_scan_id().to_string()
-        })
+        .map(
+            |(coordinate_kind, provider_fingerprint, derived_fingerprint, scan_id)| {
+                source_version_matches_values(
+                    &coordinate_kind,
+                    provider_fingerprint.as_deref(),
+                    derived_fingerprint.as_deref(),
+                    &scan_id,
+                    evidence,
+                )
+            },
+        )
         .unwrap_or(false))
+}
+
+fn source_version_matches_values(
+    coordinate_kind: &str,
+    provider_fingerprint: Option<&str>,
+    derived_fingerprint: Option<&str>,
+    scan_id: &str,
+    evidence: &SourceVersionEvidence,
+) -> bool {
+    if scan_id != evidence.last_observed_scan_id().to_string() {
+        return false;
+    }
+    match evidence.version() {
+        SourceVersionKind::Provider(expected) => {
+            coordinate_kind == "provider" && provider_fingerprint == expected.as_deref()
+        }
+        SourceVersionKind::Derived(expected) => {
+            coordinate_kind == "derived"
+                && derived_fingerprint == Some(expected.as_transformation_value())
+        }
+    }
 }
 
 fn upsert_current_membership(

@@ -62,7 +62,7 @@ fn bounded_entry_bytes_never_returns_more_than_the_requested_limit() {
 
     assert_eq!(
         access.read_entry_bytes(&resolved, &locator, 4),
-        Err(SourceAccessError::UnsupportedOperation)
+        Err(SourceAccessError::InvalidResponse)
     );
     assert_eq!(
         access
@@ -78,6 +78,55 @@ fn bounded_entry_bytes_never_returns_more_than_the_requested_limit() {
         ),
         Err(SourceAccessError::InvalidLocator)
     );
+}
+
+#[test]
+fn positional_entry_reads_are_bounded_and_do_not_follow_non_files() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let root = directory.path().join("Library");
+    fs::create_dir_all(root.join("nested")).expect("root");
+    fs::write(root.join("large.bin"), vec![b'x'; 10 * 1024 * 1024]).expect("large file");
+
+    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
+        root.to_string_lossy().into_owned(),
+    ));
+    let resolved = access.resolve_root().expect("resolve");
+    let mut read = access
+        .open_entry_read(
+            &resolved,
+            &RelativeSourceLocator::from_provider("large.bin".to_owned()),
+        )
+        .expect("open read");
+    assert_eq!(read.len().expect("length"), 10 * 1024 * 1024);
+    let mut buffer = [0_u8; 4096];
+    assert_eq!(
+        read.read_at(8 * 1024 * 1024, &mut buffer).expect("range"),
+        buffer.len()
+    );
+    assert!(buffer.iter().all(|byte| *byte == b'x'));
+    assert_eq!(
+        read.read_at(0, &mut [0_u8; 64 * 1024 + 1]),
+        Err(SourceAccessError::InvalidResponse)
+    );
+    assert!(matches!(
+        access.open_entry_read(
+            &resolved,
+            &RelativeSourceLocator::from_provider("nested".to_owned()),
+        ),
+        Err(SourceAccessError::UnsupportedOperation)
+    ));
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(root.join("large.bin"), root.join("link.bin")).expect("symlink");
+        assert!(matches!(
+            access.open_entry_read(
+                &resolved,
+                &RelativeSourceLocator::from_provider("link.bin".to_owned()),
+            ),
+            Err(SourceAccessError::UnsupportedOperation)
+        ));
+    }
 }
 
 #[test]

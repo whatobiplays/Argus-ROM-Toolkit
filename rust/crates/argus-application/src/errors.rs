@@ -90,6 +90,13 @@ pub enum ErrorCode {
     FilesystemArtworkAssetNotFound,
     ProviderConfigurationInvalid,
     ConfigurationCredentialStoreUnavailable,
+    ValidationContentMalformed,
+    ValidationContentUnsupportedRepresentation,
+    ValidationContentEncryptedUnsupported,
+    ValidationMultiGameContainerUnsupported,
+    FilesystemContentDependencyMissing,
+    ValidationContentRecognitionAmbiguous,
+    OperationTransformationResourceLimitExceeded,
 }
 
 /// Central policy metadata for one published code.
@@ -235,7 +242,7 @@ impl ErrorCode {
     }
 
     /// Returns the additive catalog required by the logical-content foundation.
-    pub const fn phase_003_all() -> &'static [Self; 28] {
+    pub const fn phase_003_all() -> &'static [Self; 35] {
         &[
             Self::ValidationInvalidArgument,
             Self::ConfigurationInvalid,
@@ -265,6 +272,13 @@ impl ErrorCode {
             Self::FilesystemArtworkAssetNotFound,
             Self::ProviderConfigurationInvalid,
             Self::ConfigurationCredentialStoreUnavailable,
+            Self::ValidationContentMalformed,
+            Self::ValidationContentUnsupportedRepresentation,
+            Self::ValidationContentEncryptedUnsupported,
+            Self::ValidationMultiGameContainerUnsupported,
+            Self::FilesystemContentDependencyMissing,
+            Self::ValidationContentRecognitionAmbiguous,
+            Self::OperationTransformationResourceLimitExceeded,
         ]
     }
 
@@ -312,6 +326,25 @@ impl ErrorCode {
             Self::ProviderConfigurationInvalid => "ARGUS.V1.PROVIDER.CONFIGURATION_INVALID",
             Self::ConfigurationCredentialStoreUnavailable => {
                 "ARGUS.V1.CONFIGURATION.CREDENTIAL_STORE_UNAVAILABLE"
+            }
+            Self::ValidationContentMalformed => "ARGUS.V1.VALIDATION.CONTENT_MALFORMED",
+            Self::ValidationContentUnsupportedRepresentation => {
+                "ARGUS.V1.VALIDATION.CONTENT_UNSUPPORTED_REPRESENTATION"
+            }
+            Self::ValidationContentEncryptedUnsupported => {
+                "ARGUS.V1.VALIDATION.CONTENT_ENCRYPTED_UNSUPPORTED"
+            }
+            Self::ValidationMultiGameContainerUnsupported => {
+                "ARGUS.V1.VALIDATION.MULTI_GAME_CONTAINER_UNSUPPORTED"
+            }
+            Self::FilesystemContentDependencyMissing => {
+                "ARGUS.V1.FILESYSTEM.CONTENT_DEPENDENCY_MISSING"
+            }
+            Self::ValidationContentRecognitionAmbiguous => {
+                "ARGUS.V1.VALIDATION.CONTENT_RECOGNITION_AMBIGUOUS"
+            }
+            Self::OperationTransformationResourceLimitExceeded => {
+                "ARGUS.V1.OPERATION.TRANSFORMATION_RESOURCE_LIMIT_EXCEEDED"
             }
         }
     }
@@ -541,6 +574,62 @@ impl ErrorCode {
                 Recoverability::UserAction,
                 RetryPolicy::UserInitiated,
                 "errors.configuration.credential_store_unavailable",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ValidationContentMalformed => policy(
+                ErrorCategory::Validation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.validation.content_malformed",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ValidationContentUnsupportedRepresentation => policy(
+                ErrorCategory::Validation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.validation.content_unsupported_representation",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ValidationContentEncryptedUnsupported => policy(
+                ErrorCategory::Validation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.validation.content_encrypted_unsupported",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ValidationMultiGameContainerUnsupported => policy(
+                ErrorCategory::Validation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.validation.multi_game_container_unsupported",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::FilesystemContentDependencyMissing => policy(
+                ErrorCategory::Filesystem,
+                ApplicationSeverity::Error,
+                Recoverability::UserAction,
+                RetryPolicy::UserInitiated,
+                "errors.filesystem.content_dependency_missing",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::ValidationContentRecognitionAmbiguous => policy(
+                ErrorCategory::Validation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.validation.content_recognition_ambiguous",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::OperationTransformationResourceLimitExceeded => policy(
+                ErrorCategory::Operation,
+                ApplicationSeverity::Warning,
+                Recoverability::Retry,
+                RetryPolicy::UserInitiated,
+                "errors.operation.transformation_resource_limit_exceeded",
                 COMMON_FAILURE_FIELDS,
             ),
         }

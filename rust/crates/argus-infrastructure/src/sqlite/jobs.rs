@@ -18,10 +18,10 @@ use argus_application::{
     PersistedSettingsReason, PersistenceError, PlatformClass, RefreshMode, RefreshProgressFacts,
     RelativeSourceLocator, SafeContext, SafeContextField, SafeContextValue, ScanAdmissionReference,
     ScanProgressFacts, ScanRunId, ScanRunProjection, ScanRunRepository, ScanRunStatus,
-    SettingsDomain, SourceEntryClassification, SourceEntryId, SourceEntryKind, SourceEntryRecord,
-    SourceEntryRepository, SourceLocatorKey, StaleLibraryScanJob, StaleLibraryScanQueries,
-    StaleLibraryScanRun, StartLibraryScanAllResult, TechnicalClass, TraceId, Version,
-    evaluate_retry_eligibility,
+    SettingsDomain, SourceEntryClassification, SourceEntryCoordinates, SourceEntryId,
+    SourceEntryKind, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
+    StaleLibraryScanJob, StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
+    TechnicalClass, TraceId, Version, evaluate_retry_eligibility,
 };
 use rusqlite::OptionalExtension;
 
@@ -494,18 +494,40 @@ impl<'scope, 'connection> SqliteSourceEntryRepository<'scope, 'connection> {
 
 impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
     fn upsert(&mut self, entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+        let (relative_locator, locator_key, provider_native_identity, source_fingerprint) =
+            match entry.coordinates() {
+                SourceEntryCoordinates::Provider {
+                    relative_locator,
+                    locator_key,
+                    provider_native_identity,
+                    source_fingerprint,
+                } => (
+                    relative_locator,
+                    locator_key,
+                    provider_native_identity.as_deref(),
+                    source_fingerprint.as_deref(),
+                ),
+                SourceEntryCoordinates::Derived { .. } => {
+                    return Err(PersistenceError::ConstraintViolation);
+                }
+            };
         let transaction = self.work.transaction_mut()?;
         let created: String = transaction
             .query_row(
                 "INSERT INTO source_entry
                     (source_entry_id, library_root_id, parent_source_entry_id,
-                     relative_locator, locator_key, display_name, display_location,
+                     coordinate_kind, relative_locator, locator_key,
+                     display_name, display_location,
                      kind, classification, provider_native_identity, source_fingerprint,
+                     derived_locator, derived_entry_key, derived_fingerprint,
+                     derivation_transformation_id, derivation_revision,
                      last_observed_scan_id, created_at, updated_at)
-                 VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                         ?11, ?12, ?12)
-                 ON CONFLICT(library_root_id, locator_key) DO UPDATE SET
+                 VALUES (lower(hex(randomblob(16))), ?1, ?2, 'provider', ?3, ?4, ?5, ?6, ?7, ?8,
+                         ?9, ?10, NULL, NULL, NULL, NULL, NULL, ?11, ?12, ?12)
+                 ON CONFLICT(library_root_id, locator_key)
+                     WHERE coordinate_kind = 'provider' DO UPDATE SET
                      parent_source_entry_id = excluded.parent_source_entry_id,
+                     coordinate_kind = excluded.coordinate_kind,
                      relative_locator = excluded.relative_locator,
                      display_name = excluded.display_name,
                      display_location = excluded.display_location,
@@ -519,14 +541,14 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
                 rusqlite::params![
                     entry.library_root_id().to_string(),
                     entry.parent_source_entry_id().map(|id| id.to_string()),
-                    entry.relative_locator().as_provider_value(),
-                    entry.locator_key().as_provider_value(),
+                    relative_locator.as_provider_value(),
+                    locator_key.as_provider_value(),
                     entry.display_name(),
                     entry.display_location(),
                     entry.kind().as_str(),
                     entry.classification().as_str(),
-                    entry.provider_native_identity(),
-                    entry.source_fingerprint(),
+                    provider_native_identity,
+                    source_fingerprint,
                     entry.last_observed_scan_id().to_string(),
                     crate::sqlite::migrations::timestamp(),
                 ],
@@ -534,6 +556,110 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
             )
             .map_err(map_persistence_operation_error)?;
         parse_source_entry_id(created)
+    }
+
+    fn upsert_derived(&mut self, entry: NewSourceEntry) -> Result<SourceEntryId, PersistenceError> {
+        let (
+            derived_locator,
+            derived_entry_key,
+            derived_fingerprint,
+            transformation_id,
+            transformation_revision,
+        ) = match entry.coordinates() {
+            SourceEntryCoordinates::Derived {
+                derived_locator,
+                derived_entry_key,
+                derived_fingerprint,
+                transformation_id,
+                transformation_revision,
+            } => (
+                derived_locator,
+                derived_entry_key,
+                derived_fingerprint,
+                transformation_id,
+                *transformation_revision,
+            ),
+            SourceEntryCoordinates::Provider { .. } => {
+                return Err(PersistenceError::ConstraintViolation);
+            }
+        };
+        let source_entry_id = entry
+            .source_entry_id()
+            .ok_or(PersistenceError::ConstraintViolation)?;
+        let parent_source_entry_id = entry
+            .parent_source_entry_id()
+            .ok_or(PersistenceError::ConstraintViolation)?;
+        if transformation_revision == 0 {
+            return Err(PersistenceError::ConstraintViolation);
+        }
+
+        let transaction = self.work.transaction_mut()?;
+        let created: String = transaction
+            .query_row(
+                "INSERT INTO source_entry
+                    (source_entry_id, library_root_id, parent_source_entry_id,
+                     coordinate_kind, relative_locator, locator_key,
+                     display_name, display_location, kind, classification,
+                     provider_native_identity, source_fingerprint,
+                     derived_locator, derived_entry_key, derived_fingerprint,
+                     derivation_transformation_id, derivation_revision,
+                     last_observed_scan_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, 'derived', NULL, NULL, ?4, ?5, ?6, ?7,
+                         NULL, NULL, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                 ON CONFLICT(
+                     parent_source_entry_id,
+                     derivation_transformation_id,
+                     derivation_revision,
+                     derived_entry_key
+                 ) WHERE coordinate_kind = 'derived' DO UPDATE SET
+                     derived_locator = excluded.derived_locator,
+                     derived_fingerprint = excluded.derived_fingerprint,
+                     display_name = excluded.display_name,
+                     display_location = excluded.display_location,
+                     kind = excluded.kind,
+                     classification = excluded.classification,
+                     last_observed_scan_id = excluded.last_observed_scan_id,
+                     updated_at = excluded.updated_at
+                 RETURNING source_entry_id",
+                rusqlite::params![
+                    source_entry_id.to_string(),
+                    entry.library_root_id().to_string(),
+                    parent_source_entry_id.to_string(),
+                    entry.display_name(),
+                    entry.display_location(),
+                    entry.kind().as_str(),
+                    entry.classification().as_str(),
+                    derived_locator.as_transformation_value(),
+                    derived_entry_key.as_transformation_value(),
+                    derived_fingerprint.as_transformation_value(),
+                    transformation_id,
+                    transformation_revision,
+                    entry.last_observed_scan_id().to_string(),
+                    entry.created_at(),
+                    entry.updated_at(),
+                ],
+                |row| row.get(0),
+            )
+            .map_err(map_persistence_operation_error)?;
+        parse_source_entry_id(created)
+    }
+
+    fn library_root_id_for_entry(
+        &mut self,
+        source_entry_id: SourceEntryId,
+    ) -> Result<LibraryRootId, PersistenceError> {
+        let raw: Option<String> = self
+            .work
+            .transaction_mut()?
+            .query_row(
+                "SELECT library_root_id FROM source_entry WHERE source_entry_id = ?1",
+                rusqlite::params![source_entry_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        let raw = raw.ok_or(PersistenceError::CorruptOrIncompatible)?;
+        LibraryRootId::try_from(raw.as_str()).map_err(|_| PersistenceError::CorruptOrIncompatible)
     }
 
     fn find_by_locator_key(
@@ -545,12 +671,53 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
             .work
             .transaction_mut()?
             .query_row(
-                "SELECT source_entry_id, parent_source_entry_id, relative_locator, locator_key,
-                        display_name, display_location, kind, classification,
-                        provider_native_identity, source_fingerprint, last_observed_scan_id
+                "SELECT source_entry_id, parent_source_entry_id, coordinate_kind,
+                        relative_locator, locator_key, display_name, display_location,
+                        kind, classification, provider_native_identity, source_fingerprint,
+                        derived_locator, derived_entry_key, derived_fingerprint,
+                        derivation_transformation_id, derivation_revision,
+                        last_observed_scan_id
                  FROM source_entry
-                 WHERE library_root_id = ?1 AND locator_key = ?2",
+                 WHERE library_root_id = ?1
+                   AND coordinate_kind = 'provider'
+                   AND locator_key = ?2",
                 rusqlite::params![library_root_id.to_string(), locator_key.as_provider_value(),],
+                source_entry_record_raw,
+            )
+            .optional()
+            .map_err(map_persistence_operation_error)?;
+        raw.map(source_entry_record_from_raw).transpose()
+    }
+
+    fn find_derived_child(
+        &mut self,
+        parent: SourceEntryId,
+        transformation_id: &str,
+        revision: u32,
+        key: &argus_application::DerivedEntryKey,
+    ) -> Result<Option<SourceEntryRecord>, PersistenceError> {
+        let raw = self
+            .work
+            .transaction_mut()?
+            .query_row(
+                "SELECT source_entry_id, parent_source_entry_id, coordinate_kind,
+                        relative_locator, locator_key, display_name, display_location,
+                        kind, classification, provider_native_identity, source_fingerprint,
+                        derived_locator, derived_entry_key, derived_fingerprint,
+                        derivation_transformation_id, derivation_revision,
+                        last_observed_scan_id
+                 FROM source_entry
+                 WHERE parent_source_entry_id = ?1
+                   AND coordinate_kind = 'derived'
+                   AND derivation_transformation_id = ?2
+                   AND derivation_revision = ?3
+                   AND derived_entry_key = ?4",
+                rusqlite::params![
+                    parent.to_string(),
+                    transformation_id,
+                    revision,
+                    key.as_transformation_value(),
+                ],
                 source_entry_record_raw,
             )
             .optional()
@@ -567,11 +734,16 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
             .work
             .transaction_mut()?
             .prepare(
-                "SELECT source_entry_id, parent_source_entry_id, relative_locator, locator_key,
-                        display_name, display_location, kind, classification,
-                        provider_native_identity, source_fingerprint, last_observed_scan_id
+                "SELECT source_entry_id, parent_source_entry_id, coordinate_kind,
+                        relative_locator, locator_key, display_name, display_location,
+                        kind, classification, provider_native_identity, source_fingerprint,
+                        derived_locator, derived_entry_key, derived_fingerprint,
+                        derivation_transformation_id, derivation_revision,
+                        last_observed_scan_id
                  FROM source_entry
-                 WHERE library_root_id = ?1 AND provider_native_identity = ?2
+                 WHERE library_root_id = ?1
+                   AND coordinate_kind = 'provider'
+                   AND provider_native_identity = ?2
                  ORDER BY created_at ASC, source_entry_id ASC
                  LIMIT 2",
             )
@@ -599,12 +771,30 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
         entry: NewSourceEntry,
         existing_source_entry_id: SourceEntryId,
     ) -> Result<SourceEntryId, PersistenceError> {
+        let (relative_locator, locator_key, provider_native_identity, source_fingerprint) =
+            match entry.coordinates() {
+                SourceEntryCoordinates::Provider {
+                    relative_locator,
+                    locator_key,
+                    provider_native_identity,
+                    source_fingerprint,
+                } => (
+                    relative_locator,
+                    locator_key,
+                    provider_native_identity.as_deref(),
+                    source_fingerprint.as_deref(),
+                ),
+                SourceEntryCoordinates::Derived { .. } => {
+                    return Err(PersistenceError::ConstraintViolation);
+                }
+            };
         let changed = self
             .work
             .transaction_mut()?
             .execute(
                 "UPDATE source_entry
                  SET parent_source_entry_id = ?1,
+                     coordinate_kind = 'provider',
                      relative_locator = ?2,
                      locator_key = ?3,
                      display_name = ?4,
@@ -613,19 +803,24 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
                      classification = ?7,
                      provider_native_identity = ?8,
                      source_fingerprint = ?9,
+                     derived_locator = NULL,
+                     derived_entry_key = NULL,
+                     derived_fingerprint = NULL,
+                     derivation_transformation_id = NULL,
+                     derivation_revision = NULL,
                      last_observed_scan_id = ?10,
                      updated_at = ?11
                  WHERE source_entry_id = ?12 AND library_root_id = ?13",
                 rusqlite::params![
                     entry.parent_source_entry_id().map(|id| id.to_string()),
-                    entry.relative_locator().as_provider_value(),
-                    entry.locator_key().as_provider_value(),
+                    relative_locator.as_provider_value(),
+                    locator_key.as_provider_value(),
                     entry.display_name(),
                     entry.display_location(),
                     entry.kind().as_str(),
                     entry.classification().as_str(),
-                    entry.provider_native_identity(),
-                    entry.source_fingerprint(),
+                    provider_native_identity,
+                    source_fingerprint,
                     entry.last_observed_scan_id().to_string(),
                     crate::sqlite::migrations::timestamp(),
                     existing_source_entry_id.to_string(),
@@ -651,9 +846,12 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
             .work
             .transaction_mut()?
             .prepare(
-                "SELECT source_entry_id, parent_source_entry_id, relative_locator, locator_key,
-                        display_name, display_location, kind, classification,
-                        provider_native_identity, source_fingerprint, last_observed_scan_id
+                "SELECT source_entry_id, parent_source_entry_id, coordinate_kind,
+                        relative_locator, locator_key, display_name, display_location,
+                        kind, classification, provider_native_identity, source_fingerprint,
+                        derived_locator, derived_entry_key, derived_fingerprint,
+                        derivation_transformation_id, derivation_revision,
+                        last_observed_scan_id
                  FROM source_entry
                  WHERE library_root_id = ?1 AND parent_source_entry_id IS ?2
                  ORDER BY created_at ASC, source_entry_id ASC
@@ -812,6 +1010,67 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
         Ok(changed as u64)
     }
 
+    fn finalize_absent_derived_scope(
+        &mut self,
+        parent: SourceEntryId,
+        transformation_id: &str,
+        revision: u32,
+        observation_run_id: argus_application::ScanRunId,
+    ) -> Result<u64, PersistenceError> {
+        let raw_ids: Vec<String> = {
+            let mut statement = self
+                .work
+                .transaction_mut()?
+                .prepare(
+                    "SELECT source_entry_id
+                     FROM source_entry
+                     WHERE parent_source_entry_id = ?1
+                       AND coordinate_kind = 'derived'
+                       AND derivation_transformation_id = ?2
+                       AND derivation_revision = ?3
+                       AND last_observed_scan_id != ?4",
+                )
+                .map_err(map_persistence_operation_error)?;
+            let rows = statement
+                .query_map(
+                    rusqlite::params![
+                        parent.to_string(),
+                        transformation_id,
+                        revision,
+                        observation_run_id.to_string(),
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(map_persistence_operation_error)?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(map_persistence_operation_error)?
+        };
+        let ids = Self::parse_source_ids(raw_ids)?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        finalize_sources(self.work, &ids)?;
+        let changed = self
+            .work
+            .transaction_mut()?
+            .execute(
+                "DELETE FROM source_entry
+                 WHERE parent_source_entry_id = ?1
+                   AND coordinate_kind = 'derived'
+                   AND derivation_transformation_id = ?2
+                   AND derivation_revision = ?3
+                   AND last_observed_scan_id != ?4",
+                rusqlite::params![
+                    parent.to_string(),
+                    transformation_id,
+                    revision,
+                    observation_run_id.to_string(),
+                ],
+            )
+            .map_err(map_persistence_operation_error)?;
+        Ok(changed as u64)
+    }
+
     fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError> {
         let raw_ids: Vec<String> = {
             let mut statement = self
@@ -842,13 +1101,19 @@ type SourceEntryRecordRaw = (
     String,
     Option<String>,
     String,
-    String,
+    Option<String>,
+    Option<String>,
     String,
     String,
     String,
     String,
     Option<String>,
     Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
     String,
 );
 
@@ -865,6 +1130,12 @@ fn source_entry_record_raw(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceEn
         row.get(8)?,
         row.get(9)?,
         row.get(10)?,
+        row.get(11)?,
+        row.get(12)?,
+        row.get(13)?,
+        row.get(14)?,
+        row.get(15)?,
+        row.get(16)?,
     ))
 }
 
@@ -874,6 +1145,7 @@ fn source_entry_record_from_raw(
     let (
         id,
         parent,
+        coordinate_kind,
         relative,
         key,
         display,
@@ -882,6 +1154,11 @@ fn source_entry_record_from_raw(
         classification,
         native,
         fingerprint,
+        derived_locator,
+        derived_entry_key,
+        derived_fingerprint,
+        transformation_id,
+        transformation_revision,
         observed,
     ) = raw;
     let source_entry_id = parse_source_entry_id(id)?;
@@ -901,17 +1178,50 @@ fn source_entry_record_from_raw(
         "unknown" => SourceEntryClassification::Unknown,
         _ => return Err(PersistenceError::CorruptOrIncompatible),
     };
-    Ok(SourceEntryRecord::new(
+    let coordinates = match coordinate_kind.as_str() {
+        "provider" => SourceEntryCoordinates::Provider {
+            relative_locator: RelativeSourceLocator::from_provider(
+                relative.ok_or(PersistenceError::CorruptOrIncompatible)?,
+            ),
+            locator_key: SourceLocatorKey::from_provider(
+                key.ok_or(PersistenceError::CorruptOrIncompatible)?,
+            ),
+            provider_native_identity: native,
+            source_fingerprint: fingerprint,
+        },
+        "derived" => {
+            if relative.is_some() || key.is_some() || native.is_some() || fingerprint.is_some() {
+                return Err(PersistenceError::CorruptOrIncompatible);
+            }
+            let transformation_revision = transformation_revision
+                .filter(|revision| *revision > 0)
+                .and_then(|revision| u32::try_from(revision).ok())
+                .ok_or(PersistenceError::CorruptOrIncompatible)?;
+            SourceEntryCoordinates::Derived {
+                derived_locator: argus_application::DerivedLocator::from_transformation(
+                    derived_locator.ok_or(PersistenceError::CorruptOrIncompatible)?,
+                ),
+                derived_entry_key: argus_application::DerivedEntryKey::from_transformation(
+                    derived_entry_key.ok_or(PersistenceError::CorruptOrIncompatible)?,
+                ),
+                derived_fingerprint: argus_application::DerivedFingerprint::from_transformation(
+                    derived_fingerprint.ok_or(PersistenceError::CorruptOrIncompatible)?,
+                ),
+                transformation_id: transformation_id
+                    .ok_or(PersistenceError::CorruptOrIncompatible)?,
+                transformation_revision,
+            }
+        }
+        _ => return Err(PersistenceError::CorruptOrIncompatible),
+    };
+    Ok(SourceEntryRecord::from_coordinates(
         source_entry_id,
         parent_source_entry_id,
-        RelativeSourceLocator::from_provider(relative),
-        SourceLocatorKey::from_provider(key),
         display,
         location,
         kind,
         classification,
-        native,
-        fingerprint,
+        coordinates,
         parse_scan_run_id(observed)?,
     ))
 }

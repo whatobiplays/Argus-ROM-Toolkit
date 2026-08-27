@@ -10,8 +10,39 @@ use crate::{
     EnrichmentProviderSession, HydrationReport, HydrationTarget, LibraryRootId,
     MetadataProviderReadinessProjection, MetadataProviderRegistry, MetadataProviderSettings,
     MetadataResolutionPolicy, MetadataSettings, OperationContext, OperationHandle,
-    UnitOfWorkFactory,
+    TransformationFailure, UnitOfWorkFactory,
 };
+
+/// Maps an infrastructure transformation result to the published application
+/// error catalog without exposing decoder-specific error types.
+pub const fn map_transformation_failure(failure: TransformationFailure) -> crate::ErrorCode {
+    match failure {
+        TransformationFailure::NotApplicable | TransformationFailure::UnsupportedFeature => {
+            crate::ErrorCode::ValidationContentUnsupportedRepresentation
+        }
+        TransformationFailure::Malformed => crate::ErrorCode::ValidationContentMalformed,
+        TransformationFailure::EncryptedUnsupported => {
+            crate::ErrorCode::ValidationContentEncryptedUnsupported
+        }
+        TransformationFailure::MultiGameUnsupported => {
+            crate::ErrorCode::ValidationMultiGameContainerUnsupported
+        }
+        TransformationFailure::MissingDependency => {
+            crate::ErrorCode::FilesystemContentDependencyMissing
+        }
+        TransformationFailure::AmbiguousRecognition => {
+            crate::ErrorCode::ValidationContentRecognitionAmbiguous
+        }
+        TransformationFailure::ResourceLimitExceeded => {
+            crate::ErrorCode::OperationTransformationResourceLimitExceeded
+        }
+        TransformationFailure::Cancelled => crate::ErrorCode::OperationCancelled,
+        TransformationFailure::ReadFailure => crate::ErrorCode::InternalUnexpected,
+        TransformationFailure::SourceChanged => {
+            crate::ErrorCode::OperationSourceChangedDuringProcessing
+        }
+    }
+}
 
 /// The privacy-terms version currently required before provider work.
 pub const CURRENT_PRIVACY_TERMS_VERSION: &str = "phase-003-v1";

@@ -2,6 +2,8 @@
 
 use argus_domain::{ContentType, PlatformId};
 
+use crate::TransformationOutput;
+
 /// Fixed-width SHA-256 identity value carried across application ports.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct IdentityDigest([u8; 32]);
@@ -22,9 +24,9 @@ impl IdentityDigest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TransformationDescriptor {
     id: &'static str,
-    platform: PlatformId,
-    content_type: ContentType,
+    revision: u32,
     representation: &'static str,
+    output: TransformationOutput,
 }
 
 impl TransformationDescriptor {
@@ -37,9 +39,22 @@ impl TransformationDescriptor {
     ) -> Self {
         Self {
             id,
-            platform,
-            content_type,
+            revision: 1,
             representation,
+            output: TransformationOutput::TypedContent {
+                platform,
+                content_type,
+            },
+        }
+    }
+
+    /// Creates a stable descriptor for a derived source scope.
+    pub const fn new_derived(id: &'static str, representation: &'static str) -> Self {
+        Self {
+            id,
+            revision: 1,
+            representation,
+            output: TransformationOutput::DerivedScope,
         }
     }
 
@@ -48,19 +63,35 @@ impl TransformationDescriptor {
         self.id
     }
 
-    /// Returns the validated output platform.
-    pub const fn platform(&self) -> PlatformId {
-        self.platform
+    /// Returns the trusted implementation revision.
+    pub const fn revision(&self) -> u32 {
+        self.revision
     }
 
-    /// Returns the validated output content type.
-    pub const fn content_type(&self) -> ContentType {
-        self.content_type
+    /// Returns the transformation output category.
+    pub const fn output(&self) -> TransformationOutput {
+        self.output
     }
 
     /// Returns the source representation consumed by this transformation.
     pub const fn representation(&self) -> &'static str {
         self.representation
+    }
+
+    /// Returns the typed output platform when this is a typed transformation.
+    pub const fn platform(&self) -> Option<PlatformId> {
+        match self.output {
+            TransformationOutput::DerivedScope => None,
+            TransformationOutput::TypedContent { platform, .. } => Some(platform),
+        }
+    }
+
+    /// Returns the typed output content class when this is a typed transformation.
+    pub const fn content_type(&self) -> Option<ContentType> {
+        match self.output {
+            TransformationOutput::DerivedScope => None,
+            TransformationOutput::TypedContent { content_type, .. } => Some(content_type),
+        }
     }
 }
 
@@ -274,6 +305,81 @@ impl TransformationRegistry {
                     ContentType::OpticalDiscWii,
                     "raw-disc-image",
                 ),
+                TransformationDescriptor::new_derived("argus.transformation.zip.v1", "zip"),
+                TransformationDescriptor::new_derived(
+                    "argus.transformation.sevenzip.v1",
+                    "sevenzip",
+                ),
+                TransformationDescriptor::new_derived("argus.transformation.tar.v1", "tar"),
+                TransformationDescriptor::new_derived("argus.transformation.gzip.v1", "gzip"),
+                TransformationDescriptor::new_derived("argus.transformation.bzip2.v1", "bzip2"),
+                TransformationDescriptor::new_derived("argus.transformation.xz.v1", "xz"),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-cd.chd-cd.v1",
+                    PlatformId::SegaCd,
+                    ContentType::OpticalDiscCd,
+                    "chd-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-saturn.chd-cd.v1",
+                    PlatformId::SegaSaturn,
+                    ContentType::OpticalDiscCd,
+                    "chd-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation.chd-cd.v1",
+                    PlatformId::SonyPlaystation,
+                    ContentType::OpticalDiscCd,
+                    "chd-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation2-cd.chd-cd.v1",
+                    PlatformId::SonyPlaystation2,
+                    ContentType::OpticalDiscCd,
+                    "chd-cd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sega-dreamcast.chd-gd.v1",
+                    PlatformId::SegaDreamcast,
+                    ContentType::OpticalDiscGd,
+                    "chd-gd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-playstation2-dvd.chd-dvd.v1",
+                    PlatformId::SonyPlaystation2,
+                    ContentType::OpticalDiscDvd,
+                    "chd-dvd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-psp.chd-umd.v1",
+                    PlatformId::SonyPsp,
+                    ContentType::OpticalDiscUmd,
+                    "chd-umd",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-gamecube.rvz.v1",
+                    PlatformId::NintendoGameCube,
+                    ContentType::OpticalDiscGameCube,
+                    "rvz",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-wii.rvz.v1",
+                    PlatformId::NintendoWii,
+                    ContentType::OpticalDiscWii,
+                    "rvz",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.sony-psp.cso.v1",
+                    PlatformId::SonyPsp,
+                    ContentType::OpticalDiscUmd,
+                    "cso",
+                ),
+                TransformationDescriptor::new(
+                    "argus.transformation.nintendo-wii.wbfs.v1",
+                    PlatformId::NintendoWii,
+                    ContentType::OpticalDiscWii,
+                    "wbfs",
+                ),
             ],
         }
     }
@@ -291,6 +397,13 @@ impl TransformationRegistry {
     /// Returns whether no transformation mechanisms are registered.
     pub fn is_empty(&self) -> bool {
         self.descriptors.is_empty()
+    }
+
+    /// Returns whether one representation is registered for production use.
+    pub fn supports(&self, representation: &str) -> bool {
+        self.descriptors
+            .iter()
+            .any(|descriptor| descriptor.representation() == representation)
     }
 }
 
@@ -462,55 +575,55 @@ impl IdentitySchemeCatalog {
                     "argus.content.identity.sega-cd.disc.v1",
                     PlatformId::SegaCd,
                     ContentType::OpticalDiscCd,
-                    &["cue-bin", "iso-2048-cd"],
+                    &["cue-bin", "iso-2048-cd", "chd-cd"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.sega-saturn.disc.v1",
                     PlatformId::SegaSaturn,
                     ContentType::OpticalDiscCd,
-                    &["cue-bin", "iso-2048-cd"],
+                    &["cue-bin", "iso-2048-cd", "chd-cd"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.sega-dreamcast.gdrom.v1",
                     PlatformId::SegaDreamcast,
                     ContentType::OpticalDiscGd,
-                    &["gdi", "cue-bin"],
+                    &["gdi", "cue-bin", "chd-gd"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.sony-playstation.disc.v1",
                     PlatformId::SonyPlaystation,
                     ContentType::OpticalDiscCd,
-                    &["cue-bin", "iso-2048-cd"],
+                    &["cue-bin", "iso-2048-cd", "chd-cd"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.sony-playstation2.cd.v1",
                     PlatformId::SonyPlaystation2,
                     ContentType::OpticalDiscCd,
-                    &["cue-bin", "iso-2048-cd"],
+                    &["cue-bin", "iso-2048-cd", "chd-cd"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.sony-playstation2.dvd.v1",
                     PlatformId::SonyPlaystation2,
                     ContentType::OpticalDiscDvd,
-                    &["iso-2048"],
+                    &["iso-2048", "chd-dvd"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.sony-psp.umd.v1",
                     PlatformId::SonyPsp,
                     ContentType::OpticalDiscUmd,
-                    &["iso-2048"],
+                    &["iso-2048", "cso", "chd-umd"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.nintendo-gamecube.disc.v1",
                     PlatformId::NintendoGameCube,
                     ContentType::OpticalDiscGameCube,
-                    &["raw-disc-image"],
+                    &["raw-disc-image", "rvz"],
                 ),
                 IdentitySchemeDescriptor::new(
                     "argus.content.identity.nintendo-wii.disc.v1",
                     PlatformId::NintendoWii,
                     ContentType::OpticalDiscWii,
-                    &["raw-disc-image"],
+                    &["raw-disc-image", "rvz", "wbfs"],
                 ),
             ],
         }

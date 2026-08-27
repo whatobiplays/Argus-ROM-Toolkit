@@ -1,10 +1,12 @@
+use argus_application::TransformationBudget;
 use argus_application::{
     IdentityDigest, LibrarySourceAccess, PlatformId, RelativeSourceLocator, RootLocator,
 };
 use argus_infrastructure::content::{
     ContentProcessingLimits, ContentReadError, ContentReader, ContentRecognitionError,
-    RecognitionError, recognize_content, recognize_content_with_budget,
-    recognize_content_with_limits, recognize_raw_cartridge, recognize_raw_cartridge_with_budget,
+    ParsingSession, RecognitionError, recognize_alternate_optical, recognize_content,
+    recognize_content_with_budget, recognize_content_with_limits, recognize_raw_cartridge,
+    recognize_raw_cartridge_with_budget,
 };
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
@@ -495,6 +497,10 @@ impl ContentReader for BoundedReader {
         destination[..count].copy_from_slice(&self.bytes[offset..end]);
         Ok(count)
     }
+
+    fn max_read_size(&self) -> usize {
+        self.max_request
+    }
 }
 
 impl ContentReader for SparseReader {
@@ -616,6 +622,23 @@ fn complete_unknown_source_is_unsupported_instead_of_truncated() {
         recognize_content_with_budget(&mut reader, 0x20).expect_err("unknown source"),
         ContentRecognitionError::UnsupportedRepresentation
     );
+}
+
+#[test]
+fn alternate_optical_dispatch_reads_bounded_probe_and_leaves_native_sources_unmatched() {
+    let staging = tempdir().expect("staging root");
+    let mut reader = BoundedReader::new(gb_fixture(0x00, 0x8000), 4);
+    let mut session = ParsingSession::for_tests(
+        TransformationBudget::new(0x100000, 0x100000, 16, 2, 0x100000, 0x100000),
+        staging.path(),
+        || false,
+    );
+
+    assert_eq!(
+        recognize_alternate_optical(&mut reader, &mut session).expect("alternate dispatch"),
+        None
+    );
+    assert!(reader.largest_request <= 4);
 }
 
 #[test]

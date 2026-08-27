@@ -787,10 +787,10 @@ fn reconcile_positive(
     scan_run_id: ScanRunId,
 ) -> Result<SourceEntryId, PersistenceError> {
     let root_id = entry.library_root_id();
-    if entries
-        .find_by_locator_key(root_id, entry.locator_key())?
-        .is_some()
-    {
+    let locator_key = entry
+        .locator_key()
+        .ok_or(PersistenceError::CorruptOrIncompatible)?;
+    if entries.find_by_locator_key(root_id, locator_key)?.is_some() {
         return entries.upsert(entry);
     }
     if let Some(identity) = entry.provider_native_identity() {

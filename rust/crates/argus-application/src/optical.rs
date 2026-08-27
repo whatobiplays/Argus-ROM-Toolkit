@@ -31,6 +31,38 @@ pub enum OpticalDependencyError {
     ResourceLimitExceeded,
 }
 
+/// One already-committed source entry paired with a caller-owned, normalized
+/// reference inside the current optical scope.
+///
+/// The reference is deliberately separate from the source-entry coordinate.
+/// Derived-container callers can provide a safe member path without exposing
+/// or parsing their transformation-owned locator.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentDependencyCandidate {
+    source: SourceEntryRecord,
+    scope_reference: String,
+}
+
+impl ContentDependencyCandidate {
+    /// Creates a candidate for one normalized scope reference.
+    pub fn new(source: SourceEntryRecord, scope_reference: impl Into<String>) -> Self {
+        Self {
+            source,
+            scope_reference: scope_reference.into(),
+        }
+    }
+
+    /// Returns the committed source entry.
+    pub fn source(&self) -> &SourceEntryRecord {
+        &self.source
+    }
+
+    /// Returns the caller-owned scope reference.
+    pub fn scope_reference(&self) -> &str {
+        &self.scope_reference
+    }
+}
+
 /// Resolves descriptor or playlist references against one committed scan.
 ///
 /// The candidates must already be restricted by the caller to the same
@@ -69,9 +101,73 @@ pub fn resolve_optical_dependencies(
             .iter()
             .filter(|candidate| candidate.kind() == SourceEntryKind::File)
             .filter(|candidate| {
-                normalize_relative(candidate.relative_locator().as_provider_value()).as_deref()
+                candidate
+                    .relative_locator()
+                    .and_then(|locator| normalize_relative(locator.as_provider_value()))
+                    .as_deref()
                     == Some(normalized.as_str())
             })
+            .collect();
+        let [entry] = matches.as_slice() else {
+            return if matches.is_empty() {
+                Err(OpticalDependencyError::Missing)
+            } else {
+                Err(OpticalDependencyError::Ambiguous)
+            };
+        };
+        if resolved.iter().any(|existing: &SourceEntryRecord| {
+            existing.source_entry_id() == entry.source_entry_id()
+        }) {
+            return Err(OpticalDependencyError::Duplicate);
+        }
+        resolved.push((*entry).clone());
+    }
+    Ok(resolved)
+}
+
+/// Resolves descriptor or playlist references against provider-neutral scope
+/// candidates.
+///
+/// This is the derived-source counterpart to
+/// [`resolve_optical_dependencies`]. The caller supplies safe scope
+/// references from its transformation-owned member index. This function only
+/// normalizes those references and never interprets a provider or derived
+/// locator token.
+pub fn resolve_content_dependencies(
+    descriptor_reference: &str,
+    references: &[String],
+    candidates: &[ContentDependencyCandidate],
+) -> Result<Vec<SourceEntryRecord>, OpticalDependencyError> {
+    if references.is_empty() {
+        return Err(OpticalDependencyError::Missing);
+    }
+    if references.len() > MAX_OPTICAL_DEPENDENCIES {
+        return Err(OpticalDependencyError::ResourceLimitExceeded);
+    }
+
+    let descriptor = normalize_scope_reference(descriptor_reference)
+        .ok_or(OpticalDependencyError::InvalidReference)?;
+    let parent = descriptor
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .unwrap_or("");
+    let mut resolved = Vec::with_capacity(references.len());
+
+    for reference in references {
+        let normalized_reference = normalize_reference(reference)?;
+        let normalized = if parent.is_empty() {
+            normalized_reference
+        } else {
+            format!("{parent}/{normalized_reference}")
+        };
+        let matches: Vec<&SourceEntryRecord> = candidates
+            .iter()
+            .filter(|candidate| candidate.source.kind() == SourceEntryKind::File)
+            .filter(|candidate| {
+                normalize_scope_reference(candidate.scope_reference()).as_deref()
+                    == Some(normalized.as_str())
+            })
+            .map(ContentDependencyCandidate::source)
             .collect();
         let [entry] = matches.as_slice() else {
             return if matches.is_empty() {
@@ -128,4 +224,16 @@ fn normalize_relative(value: &str) -> Option<String> {
         }
     }
     (!segments.is_empty()).then(|| segments.join("/"))
+}
+
+fn normalize_scope_reference(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.starts_with(['/', '\\']) {
+        return None;
+    }
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return None;
+    }
+    normalize_relative(value)
 }

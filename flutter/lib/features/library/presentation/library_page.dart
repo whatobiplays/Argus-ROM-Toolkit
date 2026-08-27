@@ -862,6 +862,7 @@ class _GameCard extends StatelessWidget {
               padding: EdgeInsets.all(grid ? 12 : 10),
               child: grid
                   ? Stack(
+                      clipBehavior: Clip.none,
                       children: [
                         Positioned.fill(child: content),
                         Positioned(

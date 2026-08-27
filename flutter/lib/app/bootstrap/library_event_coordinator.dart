@@ -48,6 +48,8 @@ final class LibraryEventCoordinator {
     final previous = _lastSequence;
     if (previous != null && event.sequence != previous + BigInt.one) {
       _emitListChanged();
+      if (event.sequence > previous) _lastSequence = event.sequence;
+      return;
     }
     if (previous == null || event.sequence > previous) {
       _lastSequence = event.sequence;

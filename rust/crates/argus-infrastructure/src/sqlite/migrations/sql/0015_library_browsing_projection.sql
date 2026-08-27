@@ -44,10 +44,10 @@ INSERT INTO game_library_row (
 )
 SELECT
     legacy.game_id,
-    COALESCE(NULLIF(TRIM(metadata.display_title), ''), legacy.display_title),
+    COALESCE(NULLIF(TRIM(metadata.display_title), ''), game.fallback_title),
     CASE
         WHEN NULLIF(TRIM(metadata.display_title), '') IS NULL
-            THEN legacy.display_title_provenance
+            THEN 'local_fallback'
         ELSE 'resolved_metadata'
     END,
     legacy.platform_id,
@@ -63,7 +63,7 @@ SELECT
     ),
     metadata.release_date,
     lower(trim(
-        COALESCE(NULLIF(TRIM(metadata.display_title), ''), legacy.display_title) || ' ' ||
+        COALESCE(NULLIF(TRIM(metadata.display_title), ''), '') || ' ' ||
         COALESCE(metadata.sort_title, '') || ' ' ||
         COALESCE(game.fallback_title, '') || ' ' ||
         COALESCE((
@@ -105,10 +105,46 @@ CREATE INDEX idx_game_library_row_platform
     ON game_library_row(platform_id, display_title COLLATE NOCASE, game_id);
 
 CREATE INDEX idx_game_library_row_release_date
-    ON game_library_row(release_date, display_title COLLATE NOCASE, game_id);
+    ON game_library_row(
+        (CASE WHEN release_date IS NULL THEN 1 ELSE 0 END) ASC,
+        release_date ASC,
+        display_title COLLATE NOCASE ASC,
+        platform_id ASC,
+        game_id ASC
+    );
+
+CREATE INDEX idx_game_library_row_release_date_desc
+    ON game_library_row(
+        (CASE WHEN release_date IS NULL THEN 1 ELSE 0 END) ASC,
+        release_date DESC,
+        display_title COLLATE NOCASE DESC,
+        platform_id DESC,
+        game_id DESC
+    );
 
 CREATE INDEX idx_game_library_row_updated_at
-    ON game_library_row(updated_at, display_title COLLATE NOCASE, game_id);
+    ON game_library_row(
+        (COALESCE(
+            CAST(strftime('%s', updated_at) AS INTEGER) * 1000,
+            CAST(updated_at AS INTEGER) * 1000,
+            0
+        )) ASC,
+        display_title COLLATE NOCASE ASC,
+        platform_id ASC,
+        game_id ASC
+    );
+
+CREATE INDEX idx_game_library_row_updated_at_desc
+    ON game_library_row(
+        (COALESCE(
+            CAST(strftime('%s', updated_at) AS INTEGER) * 1000,
+            CAST(updated_at AS INTEGER) * 1000,
+            0
+        )) DESC,
+        display_title COLLATE NOCASE DESC,
+        platform_id DESC,
+        game_id DESC
+    );
 
 CREATE INDEX idx_game_content_source_scope
     ON game_content_source(source_entry_id, is_current, game_content_id);

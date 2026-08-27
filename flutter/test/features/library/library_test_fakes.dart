@@ -88,6 +88,11 @@ final class FakeLibraryRefreshApi implements LibraryRefreshApi {
   @override
   Future<OperationHandle> refreshLibrary() async {
     libraryRefreshCalls++;
+    final currentFailure = failure;
+    if (currentFailure != null) {
+      failure = null;
+      throw currentFailure;
+    }
     return const OperationHandle(
       jobRunId: JobRunId('22222222222222222222222222222222'),
       operationType: 'library_refresh',
@@ -98,6 +103,7 @@ final class FakeLibraryRefreshApi implements LibraryRefreshApi {
 /// Deterministic single-Game read/refresh fake for detail tests.
 final class FakeGamesApi implements GamesApi {
   GetGameResult? result;
+  FutureOr<GetGameResult> Function(GameId gameId)? onGetGame;
   Object? getFailure;
   Object? refreshFailure;
   final List<GameId> requestedGameIds = [];
@@ -112,6 +118,8 @@ final class FakeGamesApi implements GamesApi {
       getFailure = null;
       throw failure;
     }
+    final handler = onGetGame;
+    if (handler != null) return await handler(gameId);
     final value = result;
     if (value != null) return value;
     throw gameNotFoundFailure();

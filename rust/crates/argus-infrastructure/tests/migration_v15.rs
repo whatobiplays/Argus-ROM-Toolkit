@@ -130,6 +130,10 @@ fn migration_v15_adds_bounded_library_projection_columns_and_indexes() {
             for index in [
                 "idx_game_library_row_search",
                 "idx_game_library_row_platform",
+                "idx_game_library_row_release_date",
+                "idx_game_library_row_release_date_desc",
+                "idx_game_library_row_updated_at",
+                "idx_game_library_row_updated_at_desc",
             ] {
                 let present = connection.scalar_i64(&format!(
                     "SELECT EXISTS(
@@ -139,6 +143,17 @@ fn migration_v15_adds_bounded_library_projection_columns_and_indexes() {
                 ))?;
                 assert_eq!(present, 1, "missing index {index}");
             }
+            let release_index = connection.scalar_text(
+                "SELECT sql FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_game_library_row_release_date'",
+            )?;
+            assert!(release_index.contains("CASE WHEN release_date IS NULL THEN 1 ELSE 0 END"));
+            assert!(release_index.contains("platform_id"));
+            let updated_index = connection.scalar_text(
+                "SELECT sql FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_game_library_row_updated_at'",
+            )?;
+            assert!(updated_index.contains("strftime('%s', updated_at)"));
             Ok(())
         })
         .expect("indexes");
@@ -184,6 +199,7 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
 
     let game_id = "11111111111111111111111111111111";
     let canonical_game_id = "22222222222222222222222222222222";
+    let fallback_game_id = "99999999999999999999999999999999";
     let content_id = "33333333333333333333333333333333";
     let membership_id = "44444444444444444444444444444444";
     let source_entry_id =
@@ -204,6 +220,13 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
                 SqliteValue::Text(game_id.to_owned()),
                 SqliteValue::Text(canonical_game_id.to_owned()),
             ],
+        )?;
+        connection.execute_with_values(
+            "INSERT INTO game (game_id, platform_id, lifecycle_state, grouping_revision,
+                 fallback_title, fallback_title_provenance, hydration_state, created_at, updated_at)
+             VALUES (?1, 'nintendo.gb', 'active', 1, 'Canonical Fallback', 'local_fallback',
+                 'unmatched', '1000', '1000')",
+            &[SqliteValue::Text(fallback_game_id.to_owned())],
         )?;
         connection.execute_with_values(
             "INSERT INTO game_content (
@@ -258,10 +281,13 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
              ) VALUES (?1, 'Legacy Fallback', 'local_fallback', 'nintendo.gb',
                  'hydrated', 'available', 1, 1, '1000'),
                     (?2, 'Canonical Game', 'local_fallback', 'nintendo.gb',
-                 'hydrated', 'available', 0, 0, '1000')",
+                 'hydrated', 'available', 0, 0, '1000'),
+                    (?3, 'Legacy Row Title', 'local_fallback', 'nintendo.gb',
+                 'unmatched', 'available', 0, 0, '1000')",
             &[
                 SqliteValue::Text(game_id.to_owned()),
                 SqliteValue::Text(canonical_game_id.to_owned()),
+                SqliteValue::Text(fallback_game_id.to_owned()),
             ],
         )?;
         connection.execute_with_values(
@@ -376,6 +402,14 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
                 "Resolved Migrated Title|resolved_metadata|us|88888888888888888888888888888888|1991-04-21|"
             ));
             assert!(projection.ends_with("resolved migrated title legacy fallback"));
+            let fallback_projection = connection.scalar_text(&format!(
+                "SELECT display_title || '|' || display_title_provenance || '|' || search_text
+                 FROM game_library_row WHERE game_id = '{fallback_game_id}'"
+            ))?;
+            assert_eq!(
+                fallback_projection,
+                "Canonical Fallback|local_fallback|canonical fallback"
+            );
             Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
         })
         .expect("verify migrated logical and enrichment rows");

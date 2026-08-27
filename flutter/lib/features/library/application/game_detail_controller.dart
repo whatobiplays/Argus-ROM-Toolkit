@@ -37,6 +37,7 @@ final class GameDetailState {
   const GameDetailState({
     required this.requestedGameId,
     required this.phase,
+    required this.refreshing,
     this.detail,
     this.canonicalGameId,
     this.failure,
@@ -46,16 +47,21 @@ final class GameDetailState {
     : this(
         requestedGameId: requestedGameId,
         phase: GameDetailLoadPhase.preReady,
+        refreshing: false,
       );
 
   final GameId requestedGameId;
   final GameDetailLoadPhase phase;
+
+  /// Whether a retained detail is being refreshed in the background.
+  final bool refreshing;
   final GameDetail? detail;
   final GameId? canonicalGameId;
   final ClientFailure? failure;
 
   GameDetailState copyWith({
     GameDetailLoadPhase? phase,
+    bool? refreshing,
     GameDetail? detail,
     GameId? canonicalGameId,
     ClientFailure? failure,
@@ -65,6 +71,7 @@ final class GameDetailState {
   }) => GameDetailState(
     requestedGameId: requestedGameId,
     phase: phase ?? this.phase,
+    refreshing: refreshing ?? this.refreshing,
     detail: clearDetail ? null : detail ?? this.detail,
     canonicalGameId: clearCanonicalGameId
         ? null
@@ -82,15 +89,20 @@ final class GameDetailController extends ChangeNotifier {
     required GamesApi games,
     required GameId gameId,
     required LibraryRuntimeContext runtimeContext,
+    required LibraryReconciliationDemandSource demandSource,
   }) : _games = games,
        _runtimeContext = runtimeContext,
-       _state = GameDetailState.initial(requestedGameId: gameId);
+       _state = GameDetailState.initial(requestedGameId: gameId) {
+    _demandSubscription = demandSource.stream.listen(_onDemand);
+  }
 
   static const String gameNotFoundCode =
       'ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND';
 
   final GamesApi _games;
   final LibraryRuntimeContext _runtimeContext;
+  late final StreamSubscription<LibraryReconciliationDemand>
+  _demandSubscription;
   GameDetailState _state;
   int _requestToken = 0;
   bool _initialized = false;
@@ -112,10 +124,13 @@ final class GameDetailController extends ChangeNotifier {
   Future<void> reload() async {
     if (_disposed || _runtimeContext is LibraryRuntimeContextPreReady) return;
     final token = ++_requestToken;
+    final retainedDetail = _state.detail;
     _publish(
       _state.copyWith(
-        phase: GameDetailLoadPhase.loading,
-        clearDetail: true,
+        phase: retainedDetail == null
+            ? GameDetailLoadPhase.loading
+            : GameDetailLoadPhase.ready,
+        refreshing: retainedDetail != null,
         clearCanonicalGameId: true,
         clearFailure: true,
       ),
@@ -127,39 +142,79 @@ final class GameDetailController extends ChangeNotifier {
         GetGameFound(:final detail) => GameDetailState(
           requestedGameId: _state.requestedGameId,
           phase: GameDetailLoadPhase.ready,
+          refreshing: false,
           detail: detail,
         ),
         GetGameRedirected(:final canonicalGameId) => GameDetailState(
           requestedGameId: _state.requestedGameId,
           phase: GameDetailLoadPhase.redirected,
+          refreshing: false,
           canonicalGameId: canonicalGameId,
         ),
       });
     } on ClientFailure catch (failure) {
       if (!_canPublish(token)) return;
-      _publish(
-        GameDetailState(
-          requestedGameId: _state.requestedGameId,
-          phase: _isGameNotFound(failure)
-              ? GameDetailLoadPhase.missing
-              : GameDetailLoadPhase.failed,
-          failure: failure,
-        ),
-      );
+      final retainedDetail = _state.detail;
+      if (retainedDetail != null && !_isGameNotFound(failure)) {
+        _publish(
+          _state.copyWith(
+            phase: GameDetailLoadPhase.ready,
+            refreshing: false,
+            failure: failure,
+          ),
+        );
+      } else {
+        _publish(
+          GameDetailState(
+            requestedGameId: _state.requestedGameId,
+            phase: _isGameNotFound(failure)
+                ? GameDetailLoadPhase.missing
+                : GameDetailLoadPhase.failed,
+            refreshing: false,
+            failure: failure,
+          ),
+        );
+      }
     } catch (error, stackTrace) {
       if (!_canPublish(token)) return;
-      _publish(
-        GameDetailState(
-          requestedGameId: _state.requestedGameId,
-          phase: GameDetailLoadPhase.failed,
-          failure: TransportFailure(
-            'The Game detail request failed',
-            kind: TransportFailureKind.unexpectedTransportFailure,
-            cause: error,
-            stackTrace: stackTrace,
-          ),
-        ),
+      final retainedDetail = _state.detail;
+      final failure = TransportFailure(
+        'The Game detail request failed',
+        kind: TransportFailureKind.unexpectedTransportFailure,
+        cause: error,
+        stackTrace: stackTrace,
       );
+      if (retainedDetail != null) {
+        _publish(
+          _state.copyWith(
+            phase: GameDetailLoadPhase.ready,
+            refreshing: false,
+            failure: failure,
+          ),
+        );
+      } else {
+        _publish(
+          GameDetailState(
+            requestedGameId: _state.requestedGameId,
+            phase: GameDetailLoadPhase.failed,
+            refreshing: false,
+            failure: failure,
+          ),
+        );
+      }
+    }
+  }
+
+  void _onDemand(LibraryReconciliationDemand demand) {
+    if (_disposed) return;
+    switch (demand) {
+      case LibraryReconciliationDemandListChanged():
+        unawaited(reload());
+      case LibraryReconciliationDemandDetailChanged(:final gameId)
+          when gameId == _state.requestedGameId:
+        unawaited(reload());
+      case LibraryReconciliationDemandDetailChanged():
+        break;
     }
   }
 
@@ -186,6 +241,7 @@ final class GameDetailController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _requestToken++;
+    unawaited(_demandSubscription.cancel());
     super.dispose();
   }
 }
@@ -269,6 +325,7 @@ final gameDetailControllerProvider = Provider.autoDispose
         games: ref.watch(libraryGamesApiProvider),
         gameId: gameId,
         runtimeContext: ref.watch(libraryRuntimeContextProvider),
+        demandSource: ref.watch(libraryReconciliationDemandProvider),
       );
       ref.onDispose(controller.dispose);
       unawaited(controller.initialize());

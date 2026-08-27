@@ -1334,7 +1334,7 @@ LibraryFacets libraryFacetsFromDto(dto.LibraryFacetsDto value) => LibraryFacets(
   platforms: [
     for (final bucket in value.platforms)
       PlatformFacetBucket(
-        platformId: PlatformId.fromWire(bucket.platformId),
+        platformId: platformFacetPlatformIdFromWire(bucket.platformId),
         count: bucket.count,
       ),
   ],
@@ -1359,6 +1359,14 @@ LibraryFacets libraryFacetsFromDto(dto.LibraryFacetsDto value) => LibraryFacets(
       ),
   ],
 );
+
+PlatformId platformFacetPlatformIdFromWire(String value) {
+  final normalized = switch (value) {
+    'sega.sega-cd' => 'sega_cd',
+    _ => value.replaceFirst('.', '_'),
+  };
+  return PlatformId.fromWire(normalized);
+}
 
 GetGameResult getGameResultFromDto(dto.GetGameResultDto value) =>
     switch (value) {
@@ -1504,12 +1512,23 @@ GameContentSourceSummary gameContentSourceSummaryFromDto(
   dto.GameContentSourceSummaryDto value,
 ) => GameContentSourceSummary(
   sourceEntryId: sourceEntryIdFromDto(value.sourceEntryId),
-  librarySourceId: value.librarySourceId,
+  librarySourceId: librarySourceIdFromDto(value.librarySourceId),
   sourceDisplayName: value.sourceDisplayName,
   libraryRootId: libraryRootIdFromDto(value.libraryRootId),
   rootDisplayName: value.rootDisplayName,
   safeLocationPresentation: value.safeLocationPresentation,
 );
+
+LibrarySourceId librarySourceIdFromDto(String value) {
+  final id = LibrarySourceId(value);
+  if (!id.isValid) {
+    throw const TransportFailure(
+      'Native library-source identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return id;
+}
 
 GameMembershipSummary gameMembershipSummaryFromDto(
   dto.GameMembershipSummaryDto value,

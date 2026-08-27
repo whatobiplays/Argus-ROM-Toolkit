@@ -54,6 +54,34 @@ final class LibraryRootId {
   int get hashCode => value.hashCode;
 }
 
+/// Opaque identity for one configured library source.
+final class LibrarySourceId {
+  const LibrarySourceId(this.value);
+
+  final String value;
+
+  /// Parses one canonical lowercase hex identity, or returns null when the
+  /// value is malformed. Bridge boundaries use this to reject invalid IDs.
+  static LibrarySourceId? tryParse(String value) {
+    final id = LibrarySourceId(value);
+    return id.isValid ? id : null;
+  }
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibrarySourceId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
 /// Opaque identity for one background execution attempt.
 final class JobRunId {
   const JobRunId(this.value);
@@ -1508,7 +1536,7 @@ final class GameContentSourceSummary {
   });
 
   final SourceEntryId sourceEntryId;
-  final String librarySourceId;
+  final LibrarySourceId librarySourceId;
   final String sourceDisplayName;
   final LibraryRootId libraryRootId;
   final String rootDisplayName;

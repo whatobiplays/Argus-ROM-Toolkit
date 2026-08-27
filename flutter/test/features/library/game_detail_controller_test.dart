@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/application/game_detail_controller.dart';
 import 'package:argus/features/library/application/library_state.dart';
@@ -13,6 +15,7 @@ void main() {
       games: games,
       gameId: const GameId('11111111111111111111111111111111'),
       runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
     );
 
     await controller.initialize();
@@ -33,6 +36,7 @@ void main() {
       games: games,
       gameId: const GameId('11111111111111111111111111111111'),
       runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
     );
 
     await controller.initialize();
@@ -50,6 +54,7 @@ void main() {
         games: games,
         gameId: const GameId('11111111111111111111111111111111'),
         runtimeContext: readyLibraryRuntimeContext,
+        demandSource: _emptyDemandSource,
       );
 
       await controller.initialize();
@@ -69,6 +74,7 @@ void main() {
         games: games,
         gameId: detail.gameId,
         runtimeContext: readyLibraryRuntimeContext,
+        demandSource: _emptyDemandSource,
       );
 
       await controller.initialize();
@@ -89,6 +95,7 @@ void main() {
       games: games,
       gameId: const GameId('11111111111111111111111111111111'),
       runtimeContext: const LibraryRuntimeContextPreReady(),
+      demandSource: _emptyDemandSource,
     );
 
     await controller.initialize();
@@ -104,6 +111,7 @@ void main() {
       games: games,
       gameId: const GameId('11111111111111111111111111111111'),
       runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
     );
 
     await controller.refresh(RefreshMode.eligibleOnly);
@@ -116,6 +124,63 @@ void main() {
     expect(games.refreshModes, [RefreshMode.eligibleOnly, RefreshMode.force]);
     controller.dispose();
   });
+
+  test(
+    'reconciles matching Library demands while retaining loaded detail',
+    () async {
+      final demands = StreamController<LibraryReconciliationDemand>.broadcast();
+      addTearDown(demands.close);
+      const gameId = GameId('11111111111111111111111111111111');
+      final initial = gameDetail(id: gameId.value, title: 'Initial detail');
+      final updated = gameDetail(id: gameId.value, title: 'Updated detail');
+      final secondResult = Completer<GetGameResult>();
+      var calls = 0;
+      final games = FakeGamesApi()
+        ..onGetGame = (_) {
+          calls++;
+          if (calls == 1) return GetGameFound(initial);
+          if (calls == 2) return secondResult.future;
+          return GetGameFound(updated);
+        };
+      final controller = GameDetailController(
+        games: games,
+        gameId: gameId,
+        runtimeContext: readyLibraryRuntimeContext,
+        demandSource: LibraryReconciliationDemandSource(demands.stream),
+      );
+
+      await controller.initialize();
+      demands.add(const LibraryReconciliationDemand.listChanged());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 2);
+      expect(controller.state.phase, GameDetailLoadPhase.ready);
+      expect(controller.state.detail, initial);
+      expect(controller.state.refreshing, isTrue);
+
+      demands.add(
+        const LibraryReconciliationDemand.detailChanged(
+          gameId: GameId('22222222222222222222222222222222'),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 2);
+
+      secondResult.complete(GetGameFound(updated));
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.state.detail, updated);
+      expect(controller.state.refreshing, isFalse);
+
+      demands.add(
+        const LibraryReconciliationDemand.detailChanged(gameId: gameId),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 3);
+      expect(controller.state.detail, updated);
+      controller.dispose();
+    },
+  );
 
   test('artwork cache deduplicates, bounds, and retries failures', () async {
     final api = FakeArtworkApi();
@@ -177,3 +242,7 @@ void main() {
     expect(cache.length, 0);
   });
 }
+
+const _emptyDemandSource = LibraryReconciliationDemandSource(
+  Stream<LibraryReconciliationDemand>.empty(),
+);

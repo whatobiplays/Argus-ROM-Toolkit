@@ -30,13 +30,8 @@ class GameDetailPage extends ConsumerStatefulWidget {
 }
 
 class _GameDetailPageState extends ConsumerState<GameDetailPage> {
-  late final ArtworkBytesCache _artworkCache;
-
-  @override
-  void initState() {
-    super.initState();
-    _artworkCache = ArtworkBytesCache(api: ref.read(libraryArtworkApiProvider));
-  }
+  ArtworkApi? _artworkApi;
+  ArtworkBytesCache? _artworkCache;
 
   Future<void> _refresh(
     GameDetailController controller,
@@ -60,6 +55,7 @@ class _GameDetailPageState extends ConsumerState<GameDetailPage> {
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(gameDetailControllerProvider(widget.gameId));
+    final artworkCache = _cacheFor(ref.watch(libraryArtworkApiProvider));
     return Scaffold(
       body: SafeArea(
         child: AnimatedBuilder(
@@ -77,7 +73,8 @@ class _GameDetailPageState extends ConsumerState<GameDetailPage> {
               ),
               GameDetailLoadPhase.ready => _GameDetailBody(
                 detail: state.detail!,
-                artworkCache: _artworkCache,
+                refreshing: state.refreshing,
+                artworkCache: artworkCache,
                 onRefresh: (mode) => _refresh(controller, mode),
               ),
               GameDetailLoadPhase.redirected => _GameRedirect(
@@ -97,6 +94,15 @@ class _GameDetailPageState extends ConsumerState<GameDetailPage> {
       ),
     );
   }
+
+  ArtworkBytesCache _cacheFor(ArtworkApi api) {
+    if (_artworkCache == null || !identical(_artworkApi, api)) {
+      _artworkCache?.clear();
+      _artworkApi = api;
+      _artworkCache = ArtworkBytesCache(api: api);
+    }
+    return _artworkCache!;
+  }
 }
 
 /// Responsive detail layout bands shared by the page and its widget tests.
@@ -109,11 +115,13 @@ GameDetailWidthClass gameDetailWidthClassForWidth(double width) =>
 class _GameDetailBody extends StatelessWidget {
   const _GameDetailBody({
     required this.detail,
+    required this.refreshing,
     required this.artworkCache,
     required this.onRefresh,
   });
 
   final GameDetail detail;
+  final bool refreshing;
   final ArtworkBytesCache artworkCache;
   final Future<void> Function(RefreshMode mode) onRefresh;
 
@@ -169,6 +177,13 @@ class _GameDetailBody extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
             children: [
+              if (refreshing)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: LinearProgressIndicator(
+                    key: ValueKey<String>('game-detail-refreshing'),
+                  ),
+                ),
               overview,
               const SizedBox(height: 12),
               if (isWide)
@@ -612,19 +627,43 @@ class _ArtworkAssetViewState extends State<_ArtworkAssetView> {
           return _ArtworkFailure(onRetry: widget.onRetry);
         }
         final asset = snapshot.data!;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.memory(
-            Uint8List.fromList(asset.bytes),
-            fit: BoxFit.cover,
-            semanticLabel:
-                '${_artworkTypeLabel(widget.artwork.artworkType)} artwork',
-            errorBuilder: (context, error, stackTrace) =>
-                _ArtworkFailure(onRetry: widget.onRetry),
-          ),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+            final decodeWidth = _decodeDimension(
+              constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : widget.prominent
+                  ? 180
+                  : 220,
+              devicePixelRatio,
+            );
+            final decodeHeight = _decodeDimension(
+              constraints.maxHeight.isFinite ? constraints.maxHeight : 240,
+              devicePixelRatio,
+            );
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(
+                Uint8List.fromList(asset.bytes),
+                cacheWidth: decodeWidth,
+                cacheHeight: decodeHeight,
+                fit: BoxFit.cover,
+                semanticLabel:
+                    '${_artworkTypeLabel(widget.artwork.artworkType)} artwork',
+                errorBuilder: (context, error, stackTrace) =>
+                    _ArtworkFailure(onRetry: widget.onRetry),
+              ),
+            );
+          },
         );
       },
     );
+  }
+
+  int? _decodeDimension(double logicalPixels, double devicePixelRatio) {
+    if (!logicalPixels.isFinite || logicalPixels <= 0) return null;
+    return (logicalPixels * devicePixelRatio).round();
   }
 
   void _startLoad() {

@@ -120,6 +120,7 @@ fn cursor_is_bound_to_the_normalized_query_shape() {
         100,
         game,
     );
+    let bound_cursor_value = bound_cursor.as_str().to_owned();
     let continued = ListGamesQuery::builder()
         .search(Some(" alpha ".to_owned()))
         .cursor(Some(bound_cursor))
@@ -127,12 +128,55 @@ fn cursor_is_bound_to_the_normalized_query_shape() {
         .expect("same normalized query shape");
     assert_eq!(
         continued.cursor().expect("cursor").as_str(),
-        query_cursor(&continued)
+        bound_cursor_value
     );
 }
 
-fn query_cursor(query: &ListGamesQuery) -> &str {
-    query.cursor().expect("cursor").as_str()
+#[test]
+fn external_cursor_rejects_oversized_decoded_position_fields() {
+    let query = ListGamesQuery::builder()
+        .search(Some("alpha".to_owned()))
+        .build()
+        .expect("search query");
+    let cursor = GameListCursor::from_query_position(
+        &query,
+        "Alpha",
+        PlatformId::NintendoNes,
+        Some("2020-01-01".to_owned()),
+        100,
+        game_id(5),
+    );
+    let parts = cursor
+        .as_str()
+        .strip_prefix("v2:")
+        .expect("v2 cursor")
+        .split(':')
+        .collect::<Vec<_>>();
+
+    let mut oversized_title = parts
+        .iter()
+        .map(|part| (*part).to_owned())
+        .collect::<Vec<_>>();
+    oversized_title[3] = "61".repeat(1025);
+    assert!(
+        GameListCursor::try_from_external(format!("v2:{}", oversized_title.join(":"))).is_err()
+    );
+
+    let mut oversized_release = parts
+        .iter()
+        .map(|part| (*part).to_owned())
+        .collect::<Vec<_>>();
+    oversized_release[5] = format!("01{}", "61".repeat(65));
+    assert!(
+        GameListCursor::try_from_external(format!("v2:{}", oversized_release.join(":"))).is_err()
+    );
+
+    let oversized_legacy = format!(
+        "v1:{}:{}",
+        "61".repeat(1025),
+        "55555555555555555555555555555555"
+    );
+    assert!(GameListCursor::try_from_external(oversized_legacy).is_err());
 }
 
 #[test]

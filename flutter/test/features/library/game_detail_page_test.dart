@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/library.dart';
 import 'package:flutter/material.dart';
@@ -27,7 +29,9 @@ void main() {
       final contentId = ContentId('22222222222222222222222222222222');
       final source = GameContentSourceSummary(
         sourceEntryId: SourceEntryId('33333333333333333333333333333333'),
-        librarySourceId: 'local-source',
+        librarySourceId: const LibrarySourceId(
+          '55555555555555555555555555555555',
+        ),
         sourceDisplayName: 'Local library',
         libraryRootId: LibraryRootId('44444444444444444444444444444444'),
         rootDisplayName: 'Games',
@@ -83,6 +87,7 @@ void main() {
         games: games,
         gameId: gameId,
         runtimeContext: readyLibraryRuntimeContext,
+        demandSource: _emptyDemandSource,
       );
       await controller.initialize();
       addTearDown(controller.dispose);
@@ -108,8 +113,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('Achievements'), findsNothing);
-      expect(find.text('Edit metadata'), findsNothing);
+      expect(find.text('Inactive orphan'), findsWidgets);
       expect(find.text('Force Refresh'), findsNothing);
 
       await tester.tap(
@@ -166,6 +170,7 @@ void main() {
       games: games,
       gameId: gameId,
       runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
     );
     await controller.initialize();
     addTearDown(controller.dispose);
@@ -194,6 +199,7 @@ void main() {
       games: games,
       gameId: requested,
       runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
     );
     await redirectController.initialize();
     addTearDown(redirectController.dispose);
@@ -216,6 +222,7 @@ void main() {
       games: missingGames,
       gameId: requested,
       runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
     );
     await missingController.initialize();
     addTearDown(missingController.dispose);
@@ -232,6 +239,161 @@ void main() {
     expect(find.text('Game not found'), findsOneWidget);
     await tester.tap(find.text('Back to Library'));
     expect(returnedToLibrary, isTrue);
+  });
+
+  testWidgets(
+    'retains loaded detail and uses bounded artwork decode targets while refreshing',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 1000);
+      addTearDown(tester.view.reset);
+
+      final gameId = const GameId('88888888888888888888888888888888');
+      final initial = gameDetail(
+        id: gameId.value,
+        title: 'Refreshable detail',
+        artwork: const [
+          ResolvedArtwork(
+            artworkType: 'cover_front',
+            referenceId: 'cover-reference',
+            assetId: 'asset-a',
+            ordering: 0,
+            selectionReason: 'test',
+            resolutionRevision: 1,
+            resolvedAt: 1,
+          ),
+        ],
+      );
+      final updated = gameDetail(id: gameId.value, title: 'Updated detail');
+      final gate = Completer<GetGameResult>();
+      var calls = 0;
+      final games = FakeGamesApi()
+        ..onGetGame = (_) {
+          calls++;
+          if (calls == 1) return GetGameFound(initial);
+          return gate.future;
+        };
+      final artwork = FakeArtworkApi()
+        ..assets['asset-a'] = ArtworkAssetBytes(
+          assetId: 'asset-a',
+          bytes: _onePixelPng,
+          mimeType: 'image/png',
+          width: 1,
+          height: 1,
+        );
+      final controller = GameDetailController(
+        games: games,
+        gameId: gameId,
+        runtimeContext: readyLibraryRuntimeContext,
+        demandSource: _emptyDemandSource,
+      );
+      await controller.initialize();
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        _detailHarness(
+          gameId: gameId,
+          controller: controller,
+          artwork: artwork,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final image = tester.widget<Image>(find.byType(Image).first);
+      final resized = image.image as ResizeImage;
+      expect(resized.width, 180);
+      expect(resized.height, 240);
+
+      final reload = controller.reload();
+      await tester.pump();
+      expect(find.text('Refreshable detail'), findsWidgets);
+      expect(
+        find.byKey(const ValueKey<String>('game-detail-refreshing')),
+        findsOneWidget,
+      );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      gate.complete(GetGameFound(updated));
+      await reload;
+      await tester.pumpAndSettle();
+      expect(find.text('Updated detail'), findsWidgets);
+    },
+  );
+
+  testWidgets('recreates artwork cache when the artwork API changes', (
+    tester,
+  ) async {
+    final gameId = const GameId('99999999999999999999999999999999');
+    final detail = gameDetail(
+      id: gameId.value,
+      artwork: const [
+        ResolvedArtwork(
+          artworkType: 'cover_front',
+          referenceId: 'cover-reference',
+          assetId: 'asset-a',
+          ordering: 0,
+          selectionReason: 'test',
+          resolutionRevision: 1,
+          resolvedAt: 1,
+        ),
+      ],
+    );
+    final controller = GameDetailController(
+      games: FakeGamesApi()..result = GetGameFound(detail),
+      gameId: gameId,
+      runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
+    );
+    await controller.initialize();
+    addTearDown(controller.dispose);
+    final firstArtwork = FakeArtworkApi()
+      ..assets['asset-a'] = ArtworkAssetBytes(
+        assetId: 'asset-a',
+        bytes: _onePixelPng,
+        mimeType: 'image/png',
+        width: 1,
+        height: 1,
+      );
+    final secondArtwork = FakeArtworkApi()
+      ..assets['asset-a'] = ArtworkAssetBytes(
+        assetId: 'asset-a',
+        bytes: _onePixelPng,
+        mimeType: 'image/png',
+        width: 1,
+        height: 1,
+      );
+    ArtworkApiHolder.initial = firstArtwork;
+    final artworkProvider = NotifierProvider<ArtworkApiHolder, ArtworkApi>(
+      ArtworkApiHolder.new,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          gameDetailControllerProvider(gameId).overrideWithValue(controller),
+          libraryArtworkApiProvider.overrideWith(
+            (ref) => ref.watch(artworkProvider),
+          ),
+        ],
+        child: MaterialApp(
+          home: GameDetailPage(
+            gameId: gameId,
+            onMissingGame: () {},
+            onOpenGame: (_) {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(firstArtwork.callsByAsset['asset-a'], 1);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(GameDetailPage)),
+    );
+    container.read(artworkProvider.notifier).replace(secondArtwork);
+    await tester.pumpAndSettle();
+    expect(secondArtwork.callsByAsset['asset-a'], 1);
   });
 }
 
@@ -268,3 +430,91 @@ Widget _detailHarness({
     ),
   ),
 );
+
+const _emptyDemandSource = LibraryReconciliationDemandSource(
+  Stream<LibraryReconciliationDemand>.empty(),
+);
+
+const _onePixelPng = <int>[
+  137,
+  80,
+  78,
+  71,
+  13,
+  10,
+  26,
+  10,
+  0,
+  0,
+  0,
+  13,
+  73,
+  72,
+  68,
+  82,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  1,
+  8,
+  6,
+  0,
+  0,
+  0,
+  31,
+  21,
+  196,
+  137,
+  0,
+  0,
+  0,
+  13,
+  73,
+  68,
+  65,
+  84,
+  120,
+  156,
+  99,
+  248,
+  207,
+  192,
+  240,
+  31,
+  0,
+  5,
+  0,
+  1,
+  255,
+  137,
+  153,
+  61,
+  29,
+  0,
+  0,
+  0,
+  0,
+  73,
+  69,
+  78,
+  68,
+  174,
+  66,
+  96,
+  130,
+];
+
+final class ArtworkApiHolder extends Notifier<ArtworkApi> {
+  static ArtworkApi? initial;
+
+  @override
+  ArtworkApi build() => initial!;
+
+  void replace(ArtworkApi value) {
+    state = value;
+  }
+}

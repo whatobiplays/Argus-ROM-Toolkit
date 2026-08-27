@@ -36,7 +36,7 @@ void main() {
 
     state = state.copyWith(viewMode: LibraryViewMode.list);
     expect(state.scrollOffset, 30);
-    state = state.copyWith(scrollOffset: 75);
+    state = state.copyWith(listScrollOffset: 75);
     expect(state.listScrollOffset, 75);
     expect(state.gridScrollOffset, 120);
   });

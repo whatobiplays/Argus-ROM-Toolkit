@@ -123,6 +123,7 @@ final class LibraryController extends ChangeNotifier {
 
   /// Replaces the complete backend-owned filter shape and reloads it.
   Future<void> setFilters(LibraryFilter filters) {
+    _searchTimer?.cancel();
     _requestToken++;
     _state = _state.copyWith(
       filters: filters,
@@ -140,6 +141,7 @@ final class LibraryController extends ChangeNotifier {
 
   /// Replaces the backend-owned sort shape and reloads it from page one.
   Future<void> setSort(LibrarySort sort) {
+    _searchTimer?.cancel();
     _requestToken++;
     _state = _state.copyWith(
       sort: sort,
@@ -165,7 +167,9 @@ final class LibraryController extends ChangeNotifier {
   /// Retains the scroll position for route restoration without querying data.
   void setScrollOffset(double scrollOffset) {
     if (_state.scrollOffset == scrollOffset) return;
-    _state = _state.copyWith(scrollOffset: scrollOffset);
+    _state = _state.viewMode == LibraryViewMode.grid
+        ? _state.copyWith(gridScrollOffset: scrollOffset)
+        : _state.copyWith(listScrollOffset: scrollOffset);
     _notify();
   }
 

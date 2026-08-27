@@ -200,9 +200,50 @@ fn scoped_search_filter_sort_and_cursor_queries_are_backend_owned() {
         vec!["32323232323232323232323232323232",]
     );
 
-    for (field, expected) in [
+    for (field, direction, expected) in [
+        (
+            LibrarySortField::DisplayTitle,
+            LibrarySortDirection::Ascending,
+            vec![
+                "31313131313131313131313131313131",
+                "32323232323232323232323232323232",
+                "33333333333333333333333333333333",
+                "34343434343434343434343434343434",
+            ],
+        ),
+        (
+            LibrarySortField::DisplayTitle,
+            LibrarySortDirection::Descending,
+            vec![
+                "34343434343434343434343434343434",
+                "33333333333333333333333333333333",
+                "32323232323232323232323232323232",
+                "31313131313131313131313131313131",
+            ],
+        ),
+        (
+            LibrarySortField::Platform,
+            LibrarySortDirection::Ascending,
+            vec![
+                "31313131313131313131313131313131",
+                "33333333333333333333333333333333",
+                "32323232323232323232323232323232",
+                "34343434343434343434343434343434",
+            ],
+        ),
+        (
+            LibrarySortField::Platform,
+            LibrarySortDirection::Descending,
+            vec![
+                "34343434343434343434343434343434",
+                "32323232323232323232323232323232",
+                "33333333333333333333333333333333",
+                "31313131313131313131313131313131",
+            ],
+        ),
         (
             LibrarySortField::ReleaseDate,
+            LibrarySortDirection::Ascending,
             vec![
                 "32323232323232323232323232323232",
                 "31313131313131313131313131313131",
@@ -212,19 +253,35 @@ fn scoped_search_filter_sort_and_cursor_queries_are_backend_owned() {
         ),
         (
             LibrarySortField::ReleaseDate,
+            LibrarySortDirection::Descending,
             vec![
                 "34343434343434343434343434343434",
                 "31313131313131313131313131313131",
                 "32323232323232323232323232323232",
                 "33333333333333333333333333333333",
+            ],
+        ),
+        (
+            LibrarySortField::UpdatedAt,
+            LibrarySortDirection::Ascending,
+            vec![
+                "31313131313131313131313131313131",
+                "32323232323232323232323232323232",
+                "33333333333333333333333333333333",
+                "34343434343434343434343434343434",
+            ],
+        ),
+        (
+            LibrarySortField::UpdatedAt,
+            LibrarySortDirection::Descending,
+            vec![
+                "34343434343434343434343434343434",
+                "33333333333333333333333333333333",
+                "32323232323232323232323232323232",
+                "31313131313131313131313131313131",
             ],
         ),
     ] {
-        let direction = if expected[0] == "32323232323232323232323232323232" {
-            LibrarySortDirection::Ascending
-        } else {
-            LibrarySortDirection::Descending
-        };
         let query = argus_application::ListGamesQuery::builder()
             .sort(LibrarySort::new(field, direction))
             .page_size(10)

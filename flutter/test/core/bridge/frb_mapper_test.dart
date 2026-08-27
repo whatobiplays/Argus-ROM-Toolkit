@@ -147,6 +147,25 @@ void main() {
     },
   );
 
+  test('maps persisted dotted platform facet identifiers', () {
+    final facets = libraryFacetsFromDto(
+      const dto.LibraryFacetsDto(
+        platforms: [
+          dto.PlatformFacetBucketDto(platformId: 'nintendo.nes', count: 3),
+          dto.PlatformFacetBucketDto(platformId: 'sega.sega-cd', count: 1),
+        ],
+        regions: [],
+        hydrationStates: [],
+        availabilityStates: [],
+      ),
+    );
+
+    expect(facets.platforms.map((bucket) => bucket.platformId), [
+      PlatformId.nintendoNes,
+      PlatformId.segaCd,
+    ]);
+  });
+
   test(
     'logical-game DTO preserves independent content states and summaries',
     () {

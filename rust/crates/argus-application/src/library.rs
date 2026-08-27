@@ -12,6 +12,11 @@ use crate::{
     ScanRunId, SourceEntryId,
 };
 
+const MAX_CURSOR_WIRE_BYTES: usize = 4096;
+const MAX_CURSOR_DISPLAY_TITLE_BYTES: usize = 1024;
+const MAX_CURSOR_PLATFORM_ID_BYTES: usize = 64;
+const MAX_CURSOR_RELEASE_DATE_BYTES: usize = 64;
+
 /// Closed scope vocabulary for backend-owned logical-library queries.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LibraryScope {
@@ -270,51 +275,36 @@ impl GameListCursor {
     /// Validates an externally supplied opaque cursor without exposing its keys.
     pub fn try_from_external(value: impl Into<String>) -> Result<Self, QueryValidationError> {
         let value = value.into();
+        if value.len() > MAX_CURSOR_WIRE_BYTES {
+            return Err(invalid_cursor());
+        }
         let Some((version, rest)) = value.split_once(':') else {
-            return Err(QueryValidationError::Application(
-                ErrorCode::ValidationInvalidArgument,
-            ));
+            return Err(invalid_cursor());
         };
         if version == "v1" {
             let rest = rest.to_owned();
             return Self::parse_legacy(value, &rest);
         }
         if version != "v2" {
-            return Err(QueryValidationError::Application(
-                ErrorCode::ValidationInvalidArgument,
-            ));
+            return Err(invalid_cursor());
         }
         let parts: Vec<&str> = rest.split(':').collect();
         if parts.len() != 8 {
-            return Err(QueryValidationError::Application(
-                ErrorCode::ValidationInvalidArgument,
-            ));
+            return Err(invalid_cursor());
         }
-        let query_fingerprint = String::from_utf8(hex_decode(parts[0]).ok_or(
-            QueryValidationError::Application(ErrorCode::ValidationInvalidArgument),
-        )?)
-        .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))?;
+        let query_fingerprint = decode_bounded_string(parts[0], 64)?;
         if query_fingerprint.len() != 64
             || !query_fingerprint
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit())
         {
-            return Err(QueryValidationError::Application(
-                ErrorCode::ValidationInvalidArgument,
-            ));
+            return Err(invalid_cursor());
         }
         let sort_field = parse_sort_field_code(parts[1])?;
         let sort_direction = parse_sort_direction_code(parts[2])?;
-        let display_title = String::from_utf8(hex_decode(parts[3]).ok_or(
-            QueryValidationError::Application(ErrorCode::ValidationInvalidArgument),
-        )?)
-        .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))?;
-        let platform = String::from_utf8(hex_decode(parts[4]).ok_or(
-            QueryValidationError::Application(ErrorCode::ValidationInvalidArgument),
-        )?)
-        .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))?;
-        let platform_id = PlatformId::try_from(platform.as_str())
-            .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))?;
+        let display_title = decode_bounded_string(parts[3], MAX_CURSOR_DISPLAY_TITLE_BYTES)?;
+        let platform = decode_bounded_string(parts[4], MAX_CURSOR_PLATFORM_ID_BYTES)?;
+        let platform_id = PlatformId::try_from(platform.as_str()).map_err(|_| invalid_cursor())?;
         let release_date = decode_optional_string(parts[5])?;
         let updated_bytes = hex_decode(parts[6]).ok_or(QueryValidationError::Application(
             ErrorCode::ValidationInvalidArgument,
@@ -322,8 +312,7 @@ impl GameListCursor {
         let updated_at_ms = i64::from_be_bytes(updated_bytes.try_into().map_err(|_| {
             QueryValidationError::Application(ErrorCode::ValidationInvalidArgument)
         })?);
-        let game_id = GameId::try_from(parts[7])
-            .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))?;
+        let game_id = GameId::try_from(parts[7]).map_err(|_| invalid_cursor())?;
         Ok(Self {
             value,
             query_fingerprint,
@@ -339,17 +328,10 @@ impl GameListCursor {
 
     fn parse_legacy(value: String, rest: &str) -> Result<Self, QueryValidationError> {
         let Some((title_hex, id)) = rest.split_once(':') else {
-            return Err(QueryValidationError::Application(
-                ErrorCode::ValidationInvalidArgument,
-            ));
+            return Err(invalid_cursor());
         };
-        let title_bytes = hex_decode(title_hex).ok_or(QueryValidationError::Application(
-            ErrorCode::ValidationInvalidArgument,
-        ))?;
-        let display_title = String::from_utf8(title_bytes)
-            .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))?;
-        let game_id = GameId::try_from(id)
-            .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))?;
+        let display_title = decode_bounded_string(title_hex, MAX_CURSOR_DISPLAY_TITLE_BYTES)?;
+        let game_id = GameId::try_from(id).map_err(|_| invalid_cursor())?;
         Ok(Self {
             value,
             query_fingerprint: default_query_fingerprint(),
@@ -1454,6 +1436,21 @@ fn parse_sort_direction_code(value: &str) -> Result<LibrarySortDirection, QueryV
     }
 }
 
+const fn invalid_cursor() -> QueryValidationError {
+    QueryValidationError::Application(ErrorCode::ValidationInvalidArgument)
+}
+
+fn decode_bounded_string(value: &str, max_bytes: usize) -> Result<String, QueryValidationError> {
+    if value.len() > max_bytes.saturating_mul(2) {
+        return Err(invalid_cursor());
+    }
+    let bytes = hex_decode(value).ok_or(invalid_cursor())?;
+    if bytes.len() > max_bytes {
+        return Err(invalid_cursor());
+    }
+    String::from_utf8(bytes).map_err(|_| invalid_cursor())
+}
+
 fn encode_optional_string(value: Option<&str>) -> String {
     match value {
         Some(value) => format!("01{}", hex_encode(value.as_bytes())),
@@ -1466,16 +1463,9 @@ fn decode_optional_string(value: &str) -> Result<Option<String>, QueryValidation
         return Ok(None);
     }
     let Some(value) = value.strip_prefix("01") else {
-        return Err(QueryValidationError::Application(
-            ErrorCode::ValidationInvalidArgument,
-        ));
+        return Err(invalid_cursor());
     };
-    let bytes = hex_decode(value).ok_or(QueryValidationError::Application(
-        ErrorCode::ValidationInvalidArgument,
-    ))?;
-    String::from_utf8(bytes)
-        .map(Some)
-        .map_err(|_| QueryValidationError::Application(ErrorCode::ValidationInvalidArgument))
+    decode_bounded_string(value, MAX_CURSOR_RELEASE_DATE_BYTES).map(Some)
 }
 
 fn scope_key(scope: LibraryScope) -> String {

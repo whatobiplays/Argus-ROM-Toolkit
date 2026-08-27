@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/application/library_controller.dart';
 import 'package:argus/features/library/application/library_state.dart';
+import 'package:argus/features/library/library_composition.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../sources/sources_test_fakes.dart';
@@ -91,6 +93,96 @@ void main() {
   );
 
   test(
+    'cancels a pending search debounce before filter and sort reloads',
+    () async {
+      final reads = FakeLibraryReads();
+      reads.onListGames = (_) => const GamePage(items: []);
+      final controller = _controller(
+        reads: reads,
+        searchDebounce: const Duration(milliseconds: 25),
+      );
+
+      await controller.initialize();
+      controller.setSearchText('pending-filter');
+      await controller.setFilters(const LibraryFilter(regions: ['us']));
+      await Future<void>.delayed(const Duration(milliseconds: 75));
+      expect(reads.requests, hasLength(2));
+
+      controller.setSearchText('pending-sort');
+      await controller.setSort(
+        const LibrarySort(
+          field: LibrarySortField.updatedAt,
+          direction: LibrarySortDirection.descending,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 75));
+      expect(reads.requests, hasLength(3));
+      controller.dispose();
+    },
+  );
+
+  test(
+    'equivalent runtime contexts retain the route-scoped controller',
+    () async {
+      final runtimeState =
+          NotifierProvider<LibraryRuntimeContextHolder, LibraryRuntimeContext>(
+            LibraryRuntimeContextHolder.new,
+          );
+      final reads = FakeLibraryReads()
+        ..onListGames = (_) => const GamePage(items: []);
+      final container = ProviderContainer(
+        overrides: [
+          libraryRuntimeContextProvider.overrideWith(
+            (ref) => ref.watch(runtimeState),
+          ),
+          libraryApiProvider.overrideWithValue(reads),
+          librarySourcesApiProvider.overrideWithValue(FakeSourcesApi()),
+          libraryRefreshApiProvider.overrideWithValue(FakeLibraryRefreshApi()),
+          libraryGamesApiProvider.overrideWithValue(FakeGamesApi()),
+          libraryReconciliationDemandProvider.overrideWithValue(
+            const LibraryReconciliationDemandSource(
+              Stream<LibraryReconciliationDemand>.empty(),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      const scope = LibraryScope.platform('nintendo.nes');
+      final first = container.read(libraryControllerProvider(scope));
+      final controllerSubscription = container.listen(
+        libraryControllerProvider(scope),
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(controllerSubscription.close);
+      await Future<void>.delayed(Duration.zero);
+      first.setSearchText('retain this query');
+
+      container
+          .read(runtimeState.notifier)
+          .replace(
+            const LibraryRuntimeContext.ready(
+              runtimeInstanceId: RuntimeInstanceId(
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              ),
+            ),
+          );
+      const equivalent = LibraryRuntimeContext.ready(
+        runtimeInstanceId: RuntimeInstanceId(
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ),
+      );
+      expect(container.read(runtimeState), equivalent);
+      await Future<void>.delayed(Duration.zero);
+
+      final second = container.read(libraryControllerProvider(scope));
+      expect(identical(second, first), isTrue);
+      expect(second.state.searchText, 'retain this query');
+    },
+  );
+
+  test(
     'does not publish a late page from an older request generation',
     () async {
       final firstGate = Completer<void>();
@@ -162,10 +254,21 @@ void main() {
   });
 }
 
+final class LibraryRuntimeContextHolder
+    extends Notifier<LibraryRuntimeContext> {
+  @override
+  LibraryRuntimeContext build() => readyLibraryRuntimeContext;
+
+  void replace(LibraryRuntimeContext value) {
+    state = value;
+  }
+}
+
 LibraryController _controller({
   FakeLibraryReads? reads,
   FakeLibraryRefreshApi? refreshApi,
   FakeGamesApi? gamesApi,
+  Duration? searchDebounce,
 }) {
   final libraryReads = reads ?? FakeLibraryReads();
   libraryReads.onListGames ??= (_) => const GamePage(items: []);
@@ -179,5 +282,6 @@ LibraryController _controller({
     demandSource: const LibraryReconciliationDemandSource(
       Stream<LibraryReconciliationDemand>.empty(),
     ),
+    searchDebounce: searchDebounce ?? LibraryController.defaultSearchDebounce,
   );
 }

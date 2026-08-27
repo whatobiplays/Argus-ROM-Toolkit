@@ -54,13 +54,64 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('grid card controls are not clipped by their Stack', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final reads = FakeLibraryReads()
+      ..onListGames = (_) => GamePage(items: [libraryRow()]);
+    final controller = await _readyController(reads);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_libraryHarness(controller: controller));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widgetList<Stack>(find.byType(Stack))
+          .any((stack) => stack.clipBehavior == Clip.none),
+      isTrue,
+    );
+  });
+
+  testWidgets('library refresh fake failures reach the toolbar error path', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final reads = FakeLibraryReads()
+      ..onListGames = (_) => GamePage(items: [libraryRow()]);
+    final refresh = FakeLibraryRefreshApi()
+      ..failure = const TransportFailure('refresh failed');
+    final controller = await _readyController(reads, refreshApi: refresh);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _libraryHarness(controller: controller, refreshApi: refresh),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('library-refresh')));
+    await tester.pump();
+
+    expect(find.text('refresh failed'), findsOneWidget);
+    expect(refresh.failure, isNull);
+  });
 }
 
-Future<LibraryController> _readyController(FakeLibraryReads reads) async {
+Future<LibraryController> _readyController(
+  FakeLibraryReads reads, {
+  FakeLibraryRefreshApi? refreshApi,
+}) async {
   final controller = LibraryController(
     reads: reads,
     sources: FakeSourcesApi(),
-    refreshApi: FakeLibraryRefreshApi(),
+    refreshApi: refreshApi ?? FakeLibraryRefreshApi(),
     gamesApi: FakeGamesApi(),
     scope: const LibraryScope.platform('nintendo.nes'),
     runtimeContext: readyLibraryRuntimeContext,
@@ -75,11 +126,14 @@ Future<LibraryController> _readyController(FakeLibraryReads reads) async {
 Widget _libraryHarness({
   required LibraryController controller,
   TextScaler? textScaler,
+  LibraryRefreshApi? refreshApi,
 }) => ProviderScope(
   overrides: [
     libraryControllerProvider(
       controller.state.scope,
     ).overrideWithValue(controller),
+    if (refreshApi != null)
+      libraryRefreshApiProvider.overrideWithValue(refreshApi),
   ],
   child: MediaQuery(
     data: MediaQueryData(textScaler: textScaler ?? const TextScaler.linear(1)),

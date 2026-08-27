@@ -1,0 +1,21 @@
+rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0016_bounded_library_projection_keys.sql
+  s_5f587c8e66cc19::t_fc01499d2c9be5 2-5,7-8,11-13,15-27,29-31,41-42,46-48,50-62,64-66
+rust/crates/argus-infrastructure/tests/migration_v15.rs
+  s_5f587c8e66cc19::t_ef7f02b559ae72 426-427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3017d6c2af6d6c0500856d2ebf9c4312273a7e2b",
+  "prompts": {},
+  "sessions": {
+    "s_5f587c8e66cc19": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a041eb-f27c-7dd2-8f56-750dc1376682",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

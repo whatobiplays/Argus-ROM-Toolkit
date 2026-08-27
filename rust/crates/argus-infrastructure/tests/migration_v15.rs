@@ -423,8 +423,8 @@ fn migration_v16_bounds_existing_library_projection_keys() {
     let old = SqliteDatabaseExecutor::open_with_registry(&database, registry_v14())
         .expect("v14 database");
     let game_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let display_title = format!("Legacy {}", "😀".repeat(300));
-    let release_date = format!("2020-01-01{}", "😀".repeat(20));
+    let display_title = format!("\0Legacy {}", "😀".repeat(300));
+    let release_date = format!("\02020-01-01{}", "😀".repeat(20));
     let expected_display_title = argus_application::bounded_library_display_title(&display_title);
     let expected_release_date = argus_application::bounded_library_release_date(&release_date);
 

@@ -424,7 +424,9 @@ fn migration_v16_bounds_existing_library_projection_keys() {
         .expect("v14 database");
     let game_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let display_title = format!("Legacy {}", "😀".repeat(300));
-    let release_date = format!("2020-01-01{}", "x".repeat(60));
+    let release_date = format!("2020-01-01{}", "😀".repeat(20));
+    let expected_display_title = argus_application::bounded_library_display_title(&display_title);
+    let expected_release_date = argus_application::bounded_library_release_date(&release_date);
 
     old.with_connection_for_tests(context(), move |connection| {
         connection.execute_with_values(
@@ -465,7 +467,15 @@ fn migration_v16_bounds_existing_library_projection_keys() {
     assert_eq!(current.migration_summary().applied_count, 2);
 
     current
-        .with_connection_for_tests(context(), |connection| {
+        .with_connection_for_tests(context(), move |connection| {
+            let persisted_title = connection.scalar_text(
+                "SELECT display_title
+                 FROM game_library_row WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+            )?;
+            let persisted_release_date = connection.scalar_text(
+                "SELECT release_date
+                 FROM game_library_row WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+            )?;
             let title_bytes = connection.scalar_i64(
                 "SELECT length(CAST(display_title AS BLOB))
                  FROM game_library_row WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
@@ -474,6 +484,8 @@ fn migration_v16_bounds_existing_library_projection_keys() {
                 "SELECT length(CAST(release_date AS BLOB))
                  FROM game_library_row WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
             )?;
+            assert_eq!(persisted_title, expected_display_title);
+            assert_eq!(persisted_release_date, expected_release_date);
             assert!(title_bytes <= 1024);
             assert!(release_date_bytes <= 64);
             Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())

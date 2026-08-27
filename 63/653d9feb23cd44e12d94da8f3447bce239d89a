@@ -1,0 +1,45 @@
+flutter/test/features/library/game_detail_controller_test.dart
+  s_5f587c8e66cc19::t_29767bdf580df2 204,212,217,224,233
+  s_5f587c8e66cc19::t_1474db874e15c6 185-203,205-211,213-216,218-223,225-232
+flutter/lib/features/library/presentation/game_detail_page.dart
+  s_5f587c8e66cc19::t_1474db874e15c6 187
+  s_5f587c8e66cc19::t_5a5bdceb0aa856 77,80,121,124,129,132,186,870-905
+flutter/lib/core/bridge/src/frb_argus_client_gateway.dart
+  s_5f587c8e66cc19::t_5b8941613da4c8 1523-1524
+rust/crates/argus-application/tests/library_queries.rs
+  s_5f587c8e66cc19::t_14594182384bb5 123-124,150-151,185-193
+  s_5f587c8e66cc19::t_fc198f37cd7a58 94-95,194-215
+flutter/test/features/library/library_state_test.dart
+  s_5f587c8e66cc19::t_29767bdf580df2 26-27,29-30,32-35,37
+  s_5f587c8e66cc19::t_1474db874e15c6 28,31
+rust/crates/argus-bridge/tests/logical_library.rs
+  s_5f587c8e66cc19::t_fc198f37cd7a58 136
+flutter/test/core/bridge/frb_mapper_test.dart
+  s_5f587c8e66cc19::t_765b715a46b048 378-393
+flutter/test/features/library/game_detail_page_test.dart
+  s_5f587c8e66cc19::t_29767bdf580df2 323-371
+rust/crates/argus-application/src/library.rs
+  s_5f587c8e66cc19::t_14594182384bb5 215-222,224-230,239,243-245,254,270,276-278,282,292,1475-1481,1483-1487
+  s_5f587c8e66cc19::t_fc198f37cd7a58 266-269,1474
+rust/crates/argus-infrastructure/src/sqlite/logical.rs
+  s_5f587c8e66cc19::t_14594182384bb5 412-413
+  s_5f587c8e66cc19::t_fc198f37cd7a58 414-425
+flutter/lib/features/library/application/game_detail_controller.dart
+  s_5f587c8e66cc19::t_5a5bdceb0aa856 108-109,128-132,212-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "63653d9feb23cd44e12d94da8f3447bce239d89a",
+  "prompts": {},
+  "sessions": {
+    "s_5f587c8e66cc19": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a041eb-f27c-7dd2-8f56-750dc1376682",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

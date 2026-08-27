@@ -105,6 +105,8 @@ final class GameDetailController extends ChangeNotifier {
   _demandSubscription;
   GameDetailState _state;
   int _requestToken = 0;
+  bool _requestInFlight = false;
+  bool _reloadAfterRequest = false;
   bool _initialized = false;
   bool _disposed = false;
 
@@ -123,6 +125,11 @@ final class GameDetailController extends ChangeNotifier {
   /// Re-reads the routed identity from the backend.
   Future<void> reload() async {
     if (_disposed || _runtimeContext is LibraryRuntimeContextPreReady) return;
+    if (_requestInFlight) {
+      _reloadAfterRequest = true;
+      return;
+    }
+    _requestInFlight = true;
     final token = ++_requestToken;
     final retainedDetail = _state.detail;
     _publish(
@@ -201,6 +208,12 @@ final class GameDetailController extends ChangeNotifier {
             failure: failure,
           ),
         );
+      }
+    } finally {
+      _requestInFlight = false;
+      if (!_disposed && _reloadAfterRequest) {
+        _reloadAfterRequest = false;
+        unawaited(reload());
       }
     }
   }

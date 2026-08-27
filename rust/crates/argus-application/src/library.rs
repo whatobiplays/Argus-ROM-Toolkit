@@ -212,10 +212,22 @@ impl GameListCursor {
     /// The wire value remains opaque and is accepted only for the default
     /// normalized query. New query shapes use the versioned position format
     /// produced by [`Self::from_query_position`].
-    pub fn from_paging_keys(display_title: impl Into<String>, game_id: GameId) -> Self {
+    ///
+    /// Cursor keys are bounded to the same sizes enforced by external cursor
+    /// decoding. Persisted values outside those bounds are rejected instead
+    /// of producing a cursor that the next request cannot read.
+    pub fn from_paging_keys(
+        display_title: impl Into<String>,
+        game_id: GameId,
+    ) -> Result<Self, QueryValidationError> {
         let display_title = display_title.into();
-        Self {
-            value: format!("v1:{}:{}", hex_encode(display_title.as_bytes()), game_id),
+        let value = format!(
+            "v1:{}:{}",
+            encode_bounded_string(&display_title, MAX_CURSOR_DISPLAY_TITLE_BYTES)?,
+            game_id
+        );
+        Ok(Self {
+            value,
             query_fingerprint: default_query_fingerprint(),
             sort_field: LibrarySortField::DisplayTitle,
             sort_direction: LibrarySortDirection::Ascending,
@@ -224,10 +236,13 @@ impl GameListCursor {
             release_date: None,
             updated_at_ms: 0,
             game_id,
-        }
+        })
     }
 
     /// Builds a query-bound cursor from the final row's stable sort keys.
+    ///
+    /// The constructor is fallible because database-backed sort keys must not
+    /// exceed the bounds accepted by [`Self::try_from_external`].
     #[allow(clippy::too_many_arguments)]
     pub fn from_query_position(
         query: &ListGamesQuery,
@@ -236,7 +251,7 @@ impl GameListCursor {
         release_date: Option<String>,
         updated_at_ms: i64,
         game_id: GameId,
-    ) -> Self {
+    ) -> Result<Self, QueryValidationError> {
         let display_title = display_title.into();
         if query.scope() == LibraryScope::All
             && query.search().is_none()
@@ -248,18 +263,23 @@ impl GameListCursor {
         let fingerprint = query.query_fingerprint().to_owned();
         let sort_field = query.sort().field();
         let sort_direction = query.sort().direction();
+        let encoded_display_title =
+            encode_bounded_string(&display_title, MAX_CURSOR_DISPLAY_TITLE_BYTES)?;
+        let encoded_platform_id =
+            encode_bounded_string(platform_id.as_str(), MAX_CURSOR_PLATFORM_ID_BYTES)?;
+        let encoded_release_date = encode_optional_string(release_date.as_deref())?;
         let value = format!(
             "v2:{}:{}:{}:{}:{}:{}:{}:{}",
             hex_encode(fingerprint.as_bytes()),
             sort_field_code(sort_field),
             sort_direction_code(sort_direction),
-            hex_encode(display_title.as_bytes()),
-            hex_encode(platform_id.as_str().as_bytes()),
-            encode_optional_string(release_date.as_deref()),
+            encoded_display_title,
+            encoded_platform_id,
+            encoded_release_date,
             hex_encode(&updated_at_ms.to_be_bytes()),
             game_id,
         );
-        Self {
+        Ok(Self {
             value,
             query_fingerprint: fingerprint,
             sort_field,
@@ -269,7 +289,7 @@ impl GameListCursor {
             release_date,
             updated_at_ms,
             game_id,
-        }
+        })
     }
 
     /// Validates an externally supplied opaque cursor without exposing its keys.
@@ -1451,10 +1471,20 @@ fn decode_bounded_string(value: &str, max_bytes: usize) -> Result<String, QueryV
     String::from_utf8(bytes).map_err(|_| invalid_cursor())
 }
 
-fn encode_optional_string(value: Option<&str>) -> String {
+fn encode_bounded_string(value: &str, max_bytes: usize) -> Result<String, QueryValidationError> {
+    if value.len() > max_bytes {
+        return Err(invalid_cursor());
+    }
+    Ok(hex_encode(value.as_bytes()))
+}
+
+fn encode_optional_string(value: Option<&str>) -> Result<String, QueryValidationError> {
     match value {
-        Some(value) => format!("01{}", hex_encode(value.as_bytes())),
-        None => "00".to_owned(),
+        Some(value) => Ok(format!(
+            "01{}",
+            encode_bounded_string(value, MAX_CURSOR_RELEASE_DATE_BYTES)?
+        )),
+        None => Ok("00".to_owned()),
     }
 }
 

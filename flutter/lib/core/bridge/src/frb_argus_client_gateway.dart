@@ -1520,8 +1520,8 @@ GameContentSourceSummary gameContentSourceSummaryFromDto(
 );
 
 LibrarySourceId librarySourceIdFromDto(String value) {
-  final id = LibrarySourceId(value);
-  if (!id.isValid) {
+  final id = LibrarySourceId.tryParse(value);
+  if (id == null) {
     throw const TransportFailure(
       'Native library-source identity is invalid',
       kind: TransportFailureKind.contractMismatch,

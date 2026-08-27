@@ -91,7 +91,8 @@ fn library_query_supports_all_closed_scopes_and_sorts() {
 #[test]
 fn cursor_is_bound_to_the_normalized_query_shape() {
     let game = game_id(4);
-    let baseline_cursor = GameListCursor::from_paging_keys("Alpha", game);
+    let baseline_cursor =
+        GameListCursor::from_paging_keys("Alpha", game).expect("bounded baseline cursor");
 
     let baseline = ListGamesQuery::builder()
         .cursor(Some(baseline_cursor.clone()))
@@ -119,7 +120,8 @@ fn cursor_is_bound_to_the_normalized_query_shape() {
         None,
         100,
         game,
-    );
+    )
+    .expect("bounded query cursor");
     let bound_cursor_value = bound_cursor.as_str().to_owned();
     let continued = ListGamesQuery::builder()
         .search(Some(" alpha ".to_owned()))
@@ -145,7 +147,8 @@ fn external_cursor_rejects_oversized_decoded_position_fields() {
         Some("2020-01-01".to_owned()),
         100,
         game_id(5),
-    );
+    )
+    .expect("bounded query cursor");
     let parts = cursor
         .as_str()
         .strip_prefix("v2:")
@@ -177,6 +180,39 @@ fn external_cursor_rejects_oversized_decoded_position_fields() {
         "55555555555555555555555555555555"
     );
     assert!(GameListCursor::try_from_external(oversized_legacy).is_err());
+}
+
+#[test]
+fn cursor_construction_rejects_position_keys_over_external_bounds() {
+    let game = game_id(6);
+    assert!(GameListCursor::from_paging_keys("x".repeat(1025), game).is_err());
+
+    let query = ListGamesQuery::builder()
+        .search(Some("alpha".to_owned()))
+        .build()
+        .expect("search query");
+    assert!(
+        GameListCursor::from_query_position(
+            &query,
+            "x".repeat(1025),
+            PlatformId::NintendoNes,
+            Some("2020-01-01".to_owned()),
+            100,
+            game,
+        )
+        .is_err()
+    );
+    assert!(
+        GameListCursor::from_query_position(
+            &query,
+            "Alpha",
+            PlatformId::NintendoNes,
+            Some("x".repeat(65)),
+            100,
+            game,
+        )
+        .is_err()
+    );
 }
 
 #[test]

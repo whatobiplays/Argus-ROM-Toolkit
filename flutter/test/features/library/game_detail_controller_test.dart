@@ -182,6 +182,55 @@ void main() {
     },
   );
 
+  test(
+    'coalesces reconciliation demands behind one in-flight reload',
+    () async {
+      final demands = StreamController<LibraryReconciliationDemand>.broadcast();
+      addTearDown(demands.close);
+      const gameId = GameId('11111111111111111111111111111111');
+      final initial = gameDetail(id: gameId.value, title: 'Initial detail');
+      final updated = gameDetail(id: gameId.value, title: 'Updated detail');
+      final pending = Completer<GetGameResult>();
+      var calls = 0;
+      final games = FakeGamesApi()
+        ..onGetGame = (_) {
+          calls++;
+          return switch (calls) {
+            1 => GetGameFound(initial),
+            2 => pending.future,
+            3 => GetGameFound(updated),
+            _ => GetGameFound(updated),
+          };
+        };
+      final controller = GameDetailController(
+        games: games,
+        gameId: gameId,
+        runtimeContext: readyLibraryRuntimeContext,
+        demandSource: LibraryReconciliationDemandSource(demands.stream),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.initialize();
+      final reload = controller.reload();
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 2);
+
+      demands
+        ..add(const LibraryReconciliationDemand.listChanged())
+        ..add(const LibraryReconciliationDemand.listChanged())
+        ..add(const LibraryReconciliationDemand.listChanged());
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 2);
+
+      pending.complete(GetGameFound(initial));
+      await reload;
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 3);
+      expect(controller.state.detail, updated);
+    },
+  );
+
   test('artwork cache deduplicates, bounds, and retries failures', () async {
     final api = FakeArtworkApi();
     final first = const ArtworkAssetBytes(

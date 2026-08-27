@@ -409,17 +409,20 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
         if has_more {
             rows.truncate(query.page_size() as usize);
         }
-        let next_cursor = has_more.then(|| {
-            let row = rows.last().expect("a page with more rows has a last row");
-            GameListCursor::from_query_position(
-                query,
-                row.display_title(),
-                row.platform_id(),
-                row.release_date_for_cursor(),
-                row.updated_at_ms(),
-                row.game_id(),
-            )
-        });
+        let next_cursor = has_more
+            .then(|| {
+                let row = rows.last().expect("a page with more rows has a last row");
+                GameListCursor::from_query_position(
+                    query,
+                    row.display_title(),
+                    row.platform_id(),
+                    row.release_date_for_cursor(),
+                    row.updated_at_ms(),
+                    row.game_id(),
+                )
+                .map_err(|_| PersistenceError::CorruptOrIncompatible)
+            })
+            .transpose()?;
         Ok(GameLibraryPage::new(rows, next_cursor))
     }
 

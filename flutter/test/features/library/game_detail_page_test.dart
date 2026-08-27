@@ -320,6 +320,55 @@ void main() {
     },
   );
 
+  testWidgets('shows a retained-detail refresh failure with retry', (
+    tester,
+  ) async {
+    final gameId = const GameId('12121212121212121212121212121212');
+    final initial = gameDetail(id: gameId.value, title: 'Retained detail');
+    final updated = gameDetail(id: gameId.value, title: 'Retried detail');
+    var calls = 0;
+    final games = FakeGamesApi()
+      ..onGetGame = (_) {
+        calls++;
+        return switch (calls) {
+          1 => GetGameFound(initial),
+          2 => Future<GetGameResult>.error(
+            const TransportFailure('refresh failed'),
+          ),
+          _ => GetGameFound(updated),
+        };
+      };
+    final controller = GameDetailController(
+      games: games,
+      gameId: gameId,
+      runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
+    );
+    await controller.initialize();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _detailHarness(gameId: gameId, controller: controller),
+    );
+    await tester.pumpAndSettle();
+
+    await controller.reload();
+    await tester.pumpAndSettle();
+    expect(find.text('Retained detail'), findsWidgets);
+    expect(find.text('refresh failed'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('game-detail-refresh-failure')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('game-detail-refresh-retry')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Retried detail'), findsWidgets);
+    expect(find.text('refresh failed'), findsNothing);
+  });
+
   testWidgets('recreates artwork cache when the artwork API changes', (
     tester,
   ) async {

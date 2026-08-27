@@ -23,12 +23,18 @@ void main() {
   });
 
   test('runtime context equality is based on the runtime generation', () {
+    const preReady = LibraryRuntimeContext.preReady();
+    const ready = LibraryRuntimeContext.ready(
+      runtimeInstanceId: RuntimeInstanceId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    );
+    const differentGeneration = LibraryRuntimeContext.ready(
+      runtimeInstanceId: RuntimeInstanceId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+    );
+
+    expect(preReady, isNot(ready));
+    expect(ready, isNot(differentGeneration));
     expect(
-      const LibraryRuntimeContext.ready(
-        runtimeInstanceId: RuntimeInstanceId(
-          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        ),
-      ),
+      ready,
       const LibraryRuntimeContext.ready(
         runtimeInstanceId: RuntimeInstanceId(
           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

@@ -74,8 +74,10 @@ class _GameDetailPageState extends ConsumerState<GameDetailPage> {
               GameDetailLoadPhase.ready => _GameDetailBody(
                 detail: state.detail!,
                 refreshing: state.refreshing,
+                failure: state.failure,
                 artworkCache: artworkCache,
                 onRefresh: (mode) => _refresh(controller, mode),
+                onRetry: controller.reload,
               ),
               GameDetailLoadPhase.redirected => _GameRedirect(
                 canonicalGameId: state.canonicalGameId!,
@@ -116,14 +118,18 @@ class _GameDetailBody extends StatelessWidget {
   const _GameDetailBody({
     required this.detail,
     required this.refreshing,
+    required this.failure,
     required this.artworkCache,
     required this.onRefresh,
+    required this.onRetry,
   });
 
   final GameDetail detail;
   final bool refreshing;
+  final ClientFailure? failure;
   final ArtworkBytesCache artworkCache;
   final Future<void> Function(RefreshMode mode) onRefresh;
+  final Future<void> Function() onRetry;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -177,6 +183,8 @@ class _GameDetailBody extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
             children: [
+              if (failure != null)
+                _GameDetailRefreshFailure(failure: failure!, onRetry: onRetry),
               if (refreshing)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 12),
@@ -855,6 +863,46 @@ class _GameLoadFailure extends StatelessWidget {
           child: const Text('Retry'),
         ),
       ],
+    ),
+  );
+}
+
+class _GameDetailRefreshFailure extends StatelessWidget {
+  const _GameDetailRefreshFailure({
+    required this.failure,
+    required this.onRetry,
+  });
+
+  final ClientFailure failure;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    key: const ValueKey<String>('game-detail-refresh-failure'),
+    color: Theme.of(context).colorScheme.errorContainer,
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Game detail refresh failed'),
+                const SizedBox(height: 4),
+                Text(failure.message),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          FilledButton(
+            key: const ValueKey<String>('game-detail-refresh-retry'),
+            onPressed: () => unawaited(onRetry()),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
     ),
   );
 }

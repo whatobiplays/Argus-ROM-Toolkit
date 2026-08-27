@@ -375,6 +375,22 @@ void main() {
     );
   });
 
+  test(
+    'library source identity mapper rejects malformed identity as contract mismatch',
+    () {
+      expect(
+        () => librarySourceIdFromDto('not-an-id'),
+        throwsA(
+          isA<TransportFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            TransportFailureKind.contractMismatch,
+          ),
+        ),
+      );
+    },
+  );
+
   test('library root page DTO maps bounded paging facts', () {
     final page = libraryRootPageFromDto(
       const dto.LibraryRootPageDto(

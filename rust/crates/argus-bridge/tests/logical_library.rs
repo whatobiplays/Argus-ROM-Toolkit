@@ -133,7 +133,7 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
 
     let page = game_page_dto(&GameLibraryPage::new(
         vec![row],
-        Some(GameListCursor::from_paging_keys("Fallback GBA", game_id)),
+        Some(GameListCursor::from_paging_keys("Fallback GBA", game_id).expect("bounded cursor")),
     ));
     assert_eq!(page.items.len(), 1);
     assert!(

@@ -16,6 +16,7 @@ use argus_application::{
     ListGamesQuery, LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship,
     PersistenceError, PlatformFacetBucket, PlatformId, RegionFacetBucket, ScanRunId, SourceEntryId,
     SourceVersionEvidence, SourceVersionKind, ValidatedContentDerivation, ValidatedM3uGrouping,
+    bounded_library_display_title, bounded_library_release_date,
 };
 use rusqlite::{OptionalExtension, Row, params_from_iter, types::Value};
 
@@ -2119,7 +2120,7 @@ pub(crate) fn refresh_game_library_projection(
     transaction: &mut rusqlite::Transaction<'_>,
     game_id: &str,
 ) -> Result<(), PersistenceError> {
-    transaction
+    let affected_rows = transaction
         .execute(
             "INSERT INTO game_library_row (
                  game_id, display_title, display_title_provenance, platform_id,
@@ -2234,6 +2235,34 @@ pub(crate) fn refresh_game_library_projection(
             [game_id],
         )
         .map_err(map_persistence_operation_error)?;
+    if affected_rows == 0 {
+        return Ok(());
+    }
+
+    // The source facts may be longer than the bounded cursor contract. Keep
+    // the persisted presentation keys and the cursor keys identical so a
+    // valid projection never produces an unreadable continuation token.
+    let (display_title, release_date): (String, Option<String>) = transaction
+        .query_row(
+            "SELECT display_title, release_date
+             FROM game_library_row
+             WHERE game_id = ?1",
+            [game_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(map_persistence_operation_error)?;
+    let bounded_display_title = bounded_library_display_title(&display_title);
+    let bounded_release_date = release_date.as_deref().map(bounded_library_release_date);
+    if display_title != bounded_display_title || release_date != bounded_release_date {
+        transaction
+            .execute(
+                "UPDATE game_library_row
+                 SET display_title = ?1, release_date = ?2
+                 WHERE game_id = ?3",
+                rusqlite::params![bounded_display_title, bounded_release_date, game_id],
+            )
+            .map_err(map_persistence_operation_error)?;
+    }
     Ok(())
 }
 

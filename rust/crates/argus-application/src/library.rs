@@ -13,9 +13,35 @@ use crate::{
 };
 
 const MAX_CURSOR_WIRE_BYTES: usize = 4096;
-const MAX_CURSOR_DISPLAY_TITLE_BYTES: usize = 1024;
+/// Maximum UTF-8 byte length retained for a Library display title and cursor key.
+pub const MAX_LIBRARY_DISPLAY_TITLE_BYTES: usize = 1024;
+/// Maximum UTF-8 byte length retained for a Library release-date sort key.
+pub const MAX_LIBRARY_RELEASE_DATE_BYTES: usize = 64;
+const MAX_CURSOR_DISPLAY_TITLE_BYTES: usize = MAX_LIBRARY_DISPLAY_TITLE_BYTES;
 const MAX_CURSOR_PLATFORM_ID_BYTES: usize = 64;
-const MAX_CURSOR_RELEASE_DATE_BYTES: usize = 64;
+const MAX_CURSOR_RELEASE_DATE_BYTES: usize = MAX_LIBRARY_RELEASE_DATE_BYTES;
+
+/// Truncates a UTF-8 Library presentation value without splitting a code point.
+fn truncate_utf8_prefix(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+    let mut end = max_bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
+}
+
+/// Applies the bounded display-title projection policy used by Library rows.
+pub fn bounded_library_display_title(value: &str) -> String {
+    truncate_utf8_prefix(value, MAX_LIBRARY_DISPLAY_TITLE_BYTES)
+}
+
+/// Applies the bounded release-date projection policy used by Library sort keys.
+pub fn bounded_library_release_date(value: &str) -> String {
+    truncate_utf8_prefix(value, MAX_LIBRARY_RELEASE_DATE_BYTES)
+}
 
 /// Closed scope vocabulary for backend-owned logical-library queries.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -213,14 +239,14 @@ impl GameListCursor {
     /// normalized query. New query shapes use the versioned position format
     /// produced by [`Self::from_query_position`].
     ///
-    /// Cursor keys are bounded to the same sizes enforced by external cursor
-    /// decoding. Persisted values outside those bounds are rejected instead
-    /// of producing a cursor that the next request cannot read.
+    /// Cursor keys use the same bounded projection values enforced by
+    /// external cursor decoding. Values supplied by a persistence adapter are
+    /// reduced to those bounds before the opaque wire value is created.
     pub fn from_paging_keys(
         display_title: impl Into<String>,
         game_id: GameId,
     ) -> Result<Self, QueryValidationError> {
-        let display_title = display_title.into();
+        let display_title = bounded_library_display_title(&display_title.into());
         let value = format!(
             "v1:{}:{}",
             encode_bounded_string(&display_title, MAX_CURSOR_DISPLAY_TITLE_BYTES)?,
@@ -241,8 +267,8 @@ impl GameListCursor {
 
     /// Builds a query-bound cursor from the final row's stable sort keys.
     ///
-    /// The constructor is fallible because database-backed sort keys must not
-    /// exceed the bounds accepted by [`Self::try_from_external`].
+    /// Database-backed sort keys are reduced to the same bounds accepted by
+    /// [`Self::try_from_external`] before the cursor is emitted.
     #[allow(clippy::too_many_arguments)]
     pub fn from_query_position(
         query: &ListGamesQuery,
@@ -252,7 +278,8 @@ impl GameListCursor {
         updated_at_ms: i64,
         game_id: GameId,
     ) -> Result<Self, QueryValidationError> {
-        let display_title = display_title.into();
+        let display_title = bounded_library_display_title(&display_title.into());
+        let release_date = release_date.map(|value| bounded_library_release_date(&value));
         if query.scope() == LibraryScope::All
             && query.search().is_none()
             && query.filters().is_empty()
@@ -424,7 +451,7 @@ impl GameLibraryRow {
     ) -> Self {
         Self {
             game_id,
-            display_title: display_title.into(),
+            display_title: bounded_library_display_title(&display_title.into()),
             platform_id,
             presentation_region: None,
             selected_cover_asset_id: None,
@@ -480,9 +507,11 @@ impl GameLibraryRow {
         source_count: u32,
         updated_at_ms: i64,
     ) -> Self {
+        let display_title = bounded_library_display_title(&display_title.into());
+        let release_date = release_date.map(|value| bounded_library_release_date(&value));
         Self {
             game_id,
-            display_title: display_title.into(),
+            display_title,
             platform_id,
             presentation_region,
             selected_cover_asset_id,

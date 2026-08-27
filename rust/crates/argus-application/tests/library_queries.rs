@@ -91,8 +91,7 @@ fn library_query_supports_all_closed_scopes_and_sorts() {
 #[test]
 fn cursor_is_bound_to_the_normalized_query_shape() {
     let game = game_id(4);
-    let baseline_cursor =
-        GameListCursor::from_paging_keys("Alpha", game).expect("bounded baseline cursor");
+    let baseline_cursor = GameListCursor::from_paging_keys("Alpha", game).expect("cursor");
 
     let baseline = ListGamesQuery::builder()
         .cursor(Some(baseline_cursor.clone()))
@@ -121,7 +120,7 @@ fn cursor_is_bound_to_the_normalized_query_shape() {
         100,
         game,
     )
-    .expect("bounded query cursor");
+    .expect("cursor");
     let bound_cursor_value = bound_cursor.as_str().to_owned();
     let continued = ListGamesQuery::builder()
         .search(Some(" alpha ".to_owned()))
@@ -148,7 +147,7 @@ fn external_cursor_rejects_oversized_decoded_position_fields() {
         100,
         game_id(5),
     )
-    .expect("bounded query cursor");
+    .expect("cursor");
     let parts = cursor
         .as_str()
         .strip_prefix("v2:")
@@ -183,36 +182,39 @@ fn external_cursor_rejects_oversized_decoded_position_fields() {
 }
 
 #[test]
-fn cursor_construction_rejects_position_keys_over_external_bounds() {
+fn cursor_construction_bounds_position_keys_for_external_decoding() {
     let game = game_id(6);
-    assert!(GameListCursor::from_paging_keys("x".repeat(1025), game).is_err());
+    let legacy = GameListCursor::from_paging_keys("x".repeat(1025), game).expect("cursor");
+    assert_eq!(legacy.display_title().len(), 1024);
+    assert!(GameListCursor::try_from_external(legacy.as_str()).is_ok());
 
     let query = ListGamesQuery::builder()
         .search(Some("alpha".to_owned()))
         .build()
         .expect("search query");
-    assert!(
-        GameListCursor::from_query_position(
-            &query,
-            "x".repeat(1025),
-            PlatformId::NintendoNes,
-            Some("2020-01-01".to_owned()),
-            100,
-            game,
-        )
-        .is_err()
-    );
-    assert!(
-        GameListCursor::from_query_position(
-            &query,
-            "Alpha",
-            PlatformId::NintendoNes,
-            Some("x".repeat(65)),
-            100,
-            game,
-        )
-        .is_err()
-    );
+    let bounded_title = GameListCursor::from_query_position(
+        &query,
+        "x".repeat(1025),
+        PlatformId::NintendoNes,
+        Some("2020-01-01".to_owned()),
+        100,
+        game,
+    )
+    .expect("cursor");
+    assert_eq!(bounded_title.display_title().len(), 1024);
+    assert!(GameListCursor::try_from_external(bounded_title.as_str()).is_ok());
+
+    let bounded_release_date = GameListCursor::from_query_position(
+        &query,
+        "Alpha",
+        PlatformId::NintendoNes,
+        Some("x".repeat(65)),
+        100,
+        game,
+    )
+    .expect("cursor");
+    assert_eq!(bounded_release_date.release_date().map(str::len), Some(64));
+    assert!(GameListCursor::try_from_external(bounded_release_date.as_str()).is_ok());
 }
 
 #[test]

@@ -1,11 +1,12 @@
 #![cfg(feature = "test-support")]
 
 use argus_application::{
-    ApplicationPortError, AvailabilityState, GameLibraryPage, HydrationState, LibraryFacetQuery,
-    LibraryFilter, LibraryScope, LibrarySort, LibrarySortDirection, LibrarySortField,
-    LogicalContentUnitOfWork, LogicalLibraryQueries, OperationContext, OperationName, PlatformId,
-    SubsystemName, TraceId,
+    ApplicationPortError, AvailabilityState, EnrichmentUnitOfWork, GameLibraryPage, HydrationState,
+    LibraryFacetQuery, LibraryFilter, LibraryScope, LibrarySort, LibrarySortDirection,
+    LibrarySortField, LogicalContentUnitOfWork, LogicalLibraryQueries, MetadataRepository,
+    OperationContext, OperationName, PlatformId, ResolvedMetadata, SubsystemName, TraceId,
 };
+use argus_domain::GameId;
 use argus_infrastructure::sqlite::SqliteDatabaseExecutor;
 use tempfile::tempdir;
 
@@ -363,5 +364,70 @@ fn normal_queries_suppress_redirected_and_inactive_orphan_games() {
     assert_eq!(ids.len(), 4);
     assert!(!ids.contains(&"35353535353535353535353535353535".to_owned()));
     assert!(!ids.contains(&"36363636363636363636363636363636".to_owned()));
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn oversized_projection_sort_keys_are_bounded_before_paging() {
+    let directory = tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("bounded-projection.sqlite3"))
+            .expect("database");
+    seed(&executor);
+    let game_id = GameId::try_from("32323232323232323232323232323232").expect("game id");
+    let metadata = ResolvedMetadata::from_persisted(
+        Some(format!("Beta {}", "😀".repeat(300))),
+        Some("beta long".to_owned()),
+        Some("description".to_owned()),
+        Some(format!("2020-01-01{}", "x".repeat(56))),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Some("us".to_owned()),
+        vec!["en".to_owned()],
+        Vec::new(),
+        2,
+        42,
+        None,
+    );
+    executor
+        .with_unit_of_work(context(), move |mut work| {
+            work.metadata().save_resolved_metadata(game_id, &metadata)?;
+            work.commit()
+        })
+        .expect("save oversized resolved metadata");
+
+    for sort in [
+        LibrarySort::new(
+            LibrarySortField::DisplayTitle,
+            LibrarySortDirection::Ascending,
+        ),
+        LibrarySort::new(
+            LibrarySortField::ReleaseDate,
+            LibrarySortDirection::Ascending,
+        ),
+    ] {
+        let mut cursor = None;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            let query = argus_application::ListGamesQuery::builder()
+                .sort(sort)
+                .cursor(cursor)
+                .page_size(1)
+                .build()
+                .expect("paged query");
+            let page = list(&executor, query);
+            let row = page.items().first().expect("expected active game");
+            if row.game_id() == game_id {
+                assert!(row.display_title().len() <= 1024);
+                assert!(row.release_date().is_none_or(|date| date.len() <= 64));
+            }
+            seen.push(row.game_id());
+            cursor = page.next_cursor().cloned();
+        }
+        assert_eq!(seen.len(), 4);
+        assert!(cursor.is_none());
+    }
+
     executor.shutdown().expect("shutdown");
 }

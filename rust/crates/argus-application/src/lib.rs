@@ -95,7 +95,9 @@ pub use library::{
     GameLibraryPage, GameLibraryRow, GameListCursor, GameMembershipSummary, GetGameResult,
     HydrationStateFacetBucket, LibraryFacetQuery, LibraryFacets, LibraryFilter, LibraryScope,
     LibrarySort, LibrarySortDirection, LibrarySortField, ListGamesQuery, ListGamesQueryBuilder,
-    LogicalLibraryQueries, PlatformFacetBucket, QueryValidationError, RegionFacetBucket,
+    LogicalLibraryQueries, MAX_LIBRARY_DISPLAY_TITLE_BYTES, MAX_LIBRARY_RELEASE_DATE_BYTES,
+    PlatformFacetBucket, QueryValidationError, RegionFacetBucket, bounded_library_display_title,
+    bounded_library_release_date,
 };
 pub use logical::{
     ContentIdentity, ConvergenceOutcome, IdentificationService, IdentityConvergenceStore,

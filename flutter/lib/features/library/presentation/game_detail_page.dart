@@ -891,7 +891,11 @@ class _GameDetailRefreshFailure extends StatelessWidget {
               children: [
                 const Text('Game detail refresh failed'),
                 const SizedBox(height: 4),
-                Text(failure.message),
+                Semantics(
+                  liveRegion: true,
+                  label: failure.message,
+                  child: Text(failure.message),
+                ),
               ],
             ),
           ),

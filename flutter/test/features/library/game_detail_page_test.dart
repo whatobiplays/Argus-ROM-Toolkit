@@ -360,6 +360,15 @@ void main() {
       find.byKey(const ValueKey<String>('game-detail-refresh-failure')),
       findsOneWidget,
     );
+    final failureMessageSemantics = tester.widget<Semantics>(
+      find
+          .ancestor(
+            of: find.text('refresh failed'),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    );
+    expect(failureMessageSemantics.properties.liveRegion, isTrue);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('game-detail-refresh-retry')),

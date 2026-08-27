@@ -187,8 +187,8 @@ fn v13_provider_ids_and_parent_relationships_survive_v14_coordinate_migration() 
     old.shutdown().expect("shutdown v13");
 
     let current = SqliteDatabaseExecutor::open(&database).expect("v14 upgrade");
-    assert_eq!(current.migration_summary().current_version, 15);
-    assert_eq!(current.migration_summary().applied_count, 2);
+    assert_eq!(current.migration_summary().current_version, 16);
+    assert_eq!(current.migration_summary().applied_count, 3);
 
     current
         .with_connection_for_tests(context(), move |connection| {

@@ -103,7 +103,7 @@ fn migration_v15_adds_bounded_library_projection_columns_and_indexes() {
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("logical.sqlite3")).expect("database");
 
-    assert_eq!(executor.migration_summary().current_version, 15);
+    assert_eq!(executor.migration_summary().current_version, 16);
 
     executor
         .with_connection_for_tests(context(), |connection| {
@@ -340,9 +340,9 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
     .expect("seed populated v14 rows");
     old.shutdown().expect("shutdown v14");
 
-    let current = SqliteDatabaseExecutor::open(&database).expect("v15 upgrade");
-    assert_eq!(current.migration_summary().current_version, 15);
-    assert_eq!(current.migration_summary().applied_count, 1);
+    let current = SqliteDatabaseExecutor::open(&database).expect("v15/v16 upgrade");
+    assert_eq!(current.migration_summary().current_version, 16);
+    assert_eq!(current.migration_summary().applied_count, 2);
 
     current
         .with_connection_for_tests(context(), move |connection| {
@@ -413,5 +413,71 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
             Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
         })
         .expect("verify migrated logical and enrichment rows");
-    current.shutdown().expect("shutdown v15");
+    current.shutdown().expect("shutdown v15/v16");
+}
+
+#[test]
+fn migration_v16_bounds_existing_library_projection_keys() {
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("oversized-projection-v14.sqlite3");
+    let old = SqliteDatabaseExecutor::open_with_registry(&database, registry_v14())
+        .expect("v14 database");
+    let game_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let display_title = format!("Legacy {}", "😀".repeat(300));
+    let release_date = format!("2020-01-01{}", "x".repeat(60));
+
+    old.with_connection_for_tests(context(), move |connection| {
+        connection.execute_with_values(
+            "INSERT INTO game (
+                 game_id, platform_id, lifecycle_state, grouping_revision, fallback_title,
+                 fallback_title_provenance, hydration_state, created_at, updated_at
+             ) VALUES (?1, 'nintendo.gb', 'active', 1, 'Legacy Fallback', 'local_fallback',
+                 'hydrated', '1000', '1000')",
+            &[SqliteValue::Text(game_id.to_owned())],
+        )?;
+        connection.execute_with_values(
+            "INSERT INTO game_library_row (
+                 game_id, display_title, display_title_provenance, platform_id,
+                 hydration_state, availability_state, content_count, source_count, updated_at
+             ) VALUES (?1, 'Legacy Row', 'local_fallback', 'nintendo.gb',
+                 'hydrated', 'available', 0, 0, '1000')",
+            &[SqliteValue::Text(game_id.to_owned())],
+        )?;
+        connection.execute_with_values(
+            "INSERT INTO resolved_metadata (
+                 game_id, display_title, sort_title, description, release_date,
+                 developers, publishers, genres, languages, presentation_region,
+                 field_provenance, resolution_revision, resolved_at
+             ) VALUES (?1, ?2, 'legacy', 'description', ?3, '', '', '', '', 'us', '{}', 1, '1000')",
+            &[
+                SqliteValue::Text(game_id.to_owned()),
+                SqliteValue::Text(display_title),
+                SqliteValue::Text(release_date),
+            ],
+        )?;
+        Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
+    })
+    .expect("seed oversized v14 projection inputs");
+    old.shutdown().expect("shutdown v14");
+
+    let current = SqliteDatabaseExecutor::open(&database).expect("v16 upgrade");
+    assert_eq!(current.migration_summary().current_version, 16);
+    assert_eq!(current.migration_summary().applied_count, 2);
+
+    current
+        .with_connection_for_tests(context(), |connection| {
+            let title_bytes = connection.scalar_i64(
+                "SELECT length(CAST(display_title AS BLOB))
+                 FROM game_library_row WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+            )?;
+            let release_date_bytes = connection.scalar_i64(
+                "SELECT length(CAST(release_date AS BLOB))
+                 FROM game_library_row WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+            )?;
+            assert!(title_bytes <= 1024);
+            assert!(release_date_bytes <= 64);
+            Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
+        })
+        .expect("verify bounded v16 projection keys");
+    current.shutdown().expect("shutdown v16");
 }

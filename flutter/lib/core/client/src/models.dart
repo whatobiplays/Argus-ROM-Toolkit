@@ -54,6 +54,34 @@ final class LibraryRootId {
   int get hashCode => value.hashCode;
 }
 
+/// Opaque identity for one configured library source.
+final class LibrarySourceId {
+  const LibrarySourceId(this.value);
+
+  final String value;
+
+  /// Parses one canonical lowercase hex identity, or returns null when the
+  /// value is malformed. Bridge boundaries use this to reject invalid IDs.
+  static LibrarySourceId? tryParse(String value) {
+    final id = LibrarySourceId(value);
+    return id.isValid ? id : null;
+  }
+
+  bool get isValid =>
+      RegExp(r'^[0-9a-f]{32}$').hasMatch(value) &&
+      value.split('').any((character) => character != '0');
+
+  @override
+  String toString() => value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibrarySourceId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+}
+
 /// Opaque identity for one background execution attempt.
 final class JobRunId {
   const JobRunId(this.value);
@@ -1482,6 +1510,7 @@ final class ContentSummary {
     required this.sourceCount,
     required this.identity,
     required this.provenance,
+    this.sources = const <GameContentSourceSummary>[],
   });
 
   final ContentId gameContentId;
@@ -1492,6 +1521,26 @@ final class ContentSummary {
   final int sourceCount;
   final ContentIdentitySummary? identity;
   final ContentProvenanceSummary? provenance;
+  final List<GameContentSourceSummary> sources;
+}
+
+/// Safe source/root display context for one current physical copy.
+final class GameContentSourceSummary {
+  const GameContentSourceSummary({
+    required this.sourceEntryId,
+    required this.librarySourceId,
+    required this.sourceDisplayName,
+    required this.libraryRootId,
+    required this.rootDisplayName,
+    required this.safeLocationPresentation,
+  });
+
+  final SourceEntryId sourceEntryId;
+  final LibrarySourceId librarySourceId;
+  final String sourceDisplayName;
+  final LibraryRootId libraryRootId;
+  final String rootDisplayName;
+  final String safeLocationPresentation;
 }
 
 /// Focused durable membership summary.
@@ -1515,6 +1564,8 @@ final class GameLibraryRow {
     required this.gameId,
     required this.displayTitle,
     required this.platformId,
+    this.presentationRegion,
+    this.selectedCoverAssetId,
     required this.hydrationState,
     required this.contentCount,
     required this.sourceCount,
@@ -1525,6 +1576,8 @@ final class GameLibraryRow {
   final GameId gameId;
   final String displayTitle;
   final PlatformId platformId;
+  final String? presentationRegion;
+  final String? selectedCoverAssetId;
   final HydrationState hydrationState;
   final int contentCount;
   final int sourceCount;
@@ -1538,6 +1591,72 @@ final class GamePage {
 
   final List<GameLibraryRow> items;
   final String? nextCursor;
+}
+
+/// Scope/search/filter shape used to request facet counts.
+final class LibraryFacetQuery {
+  const LibraryFacetQuery({
+    this.scope = const LibraryScopeAll(),
+    this.searchText,
+    this.filters = const LibraryFilter(),
+  });
+
+  final LibraryScope scope;
+  final String? searchText;
+  final LibraryFilter filters;
+}
+
+/// One platform facet bucket.
+final class PlatformFacetBucket {
+  const PlatformFacetBucket({required this.platformId, required this.count});
+
+  final PlatformId platformId;
+  final int count;
+}
+
+/// One region facet bucket.
+final class RegionFacetBucket {
+  const RegionFacetBucket({required this.region, required this.count});
+
+  final String region;
+  final int count;
+}
+
+/// One hydration-state facet bucket.
+final class HydrationStateFacetBucket {
+  const HydrationStateFacetBucket({
+    required this.hydrationState,
+    required this.count,
+  });
+
+  final HydrationState hydrationState;
+  final int count;
+}
+
+/// One availability-state facet bucket.
+final class AvailabilityStateFacetBucket {
+  const AvailabilityStateFacetBucket({
+    required this.availabilityState,
+    required this.count,
+  });
+
+  final AvailabilityState availabilityState;
+  final int count;
+}
+
+/// Complete backend-owned facet projection.
+final class LibraryFacets {
+  const LibraryFacets({
+    required this.platforms,
+    required this.regions,
+    required this.hydrationStates,
+    required this.availabilityStates,
+  });
+
+  final List<PlatformFacetBucket> platforms;
+  final List<RegionFacetBucket> regions;
+  final List<HydrationStateFacetBucket> hydrationStates;
+  final List<AvailabilityStateFacetBucket> availabilityStates;
 }
 
 /// Focused durable logical-game detail.
@@ -1780,8 +1899,7 @@ final class LibrarySort {
   final LibrarySortDirection direction;
 }
 
-/// Full logical-library query shape. P03-001 activates only its baseline
-/// values; unsupported values are rejected by the native bridge.
+/// Full logical-library query shape. Semantics remain backend-owned.
 final class ListGamesRequest {
   const ListGamesRequest({
     this.scope = const LibraryScopeAll(),

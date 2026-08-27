@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1253627171;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1272198734;
 
 // Section: executor
 
@@ -640,6 +640,39 @@ fn wire__crate__get_job_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::get_job(api_job_run_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__get_library_facets_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_library_facets",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::LibraryFacetQueryDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_library_facets(api_request)?;
                     Ok(output_ok)
                 })())
             }
@@ -2101,6 +2134,19 @@ impl SseDecode for crate::ArtworkAssetBytesDto {
     }
 }
 
+impl SseDecode for crate::AvailabilityStateFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_availabilityState =
+            <crate::LibraryAvailabilityStateDto>::sse_decode(deserializer);
+        let mut var_count = <u32>::sse_decode(deserializer);
+        return crate::AvailabilityStateFacetBucketDto {
+            availability_state: var_availabilityState,
+            count: var_count,
+        };
+    }
+}
+
 impl SseDecode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2241,6 +2287,7 @@ impl SseDecode for crate::ContentSummaryDto {
         let mut var_identity = <Option<crate::ContentIdentitySummaryDto>>::sse_decode(deserializer);
         let mut var_provenance =
             <Option<crate::ContentProvenanceSummaryDto>>::sse_decode(deserializer);
+        let mut var_sources = <Vec<crate::GameContentSourceSummaryDto>>::sse_decode(deserializer);
         return crate::ContentSummaryDto {
             game_content_id: var_gameContentId,
             platform_id: var_platformId,
@@ -2250,6 +2297,7 @@ impl SseDecode for crate::ContentSummaryDto {
             source_count: var_sourceCount,
             identity: var_identity,
             provenance: var_provenance,
+            sources: var_sources,
         };
     }
 }
@@ -2332,6 +2380,26 @@ impl SseDecode for crate::GameAvailabilityStateDto {
     }
 }
 
+impl SseDecode for crate::GameContentSourceSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sourceEntryId = <String>::sse_decode(deserializer);
+        let mut var_librarySourceId = <String>::sse_decode(deserializer);
+        let mut var_sourceDisplayName = <String>::sse_decode(deserializer);
+        let mut var_libraryRootId = <String>::sse_decode(deserializer);
+        let mut var_rootDisplayName = <String>::sse_decode(deserializer);
+        let mut var_safeLocationPresentation = <String>::sse_decode(deserializer);
+        return crate::GameContentSourceSummaryDto {
+            source_entry_id: var_sourceEntryId,
+            library_source_id: var_librarySourceId,
+            source_display_name: var_sourceDisplayName,
+            library_root_id: var_libraryRootId,
+            root_display_name: var_rootDisplayName,
+            safe_location_presentation: var_safeLocationPresentation,
+        };
+    }
+}
+
 impl SseDecode for crate::GameDetailDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2368,6 +2436,8 @@ impl SseDecode for crate::GameLibraryRowDto {
         let mut var_gameId = <String>::sse_decode(deserializer);
         let mut var_displayTitle = <String>::sse_decode(deserializer);
         let mut var_platformId = <crate::PlatformIdDto>::sse_decode(deserializer);
+        let mut var_presentationRegion = <Option<String>>::sse_decode(deserializer);
+        let mut var_selectedCoverAssetId = <Option<String>>::sse_decode(deserializer);
         let mut var_hydrationState = <crate::HydrationStateDto>::sse_decode(deserializer);
         let mut var_contentCount = <u32>::sse_decode(deserializer);
         let mut var_sourceCount = <u32>::sse_decode(deserializer);
@@ -2377,6 +2447,8 @@ impl SseDecode for crate::GameLibraryRowDto {
             game_id: var_gameId,
             display_title: var_displayTitle,
             platform_id: var_platformId,
+            presentation_region: var_presentationRegion,
+            selected_cover_asset_id: var_selectedCoverAssetId,
             hydration_state: var_hydrationState,
             content_count: var_contentCount,
             source_count: var_sourceCount,
@@ -2490,6 +2562,18 @@ impl SseDecode for crate::HydrationStateDto {
             2 => crate::HydrationStateDto::Unmatched,
             3 => crate::HydrationStateDto::Refreshing,
             _ => unreachable!("Invalid variant for HydrationStateDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::HydrationStateFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_hydrationState = <crate::LibraryHydrationStateDto>::sse_decode(deserializer);
+        let mut var_count = <u32>::sse_decode(deserializer);
+        return crate::HydrationStateFacetBucketDto {
+            hydration_state: var_hydrationState,
+            count: var_count,
         };
     }
 }
@@ -2651,6 +2735,38 @@ impl SseDecode for crate::LibraryAvailabilityStateDto {
             2 => crate::LibraryAvailabilityStateDto::Unavailable,
             3 => crate::LibraryAvailabilityStateDto::InactiveOrphan,
             _ => unreachable!("Invalid variant for LibraryAvailabilityStateDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryFacetQueryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_scope = <crate::LibraryScopeDto>::sse_decode(deserializer);
+        let mut var_searchText = <Option<String>>::sse_decode(deserializer);
+        let mut var_filters = <crate::LibraryFilterDto>::sse_decode(deserializer);
+        return crate::LibraryFacetQueryDto {
+            scope: var_scope,
+            search_text: var_searchText,
+            filters: var_filters,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryFacetsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_platforms = <Vec<crate::PlatformFacetBucketDto>>::sse_decode(deserializer);
+        let mut var_regions = <Vec<crate::RegionFacetBucketDto>>::sse_decode(deserializer);
+        let mut var_hydrationStates =
+            <Vec<crate::HydrationStateFacetBucketDto>>::sse_decode(deserializer);
+        let mut var_availabilityStates =
+            <Vec<crate::AvailabilityStateFacetBucketDto>>::sse_decode(deserializer);
+        return crate::LibraryFacetsDto {
+            platforms: var_platforms,
+            regions: var_regions,
+            hydration_states: var_hydrationStates,
+            availability_states: var_availabilityStates,
         };
     }
 }
@@ -3088,6 +3204,20 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::AvailabilityStateFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::AvailabilityStateFacetBucketDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::ContentProvenanceMemberDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3109,6 +3239,20 @@ impl SseDecode for Vec<crate::ContentSummaryDto> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::ContentSummaryDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::GameContentSourceSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::GameContentSourceSummaryDto>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -3155,6 +3299,20 @@ impl SseDecode for crate::ListGamesRequestDto {
             cursor: var_cursor,
             page_size: var_pageSize,
         };
+    }
+}
+
+impl SseDecode for Vec<crate::HydrationStateFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::HydrationStateFacetBucketDto>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
     }
 }
 
@@ -3375,6 +3533,18 @@ impl SseDecode for Vec<crate::MountedLocalFilesystemVolumeDto> {
     }
 }
 
+impl SseDecode for Vec<crate::PlatformFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::PlatformFacetBucketDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3408,6 +3578,18 @@ impl SseDecode for Vec<crate::RecoveryActionDto> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::RecoveryActionDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::RegionFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::RegionFacetBucketDto>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -3918,6 +4100,18 @@ impl SseDecode for Option<Vec<crate::ResolvedArtworkDto>> {
     }
 }
 
+impl SseDecode for crate::PlatformFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_platformId = <String>::sse_decode(deserializer);
+        let mut var_count = <u32>::sse_decode(deserializer);
+        return crate::PlatformFacetBucketDto {
+            platform_id: var_platformId,
+            count: var_count,
+        };
+    }
+}
+
 impl SseDecode for crate::PlatformIdDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4041,6 +4235,18 @@ impl SseDecode for crate::RefreshProgressFactsDto {
             total_units: var_totalUnits,
             status_key: var_statusKey,
             issue_count: var_issueCount,
+        };
+    }
+}
+
+impl SseDecode for crate::RegionFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_region = <String>::sse_decode(deserializer);
+        let mut var_count = <u32>::sse_decode(deserializer);
+        return crate::RegionFacetBucketDto {
+            region: var_region,
+            count: var_count,
         };
     }
 }
@@ -4739,65 +4945,66 @@ fn pde_ffi_dispatcher_primary_impl(
         16 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
         17 => wire__crate__get_game_impl(port, ptr, rust_vec_len, data_len),
         18 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__get_library_onboarding_state_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__get_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__get_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__get_privacy_consent_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__initialize_with_standard_data_directory_impl(
+        19 => wire__crate__get_library_facets_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__get_library_onboarding_state_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__get_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__get_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__get_privacy_consent_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__initialize_with_standard_data_directory_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        30 => wire__crate__list_games_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__list_local_filesystem_browse_directories_impl(
+        31 => wire__crate__list_games_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__list_local_filesystem_browse_directories_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        34 => {
+        35 => {
             wire__crate__list_local_filesystem_browse_roots_impl(port, ptr, rust_vec_len, data_len)
         }
-        35 => wire__crate__list_metadata_provider_readiness_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__record_library_provider_setup_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__refresh_library_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        41 => {
+        36 => wire__crate__list_metadata_provider_readiness_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__record_library_provider_setup_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__refresh_library_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        42 => {
             wire__crate__remove_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len)
         }
-        42 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__set_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__start_game_refresh_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
+        43 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__set_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__start_game_refresh_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        54 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        55 => {
+        55 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        56 => {
             wire__crate__update_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__update_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__update_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5013,6 +5220,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::ArtworkAssetBytesDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::AvailabilityStateFacetBucketDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.availability_state.into_into_dart().into_dart(),
+            self.count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::AvailabilityStateFacetBucketDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::AvailabilityStateFacetBucketDto>
+    for crate::AvailabilityStateFacetBucketDto
+{
+    fn into_into_dart(self) -> crate::AvailabilityStateFacetBucketDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::BoundedTerminalFailureDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -5189,6 +5417,7 @@ impl flutter_rust_bridge::IntoDart for crate::ContentSummaryDto {
             self.source_count.into_into_dart().into_dart(),
             self.identity.into_into_dart().into_dart(),
             self.provenance.into_into_dart().into_dart(),
+            self.sources.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5322,6 +5551,31 @@ impl flutter_rust_bridge::IntoIntoDart<crate::GameAvailabilityStateDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::GameContentSourceSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.source_entry_id.into_into_dart().into_dart(),
+            self.library_source_id.into_into_dart().into_dart(),
+            self.source_display_name.into_into_dart().into_dart(),
+            self.library_root_id.into_into_dart().into_dart(),
+            self.root_display_name.into_into_dart().into_dart(),
+            self.safe_location_presentation.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::GameContentSourceSummaryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::GameContentSourceSummaryDto>
+    for crate::GameContentSourceSummaryDto
+{
+    fn into_into_dart(self) -> crate::GameContentSourceSummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::GameDetailDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -5352,6 +5606,8 @@ impl flutter_rust_bridge::IntoDart for crate::GameLibraryRowDto {
             self.game_id.into_into_dart().into_dart(),
             self.display_title.into_into_dart().into_dart(),
             self.platform_id.into_into_dart().into_dart(),
+            self.presentation_region.into_into_dart().into_dart(),
+            self.selected_cover_asset_id.into_into_dart().into_dart(),
             self.hydration_state.into_into_dart().into_dart(),
             self.content_count.into_into_dart().into_dart(),
             self.source_count.into_into_dart().into_dart(),
@@ -5503,6 +5759,27 @@ impl flutter_rust_bridge::IntoDart for crate::HydrationStateDto {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::HydrationStateDto {}
 impl flutter_rust_bridge::IntoIntoDart<crate::HydrationStateDto> for crate::HydrationStateDto {
     fn into_into_dart(self) -> crate::HydrationStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::HydrationStateFacetBucketDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.hydration_state.into_into_dart().into_dart(),
+            self.count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::HydrationStateFacetBucketDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::HydrationStateFacetBucketDto>
+    for crate::HydrationStateFacetBucketDto
+{
+    fn into_into_dart(self) -> crate::HydrationStateFacetBucketDto {
         self
     }
 }
@@ -5673,6 +5950,43 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryAvailabilityStateDto>
     for crate::LibraryAvailabilityStateDto
 {
     fn into_into_dart(self) -> crate::LibraryAvailabilityStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryFacetQueryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.scope.into_into_dart().into_dart(),
+            self.search_text.into_into_dart().into_dart(),
+            self.filters.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibraryFacetQueryDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryFacetQueryDto>
+    for crate::LibraryFacetQueryDto
+{
+    fn into_into_dart(self) -> crate::LibraryFacetQueryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryFacetsDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.platforms.into_into_dart().into_dart(),
+            self.regions.into_into_dart().into_dart(),
+            self.hydration_states.into_into_dart().into_dart(),
+            self.availability_states.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibraryFacetsDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryFacetsDto> for crate::LibraryFacetsDto {
+    fn into_into_dart(self) -> crate::LibraryFacetsDto {
         self
     }
 }
@@ -6718,6 +7032,24 @@ impl flutter_rust_bridge::IntoIntoDart<crate::OperationHandleDto> for crate::Ope
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::PlatformFacetBucketDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.platform_id.into_into_dart().into_dart(),
+            self.count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::PlatformFacetBucketDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::PlatformFacetBucketDto>
+    for crate::PlatformFacetBucketDto
+{
+    fn into_into_dart(self) -> crate::PlatformFacetBucketDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::PlatformIdDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -6886,6 +7218,24 @@ impl flutter_rust_bridge::IntoIntoDart<crate::RefreshProgressFactsDto>
     for crate::RefreshProgressFactsDto
 {
     fn into_into_dart(self) -> crate::RefreshProgressFactsDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::RegionFacetBucketDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.region.into_into_dart().into_dart(),
+            self.count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::RegionFacetBucketDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::RegionFacetBucketDto>
+    for crate::RegionFacetBucketDto
+{
+    fn into_into_dart(self) -> crate::RegionFacetBucketDto {
         self
     }
 }
@@ -7776,6 +8126,14 @@ impl SseEncode for crate::ArtworkAssetBytesDto {
     }
 }
 
+impl SseEncode for crate::AvailabilityStateFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::LibraryAvailabilityStateDto>::sse_encode(self.availability_state, serializer);
+        <u32>::sse_encode(self.count, serializer);
+    }
+}
+
 impl SseEncode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7895,6 +8253,7 @@ impl SseEncode for crate::ContentSummaryDto {
         <u32>::sse_encode(self.source_count, serializer);
         <Option<crate::ContentIdentitySummaryDto>>::sse_encode(self.identity, serializer);
         <Option<crate::ContentProvenanceSummaryDto>>::sse_encode(self.provenance, serializer);
+        <Vec<crate::GameContentSourceSummaryDto>>::sse_encode(self.sources, serializer);
     }
 }
 
@@ -7985,6 +8344,18 @@ impl SseEncode for crate::GameAvailabilityStateDto {
     }
 }
 
+impl SseEncode for crate::GameContentSourceSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.source_entry_id, serializer);
+        <String>::sse_encode(self.library_source_id, serializer);
+        <String>::sse_encode(self.source_display_name, serializer);
+        <String>::sse_encode(self.library_root_id, serializer);
+        <String>::sse_encode(self.root_display_name, serializer);
+        <String>::sse_encode(self.safe_location_presentation, serializer);
+    }
+}
+
 impl SseEncode for crate::GameDetailDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8007,6 +8378,8 @@ impl SseEncode for crate::GameLibraryRowDto {
         <String>::sse_encode(self.game_id, serializer);
         <String>::sse_encode(self.display_title, serializer);
         <crate::PlatformIdDto>::sse_encode(self.platform_id, serializer);
+        <Option<String>>::sse_encode(self.presentation_region, serializer);
+        <Option<String>>::sse_encode(self.selected_cover_asset_id, serializer);
         <crate::HydrationStateDto>::sse_encode(self.hydration_state, serializer);
         <u32>::sse_encode(self.content_count, serializer);
         <u32>::sse_encode(self.source_count, serializer);
@@ -8112,6 +8485,14 @@ impl SseEncode for crate::HydrationStateDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::HydrationStateFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::LibraryHydrationStateDto>::sse_encode(self.hydration_state, serializer);
+        <u32>::sse_encode(self.count, serializer);
     }
 }
 
@@ -8245,6 +8626,28 @@ impl SseEncode for crate::LibraryAvailabilityStateDto {
                     unimplemented!("");
                 }
             },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::LibraryFacetQueryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::LibraryScopeDto>::sse_encode(self.scope, serializer);
+        <Option<String>>::sse_encode(self.search_text, serializer);
+        <crate::LibraryFilterDto>::sse_encode(self.filters, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryFacetsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::PlatformFacetBucketDto>>::sse_encode(self.platforms, serializer);
+        <Vec<crate::RegionFacetBucketDto>>::sse_encode(self.regions, serializer);
+        <Vec<crate::HydrationStateFacetBucketDto>>::sse_encode(self.hydration_states, serializer);
+        <Vec<crate::AvailabilityStateFacetBucketDto>>::sse_encode(
+            self.availability_states,
             serializer,
         );
     }
@@ -8589,6 +8992,16 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::AvailabilityStateFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::AvailabilityStateFacetBucketDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::ContentProvenanceMemberDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8605,6 +9018,16 @@ impl SseEncode for Vec<crate::ContentSummaryDto> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::ContentSummaryDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::GameContentSourceSummaryDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::GameContentSourceSummaryDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -8638,6 +9061,16 @@ impl SseEncode for crate::ListGamesRequestDto {
         <crate::LibrarySortDto>::sse_encode(self.sort, serializer);
         <Option<String>>::sse_encode(self.cursor, serializer);
         <u32>::sse_encode(self.page_size, serializer);
+    }
+}
+
+impl SseEncode for Vec<crate::HydrationStateFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::HydrationStateFacetBucketDto>::sse_encode(item, serializer);
+        }
     }
 }
 
@@ -8804,6 +9237,16 @@ impl SseEncode for Vec<crate::MountedLocalFilesystemVolumeDto> {
     }
 }
 
+impl SseEncode for Vec<crate::PlatformFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::PlatformFacetBucketDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8830,6 +9273,16 @@ impl SseEncode for Vec<crate::RecoveryActionDto> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::RecoveryActionDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::RegionFacetBucketDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::RegionFacetBucketDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -9258,6 +9711,14 @@ impl SseEncode for Option<Vec<crate::ResolvedArtworkDto>> {
     }
 }
 
+impl SseEncode for crate::PlatformFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.platform_id, serializer);
+        <u32>::sse_encode(self.count, serializer);
+    }
+}
+
 impl SseEncode for crate::PlatformIdDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -9371,6 +9832,14 @@ impl SseEncode for crate::RefreshProgressFactsDto {
         <Option<u64>>::sse_encode(self.total_units, serializer);
         <Option<String>>::sse_encode(self.status_key, serializer);
         <Option<u64>>::sse_encode(self.issue_count, serializer);
+    }
+}
+
+impl SseEncode for crate::RegionFacetBucketDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.region, serializer);
+        <u32>::sse_encode(self.count, serializer);
     }
 }
 

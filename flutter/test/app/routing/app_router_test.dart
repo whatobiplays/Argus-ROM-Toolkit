@@ -132,37 +132,42 @@ void main() {
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
   });
 
-  testWidgets(
-    'valid scoped Library routes preserve scope without querying All',
-    (tester) async {
-      final host = createHost();
-      final router = host.container.read(appRouterProvider);
+  testWidgets('valid scoped Library routes render their route-owned scope', (
+    tester,
+  ) async {
+    final host = createHost();
+    final router = host.container.read(appRouterProvider);
 
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: host.container,
-          child: const _RouterHost(),
-        ),
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: host.container,
+        child: const _RouterHost(),
+      ),
+    );
+    await loadAppearance(tester, host.api);
+
+    for (final testCase in <({String path, String title})>[
+      (path: '/library/platforms/nintendo_gb', title: 'Library · nintendo_gb'),
+      (path: '/library/sources/source-1', title: 'Library · Source source-1'),
+      (
+        path: '/library/library-roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        title: 'Library · Root aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ),
+    ]) {
+      router.go(testCase.path);
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, testCase.path);
+      expect(find.text(testCase.title), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('library-search')),
+        findsOneWidget,
       );
-      await loadAppearance(tester, host.api);
-
-      for (final path in <String>[
-        '/library/platforms/nintendo_gb',
-        '/library/sources/source-1',
-        '/library/library-roots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      ]) {
-        router.go(path);
-        await tester.pumpAndSettle();
-        expect(router.routeInformationProvider.value.uri.path, path);
-        expect(
-          find.text('Scoped Library browsing is not available yet'),
-          findsOneWidget,
-          reason: path,
-        );
-        expect(find.text('View All Library Games'), findsOneWidget);
-      }
-    },
-  );
+      expect(
+        find.text('Scoped Library browsing is not available yet'),
+        findsNothing,
+      );
+    }
+  });
 
   testWidgets('invalid scoped Library route data remains a controlled error', (
     tester,
@@ -470,6 +475,12 @@ void main() {
         expect(find.byKey(ValueKey<String>(testCase.key)), findsOneWidget);
         expect(find.bySemanticsLabel('Library'), findsOneWidget);
         expect(tester.takeException(), isNull);
+
+        // Each scale is intentionally isolated in its own provider container;
+        // unmount it here so auto-dispose scheduling cannot outlive the case.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        host.container.dispose();
       }
     }
   });

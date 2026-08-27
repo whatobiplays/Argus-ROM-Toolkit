@@ -1,9 +1,10 @@
 use argus_application::{
     ArtworkType, AvailabilityState, ContentIdentitySummary, ContentProvenanceSummary, ContentType,
-    GameContentPresence, GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow,
-    GameLifecycle, GameListCursor, GameMembershipSummary, GroupingBasis, HydrationState,
-    IdentificationState, IdentityDigest, MembershipRelationship, MetadataFieldProvenance,
-    PlatformId, ResolvedArtwork, ResolvedMetadata, ScanRunId, SourceEntryId,
+    GameContentPresence, GameContentSourceSummary, GameContentSummary, GameDetail, GameId,
+    GameLibraryPage, GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary,
+    GroupingBasis, HydrationState, IdentificationState, IdentityDigest, LibraryRootId,
+    LibrarySourceId, MembershipRelationship, MetadataFieldProvenance, PlatformId, ResolvedArtwork,
+    ResolvedMetadata, ScanRunId, SourceEntryId,
 };
 use argus_bridge::{game_detail_dto, game_library_row_dto, game_page_dto};
 
@@ -21,6 +22,8 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
     let content_id = content_id(2);
     let source_id = SourceEntryId::from_bytes([3; 16]).expect("source id");
     let scan_id = ScanRunId::from_bytes([4; 16]).expect("scan id");
+    let library_source_id = LibrarySourceId::from_bytes([5; 16]).expect("library source id");
+    let library_root_id = LibraryRootId::from_bytes([6; 16]).expect("library root id");
     let identity = ContentIdentitySummary::new(
         "argus.content.identity.nintendo-gba.cartridge.v1",
         1,
@@ -37,7 +40,15 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
         2,
         Some(identity),
         Some(provenance),
-    );
+    )
+    .with_sources(vec![GameContentSourceSummary::new(
+        source_id,
+        library_source_id,
+        "Local source",
+        library_root_id,
+        "Games",
+        "NES/Example.nes",
+    )]);
     let detail = GameDetail::new(
         game_id,
         PlatformId::NintendoGba,
@@ -81,6 +92,11 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
             .source_entry_id,
         source_id.to_string()
     );
+    let source = &content.sources[0];
+    assert_eq!(source.source_entry_id, source_id.to_string());
+    assert_eq!(source.library_source_id, library_source_id.to_string());
+    assert_eq!(source.library_root_id, library_root_id.to_string());
+    assert_eq!(source.safe_location_presentation, "NES/Example.nes");
 
     let row = GameLibraryRow::from_persisted(
         game_id,
@@ -98,9 +114,26 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
     assert_eq!(row_dto.source_count, 2);
     assert_eq!(row_dto.updated_at_ms, 1000);
 
+    let enriched_row = GameLibraryRow::from_persisted_with_presentation(
+        game_id,
+        "Fallback GBA",
+        PlatformId::NintendoGba,
+        Some("us".to_owned()),
+        None,
+        Some("1990-01-01".to_owned()),
+        HydrationState::PartiallyHydrated,
+        AvailabilityState::Available,
+        1,
+        2,
+        1000,
+    );
+    let enriched_row_dto = game_library_row_dto(&enriched_row);
+    assert_eq!(enriched_row_dto.presentation_region, Some("us".to_owned()));
+    assert_eq!(enriched_row_dto.selected_cover_asset_id, None);
+
     let page = game_page_dto(&GameLibraryPage::new(
         vec![row],
-        Some(GameListCursor::from_paging_keys("Fallback GBA", game_id)),
+        Some(GameListCursor::from_paging_keys("Fallback GBA", game_id).expect("cursor")),
     ));
     assert_eq!(page.items.len(), 1);
     assert!(

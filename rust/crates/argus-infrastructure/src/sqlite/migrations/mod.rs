@@ -159,6 +159,16 @@ impl MigrationRegistry {
                 "0014_derived_source_entries",
                 include_bytes!("sql/0014_derived_source_entries.sql"),
             ),
+            Migration::sql(
+                15,
+                "0015_library_browsing_projection",
+                include_bytes!("sql/0015_library_browsing_projection.sql"),
+            ),
+            Migration::sql(
+                16,
+                "0016_bounded_library_projection_keys",
+                include_bytes!("sql/0016_bounded_library_projection_keys.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

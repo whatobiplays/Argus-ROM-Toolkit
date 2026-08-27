@@ -31,18 +31,18 @@ use argus_application::{
     GetAppearanceSettingsQuery, GetGameResult, GetLibraryRootQuery, GetSourceEntryQuery,
     HydrationReport, HydrationTarget, IdentificationService, IdentityConvergenceStore,
     IdentitySchemeCatalog, JobDetail, JobRunId, JobRunRepository, JobRunState, JobSummaryPage,
-    JobsService, LibraryOnboardingState, LibraryProviderSetupDecision,
-    LibraryRefreshAdmissionResult, LibraryRefreshCoordinator, LibraryRootId, LibraryRootPage,
-    LibraryRootProjection, LibraryRootRepository, LibraryScanAdmissionResult,
-    LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
-    LibraryScope, LibraryService, LibrarySort, LibrarySourceAccess, LibrarySourceRepository,
-    ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
-    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent, LogLevel,
-    LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries, M3uGroupingMember,
-    MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderRegistry,
-    MetadataProviderService, MetadataProviderSettings, MetadataRepository,
-    MetadataResolutionPolicy, MetadataSettings, MigrationOutcome, NewJobRun,
+    JobsService, LibraryFacetQuery, LibraryFacets, LibraryOnboardingState,
+    LibraryProviderSetupDecision, LibraryRefreshAdmissionResult, LibraryRefreshCoordinator,
+    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryRootRepository,
+    LibraryScanAdmissionResult, LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity,
+    LibraryScanAllRequestLookup, LibraryScope, LibraryService, LibrarySort, LibrarySourceAccess,
+    LibrarySourceRepository, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
+    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
+    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent,
+    LogLevel, LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries,
+    M3uGroupingMember, MetadataProviderReadiness, MetadataProviderReadinessProjection,
+    MetadataProviderRegistry, MetadataProviderService, MetadataProviderSettings,
+    MetadataRepository, MetadataResolutionPolicy, MetadataSettings, MigrationOutcome, NewJobRun,
     NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationHandle,
     OperationName, PathClass, PersistenceError, PlatformClass, PlatformId, PrivacyConsent,
     ProvenanceMember, ProviderError, ProviderId, ProviderReadinessState, RefreshLibraryCommand,
@@ -832,6 +832,13 @@ impl LogicalLibraryQueries for KernelLogicalContentRepository<'_, '_> {
         self.inner.list_games(query)
     }
 
+    fn get_library_facets(
+        &mut self,
+        query: &LibraryFacetQuery,
+    ) -> Result<LibraryFacets, PersistenceError> {
+        self.inner.get_library_facets(query)
+    }
+
     fn get_game(&mut self, game_id: GameId) -> Result<GetGameResult, PersistenceError> {
         self.inner.get_game(game_id)
     }
@@ -1473,6 +1480,24 @@ impl KernelBootstrap {
                 .map_err(ApplicationPortError::Persistence)?;
             work.commit()?;
             Ok(page)
+        })
+        .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads facet counts for a bounded logical-library query shape.
+    pub fn get_library_facets_with_context(
+        &self,
+        query: &LibraryFacetQuery,
+        context: &OperationContext,
+    ) -> Result<LibraryFacets, ApplicationError> {
+        let query = query.clone();
+        self.execute(context, move |mut work| {
+            let mut logical = work.logical_content();
+            let facets = logical
+                .get_library_facets(&query)
+                .map_err(ApplicationPortError::Persistence)?;
+            work.commit()?;
+            Ok(facets)
         })
         .map_err(|error| map_application_port_error(context.trace_id(), error))
     }

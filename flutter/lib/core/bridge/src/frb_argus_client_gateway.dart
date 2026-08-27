@@ -350,6 +350,15 @@ final class FrbArgusClientGateway
   );
 
   @override
+  Future<LibraryFacets> getLibraryFacets(LibraryFacetQuery request) => _call(
+    () async => libraryFacetsFromDto(
+      await _rustApi.crateGetLibraryFacets(
+        request: libraryFacetQueryToDto(request),
+      ),
+    ),
+  );
+
+  @override
   Future<GetGameResult> getGame(GameId gameId) => _call(
     () async =>
         getGameResultFromDto(await _rustApi.crateGetGame(gameId: gameId.value)),
@@ -1227,22 +1236,32 @@ dto.ListGamesRequestDto listGamesRequestToDto(ListGamesRequest value) =>
     dto.ListGamesRequestDto(
       scope: libraryScopeToDto(value.scope),
       searchText: value.searchText,
-      filters: dto.LibraryFilterDto(
-        platformIds: value.filters.platformIds,
-        regions: value.filters.regions,
-        hydrationStates: value.filters.hydrationStates
-            .map(hydrationStateToFilterDto)
-            .toList(growable: false),
-        availabilityStates: value.filters.availabilityStates
-            .map(availabilityStateToFilterDto)
-            .toList(growable: false),
-      ),
+      filters: libraryFilterToDto(value.filters),
       sort: dto.LibrarySortDto(
         field: librarySortFieldToDto(value.sort.field),
         direction: librarySortDirectionToDto(value.sort.direction),
       ),
       cursor: value.cursor,
       pageSize: value.pageSize,
+    );
+
+dto.LibraryFacetQueryDto libraryFacetQueryToDto(LibraryFacetQuery value) =>
+    dto.LibraryFacetQueryDto(
+      scope: libraryScopeToDto(value.scope),
+      searchText: value.searchText,
+      filters: libraryFilterToDto(value.filters),
+    );
+
+dto.LibraryFilterDto libraryFilterToDto(LibraryFilter value) =>
+    dto.LibraryFilterDto(
+      platformIds: value.platformIds,
+      regions: value.regions,
+      hydrationStates: value.hydrationStates
+          .map(hydrationStateToFilterDto)
+          .toList(growable: false),
+      availabilityStates: value.availabilityStates
+          .map(availabilityStateToFilterDto)
+          .toList(growable: false),
     );
 
 dto.LibraryScopeDto libraryScopeToDto(LibraryScope value) => switch (value) {
@@ -1302,12 +1321,52 @@ GameLibraryRow gameLibraryRowFromDto(dto.GameLibraryRowDto value) =>
       gameId: gameIdFromDto(value.gameId),
       displayTitle: value.displayTitle,
       platformId: platformIdFromDto(value.platformId),
+      presentationRegion: value.presentationRegion,
+      selectedCoverAssetId: value.selectedCoverAssetId,
       hydrationState: hydrationStateFromDto(value.hydrationState),
       contentCount: value.contentCount,
       sourceCount: value.sourceCount,
       availabilityState: availabilityStateFromDto(value.availabilityState),
       updatedAtMs: value.updatedAtMs.toInt(),
     );
+
+LibraryFacets libraryFacetsFromDto(dto.LibraryFacetsDto value) => LibraryFacets(
+  platforms: [
+    for (final bucket in value.platforms)
+      PlatformFacetBucket(
+        platformId: platformFacetPlatformIdFromWire(bucket.platformId),
+        count: bucket.count,
+      ),
+  ],
+  regions: [
+    for (final bucket in value.regions)
+      RegionFacetBucket(region: bucket.region, count: bucket.count),
+  ],
+  hydrationStates: [
+    for (final bucket in value.hydrationStates)
+      HydrationStateFacetBucket(
+        hydrationState: hydrationStateFromFilterDto(bucket.hydrationState),
+        count: bucket.count,
+      ),
+  ],
+  availabilityStates: [
+    for (final bucket in value.availabilityStates)
+      AvailabilityStateFacetBucket(
+        availabilityState: availabilityStateFromFilterDto(
+          bucket.availabilityState,
+        ),
+        count: bucket.count,
+      ),
+  ],
+);
+
+PlatformId platformFacetPlatformIdFromWire(String value) {
+  final normalized = switch (value) {
+    'sega.sega-cd' => 'sega_cd',
+    _ => value.replaceFirst('.', '_'),
+  };
+  return PlatformId.fromWire(normalized);
+}
 
 GetGameResult getGameResultFromDto(dto.GetGameResultDto value) =>
     switch (value) {
@@ -1410,42 +1469,66 @@ ArtworkAssetBytes artworkAssetBytesFromDto(dto.ArtworkAssetBytesDto value) =>
       height: value.height,
     );
 
-ContentSummary contentSummaryFromDto(dto.ContentSummaryDto value) =>
-    ContentSummary(
-      gameContentId: contentIdFromDto(value.gameContentId),
-      platformId: platformIdFromDto(value.platformId),
-      contentType: contentTypeFromDto(value.contentType),
-      presence: contentPresenceFromDto(value.presence),
-      identification: identificationStateFromDto(value.identification),
-      sourceCount: value.sourceCount,
-      identity: value.identity == null
-          ? null
-          : ContentIdentitySummary(
-              schemeId: value.identity!.schemeId,
-              revision: value.identity!.revision,
-              digest: value.identity!.digest,
-            ),
-      provenance: value.provenance == null
-          ? null
-          : ContentProvenanceSummary(
-              sourceEntryId: sourceEntryIdFromDto(
-                value.provenance!.sourceEntryId,
+ContentSummary contentSummaryFromDto(
+  dto.ContentSummaryDto value,
+) => ContentSummary(
+  gameContentId: contentIdFromDto(value.gameContentId),
+  platformId: platformIdFromDto(value.platformId),
+  contentType: contentTypeFromDto(value.contentType),
+  presence: contentPresenceFromDto(value.presence),
+  identification: identificationStateFromDto(value.identification),
+  sourceCount: value.sourceCount,
+  identity: value.identity == null
+      ? null
+      : ContentIdentitySummary(
+          schemeId: value.identity!.schemeId,
+          revision: value.identity!.revision,
+          digest: value.identity!.digest,
+        ),
+  provenance: value.provenance == null
+      ? null
+      : ContentProvenanceSummary(
+          sourceEntryId: sourceEntryIdFromDto(value.provenance!.sourceEntryId),
+          associationKey: value.provenance!.associationKey,
+          sourceFingerprint: value.provenance!.sourceFingerprint,
+          lastObservedScanId: value.provenance!.lastObservedScanId,
+          members: [
+            for (final member in value.provenance!.members)
+              ContentProvenanceMember(
+                role: member.role,
+                associationKey: member.associationKey,
+                sourceEntryId: sourceEntryIdFromDto(member.sourceEntryId),
+                sourceFingerprint: member.sourceFingerprint,
+                lastObservedScanId: member.lastObservedScanId,
               ),
-              associationKey: value.provenance!.associationKey,
-              sourceFingerprint: value.provenance!.sourceFingerprint,
-              lastObservedScanId: value.provenance!.lastObservedScanId,
-              members: [
-                for (final member in value.provenance!.members)
-                  ContentProvenanceMember(
-                    role: member.role,
-                    associationKey: member.associationKey,
-                    sourceEntryId: sourceEntryIdFromDto(member.sourceEntryId),
-                    sourceFingerprint: member.sourceFingerprint,
-                    lastObservedScanId: member.lastObservedScanId,
-                  ),
-              ],
-            ),
+          ],
+        ),
+  sources: [
+    for (final source in value.sources) gameContentSourceSummaryFromDto(source),
+  ],
+);
+
+GameContentSourceSummary gameContentSourceSummaryFromDto(
+  dto.GameContentSourceSummaryDto value,
+) => GameContentSourceSummary(
+  sourceEntryId: sourceEntryIdFromDto(value.sourceEntryId),
+  librarySourceId: librarySourceIdFromDto(value.librarySourceId),
+  sourceDisplayName: value.sourceDisplayName,
+  libraryRootId: libraryRootIdFromDto(value.libraryRootId),
+  rootDisplayName: value.rootDisplayName,
+  safeLocationPresentation: value.safeLocationPresentation,
+);
+
+LibrarySourceId librarySourceIdFromDto(String value) {
+  final id = LibrarySourceId.tryParse(value);
+  if (id == null) {
+    throw const TransportFailure(
+      'Native library-source identity is invalid',
+      kind: TransportFailureKind.contractMismatch,
     );
+  }
+  return id;
+}
 
 GameMembershipSummary gameMembershipSummaryFromDto(
   dto.GameMembershipSummaryDto value,
@@ -1547,6 +1630,16 @@ HydrationState hydrationStateFromDto(dto.HydrationStateDto value) =>
       dto.HydrationStateDto.refreshing => HydrationState.refreshing,
     };
 
+HydrationState hydrationStateFromFilterDto(
+  dto.LibraryHydrationStateDto value,
+) => switch (value) {
+  dto.LibraryHydrationStateDto.hydrated => HydrationState.hydrated,
+  dto.LibraryHydrationStateDto.partiallyHydrated =>
+    HydrationState.partiallyHydrated,
+  dto.LibraryHydrationStateDto.unmatched => HydrationState.unmatched,
+  dto.LibraryHydrationStateDto.refreshing => HydrationState.refreshing,
+};
+
 AvailabilityState availabilityStateFromDto(
   dto.GameAvailabilityStateDto value,
 ) => switch (value) {
@@ -1555,6 +1648,17 @@ AvailabilityState availabilityStateFromDto(
     AvailabilityState.partiallyUnavailable,
   dto.GameAvailabilityStateDto.unavailable => AvailabilityState.unavailable,
   dto.GameAvailabilityStateDto.inactiveOrphan =>
+    AvailabilityState.inactiveOrphan,
+};
+
+AvailabilityState availabilityStateFromFilterDto(
+  dto.LibraryAvailabilityStateDto value,
+) => switch (value) {
+  dto.LibraryAvailabilityStateDto.available => AvailabilityState.available,
+  dto.LibraryAvailabilityStateDto.partiallyUnavailable =>
+    AvailabilityState.partiallyUnavailable,
+  dto.LibraryAvailabilityStateDto.unavailable => AvailabilityState.unavailable,
+  dto.LibraryAvailabilityStateDto.inactiveOrphan =>
     AvailabilityState.inactiveOrphan,
 };
 

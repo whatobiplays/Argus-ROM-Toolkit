@@ -57,6 +57,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ArtworkAssetBytesDto dco_decode_artwork_asset_bytes_dto(dynamic raw);
 
   @protected
+  AvailabilityStateFacetBucketDto
+  dco_decode_availability_state_facet_bucket_dto(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -99,6 +103,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  LibraryFacetQueryDto dco_decode_box_autoadd_library_facet_query_dto(
+    dynamic raw,
+  );
 
   @protected
   LibraryOnboardingStateDto dco_decode_box_autoadd_library_onboarding_state_dto(
@@ -284,6 +293,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   GameAvailabilityStateDto dco_decode_game_availability_state_dto(dynamic raw);
 
   @protected
+  GameContentSourceSummaryDto dco_decode_game_content_source_summary_dto(
+    dynamic raw,
+  );
+
+  @protected
   GameDetailDto dco_decode_game_detail_dto(dynamic raw);
 
   @protected
@@ -309,6 +323,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   HydrationStateDto dco_decode_hydration_state_dto(dynamic raw);
+
+  @protected
+  HydrationStateFacetBucketDto dco_decode_hydration_state_facet_bucket_dto(
+    dynamic raw,
+  );
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -343,6 +362,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryAvailabilityStateDto dco_decode_library_availability_state_dto(
     dynamic raw,
   );
+
+  @protected
+  LibraryFacetQueryDto dco_decode_library_facet_query_dto(dynamic raw);
+
+  @protected
+  LibraryFacetsDto dco_decode_library_facets_dto(dynamic raw);
 
   @protected
   LibraryFilterDto dco_decode_library_filter_dto(dynamic raw);
@@ -435,11 +460,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<AvailabilityStateFacetBucketDto>
+  dco_decode_list_availability_state_facet_bucket_dto(dynamic raw);
+
+  @protected
   List<ContentProvenanceMemberDto>
   dco_decode_list_content_provenance_member_dto(dynamic raw);
 
   @protected
   List<ContentSummaryDto> dco_decode_list_content_summary_dto(dynamic raw);
+
+  @protected
+  List<GameContentSourceSummaryDto>
+  dco_decode_list_game_content_source_summary_dto(dynamic raw);
 
   @protected
   List<GameLibraryRowDto> dco_decode_list_game_library_row_dto(dynamic raw);
@@ -451,6 +484,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ListGamesRequestDto dco_decode_list_games_request_dto(dynamic raw);
+
+  @protected
+  List<HydrationStateFacetBucketDto>
+  dco_decode_list_hydration_state_facet_bucket_dto(dynamic raw);
 
   @protected
   List<JobSummaryDto> dco_decode_list_job_summary_dto(dynamic raw);
@@ -516,6 +553,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_mounted_local_filesystem_volume_dto(dynamic raw);
 
   @protected
+  List<PlatformFacetBucketDto> dco_decode_list_platform_facet_bucket_dto(
+    dynamic raw,
+  );
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -524,6 +566,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RecoveryActionDto> dco_decode_list_recovery_action_dto(dynamic raw);
+
+  @protected
+  List<RegionFacetBucketDto> dco_decode_list_region_facet_bucket_dto(
+    dynamic raw,
+  );
 
   @protected
   List<ResolvedArtworkDto> dco_decode_list_resolved_artwork_dto(dynamic raw);
@@ -665,6 +712,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PlatformFacetBucketDto dco_decode_platform_facet_bucket_dto(dynamic raw);
+
+  @protected
   PlatformIdDto dco_decode_platform_id_dto(dynamic raw);
 
   @protected
@@ -691,6 +741,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RefreshProgressFactsDto dco_decode_refresh_progress_facts_dto(dynamic raw);
+
+  @protected
+  RegionFacetBucketDto dco_decode_region_facet_bucket_dto(dynamic raw);
 
   @protected
   RemoveLibraryRootResultDto dco_decode_remove_library_root_result_dto(
@@ -870,6 +923,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  AvailabilityStateFacetBucketDto
+  sse_decode_availability_state_facet_bucket_dto(SseDeserializer deserializer);
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
@@ -922,6 +979,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  LibraryFacetQueryDto sse_decode_box_autoadd_library_facet_query_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   LibraryOnboardingStateDto sse_decode_box_autoadd_library_onboarding_state_dto(
@@ -1161,6 +1223,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  GameContentSourceSummaryDto sse_decode_game_content_source_summary_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   GameDetailDto sse_decode_game_detail_dto(SseDeserializer deserializer);
 
   @protected
@@ -1192,6 +1259,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   HydrationStateDto sse_decode_hydration_state_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  HydrationStateFacetBucketDto sse_decode_hydration_state_facet_bucket_dto(
     SseDeserializer deserializer,
   );
 
@@ -1232,6 +1304,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryAvailabilityStateDto sse_decode_library_availability_state_dto(
     SseDeserializer deserializer,
   );
+
+  @protected
+  LibraryFacetQueryDto sse_decode_library_facet_query_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryFacetsDto sse_decode_library_facets_dto(SseDeserializer deserializer);
 
   @protected
   LibraryFilterDto sse_decode_library_filter_dto(SseDeserializer deserializer);
@@ -1346,6 +1426,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<AvailabilityStateFacetBucketDto>
+  sse_decode_list_availability_state_facet_bucket_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ContentProvenanceMemberDto>
   sse_decode_list_content_provenance_member_dto(SseDeserializer deserializer);
 
@@ -1353,6 +1439,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ContentSummaryDto> sse_decode_list_content_summary_dto(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<GameContentSourceSummaryDto>
+  sse_decode_list_game_content_source_summary_dto(SseDeserializer deserializer);
 
   @protected
   List<GameLibraryRowDto> sse_decode_list_game_library_row_dto(
@@ -1366,6 +1456,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ListGamesRequestDto sse_decode_list_games_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<HydrationStateFacetBucketDto>
+  sse_decode_list_hydration_state_facet_bucket_dto(
     SseDeserializer deserializer,
   );
 
@@ -1451,6 +1547,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PlatformFacetBucketDto> sse_decode_list_platform_facet_bucket_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -1461,6 +1562,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RecoveryActionDto> sse_decode_list_recovery_action_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<RegionFacetBucketDto> sse_decode_list_region_facet_bucket_dto(
     SseDeserializer deserializer,
   );
 
@@ -1636,6 +1742,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PlatformFacetBucketDto sse_decode_platform_facet_bucket_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PlatformIdDto sse_decode_platform_id_dto(SseDeserializer deserializer);
 
   @protected
@@ -1668,6 +1779,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RefreshProgressFactsDto sse_decode_refresh_progress_facts_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RegionFacetBucketDto sse_decode_region_facet_bucket_dto(
     SseDeserializer deserializer,
   );
 
@@ -1892,6 +2008,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_availability_state_facet_bucket_dto(
+    AvailabilityStateFacetBucketDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
@@ -1951,6 +2073,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_i_64(
     PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_library_facet_query_dto(
+    LibraryFacetQueryDto self,
     SseSerializer serializer,
   );
 
@@ -2220,6 +2348,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_game_content_source_summary_dto(
+    GameContentSourceSummaryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_game_detail_dto(GameDetailDto self, SseSerializer serializer);
 
   @protected
@@ -2268,6 +2402,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_hydration_state_facet_bucket_dto(
+    HydrationStateFacetBucketDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -2309,6 +2449,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_library_availability_state_dto(
     LibraryAvailabilityStateDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_facet_query_dto(
+    LibraryFacetQueryDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_facets_dto(
+    LibraryFacetsDto self,
     SseSerializer serializer,
   );
 
@@ -2454,6 +2606,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_availability_state_facet_bucket_dto(
+    List<AvailabilityStateFacetBucketDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_content_provenance_member_dto(
     List<ContentProvenanceMemberDto> self,
     SseSerializer serializer,
@@ -2462,6 +2620,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_content_summary_dto(
     List<ContentSummaryDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_game_content_source_summary_dto(
+    List<GameContentSourceSummaryDto> self,
     SseSerializer serializer,
   );
 
@@ -2480,6 +2644,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_games_request_dto(
     ListGamesRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_hydration_state_facet_bucket_dto(
+    List<HydrationStateFacetBucketDto> self,
     SseSerializer serializer,
   );
 
@@ -2580,6 +2750,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_platform_facet_bucket_dto(
+    List<PlatformFacetBucketDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -2594,6 +2770,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_recovery_action_dto(
     List<RecoveryActionDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_region_facet_bucket_dto(
+    List<RegionFacetBucketDto> self,
     SseSerializer serializer,
   );
 
@@ -2799,6 +2981,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_platform_facet_bucket_dto(
+    PlatformFacetBucketDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_platform_id_dto(PlatformIdDto self, SseSerializer serializer);
 
   @protected
@@ -2840,6 +3028,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_refresh_progress_facts_dto(
     RefreshProgressFactsDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_region_facet_bucket_dto(
+    RegionFacetBucketDto self,
     SseSerializer serializer,
   );
 

@@ -266,6 +266,18 @@ final class ArgusClient implements ClientBootstrap {
     return (gateway as LibraryGateway).listGames(request);
   });
 
+  Future<LibraryFacets> _getLibraryFacets(LibraryFacetQuery request) =>
+      _request(() {
+        final gateway = _gateway;
+        if (gateway is! LibraryGateway) {
+          throw const TransportFailure(
+            'Logical-library capability is unavailable',
+            kind: TransportFailureKind.contractMismatch,
+          );
+        }
+        return (gateway as LibraryGateway).getLibraryFacets(request);
+      });
+
   Future<GetGameResult> _getGame(GameId gameId) => _request(() {
     final gateway = _gateway;
     if (gateway is! LibraryGateway) {
@@ -903,6 +915,10 @@ final class _LibraryReads implements LibraryReads {
   @override
   Future<GamePage> listGames(ListGamesRequest request) =>
       _client._listGames(request);
+
+  @override
+  Future<LibraryFacets> getLibraryFacets(LibraryFacetQuery request) =>
+      _client._getLibraryFacets(request);
 
   @override
   Future<GetGameResult> getGame(GameId gameId) => _client._getGame(gameId);

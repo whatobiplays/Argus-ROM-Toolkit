@@ -200,6 +200,9 @@ void main() {
         'features/jobs/presentation/job_detail_page.dart',
         'features/jobs/presentation/jobs_messages.dart',
         'features/jobs/presentation/jobs_page.dart',
+        'features/library/application/game_detail_controller.dart',
+        'features/library/application/library_controller.dart',
+        'features/library/application/library_state.dart',
         'features/library/library.dart',
         'features/library/library_composition.dart',
         'features/library/presentation/game_detail_page.dart',
@@ -874,10 +877,11 @@ void main() {
   test('no later-phase implementation concept has leaked into production', () {
     // Phase 002+ families that remain deferred (game-content parsing, hashing,
     // RetroAchievements, filesystem watching, and additional source providers)
-    // must not appear in production sources. P03-002 explicitly authorizes the
-    // artwork vocabulary in the focused core bridge/client boundary; it stays
-    // forbidden in feature and app layers so those layers cannot become
-    // enrichment authorities. Tokens are chosen to avoid false positives from
+    // must not appear in production sources. P03-007 explicitly authorizes the
+    // artwork vocabulary only for the focused bridge/client capability,
+    // application composition, and bounded Game-detail presentation; those
+    // layers may consume immutable asset IDs and bytes but cannot resolve or
+    // rank enrichment. Tokens are chosen to avoid false positives from
     // ordinary prose or generated output.
     const forbiddenConcepts = <String>[
       'RetroAchievements',
@@ -984,10 +988,19 @@ String _relativeToLib(String filePath, String libPath) {
       .replaceAll(Platform.pathSeparator, '/');
 }
 
-bool _isApprovedP03EnrichmentConcept(String relativePath, String concept) =>
-    concept == 'artwork' &&
-    (relativePath.startsWith('core/bridge/') ||
-        relativePath.startsWith('core/client/'));
+bool _isApprovedP03EnrichmentConcept(String relativePath, String concept) {
+  final focusedClientBoundary =
+      relativePath.startsWith('core/bridge/') ||
+      relativePath.startsWith('core/client/');
+  if (concept == 'GameContent') return focusedClientBoundary;
+  if (concept != 'artwork') return false;
+  return focusedClientBoundary ||
+      relativePath == 'app/bootstrap/app_bootstrap.dart' ||
+      relativePath == 'features/library/library_composition.dart' ||
+      relativePath ==
+          'features/library/application/game_detail_controller.dart' ||
+      relativePath == 'features/library/presentation/game_detail_page.dart';
+}
 
 void _expectNoForbiddenImports(
   Map<String, String> sources, {

@@ -6,16 +6,19 @@
 //! transaction.
 
 use argus_application::{
-    ContentIdentitySummary, ContentProvenanceMemberSummary, ContentProvenanceRole,
-    ContentProvenanceSummary, ContentType, ConvergenceOutcome, GameContentId, GameContentPresence,
-    GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow, GameLifecycle,
-    GameListCursor, GameMembershipSummary, GetGameResult, GroupingBasis, HydrationState,
-    IdentificationState, IdentityConvergenceStore, IdentityDigest, LibraryRootId, ListGamesQuery,
-    LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship, PersistenceError,
-    PlatformId, ScanRunId, SourceEntryId, SourceVersionEvidence, SourceVersionKind,
-    ValidatedContentDerivation, ValidatedM3uGrouping,
+    AvailabilityStateFacetBucket, ContentIdentitySummary, ContentProvenanceMemberSummary,
+    ContentProvenanceRole, ContentProvenanceSummary, ContentType, ConvergenceOutcome,
+    GameContentId, GameContentPresence, GameContentSourceSummary, GameContentSummary, GameDetail,
+    GameId, GameLibraryPage, GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary,
+    GetGameResult, GroupingBasis, HydrationState, HydrationStateFacetBucket, IdentificationState,
+    IdentityConvergenceStore, IdentityDigest, LibraryFacetQuery, LibraryFacets, LibraryFilter,
+    LibraryRootId, LibraryScope, LibrarySort, LibrarySortDirection, LibrarySortField,
+    ListGamesQuery, LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship,
+    PersistenceError, PlatformFacetBucket, PlatformId, RegionFacetBucket, ScanRunId, SourceEntryId,
+    SourceVersionEvidence, SourceVersionKind, ValidatedContentDerivation, ValidatedM3uGrouping,
+    bounded_library_display_title, bounded_library_release_date,
 };
-use rusqlite::{OptionalExtension, Row, params_from_iter};
+use rusqlite::{OptionalExtension, Row, params_from_iter, types::Value};
 
 use super::jobs::map_persistence_operation_error;
 use super::unit_of_work::SqliteUnitOfWork;
@@ -346,6 +349,11 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
             )
             .map_err(map_persistence_operation_error)?;
 
+        // The legacy insert above keeps the creation path compatible with
+        // existing identity tests; immediately derive every v15 projection
+        // field, including search text and resolved presentation facts.
+        refresh_game_library_projection(self.transaction()?, &raw_game_id)?;
+
         Ok(ConvergenceOutcome::Created {
             game_content_id: parse_game_content_id(raw_content_id)?,
             game_id: parse_game_id(raw_game_id)?,
@@ -355,38 +363,37 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
 
 impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
     fn list_games(&mut self, query: &ListGamesQuery) -> Result<GameLibraryPage, PersistenceError> {
-        if query.scope() != argus_application::LibraryScope::All
-            || query.search().is_some()
-            || !query.filters_empty()
-            || query.sort() != argus_application::LibrarySort::DisplayTitleAscending
-        {
-            return Err(PersistenceError::ConstraintViolation);
-        }
-
-        let mut rows = Vec::new();
         let mut sql = String::from(
-            "SELECT r.game_id, r.display_title, r.platform_id, r.hydration_state,
-                    r.availability_state, r.content_count, r.source_count,
+            "SELECT r.game_id, r.display_title, r.platform_id,
+                    r.presentation_region, r.selected_cover_asset_id,
+                    r.release_date, r.hydration_state, r.availability_state,
+                    r.content_count, r.source_count,
                     COALESCE(CAST(strftime('%s', r.updated_at) AS INTEGER) * 1000,
                              CAST(r.updated_at AS INTEGER) * 1000, 0)
              FROM game_library_row r
              JOIN game g ON g.game_id = r.game_id
-             WHERE g.lifecycle_state = 'active'",
+             WHERE g.lifecycle_state = 'active'
+               AND NOT EXISTS (
+                   SELECT 1 FROM game_redirect redirect
+                   WHERE redirect.game_id = r.game_id
+               )",
         );
-        let mut values: Vec<String> = Vec::new();
-        if let Some(cursor) = query.cursor() {
-            sql.push_str(
-                " AND (r.display_title COLLATE NOCASE > ?1
-                       OR (r.display_title COLLATE NOCASE = ?1 AND r.game_id > ?2))",
-            );
-            values.push(cursor.display_title().to_owned());
-            values.push(cursor.game_id().to_string());
+        let mut values = Vec::<Value>::new();
+        append_library_scope(&mut sql, &mut values, query.scope());
+        append_library_filters(&mut sql, &mut values, query.filters());
+        if let Some(search) = query.search() {
+            sql.push_str(" AND r.search_text LIKE ? ESCAPE '\\'");
+            values.push(Value::Text(format!("%{}%", escape_like(search))));
         }
-        let limit_placeholder = if values.is_empty() { "?1" } else { "?3" };
-        sql.push_str(" ORDER BY r.display_title COLLATE NOCASE ASC, r.game_id ASC LIMIT ");
-        sql.push_str(limit_placeholder);
-        values.push((query.page_size() as u64 + 1).to_string());
-        let params = params_from_iter(values.iter());
+        if let Some(cursor) = query.cursor() {
+            append_cursor_predicate(&mut sql, &mut values, query, cursor);
+        }
+        append_ordering(&mut sql, query.sort());
+        sql.push_str(" LIMIT ?");
+        values.push(Value::Integer(i64::from(query.page_size()) + 1));
+
+        let mut rows = Vec::new();
+        let params = params_from_iter(values);
         let mut statement = self
             .transaction()?
             .prepare(&sql)
@@ -394,18 +401,46 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
         let mapped = statement
             .query_map(params, read_library_row)
             .map_err(map_persistence_operation_error)?;
-        for row in mapped {
-            rows.push(row.map_err(map_persistence_operation_error)?);
-        }
+        rows.extend(
+            mapped
+                .map(|row| row.map_err(map_persistence_operation_error))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
         let has_more = rows.len() > query.page_size() as usize;
         if has_more {
             rows.truncate(query.page_size() as usize);
         }
-        let next_cursor = has_more.then(|| {
-            let row = rows.last().expect("a page with more rows has a last row");
-            GameListCursor::from_paging_keys(row.display_title(), row.game_id())
-        });
+        let next_cursor = has_more
+            .then(|| {
+                let row = rows.last().expect("a page with more rows has a last row");
+                GameListCursor::from_query_position(
+                    query,
+                    row.display_title(),
+                    row.platform_id(),
+                    row.release_date_for_cursor(),
+                    row.updated_at_ms(),
+                    row.game_id(),
+                )
+                .map_err(|_| PersistenceError::CorruptOrIncompatible)
+            })
+            .transpose()?;
         Ok(GameLibraryPage::new(rows, next_cursor))
+    }
+
+    fn get_library_facets(
+        &mut self,
+        query: &LibraryFacetQuery,
+    ) -> Result<LibraryFacets, PersistenceError> {
+        let platforms = read_platform_facets(self.transaction()?, query)?;
+        let regions = read_region_facets(self.transaction()?, query)?;
+        let hydration_states = read_hydration_facets(self.transaction()?, query)?;
+        let availability_states = read_availability_facets(self.transaction()?, query)?;
+        Ok(LibraryFacets::new(
+            platforms,
+            regions,
+            hydration_states,
+            availability_states,
+        ))
     }
 
     fn get_game(&mut self, game_id: GameId) -> Result<GetGameResult, PersistenceError> {
@@ -502,7 +537,7 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
             for summary in summaries {
                 let provenance =
                     read_normalized_provenance(self.transaction()?, summary.game_content_id())?;
-                values.push(match provenance {
+                let summary = match provenance {
                     Some(provenance) => GameContentSummary::with_identity(
                         summary.game_content_id(),
                         summary.platform_id(),
@@ -514,7 +549,9 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
                         Some(provenance),
                     ),
                     None => summary,
-                });
+                };
+                let sources = read_content_sources(self.transaction()?, summary.game_content_id())?;
+                values.push(summary.with_sources(sources));
             }
             values
         };
@@ -529,6 +566,508 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
             content,
             availability,
         )))
+    }
+}
+
+fn append_library_scope(sql: &mut String, values: &mut Vec<Value>, scope: LibraryScope) {
+    match scope {
+        LibraryScope::All => {}
+        LibraryScope::Platform(platform) => {
+            sql.push_str(" AND r.platform_id = ?");
+            values.push(Value::Text(platform.as_str().to_owned()));
+        }
+        LibraryScope::Source(source) => {
+            sql.push_str(
+                " AND EXISTS (
+                    SELECT 1
+                    FROM game_membership scoped_membership
+                    JOIN game_content_source scoped_source
+                      ON scoped_source.game_content_id = scoped_membership.game_content_id
+                    JOIN source_entry scoped_entry
+                      ON scoped_entry.source_entry_id = scoped_source.source_entry_id
+                    JOIN library_root scoped_root
+                      ON scoped_root.library_root_id = scoped_entry.library_root_id
+                    WHERE scoped_membership.game_id = r.game_id
+                      AND scoped_membership.is_current = 1
+                      AND scoped_source.is_current = 1
+                      AND scoped_root.library_source_id = ?
+                )",
+            );
+            values.push(Value::Text(source.to_string()));
+        }
+        LibraryScope::LibraryRoot(root) => {
+            sql.push_str(
+                " AND EXISTS (
+                    SELECT 1
+                    FROM game_membership scoped_membership
+                    JOIN game_content_source scoped_source
+                      ON scoped_source.game_content_id = scoped_membership.game_content_id
+                    JOIN source_entry scoped_entry
+                      ON scoped_entry.source_entry_id = scoped_source.source_entry_id
+                    WHERE scoped_membership.game_id = r.game_id
+                      AND scoped_membership.is_current = 1
+                      AND scoped_source.is_current = 1
+                      AND scoped_entry.library_root_id = ?
+                )",
+            );
+            values.push(Value::Text(root.to_string()));
+        }
+    }
+}
+
+fn append_library_filters(sql: &mut String, values: &mut Vec<Value>, filters: &LibraryFilter) {
+    append_platform_filter(sql, values, filters.platform_ids());
+    append_string_filter(sql, values, "r.presentation_region", filters.regions());
+    append_state_filter(
+        sql,
+        values,
+        "r.hydration_state",
+        filters
+            .hydration_states()
+            .iter()
+            .copied()
+            .map(hydration_value),
+    );
+    append_state_filter(
+        sql,
+        values,
+        "r.availability_state",
+        filters
+            .availability_states()
+            .iter()
+            .copied()
+            .map(availability_value),
+    );
+}
+
+fn append_platform_filter(sql: &mut String, values: &mut Vec<Value>, platforms: &[PlatformId]) {
+    if platforms.is_empty() {
+        return;
+    }
+    sql.push_str(" AND r.platform_id IN (");
+    sql.push_str(&placeholders(platforms.len()));
+    sql.push(')');
+    values.extend(
+        platforms
+            .iter()
+            .map(|platform| Value::Text(platform.as_str().to_owned())),
+    );
+}
+
+fn append_string_filter(
+    sql: &mut String,
+    values: &mut Vec<Value>,
+    column: &str,
+    values_to_match: &[String],
+) {
+    if values_to_match.is_empty() {
+        return;
+    }
+    sql.push_str(" AND ");
+    sql.push_str(column);
+    sql.push_str(" IN (");
+    sql.push_str(&placeholders(values_to_match.len()));
+    sql.push(')');
+    values.extend(values_to_match.iter().cloned().map(Value::Text));
+}
+
+fn append_state_filter<I>(sql: &mut String, values: &mut Vec<Value>, column: &str, states: I)
+where
+    I: IntoIterator<Item = &'static str>,
+{
+    let states = states.into_iter().collect::<Vec<_>>();
+    if states.is_empty() {
+        return;
+    }
+    sql.push_str(" AND ");
+    sql.push_str(column);
+    sql.push_str(" IN (");
+    sql.push_str(&placeholders(states.len()));
+    sql.push(')');
+    values.extend(
+        states
+            .into_iter()
+            .map(|state| Value::Text(state.to_owned())),
+    );
+}
+
+fn append_cursor_predicate(
+    sql: &mut String,
+    values: &mut Vec<Value>,
+    query: &ListGamesQuery,
+    cursor: &GameListCursor,
+) {
+    let ascending = query.sort().direction() == LibrarySortDirection::Ascending;
+    let operator = if ascending { ">" } else { "<" };
+
+    if cursor.as_str().starts_with("v1:") {
+        sql.push_str(
+            " AND (r.display_title COLLATE NOCASE > ?
+                   OR (r.display_title COLLATE NOCASE = ? AND r.game_id > ?))",
+        );
+        values.push(Value::Text(cursor.display_title().to_owned()));
+        values.push(Value::Text(cursor.display_title().to_owned()));
+        values.push(Value::Text(cursor.game_id().to_string()));
+        return;
+    }
+
+    match query.sort().field() {
+        LibrarySortField::DisplayTitle => {
+            sql.push_str(" AND (");
+            append_title_game_predicate(sql, values, cursor, operator);
+            sql.push(')');
+        }
+        LibrarySortField::Platform => {
+            sql.push_str(" AND (r.platform_id ");
+            sql.push_str(operator);
+            sql.push_str(" ? OR (r.platform_id = ? AND (");
+            values.push(Value::Text(cursor.platform_id().as_str().to_owned()));
+            values.push(Value::Text(cursor.platform_id().as_str().to_owned()));
+            append_title_game_predicate(sql, values, cursor, operator);
+            sql.push_str(")))");
+        }
+        LibrarySortField::ReleaseDate => {
+            sql.push_str(" AND (");
+            let cursor_rank = if cursor.release_date().is_some() {
+                0
+            } else {
+                1
+            };
+            sql.push_str("CASE WHEN r.release_date IS NULL THEN 1 ELSE 0 END > ?");
+            values.push(Value::Integer(cursor_rank));
+            sql.push_str(" OR (CASE WHEN r.release_date IS NULL THEN 1 ELSE 0 END = ? AND ");
+            values.push(Value::Integer(cursor_rank));
+            if let Some(release_date) = cursor.release_date() {
+                sql.push_str("(r.release_date ");
+                sql.push_str(operator);
+                sql.push_str(" ? OR (r.release_date = ? AND ");
+                values.push(Value::Text(release_date.to_owned()));
+                values.push(Value::Text(release_date.to_owned()));
+                append_title_platform_game_predicate(sql, values, cursor, operator);
+                sql.push_str("))");
+            } else {
+                append_title_platform_game_predicate(sql, values, cursor, operator);
+            }
+            sql.push(')');
+            sql.push(')');
+        }
+        LibrarySortField::UpdatedAt => {
+            let expression = updated_at_expression();
+            sql.push_str(" AND (");
+            sql.push_str(expression);
+            sql.push(' ');
+            sql.push_str(operator);
+            sql.push_str(" ? OR (");
+            sql.push_str(expression);
+            sql.push_str(" = ? AND ");
+            values.push(Value::Integer(cursor.updated_at_ms()));
+            values.push(Value::Integer(cursor.updated_at_ms()));
+            append_title_platform_game_predicate(sql, values, cursor, operator);
+            sql.push_str("))");
+        }
+    }
+}
+
+fn append_title_game_predicate(
+    sql: &mut String,
+    values: &mut Vec<Value>,
+    cursor: &GameListCursor,
+    operator: &str,
+) {
+    sql.push_str("r.display_title COLLATE NOCASE ");
+    sql.push_str(operator);
+    sql.push_str(" ? OR (r.display_title COLLATE NOCASE = ? AND r.game_id ");
+    sql.push_str(operator);
+    sql.push_str(" ?)");
+    values.push(Value::Text(cursor.display_title().to_owned()));
+    values.push(Value::Text(cursor.display_title().to_owned()));
+    values.push(Value::Text(cursor.game_id().to_string()));
+}
+
+fn append_title_platform_game_predicate(
+    sql: &mut String,
+    values: &mut Vec<Value>,
+    cursor: &GameListCursor,
+    operator: &str,
+) {
+    sql.push_str("r.display_title COLLATE NOCASE ");
+    sql.push_str(operator);
+    sql.push_str(" ? OR (r.display_title COLLATE NOCASE = ? AND (");
+    values.push(Value::Text(cursor.display_title().to_owned()));
+    values.push(Value::Text(cursor.display_title().to_owned()));
+    sql.push_str("r.platform_id ");
+    sql.push_str(operator);
+    sql.push_str(" ? OR (r.platform_id = ? AND r.game_id ");
+    sql.push_str(operator);
+    sql.push_str(" ?)))");
+    values.push(Value::Text(cursor.platform_id().as_str().to_owned()));
+    values.push(Value::Text(cursor.platform_id().as_str().to_owned()));
+    values.push(Value::Text(cursor.game_id().to_string()));
+}
+
+fn append_ordering(sql: &mut String, sort: LibrarySort) {
+    let direction = match sort.direction() {
+        LibrarySortDirection::Ascending => "ASC",
+        LibrarySortDirection::Descending => "DESC",
+    };
+    match sort.field() {
+        LibrarySortField::DisplayTitle => sql.push_str(&format!(
+            " ORDER BY r.display_title COLLATE NOCASE {direction},
+                      r.game_id {direction}"
+        )),
+        LibrarySortField::Platform => sql.push_str(&format!(
+            " ORDER BY r.platform_id {direction},
+                      r.display_title COLLATE NOCASE {direction}, r.game_id {direction}"
+        )),
+        LibrarySortField::ReleaseDate => sql.push_str(&format!(
+            " ORDER BY CASE WHEN r.release_date IS NULL THEN 1 ELSE 0 END ASC,
+                      r.release_date {direction}, r.display_title COLLATE NOCASE {direction},
+                      r.platform_id {direction}, r.game_id {direction}"
+        )),
+        LibrarySortField::UpdatedAt => {
+            let expression = updated_at_expression();
+            sql.push_str(&format!(
+                " ORDER BY {expression} {direction},
+                          r.display_title COLLATE NOCASE {direction},
+                          r.platform_id {direction}, r.game_id {direction}"
+            ));
+        }
+    }
+}
+
+fn updated_at_expression() -> &'static str {
+    "COALESCE(CAST(strftime('%s', r.updated_at) AS INTEGER) * 1000,
+              CAST(r.updated_at AS INTEGER) * 1000, 0)"
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+fn hydration_value(value: HydrationState) -> &'static str {
+    match value {
+        HydrationState::Hydrated => "hydrated",
+        HydrationState::PartiallyHydrated => "partially_hydrated",
+        HydrationState::Unmatched => "unmatched",
+        HydrationState::Refreshing => "refreshing",
+    }
+}
+
+fn availability_value(value: argus_application::AvailabilityState) -> &'static str {
+    match value {
+        argus_application::AvailabilityState::Available => "available",
+        argus_application::AvailabilityState::PartiallyUnavailable => "partially_unavailable",
+        argus_application::AvailabilityState::Unavailable => "unavailable",
+        argus_application::AvailabilityState::InactiveOrphan => "inactive_orphan",
+    }
+}
+
+#[derive(Clone, Copy)]
+enum FacetCategory {
+    Platform,
+    Region,
+    Hydration,
+    Availability,
+}
+
+struct FacetQueryParts {
+    from_where: String,
+    values: Vec<Value>,
+}
+
+fn facet_query_parts(query: &LibraryFacetQuery, omitted: FacetCategory) -> FacetQueryParts {
+    let mut from_where = String::from(
+        "FROM game_library_row r
+         JOIN game g ON g.game_id = r.game_id
+         WHERE g.lifecycle_state = 'active'
+           AND NOT EXISTS (
+               SELECT 1 FROM game_redirect redirect
+               WHERE redirect.game_id = r.game_id
+           )",
+    );
+    let mut values = Vec::new();
+    append_library_scope(&mut from_where, &mut values, query.scope());
+    if let Some(search) = query.search() {
+        from_where.push_str(" AND r.search_text LIKE ? ESCAPE '\\'");
+        values.push(Value::Text(format!("%{}%", escape_like(search))));
+    }
+    let filters = query.filters();
+    if !matches!(omitted, FacetCategory::Platform) {
+        append_platform_filter(&mut from_where, &mut values, filters.platform_ids());
+    }
+    if !matches!(omitted, FacetCategory::Region) {
+        append_string_filter(
+            &mut from_where,
+            &mut values,
+            "r.presentation_region",
+            filters.regions(),
+        );
+    }
+    if !matches!(omitted, FacetCategory::Hydration) {
+        append_state_filter(
+            &mut from_where,
+            &mut values,
+            "r.hydration_state",
+            filters
+                .hydration_states()
+                .iter()
+                .copied()
+                .map(hydration_value),
+        );
+    }
+    if !matches!(omitted, FacetCategory::Availability) {
+        append_state_filter(
+            &mut from_where,
+            &mut values,
+            "r.availability_state",
+            filters
+                .availability_states()
+                .iter()
+                .copied()
+                .map(availability_value),
+        );
+    }
+    FacetQueryParts { from_where, values }
+}
+
+fn read_platform_facets(
+    transaction: &mut rusqlite::Transaction<'_>,
+    query: &LibraryFacetQuery,
+) -> Result<Vec<PlatformFacetBucket>, PersistenceError> {
+    let parts = facet_query_parts(query, FacetCategory::Platform);
+    let sql = format!(
+        "SELECT r.platform_id, COUNT(*) {} GROUP BY r.platform_id",
+        parts.from_where
+    );
+    let mut statement = transaction
+        .prepare(&sql)
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map(params_from_iter(parts.values), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(map_persistence_operation_error)?;
+    let mut result = rows
+        .map(|row| {
+            let (platform, count) = row.map_err(map_persistence_operation_error)?;
+            Ok(PlatformFacetBucket::new(
+                parse_platform(&platform)?,
+                u32::try_from(count).map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, PersistenceError>>()?;
+    result.sort_by_key(|bucket| bucket.platform_id());
+    Ok(result)
+}
+
+fn read_region_facets(
+    transaction: &mut rusqlite::Transaction<'_>,
+    query: &LibraryFacetQuery,
+) -> Result<Vec<RegionFacetBucket>, PersistenceError> {
+    let mut parts = facet_query_parts(query, FacetCategory::Region);
+    parts
+        .from_where
+        .push_str(" AND r.presentation_region IS NOT NULL");
+    let sql = format!(
+        "SELECT r.presentation_region, COUNT(*) {} GROUP BY r.presentation_region ORDER BY r.presentation_region ASC",
+        parts.from_where
+    );
+    let mut statement = transaction
+        .prepare(&sql)
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map(params_from_iter(parts.values), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(map_persistence_operation_error)?;
+    rows.map(|row| {
+        let (region, count) = row.map_err(map_persistence_operation_error)?;
+        Ok(RegionFacetBucket::new(
+            region,
+            u32::try_from(count).map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+        ))
+    })
+    .collect()
+}
+
+fn read_hydration_facets(
+    transaction: &mut rusqlite::Transaction<'_>,
+    query: &LibraryFacetQuery,
+) -> Result<Vec<HydrationStateFacetBucket>, PersistenceError> {
+    let parts = facet_query_parts(query, FacetCategory::Hydration);
+    let sql = format!(
+        "SELECT r.hydration_state, COUNT(*) {} GROUP BY r.hydration_state",
+        parts.from_where
+    );
+    let mut statement = transaction
+        .prepare(&sql)
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map(params_from_iter(parts.values), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(map_persistence_operation_error)?;
+    let mut result = rows
+        .map(|row| {
+            let (state, count) = row.map_err(map_persistence_operation_error)?;
+            Ok(HydrationStateFacetBucket::new(
+                parse_hydration(&state)?,
+                u32::try_from(count).map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, PersistenceError>>()?;
+    result.sort_by_key(|bucket| hydration_facet_sort_key(bucket.hydration_state()));
+    Ok(result)
+}
+
+fn read_availability_facets(
+    transaction: &mut rusqlite::Transaction<'_>,
+    query: &LibraryFacetQuery,
+) -> Result<Vec<AvailabilityStateFacetBucket>, PersistenceError> {
+    let parts = facet_query_parts(query, FacetCategory::Availability);
+    let sql = format!(
+        "SELECT r.availability_state, COUNT(*) {} GROUP BY r.availability_state",
+        parts.from_where
+    );
+    let mut statement = transaction
+        .prepare(&sql)
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map(params_from_iter(parts.values), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(map_persistence_operation_error)?;
+    let mut result = rows
+        .map(|row| {
+            let (state, count) = row.map_err(map_persistence_operation_error)?;
+            Ok(AvailabilityStateFacetBucket::new(
+                parse_availability(&state)?,
+                u32::try_from(count).map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, PersistenceError>>()?;
+    result.sort_by_key(|bucket| availability_facet_sort_key(bucket.availability_state()));
+    Ok(result)
+}
+
+fn hydration_facet_sort_key(value: HydrationState) -> u8 {
+    match value {
+        HydrationState::Hydrated => 0,
+        HydrationState::PartiallyHydrated => 1,
+        HydrationState::Unmatched => 2,
+        HydrationState::Refreshing => 3,
+    }
+}
+
+fn availability_facet_sort_key(value: argus_application::AvailabilityState) -> u8 {
+    match value {
+        argus_application::AvailabilityState::Available => 0,
+        argus_application::AvailabilityState::PartiallyUnavailable => 1,
+        argus_application::AvailabilityState::Unavailable => 2,
+        argus_application::AvailabilityState::InactiveOrphan => 3,
     }
 }
 
@@ -1128,7 +1667,7 @@ fn release_grouping_evidence_for_sources(
     if source_ids.is_empty() {
         return Ok(());
     }
-    let source_placeholders = placeholders(source_ids.len());
+    let source_placeholders = placeholders_from(source_ids.len(), 1);
     let playlist_ids: Vec<String> = {
         let sql = format!(
             "SELECT DISTINCT e.playlist_source_entry_id
@@ -1186,7 +1725,7 @@ fn release_grouping_evidence_for_sources(
     if evidence_ids.is_empty() {
         return Ok(());
     }
-    let evidence_placeholders = placeholders(evidence_ids.len());
+    let evidence_placeholders = placeholders_from(evidence_ids.len(), 1);
     let source_placeholders_after_evidence =
         placeholders_from(source_ids.len(), evidence_ids.len() + 1);
     let delete_member_sql = format!(
@@ -1294,6 +1833,7 @@ fn detach_content_to_provisional_game(
             rusqlite::params![new_game_id, fallback_title, platform_id, source_count],
         )
         .map_err(map_persistence_operation_error)?;
+    refresh_game(transaction, &new_game_id)?;
     refresh_game(transaction, &old_game_id)?;
     Ok(())
 }
@@ -1569,60 +2109,313 @@ fn refresh_game(
             [game_id],
         )
         .map_err(map_persistence_operation_error)?;
-    transaction
+    refresh_game_library_projection(transaction, game_id)
+}
+
+/// Recomputes the denormalized Library row for one affected Game inside the
+/// caller's transaction. Every value is derived from already-persisted
+/// canonical, enrichment, artwork, and source facts; no filesystem or
+/// provider work is possible at this layer.
+pub(crate) fn refresh_game_library_projection(
+    transaction: &mut rusqlite::Transaction<'_>,
+    game_id: &str,
+) -> Result<(), PersistenceError> {
+    let affected_rows = transaction
         .execute(
-            "UPDATE game_library_row
-             SET hydration_state = (SELECT hydration_state FROM game WHERE game_id = ?1),
-                 availability_state = CASE
+            "INSERT INTO game_library_row (
+                 game_id, display_title, display_title_provenance, platform_id,
+                 presentation_region, selected_cover_asset_id, release_date, search_text,
+                 hydration_state, availability_state, content_count, source_count, updated_at
+             )
+             SELECT
+                 g.game_id,
+                 COALESCE(NULLIF(TRIM(metadata.display_title), ''), g.fallback_title),
+                 CASE
+                     WHEN NULLIF(TRIM(metadata.display_title), '') IS NULL
+                         THEN 'local_fallback'
+                     ELSE 'resolved_metadata'
+                 END,
+                 g.platform_id,
+                 metadata.presentation_region,
+                 (
+                     SELECT artwork.asset_id
+                     FROM resolved_artwork artwork
+                     WHERE artwork.game_id = g.game_id
+                       AND artwork.artwork_type = 'cover_front'
+                       AND artwork.asset_id IS NOT NULL
+                     ORDER BY artwork.ordering ASC, artwork.reference_id ASC
+                     LIMIT 1
+                 ),
+                 metadata.release_date,
+                 lower(trim(
+                     COALESCE(NULLIF(TRIM(metadata.display_title), ''), '') || ' ' ||
+                     COALESCE(metadata.sort_title, '') || ' ' ||
+                     COALESCE(g.fallback_title, '') || ' ' ||
+                     COALESCE((
+                         SELECT group_concat(
+                             COALESCE(provider_metadata.title, '') || ' ' ||
+                             COALESCE(provider_metadata.alternate_titles, ''),
+                             ' '
+                         )
+                         FROM game_membership membership
+                         JOIN external_identity_mapping mapping
+                           ON mapping.game_content_id = membership.game_content_id
+                          AND mapping.state = 'current'
+                         JOIN provider_metadata
+                           ON provider_metadata.provider_id = mapping.provider_id
+                          AND provider_metadata.external_game_id = mapping.external_game_id
+                          AND provider_metadata.provider_revision = mapping.provider_revision
+                         WHERE membership.game_id = g.game_id
+                           AND membership.is_current = 1
+                     ), '')
+                 )),
+                 g.hydration_state,
+                 CASE
                      WHEN NOT EXISTS (
-                         SELECT 1 FROM game_membership m
-                         JOIN game_content c ON c.game_content_id = m.game_content_id
-                         WHERE m.game_id = ?1 AND m.is_current = 1
-                           AND c.presence_state <> 'orphaned'
+                         SELECT 1
+                         FROM game_membership membership
+                         JOIN game_content content
+                           ON content.game_content_id = membership.game_content_id
+                         WHERE membership.game_id = g.game_id
+                           AND membership.is_current = 1
+                           AND content.presence_state <> 'orphaned'
                      ) THEN 'inactive_orphan'
                      WHEN NOT EXISTS (
-                         SELECT 1 FROM game_membership m
-                         JOIN game_content c ON c.game_content_id = m.game_content_id
-                         WHERE m.game_id = ?1 AND m.is_current = 1
-                           AND c.presence_state IN ('partially_unavailable', 'unavailable')
+                         SELECT 1
+                         FROM game_membership membership
+                         JOIN game_content content
+                           ON content.game_content_id = membership.game_content_id
+                         WHERE membership.game_id = g.game_id
+                           AND membership.is_current = 1
+                           AND content.presence_state IN ('partially_unavailable', 'unavailable')
                      ) THEN 'available'
                      WHEN EXISTS (
-                         SELECT 1 FROM game_membership m
-                         JOIN game_content c ON c.game_content_id = m.game_content_id
-                         WHERE m.game_id = ?1 AND m.is_current = 1
-                           AND c.presence_state = 'available'
+                         SELECT 1
+                         FROM game_membership membership
+                         JOIN game_content content
+                           ON content.game_content_id = membership.game_content_id
+                         WHERE membership.game_id = g.game_id
+                           AND membership.is_current = 1
+                           AND content.presence_state = 'available'
                      ) THEN 'partially_unavailable'
                      ELSE 'unavailable'
                  END,
-                 content_count = (
-                     SELECT COUNT(*) FROM game_membership
-                     WHERE game_id = ?1 AND is_current = 1
-                 ),
-                 source_count = (
+                 (
                      SELECT COUNT(*)
-                     FROM game_membership m
-                     JOIN game_content_source s ON s.game_content_id = m.game_content_id
-                     WHERE m.game_id = ?1 AND m.is_current = 1 AND s.is_current = 1
+                     FROM game_membership membership
+                     WHERE membership.game_id = g.game_id
+                       AND membership.is_current = 1
                  ),
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE game_id = ?1",
+                 (
+                     SELECT COUNT(*)
+                     FROM game_membership membership
+                     JOIN game_content_source source
+                       ON source.game_content_id = membership.game_content_id
+                     WHERE membership.game_id = g.game_id
+                       AND membership.is_current = 1
+                       AND source.is_current = 1
+                 ),
+                 CURRENT_TIMESTAMP
+             FROM game g
+             LEFT JOIN resolved_metadata metadata ON metadata.game_id = g.game_id
+             WHERE g.game_id = ?1
+             ON CONFLICT(game_id) DO UPDATE SET
+                 display_title = excluded.display_title,
+                 display_title_provenance = excluded.display_title_provenance,
+                 platform_id = excluded.platform_id,
+                 presentation_region = excluded.presentation_region,
+                 selected_cover_asset_id = excluded.selected_cover_asset_id,
+                 release_date = excluded.release_date,
+                 search_text = excluded.search_text,
+                 hydration_state = excluded.hydration_state,
+                 availability_state = excluded.availability_state,
+                 content_count = excluded.content_count,
+                 source_count = excluded.source_count,
+                 updated_at = excluded.updated_at",
             [game_id],
         )
         .map_err(map_persistence_operation_error)?;
+    if affected_rows == 0 {
+        return Ok(());
+    }
+
+    // The source facts may be longer than the bounded cursor contract. Keep
+    // the persisted presentation keys and the cursor keys identical so a
+    // valid projection never produces an unreadable continuation token.
+    let (display_title, release_date): (String, Option<String>) = transaction
+        .query_row(
+            "SELECT display_title, release_date
+             FROM game_library_row
+             WHERE game_id = ?1",
+            [game_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(map_persistence_operation_error)?;
+    let bounded_display_title = bounded_library_display_title(&display_title);
+    let bounded_release_date = release_date.as_deref().map(bounded_library_release_date);
+    if display_title != bounded_display_title || release_date != bounded_release_date {
+        transaction
+            .execute(
+                "UPDATE game_library_row
+                 SET display_title = ?1, release_date = ?2
+                 WHERE game_id = ?3",
+                rusqlite::params![bounded_display_title, bounded_release_date, game_id],
+            )
+            .map_err(map_persistence_operation_error)?;
+    }
+    Ok(())
+}
+
+/// Refreshes only the Games currently owning one changed GameContent unit.
+/// This helper is used by metadata persistence where the mutation carries a
+/// content identity rather than a direct Game identity.
+pub(crate) fn refresh_games_for_content(
+    transaction: &mut rusqlite::Transaction<'_>,
+    content_id: &str,
+) -> Result<(), PersistenceError> {
+    let game_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT DISTINCT game_id
+                 FROM game_membership
+                 WHERE game_content_id = ?1 AND is_current = 1",
+            )
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map([content_id], |row| row.get::<_, String>(0))
+            .map_err(map_persistence_operation_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?
+    };
+    for game_id in game_ids {
+        refresh_game_library_projection(transaction, &game_id)?;
+    }
+    Ok(())
+}
+
+/// Refreshes only Games whose current mapping points at changed provider
+/// metadata. Search text includes provider-native titles, so replacing a
+/// metadata record must update those projections in the same transaction.
+pub(crate) fn refresh_games_for_provider_metadata(
+    transaction: &mut rusqlite::Transaction<'_>,
+    provider_id: &str,
+    external_game_id: &str,
+    provider_revision: u64,
+) -> Result<(), PersistenceError> {
+    let game_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT DISTINCT membership.game_id
+                 FROM external_identity_mapping mapping
+                 JOIN game_membership membership
+                   ON membership.game_content_id = mapping.game_content_id
+                  AND membership.is_current = 1
+                 WHERE mapping.provider_id = ?1
+                   AND mapping.external_game_id = ?2
+                   AND mapping.provider_revision = ?3
+                   AND mapping.state = 'current'",
+            )
+            .map_err(map_persistence_operation_error)?;
+        let rows = statement
+            .query_map(
+                rusqlite::params![
+                    provider_id,
+                    external_game_id,
+                    i64::try_from(provider_revision).unwrap_or(i64::MAX),
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(map_persistence_operation_error)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(map_persistence_operation_error)?
+    };
+    for game_id in game_ids {
+        refresh_game_library_projection(transaction, &game_id)?;
+    }
     Ok(())
 }
 
 fn read_library_row(row: &Row<'_>) -> rusqlite::Result<GameLibraryRow> {
-    Ok(GameLibraryRow::from_persisted(
+    let selected_cover_asset_id = row
+        .get::<_, Option<String>>(4)?
+        .map(|value| {
+            argus_application::ArtworkAssetId::try_from(value.as_str())
+                .map_err(|_| rusqlite::Error::InvalidQuery)
+        })
+        .transpose()?;
+    Ok(GameLibraryRow::from_persisted_with_presentation(
         parse_game_id(row.get::<_, String>(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
         row.get::<_, String>(1)?,
         parse_platform(&row.get::<_, String>(2)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        parse_hydration(&row.get::<_, String>(3)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        parse_availability(&row.get::<_, String>(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        row.get::<_, i64>(5)? as u32,
-        row.get::<_, i64>(6)? as u32,
-        row.get(7)?,
+        row.get(3)?,
+        selected_cover_asset_id,
+        row.get(5)?,
+        parse_hydration(&row.get::<_, String>(6)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        parse_availability(&row.get::<_, String>(7)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        row.get::<_, i64>(8)? as u32,
+        row.get::<_, i64>(9)? as u32,
+        row.get(10)?,
     ))
+}
+
+fn read_content_sources(
+    transaction: &mut rusqlite::Transaction<'_>,
+    content_id: GameContentId,
+) -> Result<Vec<GameContentSourceSummary>, PersistenceError> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT source_entry.source_entry_id,
+                    library_source.library_source_id,
+                    library_source.display_name,
+                    library_root.library_root_id,
+                    library_root.display_name,
+                    library_root.safe_location_presentation
+             FROM game_content_source
+             JOIN source_entry
+               ON source_entry.source_entry_id = game_content_source.source_entry_id
+             JOIN library_root
+               ON library_root.library_root_id = source_entry.library_root_id
+             JOIN library_source
+               ON library_source.library_source_id = library_root.library_source_id
+             WHERE game_content_source.game_content_id = ?1
+               AND game_content_source.is_current = 1
+             ORDER BY library_root.library_root_id ASC,
+                      source_entry.source_entry_id ASC",
+        )
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map([content_id.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(map_persistence_operation_error)?;
+    rows.map(|row| {
+        let (
+            source_entry_id,
+            library_source_id,
+            source_display_name,
+            library_root_id,
+            root_display_name,
+            safe_location_presentation,
+        ) = row.map_err(map_persistence_operation_error)?;
+        Ok(GameContentSourceSummary::new(
+            parse_source_entry_id(source_entry_id)?,
+            argus_application::LibrarySourceId::try_from(library_source_id.as_str())
+                .map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+            source_display_name,
+            LibraryRootId::try_from(library_root_id.as_str())
+                .map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+            root_display_name,
+            safe_location_presentation,
+        ))
+    })
+    .collect()
 }
 
 fn read_normalized_provenance(
@@ -1880,7 +2673,7 @@ fn hex_digit(value: u8) -> Option<u8> {
 }
 
 fn placeholders(count: usize) -> String {
-    placeholders_from(count, 1)
+    (0..count).map(|_| "?").collect::<Vec<_>>().join(", ")
 }
 
 fn placeholders_from(count: usize, start: usize) -> String {

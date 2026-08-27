@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'appearance_event_coordinator.dart';
 import 'foreground_execution_coordinator.dart';
 import 'jobs_event_coordinator.dart';
+import 'library_event_coordinator.dart';
 import 'sources_event_coordinator.dart';
 
 /// Owns the single application-level Riverpod scope.
@@ -152,6 +153,20 @@ class ArgusBootstrap extends StatelessWidget {
           ),
         libraryGamesApiProvider.overrideWith(
           (ref) => ref.watch(argusClientProvider).games,
+        ),
+        libraryArtworkApiProvider.overrideWith(
+          (ref) => ref.watch(argusClientProvider).artwork,
+        ),
+        libraryRuntimeContextProvider.overrideWith((ref) {
+          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+          return runtimeInstanceId == null
+              ? const LibraryRuntimeContext.preReady()
+              : LibraryRuntimeContext.ready(
+                  runtimeInstanceId: runtimeInstanceId,
+                );
+        }),
+        libraryReconciliationDemandProvider.overrideWith(
+          (ref) => ref.watch(libraryEventCoordinatorProvider),
         ),
         if (platform.foregroundExecutionHostApi != null)
           sourcesApiProvider.overrideWith(

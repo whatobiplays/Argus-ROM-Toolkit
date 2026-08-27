@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:argus/core/client/client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/responsive/window_size_class.dart';
+import '../application/game_detail_controller.dart';
 import '../library_composition.dart';
 
 /// Focused durable Game detail route with explicit redirect and refresh
@@ -25,56 +30,65 @@ class GameDetailPage extends ConsumerStatefulWidget {
 }
 
 class _GameDetailPageState extends ConsumerState<GameDetailPage> {
-  late Future<GetGameResult> _future;
+  ArtworkApi? _artworkApi;
+  ArtworkBytesCache? _artworkCache;
 
-  @override
-  void initState() {
-    super.initState();
-    _future = _load();
-  }
-
-  Future<GetGameResult> _load() =>
-      ref.read(libraryGamesApiProvider).getGame(widget.gameId);
-
-  Future<void> _refresh(RefreshMode mode) async {
+  Future<void> _refresh(
+    GameDetailController controller,
+    RefreshMode mode,
+  ) async {
     try {
-      final handle = await ref
-          .read(libraryGamesApiProvider)
-          .refreshGame(gameId: widget.gameId, mode: mode);
+      final handle = await controller.refresh(mode);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Game refresh started')));
       widget.onOpenJob(handle.jobRunId);
-    } on ClientFailure {
+    } on ClientFailure catch (failure) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('The Game refresh could not start')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failure.message)));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final controller = ref.watch(gameDetailControllerProvider(widget.gameId));
+    final artworkCache = _cacheFor(ref.watch(libraryArtworkApiProvider));
     return Scaffold(
       body: SafeArea(
-        child: FutureBuilder<GetGameResult>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError || snapshot.data == null) {
-              return _GameMissing(onBack: widget.onMissingGame);
-            }
-            return switch (snapshot.data!) {
-              GetGameFound(:final detail) => _GameDetailBody(
-                detail: detail,
-                onRefresh: _refresh,
+        child: AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) {
+            final state = controller.state;
+            return switch (state.phase) {
+              GameDetailLoadPhase.preReady => const Center(
+                child: Text(
+                  'Game detail is available when the runtime is ready.',
+                ),
               ),
-              GetGameRedirected(:final canonicalGameId) => _GameRedirect(
-                canonicalGameId: canonicalGameId,
+              GameDetailLoadPhase.loading => const Center(
+                child: CircularProgressIndicator(),
+              ),
+              GameDetailLoadPhase.ready => _GameDetailBody(
+                detail: state.detail!,
+                refreshing: state.refreshing,
+                failure: state.failure,
+                artworkCache: artworkCache,
+                onRefresh: (mode) => _refresh(controller, mode),
+                onRetry: controller.reload,
+              ),
+              GameDetailLoadPhase.redirected => _GameRedirect(
+                canonicalGameId: state.canonicalGameId!,
                 onOpenGame: widget.onOpenGame,
+              ),
+              GameDetailLoadPhase.missing => _GameMissing(
+                onBack: widget.onMissingGame,
+              ),
+              GameDetailLoadPhase.failed => _GameLoadFailure(
+                failure: state.failure,
+                onRetry: controller.reload,
               ),
             };
           },
@@ -82,70 +96,706 @@ class _GameDetailPageState extends ConsumerState<GameDetailPage> {
       ),
     );
   }
+
+  ArtworkBytesCache _cacheFor(ArtworkApi api) {
+    if (_artworkCache == null || !identical(_artworkApi, api)) {
+      _artworkCache?.clear();
+      _artworkApi = api;
+      _artworkCache = ArtworkBytesCache(api: api);
+    }
+    return _artworkCache!;
+  }
 }
 
+/// Responsive detail layout bands shared by the page and its widget tests.
+typedef GameDetailWidthClass = WindowSizeClass;
+
+/// Maps the exact responsive contract widths to a detail layout band.
+GameDetailWidthClass gameDetailWidthClassForWidth(double width) =>
+    classifyWindowWidth(width);
+
 class _GameDetailBody extends StatelessWidget {
-  const _GameDetailBody({required this.detail, required this.onRefresh});
+  const _GameDetailBody({
+    required this.detail,
+    required this.refreshing,
+    required this.failure,
+    required this.artworkCache,
+    required this.onRefresh,
+    required this.onRetry,
+  });
 
   final GameDetail detail;
+  final bool refreshing;
+  final ClientFailure? failure;
+  final ArtworkBytesCache artworkCache;
+  final Future<void> Function(RefreshMode mode) onRefresh;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final widthClass = gameDetailWidthClassForWidth(constraints.maxWidth);
+      final overview = _OverviewSection(
+        detail: detail,
+        artworkCache: artworkCache,
+        onRefresh: onRefresh,
+      );
+      final metadata = _DetailSection(
+        title: 'Metadata',
+        initiallyExpanded: true,
+        child: _MetadataContent(metadata: detail.resolvedMetadata),
+      );
+      final files = _DetailSection(
+        title: 'Files & Copies',
+        initiallyExpanded: true,
+        child: _FilesAndCopiesContent(detail: detail),
+      );
+      final artwork = _DetailSection(
+        title: 'Artwork',
+        child: _ArtworkContent(
+          artwork: detail.resolvedArtwork,
+          artworkCache: artworkCache,
+          onRetry: () => onRefresh(RefreshMode.eligibleOnly),
+        ),
+      );
+      final sources = _DetailSection(
+        title: 'Sources / Availability',
+        initiallyExpanded: true,
+        child: _SourcesAvailabilityContent(detail: detail),
+      );
+      final activity = _DetailSection(
+        title: 'Activity / History',
+        child: const _ActivityContent(),
+      );
+      final provenance = _DetailSection(
+        title: 'Technical provenance',
+        child: _TechnicalProvenanceContent(detail: detail),
+      );
+
+      final primary = <Widget>[metadata, files, artwork];
+      final secondary = <Widget>[sources, activity, provenance];
+      final isWide = widthClass.index >= GameDetailWidthClass.expanded.index;
+
+      return Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1440),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+            children: [
+              if (failure != null)
+                _GameDetailRefreshFailure(failure: failure!, onRetry: onRetry),
+              if (refreshing)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: LinearProgressIndicator(
+                    key: ValueKey<String>('game-detail-refreshing'),
+                  ),
+                ),
+              overview,
+              const SizedBox(height: 12),
+              if (isWide)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _withSpacing(primary),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _withSpacing(secondary),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                ..._withSpacing([...primary, ...secondary]),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  List<Widget> _withSpacing(List<Widget> sections) {
+    final result = <Widget>[];
+    for (var index = 0; index < sections.length; index++) {
+      if (index > 0) result.add(const SizedBox(height: 12));
+      result.add(sections[index]);
+    }
+    return result;
+  }
+}
+
+class _OverviewSection extends StatelessWidget {
+  const _OverviewSection({
+    required this.detail,
+    required this.artworkCache,
+    required this.onRefresh,
+  });
+
+  final GameDetail detail;
+  final ArtworkBytesCache artworkCache;
   final Future<void> Function(RefreshMode mode) onRefresh;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(
-          detail.fallbackTitle,
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 8),
-        Text('${detail.gameId.value} · ${_gamePlatform(detail.platformId)}'),
-        const SizedBox(height: 20),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+    final metadata = detail.resolvedMetadata;
+    final title = metadata?.displayTitle ?? detail.fallbackTitle;
+    final cover = _coverArtwork(detail.resolvedArtwork);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            FilledButton.icon(
-              key: const ValueKey<String>('game-refresh'),
-              onPressed: () => onRefresh(RefreshMode.eligibleOnly),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh Game'),
+            Text('Overview', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 20,
+              runSpacing: 16,
+              crossAxisAlignment: WrapCrossAlignment.start,
+              children: [
+                SizedBox(
+                  width: 180,
+                  height: 240,
+                  child: cover == null
+                      ? const _ArtworkPlaceholder(label: 'No cover artwork')
+                      : _ArtworkAssetView(
+                          artwork: cover,
+                          cache: artworkCache,
+                          prominent: true,
+                          onRetry: () => onRefresh(RefreshMode.eligibleOnly),
+                        ),
+                ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        key: const ValueKey<String>('game-overview-title'),
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_gamePlatform(detail.platformId)} · ${detail.gameId.value}',
+                      ),
+                      if (metadata?.presentationRegion case final region?)
+                        Text('Region: $region'),
+                      if (metadata?.presentationLanguages case final languages?
+                          when languages.isNotEmpty)
+                        Text('Languages: ${languages.join(', ')}'),
+                      if (metadata?.description case final description?) ...[
+                        const SizedBox(height: 12),
+                        Text(description),
+                      ],
+                      const SizedBox(height: 16),
+                      _FactRow(
+                        label: 'Lifecycle',
+                        value: _gameLifecycle(detail.lifecycle),
+                      ),
+                      _FactRow(
+                        label: 'Hydration',
+                        value: _gameHydration(detail.hydrationState),
+                      ),
+                      _FactRow(
+                        label: 'Availability',
+                        value: _availabilityLabel(detail.availabilityState),
+                      ),
+                      _FactRow(
+                        label: 'Content units',
+                        value: '${detail.content.length}',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            OutlinedButton.icon(
-              key: const ValueKey<String>('game-force-refresh'),
-              onPressed: () => onRefresh(RefreshMode.force),
-              icon: const Icon(Icons.restart_alt),
-              label: const Text('Force Refresh'),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey<String>('game-refresh'),
+                  onPressed: () =>
+                      unawaited(onRefresh(RefreshMode.eligibleOnly)),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh Game'),
+                ),
+                PopupMenuButton<RefreshMode>(
+                  key: const ValueKey<String>('game-force-refresh'),
+                  tooltip: 'Advanced refresh actions',
+                  onSelected: (mode) => unawaited(onRefresh(mode)),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: RefreshMode.force,
+                      child: Text('Force Refresh'),
+                    ),
+                  ],
+                  child: OutlinedButton.icon(
+                    onPressed: null,
+                    icon: Icon(Icons.more_horiz),
+                    label: Text('Advanced'),
+                  ),
+                ),
+              ],
             ),
+            if (detail.lifecycle == GameLifecycle.inactiveOrphan) ...[
+              const SizedBox(height: 12),
+              const _StatusBanner(
+                icon: Icons.inventory_2_outlined,
+                text:
+                    'This inactive orphan is retained for historical inspection and is read-only.',
+              ),
+            ],
           ],
         ),
-        const SizedBox(height: 24),
-        _FactRow(label: 'Status', value: _gameLifecycle(detail.lifecycle)),
+      ),
+    );
+  }
+}
+
+class _DetailSection extends StatelessWidget {
+  const _DetailSection({
+    required this.title,
+    required this.child,
+    this.initiallyExpanded = false,
+  });
+
+  final String title;
+  final Widget child;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    clipBehavior: Clip.antiAlias,
+    child: ExpansionTile(
+      key: ValueKey<String>('game-section-$title'),
+      initiallyExpanded: initiallyExpanded,
+      title: Text(title),
+      childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      children: [child],
+    ),
+  );
+}
+
+class _MetadataContent extends StatelessWidget {
+  const _MetadataContent({required this.metadata});
+
+  final ResolvedMetadata? metadata;
+
+  @override
+  Widget build(BuildContext context) {
+    if (metadata == null) {
+      return const Text('No resolved metadata is available yet.');
+    }
+    final value = metadata!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (value.displayTitle case final title?)
+          _FactRow(label: 'Title', value: title),
+        if (value.sortTitle case final title?)
+          _FactRow(label: 'Sort title', value: title),
+        if (value.releaseDate case final date?)
+          _FactRow(label: 'Release date', value: date),
+        if (value.developers.isNotEmpty)
+          _FactRow(label: 'Developers', value: value.developers.join(', ')),
+        if (value.publishers.isNotEmpty)
+          _FactRow(label: 'Publishers', value: value.publishers.join(', ')),
+        if (value.genres.isNotEmpty)
+          _FactRow(label: 'Genres', value: value.genres.join(', ')),
+        if (value.fieldProvenance.isNotEmpty)
+          ExpansionTile(
+            title: const Text('Field provenance'),
+            children: [
+              for (final provenance in value.fieldProvenance)
+                ListTile(
+                  dense: true,
+                  title: Text(provenance.field),
+                  subtitle: Text(_provenanceLabel(provenance)),
+                ),
+            ],
+          ),
+        Text(
+          'Resolution revision ${value.resolutionRevision}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+}
+
+class _FilesAndCopiesContent extends StatelessWidget {
+  const _FilesAndCopiesContent({required this.detail});
+
+  final GameDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    if (detail.content.isEmpty) {
+      return const Text('No content units are currently associated.');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final content in detail.content)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _contentTypeLabel(content.contentType),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    _FactRow(
+                      label: 'Relationship',
+                      value: _relationshipLabel(detail, content.gameContentId),
+                    ),
+                    _FactRow(
+                      label: 'Presence',
+                      value: _contentPresenceLabel(content.presence),
+                    ),
+                    _FactRow(
+                      label: 'Identification',
+                      value: _identificationLabel(content.identification),
+                    ),
+                    _FactRow(label: 'Copies', value: '${content.sourceCount}'),
+                    if (content.sources.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      for (final source in content.sources)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          leading: const Icon(Icons.folder_copy_outlined),
+                          title: Text(
+                            '${source.sourceDisplayName} · ${source.rootDisplayName}',
+                          ),
+                          subtitle: Text(source.safeLocationPresentation),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SourcesAvailabilityContent extends StatelessWidget {
+  const _SourcesAvailabilityContent({required this.detail});
+
+  final GameDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final sources = [for (final content in detail.content) ...content.sources];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         _FactRow(
-          label: 'Hydration',
-          value: _gameHydration(detail.hydrationState),
+          label: 'Game availability',
+          value: _availabilityLabel(detail.availabilityState),
         ),
-        _FactRow(label: 'Content units', value: '${detail.content.length}'),
-        if (detail.resolvedMetadata case final metadata?) ...[
-          const SizedBox(height: 24),
-          Text('Metadata', style: Theme.of(context).textTheme.titleLarge),
+        if (sources.isEmpty)
+          const Text('No current source presentation is available.')
+        else
+          for (final source in sources)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              leading: const Icon(Icons.source_outlined),
+              title: Text(source.sourceDisplayName),
+              subtitle: Text(
+                '${source.rootDisplayName} · ${source.safeLocationPresentation}',
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+class _ArtworkContent extends StatelessWidget {
+  const _ArtworkContent({
+    required this.artwork,
+    required this.artworkCache,
+    required this.onRetry,
+  });
+
+  final List<ResolvedArtwork> artwork;
+  final ArtworkBytesCache artworkCache;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (artwork.isEmpty) {
+      return const Text('No selected artwork is available yet.');
+    }
+    final grouped = <String, List<ResolvedArtwork>>{};
+    for (final value in artwork) {
+      grouped.putIfAbsent(value.artworkType, () => []).add(value);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final entry in grouped.entries) ...[
+          Text(
+            _artworkTypeLabel(entry.key),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
-          if (metadata.displayTitle case final title?) Text(title),
-          if (metadata.releaseDate case final releaseDate?)
-            Text('Released $releaseDate'),
-          if (metadata.description case final description?) ...[
-            const SizedBox(height: 8),
-            Text(description),
-          ],
-        ],
-        if (detail.resolvedMetadata == null) ...[
-          const SizedBox(height: 24),
-          const Text('No resolved metadata is available yet.'),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final value in entry.value)
+                SizedBox(
+                  width: value.artworkType == 'screenshot' ? 220 : 160,
+                  child: _ArtworkAssetView(
+                    artwork: value,
+                    cache: artworkCache,
+                    onRetry: onRetry,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
         ],
       ],
     );
   }
+}
+
+class _ArtworkAssetView extends StatefulWidget {
+  const _ArtworkAssetView({
+    required this.artwork,
+    required this.cache,
+    required this.onRetry,
+    this.prominent = false,
+  });
+
+  final ResolvedArtwork artwork;
+  final ArtworkBytesCache cache;
+  final VoidCallback onRetry;
+  final bool prominent;
+
+  @override
+  State<_ArtworkAssetView> createState() => _ArtworkAssetViewState();
+}
+
+class _ArtworkAssetViewState extends State<_ArtworkAssetView> {
+  Future<ArtworkAssetBytes>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _startLoad();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ArtworkAssetView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.artwork.assetId != widget.artwork.assetId ||
+        oldWidget.cache != widget.cache) {
+      _startLoad();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final assetId = widget.artwork.assetId;
+    if (assetId == null) {
+      return const _ArtworkPlaceholder(label: 'Artwork not downloaded');
+    }
+    return FutureBuilder<ArtworkAssetBytes>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const _ArtworkPlaceholder(label: 'Loading artwork…');
+        }
+        if (snapshot.hasError || snapshot.data == null) {
+          return _ArtworkFailure(onRetry: widget.onRetry);
+        }
+        final asset = snapshot.data!;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+            final decodeWidth = _decodeDimension(
+              constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : widget.prominent
+                  ? 180
+                  : 220,
+              devicePixelRatio,
+            );
+            final decodeHeight = _decodeDimension(
+              constraints.maxHeight.isFinite ? constraints.maxHeight : 240,
+              devicePixelRatio,
+            );
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(
+                Uint8List.fromList(asset.bytes),
+                cacheWidth: decodeWidth,
+                cacheHeight: decodeHeight,
+                fit: BoxFit.cover,
+                semanticLabel:
+                    '${_artworkTypeLabel(widget.artwork.artworkType)} artwork',
+                errorBuilder: (context, error, stackTrace) =>
+                    _ArtworkFailure(onRetry: widget.onRetry),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  int? _decodeDimension(double logicalPixels, double devicePixelRatio) {
+    if (!logicalPixels.isFinite || logicalPixels <= 0) return null;
+    return (logicalPixels * devicePixelRatio).round();
+  }
+
+  void _startLoad() {
+    final assetId = widget.artwork.assetId;
+    _future = assetId == null ? null : widget.cache.load(assetId);
+  }
+}
+
+class _ArtworkPlaceholder extends StatelessWidget {
+  const _ArtworkPlaceholder({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.image_not_supported_outlined, size: 32),
+            const SizedBox(height: 8),
+            Text(label, textAlign: TextAlign.center),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _ArtworkFailure extends StatelessWidget {
+  const _ArtworkFailure({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.errorContainer,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('Artwork unavailable', textAlign: TextAlign.center),
+        TextButton(onPressed: onRetry, child: const Text('Retry enrichment')),
+      ],
+    ),
+  );
+}
+
+class _ActivityContent extends StatelessWidget {
+  const _ActivityContent();
+
+  @override
+  Widget build(BuildContext context) => const Text(
+    'Refresh admissions and their progress are recorded in Jobs. Accepted refresh actions open the corresponding Job detail.',
+  );
+}
+
+class _TechnicalProvenanceContent extends StatelessWidget {
+  const _TechnicalProvenanceContent({required this.detail});
+
+  final GameDetail detail;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (final content in detail.content) ...[
+        Text('Content ${content.gameContentId.value}'),
+        if (content.identity case final identity?)
+          _FactRow(
+            label: 'Identity proof',
+            value: '${identity.schemeId} revision ${identity.revision}',
+          ),
+        if (content.provenance case final provenance?)
+          _FactRow(
+            label: 'Provenance',
+            value: '${provenance.members.length} normalized source member(s)',
+          ),
+        const SizedBox(height: 8),
+      ],
+      if (detail.resolvedMetadata case final metadata?)
+        _FactRow(
+          label: 'Metadata revision',
+          value: '${metadata.resolutionRevision}',
+        ),
+      for (final artwork in detail.resolvedArtwork)
+        _FactRow(
+          label: _artworkTypeLabel(artwork.artworkType),
+          value: artwork.selectionReason,
+        ),
+    ],
+  );
+}
+
+class _StatusBanner extends StatelessWidget {
+  const _StatusBanner({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      children: [
+        Icon(icon),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text)),
+      ],
+    ),
+  );
 }
 
 class _GameRedirect extends StatelessWidget {
@@ -158,21 +808,19 @@ class _GameRedirect extends StatelessWidget {
   final void Function(GameId gameId) onOpenGame;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text('This Game has moved.'),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () => onOpenGame(canonicalGameId),
-            child: const Text('Open canonical Game'),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('This Game has moved.'),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: () => onOpenGame(canonicalGameId),
+          child: const Text('Open canonical Game'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _GameMissing extends StatelessWidget {
@@ -181,22 +829,86 @@ class _GameMissing extends StatelessWidget {
   final VoidCallback onBack;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Game not found'),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('Back to Library'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _GameLoadFailure extends StatelessWidget {
+  const _GameLoadFailure({required this.failure, required this.onRetry});
+
+  final ClientFailure? failure;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(failure?.message ?? 'The Game detail could not be loaded.'),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: () => unawaited(onRetry()),
+          child: const Text('Retry'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _GameDetailRefreshFailure extends StatelessWidget {
+  const _GameDetailRefreshFailure({
+    required this.failure,
+    required this.onRetry,
+  });
+
+  final ClientFailure failure;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    key: const ValueKey<String>('game-detail-refresh-failure'),
+    color: Theme.of(context).colorScheme.errorContainer,
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Game not found'),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: onBack,
-            icon: const Icon(Icons.arrow_back),
-            label: const Text('Back to Library'),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Game detail refresh failed'),
+                const SizedBox(height: 4),
+                Semantics(
+                  liveRegion: true,
+                  label: failure.message,
+                  child: Text(failure.message),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          FilledButton(
+            key: const ValueKey<String>('game-detail-refresh-retry'),
+            onPressed: () => unawaited(onRetry()),
+            child: const Text('Retry'),
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _FactRow extends StatelessWidget {
@@ -209,6 +921,7 @@ class _FactRow extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(width: 130, child: Text(label)),
         Expanded(child: Text(value)),
@@ -216,6 +929,82 @@ class _FactRow extends StatelessWidget {
     ),
   );
 }
+
+ResolvedArtwork? _coverArtwork(List<ResolvedArtwork> artwork) {
+  for (final value in artwork) {
+    if (value.artworkType == 'cover_front') return value;
+  }
+  for (final value in artwork) {
+    if (value.assetId != null) return value;
+  }
+  return artwork.isEmpty ? null : artwork.first;
+}
+
+String _provenanceLabel(MetadataFieldProvenance value) {
+  if (value.providerId case final provider?) return 'Provided by $provider';
+  return value.source;
+}
+
+String _relationshipLabel(GameDetail detail, ContentId contentId) {
+  final relationships = detail.memberships
+      .where((membership) => membership.gameContentId == contentId)
+      .map(_membershipRelationshipLabel)
+      .toList();
+  return relationships.isEmpty
+      ? 'Associated content'
+      : relationships.join(', ');
+}
+
+String _membershipRelationshipLabel(GameMembershipSummary value) =>
+    switch (value.relationship) {
+      MembershipRelationship.primary => 'Primary',
+      MembershipRelationship.secondary => 'Secondary',
+      MembershipRelationship.primaryContent => 'Primary content',
+      MembershipRelationship.regionalVariant => 'Regional variant',
+      MembershipRelationship.languageVariant => 'Language variant',
+      MembershipRelationship.revisionVariant => 'Revision variant',
+      MembershipRelationship.disc => 'Disc',
+      MembershipRelationship.equivalentReleaseRepresentation =>
+        'Equivalent release representation',
+    };
+
+String _contentTypeLabel(ContentType value) => switch (value) {
+  ContentType.cartridgeImage => 'Cartridge image',
+  ContentType.magneticDiskImage => 'Magnetic disk image',
+  ContentType.opticalDiscCd => 'Optical disc (CD)',
+  ContentType.opticalDiscGd => 'Optical disc (GD)',
+  ContentType.opticalDiscDvd => 'Optical disc (DVD)',
+  ContentType.opticalDiscGameCube => 'Optical disc (GameCube)',
+  ContentType.opticalDiscWii => 'Optical disc (Wii)',
+  ContentType.opticalDiscUmd => 'Optical disc (UMD)',
+};
+
+String _contentPresenceLabel(ContentPresence value) => switch (value) {
+  ContentPresence.available => 'Available',
+  ContentPresence.partiallyUnavailable => 'Partially unavailable',
+  ContentPresence.unavailable => 'Unavailable',
+  ContentPresence.orphaned => 'Orphaned',
+};
+
+String _identificationLabel(IdentificationState value) => switch (value) {
+  IdentificationState.identified => 'Identified',
+  IdentificationState.needsReidentification => 'Needs re-identification',
+  IdentificationState.unidentified => 'Unidentified',
+};
+
+String _artworkTypeLabel(String value) => switch (value) {
+  'cover_front' => 'Front cover',
+  'cover_back' => 'Back cover',
+  'cover_spine' => 'Spine',
+  'screenshot' => 'Screenshots',
+  'title_screen' => 'Title screen',
+  'logo' => 'Logo',
+  'icon' => 'Icon',
+  'background' => 'Background',
+  'banner' => 'Banner',
+  'manual' => 'Manual',
+  _ => value,
+};
 
 String _gamePlatform(PlatformId platform) => switch (platform) {
   PlatformId.nintendoNes => 'Nintendo Entertainment System',
@@ -252,4 +1041,11 @@ String _gameHydration(HydrationState state) => switch (state) {
   HydrationState.partiallyHydrated => 'Partially hydrated',
   HydrationState.unmatched => 'Unmatched',
   HydrationState.refreshing => 'Refreshing',
+};
+
+String _availabilityLabel(AvailabilityState state) => switch (state) {
+  AvailabilityState.available => 'Available',
+  AvailabilityState.partiallyUnavailable => 'Partially unavailable',
+  AvailabilityState.unavailable => 'Unavailable',
+  AvailabilityState.inactiveOrphan => 'Inactive orphan',
 };

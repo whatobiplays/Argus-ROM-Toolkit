@@ -8,6 +8,7 @@ use argus_domain::{ArtworkAssetId, GameId};
 use rusqlite::params;
 
 use super::errors::operation_error;
+use super::logical::refresh_game_library_projection;
 use super::unit_of_work::SqliteUnitOfWork;
 
 /// Ephemeral artwork repository view over one active SQLite transaction.
@@ -96,6 +97,10 @@ impl ArtworkRepository for SqliteArtworkRepository<'_, '_> {
                 ],
             )
             .map_err(map_persistence_error)?;
+        refresh_game_library_projection(
+            self.work.transaction_mut()?,
+            &resolved.game_id().to_string(),
+        )?;
         Ok(())
     }
 
@@ -131,6 +136,7 @@ impl ArtworkRepository for SqliteArtworkRepository<'_, '_> {
                 )
                 .map_err(map_persistence_error)?;
         }
+        refresh_game_library_projection(self.work.transaction_mut()?, &game_id.to_string())?;
         Ok(())
     }
 

@@ -1,7 +1,6 @@
 use argus_application::{
-    ContentType, ErrorCode, GameContentPresence, IdentificationState, IdentityDigest,
-    IdentitySchemeCatalog, ListGamesQuery, PlatformId, ProviderId, QueryValidationError,
-    TransformationRegistry,
+    ContentType, GameContentPresence, IdentificationState, IdentityDigest, IdentitySchemeCatalog,
+    ListGamesQuery, PlatformId, ProviderId, TransformationRegistry,
 };
 
 #[test]
@@ -315,14 +314,11 @@ fn presence_and_identification_states_are_independent() {
 }
 
 #[test]
-fn list_games_rejects_valid_but_inactive_query_concepts_with_invalid_argument() {
+fn list_games_normalizes_activated_search_query_concepts() {
     let query = ListGamesQuery::builder()
-        .search(Some("zelda".to_owned()))
+        .search(Some("  zelda  ".to_owned()))
         .build()
-        .expect_err("search is not active in P03-001");
+        .expect("search is active in P03-007");
 
-    assert_eq!(
-        query,
-        QueryValidationError::Application(ErrorCode::ValidationInvalidArgument)
-    );
+    assert_eq!(query.search(), Some("zelda"));
 }

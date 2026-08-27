@@ -9,6 +9,9 @@ use argus_domain::GameContentId;
 use rusqlite::{OptionalExtension, params};
 
 use super::errors::operation_error;
+use super::logical::{
+    refresh_game_library_projection, refresh_games_for_content, refresh_games_for_provider_metadata,
+};
 use super::unit_of_work::SqliteUnitOfWork;
 
 /// Ephemeral metadata repository view over one active SQLite transaction.
@@ -25,6 +28,7 @@ impl<'scope, 'connection> SqliteMetadataRepository<'scope, 'connection> {
 
 impl MetadataRepository for SqliteMetadataRepository<'_, '_> {
     fn save_mapping(&mut self, mapping: &ExternalIdentityMapping) -> Result<(), PersistenceError> {
+        let content_id = mapping.game_content_id().to_string();
         self.work
             .transaction_mut()?
             .execute(
@@ -57,6 +61,7 @@ impl MetadataRepository for SqliteMetadataRepository<'_, '_> {
                 ],
             )
             .map_err(map_persistence_error)?;
+        refresh_games_for_content(self.work.transaction_mut()?, &content_id)?;
         Ok(())
     }
 
@@ -109,6 +114,12 @@ impl MetadataRepository for SqliteMetadataRepository<'_, '_> {
                 ],
             )
             .map_err(map_persistence_error)?;
+        refresh_games_for_provider_metadata(
+            self.work.transaction_mut()?,
+            metadata.provider_id().as_str(),
+            metadata.external_game_id(),
+            metadata.provider_revision(),
+        )?;
         Ok(())
     }
 
@@ -155,6 +166,7 @@ impl MetadataRepository for SqliteMetadataRepository<'_, '_> {
                 ],
             )
             .map_err(map_persistence_error)?;
+        refresh_game_library_projection(self.work.transaction_mut()?, &game_id.to_string())?;
         Ok(())
     }
 

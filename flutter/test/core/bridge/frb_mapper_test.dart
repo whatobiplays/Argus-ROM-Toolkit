@@ -147,6 +147,25 @@ void main() {
     },
   );
 
+  test('maps persisted dotted platform facet identifiers', () {
+    final facets = libraryFacetsFromDto(
+      const dto.LibraryFacetsDto(
+        platforms: [
+          dto.PlatformFacetBucketDto(platformId: 'nintendo.nes', count: 3),
+          dto.PlatformFacetBucketDto(platformId: 'sega.sega-cd', count: 1),
+        ],
+        regions: [],
+        hydrationStates: [],
+        availabilityStates: [],
+      ),
+    );
+
+    expect(facets.platforms.map((bucket) => bucket.platformId), [
+      PlatformId.nintendoNes,
+      PlatformId.segaCd,
+    ]);
+  });
+
   test(
     'logical-game DTO preserves independent content states and summaries',
     () {
@@ -175,6 +194,7 @@ void main() {
               sourceCount: 0,
               identity: null,
               provenance: null,
+              sources: [],
             ),
           ],
           availabilityState: dto.GameAvailabilityStateDto.inactiveOrphan,
@@ -227,6 +247,7 @@ void main() {
           lastObservedScanId: 'dddddddddddddddddddddddddddddddd',
           members: [],
         ),
+        sources: [],
       ),
     );
 
@@ -353,6 +374,22 @@ void main() {
       ),
     );
   });
+
+  test(
+    'library source identity mapper rejects malformed identity as contract mismatch',
+    () {
+      expect(
+        () => librarySourceIdFromDto('not-an-id'),
+        throwsA(
+          isA<TransportFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            TransportFailureKind.contractMismatch,
+          ),
+        ),
+      );
+    },
+  );
 
   test('library root page DTO maps bounded paging facts', () {
     final page = libraryRootPageFromDto(

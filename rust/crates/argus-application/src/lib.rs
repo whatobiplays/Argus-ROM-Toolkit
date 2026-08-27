@@ -90,10 +90,14 @@ pub use jobs::{
     evaluate_retry_eligibility_with_trace,
 };
 pub use library::{
-    ContentIdentitySummary, ContentProvenanceMemberSummary, ContentProvenanceSummary,
-    GameContentSummary, GameDetail, GameLibraryPage, GameLibraryRow, GameListCursor,
-    GameMembershipSummary, GetGameResult, LibraryScope, LibrarySort, ListGamesQuery,
-    ListGamesQueryBuilder, LogicalLibraryQueries, QueryValidationError,
+    AvailabilityStateFacetBucket, ContentIdentitySummary, ContentProvenanceMemberSummary,
+    ContentProvenanceSummary, GameContentSourceSummary, GameContentSummary, GameDetail,
+    GameLibraryPage, GameLibraryRow, GameListCursor, GameMembershipSummary, GetGameResult,
+    HydrationStateFacetBucket, LibraryFacetQuery, LibraryFacets, LibraryFilter, LibraryScope,
+    LibrarySort, LibrarySortDirection, LibrarySortField, ListGamesQuery, ListGamesQueryBuilder,
+    LogicalLibraryQueries, MAX_LIBRARY_DISPLAY_TITLE_BYTES, MAX_LIBRARY_RELEASE_DATE_BYTES,
+    PlatformFacetBucket, QueryValidationError, RegionFacetBucket, bounded_library_display_title,
+    bounded_library_release_date,
 };
 pub use logical::{
     ContentIdentity, ConvergenceOutcome, IdentificationService, IdentityConvergenceStore,

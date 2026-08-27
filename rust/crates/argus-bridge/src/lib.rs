@@ -18,16 +18,17 @@ use argus_application::{
     GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow, GameLifecycle,
     GameListCursor, GameMembershipSummary, GetGameResult, GroupingBasis, HydrationState,
     IdentificationState, IdentityDigest, JobDetail, JobRunId, JobRunProjection, JobRunState,
-    JobSummary, JobSummaryPage, LibraryOnboardingProgress, LibraryOnboardingState,
-    LibraryProviderSetupDecision, LibraryRefreshJobDetail, LibraryResolutionRefreshJobDetail,
-    LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage,
-    LibraryRootProjection, LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity,
-    LibraryScanChildAdmissionIssue, LibraryScanJobDetail, LibraryScanRootSummary, LibraryScope,
-    LibrarySort, ListGamesQuery, ListJobsQuery, ListJobsScope, ListLibraryRootsQuery,
-    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
-    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
-    MembershipRelationship, MetadataFieldProvenance, MetadataProviderReadiness,
-    MetadataProviderReadinessProjection, MetadataProviderSettings,
+    JobSummary, JobSummaryPage, LibraryFacetQuery, LibraryFacets, LibraryFilter,
+    LibraryOnboardingProgress, LibraryOnboardingState, LibraryProviderSetupDecision,
+    LibraryRefreshJobDetail, LibraryResolutionRefreshJobDetail, LibraryRootAvailability,
+    LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
+    LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanChildAdmissionIssue,
+    LibraryScanJobDetail, LibraryScanRootSummary, LibraryScope, LibrarySort, LibrarySortDirection,
+    LibrarySortField, LibrarySourceId, ListGamesQuery, ListJobsQuery, ListJobsScope,
+    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor,
+    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot,
+    LocalFilesystemRootSelection, MembershipRelationship, MetadataFieldProvenance,
+    MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderSettings,
     MetadataProviderSettingsUpdateResult, MetadataSettings, MetadataSettingsUpdateResult,
     MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
     PersistedSettingsReason, PlatformClass, PlatformId, PrivacyConsent, ProviderCapability,
@@ -53,6 +54,10 @@ use crate::frb_generated::StreamSink;
 
 /// First major version of the application bridge contract.
 pub const BRIDGE_CONTRACT_MAJOR: u32 = 1;
+
+/// Maximum number of Game identities accepted by one selected-refresh
+/// admission. The operation remains the existing bounded game-refresh job.
+const MAX_GAME_REFRESH_TARGETS: usize = 64;
 
 /// Application-result envelope retained for request/response operations.
 #[allow(unexpected_cfgs)]
@@ -442,8 +447,7 @@ pub enum LibraryAvailabilityStateDto {
     InactiveOrphan,
 }
 
-/// Structurally valid BE-008 library filters. P03-001 accepts only empty
-/// filters; non-empty values are rejected as INVALID_ARGUMENT.
+/// Structurally valid BE-008 library filters.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibraryFilterDto {
     pub platform_ids: Vec<String>,
@@ -475,8 +479,8 @@ pub struct LibrarySortDto {
     pub direction: LibrarySortDirectionDto,
 }
 
-/// Baseline logical-library request. The bridge validates this full query
-/// shape and activates only All/empty/default/opaque-cursor paging.
+/// Bounded logical-library request. The bridge maps the closed transport
+/// vocabulary into the application-owned query builder.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListGamesRequestDto {
     pub scope: LibraryScopeDto,
@@ -485,6 +489,51 @@ pub struct ListGamesRequestDto {
     pub sort: LibrarySortDto,
     pub cursor: Option<String>,
     pub page_size: u32,
+}
+
+/// Scope/search/filter shape used to compute backend-owned facet counts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryFacetQueryDto {
+    pub scope: LibraryScopeDto,
+    pub search_text: Option<String>,
+    pub filters: LibraryFilterDto,
+}
+
+/// One platform facet count.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformFacetBucketDto {
+    pub platform_id: String,
+    pub count: u32,
+}
+
+/// One normalized region facet count.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegionFacetBucketDto {
+    pub region: String,
+    pub count: u32,
+}
+
+/// One hydration-state facet count.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HydrationStateFacetBucketDto {
+    pub hydration_state: LibraryHydrationStateDto,
+    pub count: u32,
+}
+
+/// One availability-state facet count.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AvailabilityStateFacetBucketDto {
+    pub availability_state: LibraryAvailabilityStateDto,
+    pub count: u32,
+}
+
+/// Complete facet projection for one Library query shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryFacetsDto {
+    pub platforms: Vec<PlatformFacetBucketDto>,
+    pub regions: Vec<RegionFacetBucketDto>,
+    pub hydration_states: Vec<HydrationStateFacetBucketDto>,
+    pub availability_states: Vec<AvailabilityStateFacetBucketDto>,
 }
 
 /// Stable platform vocabulary in logical-library projections.
@@ -636,6 +685,19 @@ pub struct ContentSummaryDto {
     pub source_count: u32,
     pub identity: Option<ContentIdentitySummaryDto>,
     pub provenance: Option<ContentProvenanceSummaryDto>,
+    pub sources: Vec<GameContentSourceSummaryDto>,
+}
+
+/// Safe physical-copy source/root context. Raw locators are intentionally
+/// absent from this transport projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameContentSourceSummaryDto {
+    pub source_entry_id: String,
+    pub library_source_id: String,
+    pub source_display_name: String,
+    pub library_root_id: String,
+    pub root_display_name: String,
+    pub safe_location_presentation: String,
 }
 
 /// Focused current membership detail.
@@ -653,6 +715,8 @@ pub struct GameLibraryRowDto {
     pub game_id: String,
     pub display_title: String,
     pub platform_id: PlatformIdDto,
+    pub presentation_region: Option<String>,
+    pub selected_cover_asset_id: Option<String>,
     pub hydration_state: HydrationStateDto,
     pub content_count: u32,
     pub source_count: u32,
@@ -1784,13 +1848,21 @@ pub fn start_game_refresh(
     let (context, _guard) = host()
         .begin_operation("library", "start_game_refresh")
         .map_err(|error| application_error_dto(&error))?;
-    let game_ids = request
+    let mut game_ids = request
         .game_ids
         .iter()
         .map(|value| {
             GameId::try_from(value.as_str()).map_err(|_| validation_failure(context.trace_id()))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    game_ids.sort_by_key(ToString::to_string);
+    game_ids.dedup();
+    if game_ids.is_empty() || game_ids.len() > MAX_GAME_REFRESH_TARGETS {
+        return Err(validation_failure(context.trace_id()));
+    }
+    if request.mode == RefreshModeDto::Force && game_ids.len() != 1 {
+        return Err(validation_failure(context.trace_id()));
+    }
     host()
         .start_game_refresh_with_context(game_ids, refresh_mode_from_dto(request.mode), &context)
         .map(|handle| OperationHandleDto {
@@ -1845,9 +1917,7 @@ pub fn get_library_root(library_root_id: String) -> Result<LibraryRootDto, Appli
         .map_err(|error| application_error_dto(&error))
 }
 
-/// Lists the baseline logical-library page. Structurally valid BE-008 query
-/// concepts outside the P03-001 activation subset are rejected as
-/// `ARGUS.V1.VALIDATION.INVALID_ARGUMENT`.
+/// Lists one bounded logical-library page using backend-owned query semantics.
 #[allow(clippy::result_large_err)]
 pub fn list_games(request: ListGamesRequestDto) -> Result<GamePageDto, ApplicationErrorDto> {
     let (context, _guard) = host()
@@ -1857,6 +1927,21 @@ pub fn list_games(request: ListGamesRequestDto) -> Result<GamePageDto, Applicati
     host()
         .list_games_with_context(query, &context)
         .map(|page| game_page_dto(&page))
+        .map_err(|error| application_error_dto(&error))
+}
+
+/// Reads backend-owned facet counts for one scope/search/filter shape.
+#[allow(clippy::result_large_err)]
+pub fn get_library_facets(
+    request: LibraryFacetQueryDto,
+) -> Result<LibraryFacetsDto, ApplicationErrorDto> {
+    let (context, _guard) = host()
+        .begin_operation("library", "get_library_facets")
+        .map_err(|error| application_error_dto(&error))?;
+    let query = library_facet_query_from_dto(request, context.trace_id())?;
+    host()
+        .get_library_facets_with_context(query, &context)
+        .map(|facets| library_facets_dto(&facets))
         .map_err(|error| application_error_dto(&error))
 }
 
@@ -2716,18 +2801,9 @@ fn list_games_query_from_dto(
     request: ListGamesRequestDto,
     trace_id: argus_application::TraceId,
 ) -> Result<ListGamesQuery, ApplicationErrorDto> {
-    if !matches!(request.scope, LibraryScopeDto::All)
-        || request.search_text.is_some()
-        || !request.filters.platform_ids.is_empty()
-        || !request.filters.regions.is_empty()
-        || !request.filters.hydration_states.is_empty()
-        || !request.filters.availability_states.is_empty()
-        || request.sort.field != LibrarySortFieldDto::DisplayTitle
-        || request.sort.direction != LibrarySortDirectionDto::Ascending
-    {
-        return Err(validation_failure(trace_id));
-    }
-
+    let scope = library_scope_from_dto(request.scope, trace_id)?;
+    let filters = library_filter_from_dto(request.filters, trace_id)?;
+    let sort = library_sort_from_dto(request.sort);
     let cursor = request
         .cursor
         .map(|value| {
@@ -2735,14 +2811,110 @@ fn list_games_query_from_dto(
         })
         .transpose()?;
     ListGamesQuery::builder()
-        .scope(LibraryScope::All)
-        .search(None)
-        .filters_empty(true)
-        .sort(LibrarySort::DisplayTitleAscending)
+        .scope(scope)
+        .search(request.search_text)
+        .filters(filters)
+        .sort(sort)
         .cursor(cursor)
         .page_size(request.page_size)
         .build()
         .map_err(|_| validation_failure(trace_id))
+}
+
+#[allow(clippy::result_large_err)]
+fn library_facet_query_from_dto(
+    request: LibraryFacetQueryDto,
+    trace_id: argus_application::TraceId,
+) -> Result<LibraryFacetQuery, ApplicationErrorDto> {
+    let scope = library_scope_from_dto(request.scope, trace_id)?;
+    let filters = library_filter_from_dto(request.filters, trace_id)?;
+    LibraryFacetQuery::new(scope, request.search_text, filters)
+        .map_err(|_| validation_failure(trace_id))
+}
+
+#[allow(clippy::result_large_err)]
+fn library_scope_from_dto(
+    scope: LibraryScopeDto,
+    trace_id: argus_application::TraceId,
+) -> Result<LibraryScope, ApplicationErrorDto> {
+    match scope {
+        LibraryScopeDto::All => Ok(LibraryScope::All),
+        LibraryScopeDto::Platform { platform_id } => PlatformId::try_from(platform_id.as_str())
+            .map(LibraryScope::Platform)
+            .map_err(|_| validation_failure(trace_id)),
+        LibraryScopeDto::Source { source_id } => LibrarySourceId::try_from(source_id.as_str())
+            .map(LibraryScope::Source)
+            .map_err(|_| validation_failure(trace_id)),
+        LibraryScopeDto::LibraryRoot { library_root_id } => {
+            LibraryRootId::try_from(library_root_id.as_str())
+                .map(LibraryScope::LibraryRoot)
+                .map_err(|_| validation_failure(trace_id))
+        }
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn library_filter_from_dto(
+    filters: LibraryFilterDto,
+    trace_id: argus_application::TraceId,
+) -> Result<LibraryFilter, ApplicationErrorDto> {
+    let platforms = filters
+        .platform_ids
+        .iter()
+        .map(|value| PlatformId::try_from(value.as_str()).map_err(|_| validation_failure(trace_id)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let hydration_states = filters
+        .hydration_states
+        .into_iter()
+        .map(hydration_state_from_filter_dto)
+        .collect::<Vec<_>>();
+    let availability_states = filters
+        .availability_states
+        .into_iter()
+        .map(availability_state_from_filter_dto)
+        .collect::<Vec<_>>();
+    LibraryFilter::new(
+        platforms,
+        filters.regions,
+        hydration_states,
+        availability_states,
+    )
+    .map_err(|_| validation_failure(trace_id))
+}
+
+fn library_sort_from_dto(sort: LibrarySortDto) -> LibrarySort {
+    LibrarySort::new(
+        match sort.field {
+            LibrarySortFieldDto::DisplayTitle => LibrarySortField::DisplayTitle,
+            LibrarySortFieldDto::Platform => LibrarySortField::Platform,
+            LibrarySortFieldDto::ReleaseDate => LibrarySortField::ReleaseDate,
+            LibrarySortFieldDto::UpdatedAt => LibrarySortField::UpdatedAt,
+        },
+        match sort.direction {
+            LibrarySortDirectionDto::Ascending => LibrarySortDirection::Ascending,
+            LibrarySortDirectionDto::Descending => LibrarySortDirection::Descending,
+        },
+    )
+}
+
+fn hydration_state_from_filter_dto(value: LibraryHydrationStateDto) -> HydrationState {
+    match value {
+        LibraryHydrationStateDto::Hydrated => HydrationState::Hydrated,
+        LibraryHydrationStateDto::PartiallyHydrated => HydrationState::PartiallyHydrated,
+        LibraryHydrationStateDto::Unmatched => HydrationState::Unmatched,
+        LibraryHydrationStateDto::Refreshing => HydrationState::Refreshing,
+    }
+}
+
+fn availability_state_from_filter_dto(value: LibraryAvailabilityStateDto) -> AvailabilityState {
+    match value {
+        LibraryAvailabilityStateDto::Available => AvailabilityState::Available,
+        LibraryAvailabilityStateDto::PartiallyUnavailable => {
+            AvailabilityState::PartiallyUnavailable
+        }
+        LibraryAvailabilityStateDto::Unavailable => AvailabilityState::Unavailable,
+        LibraryAvailabilityStateDto::InactiveOrphan => AvailabilityState::InactiveOrphan,
+    }
 }
 
 fn validation_failure(trace_id: argus_application::TraceId) -> ApplicationErrorDto {
@@ -2823,13 +2995,53 @@ pub fn library_root_page_dto(page: &LibraryRootPage) -> LibraryRootPageDto {
     }
 }
 
-/// Maps one baseline logical-library page into its safe transport DTO.
+/// Maps one bounded logical-library page into its safe transport DTO.
 #[allow(unexpected_cfgs)]
 #[flutter_rust_bridge::frb(ignore)]
 pub fn game_page_dto(page: &GameLibraryPage) -> GamePageDto {
     GamePageDto {
         items: page.items().iter().map(game_library_row_dto).collect(),
         next_cursor: page.next_cursor().map(|cursor| cursor.as_str().to_owned()),
+    }
+}
+
+/// Maps the complete backend-owned facet projection.
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn library_facets_dto(facets: &LibraryFacets) -> LibraryFacetsDto {
+    LibraryFacetsDto {
+        platforms: facets
+            .platforms()
+            .iter()
+            .map(|bucket| PlatformFacetBucketDto {
+                platform_id: bucket.platform_id().as_str().to_owned(),
+                count: bucket.count(),
+            })
+            .collect(),
+        regions: facets
+            .regions()
+            .iter()
+            .map(|bucket| RegionFacetBucketDto {
+                region: bucket.region().to_owned(),
+                count: bucket.count(),
+            })
+            .collect(),
+        hydration_states: facets
+            .hydration_states()
+            .iter()
+            .map(|bucket| HydrationStateFacetBucketDto {
+                hydration_state: hydration_state_filter_dto(bucket.hydration_state()),
+                count: bucket.count(),
+            })
+            .collect(),
+        availability_states: facets
+            .availability_states()
+            .iter()
+            .map(|bucket| AvailabilityStateFacetBucketDto {
+                availability_state: availability_state_filter_dto(bucket.availability_state()),
+                count: bucket.count(),
+            })
+            .collect(),
     }
 }
 
@@ -2841,6 +3053,8 @@ pub fn game_library_row_dto(row: &GameLibraryRow) -> GameLibraryRowDto {
         game_id: row.game_id().to_string(),
         display_title: row.display_title().to_owned(),
         platform_id: platform_id_dto(row.platform_id()),
+        presentation_region: row.presentation_region().map(str::to_owned),
+        selected_cover_asset_id: row.selected_cover_asset_id().map(|id| id.to_string()),
         hydration_state: hydration_state_dto(row.hydration_state()),
         content_count: row.content_count(),
         source_count: row.source_count(),
@@ -3204,6 +3418,24 @@ fn content_summary_dto(summary: &GameContentSummary) -> ContentSummaryDto {
         source_count: summary.source_count(),
         identity: summary.identity().map(content_identity_summary_dto),
         provenance: summary.provenance().map(content_provenance_summary_dto),
+        sources: summary
+            .sources()
+            .iter()
+            .map(game_content_source_summary_dto)
+            .collect(),
+    }
+}
+
+fn game_content_source_summary_dto(
+    summary: &argus_application::GameContentSourceSummary,
+) -> GameContentSourceSummaryDto {
+    GameContentSourceSummaryDto {
+        source_entry_id: summary.source_entry_id().to_string(),
+        library_source_id: summary.library_source_id().to_string(),
+        source_display_name: summary.source_display_name().to_owned(),
+        library_root_id: summary.library_root_id().to_string(),
+        root_display_name: summary.root_display_name().to_owned(),
+        safe_location_presentation: summary.safe_location_presentation().to_owned(),
     }
 }
 
@@ -3357,12 +3589,32 @@ fn hydration_state_dto(state: HydrationState) -> HydrationStateDto {
     }
 }
 
+fn hydration_state_filter_dto(state: HydrationState) -> LibraryHydrationStateDto {
+    match state {
+        HydrationState::Hydrated => LibraryHydrationStateDto::Hydrated,
+        HydrationState::PartiallyHydrated => LibraryHydrationStateDto::PartiallyHydrated,
+        HydrationState::Unmatched => LibraryHydrationStateDto::Unmatched,
+        HydrationState::Refreshing => LibraryHydrationStateDto::Refreshing,
+    }
+}
+
 fn game_availability_state_dto(state: AvailabilityState) -> GameAvailabilityStateDto {
     match state {
         AvailabilityState::Available => GameAvailabilityStateDto::Available,
         AvailabilityState::PartiallyUnavailable => GameAvailabilityStateDto::PartiallyUnavailable,
         AvailabilityState::Unavailable => GameAvailabilityStateDto::Unavailable,
         AvailabilityState::InactiveOrphan => GameAvailabilityStateDto::InactiveOrphan,
+    }
+}
+
+fn availability_state_filter_dto(state: AvailabilityState) -> LibraryAvailabilityStateDto {
+    match state {
+        AvailabilityState::Available => LibraryAvailabilityStateDto::Available,
+        AvailabilityState::PartiallyUnavailable => {
+            LibraryAvailabilityStateDto::PartiallyUnavailable
+        }
+        AvailabilityState::Unavailable => LibraryAvailabilityStateDto::Unavailable,
+        AvailabilityState::InactiveOrphan => LibraryAvailabilityStateDto::InactiveOrphan,
     }
 }
 

@@ -71,7 +71,7 @@ class LocalFilesystemBrowserController
         failure: null,
       );
     } catch (error, stackTrace) {
-      if (requestGeneration != _navigationGeneration) return;
+      if (!ref.mounted || requestGeneration != _navigationGeneration) return;
       state = state.copyWith(
         loading: false,
         failure: _asFailure(error, stackTrace),

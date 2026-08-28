@@ -306,6 +306,43 @@ void main() {
     },
   );
 
+  test(
+    'disposal ignores a root-load failure after the request completes',
+    () async {
+      final api = _BrowserFakeApi();
+      final container = ProviderContainer(
+        overrides: [sourcesApiProvider.overrideWithValue(api)],
+      );
+      var disposed = false;
+      addTearDown(() {
+        if (!disposed) {
+          disposed = true;
+          container.dispose();
+        }
+      });
+      final observation = container.listen(
+        localFilesystemBrowserControllerProvider,
+        (previous, next) {},
+      );
+      addTearDown(observation.close);
+      final controller = container.read(
+        localFilesystemBrowserControllerProvider.notifier,
+      );
+
+      final gate = Completer<void>();
+      api.rootGates.add(gate);
+      api.failNextRootLoad = true;
+      final loading = controller.load();
+      await Future<void>.delayed(Duration.zero);
+
+      disposed = true;
+      container.dispose();
+      gate.complete();
+      await loading;
+      await _settle();
+    },
+  );
+
   test('back to the volume list invalidates an in-flight refresh', () async {
     final api = _BrowserFakeApi();
     final container = ProviderContainer(
@@ -356,6 +393,8 @@ final class _BrowserFakeApi implements SourcesApi {
   bool failNextBrowse;
   final requests = <_BrowseRequest>[];
   final browseGates = <Completer<void>>[];
+  final rootGates = <Completer<void>>[];
+  bool failNextRootLoad = false;
 
   final root = const LocalFilesystemBrowseRoot(
     location: LocalFilesystemBrowseLocation('root-location'),
@@ -369,7 +408,16 @@ final class _BrowserFakeApi implements SourcesApi {
 
   @override
   Future<List<LocalFilesystemBrowseRoot>>
-  listLocalFilesystemBrowseRoots() async => [root];
+  listLocalFilesystemBrowseRoots() async {
+    if (rootGates.isNotEmpty) {
+      await rootGates.removeAt(0).future;
+    }
+    if (failNextRootLoad) {
+      failNextRootLoad = false;
+      throw const TransportFailure('root browse failed');
+    }
+    return [root];
+  }
 
   @override
   Future<LocalFilesystemBrowsePage> listLocalFilesystemBrowseDirectories({

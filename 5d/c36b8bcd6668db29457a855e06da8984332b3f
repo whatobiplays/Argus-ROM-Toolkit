@@ -1,0 +1,73 @@
+flutter/test/features/sources/source_hierarchy_controller_test.dart
+  s_5babd7b138287b::t_bb80e78b128a43 229-234,236-241,243-250
+  s_5babd7b138287b::t_bbff7d4465b0fa 235,242,251
+flutter/lib/app/bootstrap/application_lifecycle_coordinator.g.dart
+  s_5babd7b138287b::t_f0646f5ee5a21f 70
+flutter/test/app/bootstrap/application_lifecycle_coordinator_test.dart
+  s_5babd7b138287b::t_bb80e78b128a43 91-95,100-147,152-207
+  s_5babd7b138287b::t_c3bda797235f45 1-2,90,96-99,148-151,215,223-225
+flutter/integration_test/library_android_lifecycle_qualification_test.dart
+  s_5babd7b138287b::t_a1b07dadc0faf5 7,83
+flutter/integration_test/library_lifecycle_qualification_test.dart
+  s_5babd7b138287b::t_9cb4bd3f01eaa2 73
+  s_5babd7b138287b::t_a1b07dadc0faf5 33-37,39-56,58-63,65-72,74-84
+rust/crates/argus-application/src/jobs.rs
+  s_5babd7b138287b::t_8e16f0ec768b29 3533-3542
+  s_5babd7b138287b::t_a4fb47cf5b9ea2 3491,3495,3497,3499-3526,3528,3530,3543-3563
+flutter/test/app/bootstrap/app_bootstrap_test.dart
+  s_5babd7b138287b::t_0978035c65bc7a 344-396
+flutter/lib/app/bootstrap/application_lifecycle_coordinator.dart
+  s_5babd7b138287b::t_ac2a29a24d026f 33,50,53-57,82-86
+rust/crates/argus-runtime/src/lib.rs
+  s_5babd7b138287b::t_5e4130b5edd226 115-125,2215-2216,2220-2230,5106-5109,5112-5122,5127-5128,5133
+  s_5babd7b138287b::t_9f39a3d1f73e0c 5123-5126,5129-5132
+scripts/run_library_desktop_qualification.sh
+  s_5babd7b138287b::t_ad31a90d1ba352 50-54,60
+flutter/lib/features/sources/application/source_hierarchy_controller.g.dart
+  s_5babd7b138287b::t_f0646f5ee5a21f 87
+flutter/test/features/sources/local_filesystem_browser_controller_test.dart
+  s_5babd7b138287b::t_84d44573cccf03 177-268,274-303,312,335-337
+  s_5babd7b138287b::t_6682e545b179ef 269-273
+scripts/run_library_android_qualification.sh
+  s_5babd7b138287b::t_efb0513af8655b 28-52,58,145,154,175,183,193,201,211
+flutter/lib/app/platform/application/platform_readiness_controller.dart
+  s_5babd7b138287b::t_ac2a29a24d026f 73,98-106,142
+flutter/lib/app/platform/application/platform_readiness_controller.g.dart
+  s_5babd7b138287b::t_f0646f5ee5a21f 222
+rust/crates/argus-runtime/src/runtime.rs
+  s_5babd7b138287b::t_a97b44240083da 4341
+  s_5babd7b138287b::t_a8d8ccea506182 3882,3936,3962,4033-4044
+  s_5babd7b138287b::t_3e753e753490ea 4291-4293,4322-4325,4330,4332-4340,4342-4353
+  s_5babd7b138287b::t_010dca394e80a0 3888,3942,3968
+  s_5babd7b138287b::t_9f39a3d1f73e0c 4326-4329,4331
+flutter/lib/app/bootstrap/app_bootstrap.dart
+  s_5babd7b138287b::t_7e9bb5a9c98fb3 255-287,290,293
+rust/crates/argus-runtime/tests/slice_006_restart_recovery.rs
+  s_5babd7b138287b::t_9f39a3d1f73e0c 422-423
+  s_5babd7b138287b::t_1ea7edde046292 418-421,424-445
+flutter/lib/features/sources/application/local_filesystem_browser_controller.g.dart
+  s_5babd7b138287b::t_f0646f5ee5a21f 57
+flutter/lib/features/sources/application/local_filesystem_browser_controller.dart
+  s_5babd7b138287b::t_7d2629a24caf57 73
+  s_5babd7b138287b::t_149948aca24314 34-35,57,64,78-79,90-95,99-107,110-118,125,128-134,138-143,176,179,199,217,223-232,234-245,263
+flutter/android/app/src/main/kotlin/com/argusromtoolkit/argus/ArgusForegroundExecutionHost.kt
+  s_5babd7b138287b::t_7d2629a24caf57 182-183,187
+flutter/lib/features/sources/application/source_hierarchy_controller.dart
+  s_5babd7b138287b::t_6ae742341e1a98 487
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5dc36b8bcd6668db29457a855e06da8984332b3f",
+  "prompts": {},
+  "sessions": {
+    "s_5babd7b138287b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0443c-1f5c-7363-bcbd-09f37feabf01",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

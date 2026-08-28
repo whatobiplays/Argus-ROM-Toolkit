@@ -26,7 +26,8 @@ record() {
 device_id=''
 test_pid=''
 
-# shellcheck disable=SC2329
+# ShellCheck 0.9 cannot follow this function's indirect EXIT-trap invocation.
+# shellcheck disable=SC2329,SC2317
 cleanup() {
   local status=$?
   if [[ -n "${device_id}" && -n "${ARGUS_ANDROID_SCENARIO_ADB:-}" ]]; then

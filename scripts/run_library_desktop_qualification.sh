@@ -19,7 +19,8 @@ record() {
 }
 
 data_dir=''
-# shellcheck disable=SC2329
+# ShellCheck 0.9 cannot follow this function's indirect EXIT-trap invocation.
+# shellcheck disable=SC2329,SC2317
 cleanup() {
   local status=$?
   if [[ -n "${data_dir}" && -d "${data_dir}" ]]; then

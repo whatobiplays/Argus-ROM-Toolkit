@@ -17,7 +17,7 @@ publish = false
 
 [workspace.dependencies]
 aes = { version = "0.8.4", default-features = false }
-fs2 = "0.4.3"
+fs2 = { package = "fs4", version = "1.1.0" }
 getrandom = { version = "0.4.3", features = ["sys_rng"] }
 blake3 = "1.8.2"
 chd = { version = "0.3.4", default-features = false, features = ["std", "verify_block_crc"] }

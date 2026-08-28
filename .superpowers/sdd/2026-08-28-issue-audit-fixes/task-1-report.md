@@ -20,7 +20,7 @@
 2. The reported dead/unused test state in `archive_content.rs` and `chd_content.rs` was real and removable without changing behavior.
 3. The low-space fixture in `content_session.rs` did not actually reach the available-space branch before correction.
 4. The architecture and plan documents had stale wording around Phase 003 RAR support and did not explicitly reflect the enter/leave container depth accounting now implemented.
-5. The current dependency graph still routes `fs2` only through `argus-infrastructure`, and the current production code uses `fs2::available_space` in `rust/crates/argus-infrastructure/src/content_session.rs`.
+5. The current production code still uses the `fs2::available_space` import path in `rust/crates/argus-infrastructure/src/content_session.rs`, and Cargo package aliasing can replace the unmaintained `fs2` package without changing that source import.
 
 ## Changes made
 
@@ -58,6 +58,17 @@
     - `zip` with `deflate-flate2`
     - `ruzstd` with `std`
   - Updated the RAR constraint to state that RAR remains excluded from the Phase 003 production transformation registry.
+
+### Dependency
+
+- `rust/Cargo.toml`
+  - Replaced the workspace `fs2` package dependency with a dependency alias targeting the maintained `fs4` package:
+    - `fs2 = { package = "fs4", version = "1.1.0" }`
+  - Kept the existing dependency key so the production `fs2::available_space` import path remains unchanged.
+
+- `rust/Cargo.lock`
+  - Refreshed the lockfile to resolve the alias to `fs4 1.1.0`.
+  - Verified the previous direct `fs2 0.4.3` package entry was removed.
 
 ## TDD evidence for the fixture correction
 
@@ -106,7 +117,7 @@ test staging_checks_remaining_budget_and_available_space_before_copy ... ok
 
 Interpretation: the corrected fixture now exercises the intended available-space rejection path.
 
-## Dependency audit: `fs2`
+## Dependency audit: `fs2` alias to `fs4`
 
 ### Current code and graph
 
@@ -141,6 +152,7 @@ fs2 v0.4.3
 
 - `fs2` 0.4.3 documents `available_space(path) -> Result<u64>` on docs.rs.
 - `fs4` 1.1.0 documents the same `available_space(path) -> Result<u64>` API on docs.rs and identifies itself as a fork of `fs2`.
+- `cargo info fs4` reports `version: 1.1.0`, `rust-version: 1.75.0`, and `default = [sync]`, which is compatible with the repository-pinned Rust 1.97.1 toolchain.
 
 Sources inspected:
 
@@ -150,13 +162,14 @@ Sources inspected:
 
 ### Conclusion
 
-I left `rust/Cargo.toml` and `rust/Cargo.lock` unchanged.
+I updated `rust/Cargo.toml` and `rust/Cargo.lock` to resolve the maintained replacement package without changing production source imports.
 
 Reasoning:
 
-1. The current code does not use `fs2` as a lock API here; it uses only `available_space`.
-2. Replacing `fs2` with `fs4` would require at least one production source edit outside this task’s allowed write set (`rust/crates/argus-infrastructure/src/content_session.rs`), because the import path is `use fs2::available_space;`.
-3. The task explicitly says to leave the dependency unchanged and document that conclusion if the replacement is not justified by the current supported behavior or would require broader change. That condition is met here.
+1. The current code uses only the `available_space` API, and `fs4 1.1.0` exposes the same API shape.
+2. Cargo package aliasing allows the dependency key to remain `fs2`, so `use fs2::available_space;` remains valid without editing production files outside the write set.
+3. `fs4 1.1.0` advertises `rust-version: 1.75.0`, which is compatible with the pinned Rust 1.97.1 toolchain.
+4. The refreshed lockfile shows the workspace now resolves to `fs4 1.1.0` instead of `fs2 0.4.3`.
 
 ## Commands run and results
 
@@ -197,6 +210,20 @@ Observed result:
 - `content_session`: 6 passed
 - `content_contract`: 9 passed
 
+### Follow-up dependency verification
+
+```bash
+RUSTC=/Users/daniel/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/rustc /Users/daniel/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/cargo info fs4
+RUSTC=/Users/daniel/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/rustc /Users/daniel/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/cargo check --manifest-path /Users/daniel/Projects/Argus-ROM-Toolkit/.worktrees/validate-fix-issues/rust/Cargo.toml -p argus-infrastructure
+RUSTC=/Users/daniel/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/rustc /Users/daniel/.rustup/toolchains/1.97.1-aarch64-apple-darwin/bin/cargo test --manifest-path /Users/daniel/Projects/Argus-ROM-Toolkit/.worktrees/validate-fix-issues/rust/Cargo.toml -p argus-infrastructure --features test-support --test content_session
+```
+
+Observed result:
+
+- `cargo info fs4`: `version 1.1.0`, `rust-version 1.75.0`, default feature set includes `sync`
+- `cargo check -p argus-infrastructure`: passed after locking `fs4 v1.1.0`
+- `content_session`: 6 passed after the dependency alias update
+
 ### Documentation consistency checks
 
 No repository-owned docs consistency command was found by repo search, so I validated the touched contract points directly with targeted text checks.
@@ -230,6 +257,8 @@ Observed result: success, no output.
 
 - `docs/architecture/architecture-overview.md`
 - `docs/superpowers/plans/2026-08-26-containers-and-compressed-representations.md`
+- `rust/Cargo.toml`
+- `rust/Cargo.lock`
 - `rust/crates/argus-application/tests/content_contract.rs`
 - `rust/crates/argus-infrastructure/tests/archive_content.rs`
 - `rust/crates/argus-infrastructure/tests/chd_content.rs`
@@ -238,4 +267,3 @@ Observed result: success, no output.
 ## Concerns
 
 1. There is an unrelated untracked file in the worktree, `docs/superpowers/plans/2026-08-28-issue-audit-fixes.md`. I did not modify or stage it.
-2. The dependency audit found a plausible maintained replacement (`fs4`) for the current `available_space` API, but this task could not adopt it without touching production source outside the allowed write set. The dependency remains unchanged intentionally.

@@ -49,6 +49,7 @@ void main() {
 
     expect(generatedProviderFiles, <String>[
       'app/bootstrap/appearance_event_coordinator.dart',
+      'app/bootstrap/application_lifecycle_coordinator.dart',
       'app/bootstrap/application_presentation.dart',
       'app/bootstrap/client_bootstrap.dart',
       'app/bootstrap/foreground_execution_coordinator.dart',

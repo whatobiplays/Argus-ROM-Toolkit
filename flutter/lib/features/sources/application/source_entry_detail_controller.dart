@@ -25,8 +25,9 @@ class SourceEntryDetailController extends _$SourceEntryDetailController {
     final demandSource = ref.watch(sourcesReconciliationDemandProvider);
     late final StreamSubscription<SourcesReconciliationDemand> subscription;
     subscription = demandSource.stream.listen((demand) {
-      if (demand is SourcesReconciliationDemandSourceChanged &&
-          demand.libraryRootId == rootId) {
+      if (demand is SourcesReconciliationDemandLifecycleChanged ||
+          demand is SourcesReconciliationDemandSourceChanged &&
+              demand.libraryRootId == rootId) {
         ref.invalidateSelf();
       }
     });

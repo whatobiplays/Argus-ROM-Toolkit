@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/sources/application/local_filesystem_browser_controller.dart';
+import 'package:argus/features/sources/application/sources_state.dart';
 import 'package:argus/features/sources/sources_composition.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -125,6 +128,52 @@ void main() {
     );
     expect(api.requests.map((request) => request.cursor), [null, null]);
   });
+
+  test(
+    'lifecycle reconciliation refreshes the current browser location',
+    () async {
+      final api = _BrowserFakeApi();
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = ProviderContainer(
+        overrides: [
+          sourcesApiProvider.overrideWithValue(api),
+          sourcesReconciliationDemandProvider.overrideWithValue(
+            SourcesReconciliationDemandSource(demands.stream),
+          ),
+        ],
+      );
+      addTearDown(demands.close);
+      addTearDown(container.dispose);
+      final observation = container.listen(
+        localFilesystemBrowserControllerProvider,
+        (previous, next) {},
+      );
+      addTearDown(observation.close);
+      final controller = container.read(
+        localFilesystemBrowserControllerProvider.notifier,
+      );
+
+      await controller.load();
+      await controller.openRoot(api.root);
+      await controller.openDirectory(api.child);
+      final requestsBeforeDemand = api.requests.length;
+
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(api.requests.length, requestsBeforeDemand + 1);
+      expect(api.requests.last.location, 'child-location');
+      expect(
+        container
+            .read(localFilesystemBrowserControllerProvider)
+            .page
+            ?.current
+            .location
+            .value,
+        'child-location',
+      );
+    },
+  );
 }
 
 final class _BrowserFakeApi implements SourcesApi {

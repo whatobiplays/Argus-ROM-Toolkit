@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../sources_composition.dart';
+import 'sources_state.dart';
 
 part 'local_filesystem_browser_controller.freezed.dart';
 part 'local_filesystem_browser_controller.g.dart';
@@ -27,16 +30,24 @@ class LocalFilesystemBrowserController
   static const int _pageSize = 100;
 
   _BrowserRequest? _failedRequest;
+  int _demandToken = 0;
+  StreamSubscription<SourcesReconciliationDemand>? _demandSubscription;
 
   @override
-  LocalFilesystemBrowserState build() =>
-      const LocalFilesystemBrowserState.ready(
-        roots: [],
-        page: null,
-        loading: false,
-        loadingMore: false,
-        failure: null,
-      );
+  LocalFilesystemBrowserState build() {
+    ref.onDispose(() {
+      _demandToken++;
+      unawaited(_demandSubscription?.cancel());
+    });
+    _subscribeToDemandSource(ref.watch(sourcesReconciliationDemandProvider));
+    return const LocalFilesystemBrowserState.ready(
+      roots: [],
+      page: null,
+      loading: false,
+      loadingMore: false,
+      failure: null,
+    );
+  }
 
   /// Loads the current mounted-volume list.
   Future<void> load() async {
@@ -60,6 +71,16 @@ class LocalFilesystemBrowserController
         failure: _asFailure(error, stackTrace),
       );
     }
+  }
+
+  /// Re-reads the current browser location without discarding it.
+  Future<void> refresh() async {
+    final page = state.page;
+    if (page == null) {
+      await load();
+      return;
+    }
+    await _loadPage(page.current.location, cursor: null, append: false);
   }
 
   /// Opens one provider-issued volume root.
@@ -167,6 +188,20 @@ class LocalFilesystemBrowserController
       cause: error,
       stackTrace: stackTrace,
     );
+  }
+
+  void _subscribeToDemandSource(SourcesReconciliationDemandSource source) {
+    _demandToken++;
+    final token = _demandToken;
+    final subscription = source.stream.listen((demand) {
+      if (token != _demandToken) return;
+      if (demand is SourcesReconciliationDemandLifecycleChanged) {
+        unawaited(refresh());
+      }
+    });
+    final previous = _demandSubscription;
+    _demandSubscription = subscription;
+    unawaited(previous?.cancel());
   }
 }
 

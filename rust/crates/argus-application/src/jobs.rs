@@ -3369,6 +3369,176 @@ pub trait StaleLibraryScanQueries {
     ) -> Result<Vec<StaleLibraryScanJob>, PersistenceError>;
 }
 
+/// One stale active operation and the durable child facts needed for startup
+/// reconciliation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StaleOperationJob {
+    operation_type: String,
+    job_run_id: JobRunId,
+    state: JobRunState,
+    cancellation_requested: bool,
+    scan_runs: Vec<StaleLibraryScanRun>,
+    exclusions: Vec<LibraryScanAdmissionExclusion>,
+}
+
+impl StaleOperationJob {
+    /// Creates one stale active operation snapshot.
+    pub fn new(
+        operation_type: impl Into<String>,
+        job_run_id: JobRunId,
+        state: JobRunState,
+        cancellation_requested: bool,
+        scan_runs: Vec<StaleLibraryScanRun>,
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    ) -> Self {
+        Self {
+            operation_type: operation_type.into(),
+            job_run_id,
+            state,
+            cancellation_requested,
+            scan_runs,
+            exclusions,
+        }
+    }
+
+    /// Returns the stable operation type.
+    pub fn operation_type(&self) -> &str {
+        &self.operation_type
+    }
+
+    /// Returns the stale operation identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the durable active parent state.
+    pub const fn state(&self) -> JobRunState {
+        self.state
+    }
+
+    /// Returns whether durable cancellation intent was already accepted.
+    pub const fn cancellation_requested(&self) -> bool {
+        self.cancellation_requested
+    }
+
+    /// Returns durable child scan records, when the operation owns them.
+    pub fn scan_runs(&self) -> &[StaleLibraryScanRun] {
+        &self.scan_runs
+    }
+
+    /// Returns durable admission exclusions, when the operation owns them.
+    pub fn exclusions(&self) -> &[LibraryScanAdmissionExclusion] {
+        &self.exclusions
+    }
+}
+
+/// Persistence-only query port for startup reconciliation of supported
+/// background operations.
+pub trait StaleOperationQueries {
+    /// Lists active operations that require startup reconciliation without
+    /// resolving providers or performing user-visible work.
+    fn list_stale_operation_jobs(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<StaleOperationJob>, PersistenceError>;
+}
+
+/// Persistence-only startup recovery for every supported active operation.
+pub struct StaleOperationRecoveryHandler<Q, U> {
+    queries: Q,
+    unit_of_work: U,
+}
+
+impl<Q, U> StaleOperationRecoveryHandler<Q, U> {
+    /// Composes the stale query and Unit of Work capabilities.
+    pub const fn new(queries: Q, unit_of_work: U) -> Self {
+        Self {
+            queries,
+            unit_of_work,
+        }
+    }
+}
+
+impl<Q, U> StaleOperationRecoveryHandler<Q, U>
+where
+    Q: StaleOperationQueries,
+    U: crate::UnitOfWorkFactory + Clone,
+{
+    /// Reconciles every stale supported operation and returns only after all
+    /// recovered state is coherent.
+    pub fn handle(&self, context: &OperationContext) -> Result<(), ApplicationError> {
+        let stale_jobs = self
+            .queries
+            .list_stale_operation_jobs(context)
+            .map_err(|error| map_persistence_error(context.trace_id(), error))?;
+        for job in stale_jobs {
+            self.reconcile_job(context, job)?;
+        }
+        Ok(())
+    }
+
+    fn reconcile_job(
+        &self,
+        context: &OperationContext,
+        job: StaleOperationJob,
+    ) -> Result<(), ApplicationError> {
+        let now = now_millis();
+        let cancellation_requested = job.cancellation_requested();
+        let reconciles_scan_children = matches!(
+            job.operation_type(),
+            OPERATION_TYPE_LIBRARY_SCAN | OPERATION_TYPE_LIBRARY_REFRESH
+        );
+        let parent_state = if cancellation_requested {
+            JobRunState::Cancelled
+        } else {
+            JobRunState::Abandoned
+        };
+        self.unit_of_work
+            .clone()
+            .execute(context, move |mut scope| {
+                if reconciles_scan_children {
+                    for child in job.scan_runs() {
+                        if child.status() != ScanRunStatus::Running {
+                            continue;
+                        }
+                        let child_status = if cancellation_requested {
+                            ScanRunStatus::Cancelled
+                        } else {
+                            ScanRunStatus::Abandoned
+                        };
+                        scope.scan_runs().set_status(
+                            child.scan_run_id(),
+                            child_status,
+                            Some(now),
+                            None,
+                        )?;
+                        let last_scan_status = if cancellation_requested {
+                            LibraryRootLastScanStatus::Cancelled
+                        } else {
+                            LibraryRootLastScanStatus::Abandoned
+                        };
+                        scope.library_roots().set_last_scan(
+                            child.library_root_id(),
+                            Some(LibraryRootLastScanSummary::new(
+                                child.scan_run_id().to_string(),
+                                child.job_run_id().to_string(),
+                                last_scan_status,
+                                child.started_at_ms(),
+                                Some(now),
+                            )),
+                        )?;
+                    }
+                }
+                scope
+                    .job_runs()
+                    .set_state(job.job_run_id(), parent_state, now)?;
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(())
+            })
+            .map_err(|error| map_port_error(context.trace_id(), error))
+    }
+}
+
 /// Persistence-only startup recovery for stale active LibraryScan jobs.
 ///
 /// This handler has no provider, enumeration, or scheduling capability. It

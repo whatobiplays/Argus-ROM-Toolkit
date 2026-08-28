@@ -41,6 +41,7 @@ export 'application/platform_readiness_controller.dart'
         PlatformStorageReconciliationReason,
         platformHostApiProvider,
         platformMountedVolumesReaderProvider,
+        platformReadinessRequiredProvider,
         platformReadinessControllerProvider,
         platformStorageReconciliationDemandProvider;
 export 'application/platform_readiness_state.dart'
@@ -55,4 +56,5 @@ export 'application/platform_readiness_state.dart'
         classifyPlatformReadiness;
 export 'native/platform_host_factory.dart'
     show PlatformHostComposition, createPlatformHostComposition;
+export 'native/android_qualification_api.dart' show AndroidQualificationApi;
 export 'presentation/platform_readiness_gate.dart' show PlatformReadinessGate;

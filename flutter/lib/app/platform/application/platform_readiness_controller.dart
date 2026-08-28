@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'local_filesystem_platform_api.dart';
@@ -7,6 +8,10 @@ import 'platform_host_api.dart';
 import 'platform_readiness_state.dart';
 
 part 'platform_readiness_controller.g.dart';
+
+/// Identifies whether app-lifecycle resume must certify platform readiness
+/// before composition may request reconciliation.
+final platformReadinessRequiredProvider = Provider<bool>((ref) => false);
 
 /// DI seam for the platform host; app composition always supplies it.
 @Riverpod(keepAlive: true)

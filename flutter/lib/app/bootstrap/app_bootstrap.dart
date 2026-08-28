@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'appearance_event_coordinator.dart';
+import 'application_lifecycle_coordinator.dart';
 import 'foreground_execution_coordinator.dart';
 import 'jobs_event_coordinator.dart';
 import 'library_event_coordinator.dart';
@@ -59,6 +60,9 @@ class ArgusBootstrap extends StatelessWidget {
     final platform = platformHostComposition ?? createPlatformHostComposition();
     return ProviderScope(
       overrides: [
+        platformReadinessRequiredProvider.overrideWithValue(
+          platform.requiresReadinessGate,
+        ),
         platformHostApiProvider.overrideWithValue(platform.api),
         localFilesystemPlatformApiProvider.overrideWithValue(
           platform.localFilesystemApi,
@@ -166,7 +170,11 @@ class ArgusBootstrap extends StatelessWidget {
                 );
         }),
         libraryReconciliationDemandProvider.overrideWith(
-          (ref) => ref.watch(libraryEventCoordinatorProvider),
+          (ref) => _composeLibraryReconciliationDemands(
+            ref,
+            ref.watch(libraryEventCoordinatorProvider),
+            ref.watch(applicationLifecycleReconciliationDemandProvider),
+          ),
         ),
         if (platform.foregroundExecutionHostApi != null)
           sourcesApiProvider.overrideWith(
@@ -198,6 +206,7 @@ class ArgusBootstrap extends StatelessWidget {
             ref,
             ref.watch(sourcesEventCoordinatorProvider),
             ref.watch(platformStorageReconciliationDemandProvider),
+            ref.watch(applicationLifecycleReconciliationDemandProvider),
           ),
         ),
         if (platform.foregroundExecutionHostApi != null)
@@ -215,7 +224,11 @@ class ArgusBootstrap extends StatelessWidget {
               : JobsRuntimeContext.ready(runtimeInstanceId: runtimeInstanceId);
         }),
         jobsReconciliationDemandProvider.overrideWith(
-          (ref) => ref.watch(jobsEventCoordinatorProvider),
+          (ref) => _composeJobsReconciliationDemands(
+            ref,
+            ref.watch(jobsEventCoordinatorProvider),
+            ref.watch(applicationLifecycleReconciliationDemandProvider),
+          ),
         ),
       ],
       child: ArgusApp(
@@ -230,23 +243,65 @@ void bootstrapArgus() {
   runApp(const ArgusBootstrap());
 }
 
-/// Combines runtime-event invalidations with platform storage transitions.
-/// Only the Sources channel receives the platform transition; Jobs retains
-/// its existing event and recovery authorities.
+/// Combines runtime-event invalidations with platform storage and app-lifecycle
+/// transitions while preserving each feature's existing provider seam.
 SourcesReconciliationDemandSource _composeSourcesReconciliationDemands(
   Ref ref,
   SourcesReconciliationDemandSource eventDemands,
   PlatformStorageReconciliationDemandSource storageDemands,
+  ApplicationLifecycleReconciliationDemandSource lifecycleDemands,
 ) {
   final merged = StreamController<SourcesReconciliationDemand>.broadcast();
   final eventSubscription = eventDemands.stream.listen(merged.add);
   final storageSubscription = storageDemands.stream.listen((_) {
     merged.add(const SourcesReconciliationDemand.rootsChanged());
   });
+  final lifecycleSubscription = lifecycleDemands.stream.listen((_) {
+    merged.add(const SourcesReconciliationDemand.lifecycleChanged());
+  });
   ref.onDispose(() {
     unawaited(eventSubscription.cancel());
     unawaited(storageSubscription.cancel());
+    unawaited(lifecycleSubscription.cancel());
     unawaited(merged.close());
   });
   return SourcesReconciliationDemandSource(merged.stream);
+}
+
+/// Combines runtime-event and app-lifecycle invalidations for Library.
+LibraryReconciliationDemandSource _composeLibraryReconciliationDemands(
+  Ref ref,
+  LibraryReconciliationDemandSource eventDemands,
+  ApplicationLifecycleReconciliationDemandSource lifecycleDemands,
+) {
+  final merged = StreamController<LibraryReconciliationDemand>.broadcast();
+  final eventSubscription = eventDemands.stream.listen(merged.add);
+  final lifecycleSubscription = lifecycleDemands.stream.listen((_) {
+    merged.add(const LibraryReconciliationDemand.listChanged());
+  });
+  ref.onDispose(() {
+    unawaited(eventSubscription.cancel());
+    unawaited(lifecycleSubscription.cancel());
+    unawaited(merged.close());
+  });
+  return LibraryReconciliationDemandSource(merged.stream);
+}
+
+/// Combines runtime-event and app-lifecycle invalidations for Jobs.
+JobsReconciliationDemandSource _composeJobsReconciliationDemands(
+  Ref ref,
+  JobsReconciliationDemandSource eventDemands,
+  ApplicationLifecycleReconciliationDemandSource lifecycleDemands,
+) {
+  final merged = StreamController<JobsReconciliationDemand>.broadcast();
+  final eventSubscription = eventDemands.stream.listen(merged.add);
+  final lifecycleSubscription = lifecycleDemands.stream.listen((_) {
+    merged.add(const JobsReconciliationDemand.listChanged());
+  });
+  ref.onDispose(() {
+    unawaited(eventSubscription.cancel());
+    unawaited(lifecycleSubscription.cancel());
+    unawaited(merged.close());
+  });
+  return JobsReconciliationDemandSource(merged.stream);
 }

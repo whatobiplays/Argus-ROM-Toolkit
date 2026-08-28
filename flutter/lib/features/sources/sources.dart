@@ -4,6 +4,7 @@ library;
 export 'application/sources_state.dart'
     show
         SourcesReconciliationDemand,
+        SourcesReconciliationDemandLifecycleChanged,
         SourcesReconciliationDemandRootChanged,
         SourcesReconciliationDemandRootsChanged,
         SourcesReconciliationDemandSourceChanged,

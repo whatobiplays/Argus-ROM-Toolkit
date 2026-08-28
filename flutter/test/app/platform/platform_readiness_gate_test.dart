@@ -1,6 +1,7 @@
 import 'package:argus/app/platform/application/platform_host_api.dart';
 import 'package:argus/app/platform/application/platform_readiness_controller.dart';
 import 'package:argus/app/platform/presentation/platform_readiness_gate.dart';
+import 'package:argus/app/bootstrap/application_lifecycle_coordinator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,9 +25,14 @@ void main() {
     _CountingChild.buildCount = 0;
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [platformHostApiProvider.overrideWithValue(api)],
-        child: const MaterialApp(
-          home: PlatformReadinessGate(child: _CountingChild()),
+        overrides: [
+          platformHostApiProvider.overrideWithValue(api),
+          platformReadinessRequiredProvider.overrideWithValue(true),
+        ],
+        child: const _LifecycleOwner(
+          child: MaterialApp(
+            home: PlatformReadinessGate(child: _CountingChild()),
+          ),
         ),
       ),
     );
@@ -159,6 +165,18 @@ final class _CountingChild extends StatelessWidget {
   Widget build(BuildContext context) {
     buildCount++;
     return const ColoredBox(color: Color(0xFF00FF00));
+  }
+}
+
+final class _LifecycleOwner extends ConsumerWidget {
+  const _LifecycleOwner({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(applicationLifecycleCoordinatorProvider);
+    return child;
   }
 }
 

@@ -8,9 +8,11 @@ use argus_application::{
     LibraryScanAdmissionContextRepository, LibraryScanAllRequestIdentity,
     LibraryScanInvocationKind, LibraryScanRecoveryHandler, LibraryScanTargetKind,
     LibraryScanTargetRepository, LibrarySourceRepository, NewJobRun, NewLibraryRoot,
-    NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, OperationContext,
-    OperationDetail, OperationName, RootLocator, ScanRunId, ScanRunRepository, ScanRunStatus,
-    StaleLibraryScanQueries, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
+    NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, OPERATION_TYPE_GAME_REFRESH,
+    OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
+    OPERATION_TYPE_LIBRARY_SCAN, OperationContext, OperationDetail, OperationName, RootLocator,
+    ScanRunId, ScanRunRepository, ScanRunStatus, StaleLibraryScanQueries, StaleOperationQueries,
+    StaleOperationRecoveryHandler, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
 };
 use argus_infrastructure::sqlite::{
     SqliteDatabaseExecutor, SqliteJobsQueries, SqliteLibraryRootQueries,
@@ -39,6 +41,15 @@ fn make_active_job(
     executor: &SqliteDatabaseExecutor,
     cancellation: bool,
 ) -> (LibraryRootId, JobRunId, ScanRunId) {
+    make_active_operation(executor, OPERATION_TYPE_LIBRARY_SCAN, cancellation)
+}
+
+fn make_active_operation(
+    executor: &SqliteDatabaseExecutor,
+    operation_type: &str,
+    cancellation: bool,
+) -> (LibraryRootId, JobRunId, ScanRunId) {
+    let operation_type = operation_type.to_owned();
     executor
         .execute(&context(), move |mut scope| {
             let source = scope.library_source().ensure_local_filesystem_source()?;
@@ -50,20 +61,31 @@ fn make_active_job(
                 LibraryRootAvailability::Available,
                 1,
             ))?;
+            let is_library_refresh = operation_type == OPERATION_TYPE_LIBRARY_REFRESH;
+            let invocation_kind = if is_library_refresh {
+                LibraryScanInvocationKind::InitialLibraryRefresh
+            } else {
+                LibraryScanInvocationKind::InitialScanAll
+            };
             let job = scope
                 .job_runs()
-                .insert(NewJobRun::new("library_scan", 1_000))?;
+                .insert(NewJobRun::new(operation_type.clone(), 1_000))?;
             scope
                 .job_runs()
                 .set_state(job, JobRunState::Running, 1_001)?;
-            scope.library_scan_admission_context().insert(
+            let admission_context = if is_library_refresh {
+                NewLibraryScanAdmissionContext::new(job, invocation_kind, None)
+            } else {
                 NewLibraryScanAdmissionContext::with_scan_all_request_identity(
                     job,
-                    LibraryScanInvocationKind::InitialScanAll,
+                    invocation_kind,
                     None,
                     request_identity(&format!("recovery-{job}")),
-                ),
-            )?;
+                )
+            };
+            scope
+                .library_scan_admission_context()
+                .insert(admission_context)?;
             let scan = scope.scan_runs().insert(NewScanRun::new(
                 job,
                 root,
@@ -289,4 +311,145 @@ fn startup_recovery_failure_prevents_ready() {
             .lifecycle(),
         RuntimeLifecycle::StartupFailed
     );
+}
+
+#[test]
+fn generic_startup_recovery_terminalizes_every_supported_operation_type() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
+    let operation_types = [
+        OPERATION_TYPE_LIBRARY_SCAN,
+        OPERATION_TYPE_LIBRARY_REFRESH,
+        OPERATION_TYPE_GAME_REFRESH,
+        OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
+    ];
+    let job_ids = executor
+        .execute(&context(), move |mut scope| {
+            let mut job_ids = Vec::new();
+            for (index, operation_type) in operation_types.iter().enumerate() {
+                let job = scope
+                    .job_runs()
+                    .insert(NewJobRun::new(*operation_type, 2_000 + index as i64))?;
+                scope
+                    .job_runs()
+                    .set_state(job, JobRunState::Running, 2_001 + index as i64)?;
+                job_ids.push(job);
+            }
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>(job_ids)
+        })
+        .expect("seed supported operation types");
+
+    let queries = SqliteJobsQueries::new(executor.clone());
+    let stale = queries
+        .list_stale_operation_jobs(&context())
+        .expect("list generic stale jobs");
+    assert_eq!(stale.len(), operation_types.len());
+    assert_eq!(
+        stale
+            .iter()
+            .map(|job| job.operation_type())
+            .collect::<Vec<_>>(),
+        operation_types.to_vec()
+    );
+
+    StaleOperationRecoveryHandler::new(queries, executor.clone())
+        .handle(&context())
+        .expect("generic recovery");
+
+    let connection = rusqlite::Connection::open(directory.path().join("argus.sqlite3"))
+        .expect("inspect database");
+    for job_id in job_ids {
+        let state: String = connection
+            .query_row(
+                "SELECT state FROM job_run WHERE job_run_id = ?1",
+                [job_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("read recovered state");
+        assert_eq!(state, "abandoned");
+    }
+    drop(connection);
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn generic_recovery_reconciles_running_library_refresh_children() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
+    let (root, job, scan) = make_active_operation(&executor, OPERATION_TYPE_LIBRARY_REFRESH, false);
+
+    StaleOperationRecoveryHandler::new(SqliteJobsQueries::new(executor.clone()), executor.clone())
+        .handle(&context())
+        .expect("generic recovery");
+
+    let detail = SqliteJobsQueries::new(executor.clone())
+        .get_job(&context(), job)
+        .expect("get job")
+        .expect("known job");
+    assert_eq!(detail.job().state(), JobRunState::Abandoned);
+    let OperationDetail::LibraryRefresh(operation) = detail.operation_detail() else {
+        panic!("expected library refresh operation detail");
+    };
+    assert_eq!(
+        operation
+            .scan_runs()
+            .iter()
+            .find(|run| run.scan_run_id() == scan)
+            .expect("recovered child")
+            .status(),
+        ScanRunStatus::Abandoned
+    );
+
+    let root_projection = SqliteLibraryRootQueries::new(executor.clone())
+        .get(&context(), root)
+        .expect("root query")
+        .expect("known root");
+    assert_eq!(
+        root_projection.last_scan().expect("last scan").status(),
+        LibraryRootLastScanStatus::Abandoned
+    );
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn generic_recovery_honors_cancellation_for_library_refresh_children() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
+    let (root, job, scan) = make_active_operation(&executor, OPERATION_TYPE_LIBRARY_REFRESH, true);
+
+    StaleOperationRecoveryHandler::new(SqliteJobsQueries::new(executor.clone()), executor.clone())
+        .handle(&context())
+        .expect("generic recovery");
+
+    let detail = SqliteJobsQueries::new(executor.clone())
+        .get_job(&context(), job)
+        .expect("get job")
+        .expect("known job");
+    assert_eq!(detail.job().state(), JobRunState::Cancelled);
+    let OperationDetail::LibraryRefresh(operation) = detail.operation_detail() else {
+        panic!("expected library refresh operation detail");
+    };
+    assert_eq!(
+        operation
+            .scan_runs()
+            .iter()
+            .find(|run| run.scan_run_id() == scan)
+            .expect("recovered child")
+            .status(),
+        ScanRunStatus::Cancelled
+    );
+
+    let root_projection = SqliteLibraryRootQueries::new(executor.clone())
+        .get(&context(), root)
+        .expect("root query")
+        .expect("known root");
+    assert_eq!(
+        root_projection.last_scan().expect("last scan").status(),
+        LibraryRootLastScanStatus::Cancelled
+    );
+    executor.shutdown().expect("shutdown");
 }

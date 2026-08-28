@@ -306,6 +306,8 @@ class SourcesRootListController extends _$SourcesRootListController {
     final subscription = source.stream.listen((demand) {
       if (token != _demandToken) return;
       switch (demand) {
+        case SourcesReconciliationDemandLifecycleChanged():
+          unawaited(refresh());
         case SourcesReconciliationDemandRootsChanged():
           unawaited(refresh());
         case SourcesReconciliationDemandRootChanged():

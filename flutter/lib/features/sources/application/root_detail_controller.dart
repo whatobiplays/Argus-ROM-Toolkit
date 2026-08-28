@@ -403,6 +403,8 @@ class SourcesRootDetailController extends _$SourcesRootDetailController {
     final subscription = source.stream.listen((demand) {
       if (token != _demandToken) return;
       switch (demand) {
+        case SourcesReconciliationDemandLifecycleChanged():
+          unawaited(_readAuthoritative(rootId));
         case SourcesReconciliationDemandRootsChanged():
           unawaited(_readAuthoritative(rootId));
         case SourcesReconciliationDemandRootChanged(:final libraryRootId):

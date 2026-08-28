@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use argus_application::{
     ApplicationError, ArchitectureClass, DiagnosticStage, ErrorCode, FailureRole,
-    GetAppearanceSettingsQuery, JobsService, LibraryScanRecoveryHandler, LibraryService, LogLevel,
-    OperationContext, PathClass, PlatformClass, RetryPolicy, SafeContext, SafeContextField,
-    SafeContextValue, SettingsService, StartupCollector, TraceEventPhase, TraceId,
+    GetAppearanceSettingsQuery, JobsService, LibraryService, LogLevel, OperationContext, PathClass,
+    PlatformClass, RetryPolicy, SafeContext, SafeContextField, SafeContextValue, SettingsService,
+    StaleOperationRecoveryHandler, StartupCollector, TraceEventPhase, TraceId,
 };
 use argus_infrastructure::artwork_store::ArtworkObjectStore;
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as InfraLocalFilesystemProvider;
@@ -461,7 +461,7 @@ impl StartupCoordinator {
             self.resources.unit_of_work = Some(unit_of_work);
             self.resources.jobs_service = Some(jobs_service);
             self.resources.library_service = Some(library_service);
-            LibraryScanRecoveryHandler::new(
+            StaleOperationRecoveryHandler::new(
                 SqliteJobsQueries::new(executor.clone()),
                 self.resources
                     .unit_of_work

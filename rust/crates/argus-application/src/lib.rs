@@ -85,8 +85,9 @@ pub use jobs::{
     RetryJobResult, RetryNotAdmittedReason, ScanAdmissionReference, ScanProgressFacts,
     ScanRunProjection, ScanRunRepository, ScanRunStatus, ScanRunStatusParseError,
     SourceEntryCoordinates, SourceEntryRecord, SourceEntryRepository, StaleLibraryScanJob,
-    StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
-    StartLibraryScanResult, aggregate_library_scan_state, evaluate_retry_eligibility,
+    StaleLibraryScanQueries, StaleLibraryScanRun, StaleOperationJob, StaleOperationQueries,
+    StaleOperationRecoveryHandler, StartLibraryScanAllResult, StartLibraryScanResult,
+    aggregate_library_scan_state, evaluate_retry_eligibility,
     evaluate_retry_eligibility_with_trace,
 };
 pub use library::{

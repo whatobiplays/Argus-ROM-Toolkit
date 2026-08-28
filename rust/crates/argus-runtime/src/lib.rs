@@ -2194,18 +2194,24 @@ impl KernelBootstrap {
             })
             .map_err(|error| map_application_port_error(context.trace_id(), error))?;
 
-        let credential_readiness = {
-            let mut service = self.credential_service.lock().map_err(|_| {
-                application_error_from_code(ErrorCode::InternalUnexpected, context.trace_id())
-            })?;
-            match service.refresh_readiness_from_store() {
-                Ok(readiness) => readiness,
-                Err(_) => service.readiness(),
-            }
+        // A missing provider-session composition cannot consume credential
+        // readiness. Avoid touching the platform secure store in that case;
+        // real provider sessions still use the existing readiness path.
+        let readiness = if sessions.is_empty() {
+            Vec::new()
+        } else {
+            let credential_readiness = {
+                let mut service = self.credential_service.lock().map_err(|_| {
+                    application_error_from_code(ErrorCode::InternalUnexpected, context.trace_id())
+                })?;
+                match service.refresh_readiness_from_store() {
+                    Ok(readiness) => readiness,
+                    Err(_) => service.readiness(),
+                }
+            };
+            self.metadata_provider_registry
+                .readiness_projection(&provider_settings, credential_readiness)
         };
-        let readiness = self
-            .metadata_provider_registry
-            .readiness_projection(&provider_settings, credential_readiness);
         let metadata_policy = MetadataResolutionPolicy::new(
             provider_settings.enabled().clone(),
             metadata_settings.preferred_regions().to_vec(),

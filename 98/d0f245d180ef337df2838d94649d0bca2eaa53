@@ -1,0 +1,45 @@
+flutter/lib/features/sources/application/source_hierarchy_controller.dart
+  s_5babd7b138287b::t_8408ce1481c41a 50-52,313-337
+flutter/test/features/sources/local_filesystem_browser_controller_test.dart
+  s_5babd7b138287b::t_f5a33485520578 263-308
+flutter/lib/app/bootstrap/app_bootstrap.dart
+  s_5babd7b138287b::t_8b4caee7f2a493 260
+flutter/lib/features/sources/application/source_hierarchy_controller.g.dart
+  s_5babd7b138287b::t_e40aa89baf2a10 87
+rust/crates/argus-application/src/jobs.rs
+  s_5babd7b138287b::t_896c8f6fa916a3 3518-3550,3554-3584
+  s_5babd7b138287b::t_7a84e698df3ddd 3551-3553
+  s_5babd7b138287b::t_b59f25fcc77bd1 3637-3643
+  s_5babd7b138287b::t_70d937ac698cfb 3495-3502
+flutter/test/features/sources/sources_test_fakes.dart
+  s_5babd7b138287b::t_8408ce1481c41a 56,229
+  s_5babd7b138287b::t_8b4caee7f2a493 226-228
+flutter/test/features/sources/source_hierarchy_controller_test.dart
+  s_5babd7b138287b::t_8408ce1481c41a 258
+  s_5babd7b138287b::t_f5a33485520578 253-257,259-283
+scripts/run_library_android_qualification.sh
+  s_5babd7b138287b::t_0b1c7854545658 154
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_5babd7b138287b::t_d03f8d257e7047 306-316
+flutter/lib/features/sources/application/local_filesystem_browser_controller.dart
+  s_5babd7b138287b::t_8408ce1481c41a 42,244-249
+  s_5babd7b138287b::t_59d2d8cefe672b 65,200,218
+flutter/lib/features/sources/application/local_filesystem_browser_controller.g.dart
+  s_5babd7b138287b::t_e40aa89baf2a10 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "98d0f245d180ef337df2838d94649d0bca2eaa53",
+  "prompts": {},
+  "sessions": {
+    "s_5babd7b138287b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0443c-1f5c-7363-bcbd-09f37feabf01",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

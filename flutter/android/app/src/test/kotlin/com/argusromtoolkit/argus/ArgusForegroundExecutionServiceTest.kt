@@ -196,6 +196,70 @@ class ArgusForegroundExecutionServiceTest {
         assertEquals(1, stopRequests)
     }
 
+    @Test
+    fun qualificationCanRejectExactlyOneNextServiceStart() {
+        var startRequests = 0
+        val host = ArgusForegroundExecutionHost(
+            { startRequests++ },
+            {},
+        )
+        host.rejectNextStartForQualification()
+
+        val acquisition = RecordingResult()
+        host.acquireLibraryScanLease(acquisition)
+
+        assertEquals(0, startRequests)
+        assertEquals(
+            ArgusForegroundExecutionHost.ERROR_FOREGROUND_SERVICE_UNAVAILABLE,
+            acquisition.errorCode,
+        )
+
+        val secondAcquisition = RecordingResult()
+        host.acquireLibraryScanLease(secondAcquisition)
+        assertEquals(1, startRequests)
+        assertEquals(0, secondAcquisition.errorCode?.length ?: 0)
+    }
+
+    @Test
+    fun qualificationTimeoutSignalsTheLiveExecutionHost() {
+        val host = ArgusForegroundExecutionHost({}, {})
+        val service = ArgusForegroundExecutionService()
+        val events = RecordingEventSink()
+        host.setEventSink(events)
+        val acquisition = RecordingResult()
+
+        host.acquireLibraryScanLease(acquisition)
+        host.onServiceCreated(service)
+        host.onServiceForegroundReady(service)
+
+        assertEquals(true, host.triggerTimeoutForQualification())
+        assertEquals(
+            listOf(ArgusForegroundExecutionHost.EVENT_TIMED_OUT),
+            events.events.map { it[ArgusForegroundExecutionHost.KEY_EVENT] },
+        )
+        assertEquals(false, host.triggerTimeoutForQualification())
+    }
+
+    @Test
+    fun qualificationHostLossSignalsUnexpectedServiceDestruction() {
+        val host = ArgusForegroundExecutionHost({}, {})
+        val service = ArgusForegroundExecutionService()
+        val events = RecordingEventSink()
+        host.setEventSink(events)
+        val acquisition = RecordingResult()
+
+        host.acquireLibraryScanLease(acquisition)
+        host.onServiceCreated(service)
+        host.onServiceForegroundReady(service)
+
+        assertEquals(true, host.triggerHostLossForQualification())
+        assertEquals(
+            listOf(ArgusForegroundExecutionHost.EVENT_HOST_LOST),
+            events.events.map { it[ArgusForegroundExecutionHost.KEY_EVENT] },
+        )
+        assertEquals(false, host.triggerHostLossForQualification())
+    }
+
     private class RecordingResult : MethodChannel.Result {
         var successCalls = 0
         var successValue: Any? = null

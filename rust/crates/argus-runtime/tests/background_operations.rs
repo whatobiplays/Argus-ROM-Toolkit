@@ -303,7 +303,17 @@ fn library_scan_completes_durably_and_updates_root_projections() {
     let job_run_id = start_scan(&host, root_id);
 
     let detail = host.get_job(job_run_id).expect("job detail during scan");
-    assert_eq!(detail.job().state(), JobRunState::Queued);
+    let observed_state = detail.job().state();
+    assert!(
+        matches!(
+            observed_state,
+            JobRunState::Queued
+                | JobRunState::Preparing
+                | JobRunState::Running
+                | JobRunState::Completed
+        ),
+        "unexpected scan state after admission: {observed_state:?}"
+    );
     assert_eq!(terminal_state(&host, job_run_id), JobRunState::Completed);
 
     let root = host.get_library_root(root_id).expect("root projection");

@@ -41,6 +41,7 @@ export 'application/platform_readiness_controller.dart'
         PlatformStorageReconciliationReason,
         platformHostApiProvider,
         platformMountedVolumesReaderProvider,
+        platformReadinessRequiredProvider,
         platformReadinessControllerProvider,
         platformStorageReconciliationDemandProvider;
 export 'application/platform_readiness_state.dart'

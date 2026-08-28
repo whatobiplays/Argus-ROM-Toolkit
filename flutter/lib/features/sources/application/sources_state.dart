@@ -29,6 +29,10 @@ sealed class SourcesRuntimeContext with _$SourcesRuntimeContext {
 /// demand as "re-query authoritative Sources state".
 @freezed
 sealed class SourcesReconciliationDemand with _$SourcesReconciliationDemand {
+  /// The app resumed and every loaded Sources scope may need reconciliation.
+  const factory SourcesReconciliationDemand.lifecycleChanged() =
+      SourcesReconciliationDemandLifecycleChanged;
+
   /// The configured root list or its authoritative ordering may have changed.
   const factory SourcesReconciliationDemand.rootsChanged() =
       SourcesReconciliationDemandRootsChanged;

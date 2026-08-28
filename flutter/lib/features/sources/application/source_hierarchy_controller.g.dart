@@ -84,7 +84,7 @@ final class SourceHierarchyControllerProvider
 }
 
 String _$sourceHierarchyControllerHash() =>
-    r'b7e9a15781e8e39b01021899fd69a7aad3d3a895';
+    r'6e73b2d4169e604216c85943fab24c67229313bb';
 
 /// Query-authoritative incremental hierarchy controller keyed by root.
 ///

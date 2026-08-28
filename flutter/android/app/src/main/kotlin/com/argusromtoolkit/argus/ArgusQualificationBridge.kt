@@ -6,7 +6,8 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Qualification-only Android host evidence channel for P02-006.
+ * Qualification-only Android host evidence channel for the repository's
+ * lifecycle and execution-host integration harness.
  *
  * Exposes an opaque per-Activity-instance identity to the repository-owned
  * integration-test harness so rotation and lifecycle scenarios can tell
@@ -16,7 +17,10 @@ import io.flutter.plugin.common.MethodChannel
  */
 class ArgusQualificationBridge(
     messenger: BinaryMessenger,
+    private val foregroundExecutionHost: ArgusForegroundExecutionHost? = null,
+    private val isDebugBuild: Boolean = false,
 ) : MethodChannel.MethodCallHandler {
+    private var attachedActivity: Activity? = null
     private var activityInstanceId: String? = null
 
     init {
@@ -24,11 +28,15 @@ class ArgusQualificationBridge(
     }
 
     fun attachActivity(activity: Activity, instanceId: String) {
+        attachedActivity = activity
         activityInstanceId = instanceId
     }
 
     fun detachActivity(activity: Activity) {
-        activityInstanceId = null
+        if (attachedActivity === activity) {
+            attachedActivity = null
+            activityInstanceId = null
+        }
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -43,6 +51,32 @@ class ArgusQualificationBridge(
                     )
                 } else {
                     result.success(instanceId)
+                }
+            }
+            "rejectNextExecutionHostStart" -> {
+                if (!isDebugBuild || foregroundExecutionHost == null) {
+                    result.notImplemented()
+                } else {
+                    foregroundExecutionHost.rejectNextStartForQualification()
+                    result.success(null)
+                }
+            }
+            "triggerExecutionHostTimeout" -> {
+                if (!isDebugBuild || foregroundExecutionHost == null) {
+                    result.notImplemented()
+                } else {
+                    result.success(
+                        foregroundExecutionHost.triggerTimeoutForQualification(),
+                    )
+                }
+            }
+            "triggerExecutionHostLoss" -> {
+                if (!isDebugBuild || foregroundExecutionHost == null) {
+                    result.notImplemented()
+                } else {
+                    result.success(
+                        foregroundExecutionHost.triggerHostLossForQualification(),
+                    )
                 }
             }
             else -> result.notImplemented()

@@ -73,7 +73,7 @@ final class SourceEntryDetailControllerProvider
 }
 
 String _$sourceEntryDetailControllerHash() =>
-    r'ddf4fa46d94e697a319ae5e726293c1170f38b83';
+    r'9ff0636b8a416375898a14c527a81a6bd0607a17';
 
 /// Focused authoritative detail for one selected source entry.
 ///

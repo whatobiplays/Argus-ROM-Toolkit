@@ -1,6 +1,7 @@
 package com.argusromtoolkit.argus
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
 import java.io.File
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
@@ -71,6 +72,8 @@ class ArgusApplication : Application() {
         )
         qualificationBridge = ArgusQualificationBridge(
             messenger = flutterEngine.dartExecutor.binaryMessenger,
+            foregroundExecutionHost = foregroundExecutionHost,
+            isDebugBuild = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
         )
         flutterEngine.dartExecutor.executeDartEntrypoint(
             DartExecutor.DartEntrypoint.createDefault(),

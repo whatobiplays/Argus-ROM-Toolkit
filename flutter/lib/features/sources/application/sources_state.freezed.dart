@@ -313,10 +313,11 @@ extension SourcesReconciliationDemandPatterns on SourcesReconciliationDemand {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,TResult Function( SourcesReconciliationDemandSourceChanged value)?  sourceChanged,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SourcesReconciliationDemandLifecycleChanged value)?  lifecycleChanged,TResult Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,TResult Function( SourcesReconciliationDemandSourceChanged value)?  sourceChanged,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
+case SourcesReconciliationDemandLifecycleChanged() when lifecycleChanged != null:
+return lifecycleChanged(_that);case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged(_that);case SourcesReconciliationDemandRootChanged() when rootChanged != null:
 return rootChanged(_that);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
 return sourceChanged(_that);case _:
@@ -337,10 +338,11 @@ return sourceChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourcesReconciliationDemandRootsChanged value)  rootsChanged,required TResult Function( SourcesReconciliationDemandRootChanged value)  rootChanged,required TResult Function( SourcesReconciliationDemandSourceChanged value)  sourceChanged,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SourcesReconciliationDemandLifecycleChanged value)  lifecycleChanged,required TResult Function( SourcesReconciliationDemandRootsChanged value)  rootsChanged,required TResult Function( SourcesReconciliationDemandRootChanged value)  rootChanged,required TResult Function( SourcesReconciliationDemandSourceChanged value)  sourceChanged,}){
 final _that = this;
 switch (_that) {
-case SourcesReconciliationDemandRootsChanged():
+case SourcesReconciliationDemandLifecycleChanged():
+return lifecycleChanged(_that);case SourcesReconciliationDemandRootsChanged():
 return rootsChanged(_that);case SourcesReconciliationDemandRootChanged():
 return rootChanged(_that);case SourcesReconciliationDemandSourceChanged():
 return sourceChanged(_that);}
@@ -357,10 +359,11 @@ return sourceChanged(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult? Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,TResult? Function( SourcesReconciliationDemandSourceChanged value)?  sourceChanged,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SourcesReconciliationDemandLifecycleChanged value)?  lifecycleChanged,TResult? Function( SourcesReconciliationDemandRootsChanged value)?  rootsChanged,TResult? Function( SourcesReconciliationDemandRootChanged value)?  rootChanged,TResult? Function( SourcesReconciliationDemandSourceChanged value)?  sourceChanged,}){
 final _that = this;
 switch (_that) {
-case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
+case SourcesReconciliationDemandLifecycleChanged() when lifecycleChanged != null:
+return lifecycleChanged(_that);case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged(_that);case SourcesReconciliationDemandRootChanged() when rootChanged != null:
 return rootChanged(_that);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
 return sourceChanged(_that);case _:
@@ -380,9 +383,10 @@ return sourceChanged(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  rootsChanged,TResult Function( LibraryRootId libraryRootId)?  rootChanged,TResult Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)?  sourceChanged,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  lifecycleChanged,TResult Function()?  rootsChanged,TResult Function( LibraryRootId libraryRootId)?  rootChanged,TResult Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)?  sourceChanged,required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
+case SourcesReconciliationDemandLifecycleChanged() when lifecycleChanged != null:
+return lifecycleChanged();case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged();case SourcesReconciliationDemandRootChanged() when rootChanged != null:
 return rootChanged(_that.libraryRootId);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
 return sourceChanged(_that.libraryRootId,_that.scope);case _:
@@ -403,9 +407,10 @@ return sourceChanged(_that.libraryRootId,_that.scope);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  rootsChanged,required TResult Function( LibraryRootId libraryRootId)  rootChanged,required TResult Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)  sourceChanged,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  lifecycleChanged,required TResult Function()  rootsChanged,required TResult Function( LibraryRootId libraryRootId)  rootChanged,required TResult Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)  sourceChanged,}) {final _that = this;
 switch (_that) {
-case SourcesReconciliationDemandRootsChanged():
+case SourcesReconciliationDemandLifecycleChanged():
+return lifecycleChanged();case SourcesReconciliationDemandRootsChanged():
 return rootsChanged();case SourcesReconciliationDemandRootChanged():
 return rootChanged(_that.libraryRootId);case SourcesReconciliationDemandSourceChanged():
 return sourceChanged(_that.libraryRootId,_that.scope);}
@@ -422,9 +427,10 @@ return sourceChanged(_that.libraryRootId,_that.scope);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  rootsChanged,TResult? Function( LibraryRootId libraryRootId)?  rootChanged,TResult? Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)?  sourceChanged,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  lifecycleChanged,TResult? Function()?  rootsChanged,TResult? Function( LibraryRootId libraryRootId)?  rootChanged,TResult? Function( LibraryRootId libraryRootId,  SourceEntriesChangeScope scope)?  sourceChanged,}) {final _that = this;
 switch (_that) {
-case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
+case SourcesReconciliationDemandLifecycleChanged() when lifecycleChanged != null:
+return lifecycleChanged();case SourcesReconciliationDemandRootsChanged() when rootsChanged != null:
 return rootsChanged();case SourcesReconciliationDemandRootChanged() when rootChanged != null:
 return rootChanged(_that.libraryRootId);case SourcesReconciliationDemandSourceChanged() when sourceChanged != null:
 return sourceChanged(_that.libraryRootId,_that.scope);case _:
@@ -434,6 +440,38 @@ return sourceChanged(_that.libraryRootId,_that.scope);case _:
 }
 
 }
+
+/// @nodoc
+
+
+class SourcesReconciliationDemandLifecycleChanged implements SourcesReconciliationDemand {
+  const SourcesReconciliationDemandLifecycleChanged();
+
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SourcesReconciliationDemandLifecycleChanged);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SourcesReconciliationDemand.lifecycleChanged()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 

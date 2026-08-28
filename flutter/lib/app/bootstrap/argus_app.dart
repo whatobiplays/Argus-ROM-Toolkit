@@ -1,4 +1,5 @@
 import 'package:argus/app/bootstrap/application_presentation.dart';
+import 'package:argus/app/bootstrap/application_lifecycle_coordinator.dart';
 import 'package:argus/app/bootstrap/application_presentation_gate.dart';
 import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/app/routing/app_router.dart';
@@ -18,6 +19,9 @@ class ArgusApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Keep the sole app-lifetime lifecycle observer alive independently of
+    // whichever feature route is currently visible.
+    ref.watch(applicationLifecycleCoordinatorProvider);
     final router = ref.watch(appRouterProvider);
     final platformReady =
         !platformReadinessRequired ||

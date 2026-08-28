@@ -47,6 +47,9 @@ class SourceHierarchyController extends _$SourceHierarchyController {
   final Set<String> _validatedPresentInGeneration = {};
   SourceHierarchyState? _lastPublished;
   AsyncValue<SourceHierarchyState>? _lastBuildValue;
+  Future<void>? _rootScopeLoadInFlight;
+  LibraryRootId? _rootScopeLoadRootId;
+  int? _rootScopeLoadGeneration;
 
   @override
   AsyncValue<SourceHierarchyState> build(LibraryRootId rootId) {
@@ -308,6 +311,31 @@ class SourceHierarchyController extends _$SourceHierarchyController {
 
   Future<void> _loadRootScope(LibraryRootId rootId) async {
     if (!ref.mounted) return;
+    final pending = _rootScopeLoadInFlight;
+    if (pending != null &&
+        _rootScopeLoadRootId == rootId &&
+        _rootScopeLoadGeneration == _generation) {
+      await pending;
+      return;
+    }
+    final requestGeneration = _generation;
+    final request = _loadRootScopeRequest(rootId);
+    _rootScopeLoadInFlight = request;
+    _rootScopeLoadRootId = rootId;
+    _rootScopeLoadGeneration = requestGeneration;
+    try {
+      await request;
+    } finally {
+      if (identical(_rootScopeLoadInFlight, request)) {
+        _rootScopeLoadInFlight = null;
+        _rootScopeLoadRootId = null;
+        _rootScopeLoadGeneration = null;
+      }
+    }
+  }
+
+  Future<void> _loadRootScopeRequest(LibraryRootId rootId) async {
+    if (!ref.mounted) return;
     final generation = _generation;
     final parentToken = _beginParentRequest(_rootScopeKey);
     try {
@@ -483,6 +511,10 @@ class SourceHierarchyController extends _$SourceHierarchyController {
     final token = _demandToken;
     final subscription = source.stream.listen((demand) {
       if (token != _demandToken || !ref.mounted) return;
+      if (demand is SourcesReconciliationDemandLifecycleChanged) {
+        unawaited(refresh(rootId));
+        return;
+      }
       if (demand is! SourcesReconciliationDemandSourceChanged) return;
       if (demand.libraryRootId != rootId) return;
       switch (demand.scope) {

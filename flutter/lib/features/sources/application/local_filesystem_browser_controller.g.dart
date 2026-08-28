@@ -54,7 +54,7 @@ final class LocalFilesystemBrowserControllerProvider
 }
 
 String _$localFilesystemBrowserControllerHash() =>
-    r'0a91bc5fcecbb69d6369dfd62e2b282ed5e60aba';
+    r'09b0d56276fb57bbca5d2d210bf84dbf81f1a68a';
 
 /// Owns browse navigation while retaining provider-issued identities and
 /// cursors exactly as returned by the Sources API.

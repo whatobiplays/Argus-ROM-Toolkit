@@ -4,8 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../application/platform_readiness_controller.dart';
 import '../application/platform_readiness_state.dart';
 
-/// Pre-startup Material surface that reconciles live OS readiness on every
-/// resume and only then builds the backend-dependent child subtree.
+/// Pre-startup Material surface that renders the current platform-readiness
+/// state and only builds the backend-dependent child subtree after admission.
+/// App-lifecycle observation is centralized in the application coordinator.
 class PlatformReadinessGate extends ConsumerStatefulWidget {
   const PlatformReadinessGate({required this.child, super.key});
 
@@ -16,27 +17,7 @@ class PlatformReadinessGate extends ConsumerStatefulWidget {
       _PlatformReadinessGateState();
 }
 
-class _PlatformReadinessGateState extends ConsumerState<PlatformReadinessGate>
-    with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      ref.read(platformReadinessControllerProvider.notifier).refresh();
-    }
-  }
-
+class _PlatformReadinessGateState extends ConsumerState<PlatformReadinessGate> {
   @override
   Widget build(BuildContext context) {
     final readiness = ref.watch(platformReadinessControllerProvider);

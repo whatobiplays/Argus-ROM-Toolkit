@@ -10,6 +10,7 @@ import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/app/routing/app_router.dart';
 import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
+import 'package:argus/features/library/library.dart';
 import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/sources/sources.dart';
 import '../../core/client/jobs_gateway_stub.dart';
@@ -340,6 +341,59 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Android resume coalesces storage and lifecycle Sources demands',
+    (tester) async {
+      final platformApi = _ReadinessPlatformHostApi(
+        const PlatformHostSnapshot(
+          allFilesAccessRequired: true,
+          allFilesAccessGranted: true,
+          notificationAuthorization: NotificationAuthorization.notRequired,
+          standardApplicationDataDirectory:
+              '/data/user/0/com.argusromtoolkit.argus/files/argus',
+        ),
+      );
+      final volumes = _MountedVolumesStub([
+        _volume('/storage/ABCD', '/mnt/first'),
+      ]);
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          platformHostComposition: PlatformHostComposition(
+            api: platformApi,
+            requiresReadinessGate: true,
+            localFilesystemApi: volumes,
+          ),
+          clientGatewayFactory: () => _PendingGateway(),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      final sourceDemands = <SourcesReconciliationDemand>[];
+      final subscription = container
+          .read(sourcesReconciliationDemandProvider)
+          .stream
+          .listen(sourceDemands.add);
+      addTearDown(subscription.cancel);
+
+      volumes.volumes = [_volume('/storage/ABCD', '/mnt/remounted')];
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(sourceDemands, hasLength(1));
+      expect(
+        sourceDemands.single,
+        isA<SourcesReconciliationDemandLifecycleChanged>(),
+      );
+    },
+  );
+
   test('desktop Sources capabilities retain every existing workflow', () {
     const capabilities = SourcesPresentationCapabilities();
 
@@ -361,6 +415,55 @@ void main() {
       isA<DesktopPlatformHostApi>(),
     );
     expect(container.read(standardApplicationDataDirectoryProvider), isNull);
+  });
+
+  testWidgets('resume fans one reconciliation demand through feature seams', (
+    tester,
+  ) async {
+    final pendingGateway = _PendingGateway();
+    await tester.pumpWidget(
+      ArgusBootstrap(clientGatewayFactory: () => pendingGateway),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArgusApp)),
+      listen: false,
+    );
+    final libraryDemands = <LibraryReconciliationDemand>[];
+    final librarySubscription = container
+        .read(libraryReconciliationDemandProvider)
+        .stream
+        .listen(libraryDemands.add);
+    final jobDemands = <JobsReconciliationDemand>[];
+    final jobSubscription = container
+        .read(jobsReconciliationDemandProvider)
+        .stream
+        .listen(jobDemands.add);
+    final sourceDemands = <SourcesReconciliationDemand>[];
+    final sourceSubscription = container
+        .read(sourcesReconciliationDemandProvider)
+        .stream
+        .listen(sourceDemands.add);
+    addTearDown(librarySubscription.cancel);
+    addTearDown(jobSubscription.cancel);
+    addTearDown(sourceSubscription.cancel);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    expect(libraryDemands, hasLength(1));
+    expect(
+      libraryDemands.single,
+      isA<LibraryReconciliationDemandListChanged>(),
+    );
+    expect(jobDemands, hasLength(1));
+    expect(jobDemands.single, isA<JobsReconciliationDemandListChanged>());
+    expect(sourceDemands, hasLength(1));
+    expect(
+      sourceDemands.single,
+      isA<SourcesReconciliationDemandLifecycleChanged>(),
+    );
   });
 
   testWidgets('root composition blocks until authoritative backend Ready', (

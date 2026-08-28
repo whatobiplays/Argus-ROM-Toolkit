@@ -1,6 +1,7 @@
 package com.argusromtoolkit.argus
 
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.EventChannel
@@ -42,6 +43,7 @@ class ArgusForegroundExecutionHost private constructor(
     private var eventSink: EventChannel.EventSink? = null
     private var service: ArgusForegroundExecutionService? = null
     private var projection = ForegroundExecutionProjection()
+    private var qualificationRejectNextStart = false
 
     /** Native service lifecycle owned by this application-scoped host. */
     private enum class ServiceState {
@@ -165,6 +167,49 @@ class ArgusForegroundExecutionHost private constructor(
     /** Returns the current projection for the service's initial notification. */
     fun currentProjection(): ForegroundExecutionProjection = projection
 
+    /**
+     * Requests one deterministic start rejection for the debug qualification
+     * channel. The flag is consumed by the next actual service start.
+     */
+    internal fun rejectNextStartForQualification() {
+        qualificationRejectNextStart = true
+    }
+
+    /** Triggers the same timeout callback used by the Android service. */
+    internal fun triggerTimeoutForQualification(): Boolean {
+        val current = service
+        if (current == null || serviceState != ServiceState.LIVE) return false
+        val attached = serviceIsAttached(current)
+        if (!attached ||
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM
+        ) {
+            onServiceTimeout(current)
+            if (attached) current.stopSelf()
+            return true
+        }
+        current.triggerTimeoutForQualification()
+        return true
+    }
+
+    /** Triggers the same unexpected-destruction callback used by the service. */
+    internal fun triggerHostLossForQualification(): Boolean {
+        val current = service
+        if (current == null || serviceState != ServiceState.LIVE) return false
+        if (!serviceIsAttached(current)) {
+            onServiceDestroyed(current)
+            return true
+        }
+        current.stopSelf()
+        return true
+    }
+
+    private fun serviceIsAttached(service: ArgusForegroundExecutionService): Boolean =
+        try {
+            service.application != null
+        } catch (_: RuntimeException) {
+            false
+        }
+
     private fun failPendingAcquisitions(code: String) {
         val pending = pendingAcquisitions.toMap()
         pendingAcquisitions.clear()
@@ -179,6 +224,12 @@ class ArgusForegroundExecutionHost private constructor(
         expectedServiceStop = false
         hostSignalStop = false
         serviceState = ServiceState.STARTING
+        if (qualificationRejectNextStart) {
+            qualificationRejectNextStart = false
+            serviceState = ServiceState.ABSENT
+            failPendingAcquisitions(ERROR_FOREGROUND_SERVICE_UNAVAILABLE)
+            return
+        }
         try {
             requestForegroundServiceStart()
         } catch (_: RuntimeException) {

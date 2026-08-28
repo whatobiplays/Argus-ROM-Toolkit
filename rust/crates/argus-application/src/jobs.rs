@@ -3369,6 +3369,219 @@ pub trait StaleLibraryScanQueries {
     ) -> Result<Vec<StaleLibraryScanJob>, PersistenceError>;
 }
 
+/// One stale active operation and the durable child facts needed for startup
+/// reconciliation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StaleOperationJob {
+    operation_type: String,
+    job_run_id: JobRunId,
+    state: JobRunState,
+    cancellation_requested: bool,
+    scan_runs: Vec<StaleLibraryScanRun>,
+    exclusions: Vec<LibraryScanAdmissionExclusion>,
+}
+
+impl StaleOperationJob {
+    /// Creates one stale active operation snapshot.
+    pub fn new(
+        operation_type: impl Into<String>,
+        job_run_id: JobRunId,
+        state: JobRunState,
+        cancellation_requested: bool,
+        scan_runs: Vec<StaleLibraryScanRun>,
+        exclusions: Vec<LibraryScanAdmissionExclusion>,
+    ) -> Self {
+        Self {
+            operation_type: operation_type.into(),
+            job_run_id,
+            state,
+            cancellation_requested,
+            scan_runs,
+            exclusions,
+        }
+    }
+
+    /// Returns the stable operation type.
+    pub fn operation_type(&self) -> &str {
+        &self.operation_type
+    }
+
+    /// Returns the stale operation identity.
+    pub const fn job_run_id(&self) -> JobRunId {
+        self.job_run_id
+    }
+
+    /// Returns the durable active parent state.
+    pub const fn state(&self) -> JobRunState {
+        self.state
+    }
+
+    /// Returns whether durable cancellation intent was already accepted.
+    pub const fn cancellation_requested(&self) -> bool {
+        self.cancellation_requested
+    }
+
+    /// Returns durable child scan records, when the operation owns them.
+    pub fn scan_runs(&self) -> &[StaleLibraryScanRun] {
+        &self.scan_runs
+    }
+
+    /// Returns durable admission exclusions, when the operation owns them.
+    pub fn exclusions(&self) -> &[LibraryScanAdmissionExclusion] {
+        &self.exclusions
+    }
+}
+
+/// Persistence-only query port for startup reconciliation of supported
+/// background operations.
+pub trait StaleOperationQueries {
+    /// Lists active operations that require startup reconciliation without
+    /// resolving providers or performing user-visible work.
+    fn list_stale_operation_jobs(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<StaleOperationJob>, PersistenceError>;
+}
+
+/// Persistence-only startup recovery for every supported active operation.
+pub struct StaleOperationRecoveryHandler<Q, U> {
+    queries: Q,
+    unit_of_work: U,
+}
+
+impl<Q, U> StaleOperationRecoveryHandler<Q, U> {
+    /// Composes the stale query and Unit of Work capabilities.
+    pub const fn new(queries: Q, unit_of_work: U) -> Self {
+        Self {
+            queries,
+            unit_of_work,
+        }
+    }
+}
+
+impl<Q, U> StaleOperationRecoveryHandler<Q, U>
+where
+    Q: StaleOperationQueries,
+    U: crate::UnitOfWorkFactory + Clone,
+{
+    /// Reconciles every stale supported operation and returns only after all
+    /// recovered state is coherent.
+    pub fn handle(&self, context: &OperationContext) -> Result<(), ApplicationError> {
+        let stale_jobs = self
+            .queries
+            .list_stale_operation_jobs(context)
+            .map_err(|error| map_persistence_error(context.trace_id(), error))?;
+        for job in stale_jobs {
+            self.reconcile_job(context, job)?;
+        }
+        Ok(())
+    }
+
+    fn reconcile_job(
+        &self,
+        context: &OperationContext,
+        job: StaleOperationJob,
+    ) -> Result<(), ApplicationError> {
+        let now = now_millis();
+        let cancellation_requested = job.cancellation_requested();
+        let reconciles_scan_children = matches!(
+            job.operation_type(),
+            OPERATION_TYPE_LIBRARY_SCAN | OPERATION_TYPE_LIBRARY_REFRESH
+        );
+        let exclusions_count = job.exclusions().len();
+        self.unit_of_work
+            .clone()
+            .execute(context, move |mut scope| {
+                let parent_state = if reconciles_scan_children {
+                    reconcile_stale_scan_children(
+                        &mut scope,
+                        job.scan_runs(),
+                        exclusions_count,
+                        cancellation_requested,
+                        now,
+                    )?
+                } else if cancellation_requested {
+                    JobRunState::Cancelled
+                } else {
+                    JobRunState::Abandoned
+                };
+                scope
+                    .job_runs()
+                    .set_state(job.job_run_id(), parent_state, now)?;
+                scope.commit()?;
+                Ok::<_, ApplicationPortError>(())
+            })
+            .map_err(|error| map_port_error(context.trace_id(), error))
+    }
+}
+
+/// Terminalizes stale LibraryScan children and derives their parent state from
+/// the same durable child/exclusion facts for every recovery entry point.
+fn reconcile_stale_scan_children<S>(
+    scope: &mut S,
+    scan_runs: &[StaleLibraryScanRun],
+    exclusions_count: usize,
+    cancellation_requested: bool,
+    now: i64,
+) -> Result<JobRunState, ApplicationPortError>
+where
+    S: UnitOfWork,
+{
+    if scan_runs.is_empty() && exclusions_count == 0 {
+        return Ok(if cancellation_requested {
+            JobRunState::Cancelled
+        } else {
+            JobRunState::Abandoned
+        });
+    }
+
+    let mut child_completions = Vec::with_capacity(scan_runs.len());
+    for child in scan_runs {
+        let status = if child.status() == ScanRunStatus::Running {
+            let target = if cancellation_requested {
+                ScanRunStatus::Cancelled
+            } else {
+                ScanRunStatus::Abandoned
+            };
+            let last_scan_status = if cancellation_requested {
+                LibraryRootLastScanStatus::Cancelled
+            } else {
+                LibraryRootLastScanStatus::Abandoned
+            };
+            scope
+                .scan_runs()
+                .set_status(child.scan_run_id(), target, Some(now), None)?;
+            scope.library_roots().set_last_scan(
+                child.library_root_id(),
+                Some(LibraryRootLastScanSummary::new(
+                    child.scan_run_id().to_string(),
+                    child.job_run_id().to_string(),
+                    last_scan_status,
+                    child.started_at_ms(),
+                    Some(now),
+                )),
+            )?;
+            target
+        } else {
+            child.status()
+        };
+        child_completions.push(match status {
+            ScanRunStatus::Complete => LibraryScanChildCompletion::Complete,
+            ScanRunStatus::Partial => LibraryScanChildCompletion::Partial,
+            ScanRunStatus::Failed => LibraryScanChildCompletion::Failed,
+            ScanRunStatus::Cancelled => LibraryScanChildCompletion::Cancelled,
+            ScanRunStatus::Abandoned => LibraryScanChildCompletion::Abandoned,
+            ScanRunStatus::Running => LibraryScanChildCompletion::Abandoned,
+        });
+    }
+
+    Ok(aggregate_library_scan_state(
+        child_completions.len() + exclusions_count,
+        child_completions.len(),
+        &child_completions,
+    ))
+}
+
 /// Persistence-only startup recovery for stale active LibraryScan jobs.
 ///
 /// This handler has no provider, enumeration, or scheduling capability. It
@@ -3421,56 +3634,13 @@ where
         self.unit_of_work
             .clone()
             .execute(context, move |mut scope| {
-                let mut child_statuses = Vec::with_capacity(job.scan_runs().len());
-                for child in job.scan_runs() {
-                    let status = if child.status() == ScanRunStatus::Running {
-                        let target = if cancellation_requested {
-                            ScanRunStatus::Cancelled
-                        } else {
-                            ScanRunStatus::Abandoned
-                        };
-                        scope.scan_runs().set_status(
-                            child.scan_run_id(),
-                            target,
-                            Some(now),
-                            None,
-                        )?;
-                        let last_scan_status = if cancellation_requested {
-                            LibraryRootLastScanStatus::Cancelled
-                        } else {
-                            LibraryRootLastScanStatus::Abandoned
-                        };
-                        scope.library_roots().set_last_scan(
-                            child.library_root_id(),
-                            Some(LibraryRootLastScanSummary::new(
-                                child.scan_run_id().to_string(),
-                                child.job_run_id().to_string(),
-                                last_scan_status,
-                                child.started_at_ms(),
-                                Some(now),
-                            )),
-                        )?;
-                        target
-                    } else {
-                        child.status()
-                    };
-                    child_statuses.push(status);
-                }
-                let parent_state = aggregate_library_scan_state(
-                    child_statuses.len() + exclusions_count,
-                    child_statuses.len(),
-                    &child_statuses
-                        .iter()
-                        .map(|status| match *status {
-                            ScanRunStatus::Complete => LibraryScanChildCompletion::Complete,
-                            ScanRunStatus::Partial => LibraryScanChildCompletion::Partial,
-                            ScanRunStatus::Failed => LibraryScanChildCompletion::Failed,
-                            ScanRunStatus::Cancelled => LibraryScanChildCompletion::Cancelled,
-                            ScanRunStatus::Abandoned => LibraryScanChildCompletion::Abandoned,
-                            ScanRunStatus::Running => LibraryScanChildCompletion::Abandoned,
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                let parent_state = reconcile_stale_scan_children(
+                    &mut scope,
+                    job.scan_runs(),
+                    exclusions_count,
+                    cancellation_requested,
+                    now,
+                )?;
                 scope
                     .job_runs()
                     .set_state(job.job_run_id(), parent_state, now)?;

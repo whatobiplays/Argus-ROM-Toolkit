@@ -226,6 +226,61 @@ void main() {
     },
   );
 
+  test('lifecycle demand retries an initial root load after failure', () async {
+    final api = FakeSourcesApi()..childrenByParent[''] = numberedEntries(3);
+    api.listChildrenFailure = transportFailure();
+    final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+    final container = createContainer(api, demands: demands.stream);
+    await settle();
+
+    expect(
+      container.read(sourceHierarchyControllerProvider(_rootId)),
+      isA<AsyncError<SourceHierarchyState>>(),
+    );
+    api.listChildrenFailure = null;
+    demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+
+    final state = await waitForState(
+      container,
+      (value) => value.scopesByParent['']?.hasLoaded == true,
+    );
+    expect(state.scopesByParent['']!.children, hasLength(3));
+    expect(api.listChildrenCalls, 2);
+    await demands.close();
+  });
+
+  test(
+    'lifecycle demand coalesces with an in-flight initial root load',
+    () async {
+      final api = FakeSourcesApi()..childrenByParent[''] = numberedEntries(3);
+      final gate = Completer<void>();
+      api.listChildrenGates.add(gate);
+      api.listChildrenFailuresByCall[2] = transportFailure();
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = createContainer(api, demands: demands.stream);
+
+      await settle();
+      expect(api.listChildrenCalls, 1);
+
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      await settle();
+      expect(
+        api.listChildrenCalls,
+        1,
+        reason: 'a lifecycle demand must join the initial root read',
+      );
+
+      gate.complete();
+      final state = await waitForState(
+        container,
+        (value) => value.scopesByParent['']?.hasLoaded == true,
+      );
+      expect(state.scopesByParent['']!.children, hasLength(3));
+      expect(api.listChildrenCalls, 1);
+      await demands.close();
+    },
+  );
+
   test(
     'exact invalidation scopes refresh only the reliable loaded scope',
     () async {
@@ -358,6 +413,48 @@ void main() {
     expect(api.listChildrenCalls, 4);
     await demands.close();
   });
+
+  test(
+    'lifecycle demand refreshes loaded scopes and retains drill-down state',
+    () async {
+      final dirA = fakeEntry(id: 'a' * 32, name: 'A');
+      final api = FakeSourcesApi()
+        ..childrenByParent[''] = [dirA]
+        ..childrenByParent[dirA.sourceEntryId.value] = numberedEntries(1);
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = createContainer(api, demands: demands.stream);
+      await waitForState(
+        container,
+        (state) => state.scopesByParent['']?.hasLoaded == true,
+      );
+      await container
+          .read(sourceHierarchyControllerProvider(_rootId).notifier)
+          .openContainer(_rootId, dirA.sourceEntryId);
+      await waitForState(
+        container,
+        (state) =>
+            state.scopesByParent[dirA.sourceEntryId.value]?.hasLoaded == true,
+      );
+
+      final replacement = fakeEntry(id: 'b' * 32, name: 'B');
+      api.childrenByParent[''] = [dirA, replacement];
+      api.childrenByParent[dirA.sourceEntryId.value] = numberedEntries(2);
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      await settle();
+
+      final state = container
+          .read(sourceHierarchyControllerProvider(_rootId))
+          .value!;
+      expect(state.scopesByParent['']!.children, hasLength(2));
+      expect(
+        state.scopesByParent[dirA.sourceEntryId.value]!.children,
+        hasLength(2),
+      );
+      expect(state.compactDrillDownPath, [dirA.sourceEntryId]);
+      expect(api.listChildrenCalls, 4);
+      await demands.close();
+    },
+  );
 
   test(
     'invalidated scope restarts at page one and replaces its cursor chain',
@@ -1215,6 +1312,39 @@ void main() {
         ).future,
       );
       expect(second.displayName, 'second');
+      expect(api.getEntryCalls, 2);
+      await demands.close();
+    },
+  );
+
+  test(
+    'selected-entry detail refreshes after app lifecycle reconciliation',
+    () async {
+      const entry = SourceEntryId('ffffffffffffffffffffffffffffffff');
+      final api = FakeSourcesApi()
+        ..detailsByEntry[entry.value] = fakeDetail(
+          id: entry.value,
+          name: 'first',
+        );
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = createContainer(api, demands: demands.stream);
+
+      final provider = sourceEntryDetailControllerProvider(
+        rootId: _rootId,
+        sourceEntryId: entry,
+      );
+      await container.read(provider.future);
+      expect(api.getEntryCalls, 1);
+
+      api.detailsByEntry[entry.value] = fakeDetail(
+        id: entry.value,
+        name: 'second',
+      );
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      await settle();
+
+      final refreshed = await container.read(provider.future);
+      expect(refreshed.displayName, 'second');
       expect(api.getEntryCalls, 2);
       await demands.close();
     },

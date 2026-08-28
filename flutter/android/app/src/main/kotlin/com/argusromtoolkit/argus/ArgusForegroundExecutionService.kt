@@ -20,6 +20,7 @@ import android.os.IBinder
  */
 class ArgusForegroundExecutionService : Service() {
     private var lastNotificationIdentity: ForegroundNotificationIdentity? = null
+    private var lastStartId = 0
 
     private val host: ArgusForegroundExecutionHost
         get() = (application as ArgusApplication).foregroundExecutionHost
@@ -31,6 +32,7 @@ class ArgusForegroundExecutionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
             ArgusForegroundExecutionHost.ACTION_START -> promoteToForeground()
             ArgusForegroundExecutionHost.ACTION_STOP -> stopSelf(startId)
@@ -53,6 +55,11 @@ class ArgusForegroundExecutionService : Service() {
     override fun onTimeout(startId: Int, fgsType: Int) {
         host.onServiceTimeout(this)
         stopSelf(startId)
+    }
+
+    /** Invokes the platform timeout path with the service's real start ID. */
+    internal fun triggerTimeoutForQualification() {
+        onTimeout(lastStartId, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     /** Refreshes only the notification projection. */

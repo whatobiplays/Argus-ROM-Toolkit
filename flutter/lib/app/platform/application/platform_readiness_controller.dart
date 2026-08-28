@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'local_filesystem_platform_api.dart';
@@ -7,6 +8,10 @@ import 'platform_host_api.dart';
 import 'platform_readiness_state.dart';
 
 part 'platform_readiness_controller.g.dart';
+
+/// Identifies whether app-lifecycle resume must certify platform readiness
+/// before composition may request reconciliation.
+final platformReadinessRequiredProvider = Provider<bool>((ref) => false);
 
 /// DI seam for the platform host; app composition always supplies it.
 @Riverpod(keepAlive: true)
@@ -65,7 +70,7 @@ PlatformStorageReconciliationDemandSource platformStorageReconciliationDemand(
 /// replaces an already initialized root runtime.
 @Riverpod(keepAlive: true)
 class PlatformReadinessController extends _$PlatformReadinessController {
-  bool _refreshing = false;
+  Future<void>? _refreshOperation;
   PlatformRuntimeConfiguration? _runtimeConfiguration;
   final StreamController<PlatformStorageReconciliationDemand> _demands =
       StreamController<PlatformStorageReconciliationDemand>.broadcast();
@@ -90,9 +95,15 @@ class PlatformReadinessController extends _$PlatformReadinessController {
   }
 
   /// Re-reads the authoritative OS snapshot without showing a loading state.
-  Future<void> refresh() async {
-    if (_refreshing) return;
-    _refreshing = true;
+  Future<void> refresh() {
+    final activeOperation = _refreshOperation;
+    if (activeOperation != null) return activeOperation;
+    final operation = _refresh();
+    _refreshOperation = operation;
+    return operation;
+  }
+
+  Future<void> _refresh() async {
     try {
       final snapshot = await ref.read(platformHostApiProvider).readSnapshot();
       final previous = state;
@@ -128,7 +139,7 @@ class PlatformReadinessController extends _$PlatformReadinessController {
         PlatformReadinessFailureKind.snapshotUnavailable,
       );
     } finally {
-      _refreshing = false;
+      _refreshOperation = null;
     }
   }
 

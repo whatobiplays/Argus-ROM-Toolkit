@@ -20,8 +20,9 @@ use argus_application::{
     ScanProgressFacts, ScanRunId, ScanRunProjection, ScanRunRepository, ScanRunStatus,
     SettingsDomain, SourceEntryClassification, SourceEntryCoordinates, SourceEntryId,
     SourceEntryKind, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
-    StaleLibraryScanJob, StaleLibraryScanQueries, StaleLibraryScanRun, StartLibraryScanAllResult,
-    TechnicalClass, TraceId, Version, evaluate_retry_eligibility,
+    StaleLibraryScanJob, StaleLibraryScanQueries, StaleLibraryScanRun, StaleOperationJob,
+    StaleOperationQueries, StartLibraryScanAllResult, TechnicalClass, TraceId, Version,
+    evaluate_retry_eligibility,
 };
 use rusqlite::OptionalExtension;
 
@@ -1745,6 +1746,67 @@ impl StaleLibraryScanQueries for SqliteJobsQueries {
             })
             .map_err(map_executor_error)
     }
+}
+
+impl StaleOperationQueries for SqliteJobsQueries {
+    fn list_stale_operation_jobs(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<StaleOperationJob>, PersistenceError> {
+        self.executor
+            .with_connection(context.clone(), |connection| {
+                read_stale_operation_jobs(connection).map_err(corrupt_sqlite)
+            })
+            .map_err(map_executor_error)
+    }
+}
+
+fn read_stale_operation_jobs(
+    connection: &mut SqliteConnection<'_>,
+) -> Result<Vec<StaleOperationJob>, PersistenceError> {
+    let mut jobs = Vec::new();
+    let mut statement = connection
+        .connection
+        .prepare(
+            "SELECT job_run_id, operation_type, state, cancellation_requested
+             FROM job_run
+             WHERE operation_type IN (
+                 'library_scan', 'library_refresh', 'game_refresh',
+                 'library_resolution_refresh'
+             )
+               AND state IN ('queued', 'preparing', 'running')
+             ORDER BY created_at ASC, job_run_id ASC",
+        )
+        .map_err(map_persistence_operation_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(map_persistence_operation_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(map_persistence_operation_error)?;
+    drop(statement);
+
+    for (job_run_id, operation_type, state, cancellation_requested) in rows {
+        let job_run_id = parse_job_run_id(job_run_id)?;
+        let state = parse_job_state(&state)?;
+        let scan_runs = read_stale_scan_runs(connection, job_run_id)?;
+        let exclusions = read_stale_exclusions(connection, job_run_id)?;
+        jobs.push(StaleOperationJob::new(
+            operation_type,
+            job_run_id,
+            state,
+            cancellation_requested != 0,
+            scan_runs,
+            exclusions,
+        ));
+    }
+    Ok(jobs)
 }
 
 fn read_stale_library_scan_jobs(

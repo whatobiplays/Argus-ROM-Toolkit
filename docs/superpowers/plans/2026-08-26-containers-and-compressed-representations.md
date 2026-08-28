@@ -4,9 +4,9 @@
 
 **Goal:** Activate the approved container/compressed-representation contract so supported ZIP, 7z, tar, gzip, bzip2, xz, CHD, RVZ, CSO, and WBFS inputs participate in the existing source → identity → grouping → hydration → Library flow with persistent derived source truth, exact canonical convergence, cumulative resource safety, and no packaging-sensitive identity.
 
-**Architecture:** Keep BE-012's transformation graph central. Native provider entries and transformation-derived entries remain one `SourceEntry` graph with different coordinate/version evidence. A single operation-scoped `ParsingSession` owns cancellation, cumulative budget accounting, and app-private staging. Generic wrappers enumerate persistent derived scopes; alternate optical representations decode into the P03-005 canonical optical contracts. Application code owns transformation admission, single-game policy, dependency admission, reconciliation authority, and error mapping; infrastructure owns format parsing/decoding, bounded reads, staging mechanics, and SQLite.
+**Architecture:** Keep BE-012's transformation graph central. Native provider entries and transformation-derived entries remain one `SourceEntry` graph with different coordinate/version evidence. A single operation-scoped `ParsingSession` owns cancellation, cumulative budget accounting, explicit enter/leave container depth state, and app-private staging. Generic wrappers enumerate persistent derived scopes; alternate optical representations decode into the P03-005 canonical optical contracts. Application code owns transformation admission, single-game policy, dependency admission, reconciliation authority, and error mapping; infrastructure owns format parsing/decoding, bounded reads, staging mechanics, and SQLite.
 
-**Tech Stack:** Rust 1.97.1 / edition 2024, SQLite/rusqlite, SHA-256, existing Argus runtime/UoW/job architecture. Pure-Rust decoder policy: `chd` 0.3.4 with `max_perf` disabled and block-CRC verification enabled; `sevenz-rust2` 0.22.x with a deliberately restricted feature set; `flate2` 1.1.x with `rust_backend`; `ruzstd` 0.9.x; pure-Rust LZMA/BZip2 codecs where required. Do not add `nod`, `zstd`, `liblzma`, `bzip2-sys`, libchdr, libarchive, unrar, or external decoder executables to the production dependency graph.
+**Tech Stack:** Rust 1.97.1 / edition 2024, SQLite/rusqlite, SHA-256, existing Argus runtime/UoW/job architecture. Pure-Rust decoder policy: `chd` 0.3.4 with `std` and block-CRC verification enabled, `max_perf` disabled; `sevenz-rust2` 0.22.x with only `bzip2`, `deflate`, `ppmd`, and `util`; `flate2` 1.1.x with `rust_backend`; `zip` 8.6.0 with `deflate-flate2`; `ruzstd` 0.9.x with `std`; pure-Rust LZMA/BZip2 codecs where required. Do not add `nod`, `zstd`, `liblzma`, `bzip2-sys`, libchdr, libarchive, unrar, or external decoder executables to the production dependency graph.
 
 **Spec:** `docs/superpowers/specs/2026-08-26-containers-and-compressed-representations-design.md`
 
@@ -16,7 +16,7 @@
 
 1. Preserve every existing cartridge/native-optical identity scheme ID, identity revision, digest value, `GameContent`, `Game`, and current source association across migration and unchanged refreshes.
 2. Do not hash ZIP/7z/CHD/RVZ/CSO/WBFS container bytes as logical game identity.
-3. RAR, encrypted/password-protected archives, and split/multi-volume archives remain unsupported in MVP.
+3. RAR, encrypted/password-protected archives, and split/multi-volume archives remain unsupported in MVP and are excluded from the Phase 003 production transformation registry.
 4. Multi-game archives persist truthful derived source structure but materialize no member `GameContent` from that archive.
 5. Only `Complete + validated stable input` grants absence authority for an exact derived scope.
 6. All nested transformations share one cumulative budget: 16 GiB single representation, 32 GiB expanded, 16 GiB staged, 65,536 derived entries, nesting depth 4, and a finite parser-work ceiling sufficient for the largest advertised optical representation.

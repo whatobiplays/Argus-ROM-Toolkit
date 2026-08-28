@@ -5,12 +5,12 @@ use argus_application::{
     TransformationBudget, TransformationFailure,
 };
 use argus_infrastructure::content::{
-    ContentReadError, ContentReader, DerivedScopeResult, ParsingSession,
-    enumerate_derived_container,
+    enumerate_derived_container, ContentReadError, ContentReader, DerivedScopeResult,
+    ParsingSession,
 };
-use flate2::{Compression, write::GzEncoder};
+use flate2::{write::GzEncoder, Compression};
 use tempfile::tempdir;
-use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
+use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 const SEVEN_Z_LZMA2_FIXTURE: &[u8] = &[
     0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0x00, 0x04, 0xbb, 0xac, 0x85, 0xb8, 0x0d, 0x00, 0x00, 0x00,
@@ -106,7 +106,7 @@ fn enumerate_with_parent(
 ) -> Result<Option<DerivedScopeResult>, TransformationFailure> {
     let staging = tempdir().expect("staging root");
     let mut session = ParsingSession::for_tests(limits, staging.path(), || false);
-    let mut reader = BytesReader { bytes, offset: 0 };
+    let mut reader = BytesReader { bytes };
     enumerate_derived_container(&mut reader, &parent, &mut session)
 }
 
@@ -122,12 +122,10 @@ fn assert_complete(
     for (observation, expected) in result.observations().iter().zip(names) {
         assert_eq!(observation.display_name(), *expected);
         assert_eq!(observation.kind(), SourceEntryKind::File);
-        assert!(
-            !observation
-                .derived_fingerprint()
-                .as_transformation_value()
-                .is_empty()
-        );
+        assert!(!observation
+            .derived_fingerprint()
+            .as_transformation_value()
+            .is_empty());
     }
     assert_eq!(result.member_index().len(), names.len());
 }
@@ -154,7 +152,6 @@ fn decoded_members_are_reopened_from_operation_staging() {
     );
     let mut reader = BytesReader {
         bytes: zip_fixture(&[("game.gba", b"staged-game", CompressionMethod::Stored)]),
-        offset: 0,
     };
     let result = enumerate_derived_container(&mut reader, &parent_version(), &mut session)
         .expect("zip should decode")
@@ -169,13 +166,11 @@ fn decoded_members_are_reopened_from_operation_staging() {
         .read_to_end(&mut bytes)
         .expect("staged member should read");
     assert_eq!(bytes, b"staged-game");
-    assert!(
-        result
-            .member_index()
-            .staged_path(key)
-            .expect("staged path")
-            .starts_with(session.operation_directory())
-    );
+    assert!(result
+        .member_index()
+        .staged_path(key)
+        .expect("staged path")
+        .starts_with(session.operation_directory()));
 }
 
 #[test]
@@ -415,19 +410,16 @@ fn expansion_budget_failure_cannot_be_reported_as_complete() {
 
 #[test]
 fn unsupported_bytes_are_not_claimed_by_the_derived_container_path() {
-    assert!(
-        enumerate(
-            b"not a supported wrapper".to_vec(),
-            budget(1024, 1024, 16, 4, 1024, 4096)
-        )
-        .expect("probe")
-        .is_none()
-    );
+    assert!(enumerate(
+        b"not a supported wrapper".to_vec(),
+        budget(1024, 1024, 16, 4, 1024, 4096)
+    )
+    .expect("probe")
+    .is_none());
 }
 
 struct BytesReader {
     bytes: Vec<u8>,
-    offset: usize,
 }
 
 impl ContentReader for BytesReader {
@@ -444,7 +436,6 @@ impl ContentReader for BytesReader {
             return Err(ContentReadError::OutOfRange);
         }
         destination.copy_from_slice(&self.bytes[offset..end]);
-        self.offset = end;
         Ok(destination.len())
     }
 }

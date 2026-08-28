@@ -3,14 +3,14 @@
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
-    atomic::{AtomicBool, Ordering},
 };
 
 use argus_application::{TransformationBudget, TransformationFailure};
 use argus_infrastructure::content::{
-    ParsingSession, STAGING_DIRECTORY_PREFIX, STAGING_MARKER_FILE, STAGING_MARKER_VALUE,
-    StagingSpaceProbe, cleanup_abandoned_staging,
+    cleanup_abandoned_staging, ParsingSession, StagingSpaceProbe, STAGING_DIRECTORY_PREFIX,
+    STAGING_MARKER_FILE, STAGING_MARKER_VALUE,
 };
 use tempfile::tempdir;
 
@@ -93,9 +93,13 @@ fn staging_checks_remaining_budget_and_available_space_before_copy() {
         "only the marker remains after a rejected stage"
     );
 
-    let low_space = Arc::new(FixedSpaceProbe { available: 100 });
+    let probe_calls = Arc::new(AtomicUsize::new(0));
+    let low_space = Arc::new(FixedSpaceProbe {
+        available: 100,
+        calls: Arc::clone(&probe_calls),
+    });
     let mut low_space_session = ParsingSession::for_tests_with_probe(
-        budget(64, 96, 3, 2, 64, 128),
+        budget(128, 128, 3, 2, 128, 256),
         staging.path(),
         low_space,
         || false,
@@ -104,6 +108,7 @@ fn staging_checks_remaining_budget_and_available_space_before_copy() {
         low_space_session.stage_bytes("space-limited", &[0; 101]),
         Err(TransformationFailure::ResourceLimitExceeded)
     ));
+    assert_eq!(probe_calls.load(Ordering::Relaxed), 1);
 }
 
 #[test]
@@ -196,10 +201,12 @@ fn cleanup_removes_only_marked_argus_staging_directories() {
 #[derive(Debug)]
 struct FixedSpaceProbe {
     available: u64,
+    calls: Arc<AtomicUsize>,
 }
 
 impl StagingSpaceProbe for FixedSpaceProbe {
     fn available_bytes(&self, _staging_root: &Path) -> io::Result<u64> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
         Ok(self.available)
     }
 }

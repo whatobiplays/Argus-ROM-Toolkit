@@ -2,8 +2,8 @@ use std::io::Cursor;
 
 use argus_application::TransformationBudget;
 use argus_infrastructure::content::{
-    ContentReadError, ContentReader, OpticalDescriptor, OpticalError, OpticalSource,
-    ParsingSession, canonicalize_descriptor, parse_gdi, recognize_chd, recognize_native_optical,
+    canonicalize_descriptor, parse_gdi, recognize_chd, recognize_native_optical, ContentReadError,
+    ContentReader, OpticalDescriptor, OpticalError, OpticalSource, ParsingSession,
 };
 use tempfile::tempdir;
 
@@ -471,7 +471,7 @@ fn chd_gd_uses_validated_track_metadata_and_existing_gd_identity() {
     for (offset, bytes) in high_frames.chunks_exact(hunk_bytes as usize).enumerate() {
         chunks.push((first_high_hunk + offset as u32, bytes.to_vec()));
     }
-    let mut logical = low_frame_count * CD_FRAME_BYTES as u64 + high_frames.len() as u64;
+    let logical = low_frame_count * CD_FRAME_BYTES as u64 + high_frames.len() as u64;
     let metadata = vec![
         (
             *b"CHGD",
@@ -516,8 +516,6 @@ fn chd_gd_uses_validated_track_metadata_and_existing_gd_identity() {
     assert_eq!(actual.content_type(), expected.content_type());
     assert_eq!(actual.identity_digest(), expected.identity_digest());
     assert_eq!(actual.source_representation(), "chd-gd");
-    logical = 0;
-    assert_eq!(logical, 0);
 }
 
 #[test]

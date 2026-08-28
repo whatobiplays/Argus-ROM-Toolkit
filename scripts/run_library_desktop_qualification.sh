@@ -47,13 +47,17 @@ if ! command -v rustup >/dev/null 2>&1; then
 fi
 
 app_container_dir="${HOME}/Library/Containers/dev.argusromtoolkit.argus/Data"
-mkdir -p "${app_container_dir}"
+if ! mkdir -p "${app_container_dir}"; then
+  record 'result=NOT RUN'
+  record 'reason=Could not create the test-owned desktop app container'
+  exit 2
+fi
 if ! data_dir="$(mktemp -d "${app_container_dir}/argus-library-qualification.XXXXXX")"; then
   record 'result=NOT RUN'
   record 'reason=Could not create the test-owned desktop data directory'
   exit 2
 fi
-record "data_directory=${data_dir}"
+record 'data_directory=test-owned-macos-application-container'
 
 if ! bash "${ROOT_DIR}/scripts/run_rust.sh" cargo build \
   --manifest-path "${ROOT_DIR}/rust/Cargo.toml" \

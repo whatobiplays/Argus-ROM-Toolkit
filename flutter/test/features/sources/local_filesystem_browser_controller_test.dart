@@ -174,6 +174,133 @@ void main() {
       );
     },
   );
+
+  test(
+    'lifecycle reconciliation retries after an in-flight root browse load',
+    () async {
+      final api = _BrowserFakeApi();
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = ProviderContainer(
+        overrides: [
+          sourcesApiProvider.overrideWithValue(api),
+          sourcesReconciliationDemandProvider.overrideWithValue(
+            SourcesReconciliationDemandSource(demands.stream),
+          ),
+        ],
+      );
+      addTearDown(demands.close);
+      addTearDown(container.dispose);
+      final observation = container.listen(
+        localFilesystemBrowserControllerProvider,
+        (previous, next) {},
+      );
+      addTearDown(observation.close);
+      final controller = container.read(
+        localFilesystemBrowserControllerProvider.notifier,
+      );
+
+      await controller.load();
+      final gate = Completer<void>();
+      api.browseGates.add(gate);
+      final opening = controller.openRoot(api.root);
+      await Future<void>.delayed(Duration.zero);
+
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      gate.complete();
+      await opening;
+      await _settle();
+
+      expect(api.requests.map((request) => request.location), [
+        'root-location',
+        'root-location',
+      ]);
+    },
+  );
+
+  test(
+    'lifecycle reconciliation retries after an in-flight directory load',
+    () async {
+      final api = _BrowserFakeApi();
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = ProviderContainer(
+        overrides: [
+          sourcesApiProvider.overrideWithValue(api),
+          sourcesReconciliationDemandProvider.overrideWithValue(
+            SourcesReconciliationDemandSource(demands.stream),
+          ),
+        ],
+      );
+      addTearDown(demands.close);
+      addTearDown(container.dispose);
+      final observation = container.listen(
+        localFilesystemBrowserControllerProvider,
+        (previous, next) {},
+      );
+      addTearDown(observation.close);
+      final controller = container.read(
+        localFilesystemBrowserControllerProvider.notifier,
+      );
+
+      await controller.openRoot(api.root);
+      final gate = Completer<void>();
+      api.browseGates.add(gate);
+      final opening = controller.openDirectory(api.child);
+      await Future<void>.delayed(Duration.zero);
+
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      gate.complete();
+      await opening;
+      await _settle();
+
+      expect(api.requests.map((request) => request.location), [
+        'root-location',
+        'child-location',
+        'child-location',
+      ]);
+    },
+  );
+
+  test('back to the volume list invalidates an in-flight refresh', () async {
+    final api = _BrowserFakeApi();
+    final container = ProviderContainer(
+      overrides: [sourcesApiProvider.overrideWithValue(api)],
+    );
+    addTearDown(container.dispose);
+    final observation = container.listen(
+      localFilesystemBrowserControllerProvider,
+      (previous, next) {},
+    );
+    addTearDown(observation.close);
+    final controller = container.read(
+      localFilesystemBrowserControllerProvider.notifier,
+    );
+
+    await controller.openRoot(api.root);
+    final gate = Completer<void>();
+    api.browseGates.add(gate);
+    final refreshing = controller.refresh();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(await controller.back(), isTrue);
+    expect(
+      container.read(localFilesystemBrowserControllerProvider).page,
+      isNull,
+    );
+    gate.complete();
+    await refreshing;
+    await _settle();
+
+    final state = container.read(localFilesystemBrowserControllerProvider);
+    expect(state.page, isNull);
+    expect(state.loading, isFalse);
+    expect(state.loadingMore, isFalse);
+  });
+}
+
+Future<void> _settle() async {
+  for (var index = 0; index < 10; index++) {
+    await Future<void>.delayed(Duration.zero);
+  }
 }
 
 final class _BrowserFakeApi implements SourcesApi {
@@ -182,6 +309,7 @@ final class _BrowserFakeApi implements SourcesApi {
   final bool withNextPage;
   bool failNextBrowse;
   final requests = <_BrowseRequest>[];
+  final browseGates = <Completer<void>>[];
 
   final root = const LocalFilesystemBrowseRoot(
     location: LocalFilesystemBrowseLocation('root-location'),
@@ -204,6 +332,9 @@ final class _BrowserFakeApi implements SourcesApi {
     required int pageSize,
   }) async {
     requests.add(_BrowseRequest(location.value, cursor));
+    if (browseGates.isNotEmpty) {
+      await browseGates.removeAt(0).future;
+    }
     if (failNextBrowse) {
       failNextBrowse = false;
       throw const TransportFailure('browse failed');

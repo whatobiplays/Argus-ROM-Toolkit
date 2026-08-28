@@ -3488,47 +3488,79 @@ where
             job.operation_type(),
             OPERATION_TYPE_LIBRARY_SCAN | OPERATION_TYPE_LIBRARY_REFRESH
         );
-        let parent_state = if cancellation_requested {
-            JobRunState::Cancelled
-        } else {
-            JobRunState::Abandoned
-        };
+        let exclusions_count = job.exclusions().len();
         self.unit_of_work
             .clone()
             .execute(context, move |mut scope| {
+                let mut child_statuses = Vec::new();
                 if reconciles_scan_children {
+                    child_statuses = Vec::with_capacity(job.scan_runs().len());
                     for child in job.scan_runs() {
-                        if child.status() != ScanRunStatus::Running {
-                            continue;
-                        }
-                        let child_status = if cancellation_requested {
-                            ScanRunStatus::Cancelled
-                        } else {
-                            ScanRunStatus::Abandoned
-                        };
-                        scope.scan_runs().set_status(
-                            child.scan_run_id(),
-                            child_status,
-                            Some(now),
-                            None,
-                        )?;
-                        let last_scan_status = if cancellation_requested {
-                            LibraryRootLastScanStatus::Cancelled
-                        } else {
-                            LibraryRootLastScanStatus::Abandoned
-                        };
-                        scope.library_roots().set_last_scan(
-                            child.library_root_id(),
-                            Some(LibraryRootLastScanSummary::new(
-                                child.scan_run_id().to_string(),
-                                child.job_run_id().to_string(),
-                                last_scan_status,
-                                child.started_at_ms(),
+                        let child_status = if child.status() == ScanRunStatus::Running {
+                            let target = if cancellation_requested {
+                                ScanRunStatus::Cancelled
+                            } else {
+                                ScanRunStatus::Abandoned
+                            };
+                            let last_scan_status = if cancellation_requested {
+                                LibraryRootLastScanStatus::Cancelled
+                            } else {
+                                LibraryRootLastScanStatus::Abandoned
+                            };
+                            scope.scan_runs().set_status(
+                                child.scan_run_id(),
+                                target,
                                 Some(now),
-                            )),
-                        )?;
+                                None,
+                            )?;
+                            scope.library_roots().set_last_scan(
+                                child.library_root_id(),
+                                Some(LibraryRootLastScanSummary::new(
+                                    child.scan_run_id().to_string(),
+                                    child.job_run_id().to_string(),
+                                    last_scan_status,
+                                    child.started_at_ms(),
+                                    Some(now),
+                                )),
+                            )?;
+                            target
+                        } else {
+                            child.status()
+                        };
+                        child_statuses.push(child_status);
                     }
                 }
+                let parent_state = if reconciles_scan_children
+                    && child_statuses.is_empty()
+                    && exclusions_count == 0
+                {
+                    if cancellation_requested {
+                        JobRunState::Cancelled
+                    } else {
+                        JobRunState::Abandoned
+                    }
+                } else if reconciles_scan_children {
+                    let child_completions = child_statuses
+                        .iter()
+                        .map(|status| match *status {
+                            ScanRunStatus::Complete => LibraryScanChildCompletion::Complete,
+                            ScanRunStatus::Partial => LibraryScanChildCompletion::Partial,
+                            ScanRunStatus::Failed => LibraryScanChildCompletion::Failed,
+                            ScanRunStatus::Cancelled => LibraryScanChildCompletion::Cancelled,
+                            ScanRunStatus::Abandoned => LibraryScanChildCompletion::Abandoned,
+                            ScanRunStatus::Running => LibraryScanChildCompletion::Abandoned,
+                        })
+                        .collect::<Vec<_>>();
+                    aggregate_library_scan_state(
+                        child_completions.len() + exclusions_count,
+                        child_completions.len(),
+                        &child_completions,
+                    )
+                } else if cancellation_requested {
+                    JobRunState::Cancelled
+                } else {
+                    JobRunState::Abandoned
+                };
                 scope
                     .job_runs()
                     .set_state(job.job_run_id(), parent_state, now)?;

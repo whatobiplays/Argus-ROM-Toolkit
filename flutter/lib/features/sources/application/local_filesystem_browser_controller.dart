@@ -31,6 +31,8 @@ class LocalFilesystemBrowserController
 
   _BrowserRequest? _failedRequest;
   int _demandToken = 0;
+  int _navigationGeneration = 0;
+  bool _pendingReconciliation = false;
   StreamSubscription<SourcesReconciliationDemand>? _demandSubscription;
 
   @override
@@ -52,12 +54,14 @@ class LocalFilesystemBrowserController
   /// Loads the current mounted-volume list.
   Future<void> load() async {
     if (state.loading || state.loadingMore) return;
+    final requestGeneration = _navigationGeneration;
     _failedRequest = const _BrowserRequest.roots();
     state = state.copyWith(loading: true, failure: null);
     try {
       final roots = await ref
           .read(sourcesApiProvider)
           .listLocalFilesystemBrowseRoots();
+      if (requestGeneration != _navigationGeneration) return;
       _failedRequest = null;
       state = state.copyWith(
         roots: List<LocalFilesystemBrowseRoot>.unmodifiable(roots),
@@ -66,10 +70,13 @@ class LocalFilesystemBrowserController
         failure: null,
       );
     } catch (error, stackTrace) {
+      if (requestGeneration != _navigationGeneration) return;
       state = state.copyWith(
         loading: false,
         failure: _asFailure(error, stackTrace),
       );
+    } finally {
+      _drainPendingReconciliation();
     }
   }
 
@@ -80,29 +87,60 @@ class LocalFilesystemBrowserController
       await load();
       return;
     }
-    await _loadPage(page.current.location, cursor: null, append: false);
+    await _loadPage(
+      page.current.location,
+      cursor: null,
+      append: false,
+      navigationGeneration: _navigationGeneration,
+    );
   }
 
   /// Opens one provider-issued volume root.
-  Future<void> openRoot(LocalFilesystemBrowseRoot root) =>
-      _loadPage(root.location, cursor: null, append: false);
+  Future<void> openRoot(LocalFilesystemBrowseRoot root) {
+    final navigationGeneration = _beginNavigation();
+    return _loadPage(
+      root.location,
+      cursor: null,
+      append: false,
+      navigationGeneration: navigationGeneration,
+    );
+  }
 
   /// Opens one provider-issued direct-child directory.
-  Future<void> openDirectory(LocalFilesystemBrowseDirectory directory) =>
-      _loadPage(directory.location, cursor: null, append: false);
+  Future<void> openDirectory(LocalFilesystemBrowseDirectory directory) {
+    final navigationGeneration = _beginNavigation();
+    return _loadPage(
+      directory.location,
+      cursor: null,
+      append: false,
+      navigationGeneration: navigationGeneration,
+    );
+  }
 
   /// Moves up using the provider-generated breadcrumb immediately above the
   /// current location. At a volume root, returns to the volume list.
   Future<bool> back() async {
     final page = state.page;
     if (page == null) return false;
+    final navigationGeneration = _beginNavigation();
     if (page.breadcrumbs.length <= 1) {
       _failedRequest = null;
-      state = state.copyWith(page: null, failure: null);
+      state = state.copyWith(
+        page: null,
+        loading: false,
+        loadingMore: false,
+        failure: null,
+      );
+      _drainPendingReconciliation();
       return true;
     }
     final parent = page.breadcrumbs[page.breadcrumbs.length - 2];
-    await _loadPage(parent.location, cursor: null, append: false);
+    await _loadPage(
+      parent.location,
+      cursor: null,
+      append: false,
+      navigationGeneration: navigationGeneration,
+    );
     return true;
   }
 
@@ -135,8 +173,10 @@ class LocalFilesystemBrowserController
     LocalFilesystemBrowseLocation location, {
     required String? cursor,
     required bool append,
+    int? navigationGeneration,
   }) async {
     if (state.loading || state.loadingMore) return;
+    final requestGeneration = navigationGeneration ?? _navigationGeneration;
     final request = _BrowserRequest.browse(
       location: location,
       cursor: cursor,
@@ -156,6 +196,7 @@ class LocalFilesystemBrowserController
             cursor: cursor,
             pageSize: _pageSize,
           );
+      if (requestGeneration != _navigationGeneration) return;
       final previous = state.page;
       final combined = append && previous != null
           ? LocalFilesystemBrowsePage(
@@ -173,12 +214,35 @@ class LocalFilesystemBrowserController
         failure: null,
       );
     } catch (error, stackTrace) {
+      if (requestGeneration != _navigationGeneration) return;
       state = state.copyWith(
         loading: false,
         loadingMore: false,
         failure: _asFailure(error, stackTrace),
       );
+    } finally {
+      _drainPendingReconciliation();
     }
+  }
+
+  int _beginNavigation() {
+    _navigationGeneration++;
+    _failedRequest = null;
+    if (state.loading || state.loadingMore) {
+      state = state.copyWith(loading: false, loadingMore: false);
+    }
+    return _navigationGeneration;
+  }
+
+  void _requestReconciliation() {
+    _pendingReconciliation = true;
+    _drainPendingReconciliation();
+  }
+
+  void _drainPendingReconciliation() {
+    if (!_pendingReconciliation || state.loading || state.loadingMore) return;
+    _pendingReconciliation = false;
+    unawaited(refresh());
   }
 
   ClientFailure _asFailure(Object error, StackTrace stackTrace) {
@@ -196,7 +260,7 @@ class LocalFilesystemBrowserController
     final subscription = source.stream.listen((demand) {
       if (token != _demandToken) return;
       if (demand is SourcesReconciliationDemandLifecycleChanged) {
-        unawaited(refresh());
+        _requestReconciliation();
       }
     });
     final previous = _demandSubscription;

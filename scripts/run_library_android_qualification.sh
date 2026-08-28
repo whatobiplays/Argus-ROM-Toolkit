@@ -25,11 +25,37 @@ record() {
 
 device_id=''
 test_pid=''
+test_pgid=''
+
+terminate_test_process_group() {
+  local pid="${test_pid}"
+  local pgid="${test_pgid}"
+  if [[ -z "${pid}" ]]; then return; fi
+
+  if [[ -n "${pgid}" ]]; then
+    kill -TERM "-${pgid}" >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5; do
+      if ! kill -0 "-${pgid}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "-${pgid}" >/dev/null 2>&1; then
+      kill -KILL "-${pgid}" >/dev/null 2>&1 || true
+    fi
+  else
+    kill -TERM "${pid}" >/dev/null 2>&1 || true
+  fi
+  wait "${pid}" >/dev/null 2>&1 || true
+  test_pid=''
+  test_pgid=''
+}
 
 # ShellCheck 0.9 cannot follow this function's indirect EXIT-trap invocation.
 # shellcheck disable=SC2329,SC2317
 cleanup() {
   local status=$?
+  terminate_test_process_group
   if [[ -n "${device_id}" && -n "${ARGUS_ANDROID_SCENARIO_ADB:-}" ]]; then
     "${ARGUS_ANDROID_SCENARIO_ADB}" -s "${device_id}" shell rm -rf \
       "${DEVICE_EVIDENCE_ROOT}" >/dev/null 2>&1 || true
@@ -116,6 +142,7 @@ if ! "${ARGUS_ANDROID_SCENARIO_ADB}" -s "${device_id}" shell mkdir -p \
 fi
 
 integration_status=0
+set -m
 (
   argus_android_run_integration \
     "${ROOT_DIR}" \
@@ -124,6 +151,7 @@ integration_status=0
     "--dart-define=ARGUS_LIBRARY_ANDROID_CONTINUE_PATH=${DEVICE_CONTINUE_PATH}"
 ) > "${INTEGRATION_LOG}" 2>&1 &
 test_pid=$!
+test_pgid="$(ps -o pgid= -p "${test_pid}" | tr -d ' ')"
 
 wait_for_device_file() {
   local path="$1"
@@ -144,11 +172,7 @@ wait_for_device_file() {
 if ! wait_for_device_file "${DEVICE_CONTINUE_PATH}.ready"; then
   record 'result=FAIL'
   record 'reason=Android integration test did not reach its transition barrier'
-  if kill -0 "${test_pid}" >/dev/null 2>&1; then
-    kill "${test_pid}" >/dev/null 2>&1 || true
-  fi
-  wait "${test_pid}" >/dev/null 2>&1 || true
-  test_pid=''
+  terminate_test_process_group
   exit 1
 fi
 
@@ -156,9 +180,7 @@ if ! "${ARGUS_ANDROID_SCENARIO_ADB}" -s "${device_id}" shell input \
   keyevent KEYCODE_HOME >/dev/null 2>&1; then
   record 'result=FAIL'
   record 'reason=Could not send the Android background transition'
-  kill "${test_pid}" >/dev/null 2>&1 || true
-  wait "${test_pid}" >/dev/null 2>&1 || true
-  test_pid=''
+  terminate_test_process_group
   exit 1
 fi
 sleep 2
@@ -168,9 +190,7 @@ if ! "${ARGUS_ANDROID_SCENARIO_ADB}" -s "${device_id}" shell am start -W \
   > "${HOST_EVIDENCE_DIR}/foreground.log" 2>&1; then
   record 'result=FAIL'
   record 'reason=Could not restore the Android Activity after backgrounding'
-  kill "${test_pid}" >/dev/null 2>&1 || true
-  wait "${test_pid}" >/dev/null 2>&1 || true
-  test_pid=''
+  terminate_test_process_group
   exit 1
 fi
 sleep 2
@@ -178,9 +198,7 @@ if ! "${ARGUS_ANDROID_SCENARIO_ADB}" -s "${device_id}" shell touch \
   "${DEVICE_CONTINUE_PATH}.background.done"; then
   record 'result=FAIL'
   record 'reason=Could not publish the Android foreground transition marker'
-  kill "${test_pid}" >/dev/null 2>&1 || true
-  wait "${test_pid}" >/dev/null 2>&1 || true
-  test_pid=''
+  terminate_test_process_group
   exit 1
 fi
 
@@ -190,6 +208,7 @@ else
   integration_status=$?
 fi
 test_pid=''
+test_pgid=''
 
 if "${ARGUS_ANDROID_SCENARIO_ADB}" -s "${device_id}" shell test -f \
   "${DEVICE_EVIDENCE_PATH}" >/dev/null 2>&1; then

@@ -3879,13 +3879,13 @@ impl Phase003RefreshHandler {
         for (index, game_id) in game_ids.iter().copied().enumerate() {
             if let Some(reason) = stop_reason() {
                 let completion = refresh_stop_completion(reason, committed_units > 0);
-                self.report_terminal_progress(
+                self.report_terminal_progress_best_effort(
                     progress,
                     "game_refresh.completed",
                     total,
                     committed_units,
                     completion.state(),
-                )?;
+                );
                 return Ok(completion);
             }
             let completed = u64::try_from(index).unwrap_or(u64::MAX);
@@ -3933,13 +3933,13 @@ impl Phase003RefreshHandler {
     ) -> Result<OperationCompletion, ApplicationError> {
         if let Some(reason) = stop_reason() {
             let completion = refresh_stop_completion(reason, false);
-            self.report_terminal_progress(
+            self.report_terminal_progress_best_effort(
                 progress,
                 "library_resolution_refresh.completed",
                 0,
                 0,
                 completion.state(),
-            )?;
+            );
             return Ok(completion);
         }
         let (game_ids, current_settings_revision) = self.with_kernel(context, |kernel| {
@@ -3959,13 +3959,13 @@ impl Phase003RefreshHandler {
         for (index, game_id) in game_ids.into_iter().enumerate() {
             if let Some(reason) = stop_reason() {
                 let completion = refresh_stop_completion(reason, committed_units > 0);
-                self.report_terminal_progress(
+                self.report_terminal_progress_best_effort(
                     progress,
                     "library_resolution_refresh.completed",
                     total,
                     committed_units,
                     completion.state(),
-                )?;
+                );
                 return Ok(completion);
             }
             let completed = u64::try_from(index).unwrap_or(u64::MAX);
@@ -4029,6 +4029,19 @@ impl Phase003RefreshHandler {
         )
         .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
         progress.report(facts)
+    }
+
+    /// Reports a stop-state progress snapshot without changing the durable
+    /// completion selected by the stop reason when reporting is unavailable.
+    fn report_terminal_progress_best_effort(
+        &self,
+        progress: &dyn JobProgressReporter,
+        phase: &str,
+        total: u64,
+        completed_units: u64,
+        state: JobRunState,
+    ) {
+        let _ = self.report_terminal_progress(progress, phase, total, completed_units, state);
     }
 }
 
@@ -4275,8 +4288,9 @@ mod tests {
         RuntimeLifecycle, RuntimeState, StartupFailure, StartupPhase, StartupPhaseObserver,
     };
     use argus_application::{
-        ApplicationError, BackgroundOperationStopReason, ErrorCode, JobRunState, OperationContext,
-        OperationName, SafeContext, SubsystemName, TraceId,
+        ApplicationError, BackgroundOperationStopReason, ErrorCode, JobProgress,
+        JobProgressReporter, JobRunId, JobRunState, OperationContext, OperationName, SafeContext,
+        SubsystemName, TraceId,
     };
     use std::sync::Weak;
 
@@ -4303,6 +4317,40 @@ mod tests {
             true,
         );
         assert_eq!(cancellation_after_work.state(), JobRunState::Cancelled);
+    }
+
+    struct FailingProgressReporter;
+
+    impl JobProgressReporter for FailingProgressReporter {
+        fn report(&self, _progress: JobProgress) -> Result<(), ApplicationError> {
+            Err(ApplicationError::from_code(
+                ErrorCode::InternalUnexpected,
+                TraceId::try_from(2_u128).expect("trace"),
+                SafeContext::new(),
+            )
+            .expect("error"))
+        }
+    }
+
+    #[test]
+    fn stop_completion_survives_terminal_progress_failure() {
+        let handler = super::Phase003RefreshHandler::new(
+            Arc::new(std::sync::Mutex::new(None)),
+            JobRunId::from_bytes([1; 16]).expect("job run id"),
+            super::Phase003RefreshKind::Game {
+                game_ids: vec![super::GameId::from_bytes([1; 16]).expect("game id")],
+            },
+        );
+
+        let completion = argus_application::BackgroundOperationHandler::execute(
+            &handler,
+            &fixed_context(1),
+            &|| Some(BackgroundOperationStopReason::CancellationRequested),
+            &FailingProgressReporter,
+        )
+        .expect("stop state must survive progress reporting failure");
+
+        assert_eq!(completion.state(), JobRunState::Cancelled);
     }
 
     #[test]

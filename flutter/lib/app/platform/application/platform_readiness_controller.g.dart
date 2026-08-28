@@ -219,7 +219,7 @@ final class PlatformReadinessControllerProvider
 }
 
 String _$platformReadinessControllerHash() =>
-    r'54bb2544b18a0260b497f9a5674f567f927f5d70';
+    r'd44b0521cfe05659e3b87017b83408f39c6c4da1';
 
 /// Keep-alive authority for live platform readiness.
 ///

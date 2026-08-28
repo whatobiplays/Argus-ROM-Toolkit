@@ -67,7 +67,7 @@ final class ApplicationLifecycleCoordinatorProvider
 }
 
 String _$applicationLifecycleCoordinatorHash() =>
-    r'31bf8dc1291aedf1d408ae56fcc361a2ec8a6e46';
+    r'970cfe37c228e38fae8ece938a6d22e991987d47';
 
 /// Sole app-lifetime observer for lifecycle transitions.
 ///

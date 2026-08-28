@@ -415,6 +415,35 @@ fn generic_recovery_reconciles_running_library_refresh_children() {
 }
 
 #[test]
+fn generic_recovery_derives_library_refresh_from_terminal_children() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
+    let (_root, job, scan) =
+        make_active_operation(&executor, OPERATION_TYPE_LIBRARY_REFRESH, false);
+    executor
+        .execute(&context(), move |mut scope| {
+            scope
+                .scan_runs()
+                .set_status(scan, ScanRunStatus::Complete, Some(1_002), None)?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>(())
+        })
+        .expect("complete child before recovery");
+
+    StaleOperationRecoveryHandler::new(SqliteJobsQueries::new(executor.clone()), executor.clone())
+        .handle(&context())
+        .expect("generic recovery");
+
+    let detail = SqliteJobsQueries::new(executor.clone())
+        .get_job(&context(), job)
+        .expect("get job")
+        .expect("known job");
+    assert_eq!(detail.job().state(), JobRunState::Completed);
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
 fn generic_recovery_honors_cancellation_for_library_refresh_children() {
     let directory = tempfile::tempdir().expect("tempdir");
     let executor =

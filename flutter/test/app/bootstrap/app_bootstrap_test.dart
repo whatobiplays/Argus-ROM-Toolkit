@@ -341,6 +341,59 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Android resume coalesces storage and lifecycle Sources demands',
+    (tester) async {
+      final platformApi = _ReadinessPlatformHostApi(
+        const PlatformHostSnapshot(
+          allFilesAccessRequired: true,
+          allFilesAccessGranted: true,
+          notificationAuthorization: NotificationAuthorization.notRequired,
+          standardApplicationDataDirectory:
+              '/data/user/0/com.argusromtoolkit.argus/files/argus',
+        ),
+      );
+      final volumes = _MountedVolumesStub([
+        _volume('/storage/ABCD', '/mnt/first'),
+      ]);
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          platformHostComposition: PlatformHostComposition(
+            api: platformApi,
+            requiresReadinessGate: true,
+            localFilesystemApi: volumes,
+          ),
+          clientGatewayFactory: () => _PendingGateway(),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      final sourceDemands = <SourcesReconciliationDemand>[];
+      final subscription = container
+          .read(sourcesReconciliationDemandProvider)
+          .stream
+          .listen(sourceDemands.add);
+      addTearDown(subscription.cancel);
+
+      volumes.volumes = [_volume('/storage/ABCD', '/mnt/remounted')];
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(sourceDemands, hasLength(1));
+      expect(
+        sourceDemands.single,
+        isA<SourcesReconciliationDemandLifecycleChanged>(),
+      );
+    },
+  );
+
   test('desktop Sources capabilities retain every existing workflow', () {
     const capabilities = SourcesPresentationCapabilities();
 

@@ -484,7 +484,7 @@ class SourceHierarchyController extends _$SourceHierarchyController {
     final subscription = source.stream.listen((demand) {
       if (token != _demandToken || !ref.mounted) return;
       if (demand is SourcesReconciliationDemandLifecycleChanged) {
-        unawaited(reconcile(rootId));
+        unawaited(refresh(rootId));
         return;
       }
       if (demand is! SourcesReconciliationDemandSourceChanged) return;

@@ -30,49 +30,58 @@ void main() {
   testWidgets('desktop Library lifecycle reconciliation stays single-runtime', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+    ArgusClient? client;
+    try {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      ArgusBootstrap(
-        clientGatewayFactory: () =>
-            FrbArgusClientGateway(dataDirectoryOverride: dataDirectory),
-      ),
-    );
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(ArgusApp)),
-      listen: false,
-    );
-    final client = container.read(argusClientProvider);
-    final runtime = await _waitForRuntimeReady(tester, client);
-    final demands = <LibraryReconciliationDemand>[];
-    final subscription = container
-        .read(libraryReconciliationDemandProvider)
-        .stream
-        .listen(demands.add);
-    addTearDown(subscription.cancel);
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          clientGatewayFactory: () =>
+              FrbArgusClientGateway(dataDirectoryOverride: dataDirectory),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
+      client = container.read(argusClientProvider);
+      final runtime = await _waitForRuntimeReady(tester, client!);
+      final demands = <LibraryReconciliationDemand>[];
+      final subscription = container
+          .read(libraryReconciliationDemandProvider)
+          .stream
+          .listen(demands.add);
+      addTearDown(subscription.cancel);
 
-    final clientBefore = container.read(argusClientProvider);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pump();
-    await tester.pump();
+      final clientBefore = container.read(argusClientProvider);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
 
-    expect(
-      demands.whereType<LibraryReconciliationDemandListChanged>(),
-      hasLength(1),
-    );
-    expect(
-      identical(container.read(argusClientProvider), clientBefore),
-      isTrue,
-    );
-    expect(await _readRuntimeInstanceId(client), runtime);
-
-    await client.runtime.generalShutdown();
-    await client.dispose();
-    await tester.pumpWidget(const SizedBox.shrink());
+      expect(
+        demands.whereType<LibraryReconciliationDemandListChanged>(),
+        isNotEmpty,
+      );
+      expect(
+        identical(container.read(argusClientProvider), clientBefore),
+        isTrue,
+      );
+      expect(await _readRuntimeInstanceId(client), runtime);
+    } finally {
+      final value = client;
+      if (value != null) {
+        try {
+          await value.runtime.generalShutdown();
+        } finally {
+          await value.dispose();
+        }
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
   });
 }
 

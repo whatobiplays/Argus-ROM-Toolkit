@@ -112,6 +112,17 @@ fn production_enrichment_session_factory() -> Arc<EnrichmentSessionFactory> {
     Arc::new(|| ProductionProviderSessionFactory::new().create_sessions())
 }
 
+fn sessions_require_credentials(
+    registry: &MetadataProviderRegistry,
+    sessions: &[Box<dyn EnrichmentProviderSession>],
+) -> bool {
+    sessions.iter().any(|session| {
+        registry
+            .descriptor(session.provider_id())
+            .requires_credential()
+    })
+}
+
 #[cfg(feature = "test-support")]
 // Keep this registry outside the public options struct so existing embedding
 // callers that construct the two public fields directly remain source-compatible.
@@ -2201,12 +2212,22 @@ impl KernelBootstrap {
             Vec::new()
         } else {
             let credential_readiness = {
+                let requires_credentials =
+                    sessions_require_credentials(&self.metadata_provider_registry, sessions);
                 let mut service = self.credential_service.lock().map_err(|_| {
                     application_error_from_code(ErrorCode::InternalUnexpected, context.trace_id())
                 })?;
-                match service.refresh_readiness_from_store() {
-                    Ok(readiness) => readiness,
-                    Err(_) => service.readiness(),
+                if requires_credentials {
+                    match service.refresh_readiness_from_store() {
+                        Ok(readiness) => readiness,
+                        Err(_) => service.readiness(),
+                    }
+                } else {
+                    // Non-credentialed sessions still receive the cached
+                    // readiness projection, but must not touch the secure
+                    // store merely because the enclosing refresh has a
+                    // provider session set.
+                    service.readiness()
                 }
             };
             self.metadata_provider_registry
@@ -5082,8 +5103,34 @@ fn hex_encode_bytes(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Platform, resolve_data_directory, trace_id_from_entropy};
+    use super::{
+        Platform, resolve_data_directory, sessions_require_credentials, trace_id_from_entropy,
+    };
+    use argus_application::{EnrichmentProviderSession, MetadataProviderRegistry, ProviderId};
     use std::path::PathBuf;
+
+    struct TestProviderSession(ProviderId);
+
+    impl EnrichmentProviderSession for TestProviderSession {
+        fn provider_id(&self) -> ProviderId {
+            self.0
+        }
+    }
+
+    #[test]
+    fn credential_refresh_is_required_only_for_credentialed_sessions() {
+        let registry = MetadataProviderRegistry::production();
+        let local_sessions: Vec<Box<dyn EnrichmentProviderSession>> =
+            vec![Box::new(TestProviderSession(ProviderId::GameTdb))];
+        let credentialed_sessions: Vec<Box<dyn EnrichmentProviderSession>> =
+            vec![Box::new(TestProviderSession(ProviderId::SteamGridDb))];
+
+        assert!(!sessions_require_credentials(&registry, &local_sessions));
+        assert!(sessions_require_credentials(
+            &registry,
+            &credentialed_sessions
+        ));
+    }
 
     #[test]
     fn resolves_name_based_platform_paths() {

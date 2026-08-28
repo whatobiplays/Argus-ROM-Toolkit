@@ -226,6 +226,29 @@ void main() {
     },
   );
 
+  test('lifecycle demand retries an initial root load after failure', () async {
+    final api = FakeSourcesApi()..childrenByParent[''] = numberedEntries(3);
+    api.listChildrenFailure = transportFailure();
+    final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+    final container = createContainer(api, demands: demands.stream);
+    await settle();
+
+    expect(
+      container.read(sourceHierarchyControllerProvider(_rootId)),
+      isA<AsyncError<SourceHierarchyState>>(),
+    );
+    api.listChildrenFailure = null;
+    demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+
+    final state = await waitForState(
+      container,
+      (value) => value.scopesByParent['']?.hasLoaded == true,
+    );
+    expect(state.scopesByParent['']!.children, hasLength(3));
+    expect(api.listChildrenCalls, 2);
+    await demands.close();
+  });
+
   test(
     'exact invalidation scopes refresh only the reliable loaded scope',
     () async {

@@ -252,12 +252,45 @@ SourcesReconciliationDemandSource _composeSourcesReconciliationDemands(
   ApplicationLifecycleReconciliationDemandSource lifecycleDemands,
 ) {
   final merged = StreamController<SourcesReconciliationDemand>.broadcast();
+  var storageDemandPending = false;
+  var lifecycleDemandPending = false;
+  var flushScheduled = false;
+
+  void flushPlatformDemands() {
+    flushScheduled = false;
+    final shouldRefreshRoots = storageDemandPending;
+    final shouldReconcileLoadedScopes = lifecycleDemandPending;
+    storageDemandPending = false;
+    lifecycleDemandPending = false;
+
+    // A lifecycle demand already refreshes the authoritative root list and
+    // every loaded hierarchy/browser scope. It therefore subsumes a storage
+    // demand emitted by the same Android resume without losing the loaded
+    // scope reconciliation.
+    if (shouldReconcileLoadedScopes) {
+      merged.add(const SourcesReconciliationDemand.lifecycleChanged());
+    } else if (shouldRefreshRoots) {
+      merged.add(const SourcesReconciliationDemand.rootsChanged());
+    }
+  }
+
+  void schedulePlatformDemand({
+    required bool storage,
+    required bool lifecycle,
+  }) {
+    storageDemandPending = storageDemandPending || storage;
+    lifecycleDemandPending = lifecycleDemandPending || lifecycle;
+    if (flushScheduled) return;
+    flushScheduled = true;
+    scheduleMicrotask(flushPlatformDemands);
+  }
+
   final eventSubscription = eventDemands.stream.listen(merged.add);
   final storageSubscription = storageDemands.stream.listen((_) {
-    merged.add(const SourcesReconciliationDemand.rootsChanged());
+    schedulePlatformDemand(storage: true, lifecycle: false);
   });
   final lifecycleSubscription = lifecycleDemands.stream.listen((_) {
-    merged.add(const SourcesReconciliationDemand.lifecycleChanged());
+    schedulePlatformDemand(storage: false, lifecycle: true);
   });
   ref.onDispose(() {
     unawaited(eventSubscription.cancel());

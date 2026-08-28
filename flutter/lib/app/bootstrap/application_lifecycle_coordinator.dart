@@ -30,6 +30,7 @@ class ApplicationLifecycleCoordinator extends _$ApplicationLifecycleCoordinator
   StreamController<ApplicationLifecycleReconciliationDemand>? _demands;
   bool _resumeQueued = false;
   bool _resuming = false;
+  bool _resumePending = false;
 
   @override
   ApplicationLifecycleReconciliationDemandSource build() {
@@ -46,9 +47,14 @@ class ApplicationLifecycleCoordinator extends _$ApplicationLifecycleCoordinator
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed || _resumeQueued || _resuming) {
+    if (state != AppLifecycleState.resumed) {
       return;
     }
+    if (_resuming) {
+      _resumePending = true;
+      return;
+    }
+    if (_resumeQueued) return;
     _resumeQueued = true;
     scheduleMicrotask(_reconcileAfterResume);
   }
@@ -73,6 +79,11 @@ class ApplicationLifecycleCoordinator extends _$ApplicationLifecycleCoordinator
       }
     } finally {
       _resuming = false;
+      if (_resumePending && ref.mounted) {
+        _resumePending = false;
+        _resumeQueued = true;
+        scheduleMicrotask(_reconcileAfterResume);
+      }
     }
   }
 }

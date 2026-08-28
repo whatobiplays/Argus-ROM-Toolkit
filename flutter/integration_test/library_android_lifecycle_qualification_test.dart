@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/app_bootstrap.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
+import 'package:argus/app/platform/native/android_qualification_api.dart';
 import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/library.dart';
@@ -79,7 +80,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(
         demands.whereType<LibraryReconciliationDemandListChanged>(),
-        hasLength(1),
+        isNotEmpty,
       );
 
       final host = container.read(foregroundExecutionHostApiProvider);

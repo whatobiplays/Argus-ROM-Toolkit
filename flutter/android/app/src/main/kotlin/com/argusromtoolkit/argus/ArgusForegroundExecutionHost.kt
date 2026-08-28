@@ -179,10 +179,12 @@ class ArgusForegroundExecutionHost private constructor(
     internal fun triggerTimeoutForQualification(): Boolean {
         val current = service
         if (current == null || serviceState != ServiceState.LIVE) return false
-        if (!serviceIsAttached(current) ||
+        val attached = serviceIsAttached(current)
+        if (!attached ||
             Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM
         ) {
             onServiceTimeout(current)
+            if (attached) current.stopSelf()
             return true
         }
         current.triggerTimeoutForQualification()

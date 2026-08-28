@@ -250,6 +250,38 @@ void main() {
   });
 
   test(
+    'lifecycle demand coalesces with an in-flight initial root load',
+    () async {
+      final api = FakeSourcesApi()..childrenByParent[''] = numberedEntries(3);
+      final gate = Completer<void>();
+      api.listChildrenGates.add(gate);
+      api.listChildrenFailuresByCall[2] = transportFailure();
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = createContainer(api, demands: demands.stream);
+
+      await settle();
+      expect(api.listChildrenCalls, 1);
+
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      await settle();
+      expect(
+        api.listChildrenCalls,
+        1,
+        reason: 'a lifecycle demand must join the initial root read',
+      );
+
+      gate.complete();
+      final state = await waitForState(
+        container,
+        (value) => value.scopesByParent['']?.hasLoaded == true,
+      );
+      expect(state.scopesByParent['']!.children, hasLength(3));
+      expect(api.listChildrenCalls, 1);
+      await demands.close();
+    },
+  );
+
+  test(
     'exact invalidation scopes refresh only the reliable loaded scope',
     () async {
       final dirA = fakeEntry(id: 'a' * 32, name: 'A');

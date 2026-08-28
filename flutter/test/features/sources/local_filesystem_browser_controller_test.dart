@@ -260,6 +260,52 @@ void main() {
     },
   );
 
+  test(
+    'disposal ignores reconciliation queued by an in-flight browse load',
+    () async {
+      final api = _BrowserFakeApi();
+      final demands = StreamController<SourcesReconciliationDemand>.broadcast();
+      final container = ProviderContainer(
+        overrides: [
+          sourcesApiProvider.overrideWithValue(api),
+          sourcesReconciliationDemandProvider.overrideWithValue(
+            SourcesReconciliationDemandSource(demands.stream),
+          ),
+        ],
+      );
+      var disposed = false;
+      addTearDown(() async {
+        if (!disposed) {
+          disposed = true;
+          container.dispose();
+        }
+        await demands.close();
+      });
+      final observation = container.listen(
+        localFilesystemBrowserControllerProvider,
+        (previous, next) {},
+      );
+      addTearDown(observation.close);
+      final controller = container.read(
+        localFilesystemBrowserControllerProvider.notifier,
+      );
+
+      final gate = Completer<void>();
+      api.browseGates.add(gate);
+      final opening = controller.openRoot(api.root);
+      await Future<void>.delayed(Duration.zero);
+
+      demands.add(const SourcesReconciliationDemand.lifecycleChanged());
+      await Future<void>.delayed(Duration.zero);
+      disposed = true;
+      container.dispose();
+
+      gate.complete();
+      await opening;
+      await _settle();
+    },
+  );
+
   test('back to the volume list invalidates an in-flight refresh', () async {
     final api = _BrowserFakeApi();
     final container = ProviderContainer(

@@ -151,7 +151,7 @@ set -m
     "--dart-define=ARGUS_LIBRARY_ANDROID_CONTINUE_PATH=${DEVICE_CONTINUE_PATH}"
 ) > "${INTEGRATION_LOG}" 2>&1 &
 test_pid=$!
-test_pgid="$(ps -o pgid= -p "${test_pid}" | tr -d ' ')"
+test_pgid="$(ps -o pgid= -p "${test_pid}" 2>/dev/null | tr -d ' ' || true)"
 
 wait_for_device_file() {
   local path="$1"

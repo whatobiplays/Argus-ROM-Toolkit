@@ -53,6 +53,7 @@ final class FakeSourcesApi implements SourcesApi {
   Future<void> Function()? listChildrenGate;
   Future<void> Function()? getDetailGate;
   final List<Completer<void>> listChildrenGates = [];
+  final Map<int, Object> listChildrenFailuresByCall = {};
   final List<Completer<void>> getDetailGates = [];
 
   /// Deterministic precomputed child-page responses, consumed in order after
@@ -222,6 +223,10 @@ final class FakeSourcesApi implements SourcesApi {
         listChildrenFailure = null;
         throw failure;
       }
+      final failureForCall = listChildrenFailuresByCall.remove(
+        listChildrenCalls,
+      );
+      if (failureForCall != null) throw failureForCall;
       if (listChildrenScripted.isNotEmpty) {
         return listChildrenScripted.removeAt(0);
       }

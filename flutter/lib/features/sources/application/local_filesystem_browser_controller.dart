@@ -39,6 +39,7 @@ class LocalFilesystemBrowserController
   LocalFilesystemBrowserState build() {
     ref.onDispose(() {
       _demandToken++;
+      _pendingReconciliation = false;
       unawaited(_demandSubscription?.cancel());
     });
     _subscribeToDemandSource(ref.watch(sourcesReconciliationDemandProvider));
@@ -61,7 +62,7 @@ class LocalFilesystemBrowserController
       final roots = await ref
           .read(sourcesApiProvider)
           .listLocalFilesystemBrowseRoots();
-      if (requestGeneration != _navigationGeneration) return;
+      if (!ref.mounted || requestGeneration != _navigationGeneration) return;
       _failedRequest = null;
       state = state.copyWith(
         roots: List<LocalFilesystemBrowseRoot>.unmodifiable(roots),
@@ -196,7 +197,7 @@ class LocalFilesystemBrowserController
             cursor: cursor,
             pageSize: _pageSize,
           );
-      if (requestGeneration != _navigationGeneration) return;
+      if (!ref.mounted || requestGeneration != _navigationGeneration) return;
       final previous = state.page;
       final combined = append && previous != null
           ? LocalFilesystemBrowsePage(
@@ -214,7 +215,7 @@ class LocalFilesystemBrowserController
         failure: null,
       );
     } catch (error, stackTrace) {
-      if (requestGeneration != _navigationGeneration) return;
+      if (!ref.mounted || requestGeneration != _navigationGeneration) return;
       state = state.copyWith(
         loading: false,
         loadingMore: false,
@@ -240,7 +241,12 @@ class LocalFilesystemBrowserController
   }
 
   void _drainPendingReconciliation() {
-    if (!_pendingReconciliation || state.loading || state.loadingMore) return;
+    if (!ref.mounted ||
+        !_pendingReconciliation ||
+        state.loading ||
+        state.loadingMore) {
+      return;
+    }
     _pendingReconciliation = false;
     unawaited(refresh());
   }

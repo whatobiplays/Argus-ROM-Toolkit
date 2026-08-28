@@ -257,6 +257,7 @@ SourcesReconciliationDemandSource _composeSourcesReconciliationDemands(
   var flushScheduled = false;
 
   void flushPlatformDemands() {
+    if (merged.isClosed) return;
     flushScheduled = false;
     final shouldRefreshRoots = storageDemandPending;
     final shouldReconcileLoadedScopes = lifecycleDemandPending;

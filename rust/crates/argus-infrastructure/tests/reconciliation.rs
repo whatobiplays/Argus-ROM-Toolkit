@@ -763,6 +763,8 @@ fn finalize_absent_derived_scope_deletes_stale_roots_and_all_descendants() {
             ))?;
             let stale_root = SourceEntryId::from_bytes([0xa1; 16]).expect("stale root id");
             let stale_child = SourceEntryId::from_bytes([0xa2; 16]).expect("stale child id");
+            let stale_grandchild =
+                SourceEntryId::from_bytes([0xa4; 16]).expect("stale grandchild id");
             let current_sibling = SourceEntryId::from_bytes([0xa3; 16]).expect("sibling id");
             scope.source_entries().upsert_derived(derived_entry(
                 root,
@@ -782,6 +784,14 @@ fn finalize_absent_derived_scope_deletes_stale_roots_and_all_descendants() {
             ))?;
             scope.source_entries().upsert_derived(derived_entry(
                 root,
+                stale_grandchild,
+                stale_child,
+                "stale-grandchild",
+                "test.leaf",
+                scan_one,
+            ))?;
+            scope.source_entries().upsert_derived(derived_entry(
+                root,
                 current_sibling,
                 parent,
                 "current-sibling",
@@ -793,11 +803,12 @@ fn finalize_absent_derived_scope_deletes_stale_roots_and_all_descendants() {
                 parent,
                 stale_root,
                 stale_child,
+                stale_grandchild,
                 current_sibling,
             ))
         })
         .expect("seed derived tree");
-    let (parent, stale_root, stale_child, current_sibling) = parent;
+    let (parent, stale_root, stale_child, stale_grandchild, current_sibling) = parent;
 
     let deleted = executor
         .execute(&context(), move |mut scope| {
@@ -811,7 +822,7 @@ fn finalize_absent_derived_scope_deletes_stale_roots_and_all_descendants() {
             Ok::<_, argus_application::ApplicationPortError>(deleted)
         })
         .expect("finalize derived scope");
-    assert_eq!(deleted, 2);
+    assert_eq!(deleted, 3);
 
     let remaining = executor
         .execute(&context(), move |mut scope| {
@@ -821,14 +832,19 @@ fn finalize_absent_derived_scope_deletes_stale_roots_and_all_descendants() {
             let nested = scope
                 .source_entries()
                 .list_children(root, Some(stale_root), 0, 100)?;
+            let deeply_nested =
+                scope
+                    .source_entries()
+                    .list_children(root, Some(stale_child), 0, 100)?;
             scope.commit()?;
-            Ok::<_, argus_application::ApplicationPortError>((root_children, nested))
+            Ok::<_, argus_application::ApplicationPortError>((root_children, nested, deeply_nested))
         })
         .expect("read derived tree");
     assert_eq!(remaining.0.len(), 1);
     assert_eq!(remaining.0[0].source_entry_id(), current_sibling);
     assert!(remaining.1.is_empty());
-    let _ = stale_child;
+    assert!(remaining.2.is_empty());
+    let _ = stale_grandchild;
     executor.shutdown().expect("shutdown");
 }
 

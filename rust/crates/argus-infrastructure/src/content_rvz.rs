@@ -1904,6 +1904,26 @@ mod tests {
     }
 
     #[test]
+    fn lzma2_bound_is_enforced_before_an_earlier_chunk_can_grow_output() {
+        let malformed = [0x01, 0x00, 0x00, b'a', 0x01, 0xff, 0xff, 0x00];
+
+        assert_eq!(
+            decode_lzma2_bounded(&malformed, 1, &[0; 7]),
+            Err(OpticalError::Malformed)
+        );
+    }
+
+    #[test]
+    fn lzma2_uncompressed_chunks_still_decode_within_the_bound() {
+        let encoded = [0x01, 0x00, 0x01, b'a', b'b', 0x00];
+
+        assert_eq!(
+            decode_lzma2_bounded(&encoded, 2, &[0; 7]).expect("bounded LZMA2"),
+            b"ab"
+        );
+    }
+
+    #[test]
     fn rvz_prng_packing_emits_all_four_bytes_of_each_word() {
         let seed: [u8; 68] = core::array::from_fn(|index| index as u8);
         let mut packed = Vec::with_capacity(4 + seed.len());

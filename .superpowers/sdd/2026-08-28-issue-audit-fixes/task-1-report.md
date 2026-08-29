@@ -166,9 +166,9 @@ I updated `rust/Cargo.toml` and `rust/Cargo.lock` to resolve the maintained repl
 
 Reasoning:
 
-1. The current code uses only the `available_space` API, and `fs4 1.1.0` exposes the same API shape.
+1. The current code uses `available_space` plus the `fs2::FileExt` locking methods used by the staging session and startup cleanup; `fs4 1.1.0` exposes the required API surface for both uses.
 2. Cargo package aliasing allows the dependency key to remain `fs2`, so `use fs2::available_space;` remains valid without editing production files outside the write set.
-3. `fs4 1.1.0` advertises `rust-version: 1.75.0`, which is compatible with the pinned Rust 1.97.1 toolchain.
+3. `fs4 1.1.0` advertises `rust-version: 1.75.0`, which is compatible with the pinned Rust 1.97.1 toolchain, including the `FileExt` lock methods.
 4. The refreshed lockfile shows the workspace now resolves to `fs4 1.1.0` instead of `fs2 0.4.3`.
 
 ## Commands run and results

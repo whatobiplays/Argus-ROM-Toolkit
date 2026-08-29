@@ -9,6 +9,7 @@
 //! pre-enumeration cancellation).
 
 use std::fs;
+use std::time::UNIX_EPOCH;
 
 use argus_application::{
     EnumerationOutcome, LibrarySourceAccess, LocalFilesystemBrowseProvider,
@@ -147,7 +148,22 @@ fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
             &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
         )
         .expect("initial reader");
-    let initial_fingerprint = initial.source_fingerprint().map(str::to_owned);
+    let initial_metadata = fs::metadata(&path).expect("initial metadata");
+    let initial_modified_at_ms = initial_metadata
+        .modified()
+        .expect("initial mtime")
+        .duration_since(UNIX_EPOCH)
+        .expect("initial mtime epoch")
+        .as_millis();
+    let expected_fingerprint = format!(
+        "v1:file:{}:{}",
+        initial_metadata.len(),
+        initial_modified_at_ms
+    );
+    assert_eq!(
+        initial.source_fingerprint(),
+        Some(expected_fingerprint.as_str())
+    );
 
     fs::write(&path, b"other-version").expect("same-length rewrite");
     assert_eq!(
@@ -166,9 +182,10 @@ fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
             &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
         )
         .expect("current reader");
-    assert_ne!(
-        initial_fingerprint,
-        current.source_fingerprint().map(str::to_owned)
+    assert!(
+        current
+            .source_fingerprint()
+            .is_some_and(|fingerprint| fingerprint.starts_with("v1:file:"))
     );
 }
 

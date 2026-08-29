@@ -202,7 +202,7 @@ fn derived_entries_upsert_by_transformation_key_and_keep_provider_coordinates_em
 }
 
 #[test]
-fn derived_upsert_preserves_creation_time_and_clears_provider_evidence() {
+fn derived_upsert_preserves_creation_time_and_keeps_provider_evidence_empty() {
     let directory = tempdir().expect("tempdir");
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");

@@ -120,7 +120,7 @@ fn rejects_drive_qualified_references_before_relative_normalization() {
     assert_eq!(
         resolve_optical_dependencies(
             &descriptor,
-            &["C:\\\\disc\\\\track.bin".to_owned()],
+            &["C:\\disc\\track.bin".to_owned()],
             &provider_candidates,
         ),
         Err(OpticalDependencyError::CrossRoot)
@@ -154,7 +154,7 @@ fn rejects_drive_qualified_references_before_relative_normalization() {
     assert_eq!(
         resolve_content_dependencies(
             "disc/game.cue",
-            &["E:\\\\disc\\\\track.bin".to_owned()],
+            &["E:\\disc\\track.bin".to_owned()],
             &content_candidates,
         ),
         Err(OpticalDependencyError::CrossRoot)

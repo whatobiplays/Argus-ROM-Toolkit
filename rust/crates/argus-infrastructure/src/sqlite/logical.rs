@@ -2498,14 +2498,15 @@ fn read_normalized_provenance(
                 .and_then(|value| {
                     parse_scan_run_id(value).map_err(|_| rusqlite::Error::InvalidQuery)
                 })?;
-            Ok(ContentProvenanceMemberSummary::new_with_version(
+            ContentProvenanceMemberSummary::new_with_version(
                 role,
                 association_key,
                 source_entry_id,
                 source_fingerprint,
                 derived_fingerprint,
                 scan_id,
-            ))
+            )
+            .map_err(|_| rusqlite::Error::InvalidQuery)
         })
         .map_err(map_persistence_operation_error)?;
     let members = rows
@@ -2562,13 +2563,16 @@ fn read_content_summary(row: &Row<'_>) -> rusqlite::Result<GameContentSummary> {
             if matches!(proving_coordinate_kind.as_deref(), Some("derived")) && provider.is_some() {
                 return Err(rusqlite::Error::InvalidQuery);
             }
-            Some(ContentProvenanceSummary::new_with_version(
-                parse_source_entry_id(source).map_err(|_| rusqlite::Error::InvalidQuery)?,
-                key,
-                provider,
-                derived,
-                parse_scan_run_id(scan).map_err(|_| rusqlite::Error::InvalidQuery)?,
-            ))
+            Some(
+                ContentProvenanceSummary::new_with_version(
+                    parse_source_entry_id(source).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    key,
+                    provider,
+                    derived,
+                    parse_scan_run_id(scan).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                )
+                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+            )
         }
         (None, None, None, None, None) => None,
         _ => return Err(rusqlite::Error::InvalidQuery),

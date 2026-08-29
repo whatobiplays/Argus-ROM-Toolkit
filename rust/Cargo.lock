@@ -261,6 +261,7 @@ dependencies = [
  "keyring-core",
  "lzma-rust2",
  "oxiarc-bzip2",
+ "oxiarc-core",
  "oxiarc-lzma",
  "rusqlite",
  "ruzstd 0.9.0",

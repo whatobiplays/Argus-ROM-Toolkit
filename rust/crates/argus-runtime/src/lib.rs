@@ -2273,7 +2273,7 @@ impl KernelBootstrap {
         plan: &argus_application::LibraryScanExecutionPlan,
         context: &OperationContext,
         parent: &SourceEntryRecord,
-        observed_at: i64,
+        observed_at_seconds: i64,
         scope: &argus_infrastructure::content::DerivedScopeResult,
     ) -> Result<Vec<SourceEntryRecord>, ApplicationError> {
         let transformation_id = scope.transformation_id().ok_or_else(|| {
@@ -2318,7 +2318,7 @@ impl KernelBootstrap {
                     &scope_identity,
                     &observations,
                     observation_run_id,
-                    observed_at,
+                    observed_at_seconds,
                     true,
                     outcome,
                 )?;
@@ -2349,7 +2349,7 @@ impl KernelBootstrap {
         entry: &SourceEntryRecord,
         entries: &mut Vec<SourceEntryRecord>,
         session: &mut ParsingSession<'_>,
-        observed_at: i64,
+        observed_at_seconds: i64,
         catalog: &IdentitySchemeCatalog,
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<SourceTreeResult, TransformationFailure> {
@@ -2433,7 +2433,7 @@ impl KernelBootstrap {
         }
 
         let children = self
-            .reconcile_derived_scope_with_context(plan, context, entry, observed_at, &scope)
+            .reconcile_derived_scope_with_context(plan, context, entry, observed_at_seconds, &scope)
             .map_err(|_| TransformationFailure::ReadFailure)?;
         let mut candidates = Vec::new();
         let mut derived_playlists = Vec::new();
@@ -2459,7 +2459,7 @@ impl KernelBootstrap {
                 &child,
                 entries,
                 session,
-                observed_at,
+                observed_at_seconds,
                 catalog,
                 is_cancelled,
             ) {
@@ -2875,7 +2875,7 @@ impl KernelBootstrap {
         context: &OperationContext,
         sessions: &mut [Box<dyn EnrichmentProviderSession>],
         parsing_session: &mut ParsingSession<'_>,
-        now: i64,
+        timestamps: ContentRefreshTimestamps,
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<(usize, u64), ApplicationError> {
         if is_cancelled() {
@@ -2919,7 +2919,7 @@ impl KernelBootstrap {
                 entry,
                 &mut entries,
                 parsing_session,
-                now,
+                timestamps.derived_observed_at_seconds,
                 &catalog,
                 is_cancelled,
             ) {
@@ -3511,7 +3511,12 @@ impl KernelBootstrap {
             if is_cancelled() {
                 return Err(cancelled_sources_error(context.trace_id()));
             }
-            match self.hydrate_committed_game_with_context(*game_id, context, sessions, now) {
+            match self.hydrate_committed_game_with_context(
+                *game_id,
+                context,
+                sessions,
+                timestamps.now_millis,
+            ) {
                 Ok(game_issues) => {
                     issue_count = issue_count.saturating_add(game_issues);
                 }
@@ -4540,6 +4545,21 @@ struct OpticalSourceLink {
     source_entry_id: SourceEntryId,
     game_content_id: GameContentId,
     platform: PlatformId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ContentRefreshTimestamps {
+    pub(crate) now_millis: i64,
+    pub(crate) derived_observed_at_seconds: i64,
+}
+
+impl ContentRefreshTimestamps {
+    pub(crate) fn from_millis(now_millis: i64) -> Self {
+        Self {
+            now_millis,
+            derived_observed_at_seconds: now_millis.div_euclid(1_000),
+        }
+    }
 }
 
 #[derive(Default)]

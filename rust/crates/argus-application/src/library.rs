@@ -724,6 +724,13 @@ impl ContentIdentitySummary {
     }
 }
 
+/// Rejects a provenance projection that mixes provider and derived evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProvenanceVersionError {
+    /// Both provider-native and derived fingerprints were supplied.
+    BothFingerprintsPresent,
+}
+
 /// Exact proving provenance without exposing filesystem locations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentProvenanceSummary {
@@ -750,6 +757,7 @@ impl ContentProvenanceSummary {
             None,
             last_observed_scan_id,
         )
+        .expect("provider-only provenance is always valid")
     }
 
     /// Creates one exact persisted provenance summary with either provider or
@@ -760,23 +768,29 @@ impl ContentProvenanceSummary {
         source_fingerprint: Option<String>,
         derived_fingerprint: Option<String>,
         last_observed_scan_id: ScanRunId,
-    ) -> Self {
+    ) -> Result<Self, ProvenanceVersionError> {
+        if source_fingerprint.is_some() && derived_fingerprint.is_some() {
+            return Err(ProvenanceVersionError::BothFingerprintsPresent);
+        }
         let association_key = association_key.into();
-        Self {
+        Ok(Self {
             source_entry_id,
             association_key: association_key.clone(),
             source_fingerprint: source_fingerprint.clone(),
             derived_fingerprint: derived_fingerprint.clone(),
             last_observed_scan_id,
-            members: vec![ContentProvenanceMemberSummary::new_with_version(
-                ContentProvenanceRole::Primary,
-                Some(association_key),
-                source_entry_id,
-                source_fingerprint,
-                derived_fingerprint,
-                last_observed_scan_id,
-            )],
-        }
+            members: vec![
+                ContentProvenanceMemberSummary::new_with_version(
+                    ContentProvenanceRole::Primary,
+                    Some(association_key),
+                    source_entry_id,
+                    source_fingerprint,
+                    derived_fingerprint,
+                    last_observed_scan_id,
+                )
+                .expect("summary validates mutually exclusive provenance"),
+            ],
+        })
     }
 
     /// Creates a projection from every normalized exact provenance member.
@@ -857,6 +871,7 @@ impl ContentProvenanceMemberSummary {
             None,
             last_observed_scan_id,
         )
+        .expect("provider-only provenance member is always valid")
     }
 
     /// Creates one bounded provenance-member projection with either provider
@@ -868,15 +883,18 @@ impl ContentProvenanceMemberSummary {
         source_fingerprint: Option<String>,
         derived_fingerprint: Option<String>,
         last_observed_scan_id: ScanRunId,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ProvenanceVersionError> {
+        if source_fingerprint.is_some() && derived_fingerprint.is_some() {
+            return Err(ProvenanceVersionError::BothFingerprintsPresent);
+        }
+        Ok(Self {
             role,
             association_key,
             source_entry_id,
             source_fingerprint,
             derived_fingerprint,
             last_observed_scan_id,
-        }
+        })
     }
 
     /// Returns the exact provenance role.

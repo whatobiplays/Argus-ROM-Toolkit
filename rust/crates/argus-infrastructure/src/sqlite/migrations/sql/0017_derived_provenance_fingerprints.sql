@@ -22,116 +22,120 @@ ALTER TABLE grouping_evidence_member
 
 UPDATE content_identity
 SET proving_derived_fingerprint = (
-    SELECT source_entry.derived_fingerprint
+    SELECT CASE
+        WHEN source_entry.last_observed_scan_id = content_identity.proving_scan_run_id
+        THEN COALESCE(
+            content_identity.proving_source_fingerprint,
+            source_entry.derived_fingerprint
+        )
+    END
     FROM source_entry
     WHERE source_entry.source_entry_id = content_identity.proving_source_entry_id
       AND source_entry.coordinate_kind = 'derived'
-      AND source_entry.source_fingerprint IS NULL
-      AND source_entry.derived_fingerprint IS NOT NULL
-      AND source_entry.last_observed_scan_id = content_identity.proving_scan_run_id
-)
-WHERE proving_derived_fingerprint IS NULL
-  AND proving_source_entry_id IS NOT NULL
-  AND proving_scan_run_id IS NOT NULL
-  AND proving_source_fingerprint IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM source_entry
-      WHERE source_entry.source_entry_id = content_identity.proving_source_entry_id
-        AND source_entry.coordinate_kind = 'derived'
-        AND source_entry.source_fingerprint IS NULL
-        AND source_entry.derived_fingerprint IS NOT NULL
-        AND source_entry.last_observed_scan_id = content_identity.proving_scan_run_id
-  );
+),
+proving_source_fingerprint = CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM source_entry
+        WHERE source_entry.source_entry_id = content_identity.proving_source_entry_id
+          AND source_entry.coordinate_kind = 'derived'
+    ) THEN NULL
+    ELSE proving_source_fingerprint
+END
+WHERE proving_source_entry_id IS NOT NULL;
 
 UPDATE content_identity_provenance
 SET derived_fingerprint = (
-    SELECT source_entry.derived_fingerprint
+    SELECT CASE
+        WHEN source_entry.last_observed_scan_id = content_identity_provenance.last_observed_scan_id
+        THEN COALESCE(
+            content_identity_provenance.source_fingerprint,
+            source_entry.derived_fingerprint
+        )
+    END
     FROM source_entry
     WHERE source_entry.source_entry_id = content_identity_provenance.source_entry_id
       AND source_entry.coordinate_kind = 'derived'
-      AND source_entry.source_fingerprint IS NULL
-      AND source_entry.derived_fingerprint IS NOT NULL
-      AND source_entry.last_observed_scan_id = content_identity_provenance.last_observed_scan_id
-)
-WHERE derived_fingerprint IS NULL
-  AND last_observed_scan_id IS NOT NULL
-  AND source_fingerprint IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM source_entry
-      WHERE source_entry.source_entry_id = content_identity_provenance.source_entry_id
-        AND source_entry.coordinate_kind = 'derived'
-        AND source_entry.source_fingerprint IS NULL
-        AND source_entry.derived_fingerprint IS NOT NULL
-        AND source_entry.last_observed_scan_id = content_identity_provenance.last_observed_scan_id
-  );
+),
+source_fingerprint = CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM source_entry
+        WHERE source_entry.source_entry_id = content_identity_provenance.source_entry_id
+          AND source_entry.coordinate_kind = 'derived'
+    ) THEN NULL
+    ELSE source_fingerprint
+END
+WHERE source_entry_id IS NOT NULL;
 
 UPDATE game_content_source
 SET derived_fingerprint = (
-    SELECT source_entry.derived_fingerprint
+    SELECT CASE
+        WHEN source_entry.last_observed_scan_id = game_content_source.last_observed_scan_id
+        THEN COALESCE(
+            game_content_source.source_fingerprint,
+            source_entry.derived_fingerprint
+        )
+    END
     FROM source_entry
     WHERE source_entry.source_entry_id = game_content_source.source_entry_id
       AND source_entry.coordinate_kind = 'derived'
-      AND source_entry.source_fingerprint IS NULL
-      AND source_entry.derived_fingerprint IS NOT NULL
-      AND source_entry.last_observed_scan_id = game_content_source.last_observed_scan_id
-)
-WHERE derived_fingerprint IS NULL
-  AND last_observed_scan_id IS NOT NULL
-  AND source_fingerprint IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM source_entry
-      WHERE source_entry.source_entry_id = game_content_source.source_entry_id
-        AND source_entry.coordinate_kind = 'derived'
-        AND source_entry.source_fingerprint IS NULL
-        AND source_entry.derived_fingerprint IS NOT NULL
-        AND source_entry.last_observed_scan_id = game_content_source.last_observed_scan_id
-  );
+),
+source_fingerprint = CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM source_entry
+        WHERE source_entry.source_entry_id = game_content_source.source_entry_id
+          AND source_entry.coordinate_kind = 'derived'
+    ) THEN NULL
+    ELSE source_fingerprint
+END
+WHERE source_entry_id IS NOT NULL;
 
 UPDATE grouping_evidence
 SET derived_fingerprint = (
-    SELECT source_entry.derived_fingerprint
+    SELECT CASE
+        WHEN source_entry.last_observed_scan_id = grouping_evidence.last_observed_scan_id
+        THEN COALESCE(
+            grouping_evidence.source_fingerprint,
+            source_entry.derived_fingerprint
+        )
+    END
     FROM source_entry
     WHERE source_entry.source_entry_id = grouping_evidence.playlist_source_entry_id
       AND source_entry.coordinate_kind = 'derived'
-      AND source_entry.source_fingerprint IS NULL
-      AND source_entry.derived_fingerprint IS NOT NULL
-      AND source_entry.last_observed_scan_id = grouping_evidence.last_observed_scan_id
-)
-WHERE derived_fingerprint IS NULL
-  AND last_observed_scan_id IS NOT NULL
-  AND source_fingerprint IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM source_entry
-      WHERE source_entry.source_entry_id = grouping_evidence.playlist_source_entry_id
-        AND source_entry.coordinate_kind = 'derived'
-        AND source_entry.source_fingerprint IS NULL
-        AND source_entry.derived_fingerprint IS NOT NULL
-        AND source_entry.last_observed_scan_id = grouping_evidence.last_observed_scan_id
-  );
+),
+source_fingerprint = CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM source_entry
+        WHERE source_entry.source_entry_id = grouping_evidence.playlist_source_entry_id
+          AND source_entry.coordinate_kind = 'derived'
+    ) THEN NULL
+    ELSE source_fingerprint
+END
+WHERE playlist_source_entry_id IS NOT NULL;
 
 UPDATE grouping_evidence_member
 SET member_derived_fingerprint = (
-    SELECT source_entry.derived_fingerprint
+    SELECT CASE
+        WHEN source_entry.last_observed_scan_id = grouping_evidence_member.member_last_observed_scan_id
+        THEN COALESCE(
+            grouping_evidence_member.member_source_fingerprint,
+            source_entry.derived_fingerprint
+        )
+    END
     FROM source_entry
     WHERE source_entry.source_entry_id = grouping_evidence_member.member_source_entry_id
       AND source_entry.coordinate_kind = 'derived'
-      AND source_entry.source_fingerprint IS NULL
-      AND source_entry.derived_fingerprint IS NOT NULL
-      AND source_entry.last_observed_scan_id = grouping_evidence_member.member_last_observed_scan_id
-)
-WHERE member_derived_fingerprint IS NULL
-  AND member_last_observed_scan_id IS NOT NULL
-  AND member_source_fingerprint IS NULL
-  AND EXISTS (
-      SELECT 1
-      FROM source_entry
-      WHERE source_entry.source_entry_id = grouping_evidence_member.member_source_entry_id
-        AND source_entry.coordinate_kind = 'derived'
-        AND source_entry.source_fingerprint IS NULL
-        AND source_entry.derived_fingerprint IS NOT NULL
-        AND source_entry.last_observed_scan_id = grouping_evidence_member.member_last_observed_scan_id
-  );
+),
+member_source_fingerprint = CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM source_entry
+        WHERE source_entry.source_entry_id = grouping_evidence_member.member_source_entry_id
+          AND source_entry.coordinate_kind = 'derived'
+    ) THEN NULL
+    ELSE member_source_fingerprint
+END
+WHERE member_source_entry_id IS NOT NULL;

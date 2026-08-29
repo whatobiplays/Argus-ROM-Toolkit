@@ -42,7 +42,7 @@ fn reconcile_with_timestamp(
     scope: &DerivedScopeIdentity<'_>,
     observations: &[DerivedEntryObservation],
     observation_run_id: ScanRunId,
-    observed_at: i64,
+    observed_at_seconds: i64,
     stable_input: bool,
     outcome: DerivedScopeOutcome,
 ) -> Result<Vec<SourceEntryId>, PersistenceError> {
@@ -51,7 +51,7 @@ fn reconcile_with_timestamp(
         scope,
         observations,
         observation_run_id,
-        observed_at,
+        observed_at_seconds,
         stable_input,
         outcome,
     )
@@ -166,13 +166,13 @@ fn derived_scope_uses_the_operation_timestamp_for_new_and_updated_rows() {
     let parent = id("11111111111111111111111111111111");
     let mut repository = FakeRepository::new(root("22222222222222222222222222222222"));
     let observed = observation("member:game", "game.gba", "fingerprint-game");
-    let observed_at = 1_725_000_123_456_i64;
+    let observed_at_seconds = 1_725_000_123_i64;
     let first = reconcile_with_timestamp(
         &mut repository,
         &scope(parent),
         std::slice::from_ref(&observed),
         scan("33333333333333333333333333333333"),
-        observed_at,
+        observed_at_seconds,
         true,
         DerivedScopeOutcome::Complete,
     )
@@ -180,15 +180,18 @@ fn derived_scope_uses_the_operation_timestamp_for_new_and_updated_rows() {
     let (created_at, updated_at) = repository
         .timestamps_for(first[0])
         .expect("recorded timestamps");
-    assert_eq!((created_at, updated_at), (observed_at, observed_at));
+    assert_eq!(
+        (created_at, updated_at),
+        (observed_at_seconds, observed_at_seconds)
+    );
 
-    let updated_at_ms = observed_at + 77;
+    let updated_at_seconds = observed_at_seconds + 77;
     reconcile_with_timestamp(
         &mut repository,
         &scope(parent),
         std::slice::from_ref(&observed),
         scan("44444444444444444444444444444444"),
-        updated_at_ms,
+        updated_at_seconds,
         true,
         DerivedScopeOutcome::Complete,
     )
@@ -196,7 +199,10 @@ fn derived_scope_uses_the_operation_timestamp_for_new_and_updated_rows() {
     let (created_at, updated_at) = repository
         .timestamps_for(first[0])
         .expect("updated timestamps");
-    assert_eq!((created_at, updated_at), (observed_at, updated_at_ms));
+    assert_eq!(
+        (created_at, updated_at),
+        (observed_at_seconds, updated_at_seconds)
+    );
 }
 
 struct FakeRepository {
@@ -343,6 +349,13 @@ impl SourceEntryRepository for FakeRepository {
                 && entry.transformation_revision() == Some(revision)
                 && entry.last_observed_scan_id() != observation_run_id)
         });
+        let retained_ids = self
+            .entries
+            .iter()
+            .map(SourceEntryRecord::source_entry_id)
+            .collect::<std::collections::HashSet<_>>();
+        self.timestamps
+            .retain(|source_entry_id, _| retained_ids.contains(source_entry_id));
         self.finalized_scopes += 1;
         Ok((before - self.entries.len()) as u64)
     }

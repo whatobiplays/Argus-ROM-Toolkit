@@ -111,3 +111,14 @@
 - [x] **Step 1: Add failing format-specific tests for CHD work accounting and pregap mode/boundaries, aligned CSO spans, bounded RVZ LZMA2 output and generated-word reconstruction, and large-valid/zero-WLBA/work-budget WBFS layouts.**
 - [x] **Step 2: Implement the smallest parser-local fixes that enforce these invariants before committing identity evidence.**
 - [x] **Step 3: Run all format-specific tests plus the shared content-recognition suite.**
+
+### Task 7: Version-safe derived provenance migration and binding regeneration
+
+**Files:**
+- Add: `rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0017_derived_provenance_fingerprints.sql`
+- Modify or extend: `rust/crates/argus-infrastructure/tests/migration_v15.rs`
+- Regenerate: repository FRB bindings through the checked-in generator
+
+- [x] **Step 1: Add the five derived-fingerprint columns and backfill only exact persisted scan/source-entry versions.**
+- [x] **Step 2: Move legacy derived evidence out of provider columns and preserve provider-versus-derived exclusivity on reads and writes.**
+- [x] **Step 3: Regenerate bindings and run migration, round-trip, and generated-artifact checks.**

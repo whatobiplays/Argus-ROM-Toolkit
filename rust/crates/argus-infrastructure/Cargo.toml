@@ -25,6 +25,7 @@ keyring.workspace = true
 keyring-core.workspace = true
 lzma-rust2.workspace = true
 oxiarc-bzip2.workspace = true
+oxiarc-core.workspace = true
 oxiarc-lzma.workspace = true
 ruzstd.workspace = true
 rusqlite.workspace = true

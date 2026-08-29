@@ -9,8 +9,8 @@ use super::{content_nintendo, content_sega};
 
 /// Maximum buffer used by a streaming canonicalization pass.
 pub(crate) const STREAM_CHUNK_BYTES: usize = 64 * 1024;
-
-const BLOCKED_TAR_MAGIC_OFFSET: usize = 257;
+pub(crate) const TAR_MAGIC_OFFSET: usize = 257;
+pub(crate) const TAR_MAGIC: &[u8] = b"ustar";
 
 /// Provider-backed range access used by the general content recognizer.
 ///
@@ -412,15 +412,12 @@ fn is_blocked_container(
     reader: &mut dyn ContentReader,
     source_length: u64,
 ) -> Result<bool, ContentRecognitionError> {
-    let probe_length = source_length.min(512) as usize;
-    if probe_length == 0 {
-        return Ok(false);
-    }
-    let mut probe = vec![0_u8; probe_length];
-    read_exact(reader, 0, &mut probe)?;
+    const BLOCKED_PREFIX_BYTES: usize = 8;
+    let prefix_length = source_length.min(BLOCKED_PREFIX_BYTES as u64) as usize;
+    let prefix = read_small(reader, 0, prefix_length)?;
 
-    let starts_with = |magic: &[u8]| probe.starts_with(magic);
-    Ok(starts_with(b"PK\x03\x04")
+    let starts_with = |magic: &[u8]| prefix.starts_with(magic);
+    if starts_with(b"PK\x03\x04")
         || starts_with(b"PK\x05\x06")
         || starts_with(b"PK\x07\x08")
         || starts_with(b"7z\xbc\xaf\x27\x1c")
@@ -433,8 +430,14 @@ fn is_blocked_container(
         || starts_with(b"WBFS")
         || starts_with(b"RVZ\x01")
         || starts_with(b"WIA\x01")
-        || (probe.len() >= BLOCKED_TAR_MAGIC_OFFSET + 5
-            && &probe[BLOCKED_TAR_MAGIC_OFFSET..BLOCKED_TAR_MAGIC_OFFSET + 5] == b"ustar"))
+    {
+        return Ok(true);
+    }
+
+    if source_length >= (TAR_MAGIC_OFFSET + TAR_MAGIC.len()) as u64 {
+        return Ok(read_small(reader, TAR_MAGIC_OFFSET as u64, TAR_MAGIC.len())? == TAR_MAGIC);
+    }
+    Ok(false)
 }
 
 pub(crate) fn read_exact(
@@ -592,4 +595,49 @@ pub(crate) fn in_range(offset: u64, length: u64, source_length: u64) -> bool {
     offset
         .checked_add(length)
         .is_some_and(|end| end <= source_length)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContentReadError, ContentReader, is_blocked_container};
+
+    struct CountingReader {
+        bytes: Vec<u8>,
+        requests: Vec<(u64, usize)>,
+    }
+
+    impl ContentReader for CountingReader {
+        fn len(&self) -> Result<u64, ContentReadError> {
+            Ok(self.bytes.len() as u64)
+        }
+
+        fn read_at(
+            &mut self,
+            offset: u64,
+            destination: &mut [u8],
+        ) -> Result<usize, ContentReadError> {
+            self.requests.push((offset, destination.len()));
+            let start = usize::try_from(offset).map_err(|_| ContentReadError::OutOfRange)?;
+            let end = start
+                .checked_add(destination.len())
+                .ok_or(ContentReadError::OutOfRange)?;
+            let source = self
+                .bytes
+                .get(start..end)
+                .ok_or(ContentReadError::OutOfRange)?;
+            destination.copy_from_slice(source);
+            Ok(source.len())
+        }
+    }
+
+    #[test]
+    fn blocked_container_probe_reads_only_prefix_and_tar_signature_ranges() {
+        let mut reader = CountingReader {
+            bytes: vec![0; 512],
+            requests: Vec::new(),
+        };
+
+        assert!(!is_blocked_container(&mut reader, 512).expect("probe"));
+        assert_eq!(reader.requests, [(0, 8), (257, 5)]);
+    }
 }

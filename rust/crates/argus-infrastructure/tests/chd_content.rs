@@ -69,6 +69,10 @@ fn set_u32_be(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
 }
 
+fn set_u64_be(bytes: &mut [u8], offset: usize, value: u64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_be_bytes());
+}
+
 fn set_iso_both_u16(bytes: &mut [u8], offset: usize, value: u16) {
     bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
     bytes[offset + 2..offset + 4].copy_from_slice(&value.to_be_bytes());
@@ -569,6 +573,42 @@ fn chd_stored_pregap_is_not_hashed_as_the_previous_track_tail() {
     assert_eq!(actual.content_type(), expected.content_type());
     assert_eq!(actual.identity_digest(), expected.identity_digest());
     assert_eq!(actual.canonical_length(), expected.canonical_length());
+}
+
+#[test]
+fn chd_metadata_budget_includes_zero_length_record_headers() {
+    let iso = build_ps1_iso();
+    let metadata = (0..=65_536).map(|_| (*b"NOPE", Vec::new())).collect();
+    assert_eq!(
+        recognize(
+            chd_v5_sparse(
+                iso.len() as u64,
+                ISO_SECTOR_BYTES as u32 * 4,
+                ISO_SECTOR_BYTES as u32,
+                metadata,
+                iso.chunks_exact(ISO_SECTOR_BYTES * 4)
+                    .enumerate()
+                    .map(|(index, bytes)| (index as u32, bytes.to_vec()))
+                    .collect(),
+            ),
+            10_000_000
+        ),
+        Err(OpticalError::ResourceLimitExceeded)
+    );
+}
+
+#[test]
+fn chd_metadata_chain_may_link_to_a_previously_seen_lower_offset() {
+    let iso = build_ps2_iso();
+    let mut chd = dvd_chd(&iso, *b"DVD ");
+    let first = metadata_entry(b"DVD ", &[1], 512);
+    let second = metadata_entry(b"NOPE", &[], 0);
+    set_u64_be(&mut chd, 48, 528);
+    chd[528..528 + first.len()].copy_from_slice(&first);
+    chd[512..512 + second.len()].copy_from_slice(&second);
+
+    let actual = recognize(chd, 2_000_000).expect("backward-linked metadata");
+    assert_eq!(actual.source_representation(), "chd-dvd");
 }
 
 #[test]

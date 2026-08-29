@@ -600,6 +600,11 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                 "identity-exact",
             ),
             (
+                "12121212121212121212121212121212",
+                "13131313131313131313131313131313",
+                "identity-derived",
+            ),
+            (
                 "55555555555555555555555555555555",
                 "66666666666666666666666666666666",
                 "identity-stale",
@@ -637,7 +642,7 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                     SqliteValue::Text(identity_value.to_owned()),
                     SqliteValue::Text(
                         match identity_value {
-                            "identity-exact" | "identity-stale" => {
+                            "identity-exact" | "identity-derived" | "identity-stale" => {
                                 "22222222222222222222222222222222"
                             }
                             "identity-provider" => "11111111111111111111111111111111",
@@ -662,30 +667,34 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
             )?;
         }
 
-        for (provenance_id, identity_id, source_entry_id, scan_run_id) in [
+        for (provenance_id, identity_id, source_entry_id, scan_run_id, source_fingerprint) in [
             (
                 "acacacacacacacacacacacacacacacac",
                 "44444444444444444444444444444444",
                 "22222222222222222222222222222222",
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "legacy-provenance-fingerprint",
             ),
             (
                 "adadadadadadadadadadadadadadadad",
                 "66666666666666666666666666666666",
                 "22222222222222222222222222222222",
                 "ffffffffffffffffffffffffffffffff",
+                "legacy-stale-provenance-fingerprint",
             ),
             (
                 "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
                 "88888888888888888888888888888888",
                 "11111111111111111111111111111111",
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "provider-provenance-fingerprint",
             ),
             (
                 "afafafafafafafafafafafafafafafaf",
                 "abababababababababababababababab",
                 "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "missing-provenance-fingerprint",
             ),
         ] {
             connection.execute_with_values(
@@ -693,32 +702,36 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                      provenance_member_id, content_identity_id, role, association_key,
                      source_entry_id, source_fingerprint, last_observed_scan_id,
                      identity_is_current, created_at, updated_at
-                 ) VALUES (?1, ?2, 'primary', 'primary', ?3, NULL, ?4, 1,
+                 ) VALUES (?1, ?2, 'primary', 'primary', ?3, ?5, ?4, 1,
                      '1000', '1000')",
                 &[
                     SqliteValue::Text(provenance_id.to_owned()),
                     SqliteValue::Text(identity_id.to_owned()),
                     SqliteValue::Text(source_entry_id.to_owned()),
                     SqliteValue::Text(scan_run_id.to_owned()),
+                    SqliteValue::Text(source_fingerprint.to_owned()),
                 ],
             )?;
         }
 
-        for (index, (game_content_id, source_entry_id, scan_run_id)) in [
+        for (index, (game_content_id, source_entry_id, scan_run_id, source_fingerprint)) in [
             (
                 "33333333333333333333333333333333",
                 "22222222222222222222222222222222",
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "legacy-game-content-fingerprint",
             ),
             (
                 "55555555555555555555555555555555",
                 "22222222222222222222222222222222",
                 "ffffffffffffffffffffffffffffffff",
+                "legacy-stale-game-content-fingerprint",
             ),
             (
                 "77777777777777777777777777777777",
                 "11111111111111111111111111111111",
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "provider-game-content-fingerprint",
             ),
         ]
         .into_iter()
@@ -734,27 +747,30 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                     SqliteValue::Text(format!("{index:032x}")),
                     SqliteValue::Text(game_content_id.to_owned()),
                     SqliteValue::Text(source_entry_id.to_owned()),
-                    SqliteValue::Null,
+                    SqliteValue::Text(source_fingerprint.to_owned()),
                     SqliteValue::Text(scan_run_id.to_owned()),
                 ],
             )?;
         }
 
-        for (evidence_id, source_entry_id, scan_run_id) in [
+        for (evidence_id, source_entry_id, scan_run_id, source_fingerprint) in [
             (
                 "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
                 "22222222222222222222222222222222",
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "legacy-grouping-fingerprint",
             ),
             (
                 "bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd",
                 "22222222222222222222222222222222",
                 "ffffffffffffffffffffffffffffffff",
+                "legacy-stale-grouping-fingerprint",
             ),
             (
                 "bebebebebebebebebebebebebebebebe",
                 "11111111111111111111111111111111",
                 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "provider-grouping-fingerprint",
             ),
         ] {
             connection.execute_with_values(
@@ -762,22 +778,24 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                      grouping_evidence_id, evidence_kind, playlist_source_entry_id,
                      source_fingerprint, last_observed_scan_id, is_current,
                      created_at, updated_at
-                 ) VALUES (?1, 'm3u', ?2, NULL, ?3, 1, '1000', '1000')",
+                 ) VALUES (?1, 'm3u', ?2, ?4, ?3, 1, '1000', '1000')",
                 &[
                     SqliteValue::Text(evidence_id.to_owned()),
                     SqliteValue::Text(source_entry_id.to_owned()),
                     SqliteValue::Text(scan_run_id.to_owned()),
+                    SqliteValue::Text(source_fingerprint.to_owned()),
                 ],
             )?;
             connection.execute_with_values(
                 "INSERT INTO grouping_evidence_member (
                      grouping_evidence_id, member_game_content_id, member_source_entry_id,
                      member_source_fingerprint, member_last_observed_scan_id, ordinal
-                 ) VALUES (?1, '33333333333333333333333333333333', ?2, NULL, ?3, 0)",
+                 ) VALUES (?1, '33333333333333333333333333333333', ?2, ?4, ?3, 0)",
                 &[
                     SqliteValue::Text(evidence_id.to_owned()),
                     SqliteValue::Text(source_entry_id.to_owned()),
                     SqliteValue::Text(scan_run_id.to_owned()),
+                    SqliteValue::Text(source_fingerprint.to_owned()),
                 ],
             )?;
         }
@@ -796,31 +814,37 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                     "content_identity",
                     "proving_derived_fingerprint",
                     "44444444444444444444444444444444",
-                    None,
+                    Some("legacy-provider-fingerprint"),
+                ),
+                (
+                    "content_identity",
+                    "proving_derived_fingerprint",
+                    "13131313131313131313131313131313",
+                    Some("derived-v1"),
                 ),
                 (
                     "content_identity_provenance",
                     "derived_fingerprint",
                     "acacacacacacacacacacacacacacacac",
-                    Some("derived-v1"),
+                    Some("legacy-provenance-fingerprint"),
                 ),
                 (
                     "game_content_source",
                     "derived_fingerprint",
                     "00000000000000000000000000000000",
-                    Some("derived-v1"),
+                    Some("legacy-game-content-fingerprint"),
                 ),
                 (
                     "grouping_evidence",
                     "derived_fingerprint",
                     "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
-                    Some("derived-v1"),
+                    Some("legacy-grouping-fingerprint"),
                 ),
                 (
                     "grouping_evidence_member",
                     "member_derived_fingerprint",
                     "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
-                    Some("derived-v1"),
+                    Some("legacy-grouping-fingerprint"),
                 ),
             ] {
                 let value = match table {
@@ -875,6 +899,36 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                     "derived_fingerprint",
                     "provenance_member_id = 'afafafafafafafafafafafafafafafaf'",
                 ),
+                (
+                    "game_content_source",
+                    "derived_fingerprint",
+                    "game_content_source_id = '00000000000000000000000000000001'",
+                ),
+                (
+                    "game_content_source",
+                    "derived_fingerprint",
+                    "game_content_source_id = '00000000000000000000000000000002'",
+                ),
+                (
+                    "grouping_evidence",
+                    "derived_fingerprint",
+                    "grouping_evidence_id = 'bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd'",
+                ),
+                (
+                    "grouping_evidence",
+                    "derived_fingerprint",
+                    "grouping_evidence_id = 'bebebebebebebebebebebebebebebebe'",
+                ),
+                (
+                    "grouping_evidence_member",
+                    "member_derived_fingerprint",
+                    "grouping_evidence_id = 'bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd'",
+                ),
+                (
+                    "grouping_evidence_member",
+                    "member_derived_fingerprint",
+                    "grouping_evidence_id = 'bebebebebebebebebebebebebebebebe'",
+                ),
             ] {
                 assert_eq!(
                     connection.scalar_i64(&format!(
@@ -882,6 +936,67 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
                     ))?,
                     1,
                     "unexpected historical derived backfill in {table}.{column}"
+                );
+            }
+
+            for (table, column, where_clause) in [
+                (
+                    "content_identity",
+                    "proving_source_fingerprint",
+                    "content_identity_id = '44444444444444444444444444444444'",
+                ),
+                (
+                    "content_identity",
+                    "proving_source_fingerprint",
+                    "content_identity_id = '66666666666666666666666666666666'",
+                ),
+                (
+                    "content_identity_provenance",
+                    "source_fingerprint",
+                    "provenance_member_id = 'acacacacacacacacacacacacacacacac'",
+                ),
+                (
+                    "content_identity_provenance",
+                    "source_fingerprint",
+                    "provenance_member_id = 'adadadadadadadadadadadadadadadad'",
+                ),
+                (
+                    "game_content_source",
+                    "source_fingerprint",
+                    "game_content_source_id = '00000000000000000000000000000000'",
+                ),
+                (
+                    "game_content_source",
+                    "source_fingerprint",
+                    "game_content_source_id = '00000000000000000000000000000001'",
+                ),
+                (
+                    "grouping_evidence",
+                    "source_fingerprint",
+                    "grouping_evidence_id = 'bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc'",
+                ),
+                (
+                    "grouping_evidence",
+                    "source_fingerprint",
+                    "grouping_evidence_id = 'bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd'",
+                ),
+                (
+                    "grouping_evidence_member",
+                    "member_source_fingerprint",
+                    "grouping_evidence_id = 'bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc'",
+                ),
+                (
+                    "grouping_evidence_member",
+                    "member_source_fingerprint",
+                    "grouping_evidence_id = 'bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd'",
+                ),
+            ] {
+                assert_eq!(
+                    connection.scalar_i64(&format!(
+                        "SELECT {column} IS NULL FROM {table} WHERE {where_clause}"
+                    ))?,
+                    1,
+                    "legacy provider evidence was not cleared for {table}.{column}"
                 );
             }
             Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())

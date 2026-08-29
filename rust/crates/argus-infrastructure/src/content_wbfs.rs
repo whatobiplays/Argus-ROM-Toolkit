@@ -234,8 +234,7 @@ fn parse_layout(
     if first_physical_block == 0 {
         return Err(OpticalError::Malformed);
     }
-    if disc.len() < usize::try_from(WBFS_DISC_INFO_HEADER_BYTES).expect("disc header size")
-        || &disc[0x18..0x1c] != [0x5d, 0x1c, 0x9e, 0xa3].as_slice()
+    if &disc[0x18..0x1c] != [0x5d, 0x1c, 0x9e, 0xa3].as_slice()
         || disc[..6].iter().all(|byte| *byte == 0)
     {
         return Err(OpticalError::Malformed);

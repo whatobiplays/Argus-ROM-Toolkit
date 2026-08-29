@@ -245,7 +245,8 @@ fn read_metadata(
         let raw_length = u32::from_be_bytes(header[4..8].try_into().expect("metadata length"));
         let length = raw_length & 0x00ff_ffff;
         total = total
-            .checked_add(length as usize)
+            .checked_add(CHD_METADATA_HEADER_BYTES as usize)
+            .and_then(|total| total.checked_add(length as usize))
             .ok_or(OpticalError::ResourceLimitExceeded)?;
         if total > MAX_CHD_METADATA_BYTES {
             return Err(OpticalError::ResourceLimitExceeded);
@@ -254,9 +255,6 @@ fn read_metadata(
             .charge_parser_work(u64::from(length))
             .map_err(map_session_error)?;
         let next = u64::from_be_bytes(header[8..16].try_into().expect("metadata next"));
-        if next != 0 && next <= offset {
-            return Err(OpticalError::Malformed);
-        }
         let mut value = vec![0_u8; length as usize];
         let value_offset = offset
             .checked_add(CHD_METADATA_HEADER_BYTES)

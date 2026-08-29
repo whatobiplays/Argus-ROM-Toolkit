@@ -1,0 +1,80 @@
+rust/crates/argus-application/src/lib.rs
+  s_8689687e6ca5bc::t_33a8bb9cfb335c 100-101
+rust/crates/argus-infrastructure/src/content_archive.rs
+  s_8689687e6ca5bc::t_8ba7e2f04a8d71 26
+  s_8689687e6ca5bc::t_f9c261d6bae839 1174-1202
+  s_8689687e6ca5bc::t_01edfc43cf351d 1018-1019
+  s_8689687e6ca5bc::t_30d20d94977c65 20,1008,1016-1017,1020-1024
+rust/crates/argus-application/src/sources/derived.rs
+  s_8689687e6ca5bc::t_ecd12706697350 76-77,83,135-136
+.superpowers/sdd/2026-08-28-issue-audit-fixes/task-1-report.md
+  s_8689687e6ca5bc::t_0c7e442647e50f 169,171
+rust/crates/argus-infrastructure/src/content_chd.rs
+  s_8689687e6ca5bc::t_a5f139e552bc70 248-249
+rust/crates/argus-infrastructure/src/sqlite/logical.rs
+  s_8689687e6ca5bc::t_0a1f2a0bda6edd 2501,2508-2509,2566-2575
+docs/superpowers/plans/2026-08-28-issue-audit-fixes.md
+  s_8689687e6ca5bc::t_0c7e442647e50f 114-124
+rust/crates/argus-infrastructure/src/content_wbfs.rs
+  s_8689687e6ca5bc::t_d367f7c04262c6 237
+rust/Cargo.toml
+  s_8689687e6ca5bc::t_30d20d94977c65 31
+rust/crates/argus-infrastructure/tests/cso_content.rs
+  s_8689687e6ca5bc::t_eb323aa9c6bc85 296-297,299-301
+rust/crates/argus-infrastructure/src/content_stream.rs
+  s_8689687e6ca5bc::t_8ba7e2f04a8d71 12-13,415-417,419-420,433-440
+  s_8689687e6ca5bc::t_3126a9f19ef5af 599-642
+rust/crates/argus-infrastructure/Cargo.toml
+  s_8689687e6ca5bc::t_30d20d94977c65 28
+rust/crates/argus-application/src/library.rs
+  s_8689687e6ca5bc::t_33a8bb9cfb335c 790,792
+  s_8689687e6ca5bc::t_2f84c5fe0dfd63 727-733,760,771-774,776,793,874,886-890,897
+rust/crates/argus-infrastructure/tests/local_filesystem_contract.rs
+  s_8689687e6ca5bc::t_c1aec06dcce8d3 12,151-157,162
+  s_8689687e6ca5bc::t_dc51901e4e1a88 158-161,163-166,185-188
+rust/crates/argus-infrastructure/tests/migration_v15.rs
+  s_8689687e6ca5bc::t_3639d2e7ab869c 603-606,645,670,676,683,690,697,705,712,717,722,728,734,750,756,761,767,773,781,786,793,798,817-823,829,835,841,847,902-931,941-999
+rust/crates/argus-runtime/src/lib.rs
+  s_8689687e6ca5bc::t_9f5ffab3c86c69 2436,2878,2922,3518-3519,4550-4562
+  s_8689687e6ca5bc::t_759f37bfabc094 3514-3517
+  s_8689687e6ca5bc::t_ecd12706697350 2276,2321,2352,2462
+rust/crates/argus-infrastructure/src/local_filesystem/mod.rs
+  s_8689687e6ca5bc::t_3126a9f19ef5af 103,475
+  s_8689687e6ca5bc::t_e7dbd8386d6f3f 74,85,99-102,104-105,109,453-457,463,471,473-474,476-481,485-492
+  s_8689687e6ca5bc::t_44e9d5a5fb84a8 482
+rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0017_derived_provenance_fingerprints.sql
+  s_8689687e6ca5bc::t_92b77345bc12eb 25-31,35-45,49-55,59-69,73-79,83-93,97-103,107-117,121-127,131-141
+rust/crates/argus-application/tests/optical_contract.rs
+  s_8689687e6ca5bc::t_eb323aa9c6bc85 123,157
+rust/crates/argus-runtime/src/runtime.rs
+  s_8689687e6ca5bc::t_9f5ffab3c86c69 3746-3747,3753
+rust/crates/argus-infrastructure/tests/chd_content.rs
+  s_8689687e6ca5bc::t_707f624e5560a4 72-75,578-611
+rust/crates/argus-infrastructure/tests/reconciliation.rs
+  s_8689687e6ca5bc::t_eb323aa9c6bc85 766-767,785-792,806,811,825,835-838,846-847
+rust/crates/argus-infrastructure/src/content_rvz.rs
+  s_8689687e6ca5bc::t_707f624e5560a4 1907-1925
+rust/crates/argus-application/tests/library_contract.rs
+  s_8689687e6ca5bc::t_707f624e5560a4 1-37
+rust/crates/argus-infrastructure/tests/derived_source_entries.rs
+  s_8689687e6ca5bc::t_49ac7dff5b6ae3 205
+rust/crates/argus-application/tests/derived_reconciliation.rs
+  s_8689687e6ca5bc::t_eb323aa9c6bc85 352-358
+  s_8689687e6ca5bc::t_707f624e5560a4 45,54,169,175,183-186,188,194,202-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "64b0012b071c3439be0f328537616b95ea95bb4f",
+  "prompts": {},
+  "sessions": {
+    "s_8689687e6ca5bc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0496d-1b00-7b90-86a0-2f45d45de111",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

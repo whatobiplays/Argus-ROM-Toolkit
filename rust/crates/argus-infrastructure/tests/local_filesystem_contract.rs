@@ -187,8 +187,10 @@ fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
 
     // The persisted fingerprint intentionally uses millisecond timestamps.
     // Keep the first rewrite immediate for native change detection, then
-    // retry same-length writes across the timestamp boundary so this check
-    // does not depend on scheduler timing or filesystem timestamp precision.
+    // retry same-length writes until the persisted fingerprint crosses a
+    // timestamp boundary. This avoids depending on scheduler timing within
+    // the current timestamp bucket, while still requiring the filesystem to
+    // expose a changed mtime during the bounded retry window.
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut current_fingerprint = current_fingerprint;
     while initial_fingerprint == current_fingerprint && Instant::now() < deadline {

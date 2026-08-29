@@ -101,10 +101,13 @@ impl LocalContentReader {
 
     /// Returns whether the source still has the version observed at open.
     pub fn source_version_is_unchanged(&self) -> Result<bool, SourceAccessError> {
-        let path_file = std::fs::File::open(&self.path).map_err(classify_entry_access_error)?;
-        let path_metadata = path_file.metadata().map_err(classify_entry_access_error)?;
+        let path_metadata =
+            std::fs::symlink_metadata(&self.path).map_err(classify_entry_access_error)?;
+        if !path_metadata.file_type().is_file() {
+            return Ok(false);
+        }
         let handle_metadata = self.file.metadata().map_err(classify_entry_access_error)?;
-        if !path_metadata.is_file() || !handle_metadata.is_file() {
+        if !handle_metadata.is_file() {
             return Ok(false);
         }
         // The path identity detects atomic replacement, while the opened
@@ -112,8 +115,7 @@ impl LocalContentReader {
         // The initial handle snapshot is intentional: path-level timestamps
         // can be stale on networked or virtual filesystems. The persisted
         // fingerprint remains in the historical millisecond format.
-        let current_identity_evidence =
-            source_identity_evidence(&path_file, &path_metadata, ObservedEntryKind::File);
+        let current_identity_evidence = current_path_identity_evidence(&self.path, &path_metadata)?;
         if current_identity_evidence.is_none()
             || current_identity_evidence != self.initial_identity_evidence
             || source_change_evidence(&handle_metadata, ObservedEntryKind::File)
@@ -489,6 +491,34 @@ fn source_identity_evidence(
     {
         let _ = file;
         Some(source_identity_evidence_from_metadata(metadata, kind))
+    }
+}
+
+fn current_path_identity_evidence(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+) -> Result<Option<String>, SourceAccessError> {
+    #[cfg(windows)]
+    {
+        let _ = metadata;
+        let path_file = std::fs::File::open(path).map_err(classify_entry_access_error)?;
+        let path_handle_metadata = path_file.metadata().map_err(classify_entry_access_error)?;
+        if !path_handle_metadata.is_file() {
+            return Ok(None);
+        }
+        Ok(source_identity_evidence(
+            &path_file,
+            &path_handle_metadata,
+            ObservedEntryKind::File,
+        ))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Ok(Some(source_identity_evidence_from_metadata(
+            metadata,
+            ObservedEntryKind::File,
+        )))
     }
 }
 

@@ -9,7 +9,7 @@
 //! pre-enumeration cancellation).
 
 use std::fs;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use argus_application::{
     EnumerationOutcome, LibrarySourceAccess, LocalFilesystemBrowseProvider,
@@ -164,6 +164,7 @@ fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
         initial.source_fingerprint(),
         Some(expected_fingerprint.as_str())
     );
+    let initial_fingerprint = initial.source_fingerprint().map(str::to_owned);
 
     fs::write(&path, b"other-version").expect("same-length rewrite");
     assert_eq!(
@@ -182,9 +183,30 @@ fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
             &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
         )
         .expect("current reader");
-    assert!(
-        current
+    let current_fingerprint = current.source_fingerprint().map(str::to_owned);
+
+    // The persisted fingerprint intentionally uses millisecond timestamps.
+    // Keep the first rewrite immediate for native change detection, then
+    // retry same-length writes across the timestamp boundary so this check
+    // does not depend on scheduler timing or filesystem timestamp precision.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut current_fingerprint = current_fingerprint;
+    while initial_fingerprint == current_fingerprint && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+        fs::write(&path, b"other-version").expect("same-length rewrite");
+        current_fingerprint = access
+            .open_entry_read(
+                &resolved,
+                &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
+            )
+            .expect("current reader after timestamp boundary")
             .source_fingerprint()
+            .map(str::to_owned);
+    }
+    assert_ne!(initial_fingerprint, current_fingerprint);
+    assert!(
+        current_fingerprint
+            .as_deref()
             .is_some_and(|fingerprint| fingerprint.starts_with("v1:file:"))
     );
 }

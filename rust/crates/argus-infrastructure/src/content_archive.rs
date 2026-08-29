@@ -1014,14 +1014,13 @@ impl Read for Bzip2DecodedReader {
 }
 
 fn map_bzip2_error(error: OxiArcError) -> std::io::Error {
-    let kind = match &error {
-        OxiArcError::UnexpectedEof { .. } => std::io::ErrorKind::UnexpectedEof,
-        OxiArcError::Io(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
-            std::io::ErrorKind::UnexpectedEof
+    match error {
+        OxiArcError::Io(error) => error,
+        error @ OxiArcError::UnexpectedEof { .. } => {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, error.to_string())
         }
-        _ => std::io::ErrorKind::InvalidData,
-    };
-    std::io::Error::new(kind, error.to_string())
+        error => std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()),
+    }
 }
 
 fn contains_encryption_hint(message: &str) -> bool {
@@ -1177,8 +1176,19 @@ mod tests {
     use std::io::Read as _;
 
     use oxiarc_bzip2::{CompressionLevel, compress};
+    use oxiarc_core::error::OxiArcError;
 
-    use super::Bzip2DecodedReader;
+    use super::{Bzip2DecodedReader, map_bzip2_error};
+
+    #[test]
+    fn bzip2_non_eof_io_error_preserves_underlying_error_kind() {
+        let error = map_bzip2_error(OxiArcError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "staging read failed",
+        )));
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    }
 
     #[test]
     fn truncated_bzip2_input_preserves_unexpected_eof() {

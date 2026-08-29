@@ -1,0 +1,34 @@
+rust/crates/argus-infrastructure/src/sqlite/jobs.rs
+  s_8689687e6ca5bc::t_02a5f845537aa7 1079-1096
+rust/crates/argus-infrastructure/src/local_filesystem/mod.rs
+  s_8689687e6ca5bc::t_a11501fba1485b 75,83,89,91-98,111-117,478,488,500,504-505,512,515-516,527,533-534,638-654,656
+  s_8689687e6ca5bc::t_21c2b6320b3d3d 77,85,100,126-128,575-580,582-626,655
+  s_8689687e6ca5bc::t_de3177da5f0b8f 477,479-487,489-499,501-503,581
+flutter/test/features/startup/startup_messages_test.dart
+  s_8689687e6ca5bc::t_3420ffdd2ccb2b 1-11
+rust/crates/argus-infrastructure/Cargo.toml
+  s_8689687e6ca5bc::t_21c2b6320b3d3d 44-48
+flutter/lib/features/startup/presentation/startup_messages.dart
+  s_8689687e6ca5bc::t_3420ffdd2ccb2b 10-11
+rust/crates/argus-infrastructure/src/content_stream.rs
+  s_8689687e6ca5bc::t_e46cff51b40c9b 417-419,440-442,611,636-639,647,653-666
+rust/crates/argus-infrastructure/src/content_chd.rs
+  s_8689687e6ca5bc::t_de3177da5f0b8f 367-370
+  s_8689687e6ca5bc::t_46208bba3aa291 351,783-795
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4221120950434a694b10050c03943ca42a6616dd",
+  "prompts": {},
+  "sessions": {
+    "s_8689687e6ca5bc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0496d-1b00-7b90-86a0-2f45d45de111",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

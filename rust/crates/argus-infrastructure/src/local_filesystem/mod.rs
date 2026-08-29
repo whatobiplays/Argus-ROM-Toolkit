@@ -86,11 +86,20 @@ impl LocalContentReader {
 
     /// Returns whether the source still has the version observed at open.
     pub fn source_version_is_unchanged(&self) -> Result<bool, SourceAccessError> {
-        let metadata = std::fs::metadata(&self.path).map_err(classify_entry_access_error)?;
-        if !metadata.is_file() {
+        let path_metadata = std::fs::metadata(&self.path).map_err(classify_entry_access_error)?;
+        let handle_metadata = self.file.metadata().map_err(classify_entry_access_error)?;
+        if !path_metadata.is_file() || !handle_metadata.is_file() {
             return Ok(false);
         }
-        Ok(source_fingerprint(&metadata, ObservedEntryKind::File) == self.initial_fingerprint)
+        // The path and the open handle are intentionally checked together:
+        // path metadata detects atomic replacement, while handle metadata
+        // also observes in-place changes when a filesystem serves a stale
+        // path-level timestamp from its cache.
+        Ok(
+            source_fingerprint(&path_metadata, ObservedEntryKind::File) == self.initial_fingerprint
+                && source_fingerprint(&handle_metadata, ObservedEntryKind::File)
+                    == self.initial_fingerprint,
+        )
     }
 
     /// Returns the source-version fingerprint observed when the reader opened.
@@ -434,8 +443,30 @@ fn native_identity(metadata: &std::fs::Metadata) -> Option<String> {
 }
 
 fn source_fingerprint(metadata: &std::fs::Metadata, kind: ObservedEntryKind) -> String {
-    let modified = modified_at_ns(metadata).unwrap_or(0);
-    format!("v1:{}:{}:{}", kind.as_str(), metadata.len(), modified)
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+
+        // `Metadata::modified` is not sufficient on every Windows filesystem:
+        // an immediate in-place rewrite can lose precision during conversion
+        // to `SystemTime`. Use the native FILETIME values directly so the
+        // source observation retains the filesystem's full timestamp
+        // precision. Creation time also invalidates the observation when a
+        // path is replaced atomically.
+        format!(
+            "v2:{}:{}:{}:{}",
+            kind.as_str(),
+            metadata.len(),
+            metadata.creation_time(),
+            metadata.last_write_time(),
+        )
+    }
+
+    #[cfg(not(windows))]
+    {
+        let modified = modified_at_ns(metadata).unwrap_or(0);
+        format!("v1:{}:{}:{}", kind.as_str(), metadata.len(), modified)
+    }
 }
 
 fn modified_at_ns(metadata: &std::fs::Metadata) -> Option<u128> {

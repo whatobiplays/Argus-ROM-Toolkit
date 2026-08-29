@@ -243,7 +243,7 @@ impl ErrorCode {
     }
 
     /// Returns the additive catalog required by the logical-content foundation.
-    pub const fn phase_003_all() -> &'static [Self; 35] {
+    pub const fn phase_003_all() -> &'static [Self; 36] {
         &[
             Self::ValidationInvalidArgument,
             Self::ConfigurationInvalid,
@@ -278,6 +278,7 @@ impl ErrorCode {
             Self::ValidationContentEncryptedUnsupported,
             Self::ValidationMultiGameContainerUnsupported,
             Self::FilesystemContentDependencyMissing,
+            Self::FilesystemSourceValidationIndeterminate,
             Self::ValidationContentRecognitionAmbiguous,
             Self::OperationTransformationResourceLimitExceeded,
         ]

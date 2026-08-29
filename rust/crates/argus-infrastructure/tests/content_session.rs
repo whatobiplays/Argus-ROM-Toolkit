@@ -224,6 +224,30 @@ fn cleanup_removes_argus_staging_directories_after_exclusive_root_lock() {
 }
 
 #[test]
+fn cleanup_preserves_operation_directories_with_invalid_markers() {
+    let staging = tempdir().expect("staging root");
+    let invalid_bytes = staging
+        .path()
+        .join(format!("{STAGING_DIRECTORY_PREFIX}invalid-bytes"));
+    std::fs::create_dir(&invalid_bytes).expect("invalid-bytes directory");
+    std::fs::write(invalid_bytes.join(STAGING_MARKER_FILE), b"wrong-marker")
+        .expect("invalid marker");
+
+    let invalid_type = staging
+        .path()
+        .join(format!("{STAGING_DIRECTORY_PREFIX}invalid-type"));
+    std::fs::create_dir(&invalid_type).expect("invalid-type directory");
+    std::fs::create_dir(invalid_type.join(STAGING_MARKER_FILE)).expect("marker directory");
+
+    assert_eq!(
+        cleanup_abandoned_staging(staging.path()).expect("cleanup"),
+        0
+    );
+    assert!(invalid_bytes.exists());
+    assert!(invalid_type.exists());
+}
+
+#[test]
 fn cleanup_skips_operation_namespace_while_a_session_holds_shared_root_lock() {
     let staging = tempdir().expect("staging root");
     let abandoned = staging

@@ -674,7 +674,7 @@ pub fn cleanup_abandoned_staging(root: &Path) -> io::Result<u64> {
             continue;
         }
         let file_type = entry.file_type()?;
-        if !file_type.is_dir() {
+        if !file_type.is_dir() || !marker_is_absent_or_valid(&path) {
             continue;
         }
         match fs::remove_dir_all(path) {
@@ -684,6 +684,20 @@ pub fn cleanup_abandoned_staging(root: &Path) -> io::Result<u64> {
         }
     }
     Ok(removed)
+}
+
+fn marker_is_absent_or_valid(directory: &Path) -> bool {
+    let marker = directory.join(STAGING_MARKER_FILE);
+    match fs::symlink_metadata(&marker) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(metadata) => {
+            metadata.file_type().is_file()
+                && fs::read(marker)
+                    .map(|value| value == STAGING_MARKER_VALUE)
+                    .unwrap_or(false)
+        }
+    }
 }
 
 fn create_operation_directory(root: &Path) -> io::Result<PathBuf> {

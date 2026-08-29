@@ -202,6 +202,18 @@ fn wbfs_rejects_invalid_geometry_and_honors_cancellation_or_work_limits() {
 }
 
 #[test]
+fn wbfs_rejects_a_zero_first_wlba_even_when_later_entries_are_allocated() {
+    let mut logical = build_valid_wii_image();
+    logical.resize(WBFS_BLOCK_BYTES * 2, 0);
+    let mut invalid = wbfs_image(&logical, &[1, 2]);
+    set_u16_be(&mut invalid, WBFS_HEADER_BYTES + 0x100, 0);
+    assert_eq!(
+        recognize(invalid, 100_000_000),
+        Err(OpticalError::Malformed)
+    );
+}
+
+#[test]
 fn wbfs_logical_capacity_accounts_for_partial_hard_disk_sectors() {
     let logical = build_valid_wii_image();
     let larger = wbfs_image(&logical, &[8]);

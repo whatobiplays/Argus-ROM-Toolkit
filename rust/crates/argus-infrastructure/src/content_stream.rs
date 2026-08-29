@@ -9,6 +9,8 @@ use super::{content_nintendo, content_sega};
 
 /// Maximum buffer used by a streaming canonicalization pass.
 pub(crate) const STREAM_CHUNK_BYTES: usize = 64 * 1024;
+pub(crate) const TAR_MAGIC_OFFSET: usize = 257;
+pub(crate) const TAR_MAGIC: &[u8] = b"ustar";
 
 /// Provider-backed range access used by the general content recognizer.
 ///
@@ -78,9 +80,14 @@ impl ContentReader for SourceReadContentReader<'_> {
         if end > self.len()? {
             return Err(ContentReadError::OutOfRange);
         }
-        self.source
+        let count = self
+            .source
             .read_at(offset, destination)
-            .map_err(|_| ContentReadError::Io)
+            .map_err(|_| ContentReadError::Io)?;
+        if count > destination.len() {
+            return Err(ContentReadError::Io);
+        }
+        Ok(count)
     }
 
     fn max_read_size(&self) -> usize {
@@ -405,11 +412,34 @@ fn is_blocked_container(
     reader: &mut dyn ContentReader,
     source_length: u64,
 ) -> Result<bool, ContentRecognitionError> {
-    if source_length >= 4 {
-        let magic = read_small(reader, 0, 4)?;
-        if matches!(magic.as_slice(), b"PK\x07\x08" | b"Rar!") {
-            return Ok(true);
-        }
+    const BLOCKED_PREFIX_BYTES: usize = 8;
+    let prefix_length = source_length.min(BLOCKED_PREFIX_BYTES as u64) as usize;
+    let mut prefix_storage = [0_u8; BLOCKED_PREFIX_BYTES];
+    read_exact(reader, 0, &mut prefix_storage[..prefix_length])?;
+    let prefix = &prefix_storage[..prefix_length];
+
+    let starts_with = |magic: &[u8]| prefix.starts_with(magic);
+    if starts_with(b"PK\x03\x04")
+        || starts_with(b"PK\x05\x06")
+        || starts_with(b"PK\x07\x08")
+        || starts_with(b"7z\xbc\xaf\x27\x1c")
+        || starts_with(b"Rar!\x1a\x07")
+        || starts_with(b"\x1f\x8b")
+        || starts_with(b"BZh")
+        || starts_with(b"\xfd7zXZ\0")
+        || starts_with(b"MComprHD")
+        || starts_with(b"CISO")
+        || starts_with(b"WBFS")
+        || starts_with(b"RVZ\x01")
+        || starts_with(b"WIA\x01")
+    {
+        return Ok(true);
+    }
+
+    if source_length >= (TAR_MAGIC_OFFSET + TAR_MAGIC.len()) as u64 {
+        let mut tar_magic = [0_u8; TAR_MAGIC.len()];
+        read_exact(reader, TAR_MAGIC_OFFSET as u64, &mut tar_magic)?;
+        return Ok(tar_magic == TAR_MAGIC);
     }
     Ok(false)
 }
@@ -569,4 +599,70 @@ pub(crate) fn in_range(offset: u64, length: u64, source_length: u64) -> bool {
     offset
         .checked_add(length)
         .is_some_and(|end| end <= source_length)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContentReadError, ContentReader, is_blocked_container};
+
+    struct CountingReader {
+        bytes: Vec<u8>,
+        requests: Vec<(u64, usize)>,
+        max_read_size: usize,
+    }
+
+    impl ContentReader for CountingReader {
+        fn len(&self) -> Result<u64, ContentReadError> {
+            Ok(self.bytes.len() as u64)
+        }
+
+        fn read_at(
+            &mut self,
+            offset: u64,
+            destination: &mut [u8],
+        ) -> Result<usize, ContentReadError> {
+            self.requests.push((offset, destination.len()));
+            let start = usize::try_from(offset).map_err(|_| ContentReadError::OutOfRange)?;
+            let end = start
+                .checked_add(destination.len())
+                .ok_or(ContentReadError::OutOfRange)?;
+            let source = self
+                .bytes
+                .get(start..end)
+                .ok_or(ContentReadError::OutOfRange)?;
+            destination.copy_from_slice(source);
+            Ok(source.len())
+        }
+
+        fn max_read_size(&self) -> usize {
+            self.max_read_size
+        }
+    }
+
+    #[test]
+    fn blocked_container_probe_reads_only_prefix_and_tar_signature_ranges() {
+        let mut reader = CountingReader {
+            bytes: vec![0; 512],
+            requests: Vec::new(),
+            max_read_size: 64 * 1024,
+        };
+
+        assert!(!is_blocked_container(&mut reader, 512).expect("probe"));
+        assert_eq!(reader.requests, [(0, 8), (257, 5)]);
+    }
+
+    #[test]
+    fn blocked_container_probe_honors_small_reader_request_bounds() {
+        let mut reader = CountingReader {
+            bytes: vec![0; 512],
+            requests: Vec::new(),
+            max_read_size: 3,
+        };
+
+        assert!(!is_blocked_container(&mut reader, 512).expect("probe"));
+        assert_eq!(
+            reader.requests,
+            [(0, 3), (3, 3), (6, 2), (257, 3), (260, 2)]
+        );
+    }
 }

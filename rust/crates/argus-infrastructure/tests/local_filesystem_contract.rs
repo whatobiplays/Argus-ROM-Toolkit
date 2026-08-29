@@ -9,6 +9,7 @@
 //! pre-enumeration cancellation).
 
 use std::fs;
+use std::time::UNIX_EPOCH;
 
 use argus_application::{
     EnumerationOutcome, LibrarySourceAccess, LocalFilesystemBrowseProvider,
@@ -127,6 +128,65 @@ fn positional_entry_reads_are_bounded_and_do_not_follow_non_files() {
             Err(SourceAccessError::UnsupportedOperation)
         ));
     }
+}
+
+#[test]
+fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let root = directory.path().join("Library");
+    fs::create_dir(&root).expect("root");
+    let path = root.join("rom.bin");
+    fs::write(&path, b"first-version").expect("initial file");
+
+    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
+        root.to_string_lossy().into_owned(),
+    ));
+    let resolved = access.resolve_root().expect("resolve");
+    let initial = access
+        .open_entry_read(
+            &resolved,
+            &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
+        )
+        .expect("initial reader");
+    let initial_metadata = fs::metadata(&path).expect("initial metadata");
+    let initial_modified_at_ms = initial_metadata
+        .modified()
+        .expect("initial mtime")
+        .duration_since(UNIX_EPOCH)
+        .expect("initial mtime epoch")
+        .as_millis();
+    let expected_fingerprint = format!(
+        "v1:file:{}:{}",
+        initial_metadata.len(),
+        initial_modified_at_ms
+    );
+    assert_eq!(
+        initial.source_fingerprint(),
+        Some(expected_fingerprint.as_str())
+    );
+
+    fs::write(&path, b"other-version").expect("same-length rewrite");
+    assert_eq!(
+        initial.len().expect("length"),
+        b"first-version".len() as u64
+    );
+    assert!(
+        !initial
+            .source_version_is_unchanged()
+            .expect("version check")
+    );
+
+    let current = access
+        .open_entry_read(
+            &resolved,
+            &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
+        )
+        .expect("current reader");
+    assert!(
+        current
+            .source_fingerprint()
+            .is_some_and(|fingerprint| fingerprint.starts_with("v1:file:"))
+    );
 }
 
 #[test]

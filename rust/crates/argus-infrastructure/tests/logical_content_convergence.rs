@@ -1,12 +1,13 @@
 #![cfg(feature = "test-support")]
 
 use argus_application::{
-    ContentIdentity, ContentType, GameListCursor, GetGameResult, IdentificationService,
-    IdentityConvergenceStore, IdentityDigest, LibraryRootAvailability, LibraryRootRepository,
-    LibrarySourceAccess, ListGamesQuery, LogicalContentRepository, LogicalContentUnitOfWork,
-    LogicalLibraryQueries, M3uGroupingMember, OperationContext, OperationName, PlatformId,
-    RelativeSourceLocator, RootLocator, SourceEntryRepository, SourceVersionEvidence,
-    SubsystemName, TraceId, UnitOfWork, ValidatedContentDerivation, ValidatedM3uGrouping,
+    ContentIdentity, ContentProvenanceRole, ContentType, DerivedFingerprint, GameListCursor,
+    GetGameResult, IdentificationService, IdentityConvergenceStore, IdentityDigest,
+    LibraryRootAvailability, LibraryRootRepository, LibrarySourceAccess, ListGamesQuery,
+    LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries, M3uGroupingMember,
+    OperationContext, OperationName, PlatformId, ProvenanceMember, RelativeSourceLocator,
+    RootLocator, SourceEntryRepository, SourceVersionEvidence, SubsystemName, TraceId, UnitOfWork,
+    ValidatedContentDerivation, ValidatedM3uGrouping,
 };
 use argus_infrastructure::content::ContentReader;
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
@@ -50,6 +51,35 @@ fn derivation_with_digest(
         "raw".to_owned(),
         display_title.to_owned(),
     )
+}
+
+fn derived_derivation(
+    source: &str,
+    scan: &str,
+    fingerprint: &str,
+    digest_byte: u8,
+) -> ValidatedContentDerivation {
+    let source_entry_id = argus_application::SourceEntryId::try_from(source).expect("source");
+    ValidatedContentDerivation::try_with_provenance(
+        vec![ProvenanceMember::new(
+            ContentProvenanceRole::Primary,
+            Some("raw".to_owned()),
+            SourceVersionEvidence::derived(
+                source_entry_id,
+                DerivedFingerprint::from_transformation(fingerprint.to_owned()),
+                argus_application::ScanRunId::try_from(scan).expect("scan"),
+            ),
+        )],
+        PlatformId::NintendoGb,
+        ContentType::CartridgeImage,
+        ContentIdentity::new(
+            "argus.content.identity.nintendo-gb.cartridge.v1",
+            1,
+            IdentityDigest::from_bytes([digest_byte; 32]),
+        ),
+        "derived".to_owned(),
+    )
+    .expect("derived provenance")
 }
 
 fn optical_derivation(
@@ -168,6 +198,116 @@ fn seed_source(
             Ok(())
         })
         .expect("seed source");
+}
+
+fn seed_derived_source(
+    executor: &SqliteDatabaseExecutor,
+    root: &str,
+    parent: &str,
+    scan: &str,
+    source: &str,
+    fingerprint: &str,
+) {
+    let root = root.to_owned();
+    let parent = parent.to_owned();
+    let scan = scan.to_owned();
+    let source = source.to_owned();
+    let fingerprint = fingerprint.to_owned();
+    executor
+        .with_connection_for_tests(context(), move |connection| {
+            connection.execute_with_values(
+                "INSERT INTO source_entry
+                    (source_entry_id, library_root_id, parent_source_entry_id,
+                     coordinate_kind, display_name, display_location, kind, classification,
+                     derived_locator, derived_entry_key, derived_fingerprint,
+                     derivation_transformation_id, derivation_revision,
+                     last_observed_scan_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, 'derived', 'game.gb', 'archive/game.gb', 'file',
+                         'content_candidate', 'member:game', 'member:game', ?4,
+                         'argus.transformation.zip.v1', 1, ?5, 1, 1)",
+                &[
+                    SqliteValue::Text(source),
+                    SqliteValue::Text(root),
+                    SqliteValue::Text(parent),
+                    SqliteValue::Text(fingerprint),
+                    SqliteValue::Text(scan),
+                ],
+            )?;
+            Ok(())
+        })
+        .expect("seed derived source");
+}
+
+#[test]
+fn derived_provenance_persists_only_derived_fingerprints_and_round_trips() {
+    let directory = tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("derived-provenance.sqlite3"))
+            .expect("database");
+    let root = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let job = "cccccccccccccccccccccccccccccccc";
+    let scan = "dddddddddddddddddddddddddddddddd";
+    let parent = "11111111111111111111111111111111";
+    let source = "22222222222222222222222222222222";
+    seed_source(&executor, root, job, scan, parent, "provider-parent");
+    seed_derived_source(&executor, root, parent, scan, source, "derived-v1");
+
+    let outcome = converge(
+        &executor,
+        derived_derivation(source, scan, "derived-v1", 42),
+    );
+    let game_id = match outcome {
+        argus_application::ConvergenceOutcome::Created { game_id, .. }
+        | argus_application::ConvergenceOutcome::Attached { game_id, .. } => game_id,
+    };
+    let detail = executor
+        .with_unit_of_work(context(), move |mut work| {
+            let result = {
+                let mut logical = work.logical_content();
+                logical
+                    .get_game(game_id)
+                    .map_err(argus_application::ApplicationPortError::from)?
+            };
+            work.rollback()?;
+            Ok(result)
+        })
+        .expect("derived detail");
+    let GetGameResult::Found(detail) = detail else {
+        panic!("derived game must remain addressable");
+    };
+    let provenance = detail.content()[0]
+        .provenance()
+        .expect("derived provenance projection");
+    assert_eq!(provenance.source_fingerprint(), None);
+    assert_eq!(provenance.derived_fingerprint(), Some("derived-v1"));
+    assert_eq!(provenance.members()[0].source_fingerprint(), None);
+    assert_eq!(
+        provenance.members()[0].derived_fingerprint(),
+        Some("derived-v1")
+    );
+
+    executor
+        .with_connection_for_tests(context(), |connection| {
+            let rows = connection.scalar_text(
+                "SELECT COALESCE(ci.proving_source_fingerprint, '') || '|' ||
+                            COALESCE(ci.proving_derived_fingerprint, '') || '|' ||
+                            COALESCE(p.source_fingerprint, '') || '|' ||
+                            COALESCE(p.derived_fingerprint, '') || '|' ||
+                            COALESCE(gcs.source_fingerprint, '') || '|' ||
+                            COALESCE(gcs.derived_fingerprint, '')
+                 FROM content_identity ci
+                 JOIN content_identity_provenance p
+                   ON p.content_identity_id = ci.content_identity_id
+                 JOIN game_content_source gcs
+                   ON gcs.game_content_id = ci.game_content_id
+                  AND gcs.source_entry_id = p.source_entry_id
+                 WHERE ci.is_current = 1 AND p.identity_is_current = 1",
+            )?;
+            assert_eq!(rows, "|derived-v1||derived-v1||derived-v1");
+            Ok(())
+        })
+        .expect("derived proof columns");
+    executor.shutdown().expect("shutdown");
 }
 
 #[test]

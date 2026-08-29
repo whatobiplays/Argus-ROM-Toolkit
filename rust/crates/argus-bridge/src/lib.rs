@@ -660,6 +660,7 @@ pub struct ContentProvenanceSummaryDto {
     pub source_entry_id: String,
     pub association_key: String,
     pub source_fingerprint: Option<String>,
+    pub derived_fingerprint: Option<String>,
     pub last_observed_scan_id: String,
     pub members: Vec<ContentProvenanceMemberDto>,
 }
@@ -671,6 +672,7 @@ pub struct ContentProvenanceMemberDto {
     pub association_key: Option<String>,
     pub source_entry_id: String,
     pub source_fingerprint: Option<String>,
+    pub derived_fingerprint: Option<String>,
     pub last_observed_scan_id: String,
 }
 
@@ -3454,6 +3456,7 @@ fn content_provenance_summary_dto(
         source_entry_id: summary.source_entry_id().to_string(),
         association_key: summary.association_key().to_owned(),
         source_fingerprint: summary.source_fingerprint().map(str::to_owned),
+        derived_fingerprint: summary.derived_fingerprint().map(str::to_owned),
         last_observed_scan_id: summary.last_observed_scan_id().to_string(),
         members: summary
             .members()
@@ -3471,6 +3474,7 @@ fn content_provenance_member_dto(
         association_key: member.association_key().map(str::to_owned),
         source_entry_id: member.source_entry_id().to_string(),
         source_fingerprint: member.source_fingerprint().map(str::to_owned),
+        derived_fingerprint: member.derived_fingerprint().map(str::to_owned),
         last_observed_scan_id: member.last_observed_scan_id().to_string(),
     }
 }

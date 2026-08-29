@@ -111,3 +111,52 @@ fn rejects_provider_neutral_cross_root_references() {
     let result = resolve_content_dependencies("disc/game.cue", &["../outside.bin".to_owned()], &[]);
     assert_eq!(result, Err(OpticalDependencyError::CrossRoot));
 }
+
+#[test]
+fn rejects_drive_qualified_references_before_relative_normalization() {
+    let descriptor = RelativeSourceLocator::from_provider("disc/game.cue".to_owned());
+    let provider_candidates = vec![file("33333333333333333333333333333333", "disc/track.bin")];
+
+    assert_eq!(
+        resolve_optical_dependencies(
+            &descriptor,
+            &["C:\\disc\\track.bin".to_owned()],
+            &provider_candidates,
+        ),
+        Err(OpticalDependencyError::CrossRoot)
+    );
+    assert_eq!(
+        resolve_optical_dependencies(
+            &descriptor,
+            &["D:/disc/track.bin".to_owned()],
+            &provider_candidates,
+        ),
+        Err(OpticalDependencyError::CrossRoot)
+    );
+
+    let derived = SourceEntryRecord::from_coordinates(
+        id("33333333333333333333333333333333"),
+        Some(id("44444444444444444444444444444444")),
+        "track.bin",
+        "archive-member-display/track.bin",
+        SourceEntryKind::File,
+        SourceEntryClassification::SupportingEntry,
+        SourceEntryCoordinates::Derived {
+            derived_locator: DerivedLocator::from_transformation("member:track".to_owned()),
+            derived_entry_key: DerivedEntryKey::from_transformation("member:track".to_owned()),
+            derived_fingerprint: DerivedFingerprint::from_transformation("track-v1".to_owned()),
+            transformation_id: "argus.transformation.zip.v1".to_owned(),
+            transformation_revision: 1,
+        },
+        scan("11111111111111111111111111111111"),
+    );
+    let content_candidates = vec![ContentDependencyCandidate::new(derived, "disc/track.bin")];
+    assert_eq!(
+        resolve_content_dependencies(
+            "disc/game.cue",
+            &["E:\\disc\\track.bin".to_owned()],
+            &content_candidates,
+        ),
+        Err(OpticalDependencyError::CrossRoot)
+    );
+}

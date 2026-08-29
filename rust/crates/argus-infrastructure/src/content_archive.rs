@@ -17,12 +17,13 @@ use argus_application::{
 use flate2::bufread::GzDecoder;
 use lzma_rust2::XzReader;
 use oxiarc_bzip2::BzDecoder;
+use oxiarc_core::error::OxiArcError;
 use sevenz_rust2::{ArchiveReader, Password};
 use sha2::{Digest, Sha256};
 use zip::{ZipArchive, result::ZipError};
 
 use super::content_session::{ParsingSession, StagedRepresentation};
-use super::content_stream::{ContentReadError, ContentReader};
+use super::content_stream::{ContentReadError, ContentReader, TAR_MAGIC, TAR_MAGIC_OFFSET};
 
 const ZIP_LOCAL_MAGIC: &[u8] = b"PK\x03\x04";
 const ZIP_EMPTY_MAGIC: &[u8] = b"PK\x05\x06";
@@ -32,8 +33,6 @@ const RAR_MAGIC: &[u8] = b"Rar!\x1a\x07";
 const GZIP_MAGIC: &[u8] = b"\x1f\x8b";
 const BZIP2_MAGIC: &[u8] = b"BZh";
 const XZ_MAGIC: &[u8] = b"\xfd7zXZ\0";
-const TAR_MAGIC_OFFSET: usize = 257;
-const TAR_MAGIC: &[u8] = b"ustar";
 const TAR_BLOCK_BYTES: usize = 512;
 const UNKNOWN_SIZE: Option<u64> = None;
 
@@ -496,7 +495,7 @@ impl DerivedContainerDecoder for SevenZipContainerDecoder {
                     if entry.size != 0 {
                         return Err(TransformationFailure::Malformed);
                     }
-                    None
+                    Some(session.stage_bytes("archive-member", &[])?)
                 };
                 let metadata = format!(
                     "raw={:?};compressed={};size={};crc={};has_crc={}",
@@ -1006,14 +1005,23 @@ impl Read for Bzip2DecodedReader {
             }
             self.pending.clear();
             self.offset = 0;
-            match self.decoder.read_block().map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid bzip2 stream")
-            })? {
+            match self.decoder.read_block().map_err(map_bzip2_error)? {
                 Some(block) => self.pending = block,
                 None => return Ok(0),
             }
         }
     }
+}
+
+fn map_bzip2_error(error: OxiArcError) -> std::io::Error {
+    let kind = match &error {
+        OxiArcError::UnexpectedEof { .. } => std::io::ErrorKind::UnexpectedEof,
+        OxiArcError::Io(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            std::io::ErrorKind::UnexpectedEof
+        }
+        _ => std::io::ErrorKind::InvalidData,
+    };
+    std::io::Error::new(kind, error.to_string())
 }
 
 fn contains_encryption_hint(message: &str) -> bool {
@@ -1141,19 +1149,54 @@ fn field_string(field: &[u8]) -> Result<String, TransformationFailure> {
 }
 
 fn parse_tar_octal(field: &[u8]) -> Result<u64, TransformationFailure> {
-    let trimmed = field
+    let start = field
         .iter()
-        .copied()
-        .skip_while(|byte| *byte == b' ' || *byte == 0)
-        .take_while(|byte| byte.is_ascii_digit())
-        .collect::<Vec<_>>();
-    if trimmed.is_empty() || trimmed.iter().any(|byte| !(b'0'..=b'7').contains(byte)) {
+        .position(|byte| *byte != b' ' && *byte != 0)
+        .ok_or(TransformationFailure::Malformed)?;
+    let end = field[start..]
+        .iter()
+        .position(|byte| !byte.is_ascii_digit())
+        .map_or(field.len(), |offset| start + offset);
+    let digits = &field[start..end];
+    if digits.is_empty()
+        || digits.iter().any(|byte| !(b'0'..=b'7').contains(byte))
+        || field[end..].iter().any(|byte| *byte != b' ' && *byte != 0)
+    {
         return Err(TransformationFailure::Malformed);
     }
-    trimmed.into_iter().try_fold(0_u64, |value, digit| {
+    digits.iter().copied().try_fold(0_u64, |value, digit| {
         value
             .checked_mul(8)
             .and_then(|value| value.checked_add(u64::from(digit - b'0')))
             .ok_or(TransformationFailure::ResourceLimitExceeded)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read as _;
+
+    use oxiarc_bzip2::{CompressionLevel, compress};
+
+    use super::Bzip2DecodedReader;
+
+    #[test]
+    fn truncated_bzip2_input_preserves_unexpected_eof() {
+        let mut compressed = compress(b"truncated bzip2 payload", CompressionLevel::new(1))
+            .expect("compress test payload");
+        compressed.pop();
+        let file = tempfile::NamedTempFile::new().expect("temporary compressed file");
+        std::fs::write(file.path(), compressed).expect("write truncated payload");
+        let decoder = oxiarc_bzip2::BzDecoder::new(file.reopen().expect("reopen payload"))
+            .expect("decoder header");
+        let mut reader = Bzip2DecodedReader {
+            decoder,
+            pending: Vec::new(),
+            offset: 0,
+        };
+        let error = reader
+            .read_to_end(&mut Vec::new())
+            .expect_err("truncated payload must fail");
+        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
 }

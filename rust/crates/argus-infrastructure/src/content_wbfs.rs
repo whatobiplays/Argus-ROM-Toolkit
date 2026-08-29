@@ -100,6 +100,9 @@ fn parse_layout(
     if source_length < WBFS_HEADER_BYTES {
         return Err(OpticalError::Truncated);
     }
+    session
+        .charge_parser_work(WBFS_HEADER_BYTES)
+        .map_err(map_session_error)?;
     let header = read_file_range(file, source_length, 0, WBFS_HEADER_BYTES)?;
     if &header[..4] != b"WBFS" {
         return Err(OpticalError::UnsupportedRepresentation);
@@ -143,11 +146,7 @@ fn parse_layout(
     let n_wbfs_sec_per_disc = WII_SECTORS_PER_MAX_DISC
         .checked_shr(shift_delta)
         .ok_or(OpticalError::ResourceLimitExceeded)?;
-    if n_wbfs_sec < 2
-        || n_wbfs_sec > u64::from(u16::MAX)
-        || n_wbfs_sec_per_disc == 0
-        || n_wbfs_sec_per_disc > u64::from(u16::MAX)
-    {
+    if n_wbfs_sec < 2 || n_wbfs_sec > u64::from(u16::MAX) || n_wbfs_sec_per_disc == 0 {
         return Err(OpticalError::Malformed);
     }
 
@@ -183,6 +182,9 @@ fn parse_layout(
     let header_length = WBFS_HEADER_BYTES
         .checked_add(max_disc)
         .ok_or(OpticalError::ResourceLimitExceeded)?;
+    session
+        .charge_parser_work(max_disc)
+        .map_err(map_session_error)?;
     let header = read_file_range(file, source_length, 0, header_length)?;
     let mut occupied = Vec::new();
     for index in 0..usize::try_from(max_disc).map_err(|_| OpticalError::ResourceLimitExceeded)? {
@@ -207,14 +209,10 @@ fn parse_layout(
                 .ok_or(OpticalError::ResourceLimitExceeded)?,
         )
         .ok_or(OpticalError::ResourceLimitExceeded)?;
+    session
+        .charge_parser_work(disc_info_bytes)
+        .map_err(map_session_error)?;
     let disc = read_file_range(file, source_length, disc_offset, disc_info_bytes)?;
-    if disc.len() < usize::try_from(WBFS_DISC_INFO_HEADER_BYTES).expect("disc header size")
-        || &disc[0x18..0x1c] != [0x5d, 0x1c, 0x9e, 0xa3].as_slice()
-        || disc[..6].iter().all(|byte| *byte == 0)
-    {
-        return Err(OpticalError::Malformed);
-    }
-
     let table_start = usize::try_from(WBFS_DISC_INFO_HEADER_BYTES).expect("WLBA offset");
     let table_count =
         usize::try_from(n_wbfs_sec_per_disc).map_err(|_| OpticalError::ResourceLimitExceeded)?;
@@ -228,9 +226,23 @@ fn parse_layout(
     if table_end > disc.len() {
         return Err(OpticalError::Malformed);
     }
+    let first_physical_block = u16::from_be_bytes(
+        disc[table_start..table_start + 2]
+            .try_into()
+            .expect("first WLBA entry"),
+    );
+    if first_physical_block == 0 {
+        return Err(OpticalError::Malformed);
+    }
+    if &disc[0x18..0x1c] != [0x5d, 0x1c, 0x9e, 0xa3].as_slice()
+        || disc[..6].iter().all(|byte| *byte == 0)
+    {
+        return Err(OpticalError::Malformed);
+    }
     let mut used_physical = BTreeSet::new();
     let mut extents: Vec<PreservedExtent> = Vec::new();
     for logical_block in 0..table_count {
+        session.charge_parser_work(1).map_err(map_session_error)?;
         let physical_block = u64::from(u16::from_be_bytes(
             disc[table_start + logical_block * 2..table_start + logical_block * 2 + 2]
                 .try_into()
@@ -274,14 +286,6 @@ fn parse_layout(
     if extents.is_empty() {
         return Err(OpticalError::Malformed);
     }
-    session
-        .charge_parser_work(
-            source_length
-                .checked_add(disc_info_bytes)
-                .and_then(|value| value.checked_add(n_wbfs_sec_per_disc))
-                .ok_or(OpticalError::ResourceLimitExceeded)?,
-        )
-        .map_err(map_session_error)?;
     Ok(WbfsLayout {
         logical_length: n_wbfs_sec_per_disc
             .checked_mul(wbfs_sec_bytes)

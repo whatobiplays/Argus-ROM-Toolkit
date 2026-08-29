@@ -1491,6 +1491,7 @@ ContentSummary contentSummaryFromDto(
           sourceEntryId: sourceEntryIdFromDto(value.provenance!.sourceEntryId),
           associationKey: value.provenance!.associationKey,
           sourceFingerprint: value.provenance!.sourceFingerprint,
+          derivedFingerprint: value.provenance!.derivedFingerprint,
           lastObservedScanId: value.provenance!.lastObservedScanId,
           members: [
             for (final member in value.provenance!.members)
@@ -1499,6 +1500,7 @@ ContentSummary contentSummaryFromDto(
                 associationKey: member.associationKey,
                 sourceEntryId: sourceEntryIdFromDto(member.sourceEntryId),
                 sourceFingerprint: member.sourceFingerprint,
+                derivedFingerprint: member.derivedFingerprint,
                 lastObservedScanId: member.lastObservedScanId,
               ),
           ],

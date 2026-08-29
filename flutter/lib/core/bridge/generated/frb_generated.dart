@@ -2649,14 +2649,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return ContentProvenanceMemberDto(
       role: dco_decode_String(arr[0]),
       associationKey: dco_decode_opt_String(arr[1]),
       sourceEntryId: dco_decode_String(arr[2]),
       sourceFingerprint: dco_decode_opt_String(arr[3]),
-      lastObservedScanId: dco_decode_String(arr[4]),
+      derivedFingerprint: dco_decode_opt_String(arr[4]),
+      lastObservedScanId: dco_decode_String(arr[5]),
     );
   }
 
@@ -2666,14 +2667,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return ContentProvenanceSummaryDto(
       sourceEntryId: dco_decode_String(arr[0]),
       associationKey: dco_decode_String(arr[1]),
       sourceFingerprint: dco_decode_opt_String(arr[2]),
-      lastObservedScanId: dco_decode_String(arr[3]),
-      members: dco_decode_list_content_provenance_member_dto(arr[4]),
+      derivedFingerprint: dco_decode_opt_String(arr[3]),
+      lastObservedScanId: dco_decode_String(arr[4]),
+      members: dco_decode_list_content_provenance_member_dto(arr[5]),
     );
   }
 
@@ -5334,12 +5336,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_associationKey = sse_decode_opt_String(deserializer);
     var var_sourceEntryId = sse_decode_String(deserializer);
     var var_sourceFingerprint = sse_decode_opt_String(deserializer);
+    var var_derivedFingerprint = sse_decode_opt_String(deserializer);
     var var_lastObservedScanId = sse_decode_String(deserializer);
     return ContentProvenanceMemberDto(
       role: var_role,
       associationKey: var_associationKey,
       sourceEntryId: var_sourceEntryId,
       sourceFingerprint: var_sourceFingerprint,
+      derivedFingerprint: var_derivedFingerprint,
       lastObservedScanId: var_lastObservedScanId,
     );
   }
@@ -5352,6 +5356,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sourceEntryId = sse_decode_String(deserializer);
     var var_associationKey = sse_decode_String(deserializer);
     var var_sourceFingerprint = sse_decode_opt_String(deserializer);
+    var var_derivedFingerprint = sse_decode_opt_String(deserializer);
     var var_lastObservedScanId = sse_decode_String(deserializer);
     var var_members = sse_decode_list_content_provenance_member_dto(
       deserializer,
@@ -5360,6 +5365,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sourceEntryId: var_sourceEntryId,
       associationKey: var_associationKey,
       sourceFingerprint: var_sourceFingerprint,
+      derivedFingerprint: var_derivedFingerprint,
       lastObservedScanId: var_lastObservedScanId,
       members: var_members,
     );
@@ -8584,6 +8590,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.associationKey, serializer);
     sse_encode_String(self.sourceEntryId, serializer);
     sse_encode_opt_String(self.sourceFingerprint, serializer);
+    sse_encode_opt_String(self.derivedFingerprint, serializer);
     sse_encode_String(self.lastObservedScanId, serializer);
   }
 
@@ -8596,6 +8603,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.sourceEntryId, serializer);
     sse_encode_String(self.associationKey, serializer);
     sse_encode_opt_String(self.sourceFingerprint, serializer);
+    sse_encode_opt_String(self.derivedFingerprint, serializer);
     sse_encode_String(self.lastObservedScanId, serializer);
     sse_encode_list_content_provenance_member_dto(self.members, serializer);
   }

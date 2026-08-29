@@ -37,6 +37,26 @@ fn scope(parent: SourceEntryId) -> DerivedScopeIdentity<'static> {
     }
 }
 
+fn reconcile_with_timestamp(
+    repository: &mut FakeRepository,
+    scope: &DerivedScopeIdentity<'_>,
+    observations: &[DerivedEntryObservation],
+    observation_run_id: ScanRunId,
+    observed_at_seconds: i64,
+    stable_input: bool,
+    outcome: DerivedScopeOutcome,
+) -> Result<Vec<SourceEntryId>, PersistenceError> {
+    reconcile_derived_scope(
+        repository,
+        scope,
+        observations,
+        observation_run_id,
+        observed_at_seconds,
+        stable_input,
+        outcome,
+    )
+}
+
 #[test]
 fn unchanged_derived_members_keep_ids_and_complete_scopes_remove_absent_members() {
     let parent = id("11111111111111111111111111111111");
@@ -51,6 +71,7 @@ fn unchanged_derived_members_keep_ids_and_complete_scopes_remove_absent_members(
         &scope(parent),
         &first_observations,
         scan("33333333333333333333333333333333"),
+        0,
         true,
         DerivedScopeOutcome::Complete,
     )
@@ -61,6 +82,7 @@ fn unchanged_derived_members_keep_ids_and_complete_scopes_remove_absent_members(
         &scope(parent),
         &first_observations[..2],
         scan("44444444444444444444444444444444"),
+        0,
         true,
         DerivedScopeOutcome::Complete,
     )
@@ -90,6 +112,7 @@ fn incomplete_or_unstable_scopes_never_authorize_absence() {
         &scope(parent),
         &observations,
         scan("33333333333333333333333333333333"),
+        0,
         true,
         DerivedScopeOutcome::Complete,
     )
@@ -100,6 +123,7 @@ fn incomplete_or_unstable_scopes_never_authorize_absence() {
         &scope(parent),
         &observations[..1],
         scan("44444444444444444444444444444444"),
+        0,
         true,
         DerivedScopeOutcome::Partial,
     )
@@ -112,6 +136,7 @@ fn incomplete_or_unstable_scopes_never_authorize_absence() {
         &scope(parent),
         &observations[..1],
         scan("55555555555555555555555555555555"),
+        0,
         false,
         DerivedScopeOutcome::Complete,
     )
@@ -136,9 +161,54 @@ fn archive_eligibility_ignores_sidecars_and_rejects_multiple_game_families_befor
     );
 }
 
+#[test]
+fn derived_scope_uses_the_operation_timestamp_for_new_and_updated_rows() {
+    let parent = id("11111111111111111111111111111111");
+    let mut repository = FakeRepository::new(root("22222222222222222222222222222222"));
+    let observed = observation("member:game", "game.gba", "fingerprint-game");
+    let observed_at_seconds = 1_725_000_123_i64;
+    let first = reconcile_with_timestamp(
+        &mut repository,
+        &scope(parent),
+        std::slice::from_ref(&observed),
+        scan("33333333333333333333333333333333"),
+        observed_at_seconds,
+        true,
+        DerivedScopeOutcome::Complete,
+    )
+    .expect("first scope");
+    let (created_at, updated_at) = repository
+        .timestamps_for(first[0])
+        .expect("recorded timestamps");
+    assert_eq!(
+        (created_at, updated_at),
+        (observed_at_seconds, observed_at_seconds)
+    );
+
+    let updated_at_seconds = observed_at_seconds + 77;
+    reconcile_with_timestamp(
+        &mut repository,
+        &scope(parent),
+        std::slice::from_ref(&observed),
+        scan("44444444444444444444444444444444"),
+        updated_at_seconds,
+        true,
+        DerivedScopeOutcome::Complete,
+    )
+    .expect("second scope");
+    let (created_at, updated_at) = repository
+        .timestamps_for(first[0])
+        .expect("updated timestamps");
+    assert_eq!(
+        (created_at, updated_at),
+        (observed_at_seconds, updated_at_seconds)
+    );
+}
+
 struct FakeRepository {
     root: LibraryRootId,
     entries: Vec<SourceEntryRecord>,
+    timestamps: std::collections::HashMap<SourceEntryId, (i64, i64)>,
     finalized_scopes: usize,
 }
 
@@ -147,8 +217,13 @@ impl FakeRepository {
         Self {
             root,
             entries: Vec::new(),
+            timestamps: std::collections::HashMap::new(),
             finalized_scopes: 0,
         }
+    }
+
+    fn timestamps_for(&self, source_entry_id: SourceEntryId) -> Option<(i64, i64)> {
+        self.timestamps.get(&source_entry_id).copied()
     }
 }
 
@@ -161,6 +236,13 @@ impl SourceEntryRepository for FakeRepository {
         let source_entry_id = entry
             .source_entry_id()
             .ok_or(PersistenceError::ConstraintViolation)?;
+        let created_at = self
+            .timestamps
+            .get(&source_entry_id)
+            .map(|timestamps| timestamps.0)
+            .unwrap_or_else(|| entry.created_at());
+        self.timestamps
+            .insert(source_entry_id, (created_at, entry.updated_at()));
         let record = SourceEntryRecord::from_coordinates(
             source_entry_id,
             entry.parent_source_entry_id(),
@@ -267,6 +349,13 @@ impl SourceEntryRepository for FakeRepository {
                 && entry.transformation_revision() == Some(revision)
                 && entry.last_observed_scan_id() != observation_run_id)
         });
+        let retained_ids = self
+            .entries
+            .iter()
+            .map(SourceEntryRecord::source_entry_id)
+            .collect::<std::collections::HashSet<_>>();
+        self.timestamps
+            .retain(|source_entry_id, _| retained_ids.contains(source_entry_id));
         self.finalized_scopes += 1;
         Ok((before - self.entries.len()) as u64)
     }

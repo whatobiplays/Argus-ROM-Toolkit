@@ -29,7 +29,7 @@ mod content_wbfs;
 
 pub use content_session::{
     FilesystemStagingSpaceProbe, ParsingSession, STAGING_DIRECTORY_PREFIX, STAGING_MARKER_FILE,
-    STAGING_MARKER_VALUE, StagedRepresentation, StagingSpaceProbe,
+    STAGING_MARKER_VALUE, STAGING_ROOT_LOCK_FILE, StagedRepresentation, StagingSpaceProbe,
     TRANSFORMATION_STAGING_DIRECTORY, cleanup_abandoned_staging,
 };
 

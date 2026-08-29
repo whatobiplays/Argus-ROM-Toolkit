@@ -724,12 +724,20 @@ impl ContentIdentitySummary {
     }
 }
 
+/// Rejects a provenance projection that mixes provider and derived evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProvenanceVersionError {
+    /// Both provider-native and derived fingerprints were supplied.
+    BothFingerprintsPresent,
+}
+
 /// Exact proving provenance without exposing filesystem locations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentProvenanceSummary {
     source_entry_id: SourceEntryId,
     association_key: String,
     source_fingerprint: Option<String>,
+    derived_fingerprint: Option<String>,
     last_observed_scan_id: ScanRunId,
     members: Vec<ContentProvenanceMemberSummary>,
 }
@@ -742,20 +750,47 @@ impl ContentProvenanceSummary {
         source_fingerprint: Option<String>,
         last_observed_scan_id: ScanRunId,
     ) -> Self {
+        Self::new_with_version(
+            source_entry_id,
+            association_key,
+            source_fingerprint,
+            None,
+            last_observed_scan_id,
+        )
+        .expect("provider-only provenance is always valid")
+    }
+
+    /// Creates one exact persisted provenance summary with either provider or
+    /// derived version evidence.
+    pub fn new_with_version(
+        source_entry_id: SourceEntryId,
+        association_key: impl Into<String>,
+        source_fingerprint: Option<String>,
+        derived_fingerprint: Option<String>,
+        last_observed_scan_id: ScanRunId,
+    ) -> Result<Self, ProvenanceVersionError> {
+        if source_fingerprint.is_some() && derived_fingerprint.is_some() {
+            return Err(ProvenanceVersionError::BothFingerprintsPresent);
+        }
         let association_key = association_key.into();
-        Self {
+        Ok(Self {
             source_entry_id,
             association_key: association_key.clone(),
             source_fingerprint: source_fingerprint.clone(),
+            derived_fingerprint: derived_fingerprint.clone(),
             last_observed_scan_id,
-            members: vec![ContentProvenanceMemberSummary::new(
-                ContentProvenanceRole::Primary,
-                Some(association_key),
-                source_entry_id,
-                source_fingerprint,
-                last_observed_scan_id,
-            )],
-        }
+            members: vec![
+                ContentProvenanceMemberSummary::new_with_version(
+                    ContentProvenanceRole::Primary,
+                    Some(association_key),
+                    source_entry_id,
+                    source_fingerprint,
+                    derived_fingerprint,
+                    last_observed_scan_id,
+                )
+                .expect("summary validates mutually exclusive provenance"),
+            ],
+        })
     }
 
     /// Creates a projection from every normalized exact provenance member.
@@ -771,6 +806,7 @@ impl ContentProvenanceSummary {
             source_entry_id: primary.source_entry_id(),
             association_key: primary.association_key().unwrap_or("").to_owned(),
             source_fingerprint: primary.source_fingerprint().map(str::to_owned),
+            derived_fingerprint: primary.derived_fingerprint().map(str::to_owned),
             last_observed_scan_id: primary.last_observed_scan_id(),
             members,
         })
@@ -791,6 +827,11 @@ impl ContentProvenanceSummary {
         self.source_fingerprint.as_deref()
     }
 
+    /// Returns the derived source-version fingerprint, if this proof is derived.
+    pub fn derived_fingerprint(&self) -> Option<&str> {
+        self.derived_fingerprint.as_deref()
+    }
+
     /// Returns the scan observation version.
     pub const fn last_observed_scan_id(&self) -> ScanRunId {
         self.last_observed_scan_id
@@ -809,6 +850,7 @@ pub struct ContentProvenanceMemberSummary {
     association_key: Option<String>,
     source_entry_id: SourceEntryId,
     source_fingerprint: Option<String>,
+    derived_fingerprint: Option<String>,
     last_observed_scan_id: ScanRunId,
 }
 
@@ -821,13 +863,38 @@ impl ContentProvenanceMemberSummary {
         source_fingerprint: Option<String>,
         last_observed_scan_id: ScanRunId,
     ) -> Self {
-        Self {
+        Self::new_with_version(
             role,
             association_key,
             source_entry_id,
             source_fingerprint,
+            None,
             last_observed_scan_id,
+        )
+        .expect("provider-only provenance member is always valid")
+    }
+
+    /// Creates one bounded provenance-member projection with either provider
+    /// or derived version evidence.
+    pub fn new_with_version(
+        role: ContentProvenanceRole,
+        association_key: Option<String>,
+        source_entry_id: SourceEntryId,
+        source_fingerprint: Option<String>,
+        derived_fingerprint: Option<String>,
+        last_observed_scan_id: ScanRunId,
+    ) -> Result<Self, ProvenanceVersionError> {
+        if source_fingerprint.is_some() && derived_fingerprint.is_some() {
+            return Err(ProvenanceVersionError::BothFingerprintsPresent);
         }
+        Ok(Self {
+            role,
+            association_key,
+            source_entry_id,
+            source_fingerprint,
+            derived_fingerprint,
+            last_observed_scan_id,
+        })
     }
 
     /// Returns the exact provenance role.
@@ -848,6 +915,11 @@ impl ContentProvenanceMemberSummary {
     /// Returns the observed source fingerprint.
     pub fn source_fingerprint(&self) -> Option<&str> {
         self.source_fingerprint.as_deref()
+    }
+
+    /// Returns the derived source-version fingerprint, if this member is derived.
+    pub fn derived_fingerprint(&self) -> Option<&str> {
+        self.derived_fingerprint.as_deref()
     }
 
     /// Returns the scan observation used by the proof.

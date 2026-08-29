@@ -71,26 +71,63 @@ pub struct LocalContentReader {
     path: PathBuf,
     length: u64,
     initial_fingerprint: String,
+    initial_change_evidence: String,
+    initial_identity_evidence: Option<String>,
+    initial_handle_change_time: Option<i64>,
+    initial_handle_usn: Option<i64>,
 }
 
 impl LocalContentReader {
     fn open(path: PathBuf, metadata: &std::fs::Metadata) -> Result<Self, SourceAccessError> {
         let file = std::fs::File::open(&path).map_err(classify_entry_access_error)?;
+        let handle_metadata = file.metadata().map_err(classify_entry_access_error)?;
+        let initial_handle_change_time = native_handle_change_time(&file);
+        let initial_handle_usn = native_handle_usn(&file);
+        let initial_change_evidence =
+            source_change_evidence(&handle_metadata, ObservedEntryKind::File);
+        let initial_identity_evidence =
+            source_identity_evidence(&file, &handle_metadata, ObservedEntryKind::File);
         Ok(Self {
             file,
             path,
-            length: metadata.len(),
+            length: handle_metadata.len(),
             initial_fingerprint: source_fingerprint(metadata, ObservedEntryKind::File),
+            initial_change_evidence,
+            initial_identity_evidence,
+            initial_handle_change_time,
+            initial_handle_usn,
         })
     }
 
     /// Returns whether the source still has the version observed at open.
     pub fn source_version_is_unchanged(&self) -> Result<bool, SourceAccessError> {
-        let metadata = std::fs::metadata(&self.path).map_err(classify_entry_access_error)?;
-        if !metadata.is_file() {
+        let path_file = std::fs::File::open(&self.path).map_err(classify_entry_access_error)?;
+        let path_metadata = path_file.metadata().map_err(classify_entry_access_error)?;
+        let handle_metadata = self.file.metadata().map_err(classify_entry_access_error)?;
+        if !path_metadata.is_file() || !handle_metadata.is_file() {
             return Ok(false);
         }
-        Ok(source_fingerprint(&metadata, ObservedEntryKind::File) == self.initial_fingerprint)
+        // The path identity detects atomic replacement, while the opened
+        // handle's native/high-resolution evidence detects in-place changes.
+        // The initial handle snapshot is intentional: path-level timestamps
+        // can be stale on networked or virtual filesystems. The persisted
+        // fingerprint remains in the historical millisecond format.
+        let current_identity_evidence =
+            source_identity_evidence(&path_file, &path_metadata, ObservedEntryKind::File);
+        if current_identity_evidence.is_none()
+            || current_identity_evidence != self.initial_identity_evidence
+            || source_change_evidence(&handle_metadata, ObservedEntryKind::File)
+                != self.initial_change_evidence
+        {
+            return Ok(false);
+        }
+        if native_handle_change_time(&self.file) != self.initial_handle_change_time {
+            return Ok(false);
+        }
+        if native_handle_usn(&self.file) != self.initial_handle_usn {
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     /// Returns the source-version fingerprint observed when the reader opened.
@@ -436,6 +473,222 @@ fn native_identity(metadata: &std::fs::Metadata) -> Option<String> {
 fn source_fingerprint(metadata: &std::fs::Metadata, kind: ObservedEntryKind) -> String {
     let modified = modified_at_ms(metadata).unwrap_or(0);
     format!("v1:{}:{}:{}", kind.as_str(), metadata.len(), modified)
+}
+
+fn source_identity_evidence(
+    file: &std::fs::File,
+    metadata: &std::fs::Metadata,
+    kind: ObservedEntryKind,
+) -> Option<String> {
+    #[cfg(windows)]
+    {
+        let _ = metadata;
+        native_handle_identity(file, kind)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = file;
+        Some(source_identity_evidence_from_metadata(metadata, kind))
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn native_handle_identity(file: &std::fs::File, kind: ObservedEntryKind) -> Option<String> {
+    use std::mem::zeroed;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+
+    let mut information = unsafe { zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+    let succeeded =
+        unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut information) };
+    if succeeded == 0 {
+        return None;
+    }
+    let file_index =
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow);
+    Some(format!(
+        "windows:{}:{}:{}",
+        kind.as_str(),
+        information.dwVolumeSerialNumber,
+        file_index,
+    ))
+}
+
+#[cfg(unix)]
+fn source_identity_evidence_from_metadata(
+    metadata: &std::fs::Metadata,
+    kind: ObservedEntryKind,
+) -> String {
+    use std::os::unix::fs::MetadataExt;
+
+    format!(
+        "unix:{}:{}:{}",
+        kind.as_str(),
+        metadata.dev(),
+        metadata.ino()
+    )
+}
+
+#[cfg(not(any(unix, windows)))]
+fn source_identity_evidence_from_metadata(
+    _metadata: &std::fs::Metadata,
+    kind: ObservedEntryKind,
+) -> String {
+    format!("native:{}", kind.as_str())
+}
+
+fn source_change_evidence(metadata: &std::fs::Metadata, kind: ObservedEntryKind) -> String {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+
+        format!(
+            "windows:{}:{}:{}:{}",
+            kind.as_str(),
+            metadata.len(),
+            metadata.creation_time(),
+            metadata.last_write_time(),
+        )
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        format!(
+            "unix:{}:{}:{}:{}:{}:{}:{}",
+            kind.as_str(),
+            metadata.len(),
+            metadata.dev(),
+            metadata.ino(),
+            modified_at_ns(metadata).unwrap_or(0),
+            metadata.ctime(),
+            metadata.ctime_nsec(),
+        )
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        format!(
+            "native:{}:{}:{}",
+            kind.as_str(),
+            metadata.len(),
+            modified_at_ns(metadata).unwrap_or(0),
+        )
+    }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn native_handle_change_time(file: &std::fs::File) -> Option<i64> {
+    use std::mem::size_of;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_BASIC_INFO, FileBasicInfo, GetFileInformationByHandleEx,
+    };
+
+    let mut information = FILE_BASIC_INFO::default();
+    let succeeded = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle() as _,
+            FileBasicInfo,
+            (&mut information as *mut FILE_BASIC_INFO).cast(),
+            size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    };
+    (succeeded != 0).then_some(information.ChangeTime)
+}
+
+#[cfg(not(windows))]
+fn native_handle_change_time(_file: &std::fs::File) -> Option<i64> {
+    None
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn native_handle_usn(file: &std::fs::File) -> Option<i64> {
+    use std::mem::size_of;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::{FSCTL_READ_FILE_USN_DATA, READ_FILE_USN_DATA};
+
+    let input = READ_FILE_USN_DATA {
+        MinMajorVersion: 2,
+        MaxMajorVersion: 3,
+    };
+    let mut output = [0_u8; 1024];
+    let mut bytes_returned = 0_u32;
+    let succeeded = unsafe {
+        DeviceIoControl(
+            file.as_raw_handle() as _,
+            FSCTL_READ_FILE_USN_DATA,
+            (&input as *const READ_FILE_USN_DATA).cast(),
+            size_of::<READ_FILE_USN_DATA>() as u32,
+            output.as_mut_ptr().cast(),
+            output.len() as u32,
+            &mut bytes_returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if succeeded == 0 || bytes_returned < 8 {
+        return None;
+    }
+
+    let returned = usize::try_from(bytes_returned).ok()?;
+    let record_length = usize::try_from(u32::from_ne_bytes(
+        output[..4].try_into().expect("USN record length"),
+    ))
+    .ok()?;
+    if record_length > returned {
+        return None;
+    }
+
+    match u16::from_ne_bytes(output[4..6].try_into().expect("USN major version")) {
+        2 if record_length >= 32 => Some(i64::from_ne_bytes(
+            output[24..32].try_into().expect("USN v2"),
+        )),
+        3 if record_length >= 48 => Some(i64::from_ne_bytes(
+            output[40..48].try_into().expect("USN v3"),
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(not(windows))]
+fn native_handle_usn(_file: &std::fs::File) -> Option<i64> {
+    None
+}
+
+fn modified_at_ns(metadata: &std::fs::Metadata) -> Option<u128> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::LocalContentReader;
+
+    #[test]
+    fn source_validation_uses_the_open_handle_when_path_metadata_is_stale() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("source.bin");
+        let stale_path = directory.path().join("stale.bin");
+        fs::write(&path, b"source").expect("source");
+        fs::write(&stale_path, b"stale metadata").expect("stale metadata");
+        let stale_metadata = fs::metadata(stale_path).expect("metadata");
+
+        let reader = LocalContentReader::open(path, &stale_metadata).expect("reader");
+
+        assert!(reader.source_version_is_unchanged().expect("version check"));
+    }
 }
 
 fn modified_at_ms(metadata: &std::fs::Metadata) -> Option<i64> {

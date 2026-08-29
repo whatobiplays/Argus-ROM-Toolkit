@@ -610,6 +610,7 @@ class ContentProvenanceMemberDto {
   final String? associationKey;
   final String sourceEntryId;
   final String? sourceFingerprint;
+  final String? derivedFingerprint;
   final String lastObservedScanId;
 
   const ContentProvenanceMemberDto({
@@ -617,6 +618,7 @@ class ContentProvenanceMemberDto {
     this.associationKey,
     required this.sourceEntryId,
     this.sourceFingerprint,
+    this.derivedFingerprint,
     required this.lastObservedScanId,
   });
 
@@ -626,6 +628,7 @@ class ContentProvenanceMemberDto {
       associationKey.hashCode ^
       sourceEntryId.hashCode ^
       sourceFingerprint.hashCode ^
+      derivedFingerprint.hashCode ^
       lastObservedScanId.hashCode;
 
   @override
@@ -637,6 +640,7 @@ class ContentProvenanceMemberDto {
           associationKey == other.associationKey &&
           sourceEntryId == other.sourceEntryId &&
           sourceFingerprint == other.sourceFingerprint &&
+          derivedFingerprint == other.derivedFingerprint &&
           lastObservedScanId == other.lastObservedScanId;
 }
 
@@ -646,6 +650,7 @@ class ContentProvenanceSummaryDto {
   final String sourceEntryId;
   final String associationKey;
   final String? sourceFingerprint;
+  final String? derivedFingerprint;
   final String lastObservedScanId;
   final List<ContentProvenanceMemberDto> members;
 
@@ -653,6 +658,7 @@ class ContentProvenanceSummaryDto {
     required this.sourceEntryId,
     required this.associationKey,
     this.sourceFingerprint,
+    this.derivedFingerprint,
     required this.lastObservedScanId,
     required this.members,
   });
@@ -662,6 +668,7 @@ class ContentProvenanceSummaryDto {
       sourceEntryId.hashCode ^
       associationKey.hashCode ^
       sourceFingerprint.hashCode ^
+      derivedFingerprint.hashCode ^
       lastObservedScanId.hashCode ^
       members.hashCode;
 
@@ -673,6 +680,7 @@ class ContentProvenanceSummaryDto {
           sourceEntryId == other.sourceEntryId &&
           associationKey == other.associationKey &&
           sourceFingerprint == other.sourceFingerprint &&
+          derivedFingerprint == other.derivedFingerprint &&
           lastObservedScanId == other.lastObservedScanId &&
           members == other.members;
 }

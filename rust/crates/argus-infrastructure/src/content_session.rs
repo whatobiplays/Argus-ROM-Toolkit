@@ -23,12 +23,15 @@ pub const TRANSFORMATION_STAGING_DIRECTORY: &str = "transformation-staging";
 /// Prefix identifying an operation directory owned by Argus.
 pub const STAGING_DIRECTORY_PREFIX: &str = "argus-transform-";
 
-/// Marker file required before startup cleanup may remove an operation
-/// directory.
+/// Marker file written after an operation directory has been created.
 pub const STAGING_MARKER_FILE: &str = ".argus-staging-marker";
 
 /// Exact marker contents written to a newly created operation directory.
 pub const STAGING_MARKER_VALUE: &[u8] = b"argus-transformation-staging-v1\n";
+
+/// Lock artifact shared by live sessions and exclusively held by startup
+/// cleanup. It intentionally does not use the operation-directory prefix.
+pub const STAGING_ROOT_LOCK_FILE: &str = ".argus-staging-root.lock";
 
 const STAGING_CHUNK_BYTES: usize = 64 * 1024;
 const DIRECTORY_CREATION_ATTEMPTS: u32 = 16;
@@ -84,6 +87,7 @@ impl StagedRepresentation {
 
 struct SessionStaging {
     root: PathBuf,
+    _root_lock: File,
     operation_directory: Option<PathBuf>,
     next_file_id: u64,
     space_probe: Arc<dyn StagingSpaceProbe>,
@@ -93,6 +97,13 @@ impl SessionStaging {
     fn new(root: impl AsRef<Path>, space_probe: Arc<dyn StagingSpaceProbe>) -> io::Result<Self> {
         let root = root.as_ref().to_owned();
         fs::create_dir_all(&root)?;
+        let root_lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(root.join(STAGING_ROOT_LOCK_FILE))?;
+        fs2::FileExt::lock_shared(&root_lock)?;
         let operation_directory = create_operation_directory(&root)?;
         let marker_path = operation_directory.join(STAGING_MARKER_FILE);
         let marker_result = (|| {
@@ -109,6 +120,7 @@ impl SessionStaging {
         }
         Ok(Self {
             root,
+            _root_lock: root_lock,
             operation_directory: Some(operation_directory),
             next_file_id: 0,
             space_probe,
@@ -537,9 +549,7 @@ impl<'a> ParsingSession<'a> {
         let mut length = 0_u64;
         loop {
             self.check_cancelled()?;
-            let count = reader
-                .read(&mut buffer)
-                .map_err(|_| TransformationFailure::Malformed)?;
+            let count = reader.read(&mut buffer).map_err(map_decoded_read_error)?;
             if count == 0 {
                 break;
             }
@@ -614,9 +624,39 @@ fn map_content_read_error(error: super::content_stream::ContentReadError) -> Tra
     }
 }
 
-/// Removes only abandoned operation directories with the exact Argus prefix
-/// and marker value.
+fn map_decoded_read_error(error: io::Error) -> TransformationFailure {
+    match error.kind() {
+        io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof => {
+            TransformationFailure::Malformed
+        }
+        _ => TransformationFailure::ReadFailure,
+    }
+}
+
+/// Removes abandoned operation directories with the exact Argus prefix.
+///
+/// Exclusive ownership of the staging-root lock is the liveness proof: a
+/// live parsing session holds a shared lock for its entire lifetime, so a
+/// marker-less directory can only be removed after no session can still own
+/// it. If another runtime currently owns a shared lock, cleanup returns
+/// without enumerating the operation-directory namespace.
 pub fn cleanup_abandoned_staging(root: &Path) -> io::Result<u64> {
+    let root_lock = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root.join(STAGING_ROOT_LOCK_FILE))
+    {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    match fs2::FileExt::try_lock(&root_lock) {
+        Ok(()) => {}
+        Err(fs2::TryLockError::WouldBlock) => return Ok(0),
+        Err(fs2::TryLockError::Error(error)) => return Err(error),
+    }
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
@@ -634,7 +674,7 @@ pub fn cleanup_abandoned_staging(root: &Path) -> io::Result<u64> {
             continue;
         }
         let file_type = entry.file_type()?;
-        if !file_type.is_dir() || !has_valid_marker(&path) {
+        if !file_type.is_dir() || !marker_is_absent_or_valid(&path) {
             continue;
         }
         match fs::remove_dir_all(path) {
@@ -646,15 +686,18 @@ pub fn cleanup_abandoned_staging(root: &Path) -> io::Result<u64> {
     Ok(removed)
 }
 
-fn has_valid_marker(directory: &Path) -> bool {
+fn marker_is_absent_or_valid(directory: &Path) -> bool {
     let marker = directory.join(STAGING_MARKER_FILE);
-    let Ok(metadata) = fs::symlink_metadata(&marker) else {
-        return false;
-    };
-    metadata.file_type().is_file()
-        && fs::read(marker)
-            .map(|value| value == STAGING_MARKER_VALUE)
-            .unwrap_or(false)
+    match fs::symlink_metadata(&marker) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(metadata) => {
+            metadata.file_type().is_file()
+                && fs::read(marker)
+                    .map(|value| value == STAGING_MARKER_VALUE)
+                    .unwrap_or(false)
+        }
+    }
 }
 
 fn create_operation_directory(root: &Path) -> io::Result<PathBuf> {

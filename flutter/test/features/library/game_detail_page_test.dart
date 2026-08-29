@@ -53,6 +53,7 @@ void main() {
           sourceEntryId: source.sourceEntryId,
           associationKey: 'safe-association',
           sourceFingerprint: 'safe-fingerprint',
+          derivedFingerprint: null,
           lastObservedScanId: 'safe-scan',
         ),
         sources: [source],

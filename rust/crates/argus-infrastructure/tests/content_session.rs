@@ -4,13 +4,13 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use argus_application::{TransformationBudget, TransformationFailure};
 use argus_infrastructure::content::{
     ParsingSession, STAGING_DIRECTORY_PREFIX, STAGING_MARKER_FILE, STAGING_MARKER_VALUE,
-    StagingSpaceProbe, cleanup_abandoned_staging,
+    STAGING_ROOT_LOCK_FILE, StagingSpaceProbe, cleanup_abandoned_staging,
 };
 use tempfile::tempdir;
 
@@ -46,6 +46,30 @@ fn nested_work_uses_one_cumulative_budget() {
         Err(TransformationFailure::ResourceLimitExceeded)
     ));
     session.leave_container();
+}
+
+struct FailingDecodedReader;
+
+impl Read for FailingDecodedReader {
+    fn read(&mut self, _destination: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "staged representation is unavailable",
+        ))
+    }
+}
+
+#[test]
+fn decoded_staging_preserves_io_failures_as_read_failures() {
+    let staging = tempdir().expect("staging root");
+    let mut session =
+        ParsingSession::for_tests(budget(64, 96, 3, 2, 64, 128), staging.path(), || false);
+    let mut reader = FailingDecodedReader;
+
+    assert!(matches!(
+        session.stage_decoded_reader("failing", &mut reader, None),
+        Err(TransformationFailure::ReadFailure)
+    ));
 }
 
 #[test]
@@ -93,9 +117,13 @@ fn staging_checks_remaining_budget_and_available_space_before_copy() {
         "only the marker remains after a rejected stage"
     );
 
-    let low_space = Arc::new(FixedSpaceProbe { available: 100 });
+    let probe_calls = Arc::new(AtomicUsize::new(0));
+    let low_space = Arc::new(FixedSpaceProbe {
+        available: 100,
+        calls: Arc::clone(&probe_calls),
+    });
     let mut low_space_session = ParsingSession::for_tests_with_probe(
-        budget(64, 96, 3, 2, 64, 128),
+        budget(128, 128, 3, 2, 128, 256),
         staging.path(),
         low_space,
         || false,
@@ -104,6 +132,7 @@ fn staging_checks_remaining_budget_and_available_space_before_copy() {
         low_space_session.stage_bytes("space-limited", &[0; 101]),
         Err(TransformationFailure::ResourceLimitExceeded)
     ));
+    assert_eq!(probe_calls.load(Ordering::Relaxed), 1);
 }
 
 #[test]
@@ -160,7 +189,7 @@ fn finishing_or_dropping_session_removes_operation_directory() {
 }
 
 #[test]
-fn cleanup_removes_only_marked_argus_staging_directories() {
+fn cleanup_removes_argus_staging_directories_after_exclusive_root_lock() {
     let staging = tempdir().expect("staging root");
     let recognized = staging
         .path()
@@ -185,21 +214,72 @@ fn cleanup_removes_only_marked_argus_staging_directories() {
 
     assert_eq!(
         cleanup_abandoned_staging(staging.path()).expect("cleanup"),
-        1
+        2
     );
     assert!(!recognized.exists());
-    assert!(unmarked.exists());
+    assert!(!unmarked.exists());
     assert!(unrelated.exists());
     assert!(regular_file.exists());
+    assert!(staging.path().join(STAGING_ROOT_LOCK_FILE).exists());
+}
+
+#[test]
+fn cleanup_preserves_operation_directories_with_invalid_markers() {
+    let staging = tempdir().expect("staging root");
+    let invalid_bytes = staging
+        .path()
+        .join(format!("{STAGING_DIRECTORY_PREFIX}invalid-bytes"));
+    std::fs::create_dir(&invalid_bytes).expect("invalid-bytes directory");
+    std::fs::write(invalid_bytes.join(STAGING_MARKER_FILE), b"wrong-marker")
+        .expect("invalid marker");
+
+    let invalid_type = staging
+        .path()
+        .join(format!("{STAGING_DIRECTORY_PREFIX}invalid-type"));
+    std::fs::create_dir(&invalid_type).expect("invalid-type directory");
+    std::fs::create_dir(invalid_type.join(STAGING_MARKER_FILE)).expect("marker directory");
+
+    assert_eq!(
+        cleanup_abandoned_staging(staging.path()).expect("cleanup"),
+        0
+    );
+    assert!(invalid_bytes.exists());
+    assert!(invalid_type.exists());
+}
+
+#[test]
+fn cleanup_skips_operation_namespace_while_a_session_holds_shared_root_lock() {
+    let staging = tempdir().expect("staging root");
+    let abandoned = staging
+        .path()
+        .join(format!("{STAGING_DIRECTORY_PREFIX}abandoned"));
+    std::fs::create_dir(&abandoned).expect("abandoned directory");
+
+    let session =
+        ParsingSession::for_tests(budget(64, 64, 3, 2, 64, 128), staging.path(), || false);
+    assert_eq!(
+        cleanup_abandoned_staging(staging.path()).expect("busy cleanup"),
+        0
+    );
+    assert!(abandoned.exists());
+    drop(session);
+
+    assert_eq!(
+        cleanup_abandoned_staging(staging.path()).expect("cleanup after session"),
+        1
+    );
+    assert!(!abandoned.exists());
 }
 
 #[derive(Debug)]
 struct FixedSpaceProbe {
     available: u64,
+    calls: Arc<AtomicUsize>,
 }
 
 impl StagingSpaceProbe for FixedSpaceProbe {
     fn available_bytes(&self, _staging_root: &Path) -> io::Result<u64> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
         Ok(self.available)
     }
 }

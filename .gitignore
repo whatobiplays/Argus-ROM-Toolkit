@@ -49,6 +49,7 @@ _ReSharper*/
 # -----------------------------------------------------------------------------
 .chatgpt/
 .codex/
+.worktrees/
 
 # -----------------------------------------------------------------------------
 # Environment variables, secrets, certificates, and signing material

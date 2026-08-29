@@ -3,7 +3,8 @@ use std::io::Cursor;
 use argus_application::TransformationBudget;
 use argus_infrastructure::content::{
     ContentReadError, ContentReader, OpticalDescriptor, OpticalError, OpticalSource,
-    ParsingSession, canonicalize_descriptor, parse_gdi, recognize_chd, recognize_native_optical,
+    ParsingSession, canonicalize_descriptor, parse_cue, parse_gdi, recognize_chd,
+    recognize_native_optical,
 };
 use tempfile::tempdir;
 
@@ -66,6 +67,10 @@ fn set_u32_le(bytes: &mut [u8], offset: usize, value: u32) {
 
 fn set_u32_be(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+}
+
+fn set_u64_be(bytes: &mut [u8], offset: usize, value: u64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_be_bytes());
 }
 
 fn set_iso_both_u16(bytes: &mut [u8], offset: usize, value: u16) {
@@ -471,7 +476,7 @@ fn chd_gd_uses_validated_track_metadata_and_existing_gd_identity() {
     for (offset, bytes) in high_frames.chunks_exact(hunk_bytes as usize).enumerate() {
         chunks.push((first_high_hunk + offset as u32, bytes.to_vec()));
     }
-    let mut logical = low_frame_count * CD_FRAME_BYTES as u64 + high_frames.len() as u64;
+    let logical = low_frame_count * CD_FRAME_BYTES as u64 + high_frames.len() as u64;
     let metadata = vec![
         (
             *b"CHGD",
@@ -511,13 +516,132 @@ fn chd_gd_uses_validated_track_metadata_and_existing_gd_identity() {
     ];
     let expected = canonicalize_descriptor(&OpticalDescriptor::Gdi(descriptor), &mut sources)
         .expect("native GD");
-    let actual = recognize(chd, 100_000_000).expect("CHD GD");
+    let actual = recognize(chd, 300_000_000).expect("CHD GD");
     assert_eq!(actual.platform(), expected.platform());
     assert_eq!(actual.content_type(), expected.content_type());
     assert_eq!(actual.identity_digest(), expected.identity_digest());
     assert_eq!(actual.source_representation(), "chd-gd");
-    logical = 0;
-    assert_eq!(logical, 0);
+}
+
+#[test]
+fn chd_stored_pregap_is_not_hashed_as_the_previous_track_tail() {
+    let iso = build_ps1_iso();
+    let all_frames = mode1_frames(&iso);
+    let mut raw_frames = all_frames;
+    raw_frames.extend(std::iter::repeat_n(vec![0_u8; CD_FRAME_BYTES], 4).flatten());
+    assert_eq!(raw_frames.len(), 68 * CD_FRAME_BYTES);
+
+    let hunk_bytes = CD_FRAME_BYTES as u32 * 4;
+    let chd = chd_v5_sparse(
+        raw_frames.len() as u64,
+        hunk_bytes,
+        CD_FRAME_BYTES as u32,
+        vec![
+            (
+                *b"CHT2",
+                b"TRACK:1 TYPE:MODE1 SUBTYPE:NONE FRAMES:64 PREGAP:0 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0\0"
+                    .to_vec(),
+            ),
+            (
+                *b"CHT2",
+                b"TRACK:2 TYPE:MODE1 SUBTYPE:NONE FRAMES:4 PREGAP:2 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0\0"
+                    .to_vec(),
+            ),
+        ],
+        raw_frames
+            .chunks_exact(hunk_bytes as usize)
+            .enumerate()
+            .map(|(index, bytes)| (index as u32, bytes.to_vec()))
+            .collect(),
+    );
+
+    let mut expected_file = iso;
+    expected_file.extend(std::iter::repeat_n(0_u8, 2 * ISO_SECTOR_BYTES));
+    expected_file.extend(std::iter::repeat_n(0_u8, 2 * ISO_SECTOR_BYTES));
+    let descriptor = parse_cue(
+        "FILE \"chd-track.bin\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\nFILE \"chd-track.bin\" BINARY\nTRACK 02 MODE1/2048\nINDEX 00 00:00:64\nINDEX 01 00:00:66\n",
+    )
+    .expect("CUE descriptor");
+    let mut expected_reader = MemoryReader::new(expected_file);
+    let mut expected_sources = [OpticalSource::new("chd-track.bin", &mut expected_reader)];
+    let expected =
+        canonicalize_descriptor(&OpticalDescriptor::Cue(descriptor), &mut expected_sources)
+            .expect("expected split-track identity");
+    let actual = recognize(chd, 10_000_000).expect("two-track CHD");
+
+    assert_eq!(actual.platform(), expected.platform());
+    assert_eq!(actual.content_type(), expected.content_type());
+    assert_eq!(actual.identity_digest(), expected.identity_digest());
+    assert_eq!(actual.canonical_length(), expected.canonical_length());
+}
+
+#[test]
+fn chd_metadata_budget_includes_zero_length_record_headers() {
+    let iso = build_ps1_iso();
+    let metadata = (0..=65_536).map(|_| (*b"NOPE", Vec::new())).collect();
+    assert_eq!(
+        recognize(
+            chd_v5_sparse(
+                iso.len() as u64,
+                ISO_SECTOR_BYTES as u32 * 4,
+                ISO_SECTOR_BYTES as u32,
+                metadata,
+                iso.chunks_exact(ISO_SECTOR_BYTES * 4)
+                    .enumerate()
+                    .map(|(index, bytes)| (index as u32, bytes.to_vec()))
+                    .collect(),
+            ),
+            10_000_000
+        ),
+        Err(OpticalError::ResourceLimitExceeded)
+    );
+}
+
+#[test]
+fn chd_metadata_chain_may_link_to_a_previously_seen_lower_offset() {
+    let iso = build_ps2_iso();
+    let mut chd = dvd_chd(&iso, *b"DVD ");
+    let first = metadata_entry(b"DVD ", &[1], 512);
+    let second = metadata_entry(b"NOPE", &[], 0);
+    set_u64_be(&mut chd, 48, 528);
+    chd[528..528 + first.len()].copy_from_slice(&first);
+    chd[512..512 + second.len()].copy_from_slice(&second);
+
+    let actual = recognize(chd, 2_000_000).expect("backward-linked metadata");
+    assert_eq!(actual.source_representation(), "chd-dvd");
+}
+
+#[test]
+fn cue_stored_pregap_bytes_are_hashed_at_their_index_zero_offset() {
+    let descriptor = parse_cue(
+        "FILE \"disc.bin\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\nTRACK 02 MODE1/2048\nINDEX 00 00:00:64\nINDEX 01 00:00:65\n",
+    )
+    .expect("CUE descriptor");
+    let track_one = build_ps1_iso();
+    assert_eq!(track_one.len(), 64 * ISO_SECTOR_BYTES);
+    let mut first = track_one.clone();
+    first.extend(std::iter::repeat_n(0x22_u8, ISO_SECTOR_BYTES));
+    first.extend(std::iter::repeat_n(0x33_u8, ISO_SECTOR_BYTES));
+    let mut second = track_one;
+    second.extend(std::iter::repeat_n(0x44_u8, ISO_SECTOR_BYTES));
+    second.extend(std::iter::repeat_n(0x33_u8, ISO_SECTOR_BYTES));
+
+    let first_identity = {
+        let mut reader = MemoryReader::new(first);
+        let mut sources = [OpticalSource::new("disc.bin", &mut reader)];
+        canonicalize_descriptor(&OpticalDescriptor::Cue(descriptor.clone()), &mut sources)
+            .expect("first CUE identity")
+            .identity_digest()
+    };
+    let second_identity = {
+        let mut reader = MemoryReader::new(second);
+        let mut sources = [OpticalSource::new("disc.bin", &mut reader)];
+        canonicalize_descriptor(&OpticalDescriptor::Cue(descriptor), &mut sources)
+            .expect("second CUE identity")
+            .identity_digest()
+    };
+
+    assert_ne!(first_identity, second_identity);
 }
 
 #[test]
@@ -556,6 +680,18 @@ fn chd_rejects_wrong_metadata_truncation_cancellation_and_work_exhaustion() {
         recognize(cd_chd(&iso), 1),
         Err(OpticalError::ResourceLimitExceeded)
     ));
+}
+
+#[test]
+fn chd_accounts_for_decoded_hunk_and_output_bytes_as_parser_work() {
+    let iso = build_ps1_iso();
+    let chd = cd_chd(&iso);
+    let legacy_work_allowance = chd.len() as u64 + 1_024;
+
+    assert_eq!(
+        recognize(chd, legacy_work_allowance),
+        Err(OpticalError::ResourceLimitExceeded)
+    );
 }
 
 #[test]

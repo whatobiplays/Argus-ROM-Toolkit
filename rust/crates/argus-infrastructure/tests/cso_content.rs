@@ -288,6 +288,21 @@ fn cso_nonzero_index_alignment_and_eof_are_validated() {
 }
 
 #[test]
+fn cso_plain_blocks_allow_alignment_padding_between_blocks() {
+    let native_bytes = build_psp_iso();
+    let all_blocks = (0..native_bytes.len() / ISO_SECTOR_BYTES).collect::<Vec<_>>();
+    let cso = cso_image(&native_bytes, &all_blocks, 12);
+
+    let mut native = MemoryReader::new(native_bytes);
+    let expected = recognize_native_optical(&mut native).expect("native UMD");
+    let actual = recognize(cso, 10_000_000).expect("plain aligned CSO");
+    assert_eq!(actual.platform(), expected.platform());
+    assert_eq!(actual.content_type(), expected.content_type());
+    assert_eq!(actual.identity_digest(), expected.identity_digest());
+    assert_eq!(actual.source_representation(), "cso");
+}
+
+#[test]
 fn cso_rejects_impossible_index_order() {
     let native_bytes = build_psp_iso();
     let mut cso = cso_image(&native_bytes, &[], 0);

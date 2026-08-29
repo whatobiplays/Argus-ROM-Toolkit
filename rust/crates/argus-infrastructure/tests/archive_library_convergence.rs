@@ -100,6 +100,7 @@ fn rejected_multi_game_archive_keeps_derived_truth_but_creates_no_game_content()
                 &scope,
                 &observations,
                 scan,
+                0,
                 true,
                 DerivedScopeOutcome::Complete,
             )?;
@@ -163,6 +164,7 @@ fn nested_scope_reconciliation_uses_parent_root_and_partial_scope_preserves_abse
                 &outer_scope,
                 std::slice::from_ref(&outer_child),
                 first_scan,
+                0,
                 true,
                 DerivedScopeOutcome::Complete,
             )?;
@@ -188,6 +190,7 @@ fn nested_scope_reconciliation_uses_parent_root_and_partial_scope_preserves_abse
                 &inner_scope,
                 &complete_observations,
                 first_scan,
+                0,
                 true,
                 DerivedScopeOutcome::Complete,
             )?;
@@ -203,6 +206,7 @@ fn nested_scope_reconciliation_uses_parent_root_and_partial_scope_preserves_abse
                 &inner_scope,
                 std::slice::from_ref(&inner_observations[0]),
                 first_scan,
+                0,
                 true,
                 DerivedScopeOutcome::Partial,
             )?;

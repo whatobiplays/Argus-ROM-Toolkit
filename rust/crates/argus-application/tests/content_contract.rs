@@ -268,11 +268,6 @@ fn production_catalog_activates_native_and_approved_alternate_optical_rows() {
                 .iter()
                 .all(|representation| descriptor.accepts_representation(representation))
         );
-        assert!(
-            representations
-                .iter()
-                .all(|representation| { descriptor.accepts_representation(representation) })
-        );
     }
 }
 

@@ -3743,12 +3743,14 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             if !matches!(completion.state(), JobRunState::Cancelled) && stop_reason().is_none() {
                 match self.with_kernel(context, |kernel| {
                     let is_cancelled = || stop_reason().is_some();
+                    let timestamps =
+                        crate::ContentRefreshTimestamps::from_millis(crate::now_millis());
                     kernel.refresh_committed_root_with_context(
                         plan,
                         context,
                         &mut sessions,
                         &mut parsing_session,
-                        crate::now_millis(),
+                        timestamps,
                         &is_cancelled,
                     )
                 }) {

@@ -270,7 +270,7 @@ Unknown
 
 A content-bearing node is not required to be a leaf. A playlist or CUE sheet may be a content candidate while owning supporting child entries.
 
-Phase 003 generic ZIP/7z/RAR/stream archive support is single-game only: one archive may contain one independently usable game/content family plus required companion files. An archive containing multiple independently usable games is rejected atomically for identification; Argus does not silently select the first member or create multiple Games from one generic archive. M3U is relationship/discovery evidence for independently identified discs rather than a combined content identity.
+Phase 003 generic ZIP/7z and single-stream wrapper support is single-game only; RAR remains explicitly deferred. One archive may contain one independently usable game/content family plus required companion files. An archive containing multiple independently usable games is rejected atomically for identification; Argus does not silently select the first member or create multiple Games from one generic archive. M3U is relationship/discovery evidence for independently identified discs rather than a combined content identity.
 
 ### 6.4 GameContent
 
@@ -613,7 +613,7 @@ CanonicalContentUnit
 
 ### 9.3 ParsingSession and ParsedContent
 
-Each operation owns one session-scoped `ParsingSession` containing `ParsedContent`, immutable transformation resource budget, transient staging ownership, cumulative resource accounting, and cancellation context.
+Each operation owns one session-scoped `ParsingSession` containing `ParsedContent`, immutable transformation resource budget, transient staging ownership, cumulative resource accounting, explicit container-depth state, and cancellation context.
 
 `ParsedContent` stores typed representations already produced during that session so identity/hash consumers can reuse them.
 
@@ -630,7 +630,7 @@ Transformations declare `Sequential`, `Seekable`, or `RandomAccess` requirements
 
 For mutable reads requiring validation, a staged copy becomes trusted immutable downstream input only after the source read validates as `Consistent`. `Changed` or `Indeterminate` input cannot produce trusted immutable identity/hash facts or authoritative derived absence.
 
-Every session runs under finite Argus-owned resource limits for staging, expansion, nesting, derived-entry count, representation size, and other potentially unbounded parser work. Resource-limit exhaustion fails safely and cannot authorize truncated derived structure.
+Every session runs under finite Argus-owned resource limits for staging, expansion, enter/leave container depth accounting, derived-entry count, representation size, and other potentially unbounded parser work. Resource-limit exhaustion fails safely and cannot authorize truncated derived structure.
 
 ### 9.5 Transformation outcomes
 

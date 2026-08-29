@@ -698,7 +698,8 @@ fn canonicalize_cue(
             .ok_or(OpticalError::ResourceLimitExceeded)?;
         let end = match descriptor.tracks.get(index + 1) {
             Some(next) if next.source_name == track.source_name => next
-                .index_one
+                .index_zero
+                .unwrap_or(next.index_one)
                 .checked_mul(next.mode.sector_bytes())
                 .ok_or(OpticalError::ResourceLimitExceeded)?,
             _ => source_length,
@@ -740,11 +741,14 @@ fn canonicalize_cue(
             .unwrap_or(0);
         update_u64(&mut hasher, pregap_sectors);
         if let Some(stored_bytes) = stored_pregap {
+            let stored_offset = start
+                .checked_sub(stored_bytes)
+                .ok_or(OpticalError::Malformed)?;
             hash_cd_track(
                 sources[source_index].reader,
                 stored_bytes / sector_bytes,
                 sector_bytes,
-                0,
+                stored_offset,
                 track.mode,
                 &mut hasher,
                 is_cancelled,

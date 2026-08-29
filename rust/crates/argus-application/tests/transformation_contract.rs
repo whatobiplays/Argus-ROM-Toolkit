@@ -26,6 +26,14 @@ fn source_version_distinguishes_provider_and_derived_evidence() {
 }
 
 #[test]
+fn phase_003_catalog_contains_the_activated_source_validation_error() {
+    let catalog = ErrorCode::phase_003_all();
+
+    assert_eq!(catalog.len(), 36);
+    assert!(catalog.contains(&ErrorCode::FilesystemSourceValidationIndeterminate));
+}
+
+#[test]
 fn published_container_errors_match_be_012() {
     assert_eq!(
         ErrorCode::ValidationContentMalformed.as_str(),
@@ -98,7 +106,7 @@ fn transformation_failures_map_to_published_application_codes() {
         ),
         (
             TransformationFailure::ReadFailure,
-            ErrorCode::InternalUnexpected,
+            ErrorCode::FilesystemSourceValidationIndeterminate,
         ),
         (
             TransformationFailure::SourceChanged,

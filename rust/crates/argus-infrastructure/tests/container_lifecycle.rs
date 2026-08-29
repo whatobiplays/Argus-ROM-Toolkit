@@ -124,6 +124,7 @@ fn reconcile(
                 &scope,
                 &observations,
                 scan,
+                0,
                 stable_input,
                 outcome,
             )?;

@@ -536,6 +536,11 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
                      classification = excluded.classification,
                      provider_native_identity = excluded.provider_native_identity,
                      source_fingerprint = excluded.source_fingerprint,
+                     derived_locator = NULL,
+                     derived_entry_key = NULL,
+                     derived_fingerprint = NULL,
+                     derivation_transformation_id = NULL,
+                     derivation_revision = NULL,
                      last_observed_scan_id = excluded.last_observed_scan_id,
                      updated_at = excluded.updated_at
                  RETURNING source_entry_id",
@@ -613,6 +618,10 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
                      derivation_revision,
                      derived_entry_key
                  ) WHERE coordinate_kind = 'derived' DO UPDATE SET
+                     relative_locator = NULL,
+                     locator_key = NULL,
+                     provider_native_identity = NULL,
+                     source_fingerprint = NULL,
                      derived_locator = excluded.derived_locator,
                      derived_fingerprint = excluded.derived_fingerprint,
                      display_name = excluded.display_name,
@@ -1023,13 +1032,29 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
                 .work
                 .transaction_mut()?
                 .prepare(
-                    "SELECT source_entry_id
-                     FROM source_entry
-                     WHERE parent_source_entry_id = ?1
-                       AND coordinate_kind = 'derived'
-                       AND derivation_transformation_id = ?2
-                       AND derivation_revision = ?3
-                       AND last_observed_scan_id != ?4",
+                    "WITH RECURSIVE stale_root(source_entry_id, library_root_id) AS (
+                         SELECT source_entry_id, library_root_id
+                         FROM source_entry
+                         WHERE parent_source_entry_id = ?1
+                           AND library_root_id = (
+                               SELECT library_root_id
+                               FROM source_entry
+                               WHERE source_entry_id = ?1
+                           )
+                           AND coordinate_kind = 'derived'
+                           AND derivation_transformation_id = ?2
+                           AND derivation_revision = ?3
+                           AND last_observed_scan_id != ?4
+                     ),
+                     subtree(source_entry_id, library_root_id) AS (
+                         SELECT source_entry_id, library_root_id FROM stale_root
+                         UNION ALL
+                         SELECT child.source_entry_id, child.library_root_id
+                         FROM source_entry child
+                         JOIN subtree ON child.parent_source_entry_id = subtree.source_entry_id
+                         WHERE child.library_root_id = subtree.library_root_id
+                     )
+                     SELECT source_entry_id FROM subtree",
                 )
                 .map_err(map_persistence_operation_error)?;
             let rows = statement
@@ -1051,25 +1076,24 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
             return Ok(0);
         }
         finalize_sources(self.work, &ids)?;
-        let changed = self
-            .work
-            .transaction_mut()?
-            .execute(
-                "DELETE FROM source_entry
-                 WHERE parent_source_entry_id = ?1
-                   AND coordinate_kind = 'derived'
-                   AND derivation_transformation_id = ?2
-                   AND derivation_revision = ?3
-                   AND last_observed_scan_id != ?4",
-                rusqlite::params![
-                    parent.to_string(),
-                    transformation_id,
-                    revision,
-                    observation_run_id.to_string(),
-                ],
-            )
-            .map_err(map_persistence_operation_error)?;
-        Ok(changed as u64)
+        // Delete the exact subtree snapshot that was finalized above. Keeping
+        // one materialized ID list for both operations prevents a later query
+        // edit from making persistence finalize one set of rows and delete a
+        // different set.
+        let changed = {
+            let transaction = self.work.transaction_mut()?;
+            let mut statement = transaction
+                .prepare("DELETE FROM source_entry WHERE source_entry_id = ?1")
+                .map_err(map_persistence_operation_error)?;
+            let mut changed = 0_u64;
+            for source_entry_id in &ids {
+                changed += statement
+                    .execute([source_entry_id.to_string()])
+                    .map_err(map_persistence_operation_error)? as u64;
+            }
+            changed
+        };
+        Ok(changed)
     }
 
     fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError> {
@@ -1180,16 +1204,26 @@ fn source_entry_record_from_raw(
         _ => return Err(PersistenceError::CorruptOrIncompatible),
     };
     let coordinates = match coordinate_kind.as_str() {
-        "provider" => SourceEntryCoordinates::Provider {
-            relative_locator: RelativeSourceLocator::from_provider(
-                relative.ok_or(PersistenceError::CorruptOrIncompatible)?,
-            ),
-            locator_key: SourceLocatorKey::from_provider(
-                key.ok_or(PersistenceError::CorruptOrIncompatible)?,
-            ),
-            provider_native_identity: native,
-            source_fingerprint: fingerprint,
-        },
+        "provider" => {
+            if derived_locator.is_some()
+                || derived_entry_key.is_some()
+                || derived_fingerprint.is_some()
+                || transformation_id.is_some()
+                || transformation_revision.is_some()
+            {
+                return Err(PersistenceError::CorruptOrIncompatible);
+            }
+            SourceEntryCoordinates::Provider {
+                relative_locator: RelativeSourceLocator::from_provider(
+                    relative.ok_or(PersistenceError::CorruptOrIncompatible)?,
+                ),
+                locator_key: SourceLocatorKey::from_provider(
+                    key.ok_or(PersistenceError::CorruptOrIncompatible)?,
+                ),
+                provider_native_identity: native,
+                source_fingerprint: fingerprint,
+            }
+        }
         "derived" => {
             if relative.is_some() || key.is_some() || native.is_some() || fingerprint.is_some() {
                 return Err(PersistenceError::CorruptOrIncompatible);

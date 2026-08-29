@@ -1,12 +1,13 @@
 use argus_application::TransformationBudget;
 use argus_application::{
     IdentityDigest, LibrarySourceAccess, PlatformId, RelativeSourceLocator, RootLocator,
+    SourceAccessError, SourceReadHandle,
 };
 use argus_infrastructure::content::{
     ContentProcessingLimits, ContentReadError, ContentReader, ContentRecognitionError,
-    ParsingSession, RecognitionError, recognize_alternate_optical, recognize_content,
-    recognize_content_with_budget, recognize_content_with_limits, recognize_raw_cartridge,
-    recognize_raw_cartridge_with_budget,
+    ParsingSession, RecognitionError, SourceReadContentReader, recognize_alternate_optical,
+    recognize_content, recognize_content_with_budget, recognize_content_with_limits,
+    recognize_raw_cartridge, recognize_raw_cartridge_with_budget,
 };
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
@@ -540,6 +541,34 @@ impl ContentReader for SparseReader {
         }
         Ok(destination.len())
     }
+}
+
+struct OverreportingSource;
+
+impl SourceReadHandle for OverreportingSource {
+    fn len(&self) -> Result<u64, SourceAccessError> {
+        Ok(1)
+    }
+
+    fn read_at(
+        &mut self,
+        _offset: u64,
+        destination: &mut [u8],
+    ) -> Result<usize, SourceAccessError> {
+        Ok(destination.len() + 1)
+    }
+}
+
+#[test]
+fn source_read_adapter_rejects_a_provider_count_larger_than_the_destination() {
+    let mut source = OverreportingSource;
+    let mut reader = SourceReadContentReader::new(&mut source);
+    let mut destination = [0_u8; 1];
+
+    assert_eq!(
+        reader.read_at(0, &mut destination),
+        Err(ContentReadError::Io)
+    );
 }
 
 fn sparse_3ds_header(media_units: u32) -> Vec<u8> {
@@ -1158,25 +1187,33 @@ fn cumulative_resource_budget_is_shared_across_all_probes() {
 fn archives_and_deferred_containers_are_explicitly_unsupported() {
     for prefix in [
         b"PK\x03\x04".as_slice(),
-        b"7z\xbc\xaf".as_slice(),
-        b"Rar!".as_slice(),
+        b"PK\x05\x06".as_slice(),
+        b"PK\x07\x08".as_slice(),
+        b"7z\xbc\xaf\x27\x1c".as_slice(),
+        b"Rar!\x1a\x07".as_slice(),
         b"MComprHD".as_slice(),
         b"CISO".as_slice(),
         b"WBFS".as_slice(),
         b"RVZ\x01".as_slice(),
+        b"WIA\x01".as_slice(),
         b"\x1f\x8b".as_slice(),
-        b"BZ".as_slice(),
+        b"BZh".as_slice(),
         b"\xfd7zXZ\0".as_slice(),
     ] {
-        let mut bytes = vec![0_u8; 512];
+        let mut bytes = gb_fixture(0x80, 32 * 1024);
         bytes[..prefix.len()].copy_from_slice(prefix);
-        if prefix == b"MComprHD" {
-            bytes[..8].copy_from_slice(prefix);
-        }
         let mut reader = BoundedReader::new(bytes, 64 * 1024);
         assert_eq!(
             recognize_content_with_budget(&mut reader, 0x100000).expect_err("deferred container"),
             ContentRecognitionError::UnsupportedRepresentation
         );
     }
+
+    let mut tar = gb_fixture(0x80, 32 * 1024);
+    tar[257..262].copy_from_slice(b"ustar");
+    let mut reader = BoundedReader::new(tar, 64 * 1024);
+    assert_eq!(
+        recognize_content_with_budget(&mut reader, 0x100000).expect_err("tar container"),
+        ContentRecognitionError::UnsupportedRepresentation
+    );
 }

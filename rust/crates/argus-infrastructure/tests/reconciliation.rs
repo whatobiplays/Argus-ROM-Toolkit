@@ -3,13 +3,14 @@
 //! subtree/absence mutation, authority reads, and restart durability.
 
 use argus_application::{
-    JobRunId, JobRunRepository, JobRunState, JobsQueries, LibraryRootAvailability, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootQueries,
-    LibraryRootRepository, LibrarySourceRepository, NativeIdentityMatch, NewJobRun, NewLibraryRoot,
-    NewScanRun, NewSourceEntry, OperationContext, OperationName, PersistenceError,
-    RelativeSourceLocator, RootLocator, ScanRunId, ScanRunRepository, ScanRunStatus,
-    SourceEntryClassification, SourceEntryId, SourceEntryKind, SourceEntryRecord,
-    SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
+    DerivedEntryKey, DerivedFingerprint, DerivedLocator, JobRunId, JobRunRepository, JobRunState,
+    JobsQueries, LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus,
+    LibraryRootLastScanSummary, LibraryRootQueries, LibraryRootRepository, LibrarySourceRepository,
+    NativeIdentityMatch, NewJobRun, NewLibraryRoot, NewScanRun, NewSourceEntry, OperationContext,
+    OperationName, PersistenceError, RelativeSourceLocator, RootLocator, ScanRunId,
+    ScanRunRepository, ScanRunStatus, SourceEntryClassification, SourceEntryId, SourceEntryKind,
+    SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId, UnitOfWork,
+    UnitOfWorkFactory,
 };
 use argus_infrastructure::sqlite::{
     Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteValue,
@@ -70,6 +71,33 @@ fn entry_with_parent(
         SourceEntryKind::File,
         SourceEntryClassification::Unknown,
         None,
+    )
+}
+
+fn derived_entry(
+    root: LibraryRootId,
+    source_entry_id: SourceEntryId,
+    parent: SourceEntryId,
+    name: &str,
+    transformation_id: &str,
+    scan: ScanRunId,
+) -> NewSourceEntry {
+    NewSourceEntry::new_derived(
+        source_entry_id,
+        root,
+        parent,
+        name.to_owned(),
+        name.to_owned(),
+        SourceEntryKind::File,
+        SourceEntryClassification::ContentCandidate,
+        DerivedLocator::from_transformation(format!("locator:{name}")),
+        DerivedEntryKey::from_transformation(format!("key:{name}")),
+        DerivedFingerprint::from_transformation(format!("fingerprint:{name}")),
+        transformation_id.to_owned(),
+        1,
+        scan,
+        1,
+        1,
     )
 }
 
@@ -692,6 +720,131 @@ fn finalize_absent_scope_deletes_only_unobserved_children_and_descendants() {
         .map(SourceEntryRecord::display_name)
         .collect();
     assert_eq!(names, vec!["kept.bin"]);
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn finalize_absent_derived_scope_deletes_stale_roots_and_all_descendants() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
+    let (root, job, scan_one) = seed_source_root_and_job(&executor);
+    terminalize_scan(&executor, scan_one, job);
+    let scan_two = executor
+        .execute(&context(), move |mut scope| {
+            let job = scope
+                .job_runs()
+                .insert(NewJobRun::new("library_scan", 2_000))?;
+            let scan = scope.scan_runs().insert(NewScanRun::new(
+                job,
+                root,
+                RootLocator::from_provider("/library/Games".to_owned()),
+                "Games",
+                "/library/Games",
+                1,
+                1,
+                2_000,
+            ))?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>(scan)
+        })
+        .expect("second scan");
+
+    let parent = executor
+        .execute(&context(), move |mut scope| {
+            let parent = scope.source_entries().upsert(entry_with_parts(
+                root,
+                "archive.bin",
+                None,
+                scan_two,
+                SourceEntryKind::File,
+                SourceEntryClassification::ContentCandidate,
+                None,
+            ))?;
+            let stale_root = SourceEntryId::from_bytes([0xa1; 16]).expect("stale root id");
+            let stale_child = SourceEntryId::from_bytes([0xa2; 16]).expect("stale child id");
+            let stale_grandchild =
+                SourceEntryId::from_bytes([0xa4; 16]).expect("stale grandchild id");
+            let current_sibling = SourceEntryId::from_bytes([0xa3; 16]).expect("sibling id");
+            scope.source_entries().upsert_derived(derived_entry(
+                root,
+                stale_root,
+                parent,
+                "stale-root",
+                "test.outer",
+                scan_one,
+            ))?;
+            scope.source_entries().upsert_derived(derived_entry(
+                root,
+                stale_child,
+                stale_root,
+                "stale-child",
+                "test.inner",
+                scan_one,
+            ))?;
+            scope.source_entries().upsert_derived(derived_entry(
+                root,
+                stale_grandchild,
+                stale_child,
+                "stale-grandchild",
+                "test.leaf",
+                scan_one,
+            ))?;
+            scope.source_entries().upsert_derived(derived_entry(
+                root,
+                current_sibling,
+                parent,
+                "current-sibling",
+                "test.outer",
+                scan_two,
+            ))?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>((
+                parent,
+                stale_root,
+                stale_child,
+                stale_grandchild,
+                current_sibling,
+            ))
+        })
+        .expect("seed derived tree");
+    let (parent, stale_root, stale_child, stale_grandchild, current_sibling) = parent;
+
+    let deleted = executor
+        .execute(&context(), move |mut scope| {
+            let deleted = scope.source_entries().finalize_absent_derived_scope(
+                parent,
+                "test.outer",
+                1,
+                scan_two,
+            )?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>(deleted)
+        })
+        .expect("finalize derived scope");
+    assert_eq!(deleted, 3);
+
+    let remaining = executor
+        .execute(&context(), move |mut scope| {
+            let root_children = scope
+                .source_entries()
+                .list_children(root, Some(parent), 0, 100)?;
+            let nested = scope
+                .source_entries()
+                .list_children(root, Some(stale_root), 0, 100)?;
+            let deeply_nested =
+                scope
+                    .source_entries()
+                    .list_children(root, Some(stale_child), 0, 100)?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>((root_children, nested, deeply_nested))
+        })
+        .expect("read derived tree");
+    assert_eq!(remaining.0.len(), 1);
+    assert_eq!(remaining.0[0].source_entry_id(), current_sibling);
+    assert!(remaining.1.is_empty());
+    assert!(remaining.2.is_empty());
+    let _ = stale_grandchild;
     executor.shutdown().expect("shutdown");
 }
 

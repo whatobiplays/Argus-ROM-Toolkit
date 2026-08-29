@@ -25,6 +25,7 @@ keyring.workspace = true
 keyring-core.workspace = true
 lzma-rust2.workspace = true
 oxiarc-bzip2.workspace = true
+oxiarc-core.workspace = true
 oxiarc-lzma.workspace = true
 ruzstd.workspace = true
 rusqlite.workspace = true
@@ -38,3 +39,10 @@ zip.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+] }

@@ -117,8 +117,8 @@ fn migration_0006_upgrades_a_slice_004_database_with_representative_history() {
     drop(connection);
 
     let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 16);
-    assert_eq!(fresh.migration_summary().applied_count, 11);
+    assert_eq!(fresh.migration_summary().current_version, 17);
+    assert_eq!(fresh.migration_summary().applied_count, 12);
 
     fresh
         .execute(&context(), move |mut scope| {

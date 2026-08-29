@@ -180,11 +180,12 @@ impl<'a> ContentSourceResolver<'a> {
             .open_entry_read(self.root, relative)
             .map_err(map_source_error)?;
         let reader = ProviderContentReader::new(source);
-        if let (Some(expected), Some(actual)) =
-            (entry.source_fingerprint(), reader.source_fingerprint())
-            && expected != actual
-        {
-            return Err(TransformationFailure::SourceChanged);
+        match (entry.source_fingerprint(), reader.source_fingerprint()) {
+            (Some(_), None) => return Err(TransformationFailure::SourceChanged),
+            (Some(expected), Some(actual)) if expected != actual => {
+                return Err(TransformationFailure::SourceChanged);
+            }
+            _ => {}
         }
         Ok(Box::new(reader))
     }
@@ -290,5 +291,111 @@ impl ContentReader for StagedContentReader {
             .read_exact(destination)
             .map_err(|_| ContentReadError::Io)?;
         Ok(destination.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContentSourceResolver, ParsingSession};
+    use argus_application::{
+        EnumerationResult, LibrarySourceAccess, RelativeSourceLocator, ResolvedRoot, ScanRunId,
+        SourceAccessError, SourceEntryClassification, SourceEntryId, SourceEntryKind,
+        SourceEntryRecord, SourceLocatorKey, SourceReadHandle, TransformationBudget,
+        TransformationFailure,
+    };
+    use tempfile::tempdir;
+
+    struct FingerprintlessAccess;
+
+    impl LibrarySourceAccess for FingerprintlessAccess {
+        fn resolve_root(&self) -> Result<ResolvedRoot, SourceAccessError> {
+            Ok(ResolvedRoot::from_provider("test-root".to_owned()))
+        }
+
+        fn enumerate_root_direct_children(
+            &self,
+            _root: &ResolvedRoot,
+            _is_cancelled: &dyn Fn() -> bool,
+        ) -> Result<EnumerationResult, SourceAccessError> {
+            Err(SourceAccessError::UnsupportedOperation)
+        }
+
+        fn enumerate_direct_children(
+            &self,
+            _root: &ResolvedRoot,
+            _relative: &RelativeSourceLocator,
+            _is_cancelled: &dyn Fn() -> bool,
+        ) -> Result<EnumerationResult, SourceAccessError> {
+            Err(SourceAccessError::UnsupportedOperation)
+        }
+
+        fn open_entry_read(
+            &self,
+            _root: &ResolvedRoot,
+            _relative: &RelativeSourceLocator,
+        ) -> Result<Box<dyn SourceReadHandle>, SourceAccessError> {
+            Ok(Box::new(FingerprintlessReader {
+                bytes: b"provider-bytes".to_vec(),
+            }))
+        }
+    }
+
+    struct FingerprintlessReader {
+        bytes: Vec<u8>,
+    }
+
+    impl SourceReadHandle for FingerprintlessReader {
+        fn len(&self) -> Result<u64, SourceAccessError> {
+            Ok(self.bytes.len() as u64)
+        }
+
+        fn read_at(
+            &mut self,
+            offset: u64,
+            destination: &mut [u8],
+        ) -> Result<usize, SourceAccessError> {
+            let start = usize::try_from(offset).map_err(|_| SourceAccessError::InvalidResponse)?;
+            let end = start
+                .checked_add(destination.len())
+                .ok_or(SourceAccessError::InvalidResponse)?;
+            let source = self
+                .bytes
+                .get(start..end)
+                .ok_or(SourceAccessError::InvalidResponse)?;
+            destination.copy_from_slice(source);
+            Ok(source.len())
+        }
+    }
+
+    #[test]
+    fn persisted_provider_fingerprint_requires_current_handle_evidence() {
+        let source_entry_id =
+            SourceEntryId::try_from("11111111111111111111111111111111").expect("entry id");
+        let scan_id = ScanRunId::try_from("22222222222222222222222222222222").expect("scan id");
+        let entry = SourceEntryRecord::new(
+            source_entry_id,
+            None,
+            RelativeSourceLocator::from_provider("rom.bin".to_owned()),
+            SourceLocatorKey::from_provider("rom.bin".to_owned()),
+            "rom.bin",
+            "rom.bin",
+            SourceEntryKind::File,
+            SourceEntryClassification::Container,
+            None,
+            Some("persisted-provider-fingerprint".to_owned()),
+            scan_id,
+        );
+        let access = FingerprintlessAccess;
+        let root = ResolvedRoot::from_provider("test-root".to_owned());
+        let entries = [entry.clone()];
+        let resolver = ContentSourceResolver::new(&access, &root, &entries);
+        let staging = tempdir().expect("staging");
+        let mut session =
+            ParsingSession::for_tests(TransformationBudget::production(), staging.path(), || false);
+
+        assert!(matches!(
+            resolver.open(&entry, &mut session),
+            Err(TransformationFailure::SourceChanged)
+        ));
     }
 }

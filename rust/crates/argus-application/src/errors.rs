@@ -95,6 +95,7 @@ pub enum ErrorCode {
     ValidationContentEncryptedUnsupported,
     ValidationMultiGameContainerUnsupported,
     FilesystemContentDependencyMissing,
+    FilesystemSourceValidationIndeterminate,
     ValidationContentRecognitionAmbiguous,
     OperationTransformationResourceLimitExceeded,
 }
@@ -339,6 +340,9 @@ impl ErrorCode {
             }
             Self::FilesystemContentDependencyMissing => {
                 "ARGUS.V1.FILESYSTEM.CONTENT_DEPENDENCY_MISSING"
+            }
+            Self::FilesystemSourceValidationIndeterminate => {
+                "ARGUS.V1.FILESYSTEM.SOURCE_VALIDATION_INDETERMINATE"
             }
             Self::ValidationContentRecognitionAmbiguous => {
                 "ARGUS.V1.VALIDATION.CONTENT_RECOGNITION_AMBIGUOUS"
@@ -614,6 +618,14 @@ impl ErrorCode {
                 Recoverability::UserAction,
                 RetryPolicy::UserInitiated,
                 "errors.filesystem.content_dependency_missing",
+                COMMON_FAILURE_FIELDS,
+            ),
+            Self::FilesystemSourceValidationIndeterminate => policy(
+                ErrorCategory::Filesystem,
+                ApplicationSeverity::Error,
+                Recoverability::Retry,
+                RetryPolicy::UserInitiated,
+                "errors.content.source_validation_indeterminate",
                 COMMON_FAILURE_FIELDS,
             ),
             Self::ValidationContentRecognitionAmbiguous => policy(

@@ -1471,6 +1471,7 @@ final class ContentProvenanceSummary {
     required this.sourceEntryId,
     required this.associationKey,
     required this.sourceFingerprint,
+    required this.derivedFingerprint,
     required this.lastObservedScanId,
     this.members = const <ContentProvenanceMember>[],
   });
@@ -1478,6 +1479,7 @@ final class ContentProvenanceSummary {
   final SourceEntryId sourceEntryId;
   final String associationKey;
   final String? sourceFingerprint;
+  final String? derivedFingerprint;
   final String lastObservedScanId;
   final List<ContentProvenanceMember> members;
 }
@@ -1489,6 +1491,7 @@ final class ContentProvenanceMember {
     required this.associationKey,
     required this.sourceEntryId,
     required this.sourceFingerprint,
+    required this.derivedFingerprint,
     required this.lastObservedScanId,
   });
 
@@ -1496,6 +1499,7 @@ final class ContentProvenanceMember {
   final String? associationKey;
   final SourceEntryId sourceEntryId;
   final String? sourceFingerprint;
+  final String? derivedFingerprint;
   final String lastObservedScanId;
 }
 

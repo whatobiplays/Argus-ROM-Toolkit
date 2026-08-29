@@ -65,6 +65,17 @@ fn seed(executor: &SqliteDatabaseExecutor) -> (LibraryRootId, ScanRunId, SourceE
 }
 
 fn derived_entry(root: LibraryRootId, parent: SourceEntryId, scan: ScanRunId) -> NewSourceEntry {
+    derived_entry_at(root, parent, scan, "member-fingerprint:v1", 1_000, 1_000)
+}
+
+fn derived_entry_at(
+    root: LibraryRootId,
+    parent: SourceEntryId,
+    scan: ScanRunId,
+    fingerprint: &str,
+    created_at: i64,
+    updated_at: i64,
+) -> NewSourceEntry {
     NewSourceEntry::new_derived(
         SourceEntryId::try_from("33333333333333333333333333333333").expect("derived id"),
         root,
@@ -75,12 +86,12 @@ fn derived_entry(root: LibraryRootId, parent: SourceEntryId, scan: ScanRunId) ->
         SourceEntryClassification::ContentCandidate,
         DerivedLocator::from_transformation("member:game.gba".to_owned()),
         DerivedEntryKey::from_transformation("member:game.gba".to_owned()),
-        DerivedFingerprint::from_transformation("member-fingerprint:v1".to_owned()),
+        DerivedFingerprint::from_transformation(fingerprint.to_owned()),
         "argus.transformation.zip.v1".to_owned(),
         1,
         scan,
-        1_000,
-        1_000,
+        created_at,
+        updated_at,
     )
 }
 
@@ -187,5 +198,41 @@ fn derived_entries_upsert_by_transformation_key_and_keep_provider_coordinates_em
             Ok(())
         })
         .expect("coordinate invariant");
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn derived_upsert_preserves_creation_time_and_clears_provider_evidence() {
+    let directory = tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
+    let (root, scan, parent) = seed(&executor);
+
+    executor
+        .execute(&context(), move |mut scope| {
+            let first = derived_entry_at(root, parent, scan, "member-fingerprint:v1", 1_000, 1_000);
+            let second =
+                derived_entry_at(root, parent, scan, "member-fingerprint:v2", 2_000, 2_000);
+            scope.source_entries().upsert_derived(first)?;
+            scope.source_entries().upsert_derived(second)?;
+            scope.commit()?;
+            Ok::<_, ApplicationPortError>(())
+        })
+        .expect("derived upsert timestamps");
+
+    executor
+        .with_connection_for_tests(context(), |connection| {
+            assert_eq!(
+                connection.scalar_text(
+                    "SELECT created_at || '|' || updated_at || '|' ||
+                            COALESCE(source_fingerprint, '') || '|' || derived_fingerprint
+                     FROM source_entry
+                     WHERE source_entry_id = '33333333333333333333333333333333'"
+                )?,
+                "1000|2000||member-fingerprint:v2"
+            );
+            Ok(())
+        })
+        .expect("verify derived upsert timestamp and evidence family");
     executor.shutdown().expect("shutdown");
 }

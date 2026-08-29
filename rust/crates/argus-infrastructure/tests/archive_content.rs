@@ -5,12 +5,12 @@ use argus_application::{
     TransformationBudget, TransformationFailure,
 };
 use argus_infrastructure::content::{
-    enumerate_derived_container, ContentReadError, ContentReader, DerivedScopeResult,
-    ParsingSession,
+    ContentReadError, ContentReader, DerivedScopeResult, ParsingSession,
+    enumerate_derived_container,
 };
-use flate2::{write::GzEncoder, Compression};
+use flate2::{Compression, write::GzEncoder};
 use tempfile::tempdir;
-use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 const SEVEN_Z_LZMA2_FIXTURE: &[u8] = &[
     0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0x00, 0x04, 0xbb, 0xac, 0x85, 0xb8, 0x0d, 0x00, 0x00, 0x00,
@@ -64,6 +64,15 @@ const XZ_FIXTURE: &[u8] = &[
     0x01, 0x00, 0x08, 0x67, 0x61, 0x6d, 0x65, 0x2d, 0x64, 0x61, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00,
     0xf5, 0xb4, 0x76, 0x52, 0x20, 0x3b, 0xae, 0x6b, 0x00, 0x01, 0x29, 0x09, 0x64, 0x92, 0x1c, 0x1d,
     0x1f, 0xb6, 0xf3, 0x7d, 0x01, 0x00, 0x00, 0x00, 0x00, 0x04, 0x59, 0x5a,
+];
+
+const SEVEN_Z_EMPTY_FILE_FIXTURE: &[u8] = &[
+    0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0x00, 0x04, 0x91, 0xec, 0xfe, 0x07, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x9b, 0xd9, 0xf4,
+    0x01, 0x05, 0x01, 0x0e, 0x01, 0x80, 0x0f, 0x01, 0x80, 0x19, 0x02, 0x00, 0x00, 0x11, 0x15, 0x00,
+    0x65, 0x00, 0x6d, 0x00, 0x70, 0x00, 0x74, 0x00, 0x79, 0x00, 0x2e, 0x00, 0x62, 0x00, 0x69, 0x00,
+    0x6e, 0x00, 0x00, 0x00, 0x14, 0x0a, 0x01, 0x00, 0x50, 0xb3, 0xb8, 0xc7, 0x51, 0x37, 0xdd, 0x01,
+    0x15, 0x06, 0x01, 0x00, 0x20, 0x80, 0xa4, 0x81, 0x00, 0x00,
 ];
 
 fn budget(
@@ -122,10 +131,12 @@ fn assert_complete(
     for (observation, expected) in result.observations().iter().zip(names) {
         assert_eq!(observation.display_name(), *expected);
         assert_eq!(observation.kind(), SourceEntryKind::File);
-        assert!(!observation
-            .derived_fingerprint()
-            .as_transformation_value()
-            .is_empty());
+        assert!(
+            !observation
+                .derived_fingerprint()
+                .as_transformation_value()
+                .is_empty()
+        );
     }
     assert_eq!(result.member_index().len(), names.len());
 }
@@ -166,11 +177,13 @@ fn decoded_members_are_reopened_from_operation_staging() {
         .read_to_end(&mut bytes)
         .expect("staged member should read");
     assert_eq!(bytes, b"staged-game");
-    assert!(result
-        .member_index()
-        .staged_path(key)
-        .expect("staged path")
-        .starts_with(session.operation_directory()));
+    assert!(
+        result
+            .member_index()
+            .staged_path(key)
+            .expect("staged path")
+            .starts_with(session.operation_directory())
+    );
 }
 
 #[test]
@@ -255,6 +268,33 @@ fn seven_zip_lzma_members_are_enumerated() {
 }
 
 #[test]
+fn empty_non_directory_seven_zip_members_are_reopenable() {
+    let staging = tempdir().expect("staging root");
+    let mut session = ParsingSession::for_tests(
+        budget(1024, 1024, 16, 4, 1024, 4096),
+        staging.path(),
+        || false,
+    );
+    let mut reader = BytesReader {
+        bytes: SEVEN_Z_EMPTY_FILE_FIXTURE.to_vec(),
+    };
+    let result = enumerate_derived_container(&mut reader, &parent_version(), &mut session)
+        .expect("7z should decode")
+        .expect("7z should be applicable");
+    assert_eq!(result.observations()[0].kind(), SourceEntryKind::File);
+    let key = result.observations()[0].derived_entry_key();
+    let mut staged = result
+        .member_index()
+        .open(key)
+        .expect("empty file should have a staged representation");
+    let mut bytes = Vec::new();
+    staged
+        .read_to_end(&mut bytes)
+        .expect("staged member should read");
+    assert!(bytes.is_empty());
+}
+
+#[test]
 fn tar_regular_file_and_directory_members_are_enumerated() {
     let bytes = tar_fixture(&[("folder/", b"", true), ("folder/game.gba", b"game", false)]);
     let result = enumerate(bytes, budget(4096, 1024, 16, 4, 4096, 4096))
@@ -266,6 +306,21 @@ fn tar_regular_file_and_directory_members_are_enumerated() {
     assert_eq!(result.observations()[0].kind(), SourceEntryKind::Directory);
     assert_eq!(result.observations()[1].display_name(), "game.gba");
     assert_eq!(result.observations()[1].kind(), SourceEntryKind::File);
+}
+
+#[test]
+fn tar_octal_fields_reject_non_whitespace_after_digits() {
+    let mut bytes = tar_fixture(&[("game.gba", b"game", false)]);
+    bytes[135] = b'x';
+    bytes[148..156].fill(b' ');
+    let checksum: u32 = bytes[..512].iter().map(|byte| u32::from(*byte)).sum();
+    let checksum_text = format!("{checksum:06o}\0 ");
+    bytes[148..156].copy_from_slice(checksum_text.as_bytes());
+
+    assert!(matches!(
+        enumerate(bytes, budget(4096, 1024, 16, 4, 4096, 4096)),
+        Err(TransformationFailure::Malformed)
+    ));
 }
 
 #[test]
@@ -410,12 +465,14 @@ fn expansion_budget_failure_cannot_be_reported_as_complete() {
 
 #[test]
 fn unsupported_bytes_are_not_claimed_by_the_derived_container_path() {
-    assert!(enumerate(
-        b"not a supported wrapper".to_vec(),
-        budget(1024, 1024, 16, 4, 1024, 4096)
-    )
-    .expect("probe")
-    .is_none());
+    assert!(
+        enumerate(
+            b"not a supported wrapper".to_vec(),
+            budget(1024, 1024, 16, 4, 1024, 4096)
+        )
+        .expect("probe")
+        .is_none()
+    );
 }
 
 struct BytesReader {

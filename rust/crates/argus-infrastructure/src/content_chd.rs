@@ -5,7 +5,9 @@
 //! the established optical recognizers, and changes only the reported storage
 //! representation. It never creates a CHD-specific identity scheme.
 
+use std::collections::HashMap;
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 
 use argus_application::TransformationFailure;
 use chd::metadata::{Metadata, MetadataTag};
@@ -22,6 +24,7 @@ const CD_USER_DATA_OFFSET: u64 = 16;
 const CD_USER_SECTOR_BYTES: u64 = 2_048;
 const MAX_CHD_TRACKS: usize = 99;
 const MAX_CHD_METADATA_BYTES: usize = 1024 * 1024;
+const CHD_METADATA_HEADER_BYTES: u64 = 16;
 const CHD_CD_TAGS: [[u8; 4]; 2] = [*b"CHTR", *b"CHT2"];
 const CHD_GD_TAG: [u8; 4] = *b"CHGD";
 const CHD_DVD_TAG: [u8; 4] = *b"DVD ";
@@ -42,15 +45,20 @@ pub fn recognize_chd(
         .map_err(map_session_error)?;
     let file = staged.reopen().map_err(|_| OpticalError::ReadFailure)?;
     let mut chd = Chd::open(file, None).map_err(map_chd_error)?;
-    let metadata = read_metadata(&mut chd)?;
+    let metadata = read_metadata(&mut chd, session)?;
     let media = classify_media(&metadata)?;
     let logical_bytes = chd.header().logical_bytes();
     let hunk_count = u64::from(chd.header().hunk_count());
     if logical_bytes == 0 || chd.header().hunk_size() == 0 {
         return Err(OpticalError::Malformed);
     }
+    let hunk_size = u64::from(chd.header().hunk_size());
     session
-        .charge_parser_work(hunk_count)
+        .charge_parser_work(
+            hunk_count
+                .checked_mul(hunk_size)
+                .ok_or(OpticalError::ResourceLimitExceeded)?,
+        )
         .map_err(map_session_error)?;
     match media {
         ChdMedia::Cd(mut tracks) => {
@@ -65,7 +73,7 @@ pub fn recognize_chd(
             let mut decoded =
                 ChdPayloadReader::new(chd, ChdPayloadKind::Cd(tracks.clone()), session)?;
             session
-                .charge_parser_work(output_length / CD_USER_SECTOR_BYTES)
+                .charge_parser_work(output_length)
                 .map_err(map_session_error)?;
             let cancelled = || session.check_cancelled().is_err();
             let descriptor = cue_descriptor(&tracks)?;
@@ -86,7 +94,7 @@ pub fn recognize_chd(
             let mut decoded =
                 ChdPayloadReader::new(chd, ChdPayloadKind::Cd(tracks.clone()), session)?;
             session
-                .charge_parser_work(output_length / CD_USER_SECTOR_BYTES)
+                .charge_parser_work(output_length)
                 .map_err(map_session_error)?;
             let cancelled = || session.check_cancelled().is_err();
             let descriptor = gdi_descriptor(&tracks)?;
@@ -109,7 +117,7 @@ pub fn recognize_chd(
                 .map_err(map_session_error)?;
             let mut decoded = ChdPayloadReader::new(chd, ChdPayloadKind::Direct, session)?;
             session
-                .charge_parser_work(logical_bytes / CD_USER_SECTOR_BYTES)
+                .charge_parser_work(logical_bytes)
                 .map_err(map_session_error)?;
             let cancelled = || session.check_cancelled().is_err();
             let recognition = recognize_native_optical_with_cancel(&mut decoded, &cancelled)?;
@@ -207,19 +215,71 @@ impl ChdTrackMode {
     }
 }
 
-fn read_metadata(chd: &mut Chd<File>) -> Result<Vec<Metadata>, OpticalError> {
-    let entries = chd.metadata_refs().collect::<Vec<_>>();
-    let mut result = Vec::with_capacity(entries.len());
+fn read_metadata(
+    chd: &mut Chd<File>,
+    session: &mut ParsingSession<'_>,
+) -> Result<Vec<Metadata>, OpticalError> {
+    let Some(mut offset) = chd.header().meta_offset() else {
+        return Ok(Vec::new());
+    };
+    let mut result = Vec::new();
+    let mut indices = HashMap::<u32, u32>::new();
+    let mut seen_offsets = std::collections::HashSet::new();
     let mut total = 0_usize;
-    for entry in entries {
-        let metadata = entry.read(chd.inner()).map_err(map_chd_error)?;
+    while offset != 0 {
+        if !seen_offsets.insert(offset) {
+            return Err(OpticalError::Malformed);
+        }
+        session.check_cancelled().map_err(map_session_error)?;
+        session
+            .charge_parser_work(CHD_METADATA_HEADER_BYTES)
+            .map_err(map_session_error)?;
+        let mut header = [0_u8; CHD_METADATA_HEADER_BYTES as usize];
+        chd.inner()
+            .seek(SeekFrom::Start(offset))
+            .map_err(map_metadata_io_error)?;
+        chd.inner()
+            .read_exact(&mut header)
+            .map_err(map_metadata_io_error)?;
+        let metatag = u32::from_be_bytes(header[..4].try_into().expect("metadata tag"));
+        let raw_length = u32::from_be_bytes(header[4..8].try_into().expect("metadata length"));
+        let length = raw_length & 0x00ff_ffff;
         total = total
-            .checked_add(metadata.value.len())
+            .checked_add(length as usize)
             .ok_or(OpticalError::ResourceLimitExceeded)?;
         if total > MAX_CHD_METADATA_BYTES {
             return Err(OpticalError::ResourceLimitExceeded);
         }
+        session
+            .charge_parser_work(u64::from(length))
+            .map_err(map_session_error)?;
+        let next = u64::from_be_bytes(header[8..16].try_into().expect("metadata next"));
+        if next != 0 && next <= offset {
+            return Err(OpticalError::Malformed);
+        }
+        let mut value = vec![0_u8; length as usize];
+        let value_offset = offset
+            .checked_add(CHD_METADATA_HEADER_BYTES)
+            .ok_or(OpticalError::ResourceLimitExceeded)?;
+        chd.inner()
+            .seek(SeekFrom::Start(value_offset))
+            .map_err(map_metadata_io_error)?;
+        chd.inner()
+            .read_exact(&mut value)
+            .map_err(map_metadata_io_error)?;
+        let index = indices.entry(metatag).or_insert(0);
+        let metadata = Metadata {
+            metatag,
+            value,
+            flags: (raw_length >> 24) as u8,
+            index: *index,
+            length,
+        };
+        *index = (*index)
+            .checked_add(1)
+            .ok_or(OpticalError::ResourceLimitExceeded)?;
         result.push(metadata);
+        offset = next;
     }
     Ok(result)
 }
@@ -265,7 +325,10 @@ fn parse_track(metadata: &Metadata) -> Result<ChdTrack, OpticalError> {
     let mut pregap = 0_u64;
     let mut postgap = 0_u64;
     let mut mode = None;
+    let mut subtype = None;
     let mut pregap_virtual = false;
+    let mut pregap_mode = None;
+    let mut pregap_subtype = None;
     for field in text.split_whitespace() {
         let Some((key, value)) = field.split_once(':') else {
             return Err(OpticalError::Malformed);
@@ -278,29 +341,42 @@ fn parse_track(metadata: &Metadata) -> Result<ChdTrack, OpticalError> {
                 );
             }
             "TYPE" => {
-                mode = Some(match value.to_ascii_uppercase().as_str() {
-                    "AUDIO" => ChdTrackMode::Audio,
-                    "MODE1" => ChdTrackMode::Mode1_2048,
-                    "MODE1_RAW" => ChdTrackMode::Mode1_2352,
-                    "MODE2" => ChdTrackMode::Mode2_2336,
-                    "MODE2_RAW" => ChdTrackMode::Mode2_2352,
-                    _ => return Err(OpticalError::UnsupportedRepresentation),
-                });
+                mode = Some(parse_track_mode(value)?);
             }
             "FRAMES" => frames = Some(parse_metadata_u64(value)?),
             "PREGAP" => pregap = parse_metadata_u64(value)?,
             "POSTGAP" => postgap = parse_metadata_u64(value)?,
-            "PGTYPE" => pregap_virtual = value.starts_with(['V', 'v']),
-            "SUBTYPE" | "PGSUB" | "PAD" => {}
+            "PGTYPE" => {
+                if value.eq_ignore_ascii_case("V") {
+                    pregap_virtual = true;
+                } else {
+                    pregap_mode = Some(parse_track_mode(value)?);
+                }
+            }
+            "SUBTYPE" => subtype = Some(value.to_ascii_uppercase()),
+            "PGSUB" => pregap_subtype = Some(value.to_ascii_uppercase()),
+            "PAD" => {}
             _ => return Err(OpticalError::Malformed),
         }
     }
     let number = number.ok_or(OpticalError::Malformed)?;
     let frames = frames.ok_or(OpticalError::Malformed)?;
-    if number == 0 || frames == 0 || mode.is_none() {
+    let mode = mode.ok_or(OpticalError::Malformed)?;
+    if number == 0 || frames == 0 {
         return Err(OpticalError::Malformed);
     }
     let stored_pregap = pregap != 0 && !pregap_virtual;
+    if stored_pregap && pregap_mode.is_some_and(|pregap_mode| pregap_mode != mode) {
+        return Err(OpticalError::UnsupportedRepresentation);
+    }
+    if stored_pregap
+        && subtype
+            .as_ref()
+            .zip(pregap_subtype.as_ref())
+            .is_some_and(|(subtype, pregap_subtype)| subtype != pregap_subtype)
+    {
+        return Err(OpticalError::UnsupportedRepresentation);
+    }
     Ok(ChdTrack {
         number,
         frames,
@@ -311,8 +387,19 @@ fn parse_track(metadata: &Metadata) -> Result<ChdTrack, OpticalError> {
         output_offset: 0,
         output_frames: frames,
         data_offset: 0,
-        mode: mode.expect("mode checked above"),
+        mode,
     })
+}
+
+fn parse_track_mode(value: &str) -> Result<ChdTrackMode, OpticalError> {
+    match value.to_ascii_uppercase().as_str() {
+        "AUDIO" => Ok(ChdTrackMode::Audio),
+        "MODE1" => Ok(ChdTrackMode::Mode1_2048),
+        "MODE1_RAW" => Ok(ChdTrackMode::Mode1_2352),
+        "MODE2" => Ok(ChdTrackMode::Mode2_2336),
+        "MODE2_RAW" => Ok(ChdTrackMode::Mode2_2352),
+        _ => Err(OpticalError::UnsupportedRepresentation),
+    }
 }
 
 fn prepare_cd_geometry(
@@ -643,6 +730,14 @@ fn map_chd_error(error: ChdError) -> OpticalError {
     }
 }
 
+fn map_metadata_io_error(error: std::io::Error) -> OpticalError {
+    if error.kind() == std::io::ErrorKind::UnexpectedEof {
+        OpticalError::Truncated
+    } else {
+        OpticalError::ReadFailure
+    }
+}
+
 fn map_session_error(error: TransformationFailure) -> OpticalError {
     match error {
         TransformationFailure::Cancelled => OpticalError::Cancelled,
@@ -660,5 +755,28 @@ fn map_decoded_optical_error(error: OpticalError, cancelled: &dyn Fn() -> bool) 
             OpticalError::ReadFailure => OpticalError::Malformed,
             other => other,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OpticalError, parse_track};
+    use chd::metadata::Metadata;
+
+    #[test]
+    fn stored_pregap_mode_must_match_the_track_mode() {
+        let value = b"TRACK:1 TYPE:MODE1 SUBTYPE:NONE FRAMES:4 PREGAP:1 PGTYPE:MODE2 PGSUB:NONE POSTGAP:0\0";
+        let metadata = Metadata {
+            metatag: u32::from_be_bytes(*b"CHT2"),
+            value: value.to_vec(),
+            flags: 0,
+            index: 0,
+            length: value.len() as u32,
+        };
+
+        assert_eq!(
+            parse_track(&metadata),
+            Err(OpticalError::UnsupportedRepresentation)
+        );
     }
 }

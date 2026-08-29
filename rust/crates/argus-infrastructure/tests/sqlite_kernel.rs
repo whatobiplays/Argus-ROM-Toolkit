@@ -101,7 +101,7 @@ fn reopening_current_database_preserves_migration_and_default() {
             ))
         })
         .expect("query reopened database");
-    assert_eq!(values, (16, 1, "dark".to_owned()));
+    assert_eq!(values, (17, 1, "dark".to_owned()));
     second.shutdown().expect("second shutdown");
 }
 

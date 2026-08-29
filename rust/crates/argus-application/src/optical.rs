@@ -63,6 +63,38 @@ impl ContentDependencyCandidate {
     }
 }
 
+trait DependencyCandidate {
+    fn source(&self) -> &SourceEntryRecord;
+
+    fn matches_normalized_reference(&self, normalized: &str) -> bool;
+}
+
+impl DependencyCandidate for SourceEntryRecord {
+    fn source(&self) -> &SourceEntryRecord {
+        self
+    }
+
+    fn matches_normalized_reference(&self, normalized: &str) -> bool {
+        self.kind() == SourceEntryKind::File
+            && self
+                .relative_locator()
+                .and_then(|locator| normalize_relative(locator.as_provider_value()))
+                .as_deref()
+                == Some(normalized)
+    }
+}
+
+impl DependencyCandidate for ContentDependencyCandidate {
+    fn source(&self) -> &SourceEntryRecord {
+        &self.source
+    }
+
+    fn matches_normalized_reference(&self, normalized: &str) -> bool {
+        self.source.kind() == SourceEntryKind::File
+            && normalize_scope_reference(self.scope_reference()).as_deref() == Some(normalized)
+    }
+}
+
 /// Resolves descriptor or playlist references against one committed scan.
 ///
 /// The candidates must already be restricted by the caller to the same
@@ -74,55 +106,10 @@ pub fn resolve_optical_dependencies(
     references: &[String],
     candidates: &[SourceEntryRecord],
 ) -> Result<Vec<SourceEntryRecord>, OpticalDependencyError> {
-    if references.is_empty() {
-        return Err(OpticalDependencyError::Missing);
-    }
-    if references.len() > MAX_OPTICAL_DEPENDENCIES {
-        return Err(OpticalDependencyError::ResourceLimitExceeded);
-    }
-
+    validate_reference_count(references)?;
     let descriptor = normalize_relative(descriptor_locator.as_provider_value())
         .ok_or(OpticalDependencyError::InvalidReference)?;
-    let parent = descriptor
-        .rsplit_once('/')
-        .map(|(parent, _)| parent)
-        .unwrap_or("");
-
-    let mut resolved = Vec::with_capacity(references.len());
-    for reference in references {
-        let normalized_reference = normalize_reference(reference)?;
-        let normalized = if parent.is_empty() {
-            normalized_reference
-        } else {
-            format!("{parent}/{normalized_reference}")
-        };
-
-        let matches: Vec<&SourceEntryRecord> = candidates
-            .iter()
-            .filter(|candidate| candidate.kind() == SourceEntryKind::File)
-            .filter(|candidate| {
-                candidate
-                    .relative_locator()
-                    .and_then(|locator| normalize_relative(locator.as_provider_value()))
-                    .as_deref()
-                    == Some(normalized.as_str())
-            })
-            .collect();
-        let [entry] = matches.as_slice() else {
-            return if matches.is_empty() {
-                Err(OpticalDependencyError::Missing)
-            } else {
-                Err(OpticalDependencyError::Ambiguous)
-            };
-        };
-        if resolved.iter().any(|existing: &SourceEntryRecord| {
-            existing.source_entry_id() == entry.source_entry_id()
-        }) {
-            return Err(OpticalDependencyError::Duplicate);
-        }
-        resolved.push((*entry).clone());
-    }
-    Ok(resolved)
+    resolve_dependencies(&descriptor, references, candidates)
 }
 
 /// Resolves descriptor or playlist references against provider-neutral scope
@@ -138,15 +125,27 @@ pub fn resolve_content_dependencies(
     references: &[String],
     candidates: &[ContentDependencyCandidate],
 ) -> Result<Vec<SourceEntryRecord>, OpticalDependencyError> {
+    validate_reference_count(references)?;
+    let descriptor = normalize_scope_reference(descriptor_reference)
+        .ok_or(OpticalDependencyError::InvalidReference)?;
+    resolve_dependencies(&descriptor, references, candidates)
+}
+
+fn validate_reference_count(references: &[String]) -> Result<(), OpticalDependencyError> {
     if references.is_empty() {
         return Err(OpticalDependencyError::Missing);
     }
     if references.len() > MAX_OPTICAL_DEPENDENCIES {
         return Err(OpticalDependencyError::ResourceLimitExceeded);
     }
+    Ok(())
+}
 
-    let descriptor = normalize_scope_reference(descriptor_reference)
-        .ok_or(OpticalDependencyError::InvalidReference)?;
+fn resolve_dependencies<C: DependencyCandidate>(
+    descriptor: &str,
+    references: &[String],
+    candidates: &[C],
+) -> Result<Vec<SourceEntryRecord>, OpticalDependencyError> {
     let parent = descriptor
         .rsplit_once('/')
         .map(|(parent, _)| parent)
@@ -160,28 +159,21 @@ pub fn resolve_content_dependencies(
         } else {
             format!("{parent}/{normalized_reference}")
         };
-        let matches: Vec<&SourceEntryRecord> = candidates
+        let matches: Vec<&C> = candidates
             .iter()
-            .filter(|candidate| candidate.source.kind() == SourceEntryKind::File)
-            .filter(|candidate| {
-                normalize_scope_reference(candidate.scope_reference()).as_deref()
-                    == Some(normalized.as_str())
-            })
-            .map(ContentDependencyCandidate::source)
+            .filter(|candidate| candidate.matches_normalized_reference(&normalized))
             .collect();
-        let [entry] = matches.as_slice() else {
-            return if matches.is_empty() {
-                Err(OpticalDependencyError::Missing)
-            } else {
-                Err(OpticalDependencyError::Ambiguous)
-            };
+        let entry = match matches.as_slice() {
+            [] => return Err(OpticalDependencyError::Missing),
+            [entry] => entry.source(),
+            _ => return Err(OpticalDependencyError::Ambiguous),
         };
         if resolved.iter().any(|existing: &SourceEntryRecord| {
             existing.source_entry_id() == entry.source_entry_id()
         }) {
             return Err(OpticalDependencyError::Duplicate);
         }
-        resolved.push((*entry).clone());
+        resolved.push(entry.clone());
     }
     Ok(resolved)
 }
@@ -189,6 +181,9 @@ pub fn resolve_content_dependencies(
 fn normalize_reference(reference: &str) -> Result<String, OpticalDependencyError> {
     if reference.trim().is_empty() {
         return Err(OpticalDependencyError::InvalidReference);
+    }
+    if has_drive_prefix(reference.trim()) {
+        return Err(OpticalDependencyError::CrossRoot);
     }
     let path = Path::new(reference.trim());
     if path.is_absolute() {
@@ -231,9 +226,13 @@ fn normalize_scope_reference(value: &str) -> Option<String> {
     if value.starts_with(['/', '\\']) {
         return None;
     }
-    let bytes = value.as_bytes();
-    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+    if has_drive_prefix(value) {
         return None;
     }
     normalize_relative(value)
+}
+
+fn has_drive_prefix(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }

@@ -226,14 +226,19 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
                      proving_source_entry_id = ?1,
                      proving_association_key = ?2,
                      proving_source_fingerprint = ?3,
-                     proving_scan_run_id = ?4,
+                     proving_derived_fingerprint = ?4,
+                     proving_scan_run_id = ?5,
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE content_identity_id = ?5
+                 WHERE content_identity_id = ?6
                    AND is_current = 0",
                     rusqlite::params![
                         derivation.source_entry_id().to_string(),
                         derivation.association_key(),
                         derivation.source_version().source_fingerprint(),
+                        derivation
+                            .source_version()
+                            .derived_fingerprint()
+                            .map(|value| value.as_transformation_value()),
                         derivation
                             .source_version()
                             .last_observed_scan_id()
@@ -296,9 +301,10 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
                     (content_identity_id, game_content_id, scheme_id, identity_revision,
                      identity_value, is_current, proving_source_entry_id,
                      proving_association_key, proving_source_fingerprint,
-                     proving_scan_run_id, created_at, updated_at)
+                     proving_derived_fingerprint, proving_scan_run_id,
+                     created_at, updated_at)
                  VALUES
-                    (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, 1, ?5, ?6, ?7, ?8,
+                    (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, 1, ?5, ?6, ?7, ?8, ?9,
                      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                  RETURNING content_identity_id",
                 rusqlite::params![
@@ -312,6 +318,10 @@ impl IdentityConvergenceStore for SqliteLogicalContentRepository<'_, '_> {
                         .first()
                         .and_then(|member| member.association_key()),
                     derivation.source_version().source_fingerprint(),
+                    derivation
+                        .source_version()
+                        .derived_fingerprint()
+                        .map(|value| value.as_transformation_value()),
                     derivation
                         .source_version()
                         .last_observed_scan_id()
@@ -513,7 +523,11 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
                             COUNT(DISTINCT CASE WHEN gcs.is_current = 1 THEN gcs.game_content_source_id END),
                             ci.scheme_id, ci.identity_revision, ci.identity_value,
                             ci.proving_source_entry_id, ci.proving_association_key,
-                            ci.proving_source_fingerprint, ci.proving_scan_run_id
+                            ci.proving_source_fingerprint, ci.proving_derived_fingerprint,
+                            ci.proving_scan_run_id,
+                            (SELECT coordinate_kind
+                             FROM source_entry
+                             WHERE source_entry_id = ci.proving_source_entry_id)
                      FROM game_membership gm
                      JOIN game_content gc ON gc.game_content_id = gm.game_content_id
                      LEFT JOIN game_content_source gcs ON gcs.game_content_id = gc.game_content_id
@@ -531,7 +545,7 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
                     .map_err(map_persistence_operation_error)?;
                 mapped
                     .collect::<Result<Vec<_>, _>>()
-                    .map_err(map_persistence_operation_error)?
+                    .map_err(map_logical_read_error)?
             };
             let mut values = Vec::with_capacity(summaries.len());
             for summary in summaries {
@@ -1484,15 +1498,18 @@ fn apply_m3u_grouping_transaction(
         .query_row(
             "INSERT INTO grouping_evidence
                 (grouping_evidence_id, evidence_kind, playlist_source_entry_id,
-                 source_fingerprint, last_observed_scan_id, is_current,
+                 source_fingerprint, derived_fingerprint, last_observed_scan_id, is_current,
                  created_at, updated_at)
              VALUES
-                (lower(hex(randomblob(16))), 'm3u', ?1, ?2, ?3, 1,
+                (lower(hex(randomblob(16))), 'm3u', ?1, ?2, ?3, ?4, 1,
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
              RETURNING grouping_evidence_id",
             rusqlite::params![
                 playlist_id,
                 playlist_evidence.source_fingerprint(),
+                playlist_evidence
+                    .derived_fingerprint()
+                    .map(|value| value.as_transformation_value()),
                 playlist_evidence.last_observed_scan_id().to_string(),
             ],
             |row| row.get(0),
@@ -1504,13 +1521,17 @@ fn apply_m3u_grouping_transaction(
                 "INSERT INTO grouping_evidence_member
                     (grouping_evidence_id, member_game_content_id,
                      member_source_entry_id, member_source_fingerprint,
-                     member_last_observed_scan_id, ordinal)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                     member_derived_fingerprint, member_last_observed_scan_id, ordinal)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
                     evidence_id,
                     member.game_content_id().to_string(),
                     member.source_version().source_entry_id().to_string(),
                     member.source_version().source_fingerprint(),
+                    member
+                        .source_version()
+                        .derived_fingerprint()
+                        .map(|value| value.as_transformation_value()),
                     member.source_version().last_observed_scan_id().to_string(),
                     i64::from(member.ordinal()),
                 ],
@@ -1562,10 +1583,13 @@ fn source_version_matches_values(
     }
     match evidence.version() {
         SourceVersionKind::Provider(expected) => {
-            coordinate_kind == "provider" && provider_fingerprint == expected.as_deref()
+            coordinate_kind == "provider"
+                && provider_fingerprint == expected.as_deref()
+                && derived_fingerprint.is_none()
         }
         SourceVersionKind::Derived(expected) => {
             coordinate_kind == "derived"
+                && provider_fingerprint.is_none()
                 && derived_fingerprint == Some(expected.as_transformation_value())
         }
     }
@@ -1954,12 +1978,14 @@ fn ensure_source_associations(
             .execute(
                 "INSERT INTO game_content_source
                 (game_content_source_id, game_content_id, source_entry_id, association_key,
-                 source_fingerprint, last_observed_scan_id, is_current, created_at, updated_at)
+                 source_fingerprint, derived_fingerprint, last_observed_scan_id,
+                 is_current, created_at, updated_at)
              VALUES
-                (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, 1,
+                (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, 1,
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
              ON CONFLICT(game_content_id, source_entry_id, association_key)
              DO UPDATE SET source_fingerprint = excluded.source_fingerprint,
+                           derived_fingerprint = excluded.derived_fingerprint,
                            last_observed_scan_id = excluded.last_observed_scan_id,
                            is_current = 1,
                            updated_at = CURRENT_TIMESTAMP",
@@ -1968,6 +1994,10 @@ fn ensure_source_associations(
                     member.source_entry_id().to_string(),
                     association_key,
                     member.source_version().source_fingerprint(),
+                    member
+                        .source_version()
+                        .derived_fingerprint()
+                        .map(|value| value.as_transformation_value()),
                     member.source_version().last_observed_scan_id().to_string(),
                 ],
             )
@@ -1993,10 +2023,11 @@ fn update_identity_provenance(
             .execute(
                 "INSERT INTO content_identity_provenance
                     (provenance_member_id, content_identity_id, role, association_key,
-                     source_entry_id, source_fingerprint, last_observed_scan_id,
+                     source_entry_id, source_fingerprint, derived_fingerprint,
+                     last_observed_scan_id,
                      identity_is_current, created_at, updated_at)
                  VALUES
-                    (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                    (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
                      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
                 rusqlite::params![
                     identity_id,
@@ -2004,6 +2035,10 @@ fn update_identity_provenance(
                     member.association_key(),
                     member.source_entry_id().to_string(),
                     member.source_version().source_fingerprint(),
+                    member
+                        .source_version()
+                        .derived_fingerprint()
+                        .map(|value| value.as_transformation_value()),
                     member.source_version().last_observed_scan_id().to_string(),
                     if identity_is_current { 1_i64 } else { 0_i64 },
                 ],
@@ -2425,9 +2460,11 @@ fn read_normalized_provenance(
     let mut statement = transaction
         .prepare(
             "SELECT p.role, p.association_key, p.source_entry_id,
-                    p.source_fingerprint, p.last_observed_scan_id
+                    p.source_fingerprint, p.derived_fingerprint,
+                    p.last_observed_scan_id, e.coordinate_kind
              FROM content_identity_provenance p
              JOIN content_identity i ON i.content_identity_id = p.content_identity_id
+             LEFT JOIN source_entry e ON e.source_entry_id = p.source_entry_id
              WHERE i.game_content_id = ?1 AND i.is_current = 1
                AND p.identity_is_current = 1
              ORDER BY p.rowid ASC",
@@ -2440,26 +2477,49 @@ fn read_normalized_provenance(
             let association_key = row.get::<_, Option<String>>(1)?;
             let source_entry_id = parse_source_entry_id(row.get::<_, String>(2)?)
                 .map_err(|_| rusqlite::Error::InvalidQuery)?;
-            let source_fingerprint = row.get(3)?;
+            let source_fingerprint: Option<String> = row.get(3)?;
+            let derived_fingerprint: Option<String> = row.get(4)?;
+            let coordinate_kind: Option<String> = row.get(6)?;
+            if source_fingerprint.is_some() && derived_fingerprint.is_some() {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            if matches!(coordinate_kind.as_deref(), Some("provider"))
+                && derived_fingerprint.is_some()
+            {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            if matches!(coordinate_kind.as_deref(), Some("derived")) && source_fingerprint.is_some()
+            {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
             let scan_id = row
-                .get::<_, Option<String>>(4)?
+                .get::<_, Option<String>>(5)?
                 .ok_or(rusqlite::Error::InvalidQuery)
                 .and_then(|value| {
                     parse_scan_run_id(value).map_err(|_| rusqlite::Error::InvalidQuery)
                 })?;
-            Ok(ContentProvenanceMemberSummary::new(
+            Ok(ContentProvenanceMemberSummary::new_with_version(
                 role,
                 association_key,
                 source_entry_id,
                 source_fingerprint,
+                derived_fingerprint,
                 scan_id,
             ))
         })
         .map_err(map_persistence_operation_error)?;
     let members = rows
         .collect::<Result<Vec<_>, _>>()
-        .map_err(map_persistence_operation_error)?;
+        .map_err(map_logical_read_error)?;
     Ok(ContentProvenanceSummary::from_members(members))
+}
+
+fn map_logical_read_error(error: rusqlite::Error) -> PersistenceError {
+    if matches!(error, rusqlite::Error::InvalidQuery) {
+        PersistenceError::CorruptOrIncompatible
+    } else {
+        map_persistence_operation_error(error)
+    }
 }
 
 fn read_content_summary(row: &Row<'_>) -> rusqlite::Result<GameContentSummary> {
@@ -2471,7 +2531,9 @@ fn read_content_summary(row: &Row<'_>) -> rusqlite::Result<GameContentSummary> {
     let proving_source_entry_id: Option<String> = row.get(9)?;
     let proving_association_key: Option<String> = row.get(10)?;
     let proving_fingerprint: Option<String> = row.get(11)?;
-    let proving_scan_id: Option<String> = row.get(12)?;
+    let proving_derived_fingerprint: Option<String> = row.get(12)?;
+    let proving_scan_id: Option<String> = row.get(13)?;
+    let proving_coordinate_kind: Option<String> = row.get(14)?;
     let identity = match (identity_scheme, identity_revision, identity_value) {
         (Some(scheme), Some(revision), Some(value)) => Some(ContentIdentitySummary::new(
             scheme,
@@ -2486,15 +2548,29 @@ fn read_content_summary(row: &Row<'_>) -> rusqlite::Result<GameContentSummary> {
     let provenance = match (
         proving_source_entry_id,
         proving_association_key,
+        proving_fingerprint,
+        proving_derived_fingerprint,
         proving_scan_id,
     ) {
-        (Some(source), Some(key), Some(scan)) => Some(ContentProvenanceSummary::new(
-            parse_source_entry_id(source).map_err(|_| rusqlite::Error::InvalidQuery)?,
-            key,
-            proving_fingerprint,
-            parse_scan_run_id(scan).map_err(|_| rusqlite::Error::InvalidQuery)?,
-        )),
-        (None, None, None) => None,
+        (Some(source), Some(key), provider, derived, Some(scan)) => {
+            if provider.is_some() && derived.is_some() {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            if matches!(proving_coordinate_kind.as_deref(), Some("provider")) && derived.is_some() {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            if matches!(proving_coordinate_kind.as_deref(), Some("derived")) && provider.is_some() {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Some(ContentProvenanceSummary::new_with_version(
+                parse_source_entry_id(source).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                key,
+                provider,
+                derived,
+                parse_scan_run_id(scan).map_err(|_| rusqlite::Error::InvalidQuery)?,
+            ))
+        }
+        (None, None, None, None, None) => None,
         _ => return Err(rusqlite::Error::InvalidQuery),
     };
     Ok(GameContentSummary::with_identity(

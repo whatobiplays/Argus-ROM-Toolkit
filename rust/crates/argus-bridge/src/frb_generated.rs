@@ -2246,12 +2246,14 @@ impl SseDecode for crate::ContentProvenanceMemberDto {
         let mut var_associationKey = <Option<String>>::sse_decode(deserializer);
         let mut var_sourceEntryId = <String>::sse_decode(deserializer);
         let mut var_sourceFingerprint = <Option<String>>::sse_decode(deserializer);
+        let mut var_derivedFingerprint = <Option<String>>::sse_decode(deserializer);
         let mut var_lastObservedScanId = <String>::sse_decode(deserializer);
         return crate::ContentProvenanceMemberDto {
             role: var_role,
             association_key: var_associationKey,
             source_entry_id: var_sourceEntryId,
             source_fingerprint: var_sourceFingerprint,
+            derived_fingerprint: var_derivedFingerprint,
             last_observed_scan_id: var_lastObservedScanId,
         };
     }
@@ -2263,12 +2265,14 @@ impl SseDecode for crate::ContentProvenanceSummaryDto {
         let mut var_sourceEntryId = <String>::sse_decode(deserializer);
         let mut var_associationKey = <String>::sse_decode(deserializer);
         let mut var_sourceFingerprint = <Option<String>>::sse_decode(deserializer);
+        let mut var_derivedFingerprint = <Option<String>>::sse_decode(deserializer);
         let mut var_lastObservedScanId = <String>::sse_decode(deserializer);
         let mut var_members = <Vec<crate::ContentProvenanceMemberDto>>::sse_decode(deserializer);
         return crate::ContentProvenanceSummaryDto {
             source_entry_id: var_sourceEntryId,
             association_key: var_associationKey,
             source_fingerprint: var_sourceFingerprint,
+            derived_fingerprint: var_derivedFingerprint,
             last_observed_scan_id: var_lastObservedScanId,
             members: var_members,
         };
@@ -5365,6 +5369,7 @@ impl flutter_rust_bridge::IntoDart for crate::ContentProvenanceMemberDto {
             self.association_key.into_into_dart().into_dart(),
             self.source_entry_id.into_into_dart().into_dart(),
             self.source_fingerprint.into_into_dart().into_dart(),
+            self.derived_fingerprint.into_into_dart().into_dart(),
             self.last_observed_scan_id.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -5388,6 +5393,7 @@ impl flutter_rust_bridge::IntoDart for crate::ContentProvenanceSummaryDto {
             self.source_entry_id.into_into_dart().into_dart(),
             self.association_key.into_into_dart().into_dart(),
             self.source_fingerprint.into_into_dart().into_dart(),
+            self.derived_fingerprint.into_into_dart().into_dart(),
             self.last_observed_scan_id.into_into_dart().into_dart(),
             self.members.into_into_dart().into_dart(),
         ]
@@ -8227,6 +8233,7 @@ impl SseEncode for crate::ContentProvenanceMemberDto {
         <Option<String>>::sse_encode(self.association_key, serializer);
         <String>::sse_encode(self.source_entry_id, serializer);
         <Option<String>>::sse_encode(self.source_fingerprint, serializer);
+        <Option<String>>::sse_encode(self.derived_fingerprint, serializer);
         <String>::sse_encode(self.last_observed_scan_id, serializer);
     }
 }
@@ -8237,6 +8244,7 @@ impl SseEncode for crate::ContentProvenanceSummaryDto {
         <String>::sse_encode(self.source_entry_id, serializer);
         <String>::sse_encode(self.association_key, serializer);
         <Option<String>>::sse_encode(self.source_fingerprint, serializer);
+        <Option<String>>::sse_encode(self.derived_fingerprint, serializer);
         <String>::sse_encode(self.last_observed_scan_id, serializer);
         <Vec<crate::ContentProvenanceMemberDto>>::sse_encode(self.members, serializer);
     }

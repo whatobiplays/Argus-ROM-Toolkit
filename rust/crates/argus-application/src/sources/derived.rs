@@ -4,6 +4,8 @@
 //! module turns those observations into durable source-graph rows and keeps
 //! archive eligibility separate from logical content convergence.
 
+use std::collections::HashSet;
+
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -50,11 +52,12 @@ pub fn evaluate_archive_eligibility<T>(
     families: &[T],
 ) -> Result<ArchiveEligibility<T>, ArchiveAdmissionError>
 where
-    T: Clone + Eq,
+    T: Clone + Eq + std::hash::Hash,
 {
+    let mut seen = HashSet::with_capacity(families.len());
     let mut unique = Vec::new();
     for family in families {
-        if !unique.contains(family) {
+        if seen.insert(family) {
             unique.push(family.clone());
         }
     }
@@ -76,6 +79,7 @@ pub fn reconcile_derived_scope(
     scope: &DerivedScopeIdentity<'_>,
     observations: &[DerivedEntryObservation],
     observation_run_id: ScanRunId,
+    observed_at: i64,
     stable_input: bool,
     outcome: DerivedScopeOutcome,
 ) -> Result<Vec<SourceEntryId>, PersistenceError> {
@@ -127,8 +131,8 @@ pub fn reconcile_derived_scope(
             scope.transformation_id.to_owned(),
             scope.transformation_revision,
             observation_run_id,
-            0,
-            0,
+            observed_at,
+            observed_at,
         );
         reconciled.push(entries.upsert_derived(entry)?);
     }

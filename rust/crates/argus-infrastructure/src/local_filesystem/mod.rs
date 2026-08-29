@@ -434,8 +434,16 @@ fn native_identity(metadata: &std::fs::Metadata) -> Option<String> {
 }
 
 fn source_fingerprint(metadata: &std::fs::Metadata, kind: ObservedEntryKind) -> String {
-    let modified = modified_at_ms(metadata).unwrap_or(0);
+    let modified = modified_at_ns(metadata).unwrap_or(0);
     format!("v1:{}:{}:{}", kind.as_str(), metadata.len(), modified)
+}
+
+fn modified_at_ns(metadata: &std::fs::Metadata) -> Option<u128> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos())
 }
 
 fn modified_at_ms(metadata: &std::fs::Metadata) -> Option<i64> {

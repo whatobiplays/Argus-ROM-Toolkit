@@ -226,7 +226,7 @@ impl<'a> CsoReader<'a> {
         let expected_length =
             usize::try_from(self.block_size).map_err(|_| ContentReadError::OutOfRange)?;
         let decoded = if current.plain {
-            if compressed_length != self.block_size {
+            if compressed_length < self.block_size {
                 return Err(self.record_failure(OpticalError::Malformed));
             }
             let mut decoded = vec![0_u8; expected_length];

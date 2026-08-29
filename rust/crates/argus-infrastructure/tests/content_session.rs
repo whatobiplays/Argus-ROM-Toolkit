@@ -3,14 +3,14 @@
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use argus_application::{TransformationBudget, TransformationFailure};
 use argus_infrastructure::content::{
-    cleanup_abandoned_staging, ParsingSession, StagingSpaceProbe, STAGING_DIRECTORY_PREFIX,
-    STAGING_MARKER_FILE, STAGING_MARKER_VALUE,
+    ParsingSession, STAGING_DIRECTORY_PREFIX, STAGING_MARKER_FILE, STAGING_MARKER_VALUE,
+    STAGING_ROOT_LOCK_FILE, StagingSpaceProbe, cleanup_abandoned_staging,
 };
 use tempfile::tempdir;
 
@@ -46,6 +46,30 @@ fn nested_work_uses_one_cumulative_budget() {
         Err(TransformationFailure::ResourceLimitExceeded)
     ));
     session.leave_container();
+}
+
+struct FailingDecodedReader;
+
+impl Read for FailingDecodedReader {
+    fn read(&mut self, _destination: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "staged representation is unavailable",
+        ))
+    }
+}
+
+#[test]
+fn decoded_staging_preserves_io_failures_as_read_failures() {
+    let staging = tempdir().expect("staging root");
+    let mut session =
+        ParsingSession::for_tests(budget(64, 96, 3, 2, 64, 128), staging.path(), || false);
+    let mut reader = FailingDecodedReader;
+
+    assert!(matches!(
+        session.stage_decoded_reader("failing", &mut reader, None),
+        Err(TransformationFailure::ReadFailure)
+    ));
 }
 
 #[test]
@@ -165,7 +189,7 @@ fn finishing_or_dropping_session_removes_operation_directory() {
 }
 
 #[test]
-fn cleanup_removes_only_marked_argus_staging_directories() {
+fn cleanup_removes_argus_staging_directories_after_exclusive_root_lock() {
     let staging = tempdir().expect("staging root");
     let recognized = staging
         .path()
@@ -190,12 +214,37 @@ fn cleanup_removes_only_marked_argus_staging_directories() {
 
     assert_eq!(
         cleanup_abandoned_staging(staging.path()).expect("cleanup"),
-        1
+        2
     );
     assert!(!recognized.exists());
-    assert!(unmarked.exists());
+    assert!(!unmarked.exists());
     assert!(unrelated.exists());
     assert!(regular_file.exists());
+    assert!(staging.path().join(STAGING_ROOT_LOCK_FILE).exists());
+}
+
+#[test]
+fn cleanup_skips_operation_namespace_while_a_session_holds_shared_root_lock() {
+    let staging = tempdir().expect("staging root");
+    let abandoned = staging
+        .path()
+        .join(format!("{STAGING_DIRECTORY_PREFIX}abandoned"));
+    std::fs::create_dir(&abandoned).expect("abandoned directory");
+
+    let session =
+        ParsingSession::for_tests(budget(64, 64, 3, 2, 64, 128), staging.path(), || false);
+    assert_eq!(
+        cleanup_abandoned_staging(staging.path()).expect("busy cleanup"),
+        0
+    );
+    assert!(abandoned.exists());
+    drop(session);
+
+    assert_eq!(
+        cleanup_abandoned_staging(staging.path()).expect("cleanup after session"),
+        1
+    );
+    assert!(!abandoned.exists());
 }
 
 #[derive(Debug)]

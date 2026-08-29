@@ -10,6 +10,8 @@ use super::{content_nintendo, content_sega};
 /// Maximum buffer used by a streaming canonicalization pass.
 pub(crate) const STREAM_CHUNK_BYTES: usize = 64 * 1024;
 
+const BLOCKED_TAR_MAGIC_OFFSET: usize = 257;
+
 /// Provider-backed range access used by the general content recognizer.
 ///
 /// Implementations must not expose provider locators. The recognizer only
@@ -78,9 +80,14 @@ impl ContentReader for SourceReadContentReader<'_> {
         if end > self.len()? {
             return Err(ContentReadError::OutOfRange);
         }
-        self.source
+        let count = self
+            .source
             .read_at(offset, destination)
-            .map_err(|_| ContentReadError::Io)
+            .map_err(|_| ContentReadError::Io)?;
+        if count > destination.len() {
+            return Err(ContentReadError::Io);
+        }
+        Ok(count)
     }
 
     fn max_read_size(&self) -> usize {
@@ -405,13 +412,29 @@ fn is_blocked_container(
     reader: &mut dyn ContentReader,
     source_length: u64,
 ) -> Result<bool, ContentRecognitionError> {
-    if source_length >= 4 {
-        let magic = read_small(reader, 0, 4)?;
-        if matches!(magic.as_slice(), b"PK\x07\x08" | b"Rar!") {
-            return Ok(true);
-        }
+    let probe_length = source_length.min(512) as usize;
+    if probe_length == 0 {
+        return Ok(false);
     }
-    Ok(false)
+    let mut probe = vec![0_u8; probe_length];
+    read_exact(reader, 0, &mut probe)?;
+
+    let starts_with = |magic: &[u8]| probe.starts_with(magic);
+    Ok(starts_with(b"PK\x03\x04")
+        || starts_with(b"PK\x05\x06")
+        || starts_with(b"PK\x07\x08")
+        || starts_with(b"7z\xbc\xaf\x27\x1c")
+        || starts_with(b"Rar!\x1a\x07")
+        || starts_with(b"\x1f\x8b")
+        || starts_with(b"BZh")
+        || starts_with(b"\xfd7zXZ\0")
+        || starts_with(b"MComprHD")
+        || starts_with(b"CISO")
+        || starts_with(b"WBFS")
+        || starts_with(b"RVZ\x01")
+        || starts_with(b"WIA\x01")
+        || (probe.len() >= BLOCKED_TAR_MAGIC_OFFSET + 5
+            && &probe[BLOCKED_TAR_MAGIC_OFFSET..BLOCKED_TAR_MAGIC_OFFSET + 5] == b"ustar"))
 }
 
 pub(crate) fn read_exact(

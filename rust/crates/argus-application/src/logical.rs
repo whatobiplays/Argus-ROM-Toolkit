@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// Current identity and exact source evidence produced outside a write transaction.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ContentIdentity {
     scheme_id: String,
     revision: u32,

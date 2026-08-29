@@ -37,7 +37,9 @@ pub const fn map_transformation_failure(failure: TransformationFailure) -> crate
             crate::ErrorCode::OperationTransformationResourceLimitExceeded
         }
         TransformationFailure::Cancelled => crate::ErrorCode::OperationCancelled,
-        TransformationFailure::ReadFailure => crate::ErrorCode::InternalUnexpected,
+        TransformationFailure::ReadFailure => {
+            crate::ErrorCode::FilesystemSourceValidationIndeterminate
+        }
         TransformationFailure::SourceChanged => {
             crate::ErrorCode::OperationSourceChangedDuringProcessing
         }

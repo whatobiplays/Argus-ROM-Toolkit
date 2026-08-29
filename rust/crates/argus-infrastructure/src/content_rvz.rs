@@ -1405,6 +1405,7 @@ fn decode_lzma2_bounded(
     if dictionary == u32::MAX || dictionary > RVZ_MAX_LZMA_DICTIONARY_BYTES {
         return Err(OpticalError::ResourceLimitExceeded);
     }
+    preflight_lzma2_output(compressed, maximum_size)?;
     let mut decoder = Lzma2Decoder::new(dictionary);
     let mut cursor = Cursor::new(compressed);
     let mut output = Vec::with_capacity(maximum_size.min(RVZ_MAX_CHUNK_BYTES as usize));
@@ -1554,6 +1555,7 @@ fn decode_lzma2(
     if dictionary == u32::MAX || dictionary > RVZ_MAX_LZMA_DICTIONARY_BYTES {
         return Err(OpticalError::ResourceLimitExceeded);
     }
+    preflight_lzma2_output(compressed, expected)?;
     let mut decoder = Lzma2Decoder::new(dictionary);
     let mut cursor = Cursor::new(compressed);
     let mut output = Vec::with_capacity(expected);
@@ -1569,6 +1571,84 @@ fn decode_lzma2(
         }
     }
     exact_length(output, expected)
+}
+
+/// Verifies every LZMA2 chunk declaration before handing bytes to oxiarc.
+///
+/// `Lzma2Decoder::decode_chunk` allocates the declared uncompressed size before
+/// it reads the chunk payload. The decoder contract guarantees that a chunk
+/// produces exactly that declaration, so checking the cumulative declarations
+/// first makes the caller's output bound effective before any decoder buffer
+/// can grow beyond it.
+fn preflight_lzma2_output(compressed: &[u8], maximum_size: usize) -> Result<(), OpticalError> {
+    let maximum_size =
+        u64::try_from(maximum_size).map_err(|_| OpticalError::ResourceLimitExceeded)?;
+    let mut cursor = 0_usize;
+    let mut total = 0_u64;
+    loop {
+        let control = *compressed.get(cursor).ok_or(OpticalError::Malformed)?;
+        cursor += 1;
+        if control == 0 {
+            return Ok(());
+        }
+
+        let uncompressed_size = if control == 1 || control == 2 {
+            read_u16_be_at(compressed, &mut cursor)? as u64 + 1
+        } else if control >= 0x80 {
+            let high = u64::from(control & 0x1f) << 16;
+            let low = u64::from(read_u16_be_at(compressed, &mut cursor)?);
+            let uncompressed_size = high | low;
+            let compressed_size = u64::from(read_u16_be_at(compressed, &mut cursor)?) + 1;
+            if ((control >> 5) & 0x03) >= 2 {
+                let _ = compressed.get(cursor).ok_or(OpticalError::Malformed)?;
+                cursor += 1;
+            }
+            total = total
+                .checked_add(uncompressed_size + 1)
+                .ok_or(OpticalError::ResourceLimitExceeded)?;
+            if total > maximum_size {
+                return Err(OpticalError::Malformed);
+            }
+            skip_bytes(compressed, &mut cursor, compressed_size as usize)?;
+            continue;
+        } else {
+            return Err(OpticalError::Malformed);
+        };
+
+        total = total
+            .checked_add(uncompressed_size)
+            .ok_or(OpticalError::ResourceLimitExceeded)?;
+        if total > maximum_size {
+            return Err(OpticalError::Malformed);
+        }
+        skip_bytes(
+            compressed,
+            &mut cursor,
+            usize::try_from(uncompressed_size).map_err(|_| OpticalError::ResourceLimitExceeded)?,
+        )?;
+    }
+}
+
+fn read_u16_be_at(bytes: &[u8], cursor: &mut usize) -> Result<u16, OpticalError> {
+    let end = cursor
+        .checked_add(2)
+        .ok_or(OpticalError::ResourceLimitExceeded)?;
+    let value = bytes.get(*cursor..end).ok_or(OpticalError::Malformed)?;
+    *cursor = end;
+    Ok(u16::from_be_bytes(
+        value.try_into().expect("two-byte LZMA2 field"),
+    ))
+}
+
+fn skip_bytes(bytes: &[u8], cursor: &mut usize, count: usize) -> Result<(), OpticalError> {
+    let end = cursor
+        .checked_add(count)
+        .ok_or(OpticalError::ResourceLimitExceeded)?;
+    if end > bytes.len() {
+        return Err(OpticalError::Malformed);
+    }
+    *cursor = end;
+    Ok(())
 }
 
 fn decode_zstd(compressed: &[u8], expected: usize) -> Result<Vec<u8>, OpticalError> {
@@ -1701,7 +1781,7 @@ fn next_prng_byte(state: &mut [u32; 521], index: &mut usize) -> u8 {
     *index += 1;
     match byte {
         0 => (word >> 24) as u8,
-        1 => (word >> 18) as u8,
+        1 => (word >> 16) as u8,
         2 => (word >> 8) as u8,
         _ => word as u8,
     }
@@ -1807,7 +1887,21 @@ fn map_session_error(error: TransformationFailure) -> OpticalError {
 
 #[cfg(test)]
 mod tests {
-    use super::unpack_rvz;
+    use super::{OpticalError, decode_lzma2_bounded, preflight_lzma2_output, unpack_rvz};
+
+    #[test]
+    fn lzma2_preflight_rejects_declared_output_before_decoder_growth() {
+        let malformed = [0x01, 0xff, 0xff];
+
+        assert_eq!(
+            preflight_lzma2_output(&malformed, 1024),
+            Err(OpticalError::Malformed)
+        );
+        assert_eq!(
+            decode_lzma2_bounded(&malformed, 1024, &[0; 7]),
+            Err(OpticalError::Malformed)
+        );
+    }
 
     #[test]
     fn rvz_prng_packing_emits_all_four_bytes_of_each_word() {
@@ -1819,7 +1913,7 @@ mod tests {
         assert_eq!(
             unpack_rvz(&packed, 12, 0).expect("packed data"),
             [
-                0x1d, 0x75, 0x7e, 0x0b, 0x64, 0x34, 0x64, 0x56, 0xb7, 0xf9, 0x5f, 0x37,
+                0x1d, 0xd7, 0x7e, 0x0b, 0x64, 0xd2, 0x64, 0x56, 0xb7, 0xe7, 0x5f, 0x37,
             ]
         );
     }

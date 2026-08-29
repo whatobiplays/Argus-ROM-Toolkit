@@ -98,7 +98,7 @@ fn transformation_failures_map_to_published_application_codes() {
         ),
         (
             TransformationFailure::ReadFailure,
-            ErrorCode::InternalUnexpected,
+            ErrorCode::FilesystemSourceValidationIndeterminate,
         ),
         (
             TransformationFailure::SourceChanged,

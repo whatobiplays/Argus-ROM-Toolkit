@@ -496,7 +496,7 @@ impl DerivedContainerDecoder for SevenZipContainerDecoder {
                     if entry.size != 0 {
                         return Err(TransformationFailure::Malformed);
                     }
-                    None
+                    Some(session.stage_bytes("archive-member", &[])?)
                 };
                 let metadata = format!(
                     "raw={:?};compressed={};size={};crc={};has_crc={}",
@@ -1006,8 +1006,13 @@ impl Read for Bzip2DecodedReader {
             }
             self.pending.clear();
             self.offset = 0;
-            match self.decoder.read_block().map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid bzip2 stream")
+            match self.decoder.read_block().map_err(|error| {
+                let kind = if std::error::Error::source(&error).is_some() {
+                    std::io::ErrorKind::Other
+                } else {
+                    std::io::ErrorKind::InvalidData
+                };
+                std::io::Error::new(kind, "bzip2 decoder failed")
             })? {
                 Some(block) => self.pending = block,
                 None => return Ok(0),
@@ -1141,16 +1146,22 @@ fn field_string(field: &[u8]) -> Result<String, TransformationFailure> {
 }
 
 fn parse_tar_octal(field: &[u8]) -> Result<u64, TransformationFailure> {
-    let trimmed = field
+    let start = field
         .iter()
-        .copied()
-        .skip_while(|byte| *byte == b' ' || *byte == 0)
-        .take_while(|byte| byte.is_ascii_digit())
-        .collect::<Vec<_>>();
-    if trimmed.is_empty() || trimmed.iter().any(|byte| !(b'0'..=b'7').contains(byte)) {
+        .position(|byte| *byte != b' ' && *byte != 0)
+        .ok_or(TransformationFailure::Malformed)?;
+    let end = field[start..]
+        .iter()
+        .position(|byte| !byte.is_ascii_digit())
+        .map_or(field.len(), |offset| start + offset);
+    let digits = &field[start..end];
+    if digits.is_empty()
+        || digits.iter().any(|byte| !(b'0'..=b'7').contains(byte))
+        || field[end..].iter().any(|byte| *byte != b' ' && *byte != 0)
+    {
         return Err(TransformationFailure::Malformed);
     }
-    trimmed.into_iter().try_fold(0_u64, |value, digit| {
+    digits.iter().copied().try_fold(0_u64, |value, digit| {
         value
             .checked_mul(8)
             .and_then(|value| value.checked_add(u64::from(digit - b'0')))

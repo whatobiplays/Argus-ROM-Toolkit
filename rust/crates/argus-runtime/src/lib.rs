@@ -2273,6 +2273,7 @@ impl KernelBootstrap {
         plan: &argus_application::LibraryScanExecutionPlan,
         context: &OperationContext,
         parent: &SourceEntryRecord,
+        observed_at: i64,
         scope: &argus_infrastructure::content::DerivedScopeResult,
     ) -> Result<Vec<SourceEntryRecord>, ApplicationError> {
         let transformation_id = scope.transformation_id().ok_or_else(|| {
@@ -2317,6 +2318,7 @@ impl KernelBootstrap {
                     &scope_identity,
                     &observations,
                     observation_run_id,
+                    observed_at,
                     true,
                     outcome,
                 )?;
@@ -2347,6 +2349,7 @@ impl KernelBootstrap {
         entry: &SourceEntryRecord,
         entries: &mut Vec<SourceEntryRecord>,
         session: &mut ParsingSession<'_>,
+        observed_at: i64,
         catalog: &IdentitySchemeCatalog,
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<SourceTreeResult, TransformationFailure> {
@@ -2382,7 +2385,6 @@ impl KernelBootstrap {
                     )?;
                     return Ok(SourceTreeResult {
                         candidates: Vec::new(),
-                        playlists: Vec::new(),
                         derived_playlists: playlist.into_iter().collect(),
                         issue_codes: Vec::new(),
                     });
@@ -2404,7 +2406,6 @@ impl KernelBootstrap {
                     )?;
                     return Ok(SourceTreeResult {
                         candidates: candidate.into_iter().collect(),
-                        playlists: Vec::new(),
                         derived_playlists: Vec::new(),
                         issue_codes: Vec::new(),
                     });
@@ -2418,7 +2419,6 @@ impl KernelBootstrap {
                 )?;
                 return Ok(SourceTreeResult {
                     candidates: candidate.into_iter().collect(),
-                    playlists: Vec::new(),
                     derived_playlists: Vec::new(),
                     issue_codes: Vec::new(),
                 });
@@ -2433,10 +2433,9 @@ impl KernelBootstrap {
         }
 
         let children = self
-            .reconcile_derived_scope_with_context(plan, context, entry, &scope)
+            .reconcile_derived_scope_with_context(plan, context, entry, observed_at, &scope)
             .map_err(|_| TransformationFailure::ReadFailure)?;
         let mut candidates = Vec::new();
-        let mut playlists = Vec::new();
         let mut derived_playlists = Vec::new();
         let mut issue_codes = Vec::new();
         for child in &children {
@@ -2460,12 +2459,12 @@ impl KernelBootstrap {
                 &child,
                 entries,
                 session,
+                observed_at,
                 catalog,
                 is_cancelled,
             ) {
                 Ok(result) => {
                     candidates.extend(result.candidates);
-                    playlists.extend(result.playlists);
                     derived_playlists.extend(result.derived_playlists);
                     issue_codes.extend(result.issue_codes);
                 }
@@ -2538,7 +2537,6 @@ impl KernelBootstrap {
         };
         Ok(SourceTreeResult {
             candidates,
-            playlists,
             derived_playlists,
             issue_codes,
         })
@@ -2727,6 +2725,10 @@ impl KernelBootstrap {
             derivation,
             platform: recognition.platform(),
             content_type: recognition.content_type(),
+            optical_dependency_ids: dependencies
+                .iter()
+                .map(SourceEntryRecord::source_entry_id)
+                .collect(),
         }))
     }
 
@@ -2820,6 +2822,7 @@ impl KernelBootstrap {
             derivation,
             platform: recognition.platform(),
             content_type: recognition.content_type(),
+            optical_dependency_ids: Vec::new(),
         }))
     }
 
@@ -2859,6 +2862,7 @@ impl KernelBootstrap {
             derivation,
             platform: recognition.platform(),
             content_type: recognition.content_type(),
+            optical_dependency_ids: Vec::new(),
         }))
     }
 
@@ -2915,12 +2919,12 @@ impl KernelBootstrap {
                 entry,
                 &mut entries,
                 parsing_session,
+                now,
                 &catalog,
                 is_cancelled,
             ) {
                 Ok(result) => {
                     transformation_issue_codes.extend(result.issue_codes);
-                    playlist_entries.extend(result.playlists);
                     derived_playlist_groups.extend(result.derived_playlists);
                     for candidate in result.candidates {
                         match self.identify_committed_source_entry_with_context(
@@ -2931,12 +2935,17 @@ impl KernelBootstrap {
                                 let (game_content_id, game_id) = convergence_ids(outcome);
                                 add_game_id(&mut game_ids, game_id);
                                 if is_optical_content(candidate.content_type) {
-                                    add_optical_source(
-                                        &mut optical_sources,
-                                        candidate.entry.source_entry_id(),
-                                        game_content_id,
-                                        candidate.platform,
-                                    );
+                                    for source_entry_id in
+                                        std::iter::once(candidate.entry.source_entry_id())
+                                            .chain(candidate.optical_dependency_ids.iter().copied())
+                                    {
+                                        add_optical_source(
+                                            &mut optical_sources,
+                                            source_entry_id,
+                                            game_content_id,
+                                            candidate.platform,
+                                        );
+                                    }
                                 }
                             }
                             Err(_) => issue_count = issue_count.saturating_add(1),
@@ -2951,7 +2960,6 @@ impl KernelBootstrap {
                         return Err(cancelled_sources_error(context.trace_id()));
                     }
                     transformation_issue_codes.push(map_transformation_failure(failure));
-                    issue_count = issue_count.saturating_add(1);
                 }
             }
         }
@@ -4537,7 +4545,6 @@ struct OpticalSourceLink {
 #[derive(Default)]
 struct SourceTreeResult {
     candidates: Vec<ProcessedContentCandidate>,
-    playlists: Vec<SourceEntryRecord>,
     derived_playlists: Vec<DerivedPlaylistGroup>,
     issue_codes: Vec<ErrorCode>,
 }
@@ -4546,7 +4553,6 @@ impl SourceTreeResult {
     fn empty() -> Self {
         Self {
             candidates: Vec::new(),
-            playlists: Vec::new(),
             derived_playlists: Vec::new(),
             issue_codes: Vec::new(),
         }
@@ -4565,6 +4571,7 @@ struct ProcessedContentCandidate {
     derivation: ValidatedContentDerivation,
     platform: PlatformId,
     content_type: ContentType,
+    optical_dependency_ids: Vec<SourceEntryId>,
 }
 
 fn source_version_for_entry(

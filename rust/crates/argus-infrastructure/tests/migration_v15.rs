@@ -103,7 +103,7 @@ fn migration_v15_adds_bounded_library_projection_columns_and_indexes() {
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("logical.sqlite3")).expect("database");
 
-    assert_eq!(executor.migration_summary().current_version, 16);
+    assert_eq!(executor.migration_summary().current_version, 17);
 
     executor
         .with_connection_for_tests(context(), |connection| {
@@ -340,9 +340,9 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
     .expect("seed populated v14 rows");
     old.shutdown().expect("shutdown v14");
 
-    let current = SqliteDatabaseExecutor::open(&database).expect("v15/v16 upgrade");
-    assert_eq!(current.migration_summary().current_version, 16);
-    assert_eq!(current.migration_summary().applied_count, 2);
+    let current = SqliteDatabaseExecutor::open(&database).expect("v15-v17 upgrade");
+    assert_eq!(current.migration_summary().current_version, 17);
+    assert_eq!(current.migration_summary().applied_count, 3);
 
     current
         .with_connection_for_tests(context(), move |connection| {
@@ -413,7 +413,7 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
             Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
         })
         .expect("verify migrated logical and enrichment rows");
-    current.shutdown().expect("shutdown v15/v16");
+    current.shutdown().expect("shutdown v15-v17");
 }
 
 #[test]
@@ -462,9 +462,9 @@ fn migration_v16_bounds_existing_library_projection_keys() {
     .expect("seed oversized v14 projection inputs");
     old.shutdown().expect("shutdown v14");
 
-    let current = SqliteDatabaseExecutor::open(&database).expect("v16 upgrade");
-    assert_eq!(current.migration_summary().current_version, 16);
-    assert_eq!(current.migration_summary().applied_count, 2);
+    let current = SqliteDatabaseExecutor::open(&database).expect("v15-v17 upgrade");
+    assert_eq!(current.migration_summary().current_version, 17);
+    assert_eq!(current.migration_summary().applied_count, 3);
 
     current
         .with_connection_for_tests(context(), move |connection| {
@@ -491,5 +491,401 @@ fn migration_v16_bounds_existing_library_projection_keys() {
             Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
         })
         .expect("verify bounded v16 projection keys");
-    current.shutdown().expect("shutdown v16");
+    current.shutdown().expect("shutdown v17");
+}
+
+#[test]
+fn migration_v17_backfills_only_provable_derived_proof_versions() {
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("derived-proof-v14.sqlite3");
+    let old = SqliteDatabaseExecutor::open_with_registry(&database, registry_v14())
+        .expect("v14 database");
+
+    old.with_connection_for_tests(context(), |connection| {
+        let (library_source_id, display_name) = ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Test");
+        connection.execute_with_values(
+            "INSERT INTO library_source (
+                 library_source_id, source_provider_type, display_name,
+                 provider_config, config_revision, created_at, updated_at
+             ) VALUES (?1, 'local_filesystem', ?2, '{}', 1, '1000', '1000')",
+            &[
+                SqliteValue::Text(library_source_id.to_owned()),
+                SqliteValue::Text(display_name.to_owned()),
+            ],
+        )?;
+        connection.execute_with_values(
+            "INSERT INTO library_root (
+                 library_root_id, library_source_id, root_locator, display_name,
+                 safe_location_presentation, availability_status, config_revision,
+                 created_at, updated_at
+             ) VALUES (?1, ?2, '/library', 'Test Root', '/library', 'available', 1,
+                 '1000', '1000')",
+            &[
+                SqliteValue::Text("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned()),
+                SqliteValue::Text("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned()),
+            ],
+        )?;
+        for (job_run_id, scan_run_id, started_at) in [
+            (
+                "cccccccccccccccccccccccccccccccc",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                1000_i64,
+            ),
+            (
+                "dddddddddddddddddddddddddddddddd",
+                "ffffffffffffffffffffffffffffffff",
+                900_i64,
+            ),
+        ] {
+            connection.execute_with_values(
+                "INSERT INTO job_run (job_run_id, operation_type, state, created_at)
+                 VALUES (?1, 'library_scan', 'completed', ?2)",
+                &[
+                    SqliteValue::Text(job_run_id.to_owned()),
+                    SqliteValue::Integer(started_at),
+                ],
+            )?;
+            connection.execute_with_values(
+                "INSERT INTO scan_run (
+                     scan_run_id, job_run_id, historical_library_root_id, root_locator,
+                     root_display_name, safe_location_display, source_config_revision,
+                     root_config_revision, status, started_at, completed_at
+                 ) VALUES (?1, ?2, ?3, '/library', 'Test Root', '/library', 1, 1,
+                     'complete', ?4, ?4)",
+                &[
+                    SqliteValue::Text(scan_run_id.to_owned()),
+                    SqliteValue::Text(job_run_id.to_owned()),
+                    SqliteValue::Text("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned()),
+                    SqliteValue::Integer(started_at),
+                ],
+            )?;
+        }
+        connection.execute_with_values(
+            "INSERT INTO source_entry (
+                 source_entry_id, library_root_id, parent_source_entry_id, coordinate_kind,
+                 relative_locator, locator_key, display_name, display_location, kind,
+                 classification, provider_native_identity, source_fingerprint,
+                 last_observed_scan_id, created_at, updated_at
+             ) VALUES (?1, ?2, NULL, 'provider', 'parent', 'parent', 'Parent', 'Parent',
+                 'directory', 'container', NULL, 'provider-v1', ?3, 1000, 1000)",
+            &[
+                SqliteValue::Text("11111111111111111111111111111111".to_owned()),
+                SqliteValue::Text("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned()),
+                SqliteValue::Text("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".to_owned()),
+            ],
+        )?;
+        connection.execute_with_values(
+            "INSERT INTO source_entry (
+                 source_entry_id, library_root_id, parent_source_entry_id, coordinate_kind,
+                 relative_locator, locator_key, display_name, display_location, kind,
+                 classification, provider_native_identity, source_fingerprint,
+                 derived_locator, derived_entry_key, derived_fingerprint,
+                 derivation_transformation_id, derivation_revision,
+                 last_observed_scan_id, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, 'derived', NULL, NULL, 'Derived', 'Derived', 'file',
+                 'content_candidate', NULL, NULL, 'child', 'child', 'derived-v1',
+                 'test.transform', 1, ?4, 1000, 1000)",
+            &[
+                SqliteValue::Text("22222222222222222222222222222222".to_owned()),
+                SqliteValue::Text("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned()),
+                SqliteValue::Text("11111111111111111111111111111111".to_owned()),
+                SqliteValue::Text("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".to_owned()),
+            ],
+        )?;
+
+        for (game_content_id, identity_id, identity_value) in [
+            (
+                "33333333333333333333333333333333",
+                "44444444444444444444444444444444",
+                "identity-exact",
+            ),
+            (
+                "55555555555555555555555555555555",
+                "66666666666666666666666666666666",
+                "identity-stale",
+            ),
+            (
+                "77777777777777777777777777777777",
+                "88888888888888888888888888888888",
+                "identity-provider",
+            ),
+            (
+                "99999999999999999999999999999999",
+                "abababababababababababababababab",
+                "identity-missing",
+            ),
+        ] {
+            connection.execute_with_values(
+                "INSERT INTO game_content (
+                     game_content_id, platform_id, content_type, presence_state,
+                     identification_state, grouping_revision, created_at, updated_at
+                 ) VALUES (?1, 'nintendo.gb', 'CartridgeImage', 'available', 'identified',
+                     1, '1000', '1000')",
+                &[SqliteValue::Text(game_content_id.to_owned())],
+            )?;
+            connection.execute_with_values(
+                "INSERT INTO content_identity (
+                     content_identity_id, game_content_id, scheme_id, identity_revision,
+                     identity_value, is_current, proving_source_entry_id,
+                     proving_association_key, proving_source_fingerprint, proving_scan_run_id,
+                     created_at, updated_at
+                 ) VALUES (?1, ?2, 'test', 1, ?3, 1, ?4, 'primary', ?5, ?6,
+                     '1000', '1000')",
+                &[
+                    SqliteValue::Text(identity_id.to_owned()),
+                    SqliteValue::Text(game_content_id.to_owned()),
+                    SqliteValue::Text(identity_value.to_owned()),
+                    SqliteValue::Text(
+                        match identity_value {
+                            "identity-exact" | "identity-stale" => {
+                                "22222222222222222222222222222222"
+                            }
+                            "identity-provider" => "11111111111111111111111111111111",
+                            _ => "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                        }
+                        .to_owned(),
+                    ),
+                    match identity_value {
+                        "identity-exact" => {
+                            SqliteValue::Text("legacy-provider-fingerprint".to_owned())
+                        }
+                        _ => SqliteValue::Null,
+                    },
+                    SqliteValue::Text(
+                        match identity_value {
+                            "identity-stale" => "ffffffffffffffffffffffffffffffff",
+                            _ => "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                        }
+                        .to_owned(),
+                    ),
+                ],
+            )?;
+        }
+
+        for (provenance_id, identity_id, source_entry_id, scan_run_id) in [
+            (
+                "acacacacacacacacacacacacacacacac",
+                "44444444444444444444444444444444",
+                "22222222222222222222222222222222",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ),
+            (
+                "adadadadadadadadadadadadadadadad",
+                "66666666666666666666666666666666",
+                "22222222222222222222222222222222",
+                "ffffffffffffffffffffffffffffffff",
+            ),
+            (
+                "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae",
+                "88888888888888888888888888888888",
+                "11111111111111111111111111111111",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ),
+            (
+                "afafafafafafafafafafafafafafafaf",
+                "abababababababababababababababab",
+                "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ),
+        ] {
+            connection.execute_with_values(
+                "INSERT INTO content_identity_provenance (
+                     provenance_member_id, content_identity_id, role, association_key,
+                     source_entry_id, source_fingerprint, last_observed_scan_id,
+                     identity_is_current, created_at, updated_at
+                 ) VALUES (?1, ?2, 'primary', 'primary', ?3, NULL, ?4, 1,
+                     '1000', '1000')",
+                &[
+                    SqliteValue::Text(provenance_id.to_owned()),
+                    SqliteValue::Text(identity_id.to_owned()),
+                    SqliteValue::Text(source_entry_id.to_owned()),
+                    SqliteValue::Text(scan_run_id.to_owned()),
+                ],
+            )?;
+        }
+
+        for (index, (game_content_id, source_entry_id, scan_run_id)) in [
+            (
+                "33333333333333333333333333333333",
+                "22222222222222222222222222222222",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ),
+            (
+                "55555555555555555555555555555555",
+                "22222222222222222222222222222222",
+                "ffffffffffffffffffffffffffffffff",
+            ),
+            (
+                "77777777777777777777777777777777",
+                "11111111111111111111111111111111",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            connection.execute_with_values(
+                "INSERT INTO game_content_source (
+                     game_content_source_id, game_content_id, source_entry_id,
+                     association_key, source_fingerprint, last_observed_scan_id,
+                     is_current, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, 'primary', ?4, ?5, 1, '1000', '1000')",
+                &[
+                    SqliteValue::Text(format!("{index:032x}")),
+                    SqliteValue::Text(game_content_id.to_owned()),
+                    SqliteValue::Text(source_entry_id.to_owned()),
+                    SqliteValue::Null,
+                    SqliteValue::Text(scan_run_id.to_owned()),
+                ],
+            )?;
+        }
+
+        for (evidence_id, source_entry_id, scan_run_id) in [
+            (
+                "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                "22222222222222222222222222222222",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ),
+            (
+                "bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd",
+                "22222222222222222222222222222222",
+                "ffffffffffffffffffffffffffffffff",
+            ),
+            (
+                "bebebebebebebebebebebebebebebebe",
+                "11111111111111111111111111111111",
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ),
+        ] {
+            connection.execute_with_values(
+                "INSERT INTO grouping_evidence (
+                     grouping_evidence_id, evidence_kind, playlist_source_entry_id,
+                     source_fingerprint, last_observed_scan_id, is_current,
+                     created_at, updated_at
+                 ) VALUES (?1, 'm3u', ?2, NULL, ?3, 1, '1000', '1000')",
+                &[
+                    SqliteValue::Text(evidence_id.to_owned()),
+                    SqliteValue::Text(source_entry_id.to_owned()),
+                    SqliteValue::Text(scan_run_id.to_owned()),
+                ],
+            )?;
+            connection.execute_with_values(
+                "INSERT INTO grouping_evidence_member (
+                     grouping_evidence_id, member_game_content_id, member_source_entry_id,
+                     member_source_fingerprint, member_last_observed_scan_id, ordinal
+                 ) VALUES (?1, '33333333333333333333333333333333', ?2, NULL, ?3, 0)",
+                &[
+                    SqliteValue::Text(evidence_id.to_owned()),
+                    SqliteValue::Text(source_entry_id.to_owned()),
+                    SqliteValue::Text(scan_run_id.to_owned()),
+                ],
+            )?;
+        }
+        Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
+    })
+    .expect("seed v14 proof rows");
+    old.shutdown().expect("shutdown v14");
+
+    let current = SqliteDatabaseExecutor::open(&database).expect("v17 upgrade");
+    assert_eq!(current.migration_summary().current_version, 17);
+    assert_eq!(current.migration_summary().applied_count, 3);
+    current
+        .with_connection_for_tests(context(), |connection| {
+            for (table, column, id, expected) in [
+                (
+                    "content_identity",
+                    "proving_derived_fingerprint",
+                    "44444444444444444444444444444444",
+                    None,
+                ),
+                (
+                    "content_identity_provenance",
+                    "derived_fingerprint",
+                    "acacacacacacacacacacacacacacacac",
+                    Some("derived-v1"),
+                ),
+                (
+                    "game_content_source",
+                    "derived_fingerprint",
+                    "00000000000000000000000000000000",
+                    Some("derived-v1"),
+                ),
+                (
+                    "grouping_evidence",
+                    "derived_fingerprint",
+                    "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                    Some("derived-v1"),
+                ),
+                (
+                    "grouping_evidence_member",
+                    "member_derived_fingerprint",
+                    "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                    Some("derived-v1"),
+                ),
+            ] {
+                let value = match table {
+                    "content_identity" => connection.scalar_text(&format!(
+                        "SELECT COALESCE({column}, '') FROM {table} WHERE content_identity_id = '{id}'"
+                    ))?,
+                    "content_identity_provenance" => connection.scalar_text(&format!(
+                        "SELECT COALESCE({column}, '') FROM {table} WHERE provenance_member_id = '{id}'"
+                    ))?,
+                    "game_content_source" => connection.scalar_text(&format!(
+                        "SELECT COALESCE({column}, '') FROM {table} WHERE game_content_source_id = '{id}'"
+                    ))?,
+                    "grouping_evidence" => connection.scalar_text(&format!(
+                        "SELECT COALESCE({column}, '') FROM {table} WHERE grouping_evidence_id = '{id}'"
+                    ))?,
+                    "grouping_evidence_member" => connection.scalar_text(&format!(
+                        "SELECT COALESCE({column}, '') FROM {table} WHERE grouping_evidence_id = '{id}'"
+                    ))?,
+                    _ => unreachable!(),
+                };
+                assert_eq!(Some(value.as_str()).filter(|value| !value.is_empty()), expected);
+            }
+
+            for (table, column, where_clause) in [
+                (
+                    "content_identity",
+                    "proving_derived_fingerprint",
+                    "content_identity_id = '66666666666666666666666666666666'",
+                ),
+                (
+                    "content_identity",
+                    "proving_derived_fingerprint",
+                    "content_identity_id = '88888888888888888888888888888888'",
+                ),
+                (
+                    "content_identity",
+                    "proving_derived_fingerprint",
+                    "content_identity_id = 'abababababababababababababababab'",
+                ),
+                (
+                    "content_identity_provenance",
+                    "derived_fingerprint",
+                    "provenance_member_id = 'adadadadadadadadadadadadadadadad'",
+                ),
+                (
+                    "content_identity_provenance",
+                    "derived_fingerprint",
+                    "provenance_member_id = 'aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae'",
+                ),
+                (
+                    "content_identity_provenance",
+                    "derived_fingerprint",
+                    "provenance_member_id = 'afafafafafafafafafafafafafafafaf'",
+                ),
+            ] {
+                assert_eq!(
+                    connection.scalar_i64(&format!(
+                        "SELECT {column} IS NULL FROM {table} WHERE {where_clause}"
+                    ))?,
+                    1,
+                    "unexpected historical derived backfill in {table}.{column}"
+                );
+            }
+            Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
+        })
+        .expect("verify v17 proof backfill");
+    current.shutdown().expect("shutdown v17");
 }

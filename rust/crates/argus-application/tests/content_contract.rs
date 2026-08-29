@@ -107,10 +107,12 @@ fn transformation_registry_is_distinct_from_identity_scheme_catalog() {
 
     assert_eq!(registry.len(), 50);
     assert_eq!(catalog.len(), 22);
-    assert!(registry
-        .descriptors()
-        .iter()
-        .all(|descriptor| descriptor.id().starts_with("argus.transformation.")));
+    assert!(
+        registry
+            .descriptors()
+            .iter()
+            .all(|descriptor| descriptor.id().starts_with("argus.transformation."))
+    );
     assert_ne!(
         registry.descriptors()[0].id(),
         catalog.descriptors()[0].id()
@@ -135,10 +137,12 @@ fn production_transformation_matrix_is_explicit_and_excludes_rar() {
     assert!(!registry.supports("multipart"));
 
     let catalog = IdentitySchemeCatalog::production();
-    assert!(catalog
-        .descriptors()
-        .iter()
-        .all(|descriptor| { descriptor.revision() == 1 && descriptor.algorithm() == "sha256" }));
+    assert!(
+        catalog
+            .descriptors()
+            .iter()
+            .all(|descriptor| { descriptor.revision() == 1 && descriptor.algorithm() == "sha256" })
+    );
 }
 
 #[test]
@@ -259,9 +263,11 @@ fn production_catalog_activates_native_and_approved_alternate_optical_rows() {
         let descriptor = catalog.select(platform, content_type).expect("catalog row");
         assert_eq!(descriptor.id(), scheme_id);
         assert_eq!(descriptor.representations(), representations);
-        assert!(representations
-            .iter()
-            .all(|representation| descriptor.accepts_representation(representation)));
+        assert!(
+            representations
+                .iter()
+                .all(|representation| descriptor.accepts_representation(representation))
+        );
     }
 }
 

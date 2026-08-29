@@ -130,6 +130,49 @@ fn positional_entry_reads_are_bounded_and_do_not_follow_non_files() {
 }
 
 #[test]
+fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let root = directory.path().join("Library");
+    fs::create_dir(&root).expect("root");
+    let path = root.join("rom.bin");
+    fs::write(&path, b"first-version").expect("initial file");
+
+    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
+        root.to_string_lossy().into_owned(),
+    ));
+    let resolved = access.resolve_root().expect("resolve");
+    let initial = access
+        .open_entry_read(
+            &resolved,
+            &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
+        )
+        .expect("initial reader");
+    let initial_fingerprint = initial.source_fingerprint().map(str::to_owned);
+
+    fs::write(&path, b"other-version").expect("same-length rewrite");
+    assert_eq!(
+        initial.len().expect("length"),
+        b"first-version".len() as u64
+    );
+    assert!(
+        !initial
+            .source_version_is_unchanged()
+            .expect("version check")
+    );
+
+    let current = access
+        .open_entry_read(
+            &resolved,
+            &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
+        )
+        .expect("current reader");
+    assert_ne!(
+        initial_fingerprint,
+        current.source_fingerprint().map(str::to_owned)
+    );
+}
+
+#[test]
 fn cancellation_mid_enumeration_is_honored_after_partial_progress() {
     let directory = tempfile::tempdir().expect("tempdir");
     let root = directory.path().join("Library");

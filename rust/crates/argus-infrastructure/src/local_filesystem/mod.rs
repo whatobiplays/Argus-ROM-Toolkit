@@ -72,17 +72,20 @@ pub struct LocalContentReader {
     length: u64,
     initial_fingerprint: String,
     initial_change_evidence: String,
+    initial_handle_change_time: Option<i64>,
 }
 
 impl LocalContentReader {
     fn open(path: PathBuf, metadata: &std::fs::Metadata) -> Result<Self, SourceAccessError> {
         let file = std::fs::File::open(&path).map_err(classify_entry_access_error)?;
+        let initial_handle_change_time = native_handle_change_time(&file);
         Ok(Self {
             file,
             path,
             length: metadata.len(),
             initial_fingerprint: source_fingerprint(metadata, ObservedEntryKind::File),
             initial_change_evidence: source_change_evidence(metadata, ObservedEntryKind::File),
+            initial_handle_change_time,
         })
     }
 
@@ -104,6 +107,9 @@ impl LocalContentReader {
             || source_change_evidence(&handle_metadata, ObservedEntryKind::File)
                 != self.initial_change_evidence
         {
+            return Ok(false);
+        }
+        if native_handle_change_time(&self.file) != self.initial_handle_change_time {
             return Ok(false);
         }
         Ok(true)
@@ -491,6 +497,32 @@ fn source_change_evidence(metadata: &std::fs::Metadata, kind: ObservedEntryKind)
             modified_at_ns(metadata).unwrap_or(0),
         )
     }
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn native_handle_change_time(file: &std::fs::File) -> Option<i64> {
+    use std::mem::size_of;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_BASIC_INFO, FileBasicInfo, GetFileInformationByHandleEx,
+    };
+
+    let mut information = FILE_BASIC_INFO::default();
+    let succeeded = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle() as _,
+            FileBasicInfo,
+            (&mut information as *mut FILE_BASIC_INFO).cast(),
+            size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    };
+    (succeeded != 0).then_some(information.ChangeTime)
+}
+
+#[cfg(not(windows))]
+fn native_handle_change_time(_file: &std::fs::File) -> Option<i64> {
+    None
 }
 
 fn modified_at_ns(metadata: &std::fs::Metadata) -> Option<u128> {

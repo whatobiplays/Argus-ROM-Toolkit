@@ -71,16 +71,19 @@ pub struct LocalContentReader {
     path: PathBuf,
     length: u64,
     initial_fingerprint: String,
+    initial_content_fingerprint: [u8; 32],
 }
 
 impl LocalContentReader {
     fn open(path: PathBuf, metadata: &std::fs::Metadata) -> Result<Self, SourceAccessError> {
         let file = std::fs::File::open(&path).map_err(classify_entry_access_error)?;
+        let initial_content_fingerprint = content_fingerprint(&file)?;
         Ok(Self {
             file,
             path,
             length: metadata.len(),
             initial_fingerprint: source_fingerprint(metadata, ObservedEntryKind::File),
+            initial_content_fingerprint,
         })
     }
 
@@ -95,11 +98,26 @@ impl LocalContentReader {
         // path metadata detects atomic replacement, while handle metadata
         // also observes in-place changes when a filesystem serves a stale
         // path-level timestamp from its cache.
-        Ok(
-            source_fingerprint(&path_metadata, ObservedEntryKind::File) == self.initial_fingerprint
-                && source_fingerprint(&handle_metadata, ObservedEntryKind::File)
-                    == self.initial_fingerprint,
-        )
+        if source_fingerprint(&path_metadata, ObservedEntryKind::File) != self.initial_fingerprint
+            || source_fingerprint(&handle_metadata, ObservedEntryKind::File)
+                != self.initial_fingerprint
+        {
+            return Ok(false);
+        }
+
+        // Windows can defer updating its last-write timestamp for an
+        // immediate in-place rewrite. Re-read the current path through a new
+        // handle and compare a streaming content fingerprint as a native
+        // timestamp-independent change check. The fixed-size buffer keeps
+        // validation bounded even for very large sources.
+        let current_file = std::fs::File::open(&self.path).map_err(classify_entry_access_error)?;
+        let current_metadata = current_file
+            .metadata()
+            .map_err(classify_entry_access_error)?;
+        if !current_metadata.is_file() {
+            return Ok(false);
+        }
+        Ok(content_fingerprint(&current_file)? == self.initial_content_fingerprint)
     }
 
     /// Returns the source-version fingerprint observed when the reader opened.
@@ -467,6 +485,27 @@ fn source_fingerprint(metadata: &std::fs::Metadata, kind: ObservedEntryKind) -> 
         let modified = modified_at_ns(metadata).unwrap_or(0);
         format!("v1:{}:{}:{}", kind.as_str(), metadata.len(), modified)
     }
+}
+
+fn content_fingerprint(file: &std::fs::File) -> Result<[u8; 32], SourceAccessError> {
+    const FINGERPRINT_CHUNK_BYTES: usize = 64 * 1024;
+
+    let mut reader = file.try_clone().map_err(classify_entry_access_error)?;
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(classify_entry_access_error)?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = [0u8; FINGERPRINT_CHUNK_BYTES];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .map_err(classify_entry_access_error)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(*hasher.finalize().as_bytes())
 }
 
 fn modified_at_ns(metadata: &std::fs::Metadata) -> Option<u128> {

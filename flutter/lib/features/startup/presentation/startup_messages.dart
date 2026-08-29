@@ -7,6 +7,8 @@ String messageForKey(String key) => switch (key) {
   'errors.configuration.invalid' => 'Argus configuration is invalid.',
   'errors.filesystem.permission_denied' =>
     'Argus does not have permission to access its data files.',
+  'errors.content.source_validation_indeterminate' =>
+    'Argus could not verify that a source remained unchanged.',
   'errors.persistence.database_locked' =>
     'The Argus database is locked by another process.',
   'errors.persistence.database_open_failed' =>

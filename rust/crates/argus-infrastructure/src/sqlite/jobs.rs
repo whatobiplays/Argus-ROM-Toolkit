@@ -1076,48 +1076,24 @@ impl SourceEntryRepository for SqliteSourceEntryRepository<'_, '_> {
             return Ok(0);
         }
         finalize_sources(self.work, &ids)?;
-        let changed = self
-            .work
-            .transaction_mut()?
-            .execute(
-                "WITH RECURSIVE stale_root(source_entry_id, library_root_id) AS (
-                     SELECT source_entry_id, library_root_id
-                     FROM source_entry
-                     WHERE parent_source_entry_id = ?1
-                       AND library_root_id = (
-                           SELECT library_root_id
-                           FROM source_entry
-                           WHERE source_entry_id = ?1
-                       )
-                       AND coordinate_kind = 'derived'
-                       AND derivation_transformation_id = ?2
-                       AND derivation_revision = ?3
-                       AND last_observed_scan_id != ?4
-                 ),
-                 subtree(source_entry_id, library_root_id) AS (
-                     SELECT source_entry_id, library_root_id FROM stale_root
-                     UNION ALL
-                     SELECT child.source_entry_id, child.library_root_id
-                     FROM source_entry child
-                     JOIN subtree ON child.parent_source_entry_id = subtree.source_entry_id
-                     WHERE child.library_root_id = subtree.library_root_id
-                 )
-                 DELETE FROM source_entry
-                 WHERE source_entry_id IN (SELECT source_entry_id FROM subtree)
-                   AND library_root_id = (
-                       SELECT library_root_id
-                       FROM source_entry
-                       WHERE source_entry_id = ?1
-                   )",
-                rusqlite::params![
-                    parent.to_string(),
-                    transformation_id,
-                    revision,
-                    observation_run_id.to_string(),
-                ],
-            )
-            .map_err(map_persistence_operation_error)?;
-        Ok(changed as u64)
+        // Delete the exact subtree snapshot that was finalized above. Keeping
+        // one materialized ID list for both operations prevents a later query
+        // edit from making persistence finalize one set of rows and delete a
+        // different set.
+        let changed = {
+            let transaction = self.work.transaction_mut()?;
+            let mut statement = transaction
+                .prepare("DELETE FROM source_entry WHERE source_entry_id = ?1")
+                .map_err(map_persistence_operation_error)?;
+            let mut changed = 0_u64;
+            for source_entry_id in &ids {
+                changed += statement
+                    .execute([source_entry_id.to_string()])
+                    .map_err(map_persistence_operation_error)? as u64;
+            }
+            changed
+        };
+        Ok(changed)
     }
 
     fn delete_for_root(&mut self, library_root_id: LibraryRootId) -> Result<(), PersistenceError> {

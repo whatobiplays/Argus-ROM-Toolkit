@@ -348,7 +348,7 @@ fn parse_track(metadata: &Metadata) -> Result<ChdTrack, OpticalError> {
                 if value.eq_ignore_ascii_case("V") {
                     pregap_virtual = true;
                 } else {
-                    pregap_mode = Some(parse_track_mode(value)?);
+                    pregap_mode = Some(value.to_owned());
                 }
             }
             "SUBTYPE" => subtype = Some(value.to_ascii_uppercase()),
@@ -364,7 +364,10 @@ fn parse_track(metadata: &Metadata) -> Result<ChdTrack, OpticalError> {
         return Err(OpticalError::Malformed);
     }
     let stored_pregap = pregap != 0 && !pregap_virtual;
-    if stored_pregap && pregap_mode.is_some_and(|pregap_mode| pregap_mode != mode) {
+    if stored_pregap
+        && let Some(pregap_mode) = pregap_mode.as_deref()
+        && parse_track_mode(pregap_mode)? != mode
+    {
         return Err(OpticalError::UnsupportedRepresentation);
     }
     if stored_pregap
@@ -776,5 +779,19 @@ mod tests {
             parse_track(&metadata),
             Err(OpticalError::UnsupportedRepresentation)
         );
+    }
+
+    #[test]
+    fn unused_pregap_mode_is_not_validated_without_stored_pregap() {
+        let value = b"TRACK:1 TYPE:MODE1 SUBTYPE:NONE FRAMES:4 PREGAP:0 PGTYPE:UNKNOWN PGSUB:NONE POSTGAP:0\0";
+        let metadata = Metadata {
+            metatag: u32::from_be_bytes(*b"CHT2"),
+            value: value.to_vec(),
+            flags: 0,
+            index: 0,
+            length: value.len() as u32,
+        };
+
+        assert!(parse_track(&metadata).is_ok());
     }
 }

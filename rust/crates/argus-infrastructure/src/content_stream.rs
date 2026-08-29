@@ -414,7 +414,9 @@ fn is_blocked_container(
 ) -> Result<bool, ContentRecognitionError> {
     const BLOCKED_PREFIX_BYTES: usize = 8;
     let prefix_length = source_length.min(BLOCKED_PREFIX_BYTES as u64) as usize;
-    let prefix = read_small(reader, 0, prefix_length)?;
+    let mut prefix_storage = [0_u8; BLOCKED_PREFIX_BYTES];
+    read_exact(reader, 0, &mut prefix_storage[..prefix_length])?;
+    let prefix = &prefix_storage[..prefix_length];
 
     let starts_with = |magic: &[u8]| prefix.starts_with(magic);
     if starts_with(b"PK\x03\x04")
@@ -435,7 +437,9 @@ fn is_blocked_container(
     }
 
     if source_length >= (TAR_MAGIC_OFFSET + TAR_MAGIC.len()) as u64 {
-        return Ok(read_small(reader, TAR_MAGIC_OFFSET as u64, TAR_MAGIC.len())? == TAR_MAGIC);
+        let mut tar_magic = [0_u8; TAR_MAGIC.len()];
+        read_exact(reader, TAR_MAGIC_OFFSET as u64, &mut tar_magic)?;
+        return Ok(tar_magic == TAR_MAGIC);
     }
     Ok(false)
 }
@@ -604,6 +608,7 @@ mod tests {
     struct CountingReader {
         bytes: Vec<u8>,
         requests: Vec<(u64, usize)>,
+        max_read_size: usize,
     }
 
     impl ContentReader for CountingReader {
@@ -628,6 +633,10 @@ mod tests {
             destination.copy_from_slice(source);
             Ok(source.len())
         }
+
+        fn max_read_size(&self) -> usize {
+            self.max_read_size
+        }
     }
 
     #[test]
@@ -635,9 +644,25 @@ mod tests {
         let mut reader = CountingReader {
             bytes: vec![0; 512],
             requests: Vec::new(),
+            max_read_size: 64 * 1024,
         };
 
         assert!(!is_blocked_container(&mut reader, 512).expect("probe"));
         assert_eq!(reader.requests, [(0, 8), (257, 5)]);
+    }
+
+    #[test]
+    fn blocked_container_probe_honors_small_reader_request_bounds() {
+        let mut reader = CountingReader {
+            bytes: vec![0; 512],
+            requests: Vec::new(),
+            max_read_size: 3,
+        };
+
+        assert!(!is_blocked_container(&mut reader, 512).expect("probe"));
+        assert_eq!(
+            reader.requests,
+            [(0, 3), (3, 3), (6, 2), (257, 3), (260, 2)]
+        );
     }
 }

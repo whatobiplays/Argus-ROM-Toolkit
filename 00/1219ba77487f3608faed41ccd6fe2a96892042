@@ -1,0 +1,23 @@
+README.md
+  s_8f81f39a0d0d07::t_64b9f049a52275 26
+scripts/bootstrap.sh
+  s_8f81f39a0d0d07::t_64b9f049a52275 14
+.github/workflows/ci.yml
+  s_8f81f39a0d0d07::t_64b9f049a52275 39-41,169-171,242-243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "001219ba77487f3608faed41ccd6fe2a96892042",
+  "prompts": {},
+  "sessions": {
+    "s_8f81f39a0d0d07": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04c91-f9af-7c13-ac0a-786b67073a0b",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

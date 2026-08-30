@@ -296,3 +296,8 @@ node_modules/
 .npm/
 .yarn/
 .pnpm-store/
+
+# The debug Android manifest is a committed source file, not a native build
+# output, despite the generic Windows `Debug/` directory rule above.
+!flutter/android/app/src/debug/
+!flutter/android/app/src/debug/AndroidManifest.xml

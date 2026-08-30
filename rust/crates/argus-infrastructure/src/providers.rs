@@ -21,6 +21,13 @@ use crate::credentials::KeyringSecureCredentialStore;
 
 const MAX_PROVIDER_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PROVIDER_ATTEMPTS: usize = 3;
+const PLAYMATCH_PROBE_FILE_NAME: &str = "argus-probe.rom";
+const PLAYMATCH_PROBE_FILE_SIZE: u64 = 0;
+const GAMETDB_DS_CATALOG_PATH: &str = "/dstdb.txt?LANG=EN";
+const GAMETDB_ARTWORK_BASE_URL: &str = "https://art.gametdb.com";
+const STEAMGRIDDB_CREDENTIAL_VALIDATION_TERM: &str = "tetris";
+const MAX_GAMETDB_CATALOG_LINE_BYTES: usize = 4096;
+const MAX_GAMETDB_TITLE_BYTES: usize = 2048;
 
 /// One bounded synchronous provider request.
 #[derive(Clone, Eq, PartialEq)]
@@ -277,71 +284,43 @@ where
         platform_id: PlatformId,
         identity: &str,
     ) -> Result<Vec<ExactMatchEvidence>, ProviderAdapterError> {
-        if !is_valid_identity(identity) {
+        if !is_valid_playmatch_sha256(identity) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
-        let Some(provider_platform_id) = ProviderId::Playmatch
-            .platform_mapping(platform_id)
-            .mapped_id()
-        else {
+        let Some(provider_platform_name) = playmatch_platform_name(platform_id) else {
             return Err(ProviderAdapterError::UnsupportedCapability);
         };
-        let body = serde_json::json!({
-            "platform": provider_platform_id,
-            "identity": identity,
-        })
-        .to_string()
-        .into_bytes();
-        let response = self.send("/match", body, BTreeMap::new())?;
+        // The v2 API gives SHA-256 precedence over filename and size. The
+        // application port carries the canonical digest but not a ROM
+        // filename or length, so these fixed non-content values deliberately
+        // prevent the fallback branch from becoming a fuzzy lookup.
+        let url = format!(
+            "{}/identify/relations?fileName={PLAYMATCH_PROBE_FILE_NAME}&fileSize={PLAYMATCH_PROBE_FILE_SIZE}&sha256={identity}",
+            self.base_url.trim_end_matches('/')
+        );
+        let response = self.send_get(url)?;
         let root = parse_json(&response)?;
-        let Some(matches) = root.get("matches").and_then(Value::as_array) else {
-            return Err(ProviderAdapterError::InvalidResponse);
-        };
-        let mut evidence = Vec::with_capacity(matches.len());
-        for item in matches {
-            let Some(external_game_id) = item.get("external_game_id").and_then(Value::as_str)
-            else {
-                return Err(ProviderAdapterError::InvalidResponse);
-            };
-            if !is_valid_external_id(external_game_id) {
-                return Err(ProviderAdapterError::InvalidResponse);
-            }
-            let Some(response_platform) = item.get("platform").and_then(Value::as_str) else {
-                return Err(ProviderAdapterError::InvalidResponse);
-            };
-            let Some(response_identity) = item.get("identity").and_then(Value::as_str) else {
-                return Err(ProviderAdapterError::InvalidResponse);
-            };
-            if !is_valid_identity(response_identity) {
-                return Err(ProviderAdapterError::InvalidResponse);
-            }
-            if response_platform != provider_platform_id {
-                continue;
-            }
-            evidence.push(ExactMatchEvidence::Playmatch {
-                game_content_id,
-                platform_id,
-                external_game_id: external_game_id.to_owned(),
-                submitted_identity: identity.to_owned(),
-                response_identity: response_identity.to_owned(),
-            });
-        }
-        Ok(evidence)
+        parse_playmatch_relations(
+            &root,
+            game_content_id,
+            platform_id,
+            identity,
+            provider_platform_name,
+        )
     }
 
-    fn send(
-        &self,
-        path: &str,
-        body: Vec<u8>,
-        headers: BTreeMap<String, String>,
-    ) -> Result<ProviderResponse, ProviderAdapterError> {
-        let url = format!("{}{}", self.base_url, path);
+    fn send_get(&self, url: String) -> Result<ProviderResponse, ProviderAdapterError> {
         if !is_provider_url_allowed(&url, ProviderId::Playmatch, true) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
         let response = self
             .transport
-            .send(ProviderRequest::new("POST", url, headers, body))
+            .send(ProviderRequest::new(
+                "GET",
+                url,
+                BTreeMap::new(),
+                Vec::new(),
+            ))
             .map_err(map_transport_error)?;
         if response.status() != 200 {
             return Err(ProviderAdapterError::InvalidResponse);
@@ -378,99 +357,16 @@ where
         if !is_valid_gametdb_identifier(native_identifier) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
-        let Some(provider_platform_id) = ProviderId::GameTdb
-            .platform_mapping(platform_id)
-            .mapped_id()
-        else {
+        if platform_id != PlatformId::NintendoNds {
             return Err(ProviderAdapterError::UnsupportedCapability);
-        };
-        let body = serde_json::json!({
-            "platform": provider_platform_id,
-            "identifier": native_identifier,
-        })
-        .to_string()
-        .into_bytes();
-        let url = format!("{}/lookup", self.base_url);
-        if !is_provider_url_allowed(&url, ProviderId::GameTdb, true) {
-            return Err(ProviderAdapterError::InvalidResponse);
         }
-        let response = self
-            .transport
-            .send(ProviderRequest::new("POST", url, BTreeMap::new(), body))
-            .map_err(map_transport_error)?;
-        if response.status() == 404 {
-            return Ok(None);
-        }
-        if response.status() != 200 {
-            return Err(ProviderAdapterError::InvalidResponse);
-        }
-        let root = parse_json(&response)?;
-        let Some(game) = root.get("game") else {
-            return Err(ProviderAdapterError::InvalidResponse);
-        };
-        let Some(external_game_id) = game.get("id").and_then(Value::as_str) else {
-            return Err(ProviderAdapterError::InvalidResponse);
-        };
-        if !is_valid_external_id(external_game_id) {
-            return Err(ProviderAdapterError::InvalidResponse);
-        }
-        if game
-            .get("platform")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != provider_platform_id)
-        {
-            return Ok(None);
-        }
-        if game
-            .get("identifier")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != native_identifier)
-        {
-            return Ok(None);
-        }
-        let title = game.get("title").and_then(Value::as_str).map(str::to_owned);
-        let region = game
-            .get("region")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let language = game
-            .get("language")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let revision = game
-            .get("revision")
-            .and_then(Value::as_u64)
+        let requested_id = gametdb_raw_identifier(native_identifier)
             .ok_or(ProviderAdapterError::InvalidResponse)?;
-        Ok(Some(ProviderMetadata::new(
-            ProviderId::GameTdb,
-            external_game_id,
-            revision,
-            region,
-            language,
-            0,
-            None,
-            title,
-            Vec::new(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            100,
-            format!("gametdb:{external_game_id}"),
-        )))
-    }
-
-    /// Discovers credential-free artwork references for one exact record.
-    pub fn discover_artwork(
-        &self,
-        external_game_id: &str,
-    ) -> Result<Vec<ArtworkCandidate>, ProviderAdapterError> {
-        if !is_valid_external_id(external_game_id) {
-            return Err(ProviderAdapterError::InvalidResponse);
-        }
-        let url = format!("{}/artwork/{external_game_id}", self.base_url);
+        let url = format!(
+            "{}{}",
+            self.base_url.trim_end_matches('/'),
+            GAMETDB_DS_CATALOG_PATH
+        );
         if !is_provider_url_allowed(&url, ProviderId::GameTdb, true) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
@@ -486,28 +382,74 @@ where
         if response.status() != 200 {
             return Err(ProviderAdapterError::InvalidResponse);
         }
-        let root = parse_json(&response)?;
-        parse_artwork_candidates(&root, ProviderId::GameTdb, &self.base_url)
+        let catalog = parse_gametdb_ds_catalog(&response)?;
+        let Some(title) = catalog.records.get(requested_id) else {
+            return Ok(None);
+        };
+        Ok(Some(ProviderMetadata::new(
+            ProviderId::GameTdb,
+            requested_id,
+            catalog.revision,
+            None,
+            Some("en".to_owned()),
+            0,
+            None,
+            Some(title.clone()),
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec!["en".to_owned()],
+            100,
+            format!("gametdb:{requested_id}"),
+        )))
     }
 
-    /// Downloads original bytes from a credential-free URL or opaque
-    /// GameTDB asset locator returned by the artwork endpoint.
+    /// Discovers one official front-cover asset for a known DS identifier.
+    pub fn discover_artwork(
+        &self,
+        external_game_id: &str,
+    ) -> Result<Vec<ArtworkCandidate>, ProviderAdapterError> {
+        if !is_valid_gametdb_raw_identifier(external_game_id) {
+            return Err(ProviderAdapterError::InvalidResponse);
+        }
+        let Some(locale) = gametdb_artwork_locale(external_game_id) else {
+            return Ok(Vec::new());
+        };
+        let asset_id = format!("cover:{locale}:{external_game_id}");
+        Ok(vec![
+            ArtworkCandidate::new(
+                ProviderId::GameTdb,
+                asset_id.clone(),
+                ArtworkType::CoverFront,
+                format!("asset:{asset_id}"),
+                1,
+            )
+            .with_details(Some(locale), Some("en"), None, None, 100),
+        ])
+    }
+
+    /// Downloads original bytes from an official GameTDB asset locator or a
+    /// previously persisted provider-owned HTTPS source.
     pub fn download_artwork(
         &self,
         external_game_id: &str,
         source: &str,
     ) -> Result<Vec<u8>, ProviderAdapterError> {
+        if !is_valid_gametdb_raw_identifier(external_game_id) {
+            return Err(ProviderAdapterError::InvalidResponse);
+        }
         let url = if is_provider_artwork_url_allowed(source, ProviderId::GameTdb, &self.base_url) {
             source.to_owned()
-        } else if let Some(asset_id) = source.strip_prefix("asset:") {
-            if !is_valid_opaque_locator(source) || !is_valid_external_id(external_game_id) {
+        } else if let Some((locale, asset_game_id)) = gametdb_artwork_locator(source) {
+            if asset_game_id != external_game_id {
                 return Err(ProviderAdapterError::InvalidResponse);
             }
-            let url = format!(
-                "{}/artwork/{external_game_id}/asset/{asset_id}",
-                self.base_url
-            );
-            if !is_provider_url_allowed(&url, ProviderId::GameTdb, true) {
+            let url =
+                format!("{GAMETDB_ARTWORK_BASE_URL}/ds/cover/{locale}/{external_game_id}.jpg");
+            if !is_provider_url_allowed(&url, ProviderId::GameTdb, false) {
                 return Err(ProviderAdapterError::InvalidResponse);
             }
             url
@@ -537,6 +479,56 @@ pub struct SteamGridDbAdapter<T> {
     base_url: String,
 }
 
+#[derive(Clone, Copy)]
+enum SteamGridDbAssetKind {
+    Grid,
+    Hero,
+    Logo,
+    Icon,
+}
+
+const STEAMGRIDDB_ASSET_KINDS: &[SteamGridDbAssetKind] = &[
+    SteamGridDbAssetKind::Grid,
+    SteamGridDbAssetKind::Hero,
+    SteamGridDbAssetKind::Logo,
+    SteamGridDbAssetKind::Icon,
+];
+
+impl SteamGridDbAssetKind {
+    const fn endpoint(self) -> &'static str {
+        match self {
+            Self::Grid => "grids",
+            Self::Hero => "heroes",
+            Self::Logo => "logos",
+            Self::Icon => "icons",
+        }
+    }
+
+    const fn artwork_type(self) -> ArtworkType {
+        match self {
+            Self::Grid => ArtworkType::CoverFront,
+            Self::Hero => ArtworkType::Banner,
+            Self::Logo => ArtworkType::Logo,
+            Self::Icon => ArtworkType::Icon,
+        }
+    }
+
+    fn from_locator(value: &str) -> Option<Self> {
+        match value {
+            "grid" => Some(Self::Grid),
+            "hero" => Some(Self::Hero),
+            "logo" => Some(Self::Logo),
+            "icon" => Some(Self::Icon),
+            _ => None,
+        }
+    }
+}
+
+struct SteamGridDbAsset {
+    id: u64,
+    source_url: String,
+}
+
 impl<T> SteamGridDbAdapter<T>
 where
     T: ProviderTransport,
@@ -558,29 +550,28 @@ where
         if secret.is_empty() {
             return Err(ProviderAdapterError::UnsupportedCapability);
         }
-        if !is_valid_external_id(external_game_id) {
+        if !is_valid_steamgriddb_id(external_game_id) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
         let token =
             std::str::from_utf8(secret).map_err(|_| ProviderAdapterError::UnsupportedCapability)?;
-        let mut headers = BTreeMap::new();
-        headers.insert("authorization".to_owned(), format!("Bearer {token}"));
-        let url = format!("{}/artwork/{}", self.base_url, external_game_id);
-        if !is_provider_url_allowed(&url, ProviderId::SteamGridDb, true) {
-            return Err(ProviderAdapterError::InvalidResponse);
+        let mut candidates = Vec::new();
+        for &kind in STEAMGRIDDB_ASSET_KINDS {
+            for asset in self.fetch_assets(external_game_id, kind, token)? {
+                candidates.push(ArtworkCandidate::new(
+                    ProviderId::SteamGridDb,
+                    asset.id.to_string(),
+                    kind.artwork_type(),
+                    asset.source_url,
+                    asset.id,
+                ));
+            }
         }
-        let response = self
-            .transport
-            .send(ProviderRequest::new("GET", url, headers, Vec::new()))
-            .map_err(map_transport_error)?;
-        if response.status() != 200 {
-            return Err(ProviderAdapterError::InvalidResponse);
-        }
-        let root = parse_json(&response)?;
-        parse_artwork_candidates(&root, ProviderId::SteamGridDb, &self.base_url)
+        Ok(candidates)
     }
 
-    /// Downloads original bytes for an opaque provider asset locator.
+    /// Downloads original bytes from a stable provider URL or resolves an
+    /// opaque provider asset identity through the documented v2 endpoint.
     pub fn download_artwork(
         &self,
         external_game_id: &str,
@@ -592,29 +583,66 @@ where
         }
         let token =
             std::str::from_utf8(secret).map_err(|_| ProviderAdapterError::UnsupportedCapability)?;
-        let asset_id = asset_locator
-            .strip_prefix("asset:")
-            .filter(|_| is_valid_opaque_locator(asset_locator))
+        if !is_valid_steamgriddb_id(external_game_id) {
+            return Err(ProviderAdapterError::InvalidResponse);
+        }
+        if is_provider_artwork_url_allowed(asset_locator, ProviderId::SteamGridDb, &self.base_url) {
+            return self.download_original_url(asset_locator);
+        }
+
+        let (requested_kind, asset_id) = steamgriddb_artwork_locator(asset_locator)
             .ok_or(ProviderAdapterError::InvalidResponse)?;
-        if !is_valid_external_id(external_game_id) {
+        let kinds = requested_kind
+            .map(|kind| vec![kind])
+            .unwrap_or_else(|| STEAMGRIDDB_ASSET_KINDS.to_vec());
+        for kind in kinds {
+            let assets = self.fetch_assets(external_game_id, kind, token)?;
+            if let Some(asset) = assets.into_iter().find(|asset| asset.id == asset_id) {
+                return self.download_original_url(&asset.source_url);
+            }
+        }
+        Err(ProviderAdapterError::InvalidResponse)
+    }
+
+    fn fetch_assets(
+        &self,
+        external_game_id: &str,
+        kind: SteamGridDbAssetKind,
+        token: &str,
+    ) -> Result<Vec<SteamGridDbAsset>, ProviderAdapterError> {
+        let url = format!(
+            "{}/{}/game/{external_game_id}",
+            self.base_url.trim_end_matches('/'),
+            kind.endpoint()
+        );
+        if !is_provider_url_allowed(&url, ProviderId::SteamGridDb, false) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
         let mut headers = BTreeMap::new();
         headers.insert("authorization".to_owned(), format!("Bearer {token}"));
-        let url = format!(
-            "{}/artwork/{external_game_id}/asset/{asset_id}",
-            self.base_url
-        );
-        if !is_provider_url_allowed(&url, ProviderId::SteamGridDb, true) {
-            return Err(ProviderAdapterError::InvalidResponse);
-        }
         let response = self
             .transport
             .send(ProviderRequest::new("GET", url, headers, Vec::new()))
             .map_err(map_transport_error)?;
-        if response.status() != 200 {
+        let response = steamgriddb_success_response(response)?;
+        let root = parse_json(&response)?;
+        parse_steamgriddb_assets(&root, &self.base_url)
+    }
+
+    fn download_original_url(&self, source_url: &str) -> Result<Vec<u8>, ProviderAdapterError> {
+        if !is_provider_artwork_url_allowed(source_url, ProviderId::SteamGridDb, &self.base_url) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
+        let response = self
+            .transport
+            .send(ProviderRequest::new(
+                "GET",
+                source_url,
+                BTreeMap::new(),
+                Vec::new(),
+            ))
+            .map_err(map_transport_error)?;
+        let response = steamgriddb_success_response(response)?;
         bounded_response_body(&response)
     }
 }
@@ -841,85 +869,303 @@ where
     }
 }
 
-fn parse_artwork_candidates(
+fn playmatch_platform_name(platform_id: PlatformId) -> Option<&'static str> {
+    match platform_id {
+        PlatformId::NintendoGb => Some("Game Boy"),
+        _ => None,
+    }
+}
+
+fn parse_playmatch_relations(
     root: &Value,
-    provider_id: ProviderId,
+    game_content_id: GameContentId,
+    platform_id: PlatformId,
+    identity: &str,
+    provider_platform_name: &str,
+) -> Result<Vec<ExactMatchEvidence>, ProviderAdapterError> {
+    let match_type = root
+        .get("gameMatchType")
+        .and_then(Value::as_str)
+        .ok_or(ProviderAdapterError::InvalidResponse)?;
+    if match_type == "NoMatch" {
+        return Ok(Vec::new());
+    }
+    if !matches!(
+        match_type,
+        "SHA256" | "SHA1" | "MD5" | "CRC" | "FileNameAndSize"
+    ) {
+        return Err(ProviderAdapterError::InvalidResponse);
+    }
+    // The request supplies a SHA-256 identity. A fallback match would be a
+    // filename/size guess and therefore cannot become exact application
+    // evidence.
+    if match_type != "SHA256" {
+        return Ok(Vec::new());
+    }
+
+    let mut relations = vec![root];
+    if let Some(additional_matches) = root.get("additionalMatches")
+        && !additional_matches.is_null()
+    {
+        let additional_matches = additional_matches
+            .as_array()
+            .ok_or(ProviderAdapterError::InvalidResponse)?;
+        relations.extend(additional_matches);
+    }
+
+    relations
+        .into_iter()
+        .map(|relation| {
+            let Some((external_game_id, response_identity, response_platform)) =
+                playmatch_relation_identity(relation, identity)?
+            else {
+                return Ok(None);
+            };
+            if response_platform != provider_platform_name {
+                return Ok(None);
+            }
+            Ok(Some(ExactMatchEvidence::Playmatch {
+                game_content_id,
+                platform_id,
+                external_game_id,
+                submitted_identity: identity.to_owned(),
+                response_identity,
+            }))
+        })
+        .collect::<Result<Vec<_>, ProviderAdapterError>>()
+        .map(|matches| matches.into_iter().flatten().collect())
+}
+
+fn playmatch_relation_identity(
+    relation: &Value,
+    identity: &str,
+) -> Result<Option<(String, String, String)>, ProviderAdapterError> {
+    let game = relation
+        .get("game")
+        .and_then(Value::as_object)
+        .ok_or(ProviderAdapterError::InvalidResponse)?;
+    let external_game_id = game
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|value| is_valid_external_id(value))
+        .ok_or(ProviderAdapterError::InvalidResponse)?;
+    let platform = relation
+        .get("platform")
+        .and_then(Value::as_object)
+        .and_then(|platform| platform.get("name"))
+        .and_then(Value::as_str)
+        .filter(|value| is_valid_provider_label(value))
+        .ok_or(ProviderAdapterError::InvalidResponse)?;
+    let game_files = relation
+        .get("gameFiles")
+        .and_then(Value::as_array)
+        .ok_or(ProviderAdapterError::InvalidResponse)?;
+    let matching_file = game_files.iter().find(|game_file| {
+        game_file
+            .get("gameId")
+            .and_then(Value::as_str)
+            .is_some_and(|game_id| game_id == external_game_id)
+            && game_file
+                .get("sha256")
+                .and_then(Value::as_str)
+                .is_some_and(|sha256| sha256 == identity)
+    });
+    let Some(matching_file) = matching_file else {
+        return Err(ProviderAdapterError::InvalidResponse);
+    };
+    let response_identity = matching_file
+        .get("sha256")
+        .and_then(Value::as_str)
+        .filter(|value| is_valid_playmatch_sha256(value))
+        .ok_or(ProviderAdapterError::InvalidResponse)?;
+    Ok(Some((
+        external_game_id.to_owned(),
+        response_identity.to_owned(),
+        platform.to_owned(),
+    )))
+}
+
+struct GameTdbDsCatalog {
+    revision: u64,
+    records: BTreeMap<String, String>,
+}
+
+fn parse_gametdb_ds_catalog(
+    response: &ProviderResponse,
+) -> Result<GameTdbDsCatalog, ProviderAdapterError> {
+    let body = bounded_response_body(response)?;
+    let text = std::str::from_utf8(&body).map_err(|_| ProviderAdapterError::InvalidResponse)?;
+    let mut lines = text.lines();
+    let header = lines.next().ok_or(ProviderAdapterError::InvalidResponse)?;
+    let revision = parse_gametdb_ds_revision(header)?;
+    let mut records = BTreeMap::new();
+
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        if line.len() > MAX_GAMETDB_CATALOG_LINE_BYTES {
+            return Err(ProviderAdapterError::InvalidResponse);
+        }
+        let (raw_id, title) = line
+            .split_once(" = ")
+            .ok_or(ProviderAdapterError::InvalidResponse)?;
+        let title = title.trim_end_matches([' ', '\t']);
+        if !is_valid_gametdb_raw_identifier(raw_id)
+            || title.is_empty()
+            || title.len() > MAX_GAMETDB_TITLE_BYTES
+            || title.chars().any(char::is_control)
+        {
+            return Err(ProviderAdapterError::InvalidResponse);
+        }
+        if records
+            .insert(raw_id.to_owned(), title.to_owned())
+            .is_some()
+        {
+            return Err(ProviderAdapterError::InvalidResponse);
+        }
+    }
+
+    Ok(GameTdbDsCatalog { revision, records })
+}
+
+fn parse_gametdb_ds_revision(header: &str) -> Result<u64, ProviderAdapterError> {
+    const HEADER_PREFIX: &str = "TITLES = https://www.gametdb.com (type: DS language: EN version: ";
+    let version = header
+        .strip_prefix(HEADER_PREFIX)
+        .and_then(|value| value.strip_suffix(')'))
+        .ok_or(ProviderAdapterError::InvalidResponse)?;
+    version
+        .parse::<u64>()
+        .map_err(|_| ProviderAdapterError::InvalidResponse)
+}
+
+fn gametdb_raw_identifier(value: &str) -> Option<&str> {
+    let raw_identifier = value
+        .strip_prefix("product:")
+        .or_else(|| value.strip_prefix("native:"))?;
+    is_valid_gametdb_raw_identifier(raw_identifier).then_some(raw_identifier)
+}
+
+fn is_valid_gametdb_raw_identifier(value: &str) -> bool {
+    value.len() == 4
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte.is_ascii_uppercase())
+}
+
+fn gametdb_artwork_locale(external_game_id: &str) -> Option<&'static str> {
+    match external_game_id.as_bytes().last().copied() {
+        Some(b'E') => Some("US"),
+        Some(b'P') => Some("EN"),
+        Some(b'J') => Some("JA"),
+        Some(b'K') => Some("KO"),
+        _ => None,
+    }
+}
+
+fn gametdb_artwork_locator(source: &str) -> Option<(&str, &str)> {
+    if !is_valid_opaque_locator(source) {
+        return None;
+    }
+    let mut parts = source.strip_prefix("asset:")?.split(':');
+    if parts.next()? != "cover" {
+        return None;
+    }
+    let locale = parts.next()?;
+    let external_game_id = parts.next()?;
+    if parts.next().is_some()
+        || gametdb_artwork_locale(external_game_id) != Some(locale)
+        || !is_valid_gametdb_raw_identifier(external_game_id)
+    {
+        return None;
+    }
+    Some((locale, external_game_id))
+}
+
+fn is_valid_playmatch_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn is_valid_provider_label(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+}
+
+fn steamgriddb_artwork_locator(source: &str) -> Option<(Option<SteamGridDbAssetKind>, u64)> {
+    if !is_valid_opaque_locator(source) {
+        return None;
+    }
+    let mut parts = source.strip_prefix("asset:")?.split(':');
+    let first = parts.next()?;
+    let (kind, asset_id) = match (SteamGridDbAssetKind::from_locator(first), parts.next()) {
+        (Some(kind), Some(asset_id)) if parts.next().is_none() => (Some(kind), asset_id),
+        (None, None) => (None, first),
+        _ => return None,
+    };
+    let asset_id = asset_id
+        .parse::<u64>()
+        .ok()
+        .filter(|asset_id| *asset_id > 0)?;
+    Some((kind, asset_id))
+}
+
+fn parse_steamgriddb_assets(
+    root: &Value,
     base_url: &str,
-) -> Result<Vec<ArtworkCandidate>, ProviderAdapterError> {
-    let Some(assets) = root.get("assets").and_then(Value::as_array) else {
+) -> Result<Vec<SteamGridDbAsset>, ProviderAdapterError> {
+    if root.get("success").and_then(Value::as_bool) != Some(true)
+        || root.get("page").and_then(Value::as_u64).is_none()
+        || root.get("total").and_then(Value::as_u64).is_none()
+        || root
+            .get("limit")
+            .and_then(Value::as_u64)
+            .is_none_or(|limit| limit == 0 || limit > 50)
+    {
+        return Err(ProviderAdapterError::InvalidResponse);
+    }
+    let Some(assets) = root.get("data").and_then(Value::as_array) else {
         return Err(ProviderAdapterError::InvalidResponse);
     };
     let mut result = Vec::with_capacity(assets.len());
     for asset in assets {
-        let Some(id) = asset.get("id").and_then(Value::as_str) else {
+        let Some(id) = asset.get("id").and_then(Value::as_u64).filter(|id| *id > 0) else {
             return Err(ProviderAdapterError::InvalidResponse);
         };
-        if !is_valid_external_id(id) {
+        let Some(source_url) = asset.get("url").and_then(Value::as_str) else {
+            return Err(ProviderAdapterError::InvalidResponse);
+        };
+        if !is_provider_artwork_url_allowed(source_url, ProviderId::SteamGridDb, base_url) {
             return Err(ProviderAdapterError::InvalidResponse);
         }
-        let Some(kind) = asset.get("type").and_then(Value::as_str) else {
-            return Err(ProviderAdapterError::InvalidResponse);
-        };
-        let artwork_type = match kind {
-            "cover_front" => ArtworkType::CoverFront,
-            "cover_back" => ArtworkType::CoverBack,
-            "screenshot" => ArtworkType::Screenshot,
-            "logo" => ArtworkType::Logo,
-            "icon" => ArtworkType::Icon,
-            "background" => ArtworkType::Background,
-            "banner" => ArtworkType::Banner,
-            _ => continue,
-        };
-        let revision = asset
-            .get("revision")
+        result.push(SteamGridDbAsset {
+            id,
+            source_url: source_url.to_owned(),
+        });
+    }
+    if result.len()
+        > root
+            .get("limit")
             .and_then(Value::as_u64)
-            .ok_or(ProviderAdapterError::InvalidResponse)?;
-        let width = asset
-            .get("width")
-            .and_then(Value::as_u64)
-            .map(|value| u32::try_from(value).map_err(|_| ProviderAdapterError::InvalidResponse))
-            .transpose()?;
-        let height = asset
-            .get("height")
-            .and_then(Value::as_u64)
-            .map(|value| u32::try_from(value).map_err(|_| ProviderAdapterError::InvalidResponse))
-            .transpose()?;
-        let region = asset
-            .get("region")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let language = asset
-            .get("language")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let quality = asset.get("quality").and_then(Value::as_u64).unwrap_or(0);
-        let quality = u8::try_from(quality)
-            .ok()
-            .filter(|value| *value <= 100)
-            .ok_or(ProviderAdapterError::InvalidResponse)?;
-        let discovered_at = asset
-            .get("discovered_at")
-            .and_then(|value| {
-                value
-                    .as_i64()
-                    .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
-            })
-            .unwrap_or_default();
-        let source = asset
-            .get("url")
-            .and_then(Value::as_str)
-            .filter(|url| {
-                provider_id != ProviderId::SteamGridDb
-                    && is_provider_artwork_url_allowed(url, provider_id, base_url)
-            })
-            .map_or_else(|| format!("asset:{id}"), str::to_owned);
-        result.push(
-            ArtworkCandidate::new(provider_id, id, artwork_type, source, revision)
-                .with_details(region, language, width, height, quality)
-                .with_discovered_at(discovered_at),
-        );
+            .and_then(|limit| usize::try_from(limit).ok())
+            .unwrap_or_default()
+    {
+        return Err(ProviderAdapterError::InvalidResponse);
     }
     Ok(result)
+}
+
+fn steamgriddb_success_response(
+    response: ProviderResponse,
+) -> Result<ProviderResponse, ProviderAdapterError> {
+    match response.status() {
+        200 => Ok(response),
+        401 | 403 => Err(ProviderAdapterError::AuthenticationFailed),
+        429 => Err(ProviderAdapterError::RateLimited),
+        _ => Err(ProviderAdapterError::InvalidResponse),
+    }
 }
 
 fn is_allowed_transport_url(url: &str) -> bool {
@@ -1020,7 +1266,11 @@ fn is_approved_provider_host(provider_id: ProviderId, host: &str) -> bool {
     }
     let host = host.to_ascii_lowercase();
     match provider_id {
-        ProviderId::Playmatch => host == "playmatch.com" || host.ends_with(".playmatch.com"),
+        ProviderId::Playmatch => {
+            host == "playmatch.com"
+                || host.ends_with(".playmatch.com")
+                || host == "playmatch.retrorealm.dev"
+        }
         ProviderId::GameTdb => host == "gametdb.com" || host.ends_with(".gametdb.com"),
         ProviderId::SteamGridDb => {
             (host == "steamgriddb.com" || host.ends_with(".steamgriddb.com"))
@@ -1049,12 +1299,15 @@ fn is_valid_external_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
 }
 
-fn is_valid_identity(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 512 && !value.chars().any(char::is_whitespace)
+fn is_valid_steamgriddb_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 20
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && value.parse::<u64>().is_ok_and(|id| id > 0)
 }
 
 fn is_valid_gametdb_identifier(value: &str) -> bool {
-    is_valid_external_id(value) && (value.starts_with("product:") || value.starts_with("native:"))
+    gametdb_raw_identifier(value).is_some()
 }
 
 fn redact_url(url: &str) -> String {
@@ -1090,8 +1343,8 @@ impl ProductionProviderSessionFactory {
     /// Creates the immutable production endpoint configuration.
     pub fn new() -> Self {
         Self {
-            playmatch_base_url: "https://api.playmatch.com/v1".to_owned(),
-            gametdb_base_url: "https://api.gametdb.com/v1".to_owned(),
+            playmatch_base_url: "https://playmatch.retrorealm.dev/api/v2".to_owned(),
+            gametdb_base_url: "https://www.gametdb.com".to_owned(),
             steamgriddb_base_url: "https://www.steamgriddb.com/api/v2".to_owned(),
         }
     }
@@ -1137,8 +1390,9 @@ impl Default for ProductionProviderSessionFactory {
 
 /// Explicit credential validator for the write-only provider credential port.
 ///
-/// The validator owns only the transport and endpoint. Secret bytes are
-/// borrowed for one request and never returned, logged, or placed in a DTO.
+/// The validator owns only the transport and documented read-only search
+/// endpoint. Secret bytes are borrowed for one request and never returned,
+/// logged, or placed in a DTO.
 #[derive(Clone)]
 pub struct SteamGridDbCredentialValidator<T> {
     transport: T,
@@ -1170,8 +1424,11 @@ where
             std::str::from_utf8(secret).map_err(|_| CredentialValidationError::Misconfigured)?;
         let mut headers = BTreeMap::new();
         headers.insert("authorization".to_owned(), format!("Bearer {token}"));
-        let url = format!("{}/auth/validate", self.base_url);
-        if !is_provider_url_allowed(&url, ProviderId::SteamGridDb, true) {
+        let url = format!(
+            "{}/search/autocomplete/{STEAMGRIDDB_CREDENTIAL_VALIDATION_TERM}",
+            self.base_url.trim_end_matches('/')
+        );
+        if !is_provider_url_allowed(&url, ProviderId::SteamGridDb, false) {
             return Err(CredentialValidationError::Misconfigured);
         }
         let response = self
@@ -1190,6 +1447,7 @@ where
             })?;
         match response.status() {
             200..=299 => Ok(()),
+            429 => Err(CredentialValidationError::Unavailable),
             400..=499 => Err(CredentialValidationError::InvalidCredentials),
             _ => Err(CredentialValidationError::Unavailable),
         }

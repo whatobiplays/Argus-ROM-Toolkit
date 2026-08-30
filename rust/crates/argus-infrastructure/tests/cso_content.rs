@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use argus_application::TransformationBudget;
+use argus_application::{ContentType, PlatformId, TransformationBudget};
 use argus_infrastructure::content::{
     ContentReadError, ContentReader, OpticalError, ParsingSession, recognize_cso,
     recognize_native_optical,
@@ -266,8 +266,10 @@ fn cso_plain_and_deflate_blocks_reuse_psp_identity() {
     let expected = recognize_native_optical(&mut native).expect("native UMD");
     let cso = cso_image(&native_bytes, &[0, 4], 0);
     let actual = recognize(cso, 10_000_000).expect("CSO UMD");
-    assert_eq!(actual.platform(), expected.platform());
-    assert_eq!(actual.content_type(), expected.content_type());
+    assert_eq!(expected.platform(), PlatformId::SonyPsp);
+    assert_eq!(expected.content_type(), ContentType::OpticalDiscUmd);
+    assert_eq!(actual.platform(), PlatformId::SonyPsp);
+    assert_eq!(actual.content_type(), ContentType::OpticalDiscUmd);
     assert_eq!(actual.identity_digest(), expected.identity_digest());
     assert_eq!(actual.source_representation(), "cso");
 }
@@ -296,8 +298,10 @@ fn cso_plain_blocks_allow_alignment_padding_between_blocks() {
     let mut native = MemoryReader::new(native_bytes);
     let expected = recognize_native_optical(&mut native).expect("native UMD");
     let actual = recognize(cso, 10_000_000).expect("plain aligned CSO");
-    assert_eq!(actual.platform(), expected.platform());
-    assert_eq!(actual.content_type(), expected.content_type());
+    assert_eq!(expected.platform(), PlatformId::SonyPsp);
+    assert_eq!(expected.content_type(), ContentType::OpticalDiscUmd);
+    assert_eq!(actual.platform(), PlatformId::SonyPsp);
+    assert_eq!(actual.content_type(), ContentType::OpticalDiscUmd);
     assert_eq!(actual.identity_digest(), expected.identity_digest());
     assert_eq!(actual.source_representation(), "cso");
 }

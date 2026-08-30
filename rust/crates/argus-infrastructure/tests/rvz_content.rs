@@ -1,6 +1,6 @@
 use aes::Aes128;
 use aes::cipher::{BlockEncrypt, KeyInit};
-use argus_application::TransformationBudget;
+use argus_application::{ContentType, PlatformId, TransformationBudget};
 use argus_infrastructure::content::{
     ContentReadError, ContentReader, OpticalError, ParsingSession, recognize_native_optical,
     recognize_rvz,
@@ -392,13 +392,45 @@ fn zstd_rvz_image(logical: &[u8]) -> Vec<u8> {
 
 #[test]
 fn complete_gamecube_and_wii_rvz_reconstruct_native_identity() {
-    for logical in [build_valid_gamecube_image(), build_valid_wii_image()] {
+    let fixtures = [
+        (
+            "gamecube-rvz",
+            build_valid_gamecube_image(),
+            PlatformId::NintendoGameCube,
+            ContentType::OpticalDiscGameCube,
+        ),
+        (
+            "wii-rvz",
+            build_valid_wii_image(),
+            PlatformId::NintendoWii,
+            ContentType::OpticalDiscWii,
+        ),
+    ];
+    for (fixture_name, logical, expected_platform, expected_content_type) in fixtures {
         let mut native_reader = MemoryReader::new(logical.clone());
         let native = recognize_native_optical(&mut native_reader).expect("native disc");
         let actual = recognize(rvz_image(&logical, 0), 100_000_000, 100_000_000)
-            .unwrap_or_else(|error| panic!("RVZ {:?}: {error:?}", native.platform()));
-        assert_eq!(actual.platform(), native.platform());
-        assert_eq!(actual.content_type(), native.content_type());
+            .unwrap_or_else(|error| panic!("RVZ {fixture_name}: {error:?}"));
+        assert_eq!(
+            native.platform(),
+            expected_platform,
+            "{fixture_name} native platform"
+        );
+        assert_eq!(
+            native.content_type(),
+            expected_content_type,
+            "{fixture_name} native content type"
+        );
+        assert_eq!(
+            actual.platform(),
+            expected_platform,
+            "{fixture_name} RVZ platform"
+        );
+        assert_eq!(
+            actual.content_type(),
+            expected_content_type,
+            "{fixture_name} RVZ content type"
+        );
         assert_eq!(actual.identity_digest(), native.identity_digest());
         assert_eq!(actual.source_representation(), "rvz");
     }

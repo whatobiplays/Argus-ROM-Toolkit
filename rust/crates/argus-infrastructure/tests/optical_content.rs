@@ -1,3 +1,4 @@
+use argus_application::{ContentType, PlatformId};
 use argus_infrastructure::content::{
     ContentReadError, ContentReader, OpticalDescriptor, OpticalError, OpticalSource,
     canonicalize_descriptor, parse_cue, parse_descriptor, parse_gdi, parse_m3u,
@@ -319,6 +320,206 @@ fn build_valid_wii_image() -> Vec<u8> {
     set_u32_be(&mut image, 0x50000 + 0x2b8, 0x4000 >> 2);
     set_u32_be(&mut image, 0x50000 + 0x2bc, 0x20000 >> 2);
     image
+}
+
+#[derive(Clone, Copy)]
+struct OpticalIdentityFixture {
+    platform: PlatformId,
+    content_type: ContentType,
+    representation: &'static str,
+    fixture_name: &'static str,
+    build: fn() -> Vec<u8>,
+}
+
+fn sega_cd_iso_identity_fixture() -> Vec<u8> {
+    build_sega_cd_iso(b"SEGADISCSYSTEM")
+}
+
+fn saturn_iso_identity_fixture() -> Vec<u8> {
+    build_saturn_iso()
+}
+
+fn dreamcast_iso_identity_fixture() -> Vec<u8> {
+    build_dreamcast_iso()
+}
+
+fn playstation_iso_identity_fixture() -> Vec<u8> {
+    build_ps1_iso()
+}
+
+fn playstation2_cd_iso_identity_fixture() -> Vec<u8> {
+    build_ps2_iso()
+}
+
+fn playstation2_dvd_iso_identity_fixture() -> Vec<u8> {
+    let mut image = build_ps2_iso();
+    image.resize(320 * ISO_SECTOR_BYTES, 0);
+    set_iso_both_endian(&mut image[16 * ISO_SECTOR_BYTES..], 80, 320);
+    image[256 * ISO_SECTOR_BYTES + 1..256 * ISO_SECTOR_BYTES + 6].copy_from_slice(b"BEA01");
+    image[257 * ISO_SECTOR_BYTES + 1..257 * ISO_SECTOR_BYTES + 6].copy_from_slice(b"NSR02");
+    image
+}
+
+fn psp_iso_identity_fixture() -> Vec<u8> {
+    build_psp_iso()
+}
+
+fn gamecube_raw_identity_fixture() -> Vec<u8> {
+    build_valid_gamecube_image()
+}
+
+fn wii_raw_identity_fixture() -> Vec<u8> {
+    build_valid_wii_image()
+}
+
+#[test]
+fn every_native_optical_identity_row_has_an_explicit_owned_fixture() {
+    let fixtures = [
+        OpticalIdentityFixture {
+            platform: PlatformId::SegaCd,
+            content_type: ContentType::OpticalDiscCd,
+            representation: "iso-2048-cd",
+            fixture_name: "sega-cd-iso",
+            build: sega_cd_iso_identity_fixture,
+        },
+        OpticalIdentityFixture {
+            platform: PlatformId::SegaSaturn,
+            content_type: ContentType::OpticalDiscCd,
+            representation: "iso-2048-cd",
+            fixture_name: "sega-saturn-iso",
+            build: saturn_iso_identity_fixture,
+        },
+        OpticalIdentityFixture {
+            platform: PlatformId::SonyPlaystation,
+            content_type: ContentType::OpticalDiscCd,
+            representation: "iso-2048-cd",
+            fixture_name: "playstation-iso",
+            build: playstation_iso_identity_fixture,
+        },
+        OpticalIdentityFixture {
+            platform: PlatformId::SonyPlaystation2,
+            content_type: ContentType::OpticalDiscCd,
+            representation: "iso-2048-cd",
+            fixture_name: "playstation-2-cd-iso",
+            build: playstation2_cd_iso_identity_fixture,
+        },
+        OpticalIdentityFixture {
+            platform: PlatformId::SonyPlaystation2,
+            content_type: ContentType::OpticalDiscDvd,
+            representation: "iso-2048",
+            fixture_name: "playstation-2-dvd-iso",
+            build: playstation2_dvd_iso_identity_fixture,
+        },
+        OpticalIdentityFixture {
+            platform: PlatformId::SonyPsp,
+            content_type: ContentType::OpticalDiscUmd,
+            representation: "iso-2048",
+            fixture_name: "psp-umd-iso",
+            build: psp_iso_identity_fixture,
+        },
+        OpticalIdentityFixture {
+            platform: PlatformId::NintendoGameCube,
+            content_type: ContentType::OpticalDiscGameCube,
+            representation: "raw-disc-image",
+            fixture_name: "gamecube-raw-disc",
+            build: gamecube_raw_identity_fixture,
+        },
+        OpticalIdentityFixture {
+            platform: PlatformId::NintendoWii,
+            content_type: ContentType::OpticalDiscWii,
+            representation: "raw-disc-image",
+            fixture_name: "wii-raw-disc",
+            build: wii_raw_identity_fixture,
+        },
+    ];
+
+    let mut fixture_names = std::collections::BTreeSet::new();
+    for fixture in fixtures {
+        assert!(
+            fixture_names.insert(fixture.fixture_name),
+            "fixture name reused: {}",
+            fixture.fixture_name
+        );
+        let mut reader = MemoryReader::new((fixture.build)());
+        let recognized = recognize_native_optical(&mut reader)
+            .unwrap_or_else(|error| panic!("{}: {error:?}", fixture.fixture_name));
+        assert_eq!(
+            recognized.platform(),
+            fixture.platform,
+            "{}",
+            fixture.fixture_name
+        );
+        assert_eq!(
+            recognized.content_type(),
+            fixture.content_type,
+            "{}",
+            fixture.fixture_name
+        );
+        assert_eq!(
+            recognized.source_representation(),
+            fixture.representation,
+            "{}",
+            fixture.fixture_name
+        );
+    }
+    assert_eq!(fixture_names.len(), fixtures.len());
+}
+
+#[test]
+fn every_cue_identity_row_has_an_explicit_owned_fixture() {
+    let fixtures = [
+        (
+            PlatformId::SegaCd,
+            ContentType::OpticalDiscCd,
+            "sega-cd-cue",
+            sega_cd_iso_identity_fixture as fn() -> Vec<u8>,
+        ),
+        (
+            PlatformId::SegaSaturn,
+            ContentType::OpticalDiscCd,
+            "sega-saturn-cue",
+            saturn_iso_identity_fixture as fn() -> Vec<u8>,
+        ),
+        (
+            PlatformId::SegaDreamcast,
+            ContentType::OpticalDiscGd,
+            "dreamcast-cue",
+            dreamcast_iso_identity_fixture as fn() -> Vec<u8>,
+        ),
+        (
+            PlatformId::SonyPlaystation,
+            ContentType::OpticalDiscCd,
+            "playstation-cue",
+            playstation_iso_identity_fixture as fn() -> Vec<u8>,
+        ),
+        (
+            PlatformId::SonyPlaystation2,
+            ContentType::OpticalDiscCd,
+            "playstation-2-cd-cue",
+            playstation2_cd_iso_identity_fixture as fn() -> Vec<u8>,
+        ),
+    ];
+    let mut fixture_names = std::collections::BTreeSet::new();
+
+    for (platform, content_type, fixture_name, build) in fixtures {
+        assert!(
+            fixture_names.insert(fixture_name),
+            "fixture name reused: {fixture_name}"
+        );
+        let descriptor = cue_descriptor();
+        let mut reader = MemoryReader::new(build());
+        let mut sources = [OpticalSource::new("disc.bin", &mut reader)];
+        let recognized = canonicalize_descriptor(&descriptor, &mut sources)
+            .unwrap_or_else(|error| panic!("{fixture_name}: {error:?}"));
+        assert_eq!(recognized.platform(), platform, "{fixture_name}");
+        assert_eq!(recognized.content_type(), content_type, "{fixture_name}");
+        assert_eq!(
+            recognized.source_representation(),
+            "cue-bin",
+            "{fixture_name}"
+        );
+    }
+    assert_eq!(fixture_names.len(), fixtures.len());
 }
 
 #[test]

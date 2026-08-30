@@ -22,7 +22,7 @@ pub use appearance::{SqliteAppearanceSettingsQueries, SqliteAppearanceSettingsRe
 pub use artwork::SqliteArtworkRepository;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
-pub use connection::{SqliteConnection, SqliteValue};
+pub use connection::{SqliteConnection, SqliteQueryMetrics, SqliteValue};
 pub use errors::{MigrationError, SqliteExecutorError, SqliteOperationError};
 pub use executor::{DEFAULT_QUEUE_CAPACITY, SqliteDatabaseExecutor};
 pub use jobs::{

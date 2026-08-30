@@ -192,6 +192,16 @@ fn build_ps1_iso() -> Vec<u8> {
     ])
 }
 
+fn build_ps2_cd_iso() -> Vec<u8> {
+    build_iso_with_files(vec![
+        (
+            "SYSTEM.CNF;1".to_owned(),
+            b"BOOT2 = cdrom0:\\SCUS_000.01;1\nVER = 1.00\nVMODE = NTSC\n".to_vec(),
+        ),
+        ("SCUS_000.01;1".to_owned(), vec![0_u8; 0x100]),
+    ])
+}
+
 fn build_ps2_iso() -> Vec<u8> {
     let mut image = build_iso_with_files(vec![
         (
@@ -204,6 +214,24 @@ fn build_ps2_iso() -> Vec<u8> {
     set_iso_both_u32(&mut image[16 * ISO_SECTOR_BYTES..], 80, 320);
     image[256 * ISO_SECTOR_BYTES + 1..256 * ISO_SECTOR_BYTES + 6].copy_from_slice(b"BEA01");
     image[257 * ISO_SECTOR_BYTES + 1..257 * ISO_SECTOR_BYTES + 6].copy_from_slice(b"NSR02");
+    image
+}
+
+fn build_sega_cd_iso(identifier: &[u8]) -> Vec<u8> {
+    let mut image = build_iso_with_files(Vec::new());
+    image[..identifier.len()].copy_from_slice(identifier);
+    set_u32_be(&mut image, 0x30, 0x200);
+    set_u32_be(&mut image, 0x34, 0x600);
+    set_u32_be(&mut image, 0x40, 0x800);
+    set_u32_be(&mut image, 0x44, 0x7200);
+    image[0x100..0x104].copy_from_slice(b"SEGA");
+    image
+}
+
+fn build_saturn_iso() -> Vec<u8> {
+    let mut image = build_iso_with_files(Vec::new());
+    image[..16].copy_from_slice(b"SEGA SEGASATURN ");
+    image[0x20..0x2b].copy_from_slice(b"SATURN-BOOT");
     image
 }
 
@@ -420,14 +448,52 @@ fn dvd_chd(iso: &[u8], tag: [u8; 4]) -> Vec<u8> {
 
 #[test]
 fn chd_cd_reuses_native_cd_identity() {
-    let native_bytes = build_ps1_iso();
-    let mut native = MemoryReader::new(native_bytes.clone());
-    let expected = recognize_native_optical(&mut native).expect("native CD");
-    let actual = recognize(cd_chd(&native_bytes), 1_000_000).expect("CHD CD");
-    assert_eq!(actual.platform(), expected.platform());
-    assert_eq!(actual.content_type(), expected.content_type());
-    assert_eq!(actual.identity_digest(), expected.identity_digest());
-    assert_eq!(actual.source_representation(), "chd-cd");
+    for (fixture_name, native_bytes, expected_platform) in [
+        (
+            "sega-cd",
+            build_sega_cd_iso(b"SEGADISCSYSTEM"),
+            argus_application::PlatformId::SegaCd,
+        ),
+        (
+            "sega-saturn",
+            build_saturn_iso(),
+            argus_application::PlatformId::SegaSaturn,
+        ),
+        (
+            "playstation",
+            build_ps1_iso(),
+            argus_application::PlatformId::SonyPlaystation,
+        ),
+        (
+            "playstation-2-cd",
+            build_ps2_cd_iso(),
+            argus_application::PlatformId::SonyPlaystation2,
+        ),
+    ] {
+        let mut native = MemoryReader::new(native_bytes.clone());
+        let expected = recognize_native_optical(&mut native)
+            .unwrap_or_else(|error| panic!("{fixture_name} native: {error:?}"));
+        assert_eq!(expected.platform(), expected_platform, "{fixture_name}");
+        assert_eq!(
+            expected.content_type(),
+            argus_application::ContentType::OpticalDiscCd,
+            "{fixture_name}"
+        );
+        let actual = recognize(cd_chd(&native_bytes), 1_000_000)
+            .unwrap_or_else(|error| panic!("{fixture_name} CHD: {error:?}"));
+        assert_eq!(actual.platform(), expected_platform, "{fixture_name}");
+        assert_eq!(
+            actual.content_type(),
+            argus_application::ContentType::OpticalDiscCd,
+            "{fixture_name}"
+        );
+        assert_eq!(
+            actual.identity_digest(),
+            expected.identity_digest(),
+            "{fixture_name}"
+        );
+        assert_eq!(actual.source_representation(), "chd-cd", "{fixture_name}");
+    }
 }
 
 #[test]

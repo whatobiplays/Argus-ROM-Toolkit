@@ -58,6 +58,9 @@ check-generated:
       fi; \
       exit "${status}"
 
+check-qualification-record:
+    bash scripts/check_qualification_record.sh
+
 format:
     @bash scripts/run_rust.sh cargo fmt --manifest-path rust/Cargo.toml --all
     cd flutter && fvm dart format .
@@ -89,6 +92,12 @@ test-local-filesystem-native:
 
 test-library-desktop-qualification:
     bash scripts/run_library_desktop_qualification.sh
+
+test-live-provider-qualification:
+    bash scripts/run_live_provider_qualification.sh
+
+test-deterministic-qualification:
+    bash scripts/run_deterministic_qualification.sh
 
 build-android-bridge:
     bash scripts/build_android_bridge.sh
@@ -138,4 +147,4 @@ test-phase-002-android-final:
 test-library-android-qualification:
     bash scripts/run_library_android_qualification.sh
 
-check: check-generated _format-check lint _architecture test
+check: check-generated _format-check lint _architecture test check-qualification-record

@@ -1,4 +1,4 @@
-use argus_application::TransformationBudget;
+use argus_application::{ContentType, TransformationBudget};
 use argus_application::{
     IdentityDigest, LibrarySourceAccess, PlatformId, RelativeSourceLocator, RootLocator,
     SourceAccessError, SourceReadHandle,
@@ -294,6 +294,280 @@ fn nds_fixture(with_padding: bool) -> Vec<u8> {
     bytes[0x15c..0x15e].copy_from_slice(&0xcf56_u16.to_le_bytes());
     bytes[0x15e..0x160].copy_from_slice(&0xd45e_u16.to_le_bytes());
     bytes
+}
+
+#[derive(Clone, Copy)]
+struct CartridgeIdentityFixture {
+    platform: PlatformId,
+    content_type: ContentType,
+    representation: &'static str,
+    fixture_name: &'static str,
+    build: fn() -> Vec<u8>,
+}
+
+fn nes_ines_identity_fixture() -> Vec<u8> {
+    nes_fixture(false)
+}
+
+fn nes2_identity_fixture() -> Vec<u8> {
+    nes_fixture(true)
+}
+
+fn fds_fw_identity_fixture() -> Vec<u8> {
+    let mut headered = b"FDS\x1a".to_vec();
+    headered.push(1);
+    headered.extend_from_slice(&[0; 11]);
+    headered.extend_from_slice(&fds_side_fixture());
+    headered
+}
+
+fn fds_headerless_identity_fixture() -> Vec<u8> {
+    fds_side_fixture()
+}
+
+fn snes_linear_identity_fixture() -> Vec<u8> {
+    snes_fixture()
+}
+
+fn snes_copier_headered_identity_fixture() -> Vec<u8> {
+    let mut headered = vec![0xa5_u8; 512];
+    headered.extend_from_slice(&snes_fixture());
+    headered
+}
+
+fn gb_identity_fixture() -> Vec<u8> {
+    gb_fixture(0x00, 0x8000)
+}
+
+fn gbc_identity_fixture() -> Vec<u8> {
+    gb_fixture(0x80, 0x8000)
+}
+
+fn gba_identity_fixture() -> Vec<u8> {
+    gba_fixture(0x100)
+}
+
+fn n64_native_identity_fixture() -> Vec<u8> {
+    n64_fixture()
+}
+
+fn n64_byteswapped16_identity_fixture() -> Vec<u8> {
+    n64_swapped16_fixture(&n64_fixture())
+}
+
+fn n64_byteswapped32_identity_fixture() -> Vec<u8> {
+    n64_swapped32_fixture(&n64_fixture())
+}
+
+fn nds_identity_fixture() -> Vec<u8> {
+    nds_fixture(false)
+}
+
+fn key_free_3ds_identity_fixture() -> Vec<u8> {
+    sparse_3ds_header(2)
+}
+
+fn sms_identity_fixture() -> Vec<u8> {
+    sega_header_fixture(0x40)
+}
+
+fn game_gear_identity_fixture() -> Vec<u8> {
+    sega_header_fixture(0x50)
+}
+
+fn genesis_linear_identity_fixture() -> Vec<u8> {
+    genesis_fixture()
+}
+
+fn genesis_smd_identity_fixture() -> Vec<u8> {
+    genesis_smd_fixture(&genesis_fixture())
+}
+
+fn thirty_two_x_identity_fixture() -> Vec<u8> {
+    let mut bytes = genesis_fixture();
+    bytes[0x100..0x110].copy_from_slice(b"SEGA 32X        ");
+    bytes[0x3c0..0x3d0].copy_from_slice(b"MARS CHECK MODE ");
+    bytes[0x3d0..0x3d4].copy_from_slice(&0_u32.to_be_bytes());
+    bytes[0x3d4..0x3d8].copy_from_slice(&0_u32.to_be_bytes());
+    bytes[0x3d8..0x3dc].copy_from_slice(&0x0600_0120_u32.to_be_bytes());
+    bytes[0x3dc..0x3e0].copy_from_slice(&0x4000_u32.to_be_bytes());
+    bytes[0x3e0..0x3e4].copy_from_slice(&0x0600_2000_u32.to_be_bytes());
+    bytes[0x3e4..0x3e8].copy_from_slice(&0x0600_0000_u32.to_be_bytes());
+    bytes[0x3e8..0x3ec].copy_from_slice(&0x0600_2000_u32.to_be_bytes());
+    bytes[0x3ec..0x3f0].copy_from_slice(&0x0600_0000_u32.to_be_bytes());
+    bytes
+}
+
+#[test]
+fn every_cartridge_identity_row_has_an_explicit_owned_fixture() {
+    let fixtures = [
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoNes,
+            content_type: ContentType::CartridgeImage,
+            representation: "nes-ines",
+            fixture_name: "nes-ines-header",
+            build: nes_ines_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoNes,
+            content_type: ContentType::CartridgeImage,
+            representation: "nes-2",
+            fixture_name: "nes-2-header",
+            build: nes2_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoFds,
+            content_type: ContentType::MagneticDiskImage,
+            representation: "fds-fw",
+            fixture_name: "fds-fw-header",
+            build: fds_fw_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoFds,
+            content_type: ContentType::MagneticDiskImage,
+            representation: "fds-headerless",
+            fixture_name: "fds-headerless-side",
+            build: fds_headerless_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoSnes,
+            content_type: ContentType::CartridgeImage,
+            representation: "snes-linear",
+            fixture_name: "snes-linear-image",
+            build: snes_linear_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoSnes,
+            content_type: ContentType::CartridgeImage,
+            representation: "snes-copier-headered",
+            fixture_name: "snes-copier-headered-image",
+            build: snes_copier_headered_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoGb,
+            content_type: ContentType::CartridgeImage,
+            representation: "raw-cartridge-image",
+            fixture_name: "game-boy-header",
+            build: gb_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoGbc,
+            content_type: ContentType::CartridgeImage,
+            representation: "raw-cartridge-image",
+            fixture_name: "game-boy-color-header",
+            build: gbc_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoGba,
+            content_type: ContentType::CartridgeImage,
+            representation: "raw-cartridge-image",
+            fixture_name: "game-boy-advance-header",
+            build: gba_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoN64,
+            content_type: ContentType::CartridgeImage,
+            representation: "n64-native",
+            fixture_name: "n64-native-byte-order",
+            build: n64_native_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoN64,
+            content_type: ContentType::CartridgeImage,
+            representation: "n64-byteswapped16",
+            fixture_name: "n64-16-bit-byte-order",
+            build: n64_byteswapped16_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoN64,
+            content_type: ContentType::CartridgeImage,
+            representation: "n64-byteswapped32",
+            fixture_name: "n64-32-bit-byte-order",
+            build: n64_byteswapped32_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::NintendoNds,
+            content_type: ContentType::CartridgeImage,
+            representation: "raw-cartridge-image",
+            fixture_name: "nintendo-ds-trimmed-image",
+            build: nds_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::Nintendo3ds,
+            content_type: ContentType::CartridgeImage,
+            representation: "ncsd-nocrypto",
+            fixture_name: "key-free-ncsd-header",
+            build: key_free_3ds_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::SegaSms,
+            content_type: ContentType::CartridgeImage,
+            representation: "raw-cartridge-image",
+            fixture_name: "master-system-header",
+            build: sms_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::SegaGameGear,
+            content_type: ContentType::CartridgeImage,
+            representation: "raw-cartridge-image",
+            fixture_name: "game-gear-header",
+            build: game_gear_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::SegaGenesis,
+            content_type: ContentType::CartridgeImage,
+            representation: "genesis-linear-be",
+            fixture_name: "genesis-linear-header",
+            build: genesis_linear_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::SegaGenesis,
+            content_type: ContentType::CartridgeImage,
+            representation: "genesis-smd",
+            fixture_name: "genesis-smd-interleaved-image",
+            build: genesis_smd_identity_fixture,
+        },
+        CartridgeIdentityFixture {
+            platform: PlatformId::Sega32x,
+            content_type: ContentType::CartridgeImage,
+            representation: "genesis-linear-be",
+            fixture_name: "32x-startup-header",
+            build: thirty_two_x_identity_fixture,
+        },
+    ];
+
+    let mut fixture_names = std::collections::BTreeSet::new();
+    for fixture in fixtures {
+        assert!(
+            fixture_names.insert(fixture.fixture_name),
+            "fixture name reused: {}",
+            fixture.fixture_name
+        );
+        let bytes = (fixture.build)();
+        assert!(!bytes.is_empty(), "empty fixture: {}", fixture.fixture_name);
+        let mut reader = BoundedReader::new(bytes, 64 * 1024);
+        let recognized = recognize_content_with_budget(&mut reader, 0x100000)
+            .unwrap_or_else(|error| panic!("{}: {error:?}", fixture.fixture_name));
+        assert_eq!(
+            recognized.platform(),
+            fixture.platform,
+            "{}",
+            fixture.fixture_name
+        );
+        assert_eq!(
+            recognized.content_type(),
+            fixture.content_type,
+            "{}",
+            fixture.fixture_name
+        );
+        assert_eq!(
+            recognized.source_representation(),
+            fixture.representation,
+            "{}",
+            fixture.fixture_name
+        );
+    }
+    assert_eq!(fixture_names.len(), fixtures.len());
 }
 
 #[test]

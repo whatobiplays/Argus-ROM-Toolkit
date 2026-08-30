@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The Flutter integration-test driver connects to the debug Dart VM
+         service over the device's loopback interface. Keep this permission
+         debug-only so the production manifest does not widen its network
+         surface for the local qualification harness. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

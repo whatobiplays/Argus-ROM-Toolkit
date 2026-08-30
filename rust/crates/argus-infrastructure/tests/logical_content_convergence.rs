@@ -5,9 +5,9 @@ use argus_application::{
     GetGameResult, IdentificationService, IdentityConvergenceStore, IdentityDigest,
     LibraryRootAvailability, LibraryRootRepository, LibrarySourceAccess, ListGamesQuery,
     LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries, M3uGroupingMember,
-    OperationContext, OperationName, PlatformId, ProvenanceMember, RelativeSourceLocator,
-    RootLocator, SourceEntryRepository, SourceVersionEvidence, SubsystemName, TraceId, UnitOfWork,
-    ValidatedContentDerivation, ValidatedM3uGrouping,
+    OperationContext, OperationName, PersistenceError, PlatformId, ProvenanceMember,
+    RelativeSourceLocator, RootLocator, SourceEntryRepository, SourceVersionEvidence,
+    SubsystemName, TraceId, UnitOfWork, ValidatedContentDerivation, ValidatedM3uGrouping,
 };
 use argus_infrastructure::content::ContentReader;
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
@@ -307,6 +307,53 @@ fn derived_provenance_persists_only_derived_fingerprints_and_round_trips() {
             Ok(())
         })
         .expect("derived proof columns");
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn malformed_normalized_provenance_is_reported_as_corrupt_detail() {
+    let directory = tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("malformed-provenance.sqlite3"))
+            .expect("database");
+    let root = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let job = "cccccccccccccccccccccccccccccccc";
+    let scan = "dddddddddddddddddddddddddddddddd";
+    let source = "22222222222222222222222222222222";
+    seed_source(&executor, root, job, scan, source, "provider-v1");
+    let outcome = converge(&executor, derivation(source, scan, "provider-v1"));
+    let game_id = match outcome {
+        argus_application::ConvergenceOutcome::Created { game_id, .. }
+        | argus_application::ConvergenceOutcome::Attached { game_id, .. } => game_id,
+    };
+
+    executor
+        .with_connection_for_tests(context(), |connection| {
+            connection.execute_batch(
+                "UPDATE content_identity_provenance
+                 SET source_fingerprint = NULL, derived_fingerprint = 'corrupt-proof'",
+            )
+        })
+        .expect("corrupt provenance fixture");
+
+    let result = executor
+        .with_unit_of_work(context(), move |mut work| {
+            let result = {
+                let mut logical = work.logical_content();
+                logical
+                    .get_game(game_id)
+                    .map_err(argus_application::ApplicationPortError::from)
+            };
+            work.rollback()?;
+            Ok(result)
+        })
+        .expect("detail lookup should return an application error");
+    assert_eq!(
+        result,
+        Err(argus_application::ApplicationPortError::Persistence(
+            PersistenceError::CorruptOrIncompatible
+        ))
+    );
     executor.shutdown().expect("shutdown");
 }
 

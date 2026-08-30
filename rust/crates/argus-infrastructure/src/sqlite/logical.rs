@@ -5,6 +5,8 @@
 //! bytes, parsing, canonicalization, and hashing belong outside this write
 //! transaction.
 
+use std::collections::BTreeMap;
+
 use argus_application::{
     AvailabilityStateFacetBucket, ContentIdentitySummary, ContentProvenanceMemberSummary,
     ContentProvenanceRole, ContentProvenanceSummary, ContentType, ConvergenceOutcome,
@@ -381,7 +383,7 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
                     COALESCE(CAST(strftime('%s', r.updated_at) AS INTEGER) * 1000,
                              CAST(r.updated_at AS INTEGER) * 1000, 0)
              FROM game_library_row r
-             JOIN game g ON g.game_id = r.game_id
+             CROSS JOIN game g ON g.game_id = r.game_id
              WHERE g.lifecycle_state = 'active'
                AND NOT EXISTS (
                    SELECT 1 FROM game_redirect redirect
@@ -547,27 +549,33 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(map_logical_read_error)?
             };
-            let mut values = Vec::with_capacity(summaries.len());
-            for summary in summaries {
-                let provenance =
-                    read_normalized_provenance(self.transaction()?, summary.game_content_id())?;
-                let summary = match provenance {
-                    Some(provenance) => GameContentSummary::with_identity(
-                        summary.game_content_id(),
-                        summary.platform_id(),
-                        summary.content_type(),
-                        summary.presence(),
-                        summary.identification(),
-                        summary.source_count(),
-                        summary.identity().cloned(),
-                        Some(provenance),
-                    ),
-                    None => summary,
-                };
-                let sources = read_content_sources(self.transaction()?, summary.game_content_id())?;
-                values.push(summary.with_sources(sources));
-            }
-            values
+            let content_ids = summaries
+                .iter()
+                .map(|summary| summary.game_content_id().to_string())
+                .collect::<Vec<_>>();
+            let provenances = read_normalized_provenance_batch(self.transaction()?, &content_ids)?;
+            let sources = read_content_sources_batch(self.transaction()?, &content_ids)?;
+
+            summaries
+                .into_iter()
+                .map(|summary| {
+                    let content_id = summary.game_content_id().to_string();
+                    let summary = match provenances.get(&content_id).cloned().flatten() {
+                        Some(provenance) => GameContentSummary::with_identity(
+                            summary.game_content_id(),
+                            summary.platform_id(),
+                            summary.content_type(),
+                            summary.presence(),
+                            summary.identification(),
+                            summary.source_count(),
+                            summary.identity().cloned(),
+                            Some(provenance),
+                        ),
+                        None => summary,
+                    };
+                    summary.with_sources(sources.get(&content_id).cloned().unwrap_or_default())
+                })
+                .collect()
         };
 
         Ok(GetGameResult::Found(GameDetail::new(
@@ -895,7 +903,7 @@ struct FacetQueryParts {
 fn facet_query_parts(query: &LibraryFacetQuery, omitted: FacetCategory) -> FacetQueryParts {
     let mut from_where = String::from(
         "FROM game_library_row r
-         JOIN game g ON g.game_id = r.game_id
+         CROSS JOIN game g ON g.game_id = r.game_id
          WHERE g.lifecycle_state = 'active'
            AND NOT EXISTS (
                SELECT 1 FROM game_redirect redirect
@@ -2393,33 +2401,44 @@ fn read_library_row(row: &Row<'_>) -> rusqlite::Result<GameLibraryRow> {
     ))
 }
 
-fn read_content_sources(
+/// Loads source/root presentation context for every content member in one
+/// bounded query. Detail reads must not issue a query for each content member.
+fn read_content_sources_batch(
     transaction: &mut rusqlite::Transaction<'_>,
-    content_id: GameContentId,
-) -> Result<Vec<GameContentSourceSummary>, PersistenceError> {
+    content_ids: &[String],
+) -> Result<BTreeMap<String, Vec<GameContentSourceSummary>>, PersistenceError> {
+    let mut grouped = BTreeMap::new();
+    if content_ids.is_empty() {
+        return Ok(grouped);
+    }
+
+    let sql = format!(
+        "SELECT game_content_source.game_content_id,
+                source_entry.source_entry_id,
+                library_source.library_source_id,
+                library_source.display_name,
+                library_root.library_root_id,
+                library_root.display_name,
+                library_root.safe_location_presentation
+         FROM game_content_source
+         JOIN source_entry
+           ON source_entry.source_entry_id = game_content_source.source_entry_id
+         JOIN library_root
+           ON library_root.library_root_id = source_entry.library_root_id
+         JOIN library_source
+           ON library_source.library_source_id = library_root.library_source_id
+         WHERE game_content_source.game_content_id IN ({})
+           AND game_content_source.is_current = 1
+         ORDER BY game_content_source.game_content_id ASC,
+                  library_root.library_root_id ASC,
+                  source_entry.source_entry_id ASC",
+        placeholders(content_ids.len())
+    );
     let mut statement = transaction
-        .prepare(
-            "SELECT source_entry.source_entry_id,
-                    library_source.library_source_id,
-                    library_source.display_name,
-                    library_root.library_root_id,
-                    library_root.display_name,
-                    library_root.safe_location_presentation
-             FROM game_content_source
-             JOIN source_entry
-               ON source_entry.source_entry_id = game_content_source.source_entry_id
-             JOIN library_root
-               ON library_root.library_root_id = source_entry.library_root_id
-             JOIN library_source
-               ON library_source.library_source_id = library_root.library_source_id
-             WHERE game_content_source.game_content_id = ?1
-               AND game_content_source.is_current = 1
-             ORDER BY library_root.library_root_id ASC,
-                      source_entry.source_entry_id ASC",
-        )
+        .prepare(&sql)
         .map_err(map_persistence_operation_error)?;
     let rows = statement
-        .query_map([content_id.to_string()], |row| {
+        .query_map(params_from_iter(content_ids.iter()), |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -2427,11 +2446,13 @@ fn read_content_sources(
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
             ))
         })
         .map_err(map_persistence_operation_error)?;
-    rows.map(|row| {
+    for row in rows {
         let (
+            content_id,
             source_entry_id,
             library_source_id,
             source_display_name,
@@ -2439,47 +2460,61 @@ fn read_content_sources(
             root_display_name,
             safe_location_presentation,
         ) = row.map_err(map_persistence_operation_error)?;
-        Ok(GameContentSourceSummary::new(
-            parse_source_entry_id(source_entry_id)?,
-            argus_application::LibrarySourceId::try_from(library_source_id.as_str())
-                .map_err(|_| PersistenceError::CorruptOrIncompatible)?,
-            source_display_name,
-            LibraryRootId::try_from(library_root_id.as_str())
-                .map_err(|_| PersistenceError::CorruptOrIncompatible)?,
-            root_display_name,
-            safe_location_presentation,
-        ))
-    })
-    .collect()
+        grouped
+            .entry(content_id)
+            .or_default()
+            .push(GameContentSourceSummary::new(
+                parse_source_entry_id(source_entry_id)?,
+                argus_application::LibrarySourceId::try_from(library_source_id.as_str())
+                    .map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+                source_display_name,
+                LibraryRootId::try_from(library_root_id.as_str())
+                    .map_err(|_| PersistenceError::CorruptOrIncompatible)?,
+                root_display_name,
+                safe_location_presentation,
+            ));
+    }
+    Ok(grouped)
 }
 
-fn read_normalized_provenance(
+/// Loads all normalized provenance members for a detail projection in one
+/// query and groups them by content. This keeps provenance reads independent
+/// of the number of content members in one logical game.
+fn read_normalized_provenance_batch(
     transaction: &mut rusqlite::Transaction<'_>,
-    content_id: GameContentId,
-) -> Result<Option<ContentProvenanceSummary>, PersistenceError> {
+    content_ids: &[String],
+) -> Result<BTreeMap<String, Option<ContentProvenanceSummary>>, PersistenceError> {
+    let mut members_by_content = BTreeMap::<String, Vec<ContentProvenanceMemberSummary>>::new();
+    if content_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let sql = format!(
+        "SELECT i.game_content_id, p.role, p.association_key, p.source_entry_id,
+                p.source_fingerprint, p.derived_fingerprint,
+                p.last_observed_scan_id, e.coordinate_kind
+         FROM content_identity_provenance p
+         JOIN content_identity i ON i.content_identity_id = p.content_identity_id
+         LEFT JOIN source_entry e ON e.source_entry_id = p.source_entry_id
+         WHERE i.game_content_id IN ({})
+           AND i.is_current = 1
+           AND p.identity_is_current = 1
+         ORDER BY i.game_content_id ASC, p.rowid ASC",
+        placeholders(content_ids.len())
+    );
     let mut statement = transaction
-        .prepare(
-            "SELECT p.role, p.association_key, p.source_entry_id,
-                    p.source_fingerprint, p.derived_fingerprint,
-                    p.last_observed_scan_id, e.coordinate_kind
-             FROM content_identity_provenance p
-             JOIN content_identity i ON i.content_identity_id = p.content_identity_id
-             LEFT JOIN source_entry e ON e.source_entry_id = p.source_entry_id
-             WHERE i.game_content_id = ?1 AND i.is_current = 1
-               AND p.identity_is_current = 1
-             ORDER BY p.rowid ASC",
-        )
+        .prepare(&sql)
         .map_err(map_persistence_operation_error)?;
     let rows = statement
-        .query_map([content_id.to_string()], |row| {
-            let role = parse_provenance_role(&row.get::<_, String>(0)?)
+        .query_map(params_from_iter(content_ids.iter()), |row| {
+            let role = parse_provenance_role(&row.get::<_, String>(1)?)
                 .map_err(|_| rusqlite::Error::InvalidQuery)?;
-            let association_key = row.get::<_, Option<String>>(1)?;
-            let source_entry_id = parse_source_entry_id(row.get::<_, String>(2)?)
+            let association_key = row.get::<_, Option<String>>(2)?;
+            let source_entry_id = parse_source_entry_id(row.get::<_, String>(3)?)
                 .map_err(|_| rusqlite::Error::InvalidQuery)?;
-            let source_fingerprint: Option<String> = row.get(3)?;
-            let derived_fingerprint: Option<String> = row.get(4)?;
-            let coordinate_kind: Option<String> = row.get(6)?;
+            let source_fingerprint: Option<String> = row.get(4)?;
+            let derived_fingerprint: Option<String> = row.get(5)?;
+            let coordinate_kind: Option<String> = row.get(7)?;
             if source_fingerprint.is_some() && derived_fingerprint.is_some() {
                 return Err(rusqlite::Error::InvalidQuery);
             }
@@ -2493,12 +2528,12 @@ fn read_normalized_provenance(
                 return Err(rusqlite::Error::InvalidQuery);
             }
             let scan_id = row
-                .get::<_, Option<String>>(5)?
+                .get::<_, Option<String>>(6)?
                 .ok_or(rusqlite::Error::InvalidQuery)
                 .and_then(|value| {
                     parse_scan_run_id(value).map_err(|_| rusqlite::Error::InvalidQuery)
                 })?;
-            ContentProvenanceMemberSummary::new_with_version(
+            let member = ContentProvenanceMemberSummary::new_with_version(
                 role,
                 association_key,
                 source_entry_id,
@@ -2506,13 +2541,21 @@ fn read_normalized_provenance(
                 derived_fingerprint,
                 scan_id,
             )
-            .map_err(|_| rusqlite::Error::InvalidQuery)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            Ok((row.get::<_, String>(0)?, member))
         })
         .map_err(map_persistence_operation_error)?;
-    let members = rows
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(map_logical_read_error)?;
-    Ok(ContentProvenanceSummary::from_members(members))
+    for row in rows {
+        let (content_id, member) = row.map_err(map_logical_read_error)?;
+        members_by_content
+            .entry(content_id)
+            .or_default()
+            .push(member);
+    }
+    Ok(members_by_content
+        .into_iter()
+        .map(|(content_id, members)| (content_id, ContentProvenanceSummary::from_members(members)))
+        .collect())
 }
 
 fn map_logical_read_error(error: rusqlite::Error) -> PersistenceError {

@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 use argus_application::{
     ApplicationPortError, OperationContext, PersistenceError, UnitOfWorkFactory,
 };
+#[cfg(feature = "test-support")]
+use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use rusqlite::{Connection, OpenFlags};
 
 use super::connection::SqliteConnection;
@@ -71,6 +73,18 @@ pub struct SqliteDatabaseExecutor {
 
 thread_local! {
     static IN_DATABASE_WORKER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(feature = "test-support")]
+thread_local! {
+    static TEST_SQL_STATEMENT_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(feature = "test-support")]
+fn count_test_sql_statement(event: TraceEvent<'_>) {
+    if matches!(event, TraceEvent::Stmt(_, _)) {
+        TEST_SQL_STATEMENT_COUNT.with(|count| count.set(count.get().saturating_add(1)));
+    }
 }
 
 impl SqliteDatabaseExecutor {
@@ -303,6 +317,50 @@ impl SqliteDatabaseExecutor {
                     .map_err(SqliteExecutorError::ApplicationCallback)
             }),
         )
+    }
+
+    /// Runs a transaction-scoped callback and returns its SQLite statement
+    /// count for scale tests. The trace hook is installed only for this
+    /// test-support operation and is never part of the production API.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn with_unit_of_work_and_statement_count_for_tests<T, F>(
+        &self,
+        context: OperationContext,
+        callback: F,
+    ) -> Result<(T, usize), SqliteExecutorError>
+    where
+        T: Send + 'static,
+        F: for<'scope> FnOnce(SqliteUnitOfWork<'scope>) -> Result<T, ApplicationPortError>
+            + Send
+            + 'static,
+    {
+        let (value, statement_count): (T, usize) = self.submit_job(
+            context,
+            Box::new(move |connection, operation_context| {
+                TEST_SQL_STATEMENT_COUNT.with(|count| count.set(0));
+                connection.trace_v2(
+                    TraceEventCodes::SQLITE_TRACE_STMT,
+                    Some(count_test_sql_statement),
+                );
+                let transaction = connection
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                    .map_err(|error| match operation_error(&error) {
+                        SqliteOperationError::Locked => SqliteExecutorError::DatabaseLocked,
+                        _ => SqliteExecutorError::Internal,
+                    })?;
+                let work = SqliteUnitOfWork::new(transaction, operation_context);
+                let result = callback(work)
+                    .map(|value| {
+                        let statement_count = TEST_SQL_STATEMENT_COUNT.with(std::cell::Cell::get);
+                        Box::new((value, statement_count)) as Box<dyn Any + Send>
+                    })
+                    .map_err(SqliteExecutorError::ApplicationCallback);
+                connection.trace_v2(TraceEventCodes::SQLITE_TRACE_STMT, None);
+                result
+            }),
+        )?;
+        Ok((value, statement_count))
     }
 
     /// Runs bounded backend I/O on the dedicated worker without opening a

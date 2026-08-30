@@ -3,6 +3,8 @@
 #![cfg_attr(not(feature = "test-support"), allow(dead_code))]
 
 use argus_application::OperationContext;
+#[cfg(feature = "test-support")]
+use rusqlite::StatementStatus;
 use rusqlite::{Connection, ToSql};
 
 use super::errors::{SqliteOperationError, operation_error};
@@ -42,6 +44,42 @@ impl ToSql for SqliteValue {
 pub struct SqliteConnection<'connection> {
     pub(crate) connection: &'connection mut Connection,
     context: OperationContext,
+}
+
+/// SQLite execution counters captured for a test-owned representative query.
+///
+/// This type is intentionally available only with `test-support`; production
+/// callers receive no query-profiler surface or associated overhead.
+#[cfg(feature = "test-support")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqliteQueryMetrics {
+    row_count: usize,
+    vm_steps: i64,
+    full_scan_steps: i64,
+    sort_operations: i64,
+}
+
+#[cfg(feature = "test-support")]
+impl SqliteQueryMetrics {
+    /// Returns the number of rows consumed by the statement.
+    pub const fn row_count(self) -> usize {
+        self.row_count
+    }
+
+    /// Returns SQLite virtual-machine steps consumed by the statement.
+    pub const fn vm_steps(self) -> i64 {
+        self.vm_steps
+    }
+
+    /// Returns full-table scan steps reported by SQLite.
+    pub const fn full_scan_steps(self) -> i64 {
+        self.full_scan_steps
+    }
+
+    /// Returns temporary sort operations reported by SQLite.
+    pub const fn sort_operations(self) -> i64 {
+        self.sort_operations
+    }
 }
 
 impl<'connection> SqliteConnection<'connection> {
@@ -106,5 +144,60 @@ impl<'connection> SqliteConnection<'connection> {
                 |row| row.get(0),
             )
             .map_err(|error| operation_error(&error))
+    }
+
+    /// Measures one parameter-free, test-owned query without exposing the
+    /// SQLite statement or connection outside infrastructure tests.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn query_metrics_for_tests(
+        &mut self,
+        sql: &str,
+    ) -> Result<SqliteQueryMetrics, SqliteOperationError> {
+        let mut statement = self
+            .connection
+            .prepare(sql)
+            .map_err(|error| operation_error(&error))?;
+        let row_count = {
+            let mut rows = statement
+                .query([])
+                .map_err(|error| operation_error(&error))?;
+            let mut row_count = 0_usize;
+            while rows
+                .next()
+                .map_err(|error| operation_error(&error))?
+                .is_some()
+            {
+                row_count = row_count.saturating_add(1);
+            }
+            row_count
+        };
+        Ok(SqliteQueryMetrics {
+            row_count,
+            vm_steps: i64::from(statement.get_status(StatementStatus::VmStep)),
+            full_scan_steps: i64::from(statement.get_status(StatementStatus::FullscanStep)),
+            sort_operations: i64::from(statement.get_status(StatementStatus::Sort)),
+        })
+    }
+
+    /// Returns stable SQLite query-plan detail for one parameter-free,
+    /// test-owned query. Plans are used to assert index selection and avoid
+    /// making wall-clock timing a qualification gate.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn explain_query_plan_for_tests(
+        &mut self,
+        sql: &str,
+    ) -> Result<Vec<String>, SqliteOperationError> {
+        let explain_sql = format!("EXPLAIN QUERY PLAN {sql}");
+        let mut statement = self
+            .connection
+            .prepare(&explain_sql)
+            .map_err(|error| operation_error(&error))?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(3))
+            .map_err(|error| operation_error(&error))?;
+        rows.map(|row| row.map_err(|error| operation_error(&error)))
+            .collect()
     }
 }

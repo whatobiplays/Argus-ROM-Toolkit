@@ -1,0 +1,63 @@
+rust/Cargo.toml
+  s_8f81f39a0d0d07::t_d013463fbea2a2 34
+.gitignore
+  s_8f81f39a0d0d07::t_d013463fbea2a2 299-303
+rust/crates/argus-application/tests/content_contract.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 7-449
+rust/crates/argus-infrastructure/src/providers.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 24-30,287,290,293-301,303-309,312,318-323,360,362-369,375-380,385-386,388,391-394,397,404,406,410,415,418-431,434-435,441-443,446-447,450-452,482-531,553,558-568,570,573-574,586,589-612,614-616,618,621-622,627-633,636-645,872-1115,1118-1129,1134,1137,1140-1150,1152-1155,1160-1170,1269-1273,1302-1306,1310,1346-1347,1393-1395,1427-1431,1450
+rust/crates/argus-infrastructure/src/sqlite/logical.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 8-9,386,552-578,906,2404-2406,2408-2436,2438,2441,2449,2453,2455,2463-2477,2480-2483,2485-2504,2506,2509-2510,2512-2513,2515-2517,2531,2536,2544-2545,2548-2558
+docs/implementation/library-capability-qualification.md
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1-91
+rust/crates/argus-infrastructure/tests/library_scale.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 6-8,10,59-183,267-397
+rust/crates/argus-infrastructure/src/sqlite/connection.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 6-7,49-84,148-201
+rust/crates/argus-infrastructure/tests/cso_content.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 3,269-272,301-304
+rust/crates/argus-infrastructure/tests/provider_adapters.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 2,11,13-30,37-48,52-54,81-120,124,126,131-134,142-211,216-239,242-248,250,255,260,262,266-323,327-501,506,508,514,520,522-541,543-545,547-578,582-583,585,587,593-594,599,601,603,609-610,623,625,648,653,659-731,733-853,870,987,992,999,1001,1007-1011,1015,1019,1021,1036-1039,1041-1044,1052,1064,1076,1087,1093-1117
+rust/crates/argus-infrastructure/tests/rvz_content.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 3,395-409,413-433
+rust/crates/argus-infrastructure/src/sqlite/executor.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 17-18,78-89,322-363
+scripts/run_live_provider_qualification.sh
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1-99
+rust/crates/argus-infrastructure/src/sqlite/mod.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 25
+rust/crates/argus-infrastructure/tests/content_recognition.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1,299-570
+scripts/run_deterministic_qualification.sh
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1-43
+scripts/check_qualification_record.sh
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1-155
+rust/crates/argus-infrastructure/tests/optical_content.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1,325-522
+rust/crates/argus-infrastructure/tests/logical_content_convergence.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 8-10,313-356
+rust/crates/argus-infrastructure/tests/provider_live_qualification.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1-428
+flutter/android/app/src/debug/AndroidManifest.xml
+  s_8f81f39a0d0d07::t_d013463fbea2a2 1-7
+rust/crates/argus-infrastructure/tests/chd_content.rs
+  s_8f81f39a0d0d07::t_d013463fbea2a2 195-204,220-237,451-496
+justfile
+  s_8f81f39a0d0d07::t_d013463fbea2a2 61-63,96-101,150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9fcb10e79334b4fe727b8ac385e8426fc3a97c5c",
+  "prompts": {},
+  "sessions": {
+    "s_8f81f39a0d0d07": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04c91-f9af-7c13-ac0a-786b67073a0b",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

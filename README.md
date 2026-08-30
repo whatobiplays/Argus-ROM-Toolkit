@@ -23,6 +23,7 @@ Install these globally before bootstrapping the repository:
 - FVM
 - Bash
 - ShellCheck
+- ripgrep
 - native build prerequisites for the desktop platform you intend to build
 
 On Windows, Git Bash is the canonical Bash environment. WSL is not required.

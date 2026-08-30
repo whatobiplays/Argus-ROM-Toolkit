@@ -11,7 +11,7 @@ require_command() {
   fi
 }
 
-for command_name in git just rustup fvm bash shellcheck; do
+for command_name in git just rustup fvm bash shellcheck rg; do
   require_command "$command_name"
 done
 

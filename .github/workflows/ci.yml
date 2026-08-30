@@ -36,6 +36,9 @@ jobs:
       - name: Verify ShellCheck prerequisite
         run: shellcheck --version
 
+      - name: Install ripgrep prerequisite
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ripgrep
+
       - name: Bootstrap repository
         run: just bootstrap
 
@@ -163,6 +166,9 @@ jobs:
       - name: Install ShellCheck prerequisite
         run: brew install shellcheck
 
+      - name: Install ripgrep prerequisite
+        run: brew install ripgrep
+
       - name: Install pinned Rust toolchain
         run: |
           rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
@@ -232,6 +238,9 @@ jobs:
             "ndk;${flutter_ndk_version}"
           echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${flutter_ndk_version}" \
             >> "$GITHUB_ENV"
+
+      - name: Install ripgrep prerequisite
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ripgrep
 
       - name: Bootstrap repository
         run: just bootstrap

@@ -102,6 +102,16 @@ impl MigrationRegistry {
     /// schema version 8. Custom registries keep independent compatibility
     /// semantics unless they opt into a floor explicitly.
     pub fn embedded() -> Self {
+        Self::embedded_without_compatibility_floor().with_minimum_compatible_version(8)
+    }
+
+    /// Returns the complete embedded migration chain without a compatibility floor.
+    ///
+    /// This is the explicit custom-registry form for historical fixtures and
+    /// other callers that intentionally own a different compatibility policy.
+    /// The normal production open path always uses [`Self::embedded`], which
+    /// applies the production minimum-supported schema.
+    pub fn embedded_without_compatibility_floor() -> Self {
         Self::new(vec![
             Migration::sql(1, "0001_initial", include_bytes!("sql/0001_initial.sql")),
             Migration::sql(2, "0002_sources", include_bytes!("sql/0002_sources.sql")),
@@ -182,14 +192,18 @@ impl MigrationRegistry {
             ),
         ])
         .expect("embedded migration registry is valid")
-        .with_minimum_compatible_version(8)
     }
 
     pub(crate) fn as_slice(&self) -> &[Migration] {
         &self.migrations
     }
 
-    fn with_minimum_compatible_version(mut self, version: u32) -> Self {
+    /// Applies an explicit minimum compatible schema to this registry.
+    ///
+    /// Registries created with [`Self::new`] have no compatibility floor by
+    /// default. Callers that need one must opt in explicitly; this is separate
+    /// from the production policy applied by [`Self::embedded`].
+    pub fn with_minimum_compatible_version(mut self, version: u32) -> Self {
         self.minimum_compatible_version = Some(version);
         self
     }

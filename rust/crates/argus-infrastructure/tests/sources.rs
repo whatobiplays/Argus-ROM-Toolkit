@@ -49,7 +49,7 @@ fn new_root(source: LibrarySourceId, locator: RootLocator, display: &str) -> New
 }
 
 #[test]
-fn embedded_registry_upgrades_a_phase_000_database_through_slice_004() {
+fn custom_registry_upgrades_a_phase_000_database_through_slice_004() {
     let directory = tempdir().expect("tempdir");
     let database = directory.path().join("argus.sqlite3");
     let phase_000 = MigrationRegistry::new(vec![Migration::sql(

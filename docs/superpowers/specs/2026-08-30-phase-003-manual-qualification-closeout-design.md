@@ -185,24 +185,15 @@ expected behavior, actual observation, result, and evidence reference. The
 prior attempt is never overwritten. The scenario ledger may point to the
 latest retest while retaining the complete attempt history.
 
-## 6. Schema-8 compatibility decision
+## 6. Compatibility reference
 
-The minimum supported state for an existing production database is schema 8.
-An existing production database is eligible for normal forward migration only
-when its validated migration history ends at schema 8 or later. A validated
-production history ending at schema 1–7 is an unsupported pre-Phase-003
-development install and fails closed before pending migrations, without silent
-recreation or destructive repair.
-
-A genuinely fresh production database has no migration history and remains
-supported. It bootstraps through the complete immutable embedded migration
-registry beginning at migration 1. Released migration SQL and checksum/history
-validation remain unchanged.
-
-This floor belongs to the production embedded registry and normal production
-database-open path. Arbitrary `MigrationRegistry` instances and
-`open_with_registry(...)` test/custom registries retain their independent
-version semantics unless a caller explicitly configures a floor.
+Production database compatibility is owned by
+`docs/specifications/cross-cutting/spec-x-001-versioning-and-compatibility-contract.md`,
+especially its database compatibility-floor and current-floor sections. This
+manual-closeout design does not redefine that production policy. Automated
+qualification may provide implementation evidence for the owning contract,
+but it does not create manual observations or change the companion ledger's
+required owner-execution gate.
 
 The startup failure continues to use the existing incompatible-schema
 classification. No separate public below-floor error vocabulary is introduced.

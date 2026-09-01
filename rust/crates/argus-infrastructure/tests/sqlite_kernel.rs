@@ -297,6 +297,31 @@ fn production_open_migrates_schema_8_and_preserves_existing_rows() {
 }
 
 #[test]
+fn custom_registry_can_opt_into_an_explicit_compatibility_floor() {
+    let directory = tempdir().expect("temporary directory");
+    let path = directory.path().join("custom-floor.sqlite3");
+    let legacy = SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(1))
+        .expect("schema 1 database");
+    legacy.shutdown().expect("legacy shutdown");
+
+    let explicit_floor = registry_through_v8(8).with_minimum_compatible_version(2);
+    assert!(matches!(
+        SqliteDatabaseExecutor::open_with_registry(&path, explicit_floor),
+        Err(SqliteExecutorError::IncompatibleSchema)
+    ));
+
+    let unchanged = rusqlite::Connection::open(&path).expect("reopen rejected database");
+    assert_eq!(
+        unchanged
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("history count"),
+        1
+    );
+}
+
+#[test]
 fn serialized_work_runs_on_one_worker_and_reentrant_submission_is_rejected() {
     let directory = tempdir().expect("temporary directory");
     let path = directory.path().join("argus.sqlite3");

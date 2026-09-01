@@ -27,89 +27,9 @@ set -euo pipefail
 # launches can reach them.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-debug_signing_config="$ROOT_DIR/flutter/macos/Runner/Configs/Debug.local.xcconfig"
 debug_app="$ROOT_DIR/flutter/build/macos/Build/Products/Debug/argus.app"
 
-read_xcconfig_value() {
-  local key="$1"
-  local config_path="$2"
-  local value
-  value="$(sed -n -E "s|^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$|\1|p" \
-    "$config_path" | tail -n 1)"
-  printf '%s' "$value" | sed -E \
-    's/[[:space:]]*\/\/.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/'
-}
-
-configure_macos_debug_signing() {
-  local identity="${FLUTTER_XCODE_CODE_SIGN_IDENTITY:-}"
-  local team="${FLUTTER_XCODE_DEVELOPMENT_TEAM:-}"
-  local style="${FLUTTER_XCODE_CODE_SIGN_STYLE:-Automatic}"
-
-  if [[ -f "$debug_signing_config" ]]; then
-    identity="$(read_xcconfig_value CODE_SIGN_IDENTITY "$debug_signing_config")"
-    team="$(read_xcconfig_value DEVELOPMENT_TEAM "$debug_signing_config")"
-    local configured_style
-    configured_style="$(read_xcconfig_value CODE_SIGN_STYLE "$debug_signing_config")"
-    if [[ -n "$configured_style" ]]; then
-      style="$configured_style"
-    fi
-  fi
-
-  if [[ -z "$identity" || -z "$team" ]]; then
-    printf 'Stable macOS Debug signing is required for native qualification.\n' >&2
-    printf 'Create the ignored local override at:\n  %s\n' \
-      "$debug_signing_config" >&2
-    printf 'with owner-local values such as:\n' >&2
-    printf '  CODE_SIGN_IDENTITY = Apple Development\n' >&2
-    printf '  DEVELOPMENT_TEAM = YOUR_TEAM_IDENTIFIER\n' >&2
-    printf '  CODE_SIGN_STYLE = Automatic\n' >&2
-    return 1
-  fi
-  if [[ "$identity" != "Apple Development"* ]]; then
-    printf 'Native qualification requires an Apple Development signing identity.\n' >&2
-    printf 'Update %s without adding owner-specific values to tracked files.\n' \
-      "$debug_signing_config" >&2
-    return 1
-  fi
-
-  export FLUTTER_XCODE_CODE_SIGN_IDENTITY="$identity"
-  export FLUTTER_XCODE_DEVELOPMENT_TEAM="$team"
-  export FLUTTER_XCODE_CODE_SIGN_STYLE="$style"
-}
-
-verify_macos_debug_signature() {
-  local app_path="$1"
-  if [[ ! -d "$app_path" ]]; then
-    printf 'Expected macOS Debug app was not built: %s\n' "$app_path" >&2
-    return 1
-  fi
-
-  local signature_details
-  if ! signature_details="$(codesign -d --verbose=4 "$app_path" 2>&1)"; then
-    printf 'Unable to inspect the macOS Debug app signature.\n' >&2
-    return 1
-  fi
-
-  local bundle_identifier
-  bundle_identifier="$(printf '%s\n' "$signature_details" | sed -n 's/^Identifier=//p')"
-  local team_identifier
-  team_identifier="$(printf '%s\n' "$signature_details" | sed -n 's/^TeamIdentifier=//p')"
-  if [[ "$bundle_identifier" != "dev.argusromtoolkit.argus" ]]; then
-    printf 'Unexpected macOS Debug bundle identifier: %s\n' \
-      "$bundle_identifier" >&2
-    return 1
-  fi
-  if ! printf '%s\n' "$signature_details" | grep -q '^Authority=Apple Development:'; then
-    printf 'macOS Debug app is not Apple Development signed.\n' >&2
-    return 1
-  fi
-  if [[ -z "$team_identifier" || "$team_identifier" == "not set" ]]; then
-    printf 'macOS Debug app has no TeamIdentifier; stable signing is required.\n' >&2
-    return 1
-  fi
-  printf 'Verified stable Apple Development signing for macOS native qualification\n'
-}
+source "$ROOT_DIR/scripts/macos_debug_signing.sh"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   printf 'test-phase-001-native requires macOS (Darwin); got %s\n' \
@@ -157,10 +77,10 @@ bash "$ROOT_DIR/scripts/run_rust.sh" cargo build \
 (
   cd "$ROOT_DIR/flutter"
 
-  configure_macos_debug_signing
+  argus_configure_macos_debug_signing "$ROOT_DIR"
   printf 'Building macOS Debug app with stable development signing\n'
   fvm flutter build macos --debug --no-pub
-  verify_macos_debug_signature "$debug_app"
+  argus_verify_macos_debug_signature "$debug_app"
 
   printf 'Running Phase 001 native milestone\n'
   ARGUS_PHASE_001_DATA_DIR="$milestone_data_dir" \

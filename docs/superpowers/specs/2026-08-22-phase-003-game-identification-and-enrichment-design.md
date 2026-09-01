@@ -860,7 +860,7 @@ Targeted property/fuzz-style tests cover malformed headers, extreme declared siz
 
 ### 13.4 Domain/persistence scenarios
 
-Tests prove duplicate-source convergence, concurrent identity convergence, conservative grouping, orphan semantics, reappearance, resolver independence from canonical identity, incremental projection maintenance, safe forward migration from supported schema-8+ databases, rejection of validated schema 1–7 histories before mutation, and fresh bootstrap through the complete embedded chain.
+Tests prove duplicate-source convergence, concurrent identity convergence, conservative grouping, orphan semantics, reappearance, resolver independence from canonical identity, incremental projection maintenance, historical Phase 000–002 migration mechanics through an explicitly configured custom registry, safe forward migration from supported production schema-8+ databases, rejection of validated production schema 1–7 histories before mutation, and fresh bootstrap through the complete embedded chain.
 
 ### 13.5 Provider verification
 

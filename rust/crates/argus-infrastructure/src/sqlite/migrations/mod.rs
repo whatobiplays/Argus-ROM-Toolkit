@@ -219,7 +219,20 @@ impl MigrationRegistry {
     /// Registries created with [`Self::new`] have no compatibility floor by
     /// default. Callers that need one must opt in explicitly; this is separate
     /// from the production policy applied by [`Self::embedded`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `version` is outside the registry's supported schema range.
     pub fn with_minimum_compatible_version(mut self, version: u32) -> Self {
+        let final_version = self
+            .migrations
+            .last()
+            .map(|migration| migration.version)
+            .unwrap_or(0);
+        assert!(
+            version > 0 && version <= final_version,
+            "minimum compatible schema {version} must be within registry's supported version range 1..={final_version}"
+        );
         self.minimum_compatible_version = Some(version);
         self
     }

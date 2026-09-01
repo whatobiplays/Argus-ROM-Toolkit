@@ -285,6 +285,18 @@ fn custom_registry_can_opt_into_an_explicit_compatibility_floor() {
 }
 
 #[test]
+fn custom_registry_rejects_floor_above_final_migration() {
+    let result = std::panic::catch_unwind(|| {
+        migration_test_support::registry_through(1).with_minimum_compatible_version(2);
+    });
+
+    assert!(
+        result.is_err(),
+        "a compatibility floor above the registry's final migration must be rejected"
+    );
+}
+
+#[test]
 fn serialized_work_runs_on_one_worker_and_reentrant_submission_is_rejected() {
     let directory = tempdir().expect("temporary directory");
     let path = directory.path().join("argus.sqlite3");

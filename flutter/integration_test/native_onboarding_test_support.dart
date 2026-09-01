@@ -49,9 +49,14 @@ Future<ArgusClient> completeNativeLibraryOnboarding(
   if (!state.complete &&
       state.progress.providerSetupOutcome ==
           LibraryProviderSetupOutcome.pending) {
-    state = await client.onboarding.recordProviderSetup(
-      LibraryProviderSetupDecision.skipped,
-    );
+    // The native test process may share the developer's stable keychain
+    // credential. Match the durable provider fact instead of unconditionally
+    // claiming that no credential is configured; the backend intentionally
+    // rejects Skipped when secure storage reports a credential.
+    final decision = state.credentialConfigured
+        ? LibraryProviderSetupDecision.configured
+        : LibraryProviderSetupDecision.skipped;
+    state = await client.onboarding.recordProviderSetup(decision);
   }
 
   LibraryRoot? temporaryRoot;

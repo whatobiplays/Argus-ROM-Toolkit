@@ -664,7 +664,11 @@ Flutter never loads the entire Library to implement those semantics locally.
 
 ### 10.6 Migration behavior
 
-Phase 003 migrations preserve valid Phase 000–002 databases and never perform hidden user-work during schema migration.
+Phase 003 preserves fresh database bootstrap and supports existing production databases only from validated schema 8 or later. Validated existing schema 1–7 histories are unsupported pre-Phase-003 development installs and are rejected non-destructively before pending migrations.
+
+Existing production databases at schema 8 or later migrate forward through the released embedded chain. A genuinely fresh production database with no `schema_migrations` history bootstraps through the complete embedded chain from migration 1. The schema-8 floor applies to the production embedded registry and normal production database-open path; arbitrary `MigrationRegistry` instances and `open_with_registry(...)` custom/test registries retain their independent version semantics unless a caller explicitly configures an equivalent floor.
+
+Migration rejection uses the existing incompatible-schema handling and occurs before any migration transaction or schema/data mutation.
 
 Migrations must not infer `GameContent` or `Game` identity from historical filenames/folders or silently parse/hash the user's library. Existing indexed sources become eligible for identification only through an explicit user-initiated refresh.
 
@@ -856,7 +860,7 @@ Targeted property/fuzz-style tests cover malformed headers, extreme declared siz
 
 ### 13.4 Domain/persistence scenarios
 
-Tests prove duplicate-source convergence, concurrent identity convergence, conservative grouping, orphan semantics, reappearance, resolver independence from canonical identity, incremental projection maintenance, and safe migration from supported pre-Phase-003 databases.
+Tests prove duplicate-source convergence, concurrent identity convergence, conservative grouping, orphan semantics, reappearance, resolver independence from canonical identity, incremental projection maintenance, safe forward migration from supported schema-8+ databases, rejection of validated schema 1–7 histories before mutation, and fresh bootstrap through the complete embedded chain.
 
 ### 13.5 Provider verification
 

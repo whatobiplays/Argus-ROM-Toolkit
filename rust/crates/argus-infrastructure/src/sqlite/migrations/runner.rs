@@ -99,6 +99,7 @@ fn validate_existing_schema(
         validate_history_schema(connection)?;
         let history = read_history(connection)?;
         validate_history_rows(&history, registry)?;
+        validate_registry_floor(&history, registry)?;
         return Ok(());
     }
 
@@ -116,6 +117,22 @@ fn validate_existing_schema(
         return Err(MigrationError::MissingHistoricalVersion(
             registry.as_slice().first().map(|m| m.version).unwrap_or(1),
         ));
+    }
+    Ok(())
+}
+
+fn validate_registry_floor(
+    history: &[HistoryRow],
+    registry: &MigrationRegistry,
+) -> Result<(), MigrationError> {
+    let Some(floor) = registry.minimum_compatible_version() else {
+        return Ok(());
+    };
+    let Some((current_version, ..)) = history.last() else {
+        return Ok(());
+    };
+    if *current_version < floor {
+        return Err(MigrationError::MissingHistoricalVersion(floor));
     }
     Ok(())
 }

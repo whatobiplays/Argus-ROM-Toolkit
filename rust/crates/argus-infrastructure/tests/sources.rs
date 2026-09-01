@@ -18,6 +18,9 @@ use argus_infrastructure::sqlite::{
 };
 use tempfile::tempdir;
 
+#[path = "common/mod.rs"]
+mod migration_test_support;
+
 fn context() -> OperationContext {
     OperationContext::new(
         TraceId::try_from(71_u128).expect("non-zero trace"),
@@ -60,7 +63,11 @@ fn embedded_registry_upgrades_a_phase_000_database_through_slice_004() {
     assert_eq!(first.migration_summary().current_version, 1);
     first.shutdown().expect("shutdown");
 
-    let second = SqliteDatabaseExecutor::open(&database).expect("upgraded database");
+    let second = SqliteDatabaseExecutor::open_with_registry(
+        &database,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded database");
     assert_eq!(second.migration_summary().current_version, 17);
     assert_eq!(
         second.migration_summary().outcome,

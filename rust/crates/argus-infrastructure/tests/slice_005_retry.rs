@@ -14,6 +14,9 @@ use argus_infrastructure::sqlite::{
     Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteJobsQueries,
 };
 
+#[path = "common/mod.rs"]
+mod migration_test_support;
+
 fn context() -> OperationContext {
     OperationContext::new(
         TraceId::try_from(1).expect("trace"),
@@ -116,7 +119,11 @@ fn migration_0006_upgrades_a_slice_004_database_with_representative_history() {
         .expect("seed old history");
     drop(connection);
 
-    let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
+    let fresh = SqliteDatabaseExecutor::open_with_registry(
+        &database,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded open");
     assert_eq!(fresh.migration_summary().current_version, 17);
     assert_eq!(fresh.migration_summary().applied_count, 12);
 

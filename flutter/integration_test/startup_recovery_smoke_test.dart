@@ -109,14 +109,14 @@ void main() {
 Future<void> _seedMigratedDatabaseWithMissingSettings(
   String dataDirectory,
 ) async {
-  final migrationSql =
-      Platform.environment['ARGUS_MIGRATION_SQL'] ?? await _readMigrationSql();
-  final checksum =
-      Platform.environment['ARGUS_MIGRATION_SHA256'] ??
-      await _sha256(_migrationFilePath());
-
-  final sql =
-      '''
+  final db = sqlite3.sqlite3.open('$dataDirectory/argus.sqlite3');
+  try {
+    // An empty history table is treated as a fresh database by the production
+    // runner, so it applies the complete embedded chain. The trigger removes
+    // the row created by migration 1 after that migration applies its own
+    // schema work, leaving the later startup settings read invalid without
+    // copying released migration SQL into this fixture.
+    db.execute('''
 CREATE TABLE schema_migrations (
   version INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
@@ -125,35 +125,15 @@ CREATE TABLE schema_migrations (
   applied_at TEXT NOT NULL,
   app_version TEXT NOT NULL
 );
-INSERT INTO schema_migrations (version, name, kind, checksum, applied_at, app_version)
-VALUES (1, '0001_initial', 'sql', '$checksum', '1720000000', '0.1.0');
-$migrationSql
-DELETE FROM appearance_settings WHERE singleton_key = 1;
-''';
-  final db = sqlite3.sqlite3.open('$dataDirectory/argus.sqlite3');
-  try {
-    db.execute(sql);
+
+CREATE TRIGGER startup_recovery_remove_appearance_settings
+AFTER INSERT ON schema_migrations
+WHEN NEW.version = 1
+BEGIN
+  DELETE FROM appearance_settings WHERE singleton_key = 1;
+END;
+''');
   } finally {
     db.dispose();
   }
-}
-
-String _migrationFilePath() {
-  final repositoryRoot =
-      Platform.environment['ARGUS_REPO_ROOT'] ?? '${Directory.current.path}/..';
-  return '$repositoryRoot/rust/crates/argus-infrastructure/src/sqlite/'
-      'migrations/sql/0001_initial.sql';
-}
-
-Future<String> _readMigrationSql() async {
-  final file = File(_migrationFilePath());
-  expect(file.existsSync(), isTrue, reason: file.path);
-  return String.fromCharCodes(file.readAsBytesSync());
-}
-
-Future<String> _sha256(String path) async {
-  final result = await Process.run('shasum', <String>['-a', '256', path]);
-  expect(result.exitCode, 0, reason: 'shasum failed: ${result.stderr}');
-  final output = (result.stdout as String).trim();
-  return output.split(RegExp(r'\s+')).first;
 }

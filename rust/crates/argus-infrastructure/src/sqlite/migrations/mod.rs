@@ -66,6 +66,7 @@ impl Migration {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationRegistry {
     migrations: Vec<Migration>,
+    minimum_compatible_version: Option<u32>,
     #[cfg(feature = "test-support")]
     final_validation_failure: bool,
 }
@@ -89,12 +90,17 @@ impl MigrationRegistry {
         }
         Ok(Self {
             migrations,
+            minimum_compatible_version: None,
             #[cfg(feature = "test-support")]
             final_validation_failure: false,
         })
     }
 
-    /// Returns the embedded Phase 000 migration registry.
+    /// Returns the embedded production migration registry.
+    ///
+    /// Production startup rejects databases whose recorded history predates
+    /// schema version 8. Custom registries keep independent compatibility
+    /// semantics unless they opt into a floor explicitly.
     pub fn embedded() -> Self {
         Self::new(vec![
             Migration::sql(1, "0001_initial", include_bytes!("sql/0001_initial.sql")),
@@ -176,10 +182,20 @@ impl MigrationRegistry {
             ),
         ])
         .expect("embedded migration registry is valid")
+        .with_minimum_compatible_version(8)
     }
 
     pub(crate) fn as_slice(&self) -> &[Migration] {
         &self.migrations
+    }
+
+    fn with_minimum_compatible_version(mut self, version: u32) -> Self {
+        self.minimum_compatible_version = Some(version);
+        self
+    }
+
+    pub(crate) fn minimum_compatible_version(&self) -> Option<u32> {
+        self.minimum_compatible_version
     }
 
     /// Enables a deterministic validator failure for rollback regression

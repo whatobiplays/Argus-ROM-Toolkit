@@ -16,6 +16,9 @@ use argus_infrastructure::sqlite::{
     Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteValue,
 };
 
+#[path = "common/mod.rs"]
+mod migration_test_support;
+
 fn context() -> OperationContext {
     OperationContext::new(
         TraceId::try_from(1).expect("trace"),
@@ -240,7 +243,11 @@ fn migration_0004_upgrades_0003_rows_and_keeps_native_identity_non_unique() {
         (root, scan)
     };
 
-    let upgraded = SqliteDatabaseExecutor::open(&database).expect("upgraded database");
+    let upgraded = SqliteDatabaseExecutor::open_with_registry(
+        &database,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded database");
     {
         let connection = rusqlite::Connection::open(&database).expect("raw connection");
         let index_count: i64 = connection

@@ -17,6 +17,9 @@ use argus_infrastructure::sqlite::{
     Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteJobsQueries,
 };
 
+#[path = "common/mod.rs"]
+mod migration_test_support;
+
 const ROOT_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const ROOT_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const ROOT_C: &str = "cccccccccccccccccccccccccccccccc";
@@ -159,7 +162,11 @@ fn migration_0007_upgrades_0006_history_and_backfills_invalid_configuration_erro
         .expect("seed old history");
     drop(connection);
 
-    let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
+    let fresh = SqliteDatabaseExecutor::open_with_registry(
+        &database,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded open");
     assert_eq!(fresh.migration_summary().current_version, 17);
     assert_eq!(fresh.migration_summary().applied_count, 11);
 

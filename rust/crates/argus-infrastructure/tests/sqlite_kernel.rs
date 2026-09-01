@@ -47,6 +47,57 @@ fn wait_for_admission_closed(executor: &SqliteDatabaseExecutor) {
     );
 }
 
+fn registry_through_v8(version: usize) -> MigrationRegistry {
+    MigrationRegistry::new(
+        vec![
+            Migration::sql(
+                1,
+                "0001_initial",
+                include_bytes!("../src/sqlite/migrations/sql/0001_initial.sql"),
+            ),
+            Migration::sql(
+                2,
+                "0002_sources",
+                include_bytes!("../src/sqlite/migrations/sql/0002_sources.sql"),
+            ),
+            Migration::sql(
+                3,
+                "0003_jobs_scans",
+                include_bytes!("../src/sqlite/migrations/sql/0003_jobs_scans.sql"),
+            ),
+            Migration::sql(
+                4,
+                "0004_source_reconciliation",
+                include_bytes!("../src/sqlite/migrations/sql/0004_source_reconciliation.sql"),
+            ),
+            Migration::sql(
+                5,
+                "0005_source_hierarchy",
+                include_bytes!("../src/sqlite/migrations/sql/0005_source_hierarchy.sql"),
+            ),
+            Migration::sql(
+                6,
+                "0006_retry_and_progress",
+                include_bytes!("../src/sqlite/migrations/sql/0006_retry_and_progress.sql"),
+            ),
+            Migration::sql(
+                7,
+                "0007_scan_all_recovery",
+                include_bytes!("../src/sqlite/migrations/sql/0007_scan_all_recovery.sql"),
+            ),
+            Migration::sql(
+                8,
+                "0008_logical_library",
+                include_bytes!("../src/sqlite/migrations/sql/0008_logical_library.sql"),
+            ),
+        ]
+        .into_iter()
+        .take(version)
+        .collect(),
+    )
+    .expect("registry")
+}
+
 #[test]
 fn fresh_database_configures_pragmas_and_seeds_one_system_row() {
     let directory = tempdir().expect("temporary directory");
@@ -103,6 +154,146 @@ fn reopening_current_database_preserves_migration_and_default() {
         .expect("query reopened database");
     assert_eq!(values, (17, 1, "dark".to_owned()));
     second.shutdown().expect("second shutdown");
+}
+
+#[test]
+fn production_open_rejects_schema_1_through_7_while_custom_registries_keep_their_own_floor() {
+    let directory = tempdir().expect("temporary directory");
+
+    for version in 1..=7 {
+        let path = directory
+            .path()
+            .join(format!("schema-floor-v{version}.sqlite3"));
+        let legacy =
+            SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(version))
+                .expect("legacy database");
+        legacy
+            .with_connection_for_tests(context(), |connection| {
+                connection.execute(
+                    "UPDATE appearance_settings SET theme_mode = 'dark' WHERE singleton_key = 1",
+                )?;
+                Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
+            })
+            .expect("seed legacy row");
+        legacy.shutdown().expect("legacy shutdown");
+
+        assert!(
+            matches!(
+                SqliteDatabaseExecutor::open(&path),
+                Err(SqliteExecutorError::IncompatibleSchema)
+            ),
+            "production open should reject schema version {version}"
+        );
+
+        let rejected_state = rusqlite::Connection::open(&path).expect("reopen rejected database");
+        assert_eq!(
+            rejected_state
+                .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("legacy history count"),
+            version as i64
+        );
+        assert_eq!(
+            rejected_state
+                .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("legacy max version"),
+            version as i64
+        );
+        assert!(
+            !rejected_state
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM sqlite_master
+                        WHERE type = 'table' AND name = 'game_content'
+                    )",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("schema 8 table should not exist")
+        );
+        assert_eq!(
+            rejected_state
+                .query_row(
+                    "SELECT theme_mode FROM appearance_settings WHERE singleton_key = 1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("preserved theme mode"),
+            "dark"
+        );
+        drop(rejected_state);
+
+        let custom =
+            SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(version))
+                .expect("custom registry should still accept legacy schema");
+        assert_eq!(custom.migration_summary().current_version, version as u32);
+        assert_eq!(custom.migration_summary().applied_count, 0);
+        custom.shutdown().expect("custom shutdown");
+    }
+}
+
+#[test]
+fn production_open_migrates_schema_8_and_preserves_existing_rows() {
+    let directory = tempdir().expect("temporary directory");
+    let path = directory.path().join("schema-8.sqlite3");
+    let schema_8 = SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(8))
+        .expect("schema 8 database");
+    schema_8
+        .with_connection_for_tests(context(), |connection| {
+            connection.execute(
+                "UPDATE appearance_settings SET theme_mode = 'dark' WHERE singleton_key = 1",
+            )?;
+            connection.execute_batch(
+                "
+                INSERT INTO game_content
+                    (game_content_id, platform_id, content_type, presence_state,
+                     identification_state, grouping_revision, created_at, updated_at)
+                VALUES ('content-schema-8', 'nintendo.gb', 'CartridgeImage', 'available',
+                        'identified', 1, '1', '1');
+                INSERT INTO game
+                    (game_id, platform_id, lifecycle_state, grouping_revision, fallback_title,
+                     fallback_title_provenance, hydration_state, created_at, updated_at)
+                VALUES ('game-schema-8', 'nintendo.gb', 'active', 1, 'Schema 8 Fixture',
+                        'local_fallback', 'hydrated', '1', '1');
+                INSERT INTO game_library_row
+                    (game_id, display_title, display_title_provenance, platform_id,
+                     hydration_state, availability_state, content_count, source_count, updated_at)
+                VALUES ('game-schema-8', 'Schema 8 Fixture', 'local_fallback', 'nintendo.gb',
+                        'hydrated', 'available', 1, 1, '1');
+                ",
+            )?;
+            Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>(())
+        })
+        .expect("seed schema 8 rows");
+    schema_8.shutdown().expect("schema 8 shutdown");
+
+    let current = SqliteDatabaseExecutor::open(&path).expect("schema 8 upgrade");
+    assert_eq!(current.migration_summary().current_version, 17);
+    assert_eq!(current.migration_summary().applied_count, 9);
+    current
+        .with_connection_for_tests(context(), |connection| {
+            Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>((
+                connection.scalar_text(
+                    "SELECT theme_mode FROM appearance_settings WHERE singleton_key = 1",
+                )?,
+                connection.scalar_i64(
+                    "SELECT COUNT(*) FROM game_content WHERE game_content_id = 'content-schema-8'",
+                )?,
+                connection.scalar_i64(
+                    "SELECT COUNT(*) FROM game_library_row WHERE game_id = 'game-schema-8'",
+                )?,
+            ))
+        })
+        .map(|values| {
+            assert_eq!(values.0, "dark");
+            assert_eq!(values.1, 1);
+            assert_eq!(values.2, 1);
+        })
+        .expect("verify schema 8 preservation");
+    current.shutdown().expect("current shutdown");
 }
 
 #[test]

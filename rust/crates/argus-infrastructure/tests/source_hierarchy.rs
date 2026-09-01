@@ -14,6 +14,9 @@ use argus_infrastructure::sqlite::{
 };
 use tempfile::tempdir;
 
+#[path = "common/mod.rs"]
+mod migration_test_support;
+
 fn context() -> OperationContext {
     OperationContext::new(
         TraceId::try_from(1).expect("trace"),
@@ -385,7 +388,11 @@ fn migration_latest_applies_fresh_and_upgrades_version_four() {
     assert_eq!(old.migration_summary().current_version, 4);
     old.shutdown().expect("old shutdown");
 
-    let fresh = SqliteDatabaseExecutor::open(&path).expect("upgraded open");
+    let fresh = SqliteDatabaseExecutor::open_with_registry(
+        &path,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded open");
     assert_eq!(fresh.migration_summary().current_version, 17);
     assert_eq!(fresh.migration_summary().applied_count, 13);
     let index = fresh

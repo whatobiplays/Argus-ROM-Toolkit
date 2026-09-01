@@ -194,6 +194,22 @@ impl MigrationRegistry {
         .expect("embedded migration registry is valid")
     }
 
+    /// Returns an explicitly custom historical registry for infrastructure
+    /// tests. The selected prefix is derived from the same embedded migration
+    /// definitions used by production, so fixture history cannot drift when a
+    /// migration name, checksum, or ordering changes.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn embedded_through_for_tests(version: usize) -> Self {
+        let mut registry = Self::embedded_without_compatibility_floor();
+        assert!(
+            version > 0 && version <= registry.migrations.len(),
+            "historical test registry version {version} is outside the embedded migration chain"
+        );
+        registry.migrations.truncate(version);
+        registry
+    }
+
     pub(crate) fn as_slice(&self) -> &[Migration] {
         &self.migrations
     }

@@ -13,6 +13,9 @@ use std::thread;
 use std::time::Duration;
 use tempfile::tempdir;
 
+#[path = "common/mod.rs"]
+mod migration_test_support;
+
 const TEST_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn context() -> OperationContext {
@@ -45,57 +48,6 @@ fn wait_for_admission_closed(executor: &SqliteDatabaseExecutor) {
         executor.wait_for_admission_closed_for_tests(TEST_WAIT_TIMEOUT),
         "timed out waiting for shutdown admission closure"
     );
-}
-
-fn registry_through_v8(version: usize) -> MigrationRegistry {
-    MigrationRegistry::new(
-        vec![
-            Migration::sql(
-                1,
-                "0001_initial",
-                include_bytes!("../src/sqlite/migrations/sql/0001_initial.sql"),
-            ),
-            Migration::sql(
-                2,
-                "0002_sources",
-                include_bytes!("../src/sqlite/migrations/sql/0002_sources.sql"),
-            ),
-            Migration::sql(
-                3,
-                "0003_jobs_scans",
-                include_bytes!("../src/sqlite/migrations/sql/0003_jobs_scans.sql"),
-            ),
-            Migration::sql(
-                4,
-                "0004_source_reconciliation",
-                include_bytes!("../src/sqlite/migrations/sql/0004_source_reconciliation.sql"),
-            ),
-            Migration::sql(
-                5,
-                "0005_source_hierarchy",
-                include_bytes!("../src/sqlite/migrations/sql/0005_source_hierarchy.sql"),
-            ),
-            Migration::sql(
-                6,
-                "0006_retry_and_progress",
-                include_bytes!("../src/sqlite/migrations/sql/0006_retry_and_progress.sql"),
-            ),
-            Migration::sql(
-                7,
-                "0007_scan_all_recovery",
-                include_bytes!("../src/sqlite/migrations/sql/0007_scan_all_recovery.sql"),
-            ),
-            Migration::sql(
-                8,
-                "0008_logical_library",
-                include_bytes!("../src/sqlite/migrations/sql/0008_logical_library.sql"),
-            ),
-        ]
-        .into_iter()
-        .take(version)
-        .collect(),
-    )
-    .expect("registry")
 }
 
 #[test]
@@ -164,9 +116,11 @@ fn production_open_rejects_schema_1_through_7_while_custom_registries_keep_their
         let path = directory
             .path()
             .join(format!("schema-floor-v{version}.sqlite3"));
-        let legacy =
-            SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(version))
-                .expect("legacy database");
+        let legacy = SqliteDatabaseExecutor::open_with_registry(
+            &path,
+            migration_test_support::registry_through(version),
+        )
+        .expect("legacy database");
         legacy
             .with_connection_for_tests(context(), |connection| {
                 connection.execute(
@@ -226,9 +180,11 @@ fn production_open_rejects_schema_1_through_7_while_custom_registries_keep_their
         );
         drop(rejected_state);
 
-        let custom =
-            SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(version))
-                .expect("custom registry should still accept legacy schema");
+        let custom = SqliteDatabaseExecutor::open_with_registry(
+            &path,
+            migration_test_support::registry_through(version),
+        )
+        .expect("custom registry should still accept legacy schema");
         assert_eq!(custom.migration_summary().current_version, version as u32);
         assert_eq!(custom.migration_summary().applied_count, 0);
         custom.shutdown().expect("custom shutdown");
@@ -239,8 +195,11 @@ fn production_open_rejects_schema_1_through_7_while_custom_registries_keep_their
 fn production_open_migrates_schema_8_and_preserves_existing_rows() {
     let directory = tempdir().expect("temporary directory");
     let path = directory.path().join("schema-8.sqlite3");
-    let schema_8 = SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(8))
-        .expect("schema 8 database");
+    let schema_8 = SqliteDatabaseExecutor::open_with_registry(
+        &path,
+        migration_test_support::registry_through(8),
+    )
+    .expect("schema 8 database");
     schema_8
         .with_connection_for_tests(context(), |connection| {
             connection.execute(
@@ -300,11 +259,15 @@ fn production_open_migrates_schema_8_and_preserves_existing_rows() {
 fn custom_registry_can_opt_into_an_explicit_compatibility_floor() {
     let directory = tempdir().expect("temporary directory");
     let path = directory.path().join("custom-floor.sqlite3");
-    let legacy = SqliteDatabaseExecutor::open_with_registry(&path, registry_through_v8(1))
-        .expect("schema 1 database");
+    let legacy = SqliteDatabaseExecutor::open_with_registry(
+        &path,
+        migration_test_support::registry_through(1),
+    )
+    .expect("schema 1 database");
     legacy.shutdown().expect("legacy shutdown");
 
-    let explicit_floor = registry_through_v8(8).with_minimum_compatible_version(2);
+    let explicit_floor =
+        migration_test_support::registry_through(8).with_minimum_compatible_version(2);
     assert!(matches!(
         SqliteDatabaseExecutor::open_with_registry(&path, explicit_floor),
         Err(SqliteExecutorError::IncompatibleSchema)

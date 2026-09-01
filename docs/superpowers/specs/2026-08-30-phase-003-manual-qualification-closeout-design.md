@@ -80,9 +80,13 @@ check.
    initial scan/identification, and a populated Library.
 2. `MAC-02` — Library browsing/paging/search, representative
    filters/facets/sorting, stable selection, and game detail.
-3. `MAC-03` — the full Playmatch/GameTDB/SteamGridDB workflow, including
-   credential setup, metadata hydration, artwork discovery/download/display,
-   provider disable/re-enable, credential removal/replacement, and recovery.
+3. `MAC-03` — evaluate each provider according to its declared setup and role:
+   verify zero-setup Playmatch readiness and exact-content matching/enrichment
+   mappings; verify zero-setup GameTDB readiness and applicable-platform
+   metadata/artwork; configure a test SteamGridDB API key through the product
+   boundary and verify credentialed artwork discovery/download/display. Exercise
+   disable/re-enable and recovery for each provider; perform credential setup,
+   removal, or replacement only for SteamGridDB.
 4. `MAC-04` — full quit/relaunch persistence for onboarding, roots, committed
    Library state, metadata, and artwork, with no significant work silently
    started.
@@ -116,7 +120,10 @@ execution and records only sanitized labels. The stable probes are:
 2. `CNT-02` — native optical image.
 3. `CNT-03` — descriptor plus dependent tracks (CUE/BIN-style).
 4. `CNT-04` — multi-disc/playlist grouping.
-5. `CNT-05` — ordinary ZIP or 7z single-game archive.
+5. `CNT-05` — ordinary ZIP or 7z single-game archive must be successfully
+   admitted, extracted, identified, and presented as one coherent logical game;
+   any failure at those stages is `FAIL`, even when the error is bounded, and
+   the error handling must remain understandable and non-destructive.
 6. `CNT-06` — CHD.
 7. `CNT-07` — at least one RVZ, CSO, or WBFS representation.
 8. `CNT-08` — two supported equivalent representations converge without
@@ -169,7 +176,8 @@ check.
 
 ## 5. Evidence and retest rules
 
-The companion ledger is the authoritative manual record. Its scenario rows
+The [companion ledger](../../implementation/phase-003-manual-qualification.md)
+is the authoritative manual record. Its scenario rows
 contain stable IDs, independent applicability, procedure, expected result,
 status, actual observation, evidence reference, defect/retest reference, and
 latest retest reference. Its run provenance section identifies the environment

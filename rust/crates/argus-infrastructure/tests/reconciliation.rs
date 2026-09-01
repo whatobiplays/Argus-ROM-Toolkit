@@ -12,9 +12,7 @@ use argus_application::{
     SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId, UnitOfWork,
     UnitOfWorkFactory,
 };
-use argus_infrastructure::sqlite::{
-    Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteValue,
-};
+use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteValue};
 
 #[path = "common/mod.rs"]
 mod migration_test_support;
@@ -181,24 +179,7 @@ fn read_locator_via_scope(
 fn migration_0004_upgrades_0003_rows_and_keeps_native_identity_non_unique() {
     let directory = tempfile::tempdir().expect("tempdir");
     let database = directory.path().join("argus.sqlite3");
-    let registry_0003 = MigrationRegistry::new(vec![
-        Migration::sql(
-            1,
-            "0001_initial",
-            include_bytes!("../src/sqlite/migrations/sql/0001_initial.sql"),
-        ),
-        Migration::sql(
-            2,
-            "0002_sources",
-            include_bytes!("../src/sqlite/migrations/sql/0002_sources.sql"),
-        ),
-        Migration::sql(
-            3,
-            "0003_jobs_scans",
-            include_bytes!("../src/sqlite/migrations/sql/0003_jobs_scans.sql"),
-        ),
-    ])
-    .expect("0003 registry");
+    let registry_0003 = migration_test_support::registry_through(3);
     let (root, scan) = {
         let seeded = SqliteDatabaseExecutor::open_with_registry(&database, registry_0003)
             .expect("0003 database");

@@ -27,6 +27,10 @@ set -euo pipefail
 # launches can reach them.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+debug_app="$ROOT_DIR/flutter/build/macos/Build/Products/Debug/argus.app"
+
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/macos_debug_signing.sh"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   printf 'test-phase-001-native requires macOS (Darwin); got %s\n' \
@@ -73,6 +77,11 @@ bash "$ROOT_DIR/scripts/run_rust.sh" cargo build \
 
 (
   cd "$ROOT_DIR/flutter"
+
+  argus_configure_macos_debug_signing "$ROOT_DIR"
+  printf 'Building macOS Debug app with stable development signing\n'
+  fvm flutter build macos --debug --no-pub
+  argus_verify_macos_debug_signature "$debug_app"
 
   printf 'Running Phase 001 native milestone\n'
   ARGUS_PHASE_001_DATA_DIR="$milestone_data_dir" \

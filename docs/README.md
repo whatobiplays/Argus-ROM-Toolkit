@@ -6,7 +6,7 @@ This directory is the canonical engineering knowledge base for Argus ROM Toolkit
 
 1. [Architecture Overview](architecture/architecture-overview.md) — complete backend/frontend architecture and MVP boundaries.
 2. [Documentation Architecture](architecture/documentation-architecture.md) — document hierarchy, identifiers, statuses, ownership, and reference rules.
-3. [Phases](phases/README.md) — capability sequencing and implementation readiness. Current milestone: [PHASE-001 — Local Sources and Indexing](phases/phase-001-local-sources-and-indexing.md); the implemented Phase 000 baseline remains `In Progress` only because its explicitly deferred manual evidence is still `NOT RUN`.
+3. [Phases](phases/README.md) — capability sequencing and implementation readiness. Current milestone: [PHASE-003 — Game Identification and Enrichment](phases/phase-003-game-identification-and-enrichment.md); the implemented Phase 000 and Phase 001 baselines remain `In Progress` only because their explicitly deferred manual evidence is still `NOT RUN`.
 4. [Specifications](specifications/README.md) — subsystem contracts and behavior.
 5. [Implementation](implementation/README.md) — approved vertical slices.
 6. [Tasks](tasks/README.md) — bounded Codex implementation tasks.

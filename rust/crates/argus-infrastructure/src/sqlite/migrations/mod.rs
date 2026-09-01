@@ -66,6 +66,7 @@ impl Migration {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationRegistry {
     migrations: Vec<Migration>,
+    minimum_compatible_version: Option<u32>,
     #[cfg(feature = "test-support")]
     final_validation_failure: bool,
 }
@@ -89,13 +90,28 @@ impl MigrationRegistry {
         }
         Ok(Self {
             migrations,
+            minimum_compatible_version: None,
             #[cfg(feature = "test-support")]
             final_validation_failure: false,
         })
     }
 
-    /// Returns the embedded Phase 000 migration registry.
+    /// Returns the embedded production migration registry.
+    ///
+    /// Production startup rejects databases whose recorded history predates
+    /// schema version 8. Custom registries keep independent compatibility
+    /// semantics unless they opt into a floor explicitly.
     pub fn embedded() -> Self {
+        Self::embedded_without_compatibility_floor().with_minimum_compatible_version(8)
+    }
+
+    /// Returns the complete embedded migration chain without a compatibility floor.
+    ///
+    /// This is the explicit custom-registry form for historical fixtures and
+    /// other callers that intentionally own a different compatibility policy.
+    /// The normal production open path always uses [`Self::embedded`], which
+    /// applies the production minimum-supported schema.
+    pub fn embedded_without_compatibility_floor() -> Self {
         Self::new(vec![
             Migration::sql(1, "0001_initial", include_bytes!("sql/0001_initial.sql")),
             Migration::sql(2, "0002_sources", include_bytes!("sql/0002_sources.sql")),
@@ -178,8 +194,51 @@ impl MigrationRegistry {
         .expect("embedded migration registry is valid")
     }
 
+    /// Returns an explicitly custom historical registry for infrastructure
+    /// tests. The selected prefix is derived from the same embedded migration
+    /// definitions used by production, so fixture history cannot drift when a
+    /// migration name, checksum, or ordering changes.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn embedded_through_for_tests(version: usize) -> Self {
+        let mut registry = Self::embedded_without_compatibility_floor();
+        assert!(
+            version > 0 && version <= registry.migrations.len(),
+            "historical test registry version {version} is outside the embedded migration chain"
+        );
+        registry.migrations.truncate(version);
+        registry
+    }
+
     pub(crate) fn as_slice(&self) -> &[Migration] {
         &self.migrations
+    }
+
+    /// Applies an explicit minimum compatible schema to this registry.
+    ///
+    /// Registries created with [`Self::new`] have no compatibility floor by
+    /// default. Callers that need one must opt in explicitly; this is separate
+    /// from the production policy applied by [`Self::embedded`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `version` is outside the registry's supported schema range.
+    pub fn with_minimum_compatible_version(mut self, version: u32) -> Self {
+        let final_version = self
+            .migrations
+            .last()
+            .map(|migration| migration.version)
+            .unwrap_or(0);
+        assert!(
+            version > 0 && version <= final_version,
+            "minimum compatible schema {version} must be within registry's supported version range 1..={final_version}"
+        );
+        self.minimum_compatible_version = Some(version);
+        self
+    }
+
+    pub(crate) fn minimum_compatible_version(&self) -> Option<u32> {
+        self.minimum_compatible_version
     }
 
     /// Enables a deterministic validator failure for rollback regression

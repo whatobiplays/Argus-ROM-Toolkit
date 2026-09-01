@@ -3,7 +3,7 @@
 **Document ID:** SPEC-X-001  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-15  
+**Last Updated:** 2026-08-30
 **Depends On:** ARCH-001, ARCH-002, PHASE-000  
 **Supersedes:** None  
 **Superseded By:** None
@@ -90,7 +90,7 @@ Conceptually:
 Argus application release      0.4.0
 build commit                   573e501...
 latest database migration      17
-minimum supported schema       1
+minimum supported schema       8
 bridge contract major          1
 error-code contract major      1
 diagnostic bundle schema       1
@@ -284,6 +284,8 @@ Conceptually:
 minimum_supported_schema = N
 ```
 
+For the Phase 003 closeout decision, `minimum_supported_schema = 8` for existing production databases opened through the production embedded migration registry and normal production database-open path.
+
 The current application supports every released historical schema state that:
 
 1. is at or above the declared minimum supported schema;
@@ -300,13 +302,15 @@ because users of a packaged Argus application may skip arbitrary numbers of appl
 
 Compatibility depends on persisted schema state, not elapsed release count.
 
-## 15. Initial Compatibility Floor
+## 15. Current Compatibility Floor
 
-During the initial Phase 000 implementation, the minimum supported schema is the first released Argus schema once that schema is actually released.
+As of Phase 003, the minimum supported existing production database schema is 8.
 
-Before any public/released historical database exists, the repository may treat the initial schema as the sole supported state without fabricating fake legacy versions.
+Existing production databases with validated migration histories ending at schemas 1–7 are unsupported pre-Phase-003 development installs. They fail closed before any migration transaction or schema/data mutation, using the existing incompatible-schema handling.
 
-When the first released historical fixture exists, it becomes durable compatibility evidence under CONV-TEST-001.
+A genuinely fresh production database with no `schema_migrations` history remains supported. It bootstraps through the complete embedded migration chain from migration 1, including the migrations that establish schema 8 and later state.
+
+This floor is a production embedded-registry policy. Arbitrary `MigrationRegistry` instances and `open_with_registry(...)` test/custom registries retain their independent version semantics and do not inherit the production floor unless explicitly configured to do so.
 
 ## 16. Raising the Compatibility Floor
 
@@ -331,7 +335,7 @@ A product major release is the natural time for a compatibility-floor break when
 
 Argus persistence compatibility is forward-migration oriented.
 
-For a recognized supported older schema:
+For a recognized supported older schema at or above the declared compatibility floor:
 
 ```text
 recognized supported historical schema

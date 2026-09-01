@@ -62,7 +62,7 @@ Start with:
 
 - `docs/README.md`
 - `docs/architecture/architecture-overview.md`
-- `docs/phases/phase-001-local-sources-and-indexing.md` — active implementation milestone
+- `docs/phases/phase-003-game-identification-and-enrichment.md` — active implementation milestone
 - `docs/phases/phase-000-foundation.md` — implemented foundation and deferred manual completion evidence
 
 The repository documentation is the durable source of architecture and implementation intent.

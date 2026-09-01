@@ -3,6 +3,13 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_macos_native_qualification:
+        description: Run the macOS native qualification on a provisioned signing runner
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -140,7 +147,17 @@ jobs:
 
   phase-001-native:
     name: Phase 001 native milestone
+    # Hosted runners do not contain the owner-local Apple Development
+    # certificate required by the real two-process native harness. Keep the
+    # gate explicit and truthful: normal CI skips it until a repository
+    # variable enables a provisioned runner, while workflow_dispatch provides
+    # a one-off opt-in for the same environment.
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_macos_native_qualification) || vars.ARGUS_MACOS_NATIVE_QUALIFICATION_ENABLED == 'true' }}
     runs-on: macos-latest
+    env:
+      FLUTTER_XCODE_CODE_SIGN_IDENTITY: ${{ secrets.ARGUS_MACOS_CODE_SIGN_IDENTITY }}
+      FLUTTER_XCODE_DEVELOPMENT_TEAM: ${{ secrets.ARGUS_MACOS_DEVELOPMENT_TEAM }}
+      FLUTTER_XCODE_CODE_SIGN_STYLE: ${{ secrets.ARGUS_MACOS_CODE_SIGN_STYLE }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

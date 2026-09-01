@@ -175,6 +175,10 @@ Flutter/ephemeral/
 # Keep project/workspace files committed.
 # Do not ignore *.xcodeproj or *.xcworkspace globally.
 
+# Optional machine-local macOS Debug signing override used by native
+# qualification. The tracked Debug.xcconfig includes it when present.
+flutter/macos/Runner/Configs/Debug.local.xcconfig
+
 # -----------------------------------------------------------------------------
 # Windows / MSVC
 # -----------------------------------------------------------------------------

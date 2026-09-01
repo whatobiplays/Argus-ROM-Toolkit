@@ -13,10 +13,12 @@ use argus_application::{
 use argus_domain::{LibraryRootId, LibrarySourceId};
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as LocalFilesystemProviderImpl;
 use argus_infrastructure::sqlite::{
-    Migration, MigrationOutcome, MigrationRegistry, SqliteDatabaseExecutor,
-    SqliteLibraryRootQueries,
+    MigrationOutcome, SqliteDatabaseExecutor, SqliteLibraryRootQueries,
 };
 use tempfile::tempdir;
+
+#[path = "common/mod.rs"]
+mod migration_test_support;
 
 fn context() -> OperationContext {
     OperationContext::new(
@@ -46,21 +48,20 @@ fn new_root(source: LibrarySourceId, locator: RootLocator, display: &str) -> New
 }
 
 #[test]
-fn embedded_registry_upgrades_a_phase_000_database_through_slice_004() {
+fn custom_registry_upgrades_a_phase_000_database_through_slice_004() {
     let directory = tempdir().expect("tempdir");
     let database = directory.path().join("argus.sqlite3");
-    let phase_000 = MigrationRegistry::new(vec![Migration::sql(
-        1,
-        "0001_initial",
-        include_bytes!("../src/sqlite/migrations/sql/0001_initial.sql"),
-    )])
-    .expect("phase 000 registry");
+    let phase_000 = migration_test_support::registry_through(1);
     let first = SqliteDatabaseExecutor::open_with_registry(&database, phase_000)
         .expect("phase 000 database");
     assert_eq!(first.migration_summary().current_version, 1);
     first.shutdown().expect("shutdown");
 
-    let second = SqliteDatabaseExecutor::open(&database).expect("upgraded database");
+    let second = SqliteDatabaseExecutor::open_with_registry(
+        &database,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded database");
     assert_eq!(second.migration_summary().current_version, 17);
     assert_eq!(
         second.migration_summary().outcome,

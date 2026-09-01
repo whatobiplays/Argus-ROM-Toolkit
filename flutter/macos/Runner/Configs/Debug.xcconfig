@@ -1,4 +1,11 @@
 #include "../../Flutter/Flutter-Debug.xcconfig"
 #include "Warnings.xcconfig"
 
+// Optional machine-local signing overrides for macOS native qualification.
+// Keep Debug.local.xcconfig untracked; it may provide CODE_SIGN_IDENTITY,
+// DEVELOPMENT_TEAM, and CODE_SIGN_STYLE without publishing owner-specific
+// signing values. The native harness forwards these values to Flutter's
+// xcodebuild invocation so they override the project's ad-hoc Debug default.
+#include? "Debug.local.xcconfig"
+
 OTHER_LDFLAGS = $(inherited) -force_load "$(PROJECT_DIR)/../../rust/target/debug/libargus_bridge.a"

@@ -13,9 +13,10 @@ use argus_application::{
     StartLibraryScanAllResult, SubsystemName, TechnicalClass, TraceId, UnitOfWork,
     UnitOfWorkFactory,
 };
-use argus_infrastructure::sqlite::{
-    Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteJobsQueries,
-};
+use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteJobsQueries};
+
+#[path = "common/mod.rs"]
+mod migration_test_support;
 
 const ROOT_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const ROOT_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -61,48 +62,15 @@ fn configuration_error(trace_id: TraceId) -> ApplicationError {
         .expect("configuration error")
 }
 
-fn old_registry_through_0006() -> MigrationRegistry {
-    MigrationRegistry::new(vec![
-        Migration::sql(
-            1,
-            "0001_initial",
-            include_bytes!("../src/sqlite/migrations/sql/0001_initial.sql"),
-        ),
-        Migration::sql(
-            2,
-            "0002_sources",
-            include_bytes!("../src/sqlite/migrations/sql/0002_sources.sql"),
-        ),
-        Migration::sql(
-            3,
-            "0003_jobs_scans",
-            include_bytes!("../src/sqlite/migrations/sql/0003_jobs_scans.sql"),
-        ),
-        Migration::sql(
-            4,
-            "0004_source_reconciliation",
-            include_bytes!("../src/sqlite/migrations/sql/0004_source_reconciliation.sql"),
-        ),
-        Migration::sql(
-            5,
-            "0005_source_hierarchy",
-            include_bytes!("../src/sqlite/migrations/sql/0005_source_hierarchy.sql"),
-        ),
-        Migration::sql(
-            6,
-            "0006_retry_and_progress",
-            include_bytes!("../src/sqlite/migrations/sql/0006_retry_and_progress.sql"),
-        ),
-    ])
-    .expect("old registry")
-}
-
 #[test]
 fn migration_0007_upgrades_0006_history_and_backfills_invalid_configuration_errors() {
     let directory = tempfile::tempdir().expect("tempdir");
     let database = directory.path().join("argus.sqlite3");
-    let old = SqliteDatabaseExecutor::open_with_registry(&database, old_registry_through_0006())
-        .expect("old schema open");
+    let old = SqliteDatabaseExecutor::open_with_registry(
+        &database,
+        migration_test_support::registry_through(6),
+    )
+    .expect("old schema open");
     assert_eq!(old.migration_summary().current_version, 6);
     old.shutdown().expect("old shutdown");
 
@@ -159,7 +127,11 @@ fn migration_0007_upgrades_0006_history_and_backfills_invalid_configuration_erro
         .expect("seed old history");
     drop(connection);
 
-    let fresh = SqliteDatabaseExecutor::open(&database).expect("upgraded open");
+    let fresh = SqliteDatabaseExecutor::open_with_registry(
+        &database,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded open");
     assert_eq!(fresh.migration_summary().current_version, 17);
     assert_eq!(fresh.migration_summary().applied_count, 11);
 

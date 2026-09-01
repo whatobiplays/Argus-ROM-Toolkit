@@ -9,10 +9,11 @@ use argus_application::{
     SourceEntryQueries, SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId,
     UnitOfWork, UnitOfWorkFactory,
 };
-use argus_infrastructure::sqlite::{
-    Migration, MigrationRegistry, SqliteDatabaseExecutor, SqliteSourceEntryQueries, SqliteValue,
-};
+use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteSourceEntryQueries, SqliteValue};
 use tempfile::tempdir;
+
+#[path = "common/mod.rs"]
+mod migration_test_support;
 
 fn context() -> OperationContext {
     OperationContext::new(
@@ -358,34 +359,16 @@ fn projection_exposes_only_safe_application_facts() {
 fn migration_latest_applies_fresh_and_upgrades_version_four() {
     let directory = tempdir().expect("tempdir");
     let path = directory.path().join("upgrade.sqlite3");
-    let old_registry = MigrationRegistry::new(vec![
-        Migration::sql(
-            1,
-            "0001_initial",
-            include_bytes!("../src/sqlite/migrations/sql/0001_initial.sql"),
-        ),
-        Migration::sql(
-            2,
-            "0002_sources",
-            include_bytes!("../src/sqlite/migrations/sql/0002_sources.sql"),
-        ),
-        Migration::sql(
-            3,
-            "0003_jobs_scans",
-            include_bytes!("../src/sqlite/migrations/sql/0003_jobs_scans.sql"),
-        ),
-        Migration::sql(
-            4,
-            "0004_source_reconciliation",
-            include_bytes!("../src/sqlite/migrations/sql/0004_source_reconciliation.sql"),
-        ),
-    ])
-    .expect("old registry");
+    let old_registry = migration_test_support::registry_through(4);
     let old = SqliteDatabaseExecutor::open_with_registry(&path, old_registry).expect("old open");
     assert_eq!(old.migration_summary().current_version, 4);
     old.shutdown().expect("old shutdown");
 
-    let fresh = SqliteDatabaseExecutor::open(&path).expect("upgraded open");
+    let fresh = SqliteDatabaseExecutor::open_with_registry(
+        &path,
+        migration_test_support::current_registry(),
+    )
+    .expect("upgraded open");
     assert_eq!(fresh.migration_summary().current_version, 17);
     assert_eq!(fresh.migration_summary().applied_count, 13);
     let index = fresh

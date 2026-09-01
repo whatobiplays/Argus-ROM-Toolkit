@@ -1,9 +1,9 @@
 # Game Identification and Enrichment
 
 **Document ID:** PHASE-003  
-**Status:** Ready for Implementation  
+**Status:** In Progress
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-08-30
 **Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -323,7 +323,7 @@ Phase 003 is complete when all of the following are true:
 19. Android foreground hosting projects the existing Rust-owned job lifecycle and never creates a second runtime/scheduler/database authority.
 20. General archives containing multiple independent games are rejected atomically for identification.
 21. Archive/container parsing satisfies resource, traversal, staging, cancellation, and hostile-input requirements.
-22. Phase 000–002 databases migrate without hidden identification/network/filesystem work or fabricated Game identities.
+22. Fresh production databases with no migration history bootstrap through the complete embedded registry; existing production databases with validated schema 8+ history migrate forward without hidden identification/network/filesystem work, while validated schema 1–7 histories are unsupported development installs rejected non-destructively before pending migrations.
 23. Game-level Library projections update incrementally and normal Flutter browsing remains paged/backend-owned.
 24. Manual metadata/artwork correction remains explicitly later-MVP rather than accidentally post-MVP or implemented in Phase 003.
 25. RetroAchievements, arcade, collections, cross-platform grouping, IGDB, ScreenScraper, and cloud-proxy scope remain absent.
@@ -337,6 +337,13 @@ Phase 003 is complete when all of the following are true:
 33. Required result artifacts report executed and deferred evidence truthfully.
 34. Metadata/provider preference changes preserve the committed setting independently from local re-resolution admission, and their local-only reconciliation performs no provider network or artwork download work.
 35. Product onboarding is query-authoritative and durable: consent, confirmed preferences, and the explicit provider-setup outcome gate completion; first-folder success automatically completes/admit-refreshes, existing-root upgrades use explicit Finish & Refresh, and completion persists before child admission.
+36. Owner-executed manual closeout qualification covers release/production artifacts, fresh app state, macOS, physical supported ARM64 Android, representative content, targeted accessibility/visual probes, and restart/interrupted-work recovery; every applicable mandatory scenario is recorded `PASS` before the phase is Complete.
+
+### 12.1 Manual closeout gate
+
+Phase 003 remains **In Progress** until the owner records direct observations for every applicable mandatory scenario in `docs/implementation/phase-003-manual-qualification.md`. The gate covers the release or production artifact, fresh-state startup, macOS and physical supported ARM64 Android journeys, representative content and provider fallback, accessibility and visual checks, restart and interrupted-work recovery, and append-only retests where needed.
+
+Automated checks and native qualification establish implementation evidence but do not create human-observed manual evidence. This closeout gate is not a new implementation slice or a P03-010 requirement; it is the owner qualification required after the P03-001 through P03-009 implementation sequence. The phase must not be marked Complete while any applicable scenario remains `NOT RUN`, `BLOCKED`, or otherwise lacks direct evidence.
 
 ## 13. Readiness Checklist
 
@@ -360,11 +367,13 @@ Phase 003 is complete when all of the following are true:
 - [x] Architecture-overview corrections are written/reviewed
 - [x] Cross-document consistency review is clean
 
-**Readiness rule:** PHASE-003 is **Ready for Implementation** because the focused contract package and required amendments are complete, consistent, reviewed, and owner-approved. Implementation readiness is a deliberate documentation-state change and is not inferred from phase design alone.
+**Readiness rule:** PHASE-003 entered implementation after the focused contract package and required amendments were complete, consistent, reviewed, and owner-approved. The phase is now **In Progress**; implementation readiness does not satisfy the manual closeout gate or permit a Complete declaration.
 
 ## 14. References
 
 - `docs/superpowers/specs/2026-08-22-phase-003-game-identification-and-enrichment-design.md`
+- `docs/superpowers/specs/2026-08-30-phase-003-manual-qualification-closeout-design.md`
+- `docs/implementation/phase-003-manual-qualification.md`
 - `docs/architecture/architecture-overview.md`
 - `docs/product-contract.json`
 - `docs/phases/phase-001-local-sources-and-indexing.md`

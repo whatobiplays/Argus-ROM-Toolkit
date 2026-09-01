@@ -1123,7 +1123,7 @@ Tests cover:
 
 ### 35.6 Persistence/query
 
-Tests cover migration from supported Phase 000-002 schemas, current-membership and acyclic redirect/continuity-anchor constraints, retained identity-evidence separation, concurrent grouping/mapping updates, query-bound cursor stability, closed filter/sort semantics, own-category-excluded facet counts, exact hydration/availability precedence, active/orphan/redirect query behavior, incremental projection maintenance, and event-loss authoritative re-query.
+Tests cover historical Phase 000-002 migration fixtures through an explicitly configured custom/full registry, production forward migration from supported schema-8+ state, safe rejection of validated production schema 1–7 history, current-membership and acyclic redirect/continuity-anchor constraints, retained identity-evidence separation, concurrent grouping/mapping updates, query-bound cursor stability, closed filter/sort semantics, own-category-excluded facet counts, exact hydration/availability precedence, active/orphan/redirect query behavior, incremental projection maintenance, and event-loss authoritative re-query.
 
 ## 36. Out of Scope
 

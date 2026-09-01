@@ -25,6 +25,10 @@ set -euo pipefail
 # lives there and is removed by the trap after verification.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+debug_app="$ROOT_DIR/flutter/build/macos/Build/Products/Debug/argus.app"
+
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/macos_debug_signing.sh"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   printf 'test-phase-000-native requires macOS (Darwin); got %s\n' \
@@ -51,14 +55,10 @@ bash "$ROOT_DIR/scripts/run_rust.sh" cargo build \
   # tests that locate repository fixtures must receive the repo root through
   # their documented environment seam.
   export ARGUS_REPO_ROOT="$ROOT_DIR"
-  # The sandboxed macOS app process cannot read repository files outside its
-  # container, so the startup-recovery fixture is passed through the smoke
-  # test's documented content/checksum environment seams.
-  migration_sql="$ROOT_DIR/rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0001_initial.sql"
-  ARGUS_MIGRATION_SQL="$(<"$migration_sql")"
-  export ARGUS_MIGRATION_SQL
-  ARGUS_MIGRATION_SHA256="$(shasum -a 256 "$migration_sql" | awk '{print $1}')"
-  export ARGUS_MIGRATION_SHA256
+  argus_configure_macos_debug_signing "$ROOT_DIR"
+  printf 'Building macOS Debug app with stable development signing\n'
+  fvm flutter build macos --debug --no-pub
+  argus_verify_macos_debug_signature "$debug_app"
 
   printf 'Running native bridge smoke test\n'
   fvm flutter test integration_test/native_bridge_smoke_test.dart -d macos

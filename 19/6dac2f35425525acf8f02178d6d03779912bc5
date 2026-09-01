@@ -1,0 +1,21 @@
+rust/crates/argus-infrastructure/src/sqlite/migrations/mod.rs
+  s_928125732a04e3::t_38bea6b06fbd8d 222-225,227-235
+rust/crates/argus-infrastructure/tests/sqlite_kernel.rs
+  s_928125732a04e3::t_33eea2cc39b8bb 288-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "196dac2f35425525acf8f02178d6d03779912bc5",
+  "prompts": {},
+  "sessions": {
+    "s_928125732a04e3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05566-8db5-7b31-a80b-0991bd0be0ce",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

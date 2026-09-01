@@ -77,6 +77,13 @@ argus_verify_macos_debug_signature() {
     return 1
   fi
 
+  local verification_details
+  if ! verification_details="$(codesign --verify --deep --strict "$app_path" 2>&1)"; then
+    printf 'macOS Debug app failed strict code-signature verification.\n' >&2
+    printf '%s\n' "$verification_details" >&2
+    return 1
+  fi
+
   local signature_details
   if ! signature_details="$(codesign -d --verbose=4 "$app_path" 2>&1)"; then
     printf 'Unable to inspect the macOS Debug app signature.\n' >&2

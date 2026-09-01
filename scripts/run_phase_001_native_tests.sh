@@ -29,6 +29,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 debug_app="$ROOT_DIR/flutter/build/macos/Build/Products/Debug/argus.app"
 
+# shellcheck disable=SC1091
 source "$ROOT_DIR/scripts/macos_debug_signing.sh"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then

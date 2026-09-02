@@ -1,0 +1,45 @@
+scripts/macos_rust_build_environment.sh
+  s_e2917319ff88a3::t_03abdd90e25bd9 187,189-190,200,203-207,231-232,234
+  s_e2917319ff88a3::t_8ef5252ec53c3f 303-305
+  s_e2917319ff88a3::t_ec0223a7c8345f 83-97
+  s_e2917319ff88a3::t_eef631b1618704 202,230
+  s_e2917319ff88a3::t_bb4f21f6659ca6 293-298
+  s_e2917319ff88a3::t_caf29d0c4279f2 124-125
+  s_e2917319ff88a3::t_34b0978517f2f8 6-7,33-82,98-123,126-169,188,191-199,201,208-229,233,235-237,246,250,256-276,283,289-292,299-302,307-312,314-320
+scripts/test_macos_rust_build_environment.sh
+  s_e2917319ff88a3::t_062d5f3aac80c6 6,168
+  s_e2917319ff88a3::t_eaf28a0cb83af6 5,87,89,91-92,99,101-108,112,114-116,133-138,161-167,169-206,208-217,224-225,227,234-235,237,244-245,247,262-263,265,271-272,274,277,280-281,283,289-290,292
+  s_e2917319ff88a3::t_43d43cb53da531 141-155
+  s_e2917319ff88a3::t_3fe02a098bbeea 254-255
+  s_e2917319ff88a3::t_9ad6e79547c224 318-431
+  s_e2917319ff88a3::t_201c6a2845f98c 207
+docs/superpowers/specs/2026-09-02-macos-arm64-rust-deployment-target-design.md
+  s_e2917319ff88a3::t_318064d08cce35 23-28,47-49,51,54-55,58-77,84-95,99,118-119,122-135,147-150
+  s_e2917319ff88a3::t_1839f2de78c086 78-83,137-141
+docs/superpowers/plans/2026-08-21-phase-002-slice-007-android-ci-distribution-and-first-class-platform-hardening.md
+  s_e2917319ff88a3::t_b52694db6f6bcb 27-28,269-270,585-586
+docs/superpowers/specs/2026-08-21-phase-002-slice-007-android-ci-distribution-and-first-class-platform-hardening-design.md
+  s_e2917319ff88a3::t_b52694db6f6bcb 118,166-167
+docs/superpowers/plans/2026-09-02-macos-arm64-rust-deployment-target.md
+  s_e2917319ff88a3::t_65f1f181926bce 7,15,17,24-41,105-106,108-116,145-148,231-232,281-285
+  s_e2917319ff88a3::t_7f8e94c9fab204 118-120
+  s_e2917319ff88a3::t_94357109c65ff1 56-70
+docs/implementation/phase-002-slice-007-android-ci-distribution-and-first-class-platform-hardening.md
+  s_e2917319ff88a3::t_b52694db6f6bcb 15-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c7a41f3079291ae327434142b18bb847eef44458",
+  "prompts": {},
+  "sessions": {
+    "s_e2917319ff88a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a060c2-b87d-7ba1-b30d-4644caf028b9",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

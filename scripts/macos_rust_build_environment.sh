@@ -371,15 +371,17 @@ argus_cargo_config_canonical_path() {
   printf '%s/%s\n' "$absolute_directory" "$config_basename"
 }
 
-argus_cargo_config_include_path() {
-  local config_file="$1"
+# Resolve an include against an explicit Cargo-defined base directory. File
+# includes pass the including file's directory; inline CLI includes pass the
+# invocation's current working directory.
+argus_cargo_config_include_path_from_directory() {
+  local base_directory="$1"
   local include_path="$2"
-  local config_directory="${config_file%/*}"
 
   if [[ "$include_path" == /* ]]; then
     printf '%s\n' "$include_path"
   else
-    printf '%s/%s\n' "$config_directory" "$include_path"
+    printf '%s/%s\n' "$base_directory" "$include_path"
   fi
 }
 
@@ -604,6 +606,7 @@ argus_cargo_config_file_has_native_target_rustflags_recursive() {
   local visited_file
   local include_path
   local included_config_file
+  local config_directory
 
   [[ -f "$config_file" ]] || return 1
   canonical_config_file="$(argus_cargo_config_canonical_path "$config_file")" ||
@@ -624,10 +627,11 @@ argus_cargo_config_file_has_native_target_rustflags_recursive() {
   # Cargo reports a missing required include while loading the configuration;
   # an absent file cannot contribute a target flag, so leave that validation to
   # Cargo and continue looking for existing optional or required includes.
+  config_directory="${canonical_config_file%/*}"
   while IFS= read -r include_path; do
     [[ -n "$include_path" && "$include_path" == *.toml ]] || continue
-    included_config_file="$(argus_cargo_config_include_path \
-      "$canonical_config_file" "$include_path")"
+    included_config_file="$(argus_cargo_config_include_path_from_directory \
+      "$config_directory" "$include_path")"
     if [[ -f "$included_config_file" ]] &&
       argus_cargo_config_file_has_native_target_rustflags_recursive \
         "$included_config_file"; then
@@ -685,7 +689,7 @@ argus_cargo_config_value_has_native_target_rustflags() {
 
   while IFS= read -r include_path; do
     [[ -n "$include_path" && "$include_path" == *.toml ]] || continue
-    included_config_file="$(argus_cargo_config_include_path \
+    included_config_file="$(argus_cargo_config_include_path_from_directory \
       "$PWD" "$include_path")"
     if [[ -f "$included_config_file" ]] &&
       argus_cargo_config_file_has_native_target_rustflags \

@@ -407,6 +407,26 @@ run_pinned_cargo_build_probe() {
   printf '%s\n' "$log_file"
 }
 
+run_pinned_cargo_cli_config_rustc_probe() {
+  local target_directory="$1"
+  local config_value="$2"
+  local log_file
+
+  mkdir -p "$target_directory"
+  log_file="$target_directory/cargo-verbose.log"
+  if ! RUSTUP_TOOLCHAIN="$RUST_CHANNEL" rustup run "$RUST_CHANNEL" cargo \
+    --config "$config_value" rustc \
+    --manifest-path "$ROOT_DIR/rust/Cargo.toml" \
+    --package argus-domain --lib \
+    --target "$ARGUS_MACOS_RUST_TARGET" \
+    --target-dir "$target_directory" \
+    -vv >"$log_file" 2>&1; then
+    fail "pinned Cargo CLI config rustc probe failed; inspect $log_file"
+  fi
+
+  printf '%s\n' "$log_file"
+}
+
 if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] &&
   command -v rustup >/dev/null 2>&1 && [[ -n "$RUST_CHANNEL" ]]; then
   cargo_probe_root="$(mktemp -d)"
@@ -525,6 +545,62 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] &&
     '[target.aarch64-apple-darwin]' \
     'rustflags = ["-C", "opt-level=1"]' >"$recursive_target_config_file"
   run_config_rustflags_probe recursive-included-config "$recursive_config_file"
+
+  cli_include_root="$cargo_probe_root/cli-included-config"
+  mkdir -p "$cli_include_root/configs"
+  cli_cargo_home="$cli_include_root/cargo-home"
+  mkdir -p "$cli_cargo_home"
+  cli_include_target_config_file="$cli_include_root/configs/target.toml"
+  printf '%s\n' \
+    '[target.aarch64-apple-darwin]' \
+    'rustflags = ["-C", "opt-level=1"]' >"$cli_include_target_config_file"
+
+  run_cli_config_rustflags_probe() {
+    local probe_name="$1"
+    local config_value="$2"
+    local probe_log
+
+    probe_log="$(
+      cd "$cli_include_root"
+      reset_policy_environment
+      CARGO_HOME="$cli_cargo_home" \
+        argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+        --target "$ARGUS_MACOS_RUST_TARGET" --config "$config_value"
+      assert_contains "-C metadata=argus-macos-deployment-target-" \
+        "${CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS-}" \
+        "a CLI include target source must receive an additive fingerprint"
+      assert_unset CARGO_BUILD_RUSTFLAGS
+      CARGO_HOME="$cli_cargo_home" \
+        run_pinned_cargo_cli_config_rustc_probe \
+        "$cargo_probe_root/$probe_name" "$config_value"
+    )"
+    assert_file_contains "$probe_log" "-C opt-level=1"
+    assert_file_contains "$probe_log" \
+      "metadata=argus-macos-deployment-target-"
+  }
+
+  run_cli_config_rustflags_probe cli-string-include \
+    'include = ["configs/target.toml"]'
+  run_cli_config_rustflags_probe cli-inline-table-include \
+    'include = [{ path = "configs/target.toml" }]'
+
+  optional_cli_config='include = [{ path = "missing.toml", optional = true }]'
+  optional_cli_probe_log="$(
+    cd "$cli_include_root"
+    reset_policy_environment
+    CARGO_HOME="$cli_cargo_home" \
+      argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+      --target "$ARGUS_MACOS_RUST_TARGET" --config "$optional_cli_config"
+    assert_contains "-C metadata=argus-macos-deployment-target-" \
+      "${CARGO_BUILD_RUSTFLAGS-}" \
+      "an optional CLI include without target flags must use build rustflags"
+    assert_unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
+    CARGO_HOME="$cli_cargo_home" \
+      run_pinned_cargo_cli_config_rustc_probe \
+      "$cargo_probe_root/optional-cli-include" "$optional_cli_config"
+  )"
+  assert_file_contains "$optional_cli_probe_log" \
+    "metadata=argus-macos-deployment-target-"
 
   multiple_config_build_file="$included_config_root/multiple-build.toml"
   multiple_config_target_file="$included_config_root/multiple-target.toml"

@@ -95,12 +95,17 @@ The resolver accepts whitespace around the equals sign in inline `--config`
 assignments, recognizes exact and matching `cfg(...)` target tables in both
 dotted and table forms, and scans every `--config` argument. For file-based
 configuration it follows the top-level `include` array recursively, resolves
-relative paths from the including file, skips absent optional includes, and
-tracks canonical paths so cycles terminate. Missing required includes remain
-Cargo errors when Cargo loads the same invocation. During hierarchical
-discovery it selects `.cargo/config` over `.cargo/config.toml` when both exist
-in one directory, matching Cargo's compatibility behavior; the same choice is
-applied to the Cargo home configuration.
+configuration it follows the top-level `include` array recursively and
+resolves relative paths from the directory containing the including file. For
+an inline CLI `--config KEY=VALUE` include, it resolves relative paths from
+Cargo's current working directory. These base directories are passed
+explicitly to the resolver so the two Cargo-defined contexts cannot be
+confused. The resolver skips absent optional includes and tracks canonical
+paths so cycles terminate. Missing required includes remain Cargo errors when
+Cargo loads the same invocation. During hierarchical discovery it selects
+`.cargo/config` over `.cargo/config.toml` when both exist in one directory,
+matching Cargo's compatibility behavior; the same choice is applied to the
+Cargo home configuration.
 
 The helper adds the deployment marker to the highest effective Rust source
 already selected by Cargo: encoded flags, global flags, target-specific flags,
@@ -174,7 +179,8 @@ the pinned Cargo toolchain to inspect effective `rustc` arguments:
 7. Matching target-name and `cfg(...)` Cargo tables, including nested
    expressions, retain their caller flags alongside the deployment marker.
 8. Effective pinned-Cargo probes cover compact and whitespace-valid `--config`
-   assignments, direct and recursive includes, optional missing includes,
+   assignments, file-based direct and recursive includes, CLI string and
+   inline-table includes, optional missing includes in both contexts,
    include-cycle termination, multiple `--config` files, and `.cargo/config`
    versus `.cargo/config.toml` precedence.
 9. Pinned Cargo fingerprints change across 26.5 → 11.0 transitions, and the

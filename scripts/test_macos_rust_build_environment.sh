@@ -460,14 +460,31 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] &&
   assert_file_contains "$target_config_probe_log" \
     "metadata=argus-macos-deployment-target-"
 
+  run_config_rustflags_probe() {
+    local probe_name="$1"
+    local config_value="$2"
+    local probe_log
+
+    reset_policy_environment
+    argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+      --target "$ARGUS_MACOS_RUST_TARGET" --config "$config_value"
+    probe_log="$(run_pinned_cargo_rustc_probe \
+      "$cargo_probe_root/$probe_name" --config "$config_value")"
+    assert_file_contains "$probe_log" "-C opt-level=1"
+    assert_file_contains "$probe_log" \
+      "metadata=argus-macos-deployment-target-"
+  }
+
+  target_config_with_whitespace='target.aarch64-apple-darwin.rustflags = ["-C", "opt-level=1"]'
+  run_config_rustflags_probe target-config-whitespace \
+    "$target_config_with_whitespace"
+
   matching_cfg_config="target.'cfg(all(target_arch = \"aarch64\", target_os = \"macos\"))'.rustflags=[\"-C\",\"opt-level=1\"]"
-  reset_policy_environment
-  argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
-    --target "$ARGUS_MACOS_RUST_TARGET" --config "$matching_cfg_config"
-  assert_contains "-C metadata=argus-macos-deployment-target-" \
-    "$CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS" \
-    "a matching cfg --config table must receive an additive fingerprint"
-  assert_unset CARGO_BUILD_RUSTFLAGS
+  run_config_rustflags_probe matching-cfg-inline-config "$matching_cfg_config"
+
+  matching_cfg_config_with_whitespace="target.'cfg(all(target_arch = \"aarch64\", target_os = \"macos\"))'.rustflags = [\"-C\", \"opt-level=1\"]"
+  run_config_rustflags_probe matching-cfg-config-whitespace \
+    "$matching_cfg_config_with_whitespace"
 
   matching_cfg_config_file="$cargo_probe_root/matching-cfg-config.toml"
   printf '%s\n' \
@@ -486,6 +503,92 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] &&
   assert_file_contains "$matching_cfg_probe_log" "-C opt-level=1"
   assert_file_contains "$matching_cfg_probe_log" \
     "metadata=argus-macos-deployment-target-"
+
+  included_config_root="$cargo_probe_root/included-config"
+  mkdir -p "$included_config_root/nested"
+  included_config_file="$included_config_root/root.toml"
+  included_target_config_file="$included_config_root/included-target.toml"
+  printf '%s\n' 'include = ["included-target.toml"]' >"$included_config_file"
+  printf '%s\n' \
+    "[target.'cfg(target_os = \"macos\")']" \
+    'rustflags = ["-C", "opt-level=1"]' >"$included_target_config_file"
+  run_config_rustflags_probe included-config "$included_config_file"
+
+  recursive_config_file="$included_config_root/recursive-root.toml"
+  recursive_nested_config_file="$included_config_root/nested/recursive-level-one.toml"
+  recursive_target_config_file="$included_config_root/nested/recursive-level-two.toml"
+  printf '%s\n' 'include = ["nested/recursive-level-one.toml"]' \
+    >"$recursive_config_file"
+  printf '%s\n' 'include = ["recursive-level-two.toml"]' \
+    >"$recursive_nested_config_file"
+  printf '%s\n' \
+    '[target.aarch64-apple-darwin]' \
+    'rustflags = ["-C", "opt-level=1"]' >"$recursive_target_config_file"
+  run_config_rustflags_probe recursive-included-config "$recursive_config_file"
+
+  multiple_config_build_file="$included_config_root/multiple-build.toml"
+  multiple_config_target_file="$included_config_root/multiple-target.toml"
+  printf '%s\n' \
+    '[build]' \
+    'rustflags = ["-C", "opt-level=1"]' >"$multiple_config_build_file"
+  printf '%s\n' \
+    '[target.aarch64-apple-darwin]' \
+    'rustflags = ["-C", "opt-level=1"]' >"$multiple_config_target_file"
+  reset_policy_environment
+  argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+    --target "$ARGUS_MACOS_RUST_TARGET" \
+    --config "$multiple_config_build_file" \
+    --config "$multiple_config_target_file"
+  multiple_config_probe_log="$(run_pinned_cargo_rustc_probe \
+    "$cargo_probe_root/multiple-config-files" \
+    --config "$multiple_config_build_file" \
+    --config "$multiple_config_target_file")"
+  assert_file_contains "$multiple_config_probe_log" "-C opt-level=1"
+  assert_file_contains "$multiple_config_probe_log" \
+    "metadata=argus-macos-deployment-target-"
+
+  optional_config_file="$included_config_root/optional-config.toml"
+  printf '%s\n' \
+    'include = [' \
+    '  { path = "missing-optional.toml", optional = true },' \
+    ']' \
+    '[build]' \
+    'rustflags = ["-C", "opt-level=1"]' >"$optional_config_file"
+  run_config_rustflags_probe optional-included-config "$optional_config_file"
+
+  cycle_config_file="$included_config_root/cycle-root.toml"
+  cycle_nested_config_file="$included_config_root/cycle-nested.toml"
+  printf '%s\n' 'include = ["cycle-nested.toml"]' >"$cycle_config_file"
+  printf '%s\n' 'include = ["cycle-root.toml"]' >"$cycle_nested_config_file"
+  if argus_cargo_config_file_has_native_target_rustflags "$cycle_config_file"; then
+    fail "an include cycle without target flags must not report a target source"
+  fi
+
+  precedence_root="$cargo_probe_root/config-precedence"
+  mkdir -p "$precedence_root/.cargo" "$precedence_root/cargo-home"
+  printf '%s\n' \
+    '[build]' \
+    'rustflags = ["-C", "opt-level=1"]' >"$precedence_root/.cargo/config"
+  printf '%s\n' \
+    "[target.'cfg(target_os = \"macos\")']" \
+    'rustflags = ["-C", "opt-level=2"]' \
+    >"$precedence_root/.cargo/config.toml"
+  precedence_probe_log="$(
+    cd "$precedence_root"
+    export CARGO_HOME="$precedence_root/cargo-home"
+    reset_policy_environment
+    argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+      --target "$ARGUS_MACOS_RUST_TARGET"
+    assert_contains "-C metadata=argus-macos-deployment-target-" \
+      "${CARGO_BUILD_RUSTFLAGS-}" \
+      "active .cargo/config build flags must receive the deployment marker"
+    assert_unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
+    run_pinned_cargo_rustc_probe "$precedence_root/target"
+  )"
+  assert_file_contains "$precedence_probe_log" "-C opt-level=1"
+  assert_file_contains "$precedence_probe_log" \
+    "metadata=argus-macos-deployment-target-"
+  assert_file_not_contains "$precedence_probe_log" "-C opt-level=2"
 
   if ! argus_cfg_expression_matches_target \
     'all(target_arch = "aarch64", target_os = "macos")'; then

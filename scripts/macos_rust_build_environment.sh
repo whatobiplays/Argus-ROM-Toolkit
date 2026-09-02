@@ -8,6 +8,7 @@ ARGUS_MACOS_DEPLOYMENT_TARGET_CFLAGS_PREFIX="-DARGUS_MACOS_DEPLOYMENT_TARGET_FIN
 ARGUS_MACOS_ENV_ASSIGNMENTS=()
 ARGUS_MACOS_TARGET_CFG_OUTPUT=""
 ARGUS_MACOS_TARGET_CFG_OUTPUT_LOADED=false
+ARGUS_CARGO_CONFIG_VISITED=()
 ARGUS_CFG_PARSE_TEXT=""
 ARGUS_CFG_PARSE_INDEX=0
 ARGUS_CFG_PARSE_RESULT=false
@@ -260,6 +261,128 @@ argus_cfg_expression_matches_target() {
   [[ "$ARGUS_CFG_PARSE_RESULT" == true ]]
 }
 
+# Extract paths from Cargo's top-level include array. This is intentionally a
+# small TOML lexer rather than a general parser: Cargo only allows strings or
+# inline tables in this key, and target rustflags are inspected separately.
+argus_cargo_config_text_includes() {
+  awk '
+    function scan_value(line, character_position, character) {
+      for (character_position = 1; character_position <= length(line); character_position++) {
+        character = substr(line, character_position, 1)
+
+        if (value_quote != "") {
+          if (value_quote == double_quote && value_escaped) {
+            value_path = value_path character
+            value_escaped = 0
+          } else if (value_quote == double_quote && character == "\\") {
+            value_escaped = 1
+          } else if (character == value_quote) {
+            print value_path
+            value_path = ""
+            value_quote = ""
+          } else {
+            value_path = value_path character
+          }
+          continue
+        }
+
+        if (character == single_quote || character == double_quote) {
+          value_quote = character
+          value_path = ""
+        } else if (character == "#") {
+          break
+        } else if (character == "[") {
+          include_array_depth++
+        } else if (character == "]") {
+          include_array_depth--
+        } else if (character == "{") {
+          include_table_depth++
+        } else if (character == "}") {
+          include_table_depth--
+        }
+      }
+    }
+
+    BEGIN {
+      single_quote = sprintf("%c", 39)
+      double_quote = sprintf("%c", 34)
+      in_include = 0
+      saw_table = 0
+      include_array_depth = 0
+      include_table_depth = 0
+      value_quote = ""
+      value_path = ""
+      value_escaped = 0
+    }
+
+    {
+      line = $0
+      if (!in_include) {
+        if (line ~ /^[[:space:]]*\[/) {
+          saw_table = 1
+          next
+        }
+        if (!saw_table &&
+            line ~ /^[[:space:]]*include[[:space:]]*=/) {
+          sub(/^[[:space:]]*include[[:space:]]*=[[:space:]]*/, "", line)
+          in_include = 1
+          scan_value(line)
+          if (include_array_depth == 0 && include_table_depth == 0 &&
+              value_quote == "") {
+            in_include = 0
+          }
+        }
+        next
+      }
+
+      scan_value(line)
+      if (include_array_depth == 0 && include_table_depth == 0 &&
+          value_quote == "") {
+        in_include = 0
+      }
+    }
+  '
+}
+
+argus_cargo_config_canonical_path() {
+  local config_file="$1"
+  local config_directory
+  local config_basename
+  local absolute_directory
+  local realpath_config_file
+
+  if [[ "$config_file" == */* ]]; then
+    config_directory="${config_file%/*}"
+    [[ -n "$config_directory" ]] || config_directory=/
+  else
+    config_directory="$PWD"
+  fi
+  config_basename="${config_file##*/}"
+
+  if command -v realpath >/dev/null 2>&1 &&
+    realpath_config_file="$(realpath "$config_file" 2>/dev/null)"; then
+    printf '%s\n' "$realpath_config_file"
+    return 0
+  fi
+
+  if ! absolute_directory="$(cd -- "$config_directory" 2>/dev/null && pwd -P)"; then
+    return 1
+  fi
+  printf '%s/%s\n' "$absolute_directory" "$config_basename"
+}
+
+argus_cargo_config_include_path() {
+  local config_file="$1"
+  local include_path="$2"
+  local config_directory="${config_file%/*}"
+
+  if [[ "$include_path" == /* ]]; then
+    printf '%s\n' "$include_path"
+  else
+    printf '%s/%s\n' "$config_directory" "$include_path"
+  fi
+}
+
 argus_cargo_config_text_cfg_target_rustflags() {
   # Print only cfg target expressions whose table or dotted key supplies
   # rustflags. The shell evaluator below decides whether each expression
@@ -374,10 +497,11 @@ argus_cargo_config_value_has_matching_cfg_target_rustflags() {
       }
       {
         line = $0
+        sub(/^[[:space:]]*/, "", line)
         if (index(line, single_prefix) == 1) {
           cfg_expression = substr(line, length(single_prefix) + 1)
           suffix = "\\)[[:space:]]*" single_quote \
-            "[[:space:]]*\\.rustflags=.*"
+            "[[:space:]]*\\.rustflags[[:space:]]*=[[:space:]]*.*"
           if (cfg_expression ~ suffix) {
             sub(suffix, "", cfg_expression)
             print cfg_expression
@@ -386,7 +510,8 @@ argus_cargo_config_value_has_matching_cfg_target_rustflags() {
         }
         if (index(line, double_prefix) == 1) {
           cfg_expression = substr(line, length(double_prefix) + 1)
-          suffix = "\\)[[:space:]]*\"[[:space:]]*\\.rustflags=.*"
+          suffix = "\\)[[:space:]]*\"[[:space:]]*\\.rustflags" \
+            "[[:space:]]*=[[:space:]]*.*"
           if (cfg_expression ~ suffix) {
             sub(suffix, "", cfg_expression)
             print cfg_expression
@@ -401,7 +526,7 @@ argus_cargo_config_value_has_matching_cfg_target_rustflags() {
     argus_cfg_expression_matches_target "$cfg_expression"
 }
 
-argus_cargo_config_file_has_native_target_rustflags() {
+argus_cargo_config_file_has_native_target_rustflags_local() {
   local config_file="$1"
 
   [[ -f "$config_file" ]] || return 1
@@ -473,6 +598,105 @@ argus_cargo_config_file_has_native_target_rustflags() {
   return 1
 }
 
+argus_cargo_config_file_has_native_target_rustflags_recursive() {
+  local config_file="$1"
+  local canonical_config_file
+  local visited_file
+  local include_path
+  local included_config_file
+
+  [[ -f "$config_file" ]] || return 1
+  canonical_config_file="$(argus_cargo_config_canonical_path "$config_file")" ||
+    return 1
+
+  for visited_file in "${ARGUS_CARGO_CONFIG_VISITED[@]-}"; do
+    if [[ "$visited_file" == "$canonical_config_file" ]]; then
+      return 1
+    fi
+  done
+  ARGUS_CARGO_CONFIG_VISITED+=("$canonical_config_file")
+
+  if argus_cargo_config_file_has_native_target_rustflags_local \
+    "$canonical_config_file"; then
+    return 0
+  fi
+
+  # Cargo reports a missing required include while loading the configuration;
+  # an absent file cannot contribute a target flag, so leave that validation to
+  # Cargo and continue looking for existing optional or required includes.
+  while IFS= read -r include_path; do
+    [[ -n "$include_path" && "$include_path" == *.toml ]] || continue
+    included_config_file="$(argus_cargo_config_include_path \
+      "$canonical_config_file" "$include_path")"
+    if [[ -f "$included_config_file" ]] &&
+      argus_cargo_config_file_has_native_target_rustflags_recursive \
+        "$included_config_file"; then
+      return 0
+    fi
+  done < <(argus_cargo_config_text_includes <"$canonical_config_file")
+
+  return 1
+}
+
+argus_cargo_config_file_has_native_target_rustflags() {
+  ARGUS_CARGO_CONFIG_VISITED=()
+  argus_cargo_config_file_has_native_target_rustflags_recursive "$1"
+}
+
+argus_cargo_config_value_has_exact_target_rustflags() {
+  local config_value="$1"
+
+  awk '
+    BEGIN {
+      single_quote = sprintf("%c", 39)
+      double_quote = sprintf("%c", 34)
+      keys[1] = "target.aarch64-apple-darwin.rustflags"
+      keys[2] = "target." double_quote "aarch64-apple-darwin" \
+        double_quote ".rustflags"
+      keys[3] = "target." single_quote "aarch64-apple-darwin" \
+        single_quote ".rustflags"
+    }
+    {
+      line = $0
+      sub(/^[[:space:]]*/, "", line)
+      for (key_index = 1; key_index <= 3; key_index++) {
+        if (index(line, keys[key_index]) == 1) {
+          remainder = substr(line, length(keys[key_index]) + 1)
+          if (remainder ~ /^[[:space:]]*=[[:space:]]*/) {
+            found = 1
+            exit
+          }
+        }
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' <<<"$config_value"
+}
+
+argus_cargo_config_value_has_native_target_rustflags() {
+  local config_value="$1"
+  local include_path
+  local included_config_file
+
+  if argus_cargo_config_value_has_exact_target_rustflags "$config_value" ||
+    argus_cargo_config_value_has_matching_cfg_target_rustflags "$config_value"; then
+    return 0
+  fi
+
+  while IFS= read -r include_path; do
+    [[ -n "$include_path" && "$include_path" == *.toml ]] || continue
+    included_config_file="$(argus_cargo_config_include_path \
+      "$PWD" "$include_path")"
+    if [[ -f "$included_config_file" ]] &&
+      argus_cargo_config_file_has_native_target_rustflags \
+        "$included_config_file"; then
+      return 0
+    fi
+  done < <(printf '%s\n' "$config_value" | argus_cargo_config_text_includes)
+
+  return 1
+}
+
 argus_cargo_config_argument_has_native_target_rustflags() {
   local expects_config=false
   local argument
@@ -491,15 +715,7 @@ argus_cargo_config_argument_has_native_target_rustflags() {
       continue
     fi
 
-    case "$config_value" in
-      target.aarch64-apple-darwin.rustflags=* | \
-      'target."aarch64-apple-darwin".rustflags='* | \
-      "target.'aarch64-apple-darwin'.rustflags="*)
-        return 0
-        ;;
-    esac
-
-    if argus_cargo_config_value_has_matching_cfg_target_rustflags "$config_value"; then
+    if argus_cargo_config_value_has_native_target_rustflags "$config_value"; then
       return 0
     fi
 
@@ -521,11 +737,19 @@ argus_cargo_config_has_native_target_rustflags() {
   local config_file
   directory="$(pwd)"
   while :; do
-    for config_file in "$directory/.cargo/config.toml" "$directory/.cargo/config"; do
-      if argus_cargo_config_file_has_native_target_rustflags "$config_file"; then
-        return 0
-      fi
-    done
+    # Cargo uses .cargo/config in preference to .cargo/config.toml when both
+    # names exist in the same directory.
+    if [[ -f "$directory/.cargo/config" ]]; then
+      config_file="$directory/.cargo/config"
+    elif [[ -f "$directory/.cargo/config.toml" ]]; then
+      config_file="$directory/.cargo/config.toml"
+    else
+      config_file=""
+    fi
+    if [[ -n "$config_file" ]] &&
+      argus_cargo_config_file_has_native_target_rustflags "$config_file"; then
+      return 0
+    fi
 
     [[ "$directory" == / ]] && break
     directory="${directory%/*}"
@@ -533,11 +757,17 @@ argus_cargo_config_has_native_target_rustflags() {
   done
 
   local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-  for config_file in "$cargo_home/config.toml" "$cargo_home/config"; do
-    if argus_cargo_config_file_has_native_target_rustflags "$config_file"; then
-      return 0
-    fi
-  done
+  if [[ -f "$cargo_home/config" ]]; then
+    config_file="$cargo_home/config"
+  elif [[ -f "$cargo_home/config.toml" ]]; then
+    config_file="$cargo_home/config.toml"
+  else
+    config_file=""
+  fi
+  if [[ -n "$config_file" ]] &&
+    argus_cargo_config_file_has_native_target_rustflags "$config_file"; then
+    return 0
+  fi
 
   return 1
 }

@@ -82,6 +82,26 @@ environment source so Cargo combines its deployment marker with the table's
 own flags. Multiple matching tables remain Cargo's responsibility; the helper
 does not invent a second merge order.
 
+### 3.2 Cargo configuration resolution
+
+The pinned `cargo 1.97.1` binary exposes `cargo config get`, but that command
+is still unstable and rejects the pinned stable channel. The helper therefore
+does not attempt to obtain resolved configuration through Cargo itself. It
+uses a bounded resolver whose only configuration question is whether an
+active target-level `rustflags` source exists; Cargo remains responsible for
+parsing and merging the actual values.
+
+The resolver accepts whitespace around the equals sign in inline `--config`
+assignments, recognizes exact and matching `cfg(...)` target tables in both
+dotted and table forms, and scans every `--config` argument. For file-based
+configuration it follows the top-level `include` array recursively, resolves
+relative paths from the including file, skips absent optional includes, and
+tracks canonical paths so cycles terminate. Missing required includes remain
+Cargo errors when Cargo loads the same invocation. During hierarchical
+discovery it selects `.cargo/config` over `.cargo/config.toml` when both exist
+in one directory, matching Cargo's compatibility behavior; the same choice is
+applied to the Cargo home configuration.
+
 The helper adds the deployment marker to the highest effective Rust source
 already selected by Cargo: encoded flags, global flags, target-specific flags,
 or matching target configuration. For target configuration without a target
@@ -153,14 +173,18 @@ the pinned Cargo toolchain to inspect effective `rustc` arguments:
    the marker.
 7. Matching target-name and `cfg(...)` Cargo tables, including nested
    expressions, retain their caller flags alongside the deployment marker.
-8. Pinned Cargo fingerprints change across 26.5 → 11.0 transitions, and the
+8. Effective pinned-Cargo probes cover compact and whitespace-valid `--config`
+   assignments, direct and recursive includes, optional missing includes,
+   include-cycle termination, multiple `--config` files, and `.cargo/config`
+   versus `.cargo/config.toml` precedence.
+9. Pinned Cargo fingerprints change across 26.5 → 11.0 transitions, and the
    bridge archive is checked for stale 26.5 BLAKE3/native members.
-9. Phase 000/001, ordinary Rust validation, CI, and the Xcode phase route
+10. Phase 000/001, ordinary Rust validation, CI, and the Xcode phase route
    through `run_rust.sh` where applicable.
-10. Debug, Release, and Profile Xcode settings all use arm64/11.0 and retain
+11. Debug, Release, and Profile Xcode settings all use arm64/11.0 and retain
    the existing archive paths.
-11. The `build-macos-debug` Just target provides the shared, documented
-    Flutter macOS Debug build entry point.
+12. The `build-macos-debug` Just target provides the shared, documented
+   Flutter macOS Debug build entry point.
 
 Verification completed with shellcheck, the repository’s `just check` and
 focused checks, a one-time targeted cleanup of pre-existing artifacts, normal

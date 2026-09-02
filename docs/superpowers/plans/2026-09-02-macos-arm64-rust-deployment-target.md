@@ -4,7 +4,7 @@
 
 **Goal:** Make every repository-owned Apple Silicon macOS Rust/native bridge build use one deterministic deployment-target policy without allowing incompatible objects to persist in the shared Cargo cache.
 
-**Architecture:** Add a focused shell policy helper that is sourced by `scripts/run_rust.sh`. The helper applies the default only to an arm64 Darwin Cargo invocation, preserves explicit deployment-target values, and adds a macOS-scoped global Rust fingerprint salt derived from the effective value so dependency build scripts and the final archive share one cache input. Keep all existing bridge callers on `run_rust.sh`; align the Xcode project’s arm64 configurations with the 11.0 product floor.
+**Architecture:** Add a focused shell policy helper that is sourced by `scripts/run_rust.sh`. The helper applies the default only to an arm64 Darwin Cargo invocation, normalizes an empty deployment-target value to 11.0, rejects Intel macOS hosts/targets, and adds a deployment fingerprint to Cargo’s effective Rust flag source without masking caller configuration. It also adds an inert deployment fingerprint to the effective native `CFLAGS` source so cc-rs/BLAKE3 rebuilds when the deployment target changes. Keep all existing bridge callers on `run_rust.sh`; align the Xcode project’s arm64 configurations with the 11.0 product floor.
 
 **Tech Stack:** Bash, Cargo/Rust 1.97.1, Xcode project build settings, Flutter macOS, `just`, shellcheck, and repository-owned shell contract tests.
 
@@ -12,13 +12,32 @@
 
 - Supported macOS Rust target is `aarch64-apple-darwin`; Intel macOS is unsupported.
 - The default native macOS deployment target is exactly `11.0`.
-- An explicitly supplied `MACOSX_DEPLOYMENT_TARGET` value remains authoritative and is preserved byte-for-byte.
+- An explicitly supplied non-empty `MACOSX_DEPLOYMENT_TARGET` value remains authoritative and is preserved byte-for-byte; an explicitly empty value resolves to `11.0`.
 - No generated macOS deployment-target environment or macOS cache salt may enter Android, non-macOS, or other cross-target Cargo invocations.
+- `CARGO_ENCODED_RUSTFLAGS`, `RUSTFLAGS`, target-specific Rust flags/configuration, and `build.rustflags` must remain effective under the pinned Cargo precedence rules.
 - `scripts/run_rust.sh` remains the single repository-owned Rust build policy boundary.
 - Cargo output is cleaned once after implementation for verification; builds do not clean on every invocation.
 - Linker warnings are not suppressed and the shared target-directory architecture is not replaced.
 - Existing Debug, Release, and Profile bridge archive paths remain unchanged.
 - Documentation comments in new or changed shell code must explain the contract to an unfamiliar maintainer.
+
+### Correction addendum (2026-09-02)
+
+Pinned Cargo 1.97.1 probes showed that `CARGO_ENCODED_RUSTFLAGS` masks
+`RUSTFLAGS`, target-specific environment flags mask global flags for the target
+compile, matching target-specific configuration combines with the target
+environment source, and `CARGO_BUILD_RUSTFLAGS` combines with `build.rustflags`
+when no higher source is active. A global `RUSTFLAGS` salt therefore cannot be
+used unconditionally: it can mask configuration and an encoded or target-
+specific source can bypass it.
+
+The corrected helper appends the Rust metadata marker to the highest effective
+source already selected by Cargo. It appends a separate inert hexadecimal
+preprocessor definition to effective native `CFLAGS`; cc-rs tracks CFLAGS while
+the affected BLAKE3 build script does not track `MACOSX_DEPLOYMENT_TARGET`
+itself. This preserves caller flags/configuration and invalidates both Rust and
+native outputs across a deployment-target transition without forcing a Cargo
+`--target` argument or cleaning on every build.
 
 ---
 
@@ -34,54 +53,21 @@
 - [x] **Step 1: Write the failing test.**
 
 Create a strict Bash test harness that sources
-`scripts/macos_rust_build_environment.sh`, resets the policy variables between
-cases, and provides small `assert_equal`, `assert_contains`, and
-`assert_unset` helpers. Include these concrete cases:
-
-```bash
-unset MACOSX_DEPLOYMENT_TARGET CARGO_BUILD_TARGET \
-  CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS RUSTFLAGS
-argus_configure_macos_rust_build_environment Darwin arm64 cargo build
-assert_equal 11.0 "$MACOSX_DEPLOYMENT_TARGET"
-assert_contains '-C metadata=argus-macos-deployment-target-' "$RUSTFLAGS"
-
-unset CARGO_BUILD_TARGET CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS RUSTFLAGS
-export MACOSX_DEPLOYMENT_TARGET=26.5
-export RUSTFLAGS='-C opt-level=1'
-export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS='-C opt-level=1'
-argus_configure_macos_rust_build_environment Darwin arm64 cargo build
-assert_equal 26.5 "$MACOSX_DEPLOYMENT_TARGET"
-assert_contains '-C opt-level=1' "$RUSTFLAGS"
-assert_contains '-C opt-level=1' \
-  "$CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS"
-
-unset MACOSX_DEPLOYMENT_TARGET CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
-export CARGO_BUILD_TARGET=aarch64-linux-android
-argus_configure_macos_rust_build_environment Darwin arm64 cargo build
-assert_unset MACOSX_DEPLOYMENT_TARGET
-assert_unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
-
-unset CARGO_BUILD_TARGET
-argus_configure_macos_rust_build_environment Darwin arm64 cargo ndk build
-assert_unset MACOSX_DEPLOYMENT_TARGET
-assert_unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
-
-argus_configure_macos_rust_build_environment Linux x86_64 cargo build
-assert_unset MACOSX_DEPLOYMENT_TARGET
-assert_unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
-
-argus_configure_macos_rust_build_environment Darwin x86_64 cargo build
-assert_unset MACOSX_DEPLOYMENT_TARGET
-assert_unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
-```
-
-Also assert that `--target=aarch64-linux-android` and `--target
-aarch64-linux-android` skip the policy, while `--target aarch64-apple-darwin`
-uses it, and that invoking `rustc` rather than `cargo` does not add Cargo
-policy. Call the native case twice and assert the fingerprint salt occurs only
-once. Add source-contract assertions that Phase 000, Phase 001, Linux CMake,
-Windows CMake, Android bridge build, and the Xcode bridge phase all route
-through `run_rust.sh` where they build or install Rust tooling.
+`scripts/macos_rust_build_environment.sh`, resets all policy variables between
+cases, and provides assertion helpers. Cover the native default and explicit
+value, empty-value normalization, duplicate-marker prevention, Intel host/target
+rejection, Android/non-macOS skips, and `rustc` versus Cargo routing. Assert
+that the helper selects the effective source among
+`CARGO_ENCODED_RUSTFLAGS`, `RUSTFLAGS`,
+`CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS`, matching target configuration,
+and `CARGO_BUILD_RUSTFLAGS`, while adding the native `CFLAGS` marker. On a
+Darwin arm64 host, invoke pinned Cargo with `-vv` and assert the existing
+caller flag and deployment marker both appear in the effective `rustc`
+command. Reuse one target directory to prove the encoded-flag deployment
+transition recompiles a Rust artifact. Add source-contract assertions that
+Phase 000, Phase 001, Linux CMake, Windows CMake, Android bridge build, and
+the Xcode bridge phase all route through `run_rust.sh` where they build or
+install Rust tooling.
 
 - [x] **Step 2: Run the test to verify it fails.**
 
@@ -116,18 +102,22 @@ Implement the following behavior in the new helper:
 3. If no explicit target exists, treat the invocation as the native
    `aarch64-apple-darwin` build. If a target exists, apply policy only for
    `aarch64-apple-darwin`.
-4. When `MACOSX_DEPLOYMENT_TARGET` is unset, export `11.0`; when it is set,
-   including an empty value, do not assign to it.
+4. When `MACOSX_DEPLOYMENT_TARGET` is unset or empty, export `11.0`; preserve
+   a non-empty explicit value.
 5. Encode the effective deployment-target bytes as lowercase hexadecimal using
-   POSIX `od`/`tr`, then append one global Rust flag of the form
-   `-C metadata=argus-macos-deployment-target-<hex>` to `RUSTFLAGS`. Do not
-   append a duplicate and preserve all existing global and target-specific flag
-   text.
+   POSIX `od`/`tr`, then append one metadata marker to the highest effective
+   Cargo Rust flag source. Use encoded separators for
+   `CARGO_ENCODED_RUSTFLAGS`, use `CARGO_BUILD_RUSTFLAGS` when it can combine
+   with `build.rustflags`, and detect exact target-specific configuration before
+   using `CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS`.
+6. Append an inert
+   `-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=<hex>` marker to effective
+   native `CFLAGS` so cc-rs build scripts observe the same transition. Do not
+   append duplicates, replace caller flags, or mutate skip-context variables.
 
-Use comments immediately above the exported environment and cache salt to
-explain that the first controls native C build scripts and the second changes
-Cargo’s global Rust fingerprint so dependency build scripts and the shared
-archive cannot retain stale members.
+Use comments immediately above the exported deployment environment, Rust
+marker, and native C marker to explain how each participates in the shared
+cache without masking caller flags or changing linker warning behavior.
 Do not export or unset any macOS-specific variable in skip contexts.
 
 - [x] **Step 2: Source and invoke the helper from `run_rust.sh`.**
@@ -152,9 +142,10 @@ Run:
 bash scripts/test_macos_rust_build_environment.sh
 ```
 
-Expected result: PASS for all native-default, explicit-value, duplicate-salt,
-Android, cross-target, non-Darwin, unsupported-host-architecture, command,
-and source-routing cases.
+Expected result: PASS for all native-default, explicit-value, empty-value,
+duplicate-marker, Cargo-precedence, Android, cross-target, non-Darwin,
+unsupported-host/target, command, effective-pinned-Cargo, and source-routing
+cases.
 
 - [x] **Step 4: Run shellcheck on the changed scripts.**
 
@@ -237,7 +228,8 @@ bash scripts/run_rust.sh cargo clean --manifest-path rust/Cargo.toml
 ```
 
 This removes stale shared Cargo artifacts once for the verification run. Do
-not add this command to any build wrapper or recurring recipe.
+not add this command to any build wrapper or recurring recipe; deployment
+transitions are handled by the effective Rust/native fingerprint inputs.
 
 - [x] **Step 2: Run focused tests and repository static checks.**
 
@@ -286,10 +278,11 @@ the same minimum target.
 
 Use temporary logs and the shared target directory to run one wrapper build
 with `MACOSX_DEPLOYMENT_TARGET=26.5`, then a normal wrapper build without that
-variable. Confirm the second run rebuilds the bridge archive and inspect its
-members to confirm no 26.5 object remains. Run Flutter macOS Debug again and
-require no linker warning. This proves the salt invalidates the final Rust
-archive rather than merely rebuilding one native dependency.
+variable. Confirm the second run rebuilds the bridge archive and the BLAKE3
+native build, and inspect its members to confirm no 26.5 object remains. Run
+Flutter macOS Debug again and require no linker warning. This proves the
+combined Rust/native markers invalidate the final archive rather than merely
+rebuilding one root crate.
 
 - [x] **Step 6: Run the repository-level verification.**
 

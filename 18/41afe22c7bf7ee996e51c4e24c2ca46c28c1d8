@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-09-02-macos-arm64-rust-deployment-target-design.md
+  s_e2917319ff88a3::t_b7639efcd70e9e 1-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1841afe22c7bf7ee996e51c4e24c2ca46c28c1d8",
+  "prompts": {},
+  "sessions": {
+    "s_e2917319ff88a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a060c2-b87d-7ba1-b30d-4644caf028b9",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

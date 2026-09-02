@@ -396,7 +396,7 @@ cd /Users/daniel/Projects/gpt-repo-mcp && npm run check:config
 Observed result: the local configuration parses and both the profile assertion
 and documented config check pass.
 
-- [ ] **Step 12: Verify the corrected contract and commit on `main`.**
+- [x] **Step 12: Verify the corrected contract and commit on `main`.**
 
 Run the focused test, Android contract, lint, test, build, and repository check
 commands. Poison the shared Rust target with a 26.5 deployment-target wrapper
@@ -415,3 +415,12 @@ just check
 git diff --check
 git status --short
 ```
+
+Observed result: the focused contract, shellcheck, Android contract, lint,
+tests, Flutter macOS Debug build, and aggregate `just check` all passed.
+The forced shared-cache transition produced 26.5 native members and the
+normal wrapper recovered the archive to 1,927 arm64 members all at 11.0.
+The built app was arm64 with Mach-O and `Info.plist` minimum versions of
+11.0. The Phase 000 and Phase 001 harnesses were not run because their local
+signing override files are absent. Commit `58db981` contains the direct
+`main` integration.

@@ -1,7 +1,7 @@
 # macOS arm64 Rust/native deployment-target contract
 
 **Document ID:** BUILD-MACOS-ARM64-DEPLOYMENT-TARGET
-**Status:** Approved — implementation pending
+**Status:** Implemented — verified
 **Owner:** Daniel
 **Date:** 2026-09-02
 **Scope:** macOS Rust/native-library builds feeding the Flutter application
@@ -43,30 +43,34 @@ The helper invoked by `scripts/run_rust.sh` owns the following contract:
 
 | Invocation context | Generated macOS environment | Cache behavior |
 | --- | --- | --- |
-| Darwin host, effective target `aarch64-apple-darwin`, ordinary Cargo invocation | Set `MACOSX_DEPLOYMENT_TARGET=11.0` only when the caller did not provide it | Add a deterministic deployment-target input to the arm64 macOS Cargo fingerprint while preserving existing target-specific flags |
+| Darwin host, effective target `aarch64-apple-darwin`, ordinary Cargo invocation | Set `MACOSX_DEPLOYMENT_TARGET=11.0` only when the caller did not provide it | Add a deterministic deployment-target input to the macOS-scoped Cargo fingerprint while preserving existing target-specific flags |
 | Same native context with an explicit `MACOSX_DEPLOYMENT_TARGET` | Preserve the caller’s exact value | Fingerprint the explicit value |
 | Android `cargo ndk` or an explicit non-macOS target | Do not synthesize a macOS deployment target or macOS cache input | Leave Android/cross-compilation behavior unchanged |
 | Non-Darwin host | Do not synthesize a macOS deployment target or macOS cache input | Leave the existing workflow unchanged |
 
 The helper must not remove an explicitly supplied environment variable. The
 default is applied only to the native Apple Silicon macOS build domain, and
-the cache input is target-specific so Android and other cross-compilation
-workflows cannot inherit macOS policy.
+the cache input is scoped to the native macOS build domain so Android and other
+cross-compilation workflows cannot inherit macOS policy.
 
-The cache input is a semantically inert, target-scoped Rust flag salt derived
-from the effective deployment target. It is deliberately part of Cargo’s
+The cache input is a semantically inert global `RUSTFLAGS` salt applied only
+inside the native arm64 macOS build domain and derived from the effective
+deployment target. Global Rust flags are required here because Cargo can
+otherwise leave a dependency build-script/native-output path fresh while
+rebuilding only the root crate. The salt is deliberately part of Cargo’s
 fingerprint inputs so changing from one deployment target to another rebuilds
-Rust objects and the final `libargus_bridge.a`; it is not a linker flag and is
-not used to alter warning behavior. Existing caller-provided target-specific
-Rust flags remain intact.
+dependency objects, Rust objects, and the final `libargus_bridge.a`; it is not
+a linker flag and is not used to alter warning behavior. Existing
+caller-provided global and target-specific Rust flags remain intact.
 
 ## 4. Xcode and phase integration
 
 The project-level Debug, Release, and Profile configurations will declare
-`MACOSX_DEPLOYMENT_TARGET=11.0`. This makes the product setting, the
-`Info.plist` minimum-system-version substitution, and the arm64 linker floor
-describe the same supported contract. It is not an Intel compatibility
-baseline, because Intel macOS is outside the product support scope.
+`ARCHS=arm64` and `MACOSX_DEPLOYMENT_TARGET=11.0`. This makes the product
+architecture, the `Info.plist` minimum-system-version substitution, and the
+arm64 linker floor describe the same supported contract. It is not an Intel
+compatibility baseline, because Intel macOS is outside the product support
+scope.
 
 The Xcode “Build Argus native bridge” phase will continue to invoke
 `scripts/run_rust.sh`; it will not maintain a second deployment-target policy.

@@ -20,6 +20,12 @@ if (( $# == 0 )); then
   exit 2
 fi
 
+# Keep deployment-target policy before Cargo sees the invocation so native
+# dependency build scripts and Rust compilation receive the same inputs.
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/macos_rust_build_environment.sh"
+argus_configure_macos_rust_build_environment "$(uname -s)" "$(uname -m)" "$@"
+
 # Converts rustup's Cargo path to an absolute Git Bash path and removes the
 # executable component without passing native Windows paths to POSIX dirname.
 rust_toolchain_bin_from_cargo_path() {

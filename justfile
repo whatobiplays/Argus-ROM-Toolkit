@@ -74,10 +74,14 @@ lint:
     cd flutter && fvm flutter analyze --no-pub
     shellcheck scripts/*.sh
 
+test-macos-rust-build-contract:
+    bash scripts/test_macos_rust_build_environment.sh
+
 _architecture:
     bash scripts/check_rust_dependencies.sh
 
 test:
+    bash scripts/test_macos_rust_build_environment.sh
     @bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --workspace --all-features --locked
     cd flutter && fvm flutter test --no-pub
 

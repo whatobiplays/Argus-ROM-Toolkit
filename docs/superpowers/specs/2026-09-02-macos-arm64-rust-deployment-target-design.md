@@ -74,6 +74,14 @@ this wrapper:
 5. `CARGO_BUILD_RUSTFLAGS` combines with `build.rustflags` when no higher
    source is active.
 
+Cargo target configuration may be keyed by the exact target name or by a
+matching target `cfg(...)` expression. The helper evaluates matching cfg
+tables against the pinned target's rustc --print cfg output, including the
+`all`, `any`, and `not` combinators, then uses the target-specific
+environment source so Cargo combines its deployment marker with the table's
+own flags. Multiple matching tables remain Cargo's responsibility; the helper
+does not invent a second merge order.
+
 The helper adds the deployment marker to the highest effective Rust source
 already selected by Cargo: encoded flags, global flags, target-specific flags,
 or matching target configuration. For target configuration without a target
@@ -89,10 +97,23 @@ Cargo/cc-rs does not make BLAKE3 rerun merely because
 `MACOSX_DEPLOYMENT_TARGET` changed. The helper therefore also appends an
 inert hexadecimal preprocessor definition,
 `-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=<hex>`, to the effective native
-`CFLAGS` source. cc-rs tracks that input, so BLAKE3 and other affected native
-build scripts rebuild under the same deployment-target transition. Existing
-Rust and C compiler flags remain in place and are extended rather than
-replaced.
+`CFLAGS` source. cc-rs checks native flags in this order:
+`CFLAGS_aarch64-apple-darwin`, `CFLAGS_aarch64_apple_darwin`,
+`TARGET_CFLAGS`, and `CFLAGS`, while retaining all defined inputs. The
+helper adds the marker only to the highest-priority defined source, so the
+effective native flags contain one marker and all caller flags remain in
+place. Because Bash cannot assign a hyphenated variable, `run_rust.sh`
+carries that hyphenated assignment through `env` when it is the selected
+source. cc-rs tracks the resulting input, so BLAKE3 and other affected native
+build scripts rebuild under the same deployment-target transition.
+The locked dependency currently resolves cc-rs 1.4.2, whose target_envs and
+envflags implementation establishes this precedence and retains lower-priority
+caller inputs.
+
+The August 21 Android-slice documents retain their original historical
+desktop wording. They are not current macOS product authority; this September
+contract supersedes them for the macOS architecture and deployment-target
+policy.
 
 ## 4. Xcode and phase integration
 
@@ -127,12 +148,19 @@ the pinned Cargo toolchain to inspect effective `rustc` arguments:
    macOS policy or macOS cache input.
 5. Existing `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`, target-specific flags, and
    `build.rustflags` remain effective alongside the deployment marker.
-6. Pinned Cargo fingerprints change across 26.5 → 11.0 transitions, and the
+6. Native `cc` flag precedence covers the hyphenated target form, its
+   underscore form, `TARGET_CFLAGS`, and plain `CFLAGS` without duplicating
+   the marker.
+7. Matching target-name and `cfg(...)` Cargo tables, including nested
+   expressions, retain their caller flags alongside the deployment marker.
+8. Pinned Cargo fingerprints change across 26.5 → 11.0 transitions, and the
    bridge archive is checked for stale 26.5 BLAKE3/native members.
-7. Phase 000/001, ordinary Rust validation, CI, and the Xcode phase route
+9. Phase 000/001, ordinary Rust validation, CI, and the Xcode phase route
    through `run_rust.sh` where applicable.
-8. Debug, Release, and Profile Xcode settings all use arm64/11.0 and retain
+10. Debug, Release, and Profile Xcode settings all use arm64/11.0 and retain
    the existing archive paths.
+11. The `build-macos-debug` Just target provides the shared, documented
+    Flutter macOS Debug build entry point.
 
 Verification completed with shellcheck, the repository’s `just check` and
 focused checks, a one-time targeted cleanup of pre-existing artifacts, normal

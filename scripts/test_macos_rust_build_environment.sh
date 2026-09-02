@@ -7,6 +7,7 @@ encoded_separator=$'\x1f'
 
 # shellcheck disable=SC1091
 source "$ROOT_DIR/scripts/macos_rust_build_environment.sh"
+ARGUS_MACOS_RUST_CHANNEL="$RUST_CHANNEL"
 
 fail() {
   printf 'macOS Rust build contract failed: %s\n' "$1" >&2
@@ -90,6 +91,7 @@ reset_policy_environment() {
   unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
   unset CFLAGS
   unset CFLAGS_aarch64_apple_darwin
+  unset TARGET_CFLAGS
 }
 
 reset_policy_environment
@@ -140,6 +142,8 @@ assert_contains "-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=" \
 reset_policy_environment
 export CARGO_BUILD_RUSTFLAGS="-C debuginfo=1"
 export CFLAGS_aarch64_apple_darwin="-DARGUS_CALLER_FLAG=1"
+export TARGET_CFLAGS="-DARGUS_LOWER_PRIORITY_FLAG=1"
+export CFLAGS="-DARGUS_PLAIN_FLAG=1"
 argus_configure_macos_rust_build_environment Darwin arm64 cargo build
 assert_contains "-C debuginfo=1" "$CARGO_BUILD_RUSTFLAGS" \
   "an existing additive Cargo Rust flag must remain effective"
@@ -152,7 +156,54 @@ assert_contains "-DARGUS_CALLER_FLAG=1" \
 assert_contains "-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=" \
   "$CFLAGS_aarch64_apple_darwin" \
   "the effective target-specific C flag source must receive the fingerprint"
-assert_unset CFLAGS
+assert_not_contains "-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=" \
+  "$TARGET_CFLAGS" \
+  "lower-priority TARGET_CFLAGS must not receive the native fingerprint"
+assert_not_contains "-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=" \
+  "$CFLAGS" \
+  "lower-priority CFLAGS must not receive the native fingerprint"
+assert_contains "-DARGUS_PLAIN_FLAG=1" "$CFLAGS" \
+  "lower-priority CFLAGS must remain unchanged"
+
+reset_policy_environment
+export TARGET_CFLAGS="-DARGUS_CALLER_FLAG=target"
+export CFLAGS="-DARGUS_LOWER_PRIORITY_FLAG=plain"
+argus_configure_macos_rust_build_environment Darwin arm64 cargo build
+assert_contains "-DARGUS_CALLER_FLAG=target" "$TARGET_CFLAGS" \
+  "TARGET_CFLAGS must remain effective when it is the highest defined source"
+assert_contains "-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=" \
+  "$TARGET_CFLAGS" \
+  "TARGET_CFLAGS must receive the native fingerprint"
+assert_not_contains "-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=" \
+  "$CFLAGS" \
+  "plain CFLAGS must not receive the fingerprint when TARGET_CFLAGS is defined"
+
+reset_policy_environment
+# shellcheck disable=SC2016
+hyphenated_cflags_output="$(
+  env \
+    'CFLAGS_aarch64-apple-darwin=-DARGUS_CALLER_FLAG=hyphen' \
+    'CFLAGS_aarch64_apple_darwin=-DARGUS_LOWER_PRIORITY_FLAG=underscore' \
+    'TARGET_CFLAGS=-DARGUS_LOWER_PRIORITY_FLAG=target' \
+    'CFLAGS=-DARGUS_LOWER_PRIORITY_FLAG=plain' \
+    bash -euc '
+      source "$1"
+      argus_configure_macos_rust_build_environment Darwin arm64 cargo build
+      printf "%s\n" "${ARGUS_MACOS_ENV_ASSIGNMENTS[0]-}"
+    ' bash "$ROOT_DIR/scripts/macos_rust_build_environment.sh"
+)"
+assert_contains "CFLAGS_aarch64-apple-darwin=-DARGUS_CALLER_FLAG=hyphen" \
+  "$hyphenated_cflags_output" \
+  "the hyphenated target C flag source must be selected first"
+assert_contains "-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT=" \
+  "$hyphenated_cflags_output" \
+  "the hyphenated target C flag source must receive the native fingerprint"
+# shellcheck disable=SC2016
+assert_file_contains "$ROOT_DIR/scripts/run_rust.sh" \
+  'exec env "${ARGUS_MACOS_ENV_ASSIGNMENTS[@]}"'
+# shellcheck disable=SC2016
+assert_file_contains "$ROOT_DIR/scripts/run_rust.sh" \
+  'PATH="$rust_toolchain_bin:$PATH" rustup run'
 
 reset_policy_environment
 export MACOSX_DEPLOYMENT_TARGET=""
@@ -314,6 +365,9 @@ assert_file_not_contains "$xcode_project" \
   "MACOSX_DEPLOYMENT_TARGET = 10.15;"
 assert_file_contains "$xcode_project" \
   "rust/target/\$(CONFIGURATION)/libargus_bridge.a"
+assert_file_contains "$ROOT_DIR/justfile" "build-macos-debug:"
+assert_file_contains "$ROOT_DIR/justfile" \
+  "fvm flutter build macos --debug --no-pub"
 
 run_pinned_cargo_rustc_probe() {
   local target_directory="$1"
@@ -405,6 +459,61 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] &&
   assert_file_contains "$target_config_probe_log" "-C opt-level=1"
   assert_file_contains "$target_config_probe_log" \
     "metadata=argus-macos-deployment-target-"
+
+  matching_cfg_config="target.'cfg(all(target_arch = \"aarch64\", target_os = \"macos\"))'.rustflags=[\"-C\",\"opt-level=1\"]"
+  reset_policy_environment
+  argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+    --target "$ARGUS_MACOS_RUST_TARGET" --config "$matching_cfg_config"
+  assert_contains "-C metadata=argus-macos-deployment-target-" \
+    "$CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS" \
+    "a matching cfg --config table must receive an additive fingerprint"
+  assert_unset CARGO_BUILD_RUSTFLAGS
+
+  matching_cfg_config_file="$cargo_probe_root/matching-cfg-config.toml"
+  printf '%s\n' \
+    "[target.'cfg(all(target_arch = \"aarch64\", target_os = \"macos\"))']" \
+    'rustflags = ["-C", "opt-level=1"]' >"$matching_cfg_config_file"
+  reset_policy_environment
+  argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+    --target "$ARGUS_MACOS_RUST_TARGET" --config "$matching_cfg_config_file"
+  assert_contains "-C metadata=argus-macos-deployment-target-" \
+    "$CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS" \
+    "a matching cfg target table must receive an additive fingerprint"
+  assert_unset CARGO_BUILD_RUSTFLAGS
+  matching_cfg_probe_log="$(run_pinned_cargo_rustc_probe \
+    "$cargo_probe_root/matching-cfg-config" \
+    --config "$matching_cfg_config_file")"
+  assert_file_contains "$matching_cfg_probe_log" "-C opt-level=1"
+  assert_file_contains "$matching_cfg_probe_log" \
+    "metadata=argus-macos-deployment-target-"
+
+  if ! argus_cfg_expression_matches_target \
+    'all(target_arch = "aarch64", target_os = "macos")'; then
+    fail "matching all(...) cfg expression should match the native target"
+  fi
+  if argus_cfg_expression_matches_target \
+    'any(target_os = "ios", target_arch = "x86_64")'; then
+    fail "non-matching any(...) cfg expression should not match the native target"
+  fi
+  if ! argus_cfg_expression_matches_target \
+    'any(target_os = "ios", not(target_os = "ios"))'; then
+    fail "nested not(...) cfg expression should be evaluated"
+  fi
+  if ! argus_cfg_expression_matches_target \
+    'target = "aarch64-apple-darwin"'; then
+    fail "the Cargo target-name cfg predicate should match the native target"
+  fi
+
+  dotted_cfg_config_file="$cargo_probe_root/dotted-cfg-config.toml"
+  printf '%s\n' \
+    "target.'cfg(target_os = \"macos\")'.rustflags = [\"-C\", \"opt-level=1\"]" \
+    >"$dotted_cfg_config_file"
+  reset_policy_environment
+  argus_configure_macos_rust_build_environment Darwin arm64 cargo rustc \
+    --target "$ARGUS_MACOS_RUST_TARGET" --config "$dotted_cfg_config_file"
+  assert_contains "-C metadata=argus-macos-deployment-target-" \
+    "$CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS" \
+    "a dotted matching cfg target table must receive an additive fingerprint"
 
   reset_policy_environment
   export CARGO_ENCODED_RUSTFLAGS="-C${encoded_separator}opt-level=1"

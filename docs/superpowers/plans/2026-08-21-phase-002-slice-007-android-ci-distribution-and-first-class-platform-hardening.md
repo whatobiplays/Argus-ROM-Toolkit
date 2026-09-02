@@ -24,8 +24,7 @@
 - Preserve existing Windows/Linux/macOS, Phase 000, and Phase 001 verification.
 - Preserve Rust/application authority for sources, roots, jobs, admission, reconciliation, persistence, and diagnostics.
 - Do not add Android 10/API 29 compatibility, Google Play work, SAF library sources, WorkManager, auto-resume, non-ARM64 Android ABI support, or a second Android runtime/database/scheduler/job authority.
-- Do not globally remove Linux desktop x86_64 support; macOS desktop is
-  separately governed as Apple Silicon-only by BUILD-MACOS-ARM64-DEPLOYMENT-TARGET.
+- Do not globally remove desktop/Linux x86_64 support.
 - Historical plans, `.chatgpt` runs, RESULT files, and truthful historical execution evidence are immutable historical records and are excluded from live x86_64 cleanup.
 - Leave implementation changes uncommitted for owner review unless the owner explicitly authorizes staging/commit later.
 
@@ -266,8 +265,7 @@ Expected: PASS.
 
 - [ ] **Step 6: Record checkpoint without committing**
 
-Confirm the guard is Android-specific and cannot reject ordinary Linux desktop
-x86_64 support; it does not define the separate macOS architecture contract.
+Confirm the guard is Android-specific and cannot reject ordinary desktop x86_64 support.
 
 ---
 
@@ -582,8 +580,7 @@ Confirm release configuration contains no committed signing material and no debu
 
 - [ ] **Step 7: Review final diff against scope**
 
-Confirm no Android 10, Google Play, SAF source engine, WorkManager, auto-resume,
-new application authority, or Linux desktop x86_64 regression entered the diff.
+Confirm no Android 10, Google Play, SAF source engine, WorkManager, auto-resume, new application authority, or desktop x86_64 regression entered the diff.
 
 - [ ] **Step 8: Leave the worktree uncommitted for owner review**
 

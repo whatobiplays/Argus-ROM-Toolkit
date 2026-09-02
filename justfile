@@ -77,6 +77,9 @@ lint:
 test-macos-rust-build-contract:
     bash scripts/test_macos_rust_build_environment.sh
 
+build-macos-debug:
+    cd flutter && fvm flutter build macos --debug --no-pub
+
 _architecture:
     bash scripts/check_rust_dependencies.sh
 

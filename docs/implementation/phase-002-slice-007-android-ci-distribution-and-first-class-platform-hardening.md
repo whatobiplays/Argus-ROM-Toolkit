@@ -12,9 +12,7 @@ repository-owned API 36 ARM64 native milestone.
   constants, ADB/harness package references, integration/unit test fixtures,
   and Rust runtime test fixtures. The old `dev.argusromtoolkit.argus` identity
   has no migration path and is absent from live paths; desktop macOS container
-  identity and the macOS product build contract are untouched by this Android
-  slice; current macOS architecture and deployment settings are defined by
-  BUILD-MACOS-ARM64-DEPLOYMENT-TARGET.
+  identity and desktop x86_64 support are untouched.
 - Android builds are ARM64-only (`aarch64-linux-android`,
   `--target-platform android-arm64`, `arm64-v8a` packaging). The shared native
   harness requires API 36 + `arm64-v8a` unconditionally; the bootstrap and

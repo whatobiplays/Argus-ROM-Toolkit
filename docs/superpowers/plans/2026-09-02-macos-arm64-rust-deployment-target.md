@@ -311,3 +311,107 @@ git add docs/superpowers/specs/2026-09-02-macos-arm64-rust-deployment-target-des
   justfile flutter/macos/Runner.xcodeproj/project.pbxproj
 git commit -m "build: stabilize macOS arm64 native deployment target"
 ```
+
+## Correction addendum (2026-09-02, approved)
+
+The current macOS deployment-target contract remains Apple Silicon-only with a
+minimum target of 11.0. This addendum corrects the remaining edge cases found
+after the initial implementation:
+
+- native `cc` flags must honor the hyphenated target variable before its
+  underscore form, then `TARGET_CFLAGS`, then plain `CFLAGS`;
+- Cargo target tables written with matching `cfg(...)` expressions must be
+  recognized so the deployment marker survives Cargo's source precedence;
+- the shared repository validation profile needs explicit `test`, `build`,
+  and `lint` entries while retaining `all`;
+- the August Android slice records are historical and must retain their
+  original wording; the later September macOS record is the current product
+  authority.
+
+- [x] **Step 8: Add regression tests before changing the implementation.**
+
+Extend `scripts/test_macos_rust_build_environment.sh` to cover all four native
+`cc` variable spellings, including a child `env` invocation for the
+hyphenated name, a nested matching `cfg(...)` Cargo target table, and the
+`build-macos-debug` Just target.
+
+Run:
+
+```bash
+bash scripts/test_macos_rust_build_environment.sh
+```
+
+The new assertions initially failed against the current helper, proving the
+tests exercised the reported gaps; the completed focused run now exits 0.
+
+- [x] **Step 9: Implement the smallest policy corrections.**
+
+Update the sourced helper and wrapper so hyphenated environment assignments
+are carried through `env` to pinned Cargo, while valid shell identifiers are
+exported normally. Evaluate matching Cargo target `cfg(...)` expressions from
+the pinned target's `rustc --print cfg` output and route the deployment marker
+to the target-specific Rust flags source when such a table supplies
+`rustflags`. Add `build-macos-debug` as the repository's documented Flutter
+macOS build entry point.
+
+Run:
+
+```bash
+bash scripts/test_macos_rust_build_environment.sh
+shellcheck scripts/*.sh
+```
+
+Observed result: the focused contract and shell checks exit 0.
+
+- [x] **Step 10: Restore historical records and update current documentation.**
+
+Restore the three August 21 Android-slice documents byte-for-byte to their
+pre-macOS-change wording. Update the September design and plan records with
+the `cc` precedence, matching `cfg(...)` behavior, pinned-toolchain detail,
+and the historical-document supersession note.
+
+Run:
+
+```bash
+git diff HEAD^ -- docs/implementation/phase-002-slice-007-android-ci-distribution-and-first-class-platform-hardening.md docs/superpowers/plans/2026-08-21-phase-002-slice-007-android-ci-distribution-and-first-class-platform-hardening.md docs/superpowers/specs/2026-08-21-phase-002-slice-007-android-ci-distribution-and-first-class-platform-hardening-design.md
+```
+
+Observed result: those historical files have no net diff from the previous
+implementation commit.
+
+- [x] **Step 11: Update and validate the sibling Argus profile without staging it.**
+
+Change only the ignored Argus entry in
+`/Users/daniel/Projects/gpt-repo-mcp/config.local.json` to use `just test`,
+`just build-macos-debug`, `just lint`, and `just check` for its respective
+profiles. Preserve every unrelated working-tree change in that repository.
+
+Run:
+
+```bash
+jq empty /Users/daniel/Projects/gpt-repo-mcp/config.local.json
+cd /Users/daniel/Projects/gpt-repo-mcp && npm run check:config
+```
+
+Observed result: the local configuration parses and both the profile assertion
+and documented config check pass.
+
+- [ ] **Step 12: Verify the corrected contract and commit on `main`.**
+
+Run the focused test, Android contract, lint, test, build, and repository check
+commands. Poison the shared Rust target with a 26.5 deployment-target wrapper
+build, recover with the normal wrapper, inspect the bridge archive and native
+members, then run `just build-macos-debug` and inspect the resulting arm64
+binary, minimum OS, and `Info.plist`. Review `git diff --check` and stage only
+Argus files before committing directly on `main`.
+
+```bash
+just test-macos-rust-build-contract
+just check-android-contract
+just lint
+just test
+just build-macos-debug
+just check
+git diff --check
+git status --short
+```

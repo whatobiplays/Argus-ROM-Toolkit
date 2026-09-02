@@ -115,7 +115,7 @@ P02-007 removes x86_64 Android support from current executable and configuration
 
 The shared Android scenario tooling requires `arm64-v8a` unconditionally after this cleanup. Compatibility branches that accepted x86_64 solely because earlier slices packaged it are removed.
 
-A deterministic repository guard prevents future changes from silently restoring Android x86_64 support. The guard covers live Android build/configuration/test surfaces and artifact contents. It must be scoped narrowly enough that legitimate Linux desktop x86_64 support is unaffected; the macOS product is separately governed by its Apple Silicon-only contract.
+A deterministic repository guard prevents future changes from silently restoring Android x86_64 support. The guard covers live Android build/configuration/test surfaces and artifact contents. It must be scoped narrowly enough that legitimate desktop/Linux x86_64 support is unaffected.
 
 Historical plans, `.chatgpt` Codex runs, RESULT files, completed execution evidence, and other historical records that truthfully describe earlier dual-ABI work are excluded from this cleanup and guard. They remain accurate records of what happened at that time.
 
@@ -163,8 +163,7 @@ P02-007 does not add:
 - a second Android-specific runtime, database, scheduler, event authority, or job model;
 - migration compatibility from the temporary development package identity.
 
-Linux desktop x86_64 support is explicitly unaffected. macOS desktop support is
-intentionally limited to Apple Silicon by the current macOS build contract.
+Desktop x86_64 support is explicitly unaffected.
 
 ## 12. Acceptance Summary
 

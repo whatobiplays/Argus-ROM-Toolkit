@@ -5,6 +5,13 @@ ARGUS_MACOS_RUST_TARGET="aarch64-apple-darwin"
 ARGUS_MACOS_DEPLOYMENT_TARGET_DEFAULT="11.0"
 ARGUS_MACOS_DEPLOYMENT_TARGET_METADATA_PREFIX="argus-macos-deployment-target-"
 ARGUS_MACOS_DEPLOYMENT_TARGET_CFLAGS_PREFIX="-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT="
+ARGUS_MACOS_ENV_ASSIGNMENTS=()
+ARGUS_MACOS_TARGET_CFG_OUTPUT=""
+ARGUS_MACOS_TARGET_CFG_OUTPUT_LOADED=false
+ARGUS_CFG_PARSE_TEXT=""
+ARGUS_CFG_PARSE_INDEX=0
+ARGUS_CFG_PARSE_RESULT=false
+ARGUS_CFG_PARSE_VALID=true
 
 # Cargo accepts the target from either the environment or the command line.
 # The command-line form wins, matching Cargo's precedence rules for an
@@ -32,6 +39,366 @@ argus_cargo_target_from_arguments() {
 
 argus_cargo_invocation_is_ndk() {
   [[ "${1:-}" == cargo && "${2:-}" == ndk ]]
+}
+
+# Resolve the cfg facts with the same pinned Rust toolchain that the wrapper
+# will use for Cargo. This lets the helper identify target cfg tables without
+# reimplementing target properties or changing Cargo's own flag merge order.
+argus_load_macos_target_cfg_output() {
+  if [[ "$ARGUS_MACOS_TARGET_CFG_OUTPUT_LOADED" == true ]]; then
+    return 0
+  fi
+
+  local cfg_output
+  if [[ -n "${ARGUS_MACOS_RUST_CHANNEL:-}" ]] &&
+    command -v rustup >/dev/null 2>&1; then
+    if ! cfg_output="$(
+      RUSTUP_TOOLCHAIN="$ARGUS_MACOS_RUST_CHANNEL" \
+        rustup run "$ARGUS_MACOS_RUST_CHANNEL" rustc --print cfg \
+        --target "$ARGUS_MACOS_RUST_TARGET"
+    )"; then
+      printf 'Could not inspect cfg values for %s with Rust toolchain %s\n' \
+        "$ARGUS_MACOS_RUST_TARGET" "$ARGUS_MACOS_RUST_CHANNEL" >&2
+      return 1
+    fi
+  elif command -v rustc >/dev/null 2>&1; then
+    if ! cfg_output="$(rustc --print cfg --target "$ARGUS_MACOS_RUST_TARGET")"; then
+      printf 'Could not inspect cfg values for %s\n' \
+        "$ARGUS_MACOS_RUST_TARGET" >&2
+      return 1
+    fi
+  else
+    printf 'Cannot inspect cfg values for %s: rustc is unavailable\n' \
+      "$ARGUS_MACOS_RUST_TARGET" >&2
+    return 1
+  fi
+
+  ARGUS_MACOS_TARGET_CFG_OUTPUT="$cfg_output"
+  ARGUS_MACOS_TARGET_CFG_OUTPUT_LOADED=true
+}
+
+argus_cfg_predicate_matches_target() {
+  local predicate="$1"
+  predicate="$(printf '%s' "$predicate" | tr -d '[:space:]')"
+
+  # Cargo exposes the selected target name in cfg expressions, while rustc's
+  # --print cfg output contains the individual target properties.
+  if [[ "$predicate" == 'target="aarch64-apple-darwin"' ]]; then
+    return 0
+  fi
+
+  argus_load_macos_target_cfg_output || return 1
+  if printf '%s\n' "$ARGUS_MACOS_TARGET_CFG_OUTPUT" |
+    grep -Fqx "$predicate"; then
+    return 0
+  fi
+
+  return 1
+}
+
+argus_cfg_skip_whitespace() {
+  local text_length="${#ARGUS_CFG_PARSE_TEXT}"
+  local character
+
+  while (( ARGUS_CFG_PARSE_INDEX < text_length )); do
+    character="${ARGUS_CFG_PARSE_TEXT:ARGUS_CFG_PARSE_INDEX:1}"
+    case "$character" in
+      [[:space:]]) ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1)) ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+argus_cfg_parse_predicate() {
+  local text_length="${#ARGUS_CFG_PARSE_TEXT}"
+  local start_index="$ARGUS_CFG_PARSE_INDEX"
+  local nesting=0
+  local character
+
+  while (( ARGUS_CFG_PARSE_INDEX < text_length )); do
+    character="${ARGUS_CFG_PARSE_TEXT:ARGUS_CFG_PARSE_INDEX:1}"
+    case "$character" in
+      ','|')')
+        if (( nesting == 0 )); then
+          break
+        fi
+        nesting=$((nesting - 1))
+        ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1))
+        ;;
+      '(')
+        nesting=$((nesting + 1))
+        ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1))
+        ;;
+      *)
+        ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1))
+        ;;
+    esac
+  done
+
+  if (( nesting != 0 )); then
+    ARGUS_CFG_PARSE_VALID=false
+    ARGUS_CFG_PARSE_RESULT=false
+    return 0
+  fi
+
+  local predicate="${ARGUS_CFG_PARSE_TEXT:start_index:ARGUS_CFG_PARSE_INDEX-start_index}"
+  predicate="$(printf '%s' "$predicate" | tr -d '[:space:]')"
+  if [[ -z "$predicate" ]]; then
+    ARGUS_CFG_PARSE_VALID=false
+    ARGUS_CFG_PARSE_RESULT=false
+  elif argus_cfg_predicate_matches_target "$predicate"; then
+    ARGUS_CFG_PARSE_RESULT=true
+  else
+    ARGUS_CFG_PARSE_RESULT=false
+  fi
+}
+
+argus_cfg_parse_list() {
+  local operation="$1"
+  ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 4))
+
+  local aggregate=true
+  if [[ "$operation" == any ]]; then
+    aggregate=false
+  fi
+
+  argus_cfg_skip_whitespace
+  local character="${ARGUS_CFG_PARSE_TEXT:ARGUS_CFG_PARSE_INDEX:1}"
+  if [[ "$character" == ")" ]]; then
+    ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1))
+    ARGUS_CFG_PARSE_RESULT="$aggregate"
+    return 0
+  fi
+
+  while [[ "$ARGUS_CFG_PARSE_VALID" == true ]]; do
+    argus_cfg_parse_expression
+    if [[ "$ARGUS_CFG_PARSE_VALID" != true ]]; then
+      return 0
+    fi
+
+    if [[ "$operation" == all && "$ARGUS_CFG_PARSE_RESULT" != true ]]; then
+      aggregate=false
+    elif [[ "$operation" == any && "$ARGUS_CFG_PARSE_RESULT" == true ]]; then
+      aggregate=true
+    fi
+
+    argus_cfg_skip_whitespace
+    character="${ARGUS_CFG_PARSE_TEXT:ARGUS_CFG_PARSE_INDEX:1}"
+    case "$character" in
+      ',')
+        ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1))
+        argus_cfg_skip_whitespace
+        ;;
+      ')')
+        ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1))
+        ARGUS_CFG_PARSE_RESULT="$aggregate"
+        return 0
+        ;;
+      *)
+        ARGUS_CFG_PARSE_VALID=false
+        ARGUS_CFG_PARSE_RESULT=false
+        return 0
+        ;;
+    esac
+  done
+}
+
+argus_cfg_parse_expression() {
+  argus_cfg_skip_whitespace
+  local text_length="${#ARGUS_CFG_PARSE_TEXT}"
+  if (( ARGUS_CFG_PARSE_INDEX >= text_length )); then
+    ARGUS_CFG_PARSE_VALID=false
+    ARGUS_CFG_PARSE_RESULT=false
+    return 0
+  fi
+
+  local prefix="${ARGUS_CFG_PARSE_TEXT:ARGUS_CFG_PARSE_INDEX:4}"
+  if [[ "$prefix" == "all(" ]]; then
+    argus_cfg_parse_list all
+  elif [[ "$prefix" == "any(" ]]; then
+    argus_cfg_parse_list any
+  elif [[ "$prefix" == "not(" ]]; then
+    ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 4))
+    argus_cfg_parse_expression
+    if [[ "$ARGUS_CFG_PARSE_VALID" != true ]]; then
+      return 0
+    fi
+    argus_cfg_skip_whitespace
+    if [[ "${ARGUS_CFG_PARSE_TEXT:ARGUS_CFG_PARSE_INDEX:1}" != ")" ]]; then
+      ARGUS_CFG_PARSE_VALID=false
+      ARGUS_CFG_PARSE_RESULT=false
+      return 0
+    fi
+    ARGUS_CFG_PARSE_INDEX=$((ARGUS_CFG_PARSE_INDEX + 1))
+    if [[ "$ARGUS_CFG_PARSE_RESULT" == true ]]; then
+      ARGUS_CFG_PARSE_RESULT=false
+    else
+      ARGUS_CFG_PARSE_RESULT=true
+    fi
+  else
+    argus_cfg_parse_predicate
+  fi
+}
+
+argus_cfg_expression_matches_target() {
+  ARGUS_CFG_PARSE_TEXT="$1"
+  ARGUS_CFG_PARSE_INDEX=0
+  ARGUS_CFG_PARSE_RESULT=false
+  ARGUS_CFG_PARSE_VALID=true
+
+  argus_load_macos_target_cfg_output || return 1
+  argus_cfg_parse_expression
+  if [[ "$ARGUS_CFG_PARSE_VALID" != true ]]; then
+    return 1
+  fi
+
+  argus_cfg_skip_whitespace
+  if (( ARGUS_CFG_PARSE_INDEX != ${#ARGUS_CFG_PARSE_TEXT} )); then
+    return 1
+  fi
+
+  [[ "$ARGUS_CFG_PARSE_RESULT" == true ]]
+}
+
+argus_cargo_config_text_cfg_target_rustflags() {
+  # Print only cfg target expressions whose table or dotted key supplies
+  # rustflags. The shell evaluator below decides whether each expression
+  # matches the fixed aarch64-apple-darwin product target.
+  awk '
+    function flush_section() {
+      if (section_has_rustflags) {
+        print section_expression
+      }
+    }
+
+    function reset_section() {
+      section_expression = ""
+      section_has_rustflags = 0
+    }
+
+    BEGIN {
+      single_quote = sprintf("%c", 39)
+      single_prefix = "[target." single_quote "cfg("
+      double_prefix = "[target.\"cfg("
+      single_dotted_prefix = "target." single_quote "cfg("
+      double_dotted_prefix = "target.\"cfg("
+      reset_section()
+    }
+
+    {
+      line = $0
+      sub(/^[[:space:]]*/, "", line)
+
+      if (index(line, single_dotted_prefix) == 1) {
+        dotted_expression = substr(line, length(single_dotted_prefix) + 1)
+        suffix = "\\)[[:space:]]*" single_quote \
+          "[[:space:]]*\\.rustflags[[:space:]]*=.*"
+        if (dotted_expression ~ suffix) {
+          sub(suffix, "", dotted_expression)
+          print dotted_expression
+        }
+        next
+      }
+
+      if (index(line, double_dotted_prefix) == 1) {
+        dotted_expression = substr(line, length(double_dotted_prefix) + 1)
+        suffix = "\\)[[:space:]]*\"[[:space:]]*\\.rustflags" \
+          "[[:space:]]*=.*"
+        if (dotted_expression ~ suffix) {
+          sub(suffix, "", dotted_expression)
+          print dotted_expression
+        }
+        next
+      }
+
+      if (index(line, single_prefix) == 1) {
+        flush_section()
+        section_expression = substr(line, length(single_prefix) + 1)
+        suffix = "\\)[[:space:]]*" single_quote "[[:space:]]*\\].*"
+        sub(suffix, "", section_expression)
+        section_has_rustflags = 0
+        next
+      }
+
+      if (index(line, double_prefix) == 1) {
+        flush_section()
+        section_expression = substr(line, length(double_prefix) + 1)
+        suffix = "\\)[[:space:]]*\"[[:space:]]*\\].*"
+        sub(suffix, "", section_expression)
+        section_has_rustflags = 0
+        next
+      }
+
+      if (line ~ /^\[/) {
+        flush_section()
+        reset_section()
+        next
+      }
+
+      if (section_expression != "" &&
+          line ~ /^[[:space:]]*rustflags[[:space:]]*=/) {
+        section_has_rustflags = 1
+      }
+    }
+
+    END {
+      flush_section()
+    }
+  '
+}
+
+argus_cargo_config_file_has_matching_cfg_target_rustflags() {
+  local config_file="$1"
+  [[ -f "$config_file" ]] || return 1
+
+  local cfg_expression
+  while IFS= read -r cfg_expression; do
+    if argus_cfg_expression_matches_target "$cfg_expression"; then
+      return 0
+    fi
+  done < <(argus_cargo_config_text_cfg_target_rustflags <"$config_file")
+
+  return 1
+}
+
+argus_cargo_config_value_has_matching_cfg_target_rustflags() {
+  local config_value="$1"
+  local cfg_expression
+
+  cfg_expression="$(
+    awk '
+      BEGIN {
+        single_quote = sprintf("%c", 39)
+        single_prefix = "target." single_quote "cfg("
+        double_prefix = "target.\"cfg("
+      }
+      {
+        line = $0
+        if (index(line, single_prefix) == 1) {
+          cfg_expression = substr(line, length(single_prefix) + 1)
+          suffix = "\\)[[:space:]]*" single_quote \
+            "[[:space:]]*\\.rustflags=.*"
+          if (cfg_expression ~ suffix) {
+            sub(suffix, "", cfg_expression)
+            print cfg_expression
+            exit
+          }
+        }
+        if (index(line, double_prefix) == 1) {
+          cfg_expression = substr(line, length(double_prefix) + 1)
+          suffix = "\\)[[:space:]]*\"[[:space:]]*\\.rustflags=.*"
+          if (cfg_expression ~ suffix) {
+            sub(suffix, "", cfg_expression)
+            print cfg_expression
+            exit
+          }
+        }
+      }
+    ' <<<"$config_value"
+  )"
+
+  [[ -n "$cfg_expression" ]] &&
+    argus_cfg_expression_matches_target "$cfg_expression"
 }
 
 argus_cargo_config_file_has_native_target_rustflags() {
@@ -99,6 +466,10 @@ argus_cargo_config_file_has_native_target_rustflags() {
     fi
   done
 
+  if argus_cargo_config_file_has_matching_cfg_target_rustflags "$config_file"; then
+    return 0
+  fi
+
   return 1
 }
 
@@ -127,6 +498,10 @@ argus_cargo_config_argument_has_native_target_rustflags() {
         return 0
         ;;
     esac
+
+    if argus_cargo_config_value_has_matching_cfg_target_rustflags "$config_value"; then
+      return 0
+    fi
 
     if [[ -f "$config_value" ]] &&
       argus_cargo_config_file_has_native_target_rustflags "$config_value"; then
@@ -184,6 +559,56 @@ argus_deployment_target_fingerprint() {
   printf '\n'
 }
 
+argus_environment_variable_is_set() {
+  local variable_name="$1"
+
+  if [[ "$variable_name" == *-* ]]; then
+    printenv "$variable_name" >/dev/null 2>&1
+  else
+    declare -p "$variable_name" >/dev/null 2>&1
+  fi
+}
+
+# cc-rs accepts target-specific variable names containing hyphens, which Bash
+# cannot assign directly. Read those names through the process environment and
+# let the wrapper carry any updated assignment through env.
+argus_environment_variable_value() {
+  local variable_name="$1"
+
+  if [[ "$variable_name" == *-* ]]; then
+    printenv "$variable_name"
+  else
+    printf '%s\n' "${!variable_name-}"
+  fi
+}
+
+argus_append_environment_value() {
+  local variable_name="$1"
+  local value="$2"
+  local marker="$3"
+  local existing_value
+
+  existing_value="$(argus_environment_variable_value "$variable_name")"
+  if [[ "$existing_value" == *"$marker"* ]]; then
+    return 0
+  fi
+
+  if [[ -n "$existing_value" ]]; then
+    existing_value+=" "
+  fi
+  existing_value+="$value"
+
+  if [[ "$variable_name" == *-* ]]; then
+    # Bash cannot declare a hyphenated variable. The wrapper passes this
+    # assignment to Cargo through env after the policy has been evaluated.
+    ARGUS_MACOS_ENV_ASSIGNMENTS+=("$variable_name=$existing_value")
+    return 0
+  fi
+
+  printf -v "$variable_name" '%s' "$existing_value"
+  export "${variable_name?}"
+}
+
 argus_append_space_separated_value() {
   local variable_name="$1"
   local value="$2"
@@ -225,14 +650,21 @@ argus_append_encoded_rustflag() {
 
 argus_append_native_fingerprint() {
   local fingerprint="$1"
-  local marker="${ARGUS_MACOS_DEPLOYMENT_TARGET_CFLAGS_PREFIX}${fingerprint}"
+  local marker="$ARGUS_MACOS_DEPLOYMENT_TARGET_CFLAGS_PREFIX$fingerprint"
+  local variable_name
 
-  if declare -p 'CFLAGS_aarch64_apple_darwin' >/dev/null 2>&1; then
-    argus_append_space_separated_value \
-      CFLAGS_aarch64_apple_darwin "$marker" "$marker"
-  else
-    argus_append_space_separated_value CFLAGS "$marker" "$marker"
-  fi
+  for variable_name in \
+    CFLAGS_aarch64-apple-darwin \
+    CFLAGS_aarch64_apple_darwin \
+    TARGET_CFLAGS \
+    CFLAGS; do
+    if argus_environment_variable_is_set "$variable_name"; then
+      argus_append_environment_value "$variable_name" "$marker" "$marker"
+      return 0
+    fi
+  done
+
+  argus_append_environment_value CFLAGS "$marker" "$marker"
 }
 
 # Configure the environment shared by the Rust compiler and native C build
@@ -242,6 +674,7 @@ argus_configure_macos_rust_build_environment() {
   local host_os="$1"
   local host_arch="$2"
   shift 2
+  ARGUS_MACOS_ENV_ASSIGNMENTS=()
 
   if [[ "$host_os" != Darwin ]]; then
     return 0

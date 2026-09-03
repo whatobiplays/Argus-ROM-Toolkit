@@ -1979,13 +1979,27 @@ fn hex_decode(value: &str) -> Option<String> {
 }
 
 fn hex_decode_bytes(value: &str) -> Option<Vec<u8>> {
-    if !value.len().is_multiple_of(2) {
+    let bytes = value.as_bytes();
+    if !bytes.len().is_multiple_of(2) {
         return None;
     }
-    (0..value.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).ok())
-        .collect::<Option<Vec<_>>>()
+    bytes
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = hex_digit(pair[0])?;
+            let low = hex_digit(pair[1])?;
+            Some((high << 4) | low)
+        })
+        .collect()
+}
+
+fn hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn map_browse_access_error(error: SourceAccessError) -> ProviderError {
@@ -2005,13 +2019,8 @@ fn classify_browse_error(error: std::io::Error) -> ProviderError {
     }
 }
 
-/// Creates a real security-scoped bookmark for macOS integration fixtures.
-///
-/// This helper is available only to the `test-support` feature and is not part
-/// of the production provider surface. It gives runtime tests the same durable
-/// authorization shape that the native folder picker gives the application.
-#[cfg(all(feature = "test-support", target_os = "macos"))]
-pub fn macos_test_bookmark_for_directory(path: &Path) -> Vec<u8> {
+#[cfg(all(target_os = "macos", any(test, feature = "test-support")))]
+fn create_macos_security_scoped_bookmark(path: &Path) -> Vec<u8> {
     let url = NSURL::from_directory_path(path).expect("directory URL");
     url.bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
         NSURLBookmarkCreationOptions::WithSecurityScope,
@@ -2020,6 +2029,16 @@ pub fn macos_test_bookmark_for_directory(path: &Path) -> Vec<u8> {
     )
     .expect("security-scoped bookmark")
     .to_vec()
+}
+
+/// Creates a real security-scoped bookmark for macOS integration fixtures.
+///
+/// This helper is available only to the `test-support` feature and is not part
+/// of the production provider surface. It gives runtime tests the same durable
+/// authorization shape that the native folder picker gives the application.
+#[cfg(all(feature = "test-support", target_os = "macos"))]
+pub fn macos_test_bookmark_for_directory(path: &Path) -> Vec<u8> {
+    create_macos_security_scoped_bookmark(path)
 }
 
 fn classify_stat_error(error: std::io::Error) -> ProviderError {
@@ -2048,14 +2067,7 @@ mod macos_tests {
     };
 
     fn bookmark_for_directory(path: &Path) -> Vec<u8> {
-        let url = NSURL::from_directory_path(path).expect("directory URL");
-        url.bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
-            NSURLBookmarkCreationOptions::WithSecurityScope,
-            None,
-            None,
-        )
-        .expect("security-scoped bookmark")
-        .to_vec()
+        super::create_macos_security_scoped_bookmark(path)
     }
 
     #[test]
@@ -2173,6 +2185,7 @@ mod macos_tests {
         assert!(decode_macos_root_locator(&format!("{prefix}.not-hex.aa")).is_none());
         assert!(decode_macos_root_locator(&format!("{prefix}.2f746d.not-hex")).is_none());
         assert!(decode_macos_root_locator(&format!("{prefix}.2f746d.aa.extra")).is_none());
+        assert!(decode_macos_root_locator(&format!("{prefix}.\u{20ac}a.aa")).is_none());
     }
 
     struct TestScopeFactory {

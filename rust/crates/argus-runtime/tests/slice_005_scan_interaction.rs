@@ -280,15 +280,31 @@ fn retry_registration_failure_preserves_identity_and_terminalizes_coherently() {
         make_library(&busy, if index == 0 { 20_000 } else { 50 });
         busy_roots.push(add_root(&host, &busy));
     }
+    let manager = host.background_manager_for_tests().expect("manager");
     // Start the long scan only after all roots are configured so root
     // validation cannot consume the time that the capacity fixture relies on.
     let first_root = busy_roots.first().copied().expect("busy roots");
     let _ = start_scan(&host, first_root);
-    for root_id in busy_roots.into_iter().skip(1) {
+    assert!(
+        wait_until(
+            || manager.pending_len_for_tests() == 0 && manager.active_len_for_tests() == 1,
+            Duration::from_secs(15),
+        ),
+        "expected the long scan to hold the first active slot"
+    );
+    for (index, root_id) in busy_roots.into_iter().skip(1).enumerate() {
         let _ = start_scan(&host, root_id);
+        let expected_count = index + 2;
+        assert!(
+            wait_until(
+                || manager.pending_len_for_tests() + manager.active_len_for_tests()
+                    >= expected_count,
+                Duration::from_secs(15),
+            ),
+            "expected busy scan {expected_count} to remain admitted"
+        );
     }
 
-    let manager = host.background_manager_for_tests().expect("manager");
     assert!(
         wait_until(
             || manager.active_len_for_tests() >= 16,

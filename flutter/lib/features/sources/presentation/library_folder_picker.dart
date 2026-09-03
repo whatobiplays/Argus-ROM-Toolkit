@@ -41,9 +41,7 @@ Future<SelectedLibraryFolder?> _pickLibraryFolder(
 ) async {
   final path = await getDirectoryPath(confirmButtonText: 'Select Folder');
   if (path == null) return null;
-  final displayName = path
-      .split(RegExp(r'[/\\]'))
-      .lastWhere((part) => part.isNotEmpty, orElse: () => path);
+  final displayName = _displayNameForPath(path);
   return SelectedLibraryFolder(
     selection: LocalFilesystemRootSelection(path),
     displayName: displayName,
@@ -58,9 +56,7 @@ Future<SelectedLibraryFolder?> _pickLibraryFolderWithMacosPicker(
 ) async {
   final selected = await api.pickLibraryFolder();
   if (selected == null) return null;
-  final displayName = selected.path
-      .split(RegExp(r'[/\\]'))
-      .lastWhere((part) => part.isNotEmpty, orElse: () => selected.path);
+  final displayName = _displayNameForPath(selected.path);
   return SelectedLibraryFolder(
     selection: LocalFilesystemRootSelection.macos(
       selected.path,
@@ -70,6 +66,11 @@ Future<SelectedLibraryFolder?> _pickLibraryFolderWithMacosPicker(
     safeLocationPresentation: selected.path,
   );
 }
+
+/// Extracts a safe presentation name from a native filesystem path.
+String _displayNameForPath(String path) => path
+    .split(RegExp(r'[/\\]'))
+    .lastWhere((part) => part.isNotEmpty, orElse: () => path);
 
 Future<SelectedLibraryFolder?> _pickLibraryFolderWithArgusBrowser(
   BuildContext context,

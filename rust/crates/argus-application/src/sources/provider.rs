@@ -138,7 +138,7 @@ impl LocalFilesystemRootSelection {
         }
     }
 
-    /// Returns the raw picker path only for the path variant.
+    /// Returns the selected filesystem path for either path-backed variant.
     pub fn selected_folder_path(&self) -> Option<&str> {
         match self {
             Self::Path {

@@ -20,7 +20,11 @@ final class MethodChannelMacosLibraryFolderPickerApi
     final Object? raw;
     try {
       raw = await _channel.invokeMethod<Object?>('pickLibraryFolder');
-    } on Object {
+    } on PlatformException {
+      throw const MacosLibraryFolderPickerException(
+        MacosLibraryFolderPickerFailureKind.nativeUnavailable,
+      );
+    } on MissingPluginException {
       throw const MacosLibraryFolderPickerException(
         MacosLibraryFolderPickerFailureKind.nativeUnavailable,
       );

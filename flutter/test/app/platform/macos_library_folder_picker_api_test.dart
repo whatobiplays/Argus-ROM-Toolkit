@@ -93,6 +93,29 @@ void main() {
       ),
     );
   });
+
+  test('maps a missing native plugin to a bounded opaque error', () async {
+    handler.error = MissingPluginException('private plugin detail');
+
+    await expectLater(
+      const MethodChannelMacosLibraryFolderPickerApi().pickLibraryFolder(),
+      throwsA(
+        isA<MacosLibraryFolderPickerException>().having(
+          (error) => error.kind,
+          'kind',
+          MacosLibraryFolderPickerFailureKind.nativeUnavailable,
+        ),
+      ),
+    );
+  });
+
+  test('does not mask unexpected channel errors', () async {
+    final api = MethodChannelMacosLibraryFolderPickerApi(
+      channel: _UnexpectedErrorMethodChannel(),
+    );
+
+    await expectLater(api.pickLibraryFolder(), throwsA(isA<StateError>()));
+  });
 }
 
 final class _MockMethodCallHandler {
@@ -103,5 +126,14 @@ final class _MockMethodCallHandler {
     final error = this.error;
     if (error != null) throw error;
     return reply;
+  }
+}
+
+final class _UnexpectedErrorMethodChannel extends MethodChannel {
+  _UnexpectedErrorMethodChannel() : super('argus/test_unexpected_error');
+
+  @override
+  Future<T?> invokeMethod<T>(String method, [dynamic arguments]) {
+    throw StateError('programming error');
   }
 }

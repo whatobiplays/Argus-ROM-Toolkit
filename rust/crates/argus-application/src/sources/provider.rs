@@ -5,6 +5,8 @@
 //! normalize, compare, or infer filesystem semantics from provider-owned
 //! values such as [`RootLocator`] or [`LocalFilesystemRootSelection`].
 
+use std::fmt;
+
 /// Stable provider implementation family.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceProviderType {
@@ -41,8 +43,17 @@ pub struct SourceProviderTypeError;
 /// Only the owning source provider interprets the enclosed value. Generic
 /// application, persistence, bridge, and Flutter code must treat it as an
 /// opaque token.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct RootLocator(String);
+
+impl fmt::Debug for RootLocator {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("RootLocator")
+            .field(&"<opaque>")
+            .finish()
+    }
+}
 
 impl RootLocator {
     /// Wraps a provider-produced opaque locator value.
@@ -66,12 +77,38 @@ impl RootLocator {
 /// derive identity/overlap semantics from it; the LocalFilesystem provider
 /// owns all filesystem interpretation. Provider selections carry an opaque
 /// identity that is meaningful only to the LocalFilesystem provider.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum LocalFilesystemRootSelection {
     /// A desktop/native picker supplied a filesystem path.
     Path { selected_folder_path: String },
     /// The Argus-owned provider browser supplied an opaque selection identity.
     ProviderSelection { selection_identity: String },
+    /// A macOS native picker supplied a path and opaque security-scoped
+    /// authorization bytes. The provider alone interprets the authorization.
+    MacosAuthorized {
+        selected_folder_path: String,
+        authorization: Vec<u8>,
+    },
+}
+
+impl fmt::Debug for LocalFilesystemRootSelection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path { .. } => formatter
+                .debug_struct("LocalFilesystemRootSelection::Path")
+                .field("selected_folder_path", &"<opaque>")
+                .finish(),
+            Self::ProviderSelection { .. } => formatter
+                .debug_struct("LocalFilesystemRootSelection::ProviderSelection")
+                .field("selection_identity", &"<opaque>")
+                .finish(),
+            Self::MacosAuthorized { .. } => formatter
+                .debug_struct("LocalFilesystemRootSelection::MacosAuthorized")
+                .field("selected_folder_path", &"<opaque>")
+                .field("authorization", &"<opaque>")
+                .finish(),
+        }
+    }
 }
 
 impl LocalFilesystemRootSelection {
@@ -93,11 +130,23 @@ impl LocalFilesystemRootSelection {
         Self::ProviderSelection { selection_identity }
     }
 
+    /// Creates a macOS selection carrying opaque durable authorization bytes.
+    pub fn macos_authorized(selected_folder_path: String, authorization: Vec<u8>) -> Self {
+        Self::MacosAuthorized {
+            selected_folder_path,
+            authorization,
+        }
+    }
+
     /// Returns the raw picker path only for the path variant.
     pub fn selected_folder_path(&self) -> Option<&str> {
         match self {
             Self::Path {
                 selected_folder_path,
+            } => Some(selected_folder_path),
+            Self::MacosAuthorized {
+                selected_folder_path,
+                ..
             } => Some(selected_folder_path),
             Self::ProviderSelection { .. } => None,
         }
@@ -109,6 +158,7 @@ impl LocalFilesystemRootSelection {
         match self {
             Self::Path { .. } => None,
             Self::ProviderSelection { selection_identity } => Some(selection_identity),
+            Self::MacosAuthorized { .. } => None,
         }
     }
 }

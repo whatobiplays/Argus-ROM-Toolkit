@@ -3165,12 +3165,13 @@ extension LocalFilesystemRootSelectionDtoPatterns on LocalFilesystemRootSelectio
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LocalFilesystemRootSelectionDto_Path value)?  path,TResult Function( LocalFilesystemRootSelectionDto_ProviderSelection value)?  providerSelection,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( LocalFilesystemRootSelectionDto_Path value)?  path,TResult Function( LocalFilesystemRootSelectionDto_ProviderSelection value)?  providerSelection,TResult Function( LocalFilesystemRootSelectionDto_MacosAuthorized value)?  macosAuthorized,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case LocalFilesystemRootSelectionDto_Path() when path != null:
 return path(_that);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
-return providerSelection(_that);case _:
+return providerSelection(_that);case LocalFilesystemRootSelectionDto_MacosAuthorized() when macosAuthorized != null:
+return macosAuthorized(_that);case _:
   return orElse();
 
 }
@@ -3188,12 +3189,13 @@ return providerSelection(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LocalFilesystemRootSelectionDto_Path value)  path,required TResult Function( LocalFilesystemRootSelectionDto_ProviderSelection value)  providerSelection,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( LocalFilesystemRootSelectionDto_Path value)  path,required TResult Function( LocalFilesystemRootSelectionDto_ProviderSelection value)  providerSelection,required TResult Function( LocalFilesystemRootSelectionDto_MacosAuthorized value)  macosAuthorized,}){
 final _that = this;
 switch (_that) {
 case LocalFilesystemRootSelectionDto_Path():
 return path(_that);case LocalFilesystemRootSelectionDto_ProviderSelection():
-return providerSelection(_that);}
+return providerSelection(_that);case LocalFilesystemRootSelectionDto_MacosAuthorized():
+return macosAuthorized(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -3207,12 +3209,13 @@ return providerSelection(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LocalFilesystemRootSelectionDto_Path value)?  path,TResult? Function( LocalFilesystemRootSelectionDto_ProviderSelection value)?  providerSelection,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( LocalFilesystemRootSelectionDto_Path value)?  path,TResult? Function( LocalFilesystemRootSelectionDto_ProviderSelection value)?  providerSelection,TResult? Function( LocalFilesystemRootSelectionDto_MacosAuthorized value)?  macosAuthorized,}){
 final _that = this;
 switch (_that) {
 case LocalFilesystemRootSelectionDto_Path() when path != null:
 return path(_that);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
-return providerSelection(_that);case _:
+return providerSelection(_that);case LocalFilesystemRootSelectionDto_MacosAuthorized() when macosAuthorized != null:
+return macosAuthorized(_that);case _:
   return null;
 
 }
@@ -3229,11 +3232,12 @@ return providerSelection(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String selectedFolderPath)?  path,TResult Function( String selectionIdentity)?  providerSelection,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String selectedFolderPath)?  path,TResult Function( String selectionIdentity)?  providerSelection,TResult Function( String selectedFolderPath,  MacosAuthorization authorization)?  macosAuthorized,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case LocalFilesystemRootSelectionDto_Path() when path != null:
 return path(_that.selectedFolderPath);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
-return providerSelection(_that.selectionIdentity);case _:
+return providerSelection(_that.selectionIdentity);case LocalFilesystemRootSelectionDto_MacosAuthorized() when macosAuthorized != null:
+return macosAuthorized(_that.selectedFolderPath,_that.authorization);case _:
   return orElse();
 
 }
@@ -3251,11 +3255,12 @@ return providerSelection(_that.selectionIdentity);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String selectedFolderPath)  path,required TResult Function( String selectionIdentity)  providerSelection,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String selectedFolderPath)  path,required TResult Function( String selectionIdentity)  providerSelection,required TResult Function( String selectedFolderPath,  MacosAuthorization authorization)  macosAuthorized,}) {final _that = this;
 switch (_that) {
 case LocalFilesystemRootSelectionDto_Path():
 return path(_that.selectedFolderPath);case LocalFilesystemRootSelectionDto_ProviderSelection():
-return providerSelection(_that.selectionIdentity);}
+return providerSelection(_that.selectionIdentity);case LocalFilesystemRootSelectionDto_MacosAuthorized():
+return macosAuthorized(_that.selectedFolderPath,_that.authorization);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -3269,11 +3274,12 @@ return providerSelection(_that.selectionIdentity);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String selectedFolderPath)?  path,TResult? Function( String selectionIdentity)?  providerSelection,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String selectedFolderPath)?  path,TResult? Function( String selectionIdentity)?  providerSelection,TResult? Function( String selectedFolderPath,  MacosAuthorization authorization)?  macosAuthorized,}) {final _that = this;
 switch (_that) {
 case LocalFilesystemRootSelectionDto_Path() when path != null:
 return path(_that.selectedFolderPath);case LocalFilesystemRootSelectionDto_ProviderSelection() when providerSelection != null:
-return providerSelection(_that.selectionIdentity);case _:
+return providerSelection(_that.selectionIdentity);case LocalFilesystemRootSelectionDto_MacosAuthorized() when macosAuthorized != null:
+return macosAuthorized(_that.selectedFolderPath,_that.authorization);case _:
   return null;
 
 }
@@ -3407,6 +3413,74 @@ class _$LocalFilesystemRootSelectionDto_ProviderSelectionCopyWithImpl<$Res>
   return _then(LocalFilesystemRootSelectionDto_ProviderSelection(
 selectionIdentity: null == selectionIdentity ? _self.selectionIdentity : selectionIdentity // ignore: cast_nullable_to_non_nullable
 as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class LocalFilesystemRootSelectionDto_MacosAuthorized extends LocalFilesystemRootSelectionDto {
+  const LocalFilesystemRootSelectionDto_MacosAuthorized({required this.selectedFolderPath, required this.authorization}): super._();
+
+
+ final  String selectedFolderPath;
+ final  MacosAuthorization authorization;
+
+/// Create a copy of LocalFilesystemRootSelectionDto
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWith<LocalFilesystemRootSelectionDto_MacosAuthorized> get copyWith => _$LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWithImpl<LocalFilesystemRootSelectionDto_MacosAuthorized>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LocalFilesystemRootSelectionDto_MacosAuthorized&&(identical(other.selectedFolderPath, selectedFolderPath) || other.selectedFolderPath == selectedFolderPath)&&(identical(other.authorization, authorization) || other.authorization == authorization));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,selectedFolderPath,authorization);
+
+@override
+String toString() {
+  return 'LocalFilesystemRootSelectionDto.macosAuthorized(selectedFolderPath: $selectedFolderPath, authorization: $authorization)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWith<$Res> implements $LocalFilesystemRootSelectionDtoCopyWith<$Res> {
+  factory $LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWith(LocalFilesystemRootSelectionDto_MacosAuthorized value, $Res Function(LocalFilesystemRootSelectionDto_MacosAuthorized) _then) = _$LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWithImpl;
+@useResult
+$Res call({
+ String selectedFolderPath, MacosAuthorization authorization
+});
+
+
+
+
+}
+/// @nodoc
+class _$LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWithImpl<$Res>
+    implements $LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWith<$Res> {
+  _$LocalFilesystemRootSelectionDto_MacosAuthorizedCopyWithImpl(this._self, this._then);
+
+  final LocalFilesystemRootSelectionDto_MacosAuthorized _self;
+  final $Res Function(LocalFilesystemRootSelectionDto_MacosAuthorized) _then;
+
+/// Create a copy of LocalFilesystemRootSelectionDto
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? selectedFolderPath = null,Object? authorization = null,}) {
+  return _then(LocalFilesystemRootSelectionDto_MacosAuthorized(
+selectedFolderPath: null == selectedFolderPath ? _self.selectedFolderPath : selectedFolderPath // ignore: cast_nullable_to_non_nullable
+as String,authorization: null == authorization ? _self.authorization : authorization // ignore: cast_nullable_to_non_nullable
+as MacosAuthorization,
   ));
 }
 

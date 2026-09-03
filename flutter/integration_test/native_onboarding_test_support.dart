@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:argus/app/bootstrap/argus_app.dart';
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/routing/app_routes.dart';
@@ -5,6 +6,7 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/presentation/library_onboarding_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Returns the single application client composed by [ArgusBootstrap].
@@ -63,7 +65,7 @@ Future<ArgusClient> completeNativeLibraryOnboarding(
   try {
     if (!state.complete && state.requiresRootSelection) {
       final result = await client.onboarding.addLibraryRootAndRefresh(
-        LocalFilesystemRootSelection(temporaryRootPath),
+        await nativeTestRootSelection(temporaryRootPath),
       );
       switch (result) {
         case AddLibraryRootAndRefreshResultAddedAndRefreshAdmitted(
@@ -141,6 +143,23 @@ Future<ArgusClient> completeNativeLibraryOnboarding(
   );
   await _leaveNativeOnboarding(tester);
   return client;
+}
+
+/// Creates the same app-scoped authorization shape used by the native picker
+/// for a test-owned macOS container directory. The production release build
+/// does not expose this debug-only channel method; non-macOS tests preserve
+/// their existing path-selection fixture.
+Future<LocalFilesystemRootSelection> nativeTestRootSelection(
+  String path,
+) async {
+  if (!Platform.isMacOS) return LocalFilesystemRootSelection(path);
+  final authorization = await const MethodChannel(
+    'argus/macos_library_folder_picker',
+  ).invokeMethod<Uint8List>('createSecurityScopedBookmarkForTesting', path);
+  if (authorization == null || authorization.isEmpty) {
+    throw StateError('macOS test authorization was unavailable');
+  }
+  return LocalFilesystemRootSelection.macos(path, authorization);
 }
 
 Future<void> _leaveNativeOnboarding(

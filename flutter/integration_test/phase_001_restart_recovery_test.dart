@@ -264,7 +264,7 @@ Future<ProviderContainer> _pumpRealApp(
       libraryFolderPicker: (_, _) async => rootOne.isEmpty
           ? null
           : SelectedLibraryFolder(
-              selection: LocalFilesystemRootSelection(rootOne),
+              selection: await nativeTestRootSelection(rootOne),
               displayName: 'Selected root',
               safeLocationPresentation: rootOne,
             ),

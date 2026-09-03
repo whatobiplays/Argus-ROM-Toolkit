@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use argus_application::{
     CancelJobResult, JobRunId, JobRunState, LibraryRootId, LibraryRootLastScanStatus,
-    LibraryScanAllRequestIdentity, LocalFilesystemRootSelection, OperationDetail,
-    RemoveLibraryRootResult, RetryJobResult, StartLibraryScanAllResult,
+    LibraryScanAllRequestIdentity, OperationDetail, RemoveLibraryRootResult, RetryJobResult,
+    StartLibraryScanAllResult,
 };
 #[cfg(feature = "test-support")]
 use argus_application::{ErrorCode, ListJobsQuery, ListJobsScope};
-use argus_runtime::{ApplicationHost, KernelBootstrapOptions, RuntimeLifecycle};
+use argus_runtime::{ApplicationHost, KernelBootstrapOptions, RuntimeLifecycle, test_support};
 
 fn context_ready(host: &ApplicationHost) {
     let state = host.initialize().expect("initialize");
@@ -55,9 +55,7 @@ fn terminal_state(host: &ApplicationHost, job_run_id: JobRunId) -> JobRunState {
 
 fn add_root(host: &ApplicationHost, path: &Path) -> LibraryRootId {
     match host
-        .add_local_library_root(LocalFilesystemRootSelection::new(
-            path.to_string_lossy().into_owned(),
-        ))
+        .add_local_library_root(test_support::local_filesystem_root_selection(path))
         .expect("add root")
     {
         argus_application::AddLocalLibraryRootResult::Added(root) => root.root_id(),

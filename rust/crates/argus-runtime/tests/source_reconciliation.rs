@@ -9,12 +9,12 @@ use std::time::{Duration, Instant};
 
 use argus_application::{
     ApplicationPortError, JobRunId, JobRunState, JobsQueries, LibraryRootAvailability,
-    LibraryRootId, LibraryRootLastScanStatus, LibraryRootQueries, LocalFilesystemRootSelection,
-    SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
-    StartLibraryScanResult, UnitOfWork, UnitOfWorkFactory,
+    LibraryRootId, LibraryRootLastScanStatus, LibraryRootQueries, SourceEntryId, SourceEntryKind,
+    SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, StartLibraryScanResult, UnitOfWork,
+    UnitOfWorkFactory,
 };
 use argus_infrastructure::sqlite::SqliteDatabaseExecutor;
-use argus_runtime::{ApplicationHost, KernelBootstrapOptions};
+use argus_runtime::{ApplicationHost, KernelBootstrapOptions, test_support};
 
 fn context() -> argus_application::OperationContext {
     argus_application::OperationContext::new(
@@ -40,9 +40,7 @@ where
 
 fn add_root(host: &ApplicationHost, path: &Path) -> LibraryRootId {
     let result = host
-        .add_local_library_root(LocalFilesystemRootSelection::new(
-            path.to_string_lossy().into_owned(),
-        ))
+        .add_local_library_root(test_support::local_filesystem_root_selection(path))
         .expect("add root");
     match result {
         argus_application::AddLocalLibraryRootResult::Added(root) => root.root_id(),

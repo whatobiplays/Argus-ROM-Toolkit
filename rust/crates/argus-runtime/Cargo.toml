@@ -17,7 +17,7 @@ getrandom.workspace = true
 zeroize.workspace = true
 
 [features]
-test-support = []
+test-support = ["argus-infrastructure/test-support"]
 
 [dev-dependencies]
 argus-infrastructure = { path = "../argus-infrastructure", features = ["test-support"] }

@@ -1245,7 +1245,7 @@ void main() {
     expect(page.nextCursor, 'v1:1700000000:11111111111111111111111111111111');
   });
 
-  test('local filesystem selection maps both closed union variants', () {
+  test('local filesystem selection maps all closed union variants', () {
     expect(
       selectionToDto(const LocalFilesystemRootSelection('/tmp/games')),
       const dto.LocalFilesystemRootSelectionDto.path(
@@ -1260,6 +1260,17 @@ void main() {
         selectionIdentity: 'opaque-root',
       ),
     );
+    final macos = LocalFilesystemRootSelection.macos('/tmp/games', [
+      0xde,
+      0xad,
+    ]);
+    final mapped = selectionToDto(macos);
+    expect(mapped, isA<dto.LocalFilesystemRootSelectionDto_MacosAuthorized>());
+    final authorized =
+        mapped as dto.LocalFilesystemRootSelectionDto_MacosAuthorized;
+    expect(authorized.selectedFolderPath, '/tmp/games');
+    expect(authorized.authorization.field0, Uint8List.fromList([0xde, 0xad]));
+    expect(authorized.toString(), isNot(contains('222')));
   });
 
   test(

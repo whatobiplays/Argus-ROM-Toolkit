@@ -1,5 +1,7 @@
 #![cfg(feature = "test-support")]
 
+mod common;
+
 use std::io::{Cursor, Write};
 use std::thread;
 use std::time::Duration;
@@ -93,9 +95,7 @@ fn graph_fixture() -> (
     let root_id = SourceEntryId::try_from("11111111111111111111111111111111").expect("root id");
     let outer_id = SourceEntryId::try_from("33333333333333333333333333333333").expect("outer id");
     let game_id = SourceEntryId::try_from("55555555555555555555555555555555").expect("game id");
-    let access = LocalFilesystemSourceAccess::new(&argus_application::RootLocator::from_provider(
-        directory.path().to_string_lossy().into_owned(),
-    ));
+    let access = common::access(directory.path());
     let resolved_root = access.resolve_root().expect("root");
     let source_reader = access
         .open_entry_reader(

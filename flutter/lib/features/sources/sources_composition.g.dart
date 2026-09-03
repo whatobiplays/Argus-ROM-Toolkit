@@ -114,6 +114,66 @@ final class SourcesPresentationCapabilitiesProvider
 String _$sourcesPresentationCapabilitiesHash() =>
     r'bba64cf971fda58717d5b2a333e719673f1846eb';
 
+/// Supplies the macOS native picker through the single app-platform
+/// composition point. Other hosts receive null and keep their existing picker
+/// behavior.
+
+@ProviderFor(macosLibraryFolderPickerApi)
+final macosLibraryFolderPickerApiProvider =
+    MacosLibraryFolderPickerApiProvider._();
+
+/// Supplies the macOS native picker through the single app-platform
+/// composition point. Other hosts receive null and keep their existing picker
+/// behavior.
+
+final class MacosLibraryFolderPickerApiProvider
+    extends
+        $FunctionalProvider<
+          MacosLibraryFolderPickerApi?,
+          MacosLibraryFolderPickerApi?,
+          MacosLibraryFolderPickerApi?
+        >
+    with $Provider<MacosLibraryFolderPickerApi?> {
+  /// Supplies the macOS native picker through the single app-platform
+  /// composition point. Other hosts receive null and keep their existing picker
+  /// behavior.
+  MacosLibraryFolderPickerApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'macosLibraryFolderPickerApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$macosLibraryFolderPickerApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<MacosLibraryFolderPickerApi?> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  MacosLibraryFolderPickerApi? create(Ref ref) {
+    return macosLibraryFolderPickerApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(MacosLibraryFolderPickerApi? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<MacosLibraryFolderPickerApi?>(value),
+    );
+  }
+}
+
+String _$macosLibraryFolderPickerApiHash() =>
+    r'7f5f4f3f5ab4d1acd9b3dc82768e615a46705c6e';
+
 /// Focused Jobs capability injected for Sources-owned coordination (Scan All
 /// ambiguity reconciliation and cancel-and-remove).
 ///

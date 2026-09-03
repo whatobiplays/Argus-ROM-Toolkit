@@ -1,13 +1,14 @@
 #![cfg(unix)]
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use argus_application::{LibrarySourceAccess, RelativeSourceLocator, RootLocator};
-use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
+use argus_application::{LibrarySourceAccess, RelativeSourceLocator};
 
 const CHILD_ENV: &str = "ARGUS_FIFO_REVALIDATION_CHILD";
 const PATH_ENV: &str = "ARGUS_FIFO_REVALIDATION_PATH";
@@ -54,9 +55,7 @@ fn run_fifo_revalidation_case() {
     let root = path.parent().expect("FIFO root");
     fs::write(&path, b"source").expect("source file");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(root);
     let resolved = access.resolve_root().expect("resolve root");
     let reader = access
         .open_entry_reader(

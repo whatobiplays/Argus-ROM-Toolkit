@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use argus_application::{
     AddLocalLibraryRootResult, CancelJobResult, JobRunId, JobRunState, LibraryRefreshTrigger,
-    LibraryRootId, LibraryRootLastScanStatus, ListJobsQuery, ListJobsScope,
-    LocalFilesystemRootSelection, OperationDetail, RefreshMode, StartLibraryScanResult,
+    LibraryRootId, LibraryRootLastScanStatus, ListJobsQuery, ListJobsScope, OperationDetail,
+    RefreshMode, StartLibraryScanResult,
 };
 #[cfg(feature = "test-support")]
 use argus_application::{
@@ -22,7 +22,7 @@ use argus_application::{
 #[cfg(feature = "test-support")]
 use argus_infrastructure::content::{ContentReadError, ContentReader};
 use argus_runtime::{
-    ApplicationHost, KernelBootstrapOptions, RuntimeEventPayload, RuntimeLifecycle,
+    ApplicationHost, KernelBootstrapOptions, RuntimeEventPayload, RuntimeLifecycle, test_support,
 };
 
 fn context_ready(host: &ApplicationHost) {
@@ -261,9 +261,7 @@ where
 
 fn add_root(host: &ApplicationHost, path: &Path) -> LibraryRootId {
     let result = host
-        .add_local_library_root(LocalFilesystemRootSelection::new(
-            path.to_string_lossy().into_owned(),
-        ))
+        .add_local_library_root(test_support::local_filesystem_root_selection(path))
         .expect("add root");
     match result {
         AddLocalLibraryRootResult::Added(root) => root.root_id(),

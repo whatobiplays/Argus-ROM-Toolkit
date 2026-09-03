@@ -27,6 +27,12 @@ export 'application/local_filesystem_platform_api.dart'
         LocalFilesystemPlatformFailureKind,
         PlatformMountedVolume,
         maxPlatformMountedVolumes;
+export 'application/macos_library_folder_picker_api.dart'
+    show
+        MacosLibraryFolderPickerApi,
+        MacosLibraryFolderPickerException,
+        MacosLibraryFolderPickerFailureKind,
+        MacosLibraryFolderSelection;
 export 'application/diagnostics_publication_api.dart'
     show
         DiagnosticsPublicationApi,

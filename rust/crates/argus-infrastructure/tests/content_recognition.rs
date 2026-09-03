@@ -1,8 +1,6 @@
 use argus_application::{ContentType, TransformationBudget};
-use argus_application::{
-    IdentityDigest, LibrarySourceAccess, PlatformId, RelativeSourceLocator, RootLocator,
-    SourceAccessError, SourceReadHandle,
-};
+use argus_application::{IdentityDigest, PlatformId, SourceAccessError, SourceReadHandle};
+use argus_application::{LibrarySourceAccess, RelativeSourceLocator};
 use argus_infrastructure::content::{
     ContentProcessingLimits, ContentReadError, ContentReader, ContentRecognitionError,
     ParsingSession, RecognitionError, SourceReadContentReader, recognize_alternate_optical,
@@ -11,6 +9,8 @@ use argus_infrastructure::content::{
 };
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
+
+mod common;
 
 const GB_LOGO: [u8; 48] = [
     0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
@@ -882,8 +882,7 @@ fn local_source_reader_detects_mutation_after_stream_recognition() {
     let source_path = directory.path().join("game.gb");
     std::fs::write(&source_path, gb_fixture(0x00, 0x8000)).expect("write source");
 
-    let locator = RootLocator::from_provider(directory.path().to_string_lossy().into_owned());
-    let access = argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess::new(&locator);
+    let access = common::access(directory.path());
     let root = access.resolve_root().expect("resolve source root");
     let mut reader = access
         .open_entry_reader(

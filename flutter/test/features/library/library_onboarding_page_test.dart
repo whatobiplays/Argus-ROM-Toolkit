@@ -42,6 +42,7 @@ void main() {
 
       await tester.pumpAndSettle();
       expect(find.text('Accept current terms'), findsOneWidget);
+      expect(find.text('Open Sources'), findsNothing);
       expect(providers.listCalls, 0);
 
       await tester.tap(find.text('Accept current terms'));
@@ -120,7 +121,6 @@ Widget _testApp({
   child: MaterialApp(
     home: LibraryOnboardingPage(
       onOpenLibrary: onOpenLibrary ?? () {},
-      onOpenSources: () {},
       onOpenJob: onOpenJob ?? (_) {},
     ),
   ),

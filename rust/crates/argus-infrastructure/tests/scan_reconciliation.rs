@@ -3,6 +3,8 @@
 //! preserve identity on unique native moves, remove completed-scope absences,
 //! retain outside-target links, and never touch user files.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -15,13 +17,12 @@ use argus_application::{
     LibrarySourceRepository, LocalFilesystemBrowseProvider, LocalFilesystemProvider,
     LocalFilesystemRootSelection, MountedLocalFilesystemVolume, NewJobRun, NewLibraryRoot,
     NewScanRun, OperationCompletion, OperationContext, OperationName, RootLocator, ScanRunId,
-    ScanRunRepository, SourceEntryClassification, SourceEntryId, SourceEntryKind,
-    SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId, UnitOfWork,
-    UnitOfWorkFactory,
+    ScanRunRepository, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, SubsystemName,
+    TraceId, UnitOfWork, UnitOfWorkFactory,
 };
-use argus_infrastructure::local_filesystem::{
-    LocalFilesystemProvider as LocalFilesystemProviderImpl, LocalFilesystemSourceAccess,
-};
+use argus_application::{SourceEntryClassification, SourceEntryId, SourceEntryKind};
+use argus_infrastructure::local_filesystem::LocalFilesystemProvider as LocalFilesystemProviderImpl;
+use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteLibraryRootQueries};
 
 fn context() -> OperationContext {
@@ -473,7 +474,7 @@ fn real_provider_rescan_preserves_unique_native_move_and_removes_absences() {
     fs::write(library.join("a.bin"), b"a").expect("a");
     fs::write(library.join("b.bin"), b"b").expect("b");
     fs::write(library.join("Sub/nested.txt"), b"n").expect("nested");
-    let locator = RootLocator::from_provider(library.to_string_lossy().into_owned());
+    let locator = common::locator(&library);
 
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
@@ -596,7 +597,7 @@ fn real_provider_outside_target_link_is_retained_without_failing_the_scan() {
     fs::create_dir_all(&library).expect("library");
     fs::write(library.join("rom.bin"), b"rom").expect("rom");
     std::os::unix::fs::symlink(&outside, library.join("escape")).expect("symlink");
-    let locator = RootLocator::from_provider(library.to_string_lossy().into_owned());
+    let locator = common::locator(&library);
 
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
@@ -625,7 +626,7 @@ fn real_provider_scans_never_mutate_user_files() {
     fs::create_dir_all(library.join("Sub")).expect("sub");
     fs::write(library.join("a.bin"), b"alpha").expect("a");
     fs::write(library.join("Sub/nested.txt"), b"nested").expect("nested");
-    let locator = RootLocator::from_provider(library.to_string_lossy().into_owned());
+    let locator = common::locator(&library);
 
     let snapshot = |library: &Path| {
         let mut paths: Vec<String> = Vec::new();

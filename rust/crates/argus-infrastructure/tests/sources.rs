@@ -2,13 +2,15 @@
 //! LocalFilesystem provider boundary. Every test uses test-owned temporary
 //! directories; no developer filesystem or application data is accessed.
 
+mod common;
+
 use std::fs;
 
+use argus_application::ValidatedLocalRoot;
 use argus_application::{
     LibraryRootAvailability, LibraryRootQueries, LibraryRootRepository, LibrarySourceRepository,
-    LocalFilesystemProvider, LocalFilesystemRootSelection, NewLibraryRoot, OperationContext,
-    OperationName, RootLocator, RootRelationship, SubsystemName, TraceId, UnitOfWork,
-    ValidatedLocalRoot,
+    LocalFilesystemProvider, NewLibraryRoot, OperationContext, OperationName, RootLocator,
+    RootRelationship, SubsystemName, TraceId, UnitOfWork,
 };
 use argus_domain::{LibraryRootId, LibrarySourceId};
 use argus_infrastructure::local_filesystem::LocalFilesystemProvider as LocalFilesystemProviderImpl;
@@ -16,9 +18,6 @@ use argus_infrastructure::sqlite::{
     MigrationOutcome, SqliteDatabaseExecutor, SqliteLibraryRootQueries,
 };
 use tempfile::tempdir;
-
-#[path = "common/mod.rs"]
-mod migration_test_support;
 
 fn context() -> OperationContext {
     OperationContext::new(
@@ -30,10 +29,6 @@ fn context() -> OperationContext {
 
 fn root_id(value: &str) -> LibraryRootId {
     LibraryRootId::try_from(value).expect("fixture root id")
-}
-
-fn selection(path: &std::path::Path) -> LocalFilesystemRootSelection {
-    LocalFilesystemRootSelection::new(path.to_string_lossy().into_owned())
 }
 
 fn new_root(source: LibrarySourceId, locator: RootLocator, display: &str) -> NewLibraryRoot {
@@ -51,17 +46,14 @@ fn new_root(source: LibrarySourceId, locator: RootLocator, display: &str) -> New
 fn custom_registry_upgrades_a_phase_000_database_through_slice_004() {
     let directory = tempdir().expect("tempdir");
     let database = directory.path().join("argus.sqlite3");
-    let phase_000 = migration_test_support::registry_through(1);
+    let phase_000 = common::registry_through(1);
     let first = SqliteDatabaseExecutor::open_with_registry(&database, phase_000)
         .expect("phase 000 database");
     assert_eq!(first.migration_summary().current_version, 1);
     first.shutdown().expect("shutdown");
 
-    let second = SqliteDatabaseExecutor::open_with_registry(
-        &database,
-        migration_test_support::current_registry(),
-    )
-    .expect("upgraded database");
+    let second = SqliteDatabaseExecutor::open_with_registry(&database, common::current_registry())
+        .expect("upgraded database");
     assert_eq!(second.migration_summary().current_version, 17);
     assert_eq!(
         second.migration_summary().outcome,
@@ -99,7 +91,7 @@ fn provider_accepts_a_real_directory_and_derives_safe_facts() {
     let provider = LocalFilesystemProviderImpl::default();
 
     let validated = provider
-        .validate(&selection(&games))
+        .validate(&common::selection(&games))
         .expect("directory is accepted");
 
     assert_eq!(validated.display_name(), "Games");
@@ -107,9 +99,17 @@ fn provider_accepts_a_real_directory_and_derives_safe_facts() {
         validated.safe_location_presentation(),
         games.to_string_lossy()
     );
+    #[cfg(not(target_os = "macos"))]
     assert_eq!(
         validated.locator().as_provider_value(),
         games.to_string_lossy()
+    );
+    #[cfg(target_os = "macos")]
+    assert!(
+        validated
+            .locator()
+            .as_provider_value()
+            .starts_with("argus.local.macos-root.v1.")
     );
 }
 
@@ -121,7 +121,10 @@ fn provider_rejects_a_normal_file_selection() {
     let provider = LocalFilesystemProviderImpl::default();
 
     let error = provider
-        .validate(&selection(&file))
+        .validate(&common::selection_with_authorization_path(
+            &file,
+            directory.path(),
+        ))
         .expect_err("a file is not a root");
 
     assert_eq!(error, argus_application::ProviderError::NotADirectory);
@@ -138,7 +141,7 @@ fn provider_rejects_a_link_like_root_without_traversal() {
     let provider = LocalFilesystemProviderImpl::default();
 
     let error = provider
-        .validate(&selection(&link))
+        .validate(&common::selection_with_authorization_path(&link, &target))
         .expect_err("a link-like root is rejected");
 
     assert_eq!(error, argus_application::ProviderError::LinkLikeRoot);
@@ -146,21 +149,26 @@ fn provider_rejects_a_link_like_root_without_traversal() {
 
 #[test]
 fn provider_rejects_relative_and_missing_selections() {
+    let directory = tempdir().expect("tempdir");
+    let authorization_root = directory.path().join("AuthorizationRoot");
+    fs::create_dir(&authorization_root).expect("authorization root");
     let provider = LocalFilesystemProviderImpl::default();
 
     assert_eq!(
         provider
-            .validate(&LocalFilesystemRootSelection::new(
-                "relative/path".to_owned()
+            .validate(&common::selection_with_authorization_path(
+                std::path::Path::new("relative/path"),
+                &authorization_root,
             ))
             .expect_err("relative path"),
         argus_application::ProviderError::InvalidSelection
     );
     assert_eq!(
         provider
-            .validate(&selection(std::path::Path::new(
-                "/definitely/missing/argus-fixture"
-            )))
+            .validate(&common::selection_with_authorization_path(
+                std::path::Path::new("/definitely/missing/argus-fixture"),
+                &authorization_root,
+            ))
             .expect_err("missing path"),
         argus_application::ProviderError::InvalidSelection
     );
@@ -438,7 +446,7 @@ fn provider_validation_establishes_current_enumerability() {
     // Successful validation proves the directory can currently be opened as
     // an enumerable root without recursively reading its contents.
     let validated: ValidatedLocalRoot = provider
-        .validate(&selection(&games))
+        .validate(&common::selection(&games))
         .expect("enumerable directory");
     assert_eq!(validated.display_name(), "Games");
 
@@ -448,9 +456,10 @@ fn provider_validation_establishes_current_enumerability() {
         use std::os::unix::fs::PermissionsExt;
         let locked = directory.path().join("Locked");
         fs::create_dir(&locked).expect("locked directory");
+        let locked_selection = common::selection(&locked);
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("permissions");
         let error = provider
-            .validate(&selection(&locked))
+            .validate(&locked_selection)
             .expect_err("inaccessible directory");
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore");
         assert_eq!(error, argus_application::ProviderError::PermissionDenied);

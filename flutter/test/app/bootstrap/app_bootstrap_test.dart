@@ -13,6 +13,7 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/library.dart';
 import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/sources/sources.dart';
+import 'package:argus/features/sources/sources_composition.dart';
 import '../../core/client/jobs_gateway_stub.dart';
 import '../../core/client/sources_gateway_stub.dart';
 import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
@@ -34,6 +35,13 @@ void main() {
     standardApplicationDataDirectory:
         '/data/user/0/com.argusromtoolkit.argus/files/argus',
   );
+
+  test('uncomposed Sources picker capability is inert', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    expect(container.read(macosLibraryFolderPickerApiProvider), isNull);
+  });
 
   testWidgets('ArgusBootstrap owns exactly one root ProviderScope', (
     tester,
@@ -112,6 +120,30 @@ void main() {
     expect(find.byType(ProviderScope), findsOneWidget);
     expect(container.read(libraryFolderPickerProvider), same(seam));
   });
+
+  testWidgets(
+    'platform composition injects the exact macOS picker into the owned scope',
+    (tester) async {
+      final picker = _MacosLibraryFolderPickerStub();
+
+      await tester.pumpWidget(
+        ArgusBootstrap(
+          platformHostComposition: PlatformHostComposition(
+            api: const DesktopPlatformHostApi(),
+            requiresReadinessGate: false,
+            macosLibraryFolderPickerApi: picker,
+          ),
+          clientGatewayFactory: () => _PendingGateway(),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ArgusApp)),
+        listen: false,
+      );
+
+      expect(container.read(macosLibraryFolderPickerApiProvider), same(picker));
+    },
+  );
 
   testWidgets(
     'Android readiness gate blocks backend initialization until Ready',
@@ -647,6 +679,12 @@ final class _ReadinessPlatformHostApi implements PlatformHostApi {
   @override
   Future<NotificationAuthorization> requestNotificationPermission() async =>
       NotificationAuthorization.promptRequired;
+}
+
+final class _MacosLibraryFolderPickerStub
+    implements MacosLibraryFolderPickerApi {
+  @override
+  Future<MacosLibraryFolderSelection?> pickLibraryFolder() async => null;
 }
 
 final class _ForegroundExecutionHostStub implements ForegroundExecutionHostApi {

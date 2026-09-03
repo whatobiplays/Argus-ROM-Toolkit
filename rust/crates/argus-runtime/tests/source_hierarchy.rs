@@ -6,16 +6,14 @@ use std::path::Path;
 use std::time::Duration;
 
 use argus_application::{
-    ErrorCode, LibraryRootId, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection,
-    SourceEntryClassification, SourceEntryKind, StartLibraryScanResult,
+    ErrorCode, LibraryRootId, ListSourceEntryChildrenQuery, SourceEntryClassification,
+    SourceEntryKind, StartLibraryScanResult,
 };
-use argus_runtime::{ApplicationHost, KernelBootstrapOptions};
+use argus_runtime::{ApplicationHost, KernelBootstrapOptions, test_support};
 
 fn add_root(host: &ApplicationHost, path: &Path) -> LibraryRootId {
     let result = host
-        .add_local_library_root(LocalFilesystemRootSelection::new(
-            path.to_string_lossy().into_owned(),
-        ))
+        .add_local_library_root(test_support::local_filesystem_root_selection(path))
         .expect("add root");
     match result {
         argus_application::AddLocalLibraryRootResult::Added(root) => root.root_id(),

@@ -2476,6 +2476,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MacosAuthorization dco_decode_box_autoadd_macos_authorization(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_macos_authorization(raw);
+  }
+
+  @protected
   MetadataProviderSettingsDto
   dco_decode_box_autoadd_metadata_provider_settings_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -3764,9 +3770,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return LocalFilesystemRootSelectionDto_ProviderSelection(
           selectionIdentity: dco_decode_String(raw[1]),
         );
+      case 2:
+        return LocalFilesystemRootSelectionDto_MacosAuthorized(
+          selectedFolderPath: dco_decode_String(raw[1]),
+          authorization: dco_decode_box_autoadd_macos_authorization(raw[2]),
+        );
       default:
         throw Exception("unreachable");
     }
+  }
+
+  @protected
+  MacosAuthorization dco_decode_macos_authorization(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return MacosAuthorization(field0: dco_decode_list_prim_u_8_strict(arr[0]));
   }
 
   @protected
@@ -5108,6 +5128,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_local_filesystem_root_selection_dto(deserializer));
+  }
+
+  @protected
+  MacosAuthorization sse_decode_box_autoadd_macos_authorization(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_macos_authorization(deserializer));
   }
 
   @protected
@@ -6795,9 +6823,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return LocalFilesystemRootSelectionDto_ProviderSelection(
           selectionIdentity: var_selectionIdentity,
         );
+      case 2:
+        var var_selectedFolderPath = sse_decode_String(deserializer);
+        var var_authorization = sse_decode_box_autoadd_macos_authorization(
+          deserializer,
+        );
+        return LocalFilesystemRootSelectionDto_MacosAuthorized(
+          selectedFolderPath: var_selectedFolderPath,
+          authorization: var_authorization,
+        );
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  MacosAuthorization sse_decode_macos_authorization(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_field0 = sse_decode_list_prim_u_8_strict(deserializer);
+    return MacosAuthorization(field0: var_field0);
   }
 
   @protected
@@ -8375,6 +8421,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_macos_authorization(
+    MacosAuthorization self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_macos_authorization(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_metadata_provider_settings_dto(
     MetadataProviderSettingsDto self,
     SseSerializer serializer,
@@ -9770,7 +9825,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ):
         sse_encode_i_32(1, serializer);
         sse_encode_String(selectionIdentity, serializer);
+      case LocalFilesystemRootSelectionDto_MacosAuthorized(
+        selectedFolderPath: final selectedFolderPath,
+        authorization: final authorization,
+      ):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(selectedFolderPath, serializer);
+        sse_encode_box_autoadd_macos_authorization(authorization, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_macos_authorization(
+    MacosAuthorization self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_prim_u_8_strict(self.field0, serializer);
   }
 
   @protected

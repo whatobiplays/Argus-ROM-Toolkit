@@ -1,3 +1,4 @@
+import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -24,9 +25,14 @@ typedef LibraryFolderPicker =
 @Riverpod(keepAlive: true)
 LibraryFolderPicker libraryFolderPicker(Ref ref) {
   final capabilities = ref.watch(sourcesPresentationCapabilitiesProvider);
-  return capabilities.localFilesystemBrowser
-      ? _pickLibraryFolderWithArgusBrowser
-      : _pickLibraryFolder;
+  if (capabilities.localFilesystemBrowser) {
+    return _pickLibraryFolderWithArgusBrowser;
+  }
+  if (ref.watch(macosLibraryFolderPickerApiProvider) case final api?) {
+    return (context, ref) =>
+        _pickLibraryFolderWithMacosPicker(context, ref, api);
+  }
+  return _pickLibraryFolder;
 }
 
 Future<SelectedLibraryFolder?> _pickLibraryFolder(
@@ -42,6 +48,26 @@ Future<SelectedLibraryFolder?> _pickLibraryFolder(
     selection: LocalFilesystemRootSelection(path),
     displayName: displayName,
     safeLocationPresentation: path,
+  );
+}
+
+Future<SelectedLibraryFolder?> _pickLibraryFolderWithMacosPicker(
+  BuildContext context,
+  WidgetRef ref,
+  MacosLibraryFolderPickerApi api,
+) async {
+  final selected = await api.pickLibraryFolder();
+  if (selected == null) return null;
+  final displayName = selected.path
+      .split(RegExp(r'[/\\]'))
+      .lastWhere((part) => part.isNotEmpty, orElse: () => selected.path);
+  return SelectedLibraryFolder(
+    selection: LocalFilesystemRootSelection.macos(
+      selected.path,
+      selected.authorization,
+    ),
+    displayName: displayName,
+    safeLocationPresentation: selected.path,
   );
 }
 

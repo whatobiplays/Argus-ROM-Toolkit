@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 
 use argus_application::{
     AddLocalLibraryRootResult, EnrichmentProviderSession, JobRunState, LibraryRootId,
-    ListGamesQuery, ListSourceEntryChildrenQuery, LocalFilesystemRootSelection, SourceEntryId,
+    ListGamesQuery, ListSourceEntryChildrenQuery, SourceEntryId,
 };
-use argus_runtime::{ApplicationHost, KernelBootstrapOptions};
+use argus_runtime::{ApplicationHost, KernelBootstrapOptions, test_support};
 use tempfile::TempDir;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
@@ -65,9 +65,7 @@ fn zip_fixture(game: &[u8], second_game: Option<&[u8]>) -> Vec<u8> {
 
 fn add_root(host: &ApplicationHost, path: &Path) -> LibraryRootId {
     match host
-        .add_local_library_root(LocalFilesystemRootSelection::new(
-            path.to_string_lossy().into_owned(),
-        ))
+        .add_local_library_root(test_support::local_filesystem_root_selection(path))
         .expect("add root")
     {
         AddLocalLibraryRootResult::Added(root) => root.root_id(),

@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Runtime-level Slice 002 background-operation integration tests.
 
 use std::fs;

@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Slice 004 runtime integration tests: the ready host exposes bounded
 //! authoritative source-entry hierarchy reads over committed scan state.
 

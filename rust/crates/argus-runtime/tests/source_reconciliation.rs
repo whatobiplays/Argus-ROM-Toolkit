@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Slice 003 runtime integration tests: repeat LibraryScan execution through
 //! the host must durably reconcile the source graph, survive runtime and
 //! database recreation, keep availability evidence truthful, and never mutate

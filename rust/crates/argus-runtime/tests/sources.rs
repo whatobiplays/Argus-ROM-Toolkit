@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Runtime contract tests for the Slice 001 library-root workflow.
 
 use std::fs;

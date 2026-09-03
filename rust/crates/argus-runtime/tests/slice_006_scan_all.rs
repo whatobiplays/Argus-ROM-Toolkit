@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Slice 006 runtime integration tests for one multi-root Scan All job.
 
 use std::fs;

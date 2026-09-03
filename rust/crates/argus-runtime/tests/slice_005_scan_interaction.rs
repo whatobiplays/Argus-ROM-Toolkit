@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Slice 005 runtime integration tests for the complete single-root scan
 //! interaction workflow: Add & Scan, Scan Again, Retry, and Jobs authority.
 

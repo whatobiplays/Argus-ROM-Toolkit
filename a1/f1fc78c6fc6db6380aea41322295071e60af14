@@ -1,0 +1,29 @@
+rust/crates/argus-runtime/tests/source_hierarchy.rs
+  s_1cbb85284bbdfe::t_cbd4dac8f5a24b 1-2
+rust/crates/argus-runtime/tests/source_reconciliation.rs
+  s_1cbb85284bbdfe::t_cbd4dac8f5a24b 1-2
+rust/crates/argus-runtime/tests/sources.rs
+  s_1cbb85284bbdfe::t_cbd4dac8f5a24b 1-2
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_1cbb85284bbdfe::t_cbd4dac8f5a24b 1-2
+rust/crates/argus-runtime/tests/slice_006_scan_all.rs
+  s_1cbb85284bbdfe::t_cbd4dac8f5a24b 1-2
+rust/crates/argus-runtime/tests/slice_005_scan_interaction.rs
+  s_1cbb85284bbdfe::t_cbd4dac8f5a24b 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a1f1fc78c6fc6db6380aea41322295071e60af14",
+  "prompts": {},
+  "sessions": {
+    "s_1cbb85284bbdfe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a065b4-ff15-7c53-bfe5-62bcb55ed570",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

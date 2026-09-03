@@ -8,14 +8,16 @@
 //! rejection, root resolution for missing/link-like roots, and
 //! pre-enumeration cancellation).
 
+mod common;
+
 use std::fs;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
+use argus_application::RelativeSourceLocator;
 use argus_application::{
     EnumerationOutcome, LibrarySourceAccess, LocalFilesystemBrowseProvider,
     LocalFilesystemProvider, LocalFilesystemRootSelection, MountedLocalFilesystemVolume,
-    ObservedEntryKind, ProviderError, RelativeSourceLocator, RootLocator, RootRelationship,
-    SourceAccessError,
+    ObservedEntryKind, ProviderError, RootLocator, RootRelationship, SourceAccessError,
 };
 use argus_infrastructure::local_filesystem::{
     LocalFilesystemProvider as LocalFilesystemProviderImpl, LocalFilesystemSourceAccess,
@@ -28,9 +30,7 @@ fn direct_enumeration_classifies_files_and_directories_explicitly() {
     fs::create_dir_all(root.join("Sub")).expect("subdirectory");
     fs::write(root.join("rom.bin"), b"rom").expect("file");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     let scope = access
         .enumerate_root_direct_children(&resolved, &|| false)
@@ -55,9 +55,7 @@ fn bounded_entry_bytes_never_returns_more_than_the_requested_limit() {
     fs::create_dir_all(root.join("nested")).expect("root");
     fs::write(root.join("rom.bin"), b"0123456789").expect("file");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     let locator = RelativeSourceLocator::from_provider("rom.bin".to_owned());
 
@@ -88,9 +86,7 @@ fn positional_entry_reads_are_bounded_and_do_not_follow_non_files() {
     fs::create_dir_all(root.join("nested")).expect("root");
     fs::write(root.join("large.bin"), vec![b'x'; 10 * 1024 * 1024]).expect("large file");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     let mut read = access
         .open_entry_read(
@@ -138,9 +134,7 @@ fn rapid_same_length_rewrite_changes_source_version_fingerprint() {
     let path = root.join("rom.bin");
     fs::write(&path, b"first-version").expect("initial file");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     let initial = access
         .open_entry_read(
@@ -222,9 +216,7 @@ fn cancellation_mid_enumeration_is_honored_after_partial_progress() {
         fs::write(root.join(format!("entry-{index}.bin")), b"data").expect("entry");
     }
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
 
     // The enumeration loop checks cancellation before every entry, so the
@@ -256,9 +248,7 @@ fn native_identity_is_provider_owned_and_never_fabricated() {
     fs::create_dir(&root).expect("root");
     fs::write(root.join("rom.bin"), b"rom").expect("file");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     let identity_of_file = || {
         let scope = access
@@ -302,9 +292,45 @@ fn resolve_root_rejects_a_non_directory_regular_file() {
     let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
         file_path.to_string_lossy().into_owned(),
     ));
+    let result = access.resolve_root();
+    #[cfg(target_os = "macos")]
+    assert_eq!(result, Err(SourceAccessError::AuthorizationUnavailable));
+    #[cfg(not(target_os = "macos"))]
+    assert_eq!(result, Err(SourceAccessError::InvalidLocator));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn legacy_path_only_mac_locator_fails_without_mutating_the_root() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let root = directory.path().join("Library");
+    fs::create_dir(&root).expect("root");
+    fs::write(root.join("rom.bin"), b"unchanged").expect("rom");
+    let before = fs::read(root.join("rom.bin")).expect("before");
+
+    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
+        root.to_string_lossy().into_owned(),
+    ));
     assert_eq!(
         access.resolve_root(),
-        Err(SourceAccessError::InvalidLocator)
+        Err(SourceAccessError::AuthorizationUnavailable)
+    );
+    assert_eq!(fs::read(root.join("rom.bin")).expect("after"), before);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn path_only_mac_selection_is_not_admitted_as_durable_authorization() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let root = directory.path().join("Library");
+    fs::create_dir(&root).expect("root");
+
+    let provider = LocalFilesystemProviderImpl::default();
+    assert_eq!(
+        provider.validate(&LocalFilesystemRootSelection::path(
+            root.to_string_lossy().into_owned(),
+        )),
+        Err(ProviderError::PermissionDenied)
     );
 }
 
@@ -314,9 +340,7 @@ fn unresolvable_nested_scope_is_rejected_without_guessing() {
     let root = directory.path().join("Library");
     fs::create_dir_all(root.join("Sub")).expect("nested directory");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
 
     // SPEC-BE-011 root-boundary enforcement rejects every relative scope the
@@ -342,6 +366,13 @@ fn inaccessible_root_maps_to_permission_denied_when_the_runner_can_create_it() {
     let directory = tempfile::tempdir().expect("tempdir");
     let root = directory.path().join("blocked");
     fs::create_dir(&root).expect("blocked root");
+    let provider = LocalFilesystemProviderImpl::default();
+    let selection = common::selection(&root);
+    let locator = provider
+        .validate(&selection)
+        .expect("valid root before chmod")
+        .locator()
+        .clone();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).expect("chmod");
 
     // Root-like runners can still read 0o000 directories; permission-denied
@@ -352,20 +383,21 @@ fn inaccessible_root_maps_to_permission_denied_when_the_runner_can_create_it() {
         return;
     }
 
-    let provider = LocalFilesystemProviderImpl::default();
-    let selection = LocalFilesystemRootSelection::new(root.to_string_lossy().into_owned());
     assert_eq!(
         provider.validate(&selection),
         Err(ProviderError::PermissionDenied)
     );
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
-    assert_eq!(
-        access.resolve_root(),
-        Err(SourceAccessError::PermissionDenied)
-    );
+    let access = LocalFilesystemSourceAccess::new(&locator);
+    let result = access.resolve_root();
+    #[cfg(target_os = "macos")]
+    {
+        // Once the directory is no longer readable, Foundation may refuse to
+        // start the persisted scope before Rust reaches directory access.
+        assert_eq!(result, Err(SourceAccessError::AuthorizationUnavailable));
+    }
+    #[cfg(not(target_os = "macos"))]
+    assert_eq!(result, Err(SourceAccessError::PermissionDenied));
 
     fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).expect("restore");
 }

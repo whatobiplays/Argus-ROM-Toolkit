@@ -98,6 +98,37 @@ pub use runtime::*;
 pub(crate) use startup::StartupPhaseObserver;
 pub use startup::{Clock, StartupCoordinator, StartupResult, SystemClock};
 
+/// Test-only fixtures that preserve the production root-admission contract on
+/// every supported host platform.
+#[cfg(feature = "test-support")]
+pub mod test_support {
+    use std::path::Path;
+
+    use argus_application::LocalFilesystemRootSelection;
+
+    /// Creates a root selection suitable for runtime integration fixtures.
+    ///
+    /// macOS fixtures receive a real security-scoped bookmark, matching the
+    /// native picker contract. Other platforms retain the existing path-backed
+    /// fixture because they do not use macOS sandbox authorization.
+    #[cfg(target_os = "macos")]
+    pub fn local_filesystem_root_selection(path: &Path) -> LocalFilesystemRootSelection {
+        LocalFilesystemRootSelection::macos_authorized(
+            path.to_string_lossy().into_owned(),
+            argus_infrastructure::local_filesystem::macos_test_bookmark_for_directory(path),
+        )
+    }
+
+    /// Creates a root selection suitable for runtime integration fixtures.
+    ///
+    /// Non-macOS fixtures retain the existing path-backed selection because
+    /// those hosts do not use macOS sandbox authorization.
+    #[cfg(not(target_os = "macos"))]
+    pub fn local_filesystem_root_selection(path: &Path) -> LocalFilesystemRootSelection {
+        LocalFilesystemRootSelection::path(path.to_string_lossy().into_owned())
+    }
+}
+
 const STEAMGRIDDB_API_BASE_URL: &str = "https://www.steamgriddb.com/api/v2";
 
 type RuntimeCredentialService = MetadataProviderService<

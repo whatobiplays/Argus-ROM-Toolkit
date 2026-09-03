@@ -8,6 +8,7 @@ import 'package:argus/features/library/library.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/sources/sources.dart';
+import 'package:argus/features/sources/sources_composition.dart';
 import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -66,6 +67,9 @@ class ArgusBootstrap extends StatelessWidget {
         platformHostApiProvider.overrideWithValue(platform.api),
         localFilesystemPlatformApiProvider.overrideWithValue(
           platform.localFilesystemApi,
+        ),
+        macosLibraryFolderPickerApiProvider.overrideWithValue(
+          platform.macosLibraryFolderPickerApi,
         ),
         diagnosticsPublicationApiProvider.overrideWithValue(
           platform.diagnosticsPublicationApi,

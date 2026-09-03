@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Runtime contract tests for the Slice 001 library-root workflow.
 
 use std::fs;
@@ -11,6 +13,7 @@ use argus_application::{
 };
 use argus_runtime::{
     ApplicationHost, EventBus, KernelBootstrapOptions, bootstrap_kernel_with_event_bus,
+    test_support,
 };
 use tempfile::tempdir;
 
@@ -41,7 +44,7 @@ impl LibraryRootsSubscriber for CountingSourcesSubscriber {
 }
 
 fn selection(path: &std::path::Path) -> LocalFilesystemRootSelection {
-    LocalFilesystemRootSelection::new(path.to_string_lossy().into_owned())
+    test_support::local_filesystem_root_selection(path)
 }
 
 fn list_all() -> ListLibraryRootsQuery {
@@ -308,29 +311,34 @@ fn add_validation_failures_are_typed_and_sanitized() {
     ));
     host.initialize().expect("ready runtime");
 
-    let error = host
-        .add_local_library_root(selection(&file))
-        .expect_err("file is not a root");
-    assert_eq!(
-        error.code.as_str(),
+    let expected_invalid_selection_code = if cfg!(target_os = "macos") {
+        "ARGUS.V1.FILESYSTEM.PERMISSION_DENIED"
+    } else {
         "ARGUS.V1.FILESYSTEM.INVALID_ROOT_SELECTION"
-    );
+    };
+
+    let error = host
+        .add_local_library_root(LocalFilesystemRootSelection::new(
+            file.to_string_lossy().into_owned(),
+        ))
+        .expect_err("file is not a root");
+    assert_eq!(error.code.as_str(), expected_invalid_selection_code);
 
     let error = host
         .add_local_library_root(LocalFilesystemRootSelection::new("relative".to_owned()))
         .expect_err("relative path");
-    assert_eq!(
-        error.code.as_str(),
-        "ARGUS.V1.FILESYSTEM.INVALID_ROOT_SELECTION"
-    );
+    assert_eq!(error.code.as_str(), expected_invalid_selection_code);
 
     let error = host
-        .add_local_library_root(selection(&directory.path().join("Missing")))
+        .add_local_library_root(LocalFilesystemRootSelection::new(
+            directory
+                .path()
+                .join("Missing")
+                .to_string_lossy()
+                .into_owned(),
+        ))
         .expect_err("missing path");
-    assert_eq!(
-        error.code.as_str(),
-        "ARGUS.V1.FILESYSTEM.INVALID_ROOT_SELECTION"
-    );
+    assert_eq!(error.code.as_str(), expected_invalid_selection_code);
     assert_eq!(
         host.list_library_roots(list_all())
             .expect("empty list")

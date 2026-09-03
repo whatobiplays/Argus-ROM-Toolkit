@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:argus/app/platform/platform_host.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -41,6 +42,12 @@ final class SourcesPresentationCapabilities {
 @Riverpod(keepAlive: true)
 SourcesPresentationCapabilities sourcesPresentationCapabilities(Ref ref) =>
     const SourcesPresentationCapabilities();
+
+/// Supplies the macOS native picker through the single app-platform
+/// composition point. Other hosts receive null and keep their existing picker
+/// behavior.
+@Riverpod(keepAlive: true)
+MacosLibraryFolderPickerApi? macosLibraryFolderPickerApi(Ref ref) => null;
 
 /// Focused Jobs capability injected for Sources-owned coordination (Scan All
 /// ambiguity reconciliation and cancel-and-remove).

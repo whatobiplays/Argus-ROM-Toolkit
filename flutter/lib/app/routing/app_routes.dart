@@ -65,7 +65,6 @@ class LibraryOnboardingRoute extends GoRouteData with $LibraryOnboardingRoute {
   Widget build(BuildContext context, GoRouterState state) {
     return LibraryOnboardingPage(
       onOpenLibrary: () => const LibraryRoute().go(context),
-      onOpenSources: () => const SourcesRoute().go(context),
       onOpenJob: (jobRunId) =>
           JobsDetailRoute(jobRunId: jobRunId.value).go(context),
     );
@@ -305,7 +304,7 @@ class JobsRoute extends GoRouteData with $JobsRoute {
 
 /// Typed production job-detail route.
 class JobsDetailRoute extends GoRouteData with $JobsDetailRoute {
-  /// Creates the job-detail route for one raw path parameter.
+  /// Creates the job-detail route.
   const JobsDetailRoute({required this.jobRunId});
 
   /// The raw route parameter. Parsing happens at the routing boundary.

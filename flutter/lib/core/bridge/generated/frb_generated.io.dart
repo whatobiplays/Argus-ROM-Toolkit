@@ -175,6 +175,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_local_filesystem_root_selection_dto(dynamic raw);
 
   @protected
+  MacosAuthorization dco_decode_box_autoadd_macos_authorization(dynamic raw);
+
+  @protected
   MetadataProviderSettingsDto
   dco_decode_box_autoadd_metadata_provider_settings_dto(dynamic raw);
 
@@ -609,6 +612,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   LocalFilesystemRootSelectionDto
   dco_decode_local_filesystem_root_selection_dto(dynamic raw);
+
+  @protected
+  MacosAuthorization dco_decode_macos_authorization(dynamic raw);
 
   @protected
   MembershipRelationshipDto dco_decode_membership_relationship_dto(dynamic raw);
@@ -1065,6 +1071,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   LocalFilesystemRootSelectionDto
   sse_decode_box_autoadd_local_filesystem_root_selection_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MacosAuthorization sse_decode_box_autoadd_macos_authorization(
     SseDeserializer deserializer,
   );
 
@@ -1621,6 +1632,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_local_filesystem_root_selection_dto(SseDeserializer deserializer);
 
   @protected
+  MacosAuthorization sse_decode_macos_authorization(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MembershipRelationshipDto sse_decode_membership_relationship_dto(
     SseDeserializer deserializer,
   );
@@ -2170,6 +2186,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_local_filesystem_root_selection_dto(
     LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_macos_authorization(
+    MacosAuthorization self,
     SseSerializer serializer,
   );
 
@@ -2836,6 +2858,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_local_filesystem_root_selection_dto(
     LocalFilesystemRootSelectionDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_macos_authorization(
+    MacosAuthorization self,
     SseSerializer serializer,
   );
 

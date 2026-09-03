@@ -13,13 +13,11 @@ import '../library_composition.dart';
 class LibraryOnboardingPage extends ConsumerStatefulWidget {
   const LibraryOnboardingPage({
     required this.onOpenLibrary,
-    required this.onOpenSources,
     required this.onOpenJob,
     super.key,
   });
 
   final VoidCallback onOpenLibrary;
-  final VoidCallback onOpenSources;
   final void Function(JobRunId jobRunId) onOpenJob;
 
   @override
@@ -298,7 +296,6 @@ class _LibraryOnboardingPageState extends ConsumerState<LibraryOnboardingPage> {
               }
             }),
             onOpenLibrary: widget.onOpenLibrary,
-            onOpenSources: widget.onOpenSources,
           );
         },
       ),
@@ -334,7 +331,6 @@ class _OnboardingContent extends StatelessWidget {
     required this.onAddRoot,
     required this.onComplete,
     required this.onOpenLibrary,
-    required this.onOpenSources,
   });
 
   final _OnboardingSnapshot snapshot;
@@ -349,7 +345,6 @@ class _OnboardingContent extends StatelessWidget {
   final VoidCallback onAddRoot;
   final VoidCallback onComplete;
   final VoidCallback onOpenLibrary;
-  final VoidCallback onOpenSources;
 
   @override
   Widget build(BuildContext context) {
@@ -445,12 +440,6 @@ class _OnboardingContent extends StatelessWidget {
             label: const Text('Finish & Refresh'),
           ),
         ],
-        const SizedBox(height: 16),
-        TextButton.icon(
-          onPressed: onOpenSources,
-          icon: const Icon(Icons.source_outlined),
-          label: const Text('Open Sources'),
-        ),
       ],
     );
   }

@@ -14,6 +14,15 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::UNIX_EPOCH;
 
+#[cfg(target_os = "macos")]
+use objc2::rc::Retained;
+#[cfg(target_os = "macos")]
+use objc2::runtime::Bool;
+#[cfg(all(target_os = "macos", any(test, feature = "test-support")))]
+use objc2_foundation::NSURLBookmarkCreationOptions;
+#[cfg(target_os = "macos")]
+use objc2_foundation::{NSData, NSURL, NSURLBookmarkResolutionOptions};
+
 use crate::content::{ContentReadError, ContentReader};
 use argus_application::{
     DiscoveryPath, DiscoverySegment, EnumerationOutcome, EnumerationResult, LibrarySourceAccess,
@@ -30,6 +39,13 @@ const ROOT_LOCATOR_PREFIX: &str = "argus-local-root-v2";
 const BROWSE_LOCATION_PREFIX: &str = "argus-local-browse-v1";
 const BROWSE_CURSOR_PREFIX: &str = "argus-local-cursor-v1";
 const PRIMARY_VOLUME_ID: &str = "primary";
+
+#[cfg(target_os = "macos")]
+const MACOS_ROOT_LOCATOR_PREFIX: &str = "argus.local.macos-root.v1";
+#[cfg(target_os = "macos")]
+const MAX_MACOS_ROOT_PATH_BYTES: usize = 32 * 1024;
+#[cfg(target_os = "macos")]
+const MAX_MACOS_BOOKMARK_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug)]
 struct MountedVolume {
@@ -57,8 +73,54 @@ struct BrowseCoordinate {
 /// persisted and never reused across runtime generations.
 pub struct LocalFilesystemSourceAccess {
     locator: String,
-    resolved_root: Mutex<Option<std::path::PathBuf>>,
+    resolved_root: Mutex<Option<ResolvedRootState>>,
     mounted_volumes: Option<Arc<RwLock<MountedVolumeRegistry>>>,
+    #[cfg(all(test, target_os = "macos"))]
+    test_bookmark_resolver: Option<TestBookmarkResolver>,
+}
+
+struct ResolvedRootState {
+    path: PathBuf,
+    #[cfg(target_os = "macos")]
+    _security_scope: Option<MacosSecurityScope>,
+}
+
+#[cfg(target_os = "macos")]
+struct MacosSecurityScope {
+    url: Retained<NSURL>,
+    #[cfg(test)]
+    test_stop_count: Option<Arc<std::sync::atomic::AtomicUsize>>,
+}
+
+#[cfg(all(test, target_os = "macos"))]
+type TestBookmarkResolver =
+    Arc<dyn Fn(&[u8]) -> Result<MacosSecurityScope, SourceAccessError> + Send + Sync>;
+
+#[cfg(all(test, target_os = "macos"))]
+impl MacosSecurityScope {
+    fn test_started(url: Retained<NSURL>, stop_count: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        Self {
+            url,
+            test_stop_count: Some(stop_count),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+impl Drop for MacosSecurityScope {
+    fn drop(&mut self) {
+        #[cfg(test)]
+        if let Some(stop_count) = self.test_stop_count.take() {
+            stop_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+
+        // SAFETY: The URL was retained from successful bookmark resolution
+        // and startAccessingSecurityScopedResource, so it remains a valid
+        // security-scoped resource until this guard is dropped.
+        unsafe { self.url.stopAccessingSecurityScopedResource() };
+    }
 }
 
 /// Seek-backed bounded reader used by the general content recognizer.
@@ -214,18 +276,43 @@ impl LocalFilesystemSourceAccess {
             locator: locator.as_provider_value().to_owned(),
             resolved_root: Mutex::new(None),
             mounted_volumes,
+            #[cfg(all(test, target_os = "macos"))]
+            test_bookmark_resolver: None,
+        }
+    }
+
+    #[cfg(all(test, target_os = "macos"))]
+    fn new_with_test_bookmark_resolver(
+        locator: &RootLocator,
+        resolver: TestBookmarkResolver,
+    ) -> Self {
+        Self {
+            locator: locator.as_provider_value().to_owned(),
+            resolved_root: Mutex::new(None),
+            mounted_volumes: None,
+            test_bookmark_resolver: Some(resolver),
         }
     }
 }
 
 impl LibrarySourceAccess for LocalFilesystemSourceAccess {
     fn resolve_root(&self) -> Result<ResolvedRoot, SourceAccessError> {
-        let canonical = resolve_locator_path(&self.locator, self.mounted_volumes.as_ref())?;
-        let token = canonical.to_string_lossy().into_owned();
+        #[cfg(all(test, target_os = "macos"))]
+        let resolved = match self.test_bookmark_resolver.as_deref() {
+            Some(resolver) => resolve_locator_path_with_bookmark_resolver(
+                &self.locator,
+                self.mounted_volumes.as_ref(),
+                resolver,
+            )?,
+            None => resolve_locator_path(&self.locator, self.mounted_volumes.as_ref())?,
+        };
+        #[cfg(not(all(test, target_os = "macos")))]
+        let resolved = resolve_locator_path(&self.locator, self.mounted_volumes.as_ref())?;
+        let token = resolved.path.to_string_lossy().into_owned();
         *self
             .resolved_root
             .lock()
-            .map_err(|_| SourceAccessError::IoFailure)? = Some(canonical);
+            .map_err(|_| SourceAccessError::IoFailure)? = Some(resolved);
         Ok(ResolvedRoot::from_provider(token))
     }
 
@@ -299,11 +386,11 @@ impl LocalFilesystemSourceAccess {
             .lock()
             .map_err(|_| SourceAccessError::IoFailure)?;
         let resolved = resolved.as_ref().ok_or(SourceAccessError::InvalidLocator)?;
-        let canonical = resolved.to_string_lossy();
+        let canonical = resolved.path.to_string_lossy();
         if canonical != root.as_provider_value() {
             return Err(SourceAccessError::InvalidLocator);
         }
-        Ok(resolved.clone())
+        Ok(resolved.path.clone())
     }
 }
 
@@ -721,6 +808,237 @@ mod tests {
     }
 }
 
+#[cfg(all(test, target_os = "macos"))]
+mod macos_comparison_tests {
+    use super::*;
+    use std::fs;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    fn macos_locator(path: &Path, authorization: u8) -> RootLocator {
+        RootLocator::from_provider(format!(
+            "{MACOS_ROOT_LOCATOR_PREFIX}.{}.{}",
+            hex_encode_bytes(path.to_string_lossy().as_bytes()),
+            hex_encode_bytes(&[authorization]),
+        ))
+    }
+
+    fn resolver_for(
+        roots: Arc<BTreeMap<u8, PathBuf>>,
+        starts: Arc<AtomicUsize>,
+        stops: Arc<AtomicUsize>,
+    ) -> impl Fn(&[u8]) -> Result<MacosSecurityScope, SourceAccessError> {
+        move |authorization| {
+            let [authorization] = authorization else {
+                return Err(SourceAccessError::AuthorizationUnavailable);
+            };
+            let path = roots
+                .get(authorization)
+                .ok_or(SourceAccessError::AuthorizationUnavailable)?;
+            starts.fetch_add(1, Ordering::Relaxed);
+            Ok(MacosSecurityScope::test_started(
+                NSURL::from_directory_path(path).expect("directory URL"),
+                Arc::clone(&stops),
+            ))
+        }
+    }
+
+    fn assert_authorized_relationship(
+        left: &Path,
+        left_authorization: u8,
+        right: &Path,
+        right_authorization: u8,
+        expected: RootRelationship,
+    ) {
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let roots = Arc::new(BTreeMap::from([
+            (left_authorization, left.to_path_buf()),
+            (right_authorization, right.to_path_buf()),
+        ]));
+        let resolver = resolver_for(roots, Arc::clone(&starts), Arc::clone(&stops));
+
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(
+                &macos_locator(left, left_authorization),
+                &macos_locator(right, right_authorization),
+                &resolver,
+            ),
+            expected,
+        );
+        assert_eq!(starts.load(Ordering::Relaxed), 2);
+        assert_eq!(stops.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn authorized_relationships_hold_both_scopes_until_comparison_finishes() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let root = directory.path().join("Library");
+        let child = root.join("Games");
+        let sibling = directory.path().join("Other");
+        fs::create_dir(&root).expect("root");
+        fs::create_dir(&child).expect("child");
+        fs::create_dir(&sibling).expect("sibling");
+
+        assert_authorized_relationship(&root, 1, &root, 2, RootRelationship::Same);
+        assert_authorized_relationship(&root, 1, &child, 2, RootRelationship::Ancestor);
+        assert_authorized_relationship(&child, 1, &root, 2, RootRelationship::Descendant);
+        assert_authorized_relationship(&root, 1, &sibling, 2, RootRelationship::Disjoint);
+    }
+
+    #[test]
+    fn mixed_legacy_and_authorized_relationships_require_reachable_paths() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let root = directory.path().join("Library");
+        let child = root.join("Games");
+        fs::create_dir(&root).expect("root");
+        fs::create_dir(&child).expect("child");
+
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let roots = Arc::new(BTreeMap::from([(1, root.clone())]));
+        let resolver = resolver_for(roots, Arc::clone(&starts), Arc::clone(&stops));
+        let legacy_root = RootLocator::from_provider(root.to_string_lossy().into_owned());
+        let authorized_root = macos_locator(&root, 1);
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(&authorized_root, &legacy_root, &resolver,),
+            RootRelationship::Same,
+        );
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(&legacy_root, &authorized_root, &resolver,),
+            RootRelationship::Same,
+        );
+        assert_eq!(starts.load(Ordering::Relaxed), 2);
+        assert_eq!(stops.load(Ordering::Relaxed), 2);
+
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let roots = Arc::new(BTreeMap::from([(1, child.clone())]));
+        let resolver = resolver_for(roots, Arc::clone(&starts), Arc::clone(&stops));
+        let authorized_child = macos_locator(&child, 1);
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(&authorized_child, &legacy_root, &resolver,),
+            RootRelationship::Descendant,
+        );
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(&legacy_root, &authorized_child, &resolver,),
+            RootRelationship::Ancestor,
+        );
+        assert_eq!(starts.load(Ordering::Relaxed), 2);
+        assert_eq!(stops.load(Ordering::Relaxed), 2);
+
+        let missing = RootLocator::from_provider(
+            directory
+                .path()
+                .join("Missing")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let resolver = resolver_for(
+            Arc::new(BTreeMap::from([(1, root)])),
+            Arc::clone(&starts),
+            Arc::clone(&stops),
+        );
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(&authorized_root, &missing, &resolver),
+            RootRelationship::Unknown,
+        );
+        assert_eq!(starts.load(Ordering::Relaxed), 1);
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn legacy_operand_does_not_prevent_authorized_scope_resolution() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let authorized_path = directory.path().join("Library");
+        let unavailable_legacy_path = directory.path().join("Unavailable");
+        fs::create_dir(&authorized_path).expect("authorized root");
+
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let resolver = resolver_for(
+            Arc::new(BTreeMap::from([(1, authorized_path.clone())])),
+            Arc::clone(&starts),
+            Arc::clone(&stops),
+        );
+        let legacy =
+            RootLocator::from_provider(unavailable_legacy_path.to_string_lossy().into_owned());
+        let authorized = macos_locator(&authorized_path, 1);
+
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(&legacy, &authorized, &resolver),
+            RootRelationship::Unknown,
+        );
+        assert_eq!(starts.load(Ordering::Relaxed), 1);
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn comparison_releases_successful_scope_when_the_second_resolution_fails() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let first = directory.path().join("First");
+        let second = directory.path().join("Second");
+        fs::create_dir(&first).expect("first");
+        fs::create_dir(&second).expect("second");
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let resolver = {
+            let starts = Arc::clone(&starts);
+            let stops = Arc::clone(&stops);
+            let first = first.clone();
+            move |authorization: &[u8]| {
+                if authorization == [1] {
+                    starts.fetch_add(1, Ordering::Relaxed);
+                    return Ok(MacosSecurityScope::test_started(
+                        NSURL::from_directory_path(&first).expect("directory URL"),
+                        Arc::clone(&stops),
+                    ));
+                }
+                Err(SourceAccessError::AuthorizationUnavailable)
+            }
+        };
+
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(
+                &macos_locator(&first, 1),
+                &macos_locator(&second, 2),
+                &resolver,
+            ),
+            RootRelationship::Unknown,
+        );
+        assert_eq!(starts.load(Ordering::Relaxed), 1);
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn malformed_or_unavailable_authorization_never_starts_or_stops_a_scope() {
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let resolver = resolver_for(
+            Arc::new(BTreeMap::new()),
+            Arc::clone(&starts),
+            Arc::clone(&stops),
+        );
+        let malformed =
+            RootLocator::from_provider(format!("{MACOS_ROOT_LOCATOR_PREFIX}.not-hex.aa"));
+        let unavailable = RootLocator::from_provider(format!(
+            "{MACOS_ROOT_LOCATOR_PREFIX}.{}.01",
+            hex_encode_bytes(b"/tmp/library")
+        ));
+
+        assert_eq!(
+            compare_roots_with_bookmark_resolver(&malformed, &unavailable, &resolver),
+            RootRelationship::Unknown,
+        );
+        assert_eq!(starts.load(Ordering::Relaxed), 0);
+        assert_eq!(stops.load(Ordering::Relaxed), 0);
+    }
+}
+
 fn modified_at_ms(metadata: &std::fs::Metadata) -> Option<i64> {
     metadata
         .modified()
@@ -798,38 +1116,51 @@ impl LocalFilesystemProviderPort for LocalFilesystemProvider {
                     browse_location_presentation(&volume, &coordinate.relative),
                 ))
             }
+            LocalFilesystemRootSelection::MacosAuthorized {
+                selected_folder_path,
+                authorization,
+            } => self.validate_macos_selection(selected_folder_path, authorization),
         }
     }
 
     fn compare_roots(&self, left: &RootLocator, right: &RootLocator) -> RootRelationship {
-        let left_android = decode_coordinate(left.as_provider_value(), ROOT_LOCATOR_PREFIX);
-        let right_android = decode_coordinate(right.as_provider_value(), ROOT_LOCATOR_PREFIX);
-        match (left_android, right_android) {
-            (Some(left), Some(right)) => {
-                if left.provider_volume_id != right.provider_volume_id {
-                    return RootRelationship::Disjoint;
+        #[cfg(target_os = "macos")]
+        {
+            compare_roots_with_bookmark_resolver(left, right, &resolve_macos_bookmark)
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let left_android = decode_coordinate(left.as_provider_value(), ROOT_LOCATOR_PREFIX);
+            let right_android = decode_coordinate(right.as_provider_value(), ROOT_LOCATOR_PREFIX);
+            match (left_android, right_android) {
+                (Some(left), Some(right)) => {
+                    if left.provider_volume_id != right.provider_volume_id {
+                        return RootRelationship::Disjoint;
+                    }
+                    compare_relative_paths(&left.relative, &right.relative)
                 }
-                compare_relative_paths(&left.relative, &right.relative)
-            }
-            (Some(_), None) | (None, Some(_)) => RootRelationship::Unknown,
-            (None, None) => {
-                let Ok(left_canonical) = std::fs::canonicalize(Path::new(left.as_provider_value()))
-                else {
-                    return RootRelationship::Unknown;
-                };
-                let Ok(right_canonical) =
-                    std::fs::canonicalize(Path::new(right.as_provider_value()))
-                else {
-                    return RootRelationship::Unknown;
-                };
-                if left_canonical == right_canonical {
-                    RootRelationship::Same
-                } else if left_canonical.starts_with(&right_canonical) {
-                    RootRelationship::Descendant
-                } else if right_canonical.starts_with(&left_canonical) {
-                    RootRelationship::Ancestor
-                } else {
-                    RootRelationship::Disjoint
+                (Some(_), None) | (None, Some(_)) => RootRelationship::Unknown,
+                (None, None) => {
+                    let Ok(left_canonical) =
+                        std::fs::canonicalize(Path::new(left.as_provider_value()))
+                    else {
+                        return RootRelationship::Unknown;
+                    };
+                    let Ok(right_canonical) =
+                        std::fs::canonicalize(Path::new(right.as_provider_value()))
+                    else {
+                        return RootRelationship::Unknown;
+                    };
+                    if left_canonical == right_canonical {
+                        RootRelationship::Same
+                    } else if left_canonical.starts_with(&right_canonical) {
+                        RootRelationship::Descendant
+                    } else if right_canonical.starts_with(&left_canonical) {
+                        RootRelationship::Ancestor
+                    } else {
+                        RootRelationship::Disjoint
+                    }
                 }
             }
         }
@@ -847,6 +1178,7 @@ impl LocalFilesystemProviderPort for LocalFilesystemProvider {
 }
 
 impl LocalFilesystemProvider {
+    #[cfg(not(target_os = "macos"))]
     fn validate_path_selection(&self, raw: &str) -> Result<ValidatedLocalRoot, ProviderError> {
         let path = Path::new(raw);
         if !path.is_absolute() {
@@ -871,6 +1203,67 @@ impl LocalFilesystemProvider {
             display_name,
             raw.to_owned(),
         ))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn validate_path_selection(&self, _raw: &str) -> Result<ValidatedLocalRoot, ProviderError> {
+        Err(ProviderError::PermissionDenied)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn validate_macos_selection(
+        &self,
+        raw_path: &str,
+        authorization: &[u8],
+    ) -> Result<ValidatedLocalRoot, ProviderError> {
+        let path = Path::new(raw_path);
+        if !path.is_absolute() {
+            return Err(ProviderError::InvalidSelection);
+        }
+        let scope =
+            resolve_macos_bookmark(authorization).map_err(|_| ProviderError::PermissionDenied)?;
+        let authorized_path = macos_url_path(&scope.url).ok_or(ProviderError::PermissionDenied)?;
+        let authorized_metadata = std::fs::symlink_metadata(&authorized_path)
+            .map_err(|_| ProviderError::PermissionDenied)?;
+        if is_link_like(&authorized_metadata) || !authorized_metadata.is_dir() {
+            return Err(ProviderError::PermissionDenied);
+        }
+        let authorized_canonical =
+            std::fs::canonicalize(&authorized_path).map_err(|_| ProviderError::PermissionDenied)?;
+        let selected_metadata = std::fs::symlink_metadata(path).map_err(classify_stat_error)?;
+        if is_link_like(&selected_metadata) {
+            return Err(ProviderError::LinkLikeRoot);
+        }
+        if !selected_metadata.is_dir() {
+            return Err(ProviderError::NotADirectory);
+        }
+        let selected_canonical = std::fs::canonicalize(path).map_err(classify_stat_error)?;
+        if selected_canonical != authorized_canonical {
+            return Err(ProviderError::PermissionDenied);
+        }
+        std::fs::read_dir(&selected_canonical).map_err(classify_open_error)?;
+
+        let canonical_path = selected_canonical.to_string_lossy().into_owned();
+        let locator = encode_macos_root_locator(&canonical_path, authorization)
+            .ok_or(ProviderError::PermissionDenied)?;
+        let display_name = selected_canonical
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| raw_path.to_owned());
+        Ok(ValidatedLocalRoot::new(
+            RootLocator::from_provider(locator),
+            display_name,
+            raw_path.to_owned(),
+        ))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn validate_macos_selection(
+        &self,
+        _raw_path: &str,
+        _authorization: &[u8],
+    ) -> Result<ValidatedLocalRoot, ProviderError> {
+        Err(ProviderError::InvalidSelection)
     }
 }
 
@@ -1100,10 +1493,20 @@ fn resolve_volume_relative_path(
     Ok(canonical)
 }
 
+#[cfg(target_os = "macos")]
 fn resolve_locator_path(
     locator: &str,
     mounted_volumes: Option<&Arc<RwLock<MountedVolumeRegistry>>>,
-) -> Result<PathBuf, SourceAccessError> {
+) -> Result<ResolvedRootState, SourceAccessError> {
+    resolve_locator_path_with_bookmark_resolver(locator, mounted_volumes, &resolve_macos_bookmark)
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_locator_path_with_bookmark_resolver(
+    locator: &str,
+    mounted_volumes: Option<&Arc<RwLock<MountedVolumeRegistry>>>,
+    resolve_bookmark: &dyn Fn(&[u8]) -> Result<MacosSecurityScope, SourceAccessError>,
+) -> Result<ResolvedRootState, SourceAccessError> {
     if locator.starts_with(ROOT_LOCATOR_PREFIX) {
         let coordinate = decode_coordinate(locator, ROOT_LOCATOR_PREFIX)
             .ok_or(SourceAccessError::InvalidLocator)?;
@@ -1113,7 +1516,55 @@ fn resolve_locator_path(
             .volumes
             .get(&coordinate.provider_volume_id)
             .ok_or(SourceAccessError::SourceUnavailable)?;
-        return resolve_volume_relative_path(volume, &coordinate.relative);
+        return resolve_volume_relative_path(volume, &coordinate.relative).map(resolved_root_state);
+    }
+
+    let macos_locator =
+        decode_macos_root_locator(locator).ok_or(SourceAccessError::AuthorizationUnavailable)?;
+    let scope = resolve_bookmark(&macos_locator.authorization)?;
+    let authorized_path =
+        macos_url_path(&scope.url).ok_or(SourceAccessError::AuthorizationUnavailable)?;
+    let submitted_path = Path::new(&macos_locator.path);
+    let submitted_metadata = std::fs::symlink_metadata(submitted_path)
+        .map_err(|_| SourceAccessError::AuthorizationUnavailable)?;
+    if is_link_like(&submitted_metadata) || !submitted_metadata.is_dir() {
+        return Err(SourceAccessError::AuthorizationUnavailable);
+    }
+    let submitted_canonical = std::fs::canonicalize(submitted_path)
+        .map_err(|_| SourceAccessError::AuthorizationUnavailable)?;
+    let authorized_metadata = std::fs::symlink_metadata(&authorized_path)
+        .map_err(|_| SourceAccessError::AuthorizationUnavailable)?;
+    if is_link_like(&authorized_metadata) || !authorized_metadata.is_dir() {
+        return Err(SourceAccessError::AuthorizationUnavailable);
+    }
+    let authorized_canonical = std::fs::canonicalize(&authorized_path)
+        .map_err(|_| SourceAccessError::AuthorizationUnavailable)?;
+    if submitted_canonical != authorized_canonical {
+        return Err(SourceAccessError::AuthorizationUnavailable);
+    }
+    std::fs::read_dir(&submitted_canonical)
+        .map_err(|_| SourceAccessError::AuthorizationUnavailable)?;
+    Ok(ResolvedRootState {
+        path: submitted_canonical,
+        _security_scope: Some(scope),
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn resolve_locator_path(
+    locator: &str,
+    mounted_volumes: Option<&Arc<RwLock<MountedVolumeRegistry>>>,
+) -> Result<ResolvedRootState, SourceAccessError> {
+    if locator.starts_with(ROOT_LOCATOR_PREFIX) {
+        let coordinate = decode_coordinate(locator, ROOT_LOCATOR_PREFIX)
+            .ok_or(SourceAccessError::InvalidLocator)?;
+        let registry = mounted_volumes.ok_or(SourceAccessError::SourceUnavailable)?;
+        let registry = registry.read().map_err(|_| SourceAccessError::IoFailure)?;
+        let volume = registry
+            .volumes
+            .get(&coordinate.provider_volume_id)
+            .ok_or(SourceAccessError::SourceUnavailable)?;
+        return resolve_volume_relative_path(volume, &coordinate.relative).map(resolved_root_state);
     }
     let path = Path::new(locator);
     let original_metadata = std::fs::symlink_metadata(path).map_err(classify_access_error)?;
@@ -1126,7 +1577,260 @@ fn resolve_locator_path(
         return Err(SourceAccessError::InvalidLocator);
     }
     std::fs::read_dir(&canonical).map_err(classify_access_error)?;
-    Ok(canonical)
+    Ok(resolved_root_state(canonical))
+}
+
+fn resolved_root_state(path: PathBuf) -> ResolvedRootState {
+    ResolvedRootState {
+        path,
+        #[cfg(target_os = "macos")]
+        _security_scope: None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct MacosRootLocator {
+    path: String,
+    authorization: Vec<u8>,
+}
+
+#[cfg(target_os = "macos")]
+fn encode_macos_root_locator(path: &str, authorization: &[u8]) -> Option<String> {
+    if path.is_empty()
+        || path.len() > MAX_MACOS_ROOT_PATH_BYTES
+        || authorization.is_empty()
+        || authorization.len() > MAX_MACOS_BOOKMARK_BYTES
+    {
+        return None;
+    }
+    Some(format!(
+        "{MACOS_ROOT_LOCATOR_PREFIX}.{}.{}",
+        hex_encode_bytes(path.as_bytes()),
+        hex_encode_bytes(authorization),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn decode_macos_root_locator(value: &str) -> Option<MacosRootLocator> {
+    let rest = value
+        .strip_prefix(MACOS_ROOT_LOCATOR_PREFIX)?
+        .strip_prefix('.')?;
+    let (path_hex, authorization_hex) = rest.split_once('.')?;
+    if authorization_hex.contains('.') {
+        return None;
+    }
+    if path_hex.is_empty()
+        || authorization_hex.is_empty()
+        || !path_hex.len().is_multiple_of(2)
+        || !authorization_hex.len().is_multiple_of(2)
+        || path_hex.len() > MAX_MACOS_ROOT_PATH_BYTES.saturating_mul(2)
+        || authorization_hex.len() > MAX_MACOS_BOOKMARK_BYTES.saturating_mul(2)
+    {
+        return None;
+    }
+    let path = String::from_utf8(hex_decode_bytes(path_hex)?).ok()?;
+    let authorization = hex_decode_bytes(authorization_hex)?;
+    if !Path::new(&path).is_absolute()
+        || path.len() > MAX_MACOS_ROOT_PATH_BYTES
+        || authorization.is_empty()
+        || authorization.len() > MAX_MACOS_BOOKMARK_BYTES
+    {
+        return None;
+    }
+    Some(MacosRootLocator {
+        path,
+        authorization,
+    })
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn resolve_macos_bookmark(authorization: &[u8]) -> Result<MacosSecurityScope, SourceAccessError> {
+    if authorization.is_empty() || authorization.len() > MAX_MACOS_BOOKMARK_BYTES {
+        return Err(SourceAccessError::AuthorizationUnavailable);
+    }
+    let bookmark = NSData::with_bytes(authorization);
+    let mut is_stale = Bool::NO;
+    // SAFETY: The generated Foundation call borrows `bookmark` for the
+    // duration of the call, writes only to the valid `is_stale` out-parameter,
+    // and returns an owned `Retained<NSURL>` on success.
+    let url = unsafe {
+        NSURL::URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error(
+            &bookmark,
+            NSURLBookmarkResolutionOptions::WithoutUI
+                | NSURLBookmarkResolutionOptions::WithSecurityScope
+                | NSURLBookmarkResolutionOptions::WithoutImplicitStartAccessing,
+            None,
+            &mut is_stale,
+        )
+    }
+    .map_err(|_| SourceAccessError::AuthorizationUnavailable)?;
+    if is_stale.as_bool() || !url.isFileURL() {
+        return Err(SourceAccessError::AuthorizationUnavailable);
+    }
+    // SAFETY: `url` is the retained file URL returned by the successful
+    // bookmark resolution above. A `true` result transfers the matching stop
+    // obligation to the guard returned from this function.
+    let started = unsafe { url.startAccessingSecurityScopedResource() };
+    if !started {
+        return Err(SourceAccessError::AuthorizationUnavailable);
+    }
+    Ok(MacosSecurityScope {
+        url,
+        #[cfg(test)]
+        test_stop_count: None,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_url_path(url: &NSURL) -> Option<PathBuf> {
+    url.path().map(|path| PathBuf::from(path.to_string()))
+}
+
+#[cfg(target_os = "macos")]
+struct MacosComparisonRoot {
+    path: PathBuf,
+    _security_scope: Option<MacosSecurityScope>,
+}
+
+#[cfg(target_os = "macos")]
+enum MacosComparisonLocator {
+    Android(BrowseCoordinate),
+    Authorized(MacosRootLocator),
+    Legacy(PathBuf),
+    Invalid,
+}
+
+#[cfg(target_os = "macos")]
+fn compare_roots_with_bookmark_resolver(
+    left: &RootLocator,
+    right: &RootLocator,
+    resolve_bookmark: &dyn Fn(&[u8]) -> Result<MacosSecurityScope, SourceAccessError>,
+) -> RootRelationship {
+    let left_locator = classify_macos_comparison_locator(left);
+    let right_locator = classify_macos_comparison_locator(right);
+    match (&left_locator, &right_locator) {
+        (MacosComparisonLocator::Android(left), MacosComparisonLocator::Android(right)) => {
+            if left.provider_volume_id != right.provider_volume_id {
+                return RootRelationship::Disjoint;
+            }
+            compare_relative_paths(&left.relative, &right.relative)
+        }
+        (MacosComparisonLocator::Android(_), _)
+        | (_, MacosComparisonLocator::Android(_))
+        | (MacosComparisonLocator::Invalid, _)
+        | (_, MacosComparisonLocator::Invalid) => RootRelationship::Unknown,
+        _ => {
+            let left_scope = match resolve_macos_comparison_scope(&left_locator, resolve_bookmark) {
+                Ok(scope) => scope,
+                Err(_) => return RootRelationship::Unknown,
+            };
+            let right_scope = match resolve_macos_comparison_scope(&right_locator, resolve_bookmark)
+            {
+                Ok(scope) => scope,
+                Err(_) => return RootRelationship::Unknown,
+            };
+            let Some(left_root) = comparison_root(left_locator, left_scope) else {
+                return RootRelationship::Unknown;
+            };
+            let Some(right_root) = comparison_root(right_locator, right_scope) else {
+                return RootRelationship::Unknown;
+            };
+            compare_canonical_paths(&left_root.path, &right_root.path)
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn classify_macos_comparison_locator(locator: &RootLocator) -> MacosComparisonLocator {
+    let raw = locator.as_provider_value();
+    if let Some(coordinate) = decode_coordinate(raw, ROOT_LOCATOR_PREFIX) {
+        return MacosComparisonLocator::Android(coordinate);
+    }
+    if raw.starts_with(ROOT_LOCATOR_PREFIX) || raw.starts_with(MACOS_ROOT_LOCATOR_PREFIX) {
+        return decode_macos_root_locator(raw)
+            .map(MacosComparisonLocator::Authorized)
+            .unwrap_or(MacosComparisonLocator::Invalid);
+    }
+    MacosComparisonLocator::Legacy(PathBuf::from(raw))
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_macos_comparison_scope(
+    locator: &MacosComparisonLocator,
+    resolve_bookmark: &dyn Fn(&[u8]) -> Result<MacosSecurityScope, SourceAccessError>,
+) -> Result<Option<MacosSecurityScope>, SourceAccessError> {
+    match locator {
+        MacosComparisonLocator::Authorized(macos_locator) => {
+            resolve_bookmark(&macos_locator.authorization).map(Some)
+        }
+        MacosComparisonLocator::Android(_)
+        | MacosComparisonLocator::Legacy(_)
+        | MacosComparisonLocator::Invalid => Ok(None),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn comparison_root(
+    locator: MacosComparisonLocator,
+    security_scope: Option<MacosSecurityScope>,
+) -> Option<MacosComparisonRoot> {
+    match locator {
+        MacosComparisonLocator::Authorized(macos_locator) => {
+            let scope = security_scope?;
+            let authorized_path = macos_url_path(&scope.url)?;
+            let submitted_path = Path::new(&macos_locator.path);
+            let submitted_metadata = std::fs::symlink_metadata(submitted_path).ok()?;
+            let authorized_metadata = std::fs::symlink_metadata(&authorized_path).ok()?;
+            if is_link_like(&submitted_metadata)
+                || !submitted_metadata.is_dir()
+                || is_link_like(&authorized_metadata)
+                || !authorized_metadata.is_dir()
+            {
+                return None;
+            }
+            let submitted_canonical = std::fs::canonicalize(submitted_path).ok()?;
+            let authorized_canonical = std::fs::canonicalize(authorized_path).ok()?;
+            if submitted_canonical != authorized_canonical {
+                return None;
+            }
+            std::fs::read_dir(&submitted_canonical).ok()?;
+            Some(MacosComparisonRoot {
+                path: submitted_canonical,
+                _security_scope: Some(scope),
+            })
+        }
+        MacosComparisonLocator::Legacy(path) => {
+            let metadata = std::fs::symlink_metadata(&path).ok()?;
+            if is_link_like(&metadata) || !metadata.is_dir() {
+                return None;
+            }
+            let canonical = std::fs::canonicalize(&path).ok()?;
+            let canonical_metadata = std::fs::symlink_metadata(&canonical).ok()?;
+            if is_link_like(&canonical_metadata) || !canonical_metadata.is_dir() {
+                return None;
+            }
+            std::fs::read_dir(&canonical).ok()?;
+            Some(MacosComparisonRoot {
+                path: canonical,
+                _security_scope: None,
+            })
+        }
+        MacosComparisonLocator::Android(_) | MacosComparisonLocator::Invalid => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn compare_canonical_paths(left: &Path, right: &Path) -> RootRelationship {
+    if left == right {
+        RootRelationship::Same
+    } else if left.starts_with(right) {
+        RootRelationship::Descendant
+    } else if right.starts_with(left) {
+        RootRelationship::Ancestor
+    } else {
+        RootRelationship::Disjoint
+    }
 }
 
 fn relative_components(relative: &Path) -> Option<Vec<String>> {
@@ -1263,22 +1967,39 @@ fn relative_string(relative: &Path) -> String {
 }
 
 fn hex_encode(value: &str) -> String {
-    value
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex_encode_bytes(value.as_bytes())
+}
+
+fn hex_encode_bytes(value: &[u8]) -> String {
+    value.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn hex_decode(value: &str) -> Option<String> {
-    if !value.len().is_multiple_of(2) {
+    String::from_utf8(hex_decode_bytes(value)?).ok()
+}
+
+fn hex_decode_bytes(value: &str) -> Option<Vec<u8>> {
+    let bytes = value.as_bytes();
+    if !bytes.len().is_multiple_of(2) {
         return None;
     }
-    let bytes = (0..value.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).ok())
-        .collect::<Option<Vec<_>>>()?;
-    String::from_utf8(bytes).ok()
+    bytes
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = hex_digit(pair[0])?;
+            let low = hex_digit(pair[1])?;
+            Some((high << 4) | low)
+        })
+        .collect()
+}
+
+fn hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn map_browse_access_error(error: SourceAccessError) -> ProviderError {
@@ -1298,6 +2019,28 @@ fn classify_browse_error(error: std::io::Error) -> ProviderError {
     }
 }
 
+#[cfg(all(target_os = "macos", any(test, feature = "test-support")))]
+fn create_macos_security_scoped_bookmark(path: &Path) -> Vec<u8> {
+    let url = NSURL::from_directory_path(path).expect("directory URL");
+    url.bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
+        NSURLBookmarkCreationOptions::WithSecurityScope,
+        None,
+        None,
+    )
+    .expect("security-scoped bookmark")
+    .to_vec()
+}
+
+/// Creates a real security-scoped bookmark for macOS integration fixtures.
+///
+/// This helper is available only to the `test-support` feature and is not part
+/// of the production provider surface. It gives runtime tests the same durable
+/// authorization shape that the native folder picker gives the application.
+#[cfg(all(feature = "test-support", target_os = "macos"))]
+pub fn macos_test_bookmark_for_directory(path: &Path) -> Vec<u8> {
+    create_macos_security_scoped_bookmark(path)
+}
+
 fn classify_stat_error(error: std::io::Error) -> ProviderError {
     match error.kind() {
         std::io::ErrorKind::NotFound => ProviderError::InvalidSelection,
@@ -1311,5 +2054,208 @@ fn classify_open_error(error: std::io::Error) -> ProviderError {
         std::io::ErrorKind::NotFound => ProviderError::Unavailable,
         std::io::ErrorKind::PermissionDenied => ProviderError::PermissionDenied,
         _ => ProviderError::Internal,
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::*;
+    use std::fs;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    fn bookmark_for_directory(path: &Path) -> Vec<u8> {
+        super::create_macos_security_scoped_bookmark(path)
+    }
+
+    #[test]
+    fn authorized_root_is_admitted_and_restored_by_a_fresh_access_instance() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let root = directory.path().join("Library");
+        fs::create_dir(&root).expect("root");
+        fs::write(root.join("rom.bin"), b"unchanged").expect("rom");
+        let before = fs::read(root.join("rom.bin")).expect("before");
+        let authorization = bookmark_for_directory(&root);
+
+        let provider = LocalFilesystemProvider::default();
+        let selection = LocalFilesystemRootSelection::macos_authorized(
+            root.to_string_lossy().into_owned(),
+            authorization,
+        );
+        let validated = provider.validate(&selection).expect("admit root");
+        let locator = validated.locator().clone();
+        assert!(
+            locator
+                .as_provider_value()
+                .starts_with(MACOS_ROOT_LOCATOR_PREFIX)
+        );
+
+        let access = LocalFilesystemSourceAccess::new(&locator);
+        let resolved = access.resolve_root().expect("restore root");
+        let page = access
+            .enumerate_root_direct_children(&resolved, &|| false)
+            .expect("enumerate root");
+        assert_eq!(page.outcome(), EnumerationOutcome::Complete);
+        assert_eq!(page.observations().len(), 1);
+        let bytes = access
+            .read_entry_bytes(
+                &resolved,
+                &RelativeSourceLocator::from_provider("rom.bin".to_owned()),
+                1024,
+            )
+            .expect("read root entry");
+        assert_eq!(bytes, b"unchanged");
+        assert_eq!(fs::read(root.join("rom.bin")).expect("after"), before);
+
+        let fresh_access = LocalFilesystemSourceAccess::new(&locator);
+        fresh_access
+            .resolve_root()
+            .expect("restore in fresh access");
+    }
+
+    #[test]
+    fn bookmark_path_mismatch_is_rejected_without_rewriting_the_selection() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let selected = directory.path().join("Selected");
+        let authorized = directory.path().join("Authorized");
+        fs::create_dir(&selected).expect("selected");
+        fs::create_dir(&authorized).expect("authorized");
+        let selection = LocalFilesystemRootSelection::macos_authorized(
+            selected.to_string_lossy().into_owned(),
+            bookmark_for_directory(&authorized),
+        );
+        let provider = LocalFilesystemProvider::default();
+
+        assert_eq!(
+            provider.validate(&selection),
+            Err(ProviderError::PermissionDenied)
+        );
+        assert_eq!(
+            selection.selected_folder_path(),
+            Some(selected.to_string_lossy().as_ref())
+        );
+    }
+
+    #[test]
+    fn malformed_or_unavailable_authorization_is_non_destructive() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let root = directory.path().join("Library");
+        fs::create_dir(&root).expect("root");
+        fs::write(root.join("rom.bin"), b"unchanged").expect("rom");
+        let before = fs::read(root.join("rom.bin")).expect("before");
+        let locator = encode_macos_root_locator(&root.to_string_lossy(), &[0xde, 0xad, 0xbe, 0xef])
+            .expect("locator");
+        let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(locator.clone()));
+
+        assert_eq!(
+            access.resolve_root(),
+            Err(SourceAccessError::AuthorizationUnavailable)
+        );
+        assert_eq!(
+            RootLocator::from_provider(locator).as_provider_value(),
+            access.locator
+        );
+        assert_eq!(fs::read(root.join("rom.bin")).expect("after"), before);
+        assert!(decode_macos_root_locator("argus.local.macos-root.v1.bad").is_none());
+    }
+
+    #[test]
+    fn macos_root_locator_rejects_oversized_encoded_segments_before_decoding() {
+        let oversized_path = format!(
+            "{MACOS_ROOT_LOCATOR_PREFIX}.{}.aa",
+            "41".repeat(MAX_MACOS_ROOT_PATH_BYTES + 1)
+        );
+        assert!(decode_macos_root_locator(&oversized_path).is_none());
+
+        let path_hex = hex_encode_bytes(b"/tmp/argus");
+        let oversized_authorization = format!(
+            "{MACOS_ROOT_LOCATOR_PREFIX}.{path_hex}.{}",
+            "aa".repeat(MAX_MACOS_BOOKMARK_BYTES + 1)
+        );
+        assert!(decode_macos_root_locator(&oversized_authorization).is_none());
+    }
+
+    #[test]
+    fn macos_root_locator_rejects_odd_malformed_and_extra_segments() {
+        let prefix = MACOS_ROOT_LOCATOR_PREFIX;
+        assert!(decode_macos_root_locator(&format!("{prefix}.2f746d.1")).is_none());
+        assert!(decode_macos_root_locator(&format!("{prefix}.2f746d.aa1")).is_none());
+        assert!(decode_macos_root_locator(&format!("{prefix}.not-hex.aa")).is_none());
+        assert!(decode_macos_root_locator(&format!("{prefix}.2f746d.not-hex")).is_none());
+        assert!(decode_macos_root_locator(&format!("{prefix}.2f746d.aa.extra")).is_none());
+        assert!(decode_macos_root_locator(&format!("{prefix}.\u{20ac}a.aa")).is_none());
+    }
+
+    struct TestScopeFactory {
+        starts: Arc<AtomicUsize>,
+        stops: Arc<AtomicUsize>,
+        allow_start: bool,
+    }
+
+    impl TestScopeFactory {
+        fn resolver(self, path: PathBuf) -> TestBookmarkResolver {
+            Arc::new(move |_authorization| {
+                if !self.allow_start {
+                    return Err(SourceAccessError::AuthorizationUnavailable);
+                }
+                self.starts.fetch_add(1, Ordering::Relaxed);
+                Ok(MacosSecurityScope::test_started(
+                    NSURL::from_directory_path(&path).expect("directory URL"),
+                    Arc::clone(&self.stops),
+                ))
+            })
+        }
+    }
+
+    #[test]
+    fn security_scope_lifecycle_is_owned_by_access_and_has_no_global_state() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let root = directory.path().join("Library");
+        fs::create_dir(&root).expect("root");
+        let starts = Arc::new(AtomicUsize::new(0));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let factory = TestScopeFactory {
+            starts: Arc::clone(&starts),
+            stops: Arc::clone(&stops),
+            allow_start: true,
+        };
+        let locator = RootLocator::from_provider(
+            encode_macos_root_locator(&root.to_string_lossy(), &[0xab]).expect("test locator"),
+        );
+        let access = LocalFilesystemSourceAccess::new_with_test_bookmark_resolver(
+            &locator,
+            factory.resolver(root.clone()),
+        );
+
+        access.resolve_root().expect("first scope starts");
+        assert_eq!(starts.load(Ordering::Relaxed), 1);
+        assert_eq!(stops.load(Ordering::Relaxed), 0);
+
+        access.resolve_root().expect("replacement scope starts");
+        assert_eq!(starts.load(Ordering::Relaxed), 2);
+        assert_eq!(stops.load(Ordering::Relaxed), 1);
+
+        let failed_factory = TestScopeFactory {
+            starts: Arc::new(AtomicUsize::new(0)),
+            stops: Arc::new(AtomicUsize::new(0)),
+            allow_start: false,
+        };
+        let failed_starts = Arc::clone(&failed_factory.starts);
+        let failed_stops = Arc::clone(&failed_factory.stops);
+        let failed_access = LocalFilesystemSourceAccess::new_with_test_bookmark_resolver(
+            &locator,
+            failed_factory.resolver(root),
+        );
+        assert_eq!(
+            failed_access.resolve_root(),
+            Err(SourceAccessError::AuthorizationUnavailable)
+        );
+        assert_eq!(failed_starts.load(Ordering::Relaxed), 0);
+        assert_eq!(failed_stops.load(Ordering::Relaxed), 0);
+
+        drop(access);
+        assert_eq!(stops.load(Ordering::Relaxed), 2);
     }
 }

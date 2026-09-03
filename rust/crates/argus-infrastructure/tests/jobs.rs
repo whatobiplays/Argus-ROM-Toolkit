@@ -1,6 +1,8 @@
 //! Slice 002 infrastructure integration tests for job/scan persistence and
 //! the LocalFilesystem source access adapter.
 
+mod common;
+
 use std::fs;
 use std::path::Path;
 
@@ -9,13 +11,13 @@ use argus_application::{
     ActiveScanOwnership, JobProgress, JobRunRepository, JobRunState, LibraryRootAvailability,
     LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootRepository,
     LibraryScanTargetKind, LibraryScanTargetRepository, LibrarySourceRepository, NewJobRun,
-    NewLibraryRoot, NewLibraryScanTarget, NewScanRun, NewSourceEntry, ObservedEntryKind,
-    OperationContext, OperationName, PersistenceError, RelativeSourceLocator, RootLocator,
-    ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntryClassification,
-    SourceEntryKind, SourceEntryRepository, SourceLocatorKey, SubsystemName, TraceId, UnitOfWork,
-    UnitOfWorkFactory,
+    NewLibraryRoot, NewLibraryScanTarget, NewScanRun, NewSourceEntry, OperationContext,
+    OperationName, PersistenceError, RelativeSourceLocator, RootLocator, ScanRunRepository,
+    ScanRunStatus, SourceEntryClassification, SourceEntryKind, SourceEntryRepository,
+    SourceLocatorKey, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
 };
 use argus_application::{JobsQueries, LibraryRootQueries, OperationDetail};
+use argus_application::{ObservedEntryKind, SourceAccessError};
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 use argus_infrastructure::sqlite::{
     SqliteDatabaseExecutor, SqliteJobsQueries, SqliteLibraryRootQueries,
@@ -251,9 +253,7 @@ fn local_filesystem_access_enumerates_nested_scopes_without_following_links() {
     let directory = tempfile::tempdir().expect("tempdir");
     let root = directory.path().join("Library");
     make_tree(&root);
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     let root_scope = access
         .enumerate_root_direct_children(&resolved, &|| false)
@@ -333,9 +333,7 @@ fn link_like_entry_with_outside_root_target_is_retained_and_scope_stays_complete
         // creation there and assert only the ordinary-entry behavior.
     }
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     let scope = access
         .enumerate_root_direct_children(&resolved, &|| false)
@@ -367,9 +365,7 @@ fn actual_traversal_through_an_outside_target_link_is_rejected() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&outside, root.join("escape")).expect("symlink");
 
-    let access = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        root.to_string_lossy().into_owned(),
-    ));
+    let access = common::access(&root);
     let resolved = access.resolve_root().expect("resolve");
     #[cfg(unix)]
     {
@@ -389,17 +385,19 @@ fn actual_traversal_through_an_outside_target_link_is_rejected() {
 #[test]
 fn root_resolution_rejects_a_missing_or_link_like_root() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let missing = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
-        directory
-            .path()
-            .join("missing")
-            .to_string_lossy()
-            .into_owned(),
-    ));
+    let missing_path = directory.path().join("missing");
+    fs::create_dir(&missing_path).expect("missing fixture root");
+    let missing_locator = common::locator(&missing_path);
+    fs::remove_dir(&missing_path).expect("remove fixture root");
+    let missing = LocalFilesystemSourceAccess::new(&missing_locator);
+    let missing_result = missing.resolve_root();
+    #[cfg(target_os = "macos")]
     assert_eq!(
-        missing.resolve_root(),
-        Err(SourceAccessError::SourceUnavailable)
+        missing_result,
+        Err(SourceAccessError::AuthorizationUnavailable)
     );
+    #[cfg(not(target_os = "macos"))]
+    assert_eq!(missing_result, Err(SourceAccessError::SourceUnavailable));
 
     #[cfg(unix)]
     {
@@ -410,6 +408,10 @@ fn root_resolution_rejects_a_missing_or_link_like_root() {
         let link = LocalFilesystemSourceAccess::new(&RootLocator::from_provider(
             link_path.to_string_lossy().into_owned(),
         ));
-        assert_eq!(link.resolve_root(), Err(SourceAccessError::InvalidLocator));
+        let result = link.resolve_root();
+        #[cfg(target_os = "macos")]
+        assert_eq!(result, Err(SourceAccessError::AuthorizationUnavailable));
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(result, Err(SourceAccessError::InvalidLocator));
     }
 }

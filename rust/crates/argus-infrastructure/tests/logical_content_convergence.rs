@@ -1,16 +1,18 @@
 #![cfg(feature = "test-support")]
 
+mod common;
+
 use argus_application::{
     ContentIdentity, ContentProvenanceRole, ContentType, DerivedFingerprint, GameListCursor,
     GetGameResult, IdentificationService, IdentityConvergenceStore, IdentityDigest,
-    LibraryRootAvailability, LibraryRootRepository, LibrarySourceAccess, ListGamesQuery,
-    LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries, M3uGroupingMember,
-    OperationContext, OperationName, PersistenceError, PlatformId, ProvenanceMember,
-    RelativeSourceLocator, RootLocator, SourceEntryRepository, SourceVersionEvidence,
-    SubsystemName, TraceId, UnitOfWork, ValidatedContentDerivation, ValidatedM3uGrouping,
+    LibraryRootAvailability, LibraryRootRepository, ListGamesQuery, LogicalContentRepository,
+    LogicalContentUnitOfWork, LogicalLibraryQueries, M3uGroupingMember, OperationContext,
+    OperationName, PersistenceError, PlatformId, ProvenanceMember, SourceEntryRepository,
+    SourceVersionEvidence, SubsystemName, TraceId, UnitOfWork, ValidatedContentDerivation,
+    ValidatedM3uGrouping,
 };
+use argus_application::{LibrarySourceAccess, RelativeSourceLocator};
 use argus_infrastructure::content::ContentReader;
-use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 use argus_infrastructure::sqlite::{SqliteDatabaseExecutor, SqliteValue};
 use tempfile::tempdir;
 
@@ -956,8 +958,7 @@ fn changed_local_source_evidence_reaches_source_changed_error_without_persistenc
     let source_path = directory.path().join("changed.bin");
     std::fs::write(&source_path, b"scan snapshot").expect("write initial source");
 
-    let locator = RootLocator::from_provider(directory.path().to_string_lossy().into_owned());
-    let access = LocalFilesystemSourceAccess::new(&locator);
+    let access = common::access(directory.path());
     let root = access.resolve_root().expect("resolve source root");
     let initial_reader = access
         .open_entry_reader(

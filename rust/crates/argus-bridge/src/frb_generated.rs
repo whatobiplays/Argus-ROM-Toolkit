@@ -3736,10 +3736,26 @@ impl SseDecode for crate::LocalFilesystemRootSelectionDto {
                     selection_identity: var_selectionIdentity,
                 };
             }
+            2 => {
+                let mut var_selectedFolderPath = <String>::sse_decode(deserializer);
+                let mut var_authorization = <crate::MacosAuthorization>::sse_decode(deserializer);
+                return crate::LocalFilesystemRootSelectionDto::MacosAuthorized {
+                    selected_folder_path: var_selectedFolderPath,
+                    authorization: var_authorization,
+                };
+            }
             _ => {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::MacosAuthorization {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_field0 = <Vec<u8>>::sse_decode(deserializer);
+        return crate::MacosAuthorization(var_field0);
     }
 }
 
@@ -6762,6 +6778,15 @@ impl flutter_rust_bridge::IntoDart for crate::LocalFilesystemRootSelectionDto {
                 selection_identity.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::LocalFilesystemRootSelectionDto::MacosAuthorized {
+                selected_folder_path,
+                authorization,
+            } => [
+                2.into_dart(),
+                selected_folder_path.into_into_dart().into_dart(),
+                authorization.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -6776,6 +6801,18 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LocalFilesystemRootSelectionDto>
     for crate::LocalFilesystemRootSelectionDto
 {
     fn into_into_dart(self) -> crate::LocalFilesystemRootSelectionDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::MacosAuthorization {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.0.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::MacosAuthorization {}
+impl flutter_rust_bridge::IntoIntoDart<crate::MacosAuthorization> for crate::MacosAuthorization {
+    fn into_into_dart(self) -> crate::MacosAuthorization {
         self
     }
 }
@@ -9394,10 +9431,25 @@ impl SseEncode for crate::LocalFilesystemRootSelectionDto {
                 <i32>::sse_encode(1, serializer);
                 <String>::sse_encode(selection_identity, serializer);
             }
+            crate::LocalFilesystemRootSelectionDto::MacosAuthorized {
+                selected_folder_path,
+                authorization,
+            } => {
+                <i32>::sse_encode(2, serializer);
+                <String>::sse_encode(selected_folder_path, serializer);
+                <crate::MacosAuthorization>::sse_encode(authorization, serializer);
+            }
             _ => {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::MacosAuthorization {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<u8>>::sse_encode(self.0, serializer);
     }
 }
 

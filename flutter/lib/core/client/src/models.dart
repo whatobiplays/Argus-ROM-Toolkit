@@ -2044,12 +2044,24 @@ sealed class LocalFilesystemRootSelection {
     String selectionIdentity,
   ) = LocalFilesystemRootSelectionProvider;
 
+  /// macOS folder selection carrying the provider-owned authorization bytes.
+  ///
+  /// The authorization is intentionally opaque to the rest of the client. It
+  /// is transported to the provider for durable sandbox traversal and must not
+  /// be included in normal diagnostics or presentation models.
+  factory LocalFilesystemRootSelection.macos(
+    String selectedFolderPath,
+    List<int> authorization,
+  ) = LocalFilesystemRootSelectionMacos;
+
   /// Returns the path for a path selection.
   ///
   /// Provider selections do not have a path and must be handled as the
   /// provider identity they carry instead.
   String get selectedFolderPath => switch (this) {
     LocalFilesystemRootSelectionPath(:final selectedFolderPath) =>
+      selectedFolderPath,
+    LocalFilesystemRootSelectionMacos(:final selectedFolderPath) =>
       selectedFolderPath,
     LocalFilesystemRootSelectionProvider() => throw StateError(
       'Provider selections do not expose a filesystem path',
@@ -2073,6 +2085,25 @@ final class LocalFilesystemRootSelectionProvider
     : super._();
 
   final String selectionIdentity;
+}
+
+/// macOS selection whose authorization bytes remain opaque outside the
+/// provider boundary.
+final class LocalFilesystemRootSelectionMacos
+    extends LocalFilesystemRootSelection {
+  LocalFilesystemRootSelectionMacos(
+    this.selectedFolderPath,
+    List<int> authorization,
+  ) : authorization = List<int>.unmodifiable(authorization),
+      super._();
+
+  @override
+  final String selectedFolderPath;
+
+  final List<int> authorization;
+
+  @override
+  String toString() => 'LocalFilesystemRootSelectionMacos(<opaque>)';
 }
 
 /// Typed outcome of one root-only add operation.

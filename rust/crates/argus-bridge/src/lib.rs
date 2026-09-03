@@ -293,12 +293,60 @@ pub enum AddLibraryRootAndRefreshResultDto {
 }
 
 /// Untrusted typed local-folder selection supplied by the native picker seam.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum LocalFilesystemRootSelectionDto {
     /// A desktop/native picker path that the provider validates before use.
     Path { selected_folder_path: String },
     /// An opaque provider browse identity returned by a prior browse query.
     ProviderSelection { selection_identity: String },
+    /// A macOS native path plus opaque security-scoped authorization bytes.
+    MacosAuthorized {
+        selected_folder_path: String,
+        authorization: MacosAuthorization,
+    },
+}
+
+/// Rust-side wrapper for security-scoped authorization bytes.
+///
+/// The bridge serializes the wrapped bytes for transport, while the wrapper
+/// keeps generated Debug output and ordinary projections opaque.
+#[flutter_rust_bridge::frb(dart_code = r#"
+@override
+String toString() => 'MacosAuthorization(<opaque>)';
+"#)]
+#[derive(Clone, Eq, PartialEq)]
+pub struct MacosAuthorization(Vec<u8>);
+
+impl MacosAuthorization {
+    fn into_bytes(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+impl fmt::Debug for MacosAuthorization {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MacosAuthorization(<opaque>)")
+    }
+}
+
+impl fmt::Debug for LocalFilesystemRootSelectionDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path { .. } => formatter
+                .debug_struct("LocalFilesystemRootSelectionDto::Path")
+                .field("selected_folder_path", &"<opaque>")
+                .finish(),
+            Self::ProviderSelection { .. } => formatter
+                .debug_struct("LocalFilesystemRootSelectionDto::ProviderSelection")
+                .field("selection_identity", &"<opaque>")
+                .finish(),
+            Self::MacosAuthorized { .. } => formatter
+                .debug_struct("LocalFilesystemRootSelectionDto::MacosAuthorized")
+                .field("selected_folder_path", &"<opaque>")
+                .field("authorization", &"<opaque>")
+                .finish(),
+        }
+    }
 }
 
 /// One native mounted-volume fact supplied only to the synchronization ingress.
@@ -1457,6 +1505,13 @@ pub fn local_filesystem_root_selection_from_dto(
         LocalFilesystemRootSelectionDto::ProviderSelection { selection_identity } => {
             LocalFilesystemRootSelection::ProviderSelection { selection_identity }
         }
+        LocalFilesystemRootSelectionDto::MacosAuthorized {
+            selected_folder_path,
+            authorization,
+        } => LocalFilesystemRootSelection::MacosAuthorized {
+            selected_folder_path,
+            authorization: authorization.into_bytes(),
+        },
     }
 }
 

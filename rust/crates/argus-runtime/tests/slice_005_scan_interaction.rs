@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Slice 005 runtime integration tests for the complete single-root scan
 //! interaction workflow: Add & Scan, Scan Again, Retry, and Jobs authority.
 
@@ -7,10 +9,9 @@ use std::time::Duration;
 
 use argus_application::{
     AddLocalLibraryRootAndScanResult, ErrorCode, JobRunState, LibraryRootId,
-    LibraryRootLastScanStatus, LocalFilesystemRootSelection, RetryJobResult,
-    RetryNotAdmittedReason, StartLibraryScanResult,
+    LibraryRootLastScanStatus, RetryJobResult, RetryNotAdmittedReason, StartLibraryScanResult,
 };
-use argus_runtime::{ApplicationHost, KernelBootstrapOptions, RuntimeLifecycle};
+use argus_runtime::{ApplicationHost, KernelBootstrapOptions, RuntimeLifecycle, test_support};
 
 fn context_ready(host: &ApplicationHost) {
     let state = host.initialize().expect("initialize");
@@ -52,9 +53,7 @@ fn terminal_state(host: &ApplicationHost, job_run_id: argus_application::JobRunI
 
 fn add_root(host: &ApplicationHost, path: &Path) -> LibraryRootId {
     match host
-        .add_local_library_root(LocalFilesystemRootSelection::new(
-            path.to_string_lossy().into_owned(),
-        ))
+        .add_local_library_root(test_support::local_filesystem_root_selection(path))
         .expect("add root")
     {
         argus_application::AddLocalLibraryRootResult::Added(root) => root.root_id(),
@@ -80,9 +79,7 @@ fn add_and_scan_commits_root_admits_scan_and_completes() {
     make_library(&library, 300);
 
     let result = host
-        .add_local_library_root_and_scan(LocalFilesystemRootSelection::new(
-            library.to_string_lossy().into_owned(),
-        ))
+        .add_local_library_root_and_scan(test_support::local_filesystem_root_selection(&library))
         .expect("add and scan");
     let (root_id, job_run_id) = match result {
         AddLocalLibraryRootAndScanResult::AddedAndScanAdmitted(root, handle) => {
@@ -113,7 +110,7 @@ fn add_and_scan_duplicate_returns_already_configured_without_a_new_job() {
     context_ready(&host);
     let library = directory.path().join("Library");
     make_library(&library, 50);
-    let selection = LocalFilesystemRootSelection::new(library.to_string_lossy().into_owned());
+    let selection = test_support::local_filesystem_root_selection(&library);
     host.add_local_library_root_and_scan(selection.clone())
         .expect("first add and scan");
     let second = host
@@ -277,15 +274,45 @@ fn retry_registration_failure_preserves_identity_and_terminalizes_coherently() {
 
     // Fill the background manager's pending bound so the retry registration
     // fails after the new JobRun/ScanRun was durably admitted.
+    let mut busy_roots = Vec::with_capacity(16);
     for index in 0..16 {
         let busy = directory.path().join(format!("Busy-{index}"));
-        // The first busy scan runs long enough to keep every later admission
-        // queued behind the single FilesystemRead slot while the loop fills
-        // the manager's pending bound.
         make_library(&busy, if index == 0 { 20_000 } else { 50 });
-        let root_id = add_root(&host, &busy);
-        let _ = start_scan(&host, root_id);
+        busy_roots.push(add_root(&host, &busy));
     }
+    let manager = host.background_manager_for_tests().expect("manager");
+    // Start the long scan only after all roots are configured so root
+    // validation cannot consume the time that the capacity fixture relies on.
+    let first_root = busy_roots.first().copied().expect("busy roots");
+    let _ = start_scan(&host, first_root);
+    assert!(
+        wait_until(
+            || manager.pending_len_for_tests() == 0 && manager.active_len_for_tests() == 1,
+            Duration::from_secs(15),
+        ),
+        "expected the long scan to hold the first active slot"
+    );
+    for (index, root_id) in busy_roots.into_iter().skip(1).enumerate() {
+        let _ = start_scan(&host, root_id);
+        let expected_count = index + 2;
+        assert!(
+            wait_until(
+                || manager.pending_len_for_tests() + manager.active_len_for_tests()
+                    >= expected_count,
+                Duration::from_secs(15),
+            ),
+            "expected busy scan {expected_count} to remain admitted"
+        );
+    }
+
+    assert!(
+        wait_until(
+            || manager.active_len_for_tests() >= 16,
+            Duration::from_secs(15),
+        ),
+        "expected all background slots to remain admitted; active={}",
+        manager.active_len_for_tests(),
+    );
 
     let error = host.retry_job(failed).expect_err("registration failure");
     assert_eq!(error.code, ErrorCode::OperationCapacityUnavailable);

@@ -1847,6 +1847,16 @@ dto.LocalFilesystemRootSelectionDto selectionToDto(
     dto.LocalFilesystemRootSelectionDto.providerSelection(
       selectionIdentity: selectionIdentity,
     ),
+  LocalFilesystemRootSelectionMacos(
+    :final selectedFolderPath,
+    :final authorization,
+  ) =>
+    dto.LocalFilesystemRootSelectionDto.macosAuthorized(
+      selectedFolderPath: selectedFolderPath,
+      authorization: dto.MacosAuthorization(
+        field0: Uint8List.fromList(authorization),
+      ),
+    ),
 };
 
 LocalFilesystemBrowseRoot localFilesystemBrowseRootFromDto(

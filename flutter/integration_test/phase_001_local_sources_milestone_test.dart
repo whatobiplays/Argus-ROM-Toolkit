@@ -83,7 +83,7 @@ Future<void> _runMilestone(
     tester,
     dataDirectory,
     picker: (_, _) async => SelectedLibraryFolder(
-      selection: LocalFilesystemRootSelection(nextSelection),
+      selection: await nativeTestRootSelection(nextSelection),
       displayName: 'Selected root',
       safeLocationPresentation: nextSelection,
     ),

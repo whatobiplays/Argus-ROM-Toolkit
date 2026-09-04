@@ -10,7 +10,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argus_application::{
@@ -923,6 +923,13 @@ pub(crate) struct HostInner {
     startup_condvar: Condvar,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShutdownLeaseDecision {
+    Normal,
+    ReaperOwns,
+    ReleaseKernel,
+}
+
 /// Application-lifetime owner of one current runtime generation.
 #[derive(Clone)]
 pub struct ApplicationHost {
@@ -1392,6 +1399,21 @@ impl ApplicationHost {
             let mut generation = self.lock_generation_with_context(context)?;
             (generation.background.take(), generation.kernel_handle())
         };
+        let (cleanup_decision_tx, cleanup_decision_rx) = mpsc::channel::<ShutdownLeaseDecision>();
+        let cleanup_installed =
+            if let (Some(manager), Some(kernel_handle)) = (&manager, &kernel_handle) {
+                let callback_kernel_handle = Arc::clone(kernel_handle);
+                manager.install_idle_cleanup(move || {
+                    if matches!(
+                        cleanup_decision_rx.recv(),
+                        Ok(ShutdownLeaseDecision::ReleaseKernel)
+                    ) {
+                        Self::release_kernel_lease(callback_kernel_handle);
+                    }
+                })
+            } else {
+                false
+            };
         let manager_drained = match manager.as_ref() {
             Some(manager) => manager.shutdown_until(deadline),
             None => true,
@@ -1400,6 +1422,9 @@ impl ApplicationHost {
             self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
         }
         let kernel = if manager_drained {
+            if cleanup_installed {
+                let _ = cleanup_decision_tx.send(ShutdownLeaseDecision::Normal);
+            }
             let generation = self.lock_generation_with_context(context)?;
             if generation.kernel_handle().is_some() {
                 match generation.try_take_kernel() {
@@ -1432,13 +1457,16 @@ impl ApplicationHost {
                             Self::release_shutdown_lease(reaper_manager, reaper_kernel_handle);
                         })
                 };
-                if reaper.is_err() {
-                    // Thread creation can fail under host resource pressure.
-                    // Transfer the lease to the existing manager instead of
-                    // making bounded shutdown wait for the active worker.
-                    manager.install_idle_cleanup(move || {
-                        Self::release_kernel_lease(kernel_handle);
-                    });
+                if cleanup_installed {
+                    let decision = if reaper.is_ok() {
+                        ShutdownLeaseDecision::ReaperOwns
+                    } else {
+                        // Thread creation can fail under host resource pressure.
+                        // Transfer the lease to the existing manager instead of
+                        // making bounded shutdown wait for the active worker.
+                        ShutdownLeaseDecision::ReleaseKernel
+                    };
+                    let _ = cleanup_decision_tx.send(decision);
                 }
             }
             None

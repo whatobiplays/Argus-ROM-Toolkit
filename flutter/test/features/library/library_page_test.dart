@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/library.dart';
 import 'package:flutter/material.dart';
@@ -102,11 +104,57 @@ void main() {
     expect(find.text('refresh failed'), findsOneWidget);
     expect(refresh.failure, isNull);
   });
+
+  testWidgets(
+    'keeps usable rows visible while reconciliation is still loading',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final pendingRefresh = Completer<GamePage>();
+      var listCalls = 0;
+      final reads = FakeLibraryReads()
+        ..onListGames = (_) {
+          listCalls++;
+          if (listCalls == 1) return GamePage(items: [libraryRow()]);
+          return pendingRefresh.future;
+        };
+      final demands = StreamController<LibraryReconciliationDemand>.broadcast();
+      addTearDown(demands.close);
+      final controller = await _readyController(
+        reads,
+        demandSource: LibraryReconciliationDemandSource(demands.stream),
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(_libraryHarness(controller: controller));
+      await tester.pumpAndSettle();
+      expect(find.text('Test Game'), findsOneWidget);
+
+      demands.add(const LibraryReconciliationDemand.listChanged());
+      await tester.pump();
+      await tester.pump();
+
+      expect(reads.requests, hasLength(2));
+      expect(find.text('Test Game'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      pendingRefresh.complete(
+        GamePage(items: [libraryRow(title: 'Updated Game')]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Test Game'), findsNothing);
+      expect(find.text('Updated Game'), findsOneWidget);
+    },
+  );
 }
 
 Future<LibraryController> _readyController(
   FakeLibraryReads reads, {
   FakeLibraryRefreshApi? refreshApi,
+  LibraryReconciliationDemandSource? demandSource,
 }) async {
   final controller = LibraryController(
     reads: reads,
@@ -115,9 +163,11 @@ Future<LibraryController> _readyController(
     gamesApi: FakeGamesApi(),
     scope: const LibraryScope.platform('nintendo.nes'),
     runtimeContext: readyLibraryRuntimeContext,
-    demandSource: const LibraryReconciliationDemandSource(
-      Stream<LibraryReconciliationDemand>.empty(),
-    ),
+    demandSource:
+        demandSource ??
+        const LibraryReconciliationDemandSource(
+          Stream<LibraryReconciliationDemand>.empty(),
+        ),
   );
   await controller.initialize();
   return controller;

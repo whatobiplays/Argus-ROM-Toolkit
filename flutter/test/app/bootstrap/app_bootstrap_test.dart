@@ -25,6 +25,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/settings/appearance_settings_test_fakes.dart';
+import '../../features/library/library_test_fakes.dart';
+import '../../features/sources/sources_test_fakes.dart';
 import '../../features/startup/startup_test_fakes.dart';
 
 void main() {
@@ -512,6 +514,21 @@ void main() {
           diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
           runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
           appearanceSettingsApiProvider.overrideWithValue(settingsApi),
+          libraryOnboardingApiProvider.overrideWithValue(
+            FakeLibraryOnboardingApi(completeLibraryOnboardingState()),
+          ),
+          libraryApiProvider.overrideWithValue(FakeLibraryReads()),
+          librarySourcesApiProvider.overrideWithValue(FakeSourcesApi()),
+          libraryRefreshApiProvider.overrideWithValue(FakeLibraryRefreshApi()),
+          libraryGamesApiProvider.overrideWithValue(FakeGamesApi()),
+          libraryRuntimeContextProvider.overrideWith((ref) {
+            final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+            return runtimeInstanceId == null
+                ? const LibraryRuntimeContext.preReady()
+                : LibraryRuntimeContext.ready(
+                    runtimeInstanceId: runtimeInstanceId,
+                  );
+          }),
           appearanceRuntimeContextProvider.overrideWith((ref) {
             final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
             return runtimeInstanceId == null
@@ -572,6 +589,21 @@ void main() {
           diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
           runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
           appearanceSettingsApiProvider.overrideWithValue(settingsApi),
+          libraryOnboardingApiProvider.overrideWithValue(
+            FakeLibraryOnboardingApi(completeLibraryOnboardingState()),
+          ),
+          libraryApiProvider.overrideWithValue(FakeLibraryReads()),
+          librarySourcesApiProvider.overrideWithValue(FakeSourcesApi()),
+          libraryRefreshApiProvider.overrideWithValue(FakeLibraryRefreshApi()),
+          libraryGamesApiProvider.overrideWithValue(FakeGamesApi()),
+          libraryRuntimeContextProvider.overrideWith((ref) {
+            final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+            return runtimeInstanceId == null
+                ? const LibraryRuntimeContext.preReady()
+                : LibraryRuntimeContext.ready(
+                    runtimeInstanceId: runtimeInstanceId,
+                  );
+          }),
           appearanceRuntimeContextProvider.overrideWith((ref) {
             final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
             return runtimeInstanceId == null

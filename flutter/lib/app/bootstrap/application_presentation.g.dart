@@ -8,13 +8,15 @@ part of 'application_presentation.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// Projects backend readiness plus appearance authority onto shell admission.
+/// Projects backend readiness, appearance, and Library onboarding authority
+/// onto shell admission.
 
 @ProviderFor(applicationPresentationReadiness)
 final applicationPresentationReadinessProvider =
     ApplicationPresentationReadinessProvider._();
 
-/// Projects backend readiness plus appearance authority onto shell admission.
+/// Projects backend readiness, appearance, and Library onboarding authority
+/// onto shell admission.
 
 final class ApplicationPresentationReadinessProvider
     extends
@@ -24,7 +26,8 @@ final class ApplicationPresentationReadinessProvider
           ApplicationPresentationReadiness
         >
     with $Provider<ApplicationPresentationReadiness> {
-  /// Projects backend readiness plus appearance authority onto shell admission.
+  /// Projects backend readiness, appearance, and Library onboarding authority
+  /// onto shell admission.
   ApplicationPresentationReadinessProvider._()
     : super(
         from: null,
@@ -62,7 +65,7 @@ final class ApplicationPresentationReadinessProvider
 }
 
 String _$applicationPresentationReadinessHash() =>
-    r'1c1b1cb812bdc4a78f24627ae37b4c7675abdf69';
+    r'680f7378167348c82c93a204d3545399b6a7c96d';
 
 /// Projection of confirmed appearance authority onto the root theme mode.
 ///

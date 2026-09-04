@@ -1,7 +1,6 @@
+import 'package:argus/app/bootstrap/application_presentation.dart';
 import 'package:argus/app/routing/app_routes.dart';
 import 'package:argus/app/routing/not_found_page.dart';
-import 'package:argus/app/bootstrap/client_bootstrap.dart';
-import 'package:argus/core/client/client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -12,10 +11,21 @@ part 'app_router.g.dart';
 @Riverpod(keepAlive: true)
 GoRouter appRouter(Ref ref) {
   final refresh = _RouterRefresh();
+  ref.listen<ApplicationPresentationReadiness>(
+    applicationPresentationReadinessProvider,
+    (previous, next) {
+      if (previous != next) {
+        refresh.notify();
+      }
+    },
+  );
   final router = GoRouter(
     routes: $appRoutes,
     refreshListenable: refresh,
-    redirect: (context, state) => _redirectForLibraryOnboarding(ref, state),
+    redirect: (context, state) => _redirectForPresentationReadiness(
+      ref.read(applicationPresentationReadinessProvider),
+      state,
+    ),
     errorBuilder: (context, state) => AppNotFoundPage(
       path: state.uri.path,
       onReturnToLibrary: () => const LibraryRoute().go(context),
@@ -35,30 +45,29 @@ final class _RouterRefresh extends ChangeNotifier {
   void notify() => notifyListeners();
 }
 
-Future<String?> _redirectForLibraryOnboarding(
-  Ref ref,
+String? _redirectForPresentationReadiness(
+  ApplicationPresentationReadiness readiness,
   GoRouterState state,
-) async {
+) {
+  final path = state.uri.path;
+  final rootPath = const RootRoute().location;
   final onboardingPath = const LibraryOnboardingRoute().location;
+  final libraryPath = const LibraryRoute().location;
+  final settingsPath = const SettingsRoute().location;
+  final isRoot = path == rootPath;
   final isOnboarding = state.uri.path == onboardingPath;
-  try {
-    final client = ref.read(argusClientProvider);
-    if (client.boundGeneration == null) return null;
-    if (!client.supportsLibraryPhase003) {
-      return isOnboarding ? const SettingsRoute().location : null;
-    }
-    final onboarding = await client.onboarding.getState();
-    if (onboarding.complete) {
-      return isOnboarding ? const LibraryRoute().location : null;
-    }
-    return isOnboarding ? null : onboardingPath;
-  } on ClientFailure {
-    // The only truthful ready-state fallback is the controlled onboarding
-    // surface, where the user can retry the authoritative query.
-    return isOnboarding ? null : onboardingPath;
-  } on Object {
-    // Startup and platform readiness are owned by the app bootstrap. Until
-    // they are complete, leave the current location for the startup gate.
-    return null;
-  }
+
+  return switch (readiness) {
+    ApplicationPresentationReadiness.libraryUnavailable =>
+      isRoot || isOnboarding ? settingsPath : null,
+    ApplicationPresentationReadiness.onboardingRequired =>
+      isOnboarding ? null : onboardingPath,
+    ApplicationPresentationReadiness.ready =>
+      isRoot || isOnboarding ? libraryPath : null,
+    ApplicationPresentationReadiness.preReady ||
+    ApplicationPresentationReadiness.appearanceInitializing ||
+    ApplicationPresentationReadiness.appearanceUnavailable ||
+    ApplicationPresentationReadiness.onboardingInitializing ||
+    ApplicationPresentationReadiness.onboardingUnavailable => null,
+  };
 }

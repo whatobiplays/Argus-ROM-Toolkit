@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:argus/app/bootstrap/application_presentation_gate.dart';
 import 'package:argus/app/bootstrap/appearance_event_coordinator.dart';
 import 'package:argus/app/bootstrap/argus_app.dart';
@@ -7,6 +9,8 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/features/settings/application/appearance_settings_controller.dart';
 import 'package:argus/features/settings/application/appearance_settings_dependencies.dart';
 import 'package:argus/features/settings/application/appearance_settings_state.dart';
+import 'package:argus/features/library/application/library_state.dart';
+import 'package:argus/features/library/library_composition.dart';
 import 'package:argus/features/startup/startup.dart';
 import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,22 +18,41 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/settings/appearance_settings_test_fakes.dart';
+import '../../features/library/library_test_fakes.dart';
 import '../../features/startup/startup_test_fakes.dart';
+import '../../core/client/jobs_gateway_stub.dart';
+import '../../core/client/sources_gateway_stub.dart';
 
 void main() {
   Widget buildGate({
     required FakeClientBootstrap bootstrap,
     required FakeSettingsApi settingsApi,
+    FakeLibraryOnboardingApi? onboarding,
+    bool supportsLibrary = true,
     AppTerminator? terminator,
     required Widget child,
   }) {
+    final onboardingApi =
+        onboarding ?? FakeLibraryOnboardingApi(_completeOnboardingState());
     return ProviderScope(
       overrides: [
+        argusClientProvider.overrideWithValue(
+          _presentationClient(supportsLibrary: supportsLibrary),
+        ),
         clientBootstrapProvider.overrideWithValue(bootstrap),
         runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
         diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
         runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
         appearanceSettingsApiProvider.overrideWithValue(settingsApi),
+        libraryOnboardingApiProvider.overrideWithValue(onboardingApi),
+        libraryRuntimeContextProvider.overrideWith((ref) {
+          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+          return runtimeInstanceId == null
+              ? const LibraryRuntimeContext.preReady()
+              : LibraryRuntimeContext.ready(
+                  runtimeInstanceId: runtimeInstanceId,
+                );
+        }),
         appearanceRuntimeContextProvider.overrideWith((ref) {
           final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
           return runtimeInstanceId == null
@@ -51,17 +74,33 @@ void main() {
   Widget buildApp({
     required FakeClientBootstrap bootstrap,
     required FakeSettingsApi settingsApi,
+    FakeLibraryOnboardingApi? onboarding,
+    bool supportsLibrary = true,
     required GoRouter router,
     FakeEventsApi? eventsApi,
   }) {
+    final onboardingApi =
+        onboarding ?? FakeLibraryOnboardingApi(_completeOnboardingState());
     return ProviderScope(
       overrides: [
+        argusClientProvider.overrideWithValue(
+          _presentationClient(supportsLibrary: supportsLibrary),
+        ),
         appRouterProvider.overrideWithValue(router),
         clientBootstrapProvider.overrideWithValue(bootstrap),
         runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
         diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
         runtimeEventsProvider.overrideWithValue(eventsApi ?? FakeEventsApi()),
         appearanceSettingsApiProvider.overrideWithValue(settingsApi),
+        libraryOnboardingApiProvider.overrideWithValue(onboardingApi),
+        libraryRuntimeContextProvider.overrideWith((ref) {
+          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+          return runtimeInstanceId == null
+              ? const LibraryRuntimeContext.preReady()
+              : LibraryRuntimeContext.ready(
+                  runtimeInstanceId: runtimeInstanceId,
+                );
+        }),
         appearanceRuntimeContextProvider.overrideWith((ref) {
           final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
           return runtimeInstanceId == null
@@ -187,6 +226,7 @@ void main() {
       const AppearanceSettings(themeMode: ThemeMode.light),
     );
     await tester.pump();
+    await tester.pump();
 
     expect(find.text('Settings shell'), findsOneWidget);
     expect(terminations, 0);
@@ -232,9 +272,162 @@ void main() {
       const AppearanceSettings(themeMode: ThemeMode.light),
     );
     await tester.pump();
+    await tester.pump();
 
     expect(find.text('Settings shell'), findsOneWidget);
     expect(find.text('Loading appearance settings…'), findsNothing);
+  });
+
+  testWidgets(
+    'backend ready + appearance ready + onboarding read pending shows initialization',
+    (tester) async {
+      final bootstrap = FakeClientBootstrap();
+      final settingsApi = FakeSettingsApi();
+      final onboarding = FakeLibraryOnboardingApi(_incompleteOnboardingState())
+        ..getStateCompleter = Completer<LibraryOnboardingState>();
+
+      await tester.pumpWidget(
+        buildGate(
+          bootstrap: bootstrap,
+          settingsApi: settingsApi,
+          onboarding: onboarding,
+          child: shell(),
+        ),
+      );
+      await makeBackendReady(tester, bootstrap);
+      settingsApi.readRequests.single.complete(
+        const AppearanceSettings(themeMode: ThemeMode.light),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Settings shell'), findsNothing);
+      expect(onboarding.getStateCalls, 1);
+    },
+  );
+
+  testWidgets('onboarding read failure shows a bounded retry surface', (
+    tester,
+  ) async {
+    final bootstrap = FakeClientBootstrap();
+    final settingsApi = FakeSettingsApi();
+    final onboarding = FakeLibraryOnboardingApi(_incompleteOnboardingState())
+      ..getStateFailure = const TransportFailure('onboarding unavailable');
+    var terminations = 0;
+
+    await tester.pumpWidget(
+      buildGate(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
+        onboarding: onboarding,
+        terminator: () => terminations++,
+        child: shell(),
+      ),
+    );
+    await makeBackendReady(tester, bootstrap);
+    settingsApi.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.light),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Library setup unavailable'), findsOneWidget);
+    expect(
+      find.text('Argus could not read the saved Library setup state.'),
+      findsOneWidget,
+    );
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Exit'), findsOneWidget);
+    expect(find.text('Settings shell'), findsNothing);
+
+    onboarding.getStateFailure = null;
+    onboarding.state = _completeOnboardingState();
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(onboarding.getStateCalls, 2);
+    expect(find.text('Settings shell'), findsOneWidget);
+    expect(terminations, 0);
+  });
+
+  testWidgets('incomplete authoritative onboarding admits the child', (
+    tester,
+  ) async {
+    final bootstrap = FakeClientBootstrap();
+    final settingsApi = FakeSettingsApi();
+    final onboarding = FakeLibraryOnboardingApi(_incompleteOnboardingState());
+
+    await tester.pumpWidget(
+      buildGate(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
+        onboarding: onboarding,
+        child: shell(),
+      ),
+    );
+    await makeBackendReady(tester, bootstrap);
+    settingsApi.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.light),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Settings shell'), findsOneWidget);
+    expect(onboarding.getStateCalls, 1);
+  });
+
+  testWidgets('complete authoritative onboarding admits the normal shell', (
+    tester,
+  ) async {
+    final bootstrap = FakeClientBootstrap();
+    final settingsApi = FakeSettingsApi();
+    final onboarding = FakeLibraryOnboardingApi(_completeOnboardingState());
+
+    await tester.pumpWidget(
+      buildGate(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
+        onboarding: onboarding,
+        child: shell(),
+      ),
+    );
+    await makeBackendReady(tester, bootstrap);
+    settingsApi.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.light),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Settings shell'), findsOneWidget);
+    expect(onboarding.getStateCalls, 1);
+  });
+
+  testWidgets('unsupported Library capability does not query onboarding', (
+    tester,
+  ) async {
+    final bootstrap = FakeClientBootstrap();
+    final settingsApi = FakeSettingsApi();
+    final onboarding = FakeLibraryOnboardingApi(_incompleteOnboardingState())
+      ..getStateCompleter = Completer<LibraryOnboardingState>();
+
+    await tester.pumpWidget(
+      buildGate(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
+        onboarding: onboarding,
+        supportsLibrary: false,
+        child: shell(),
+      ),
+    );
+    await makeBackendReady(tester, bootstrap);
+    settingsApi.readRequests.single.complete(
+      const AppearanceSettings(themeMode: ThemeMode.light),
+    );
+    await tester.pump();
+
+    expect(find.text('Settings shell'), findsOneWidget);
+    expect(onboarding.getStateCalls, 0);
   });
 
   testWidgets('first normal shell frame after authoritative Dark is dark', (
@@ -266,6 +459,7 @@ void main() {
     settingsApi.readRequests.single.complete(
       const AppearanceSettings(themeMode: ThemeMode.dark),
     );
+    await tester.pump();
     await tester.pump();
 
     expect(find.text('Settings shell'), findsOneWidget);
@@ -305,6 +499,7 @@ void main() {
     settingsApi.readRequests.single.complete(
       const AppearanceSettings(themeMode: ThemeMode.light),
     );
+    await tester.pump();
     await tester.pump();
     expect(find.text('Settings shell'), findsOneWidget);
     expect(
@@ -368,6 +563,7 @@ void main() {
       const AppearanceSettings(themeMode: ThemeMode.system),
     );
     await tester.pump();
+    await tester.pump();
     expect(find.text('Settings shell'), findsOneWidget);
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,
@@ -428,6 +624,7 @@ void main() {
       const AppearanceSettings(themeMode: ThemeMode.dark),
     );
     await tester.pump();
+    await tester.pump();
     expect(
       Theme.of(tester.element(find.text('Settings shell'))).brightness,
       Brightness.dark,
@@ -479,6 +676,7 @@ void main() {
         const AppearanceSettings(themeMode: ThemeMode.light),
       );
       await tester.pump();
+      await tester.pump();
       expect(find.text('Settings shell'), findsOneWidget);
       expect(
         Theme.of(tester.element(find.text('Settings shell'))).brightness,
@@ -518,4 +716,158 @@ void main() {
       expect(settingsApi.updateRequests, isEmpty);
     },
   );
+}
+
+LibraryOnboardingState _incompleteOnboardingState() =>
+    const LibraryOnboardingState(
+      progress: LibraryOnboardingProgress(
+        acceptedPrivacyTermsVersion: null,
+        acceptedPrivacyAtMs: null,
+        metadataPreferencesConfirmed: false,
+        providerSetupOutcome: LibraryProviderSetupOutcome.pending,
+        completedAtMs: null,
+      ),
+      requiredPrivacyTermsVersion: 'terms',
+      requiresPrivacyAcceptance: true,
+      requiresRootSelection: true,
+      credentialConfigured: false,
+      complete: false,
+    );
+
+LibraryOnboardingState _completeOnboardingState() =>
+    const LibraryOnboardingState(
+      progress: LibraryOnboardingProgress(
+        acceptedPrivacyTermsVersion: 'terms',
+        acceptedPrivacyAtMs: 1,
+        metadataPreferencesConfirmed: true,
+        providerSetupOutcome: LibraryProviderSetupOutcome.skipped,
+        completedAtMs: 1,
+      ),
+      requiredPrivacyTermsVersion: 'terms',
+      requiresPrivacyAcceptance: false,
+      requiresRootSelection: false,
+      credentialConfigured: false,
+      complete: true,
+    );
+
+ArgusClient _presentationClient({required bool supportsLibrary}) => ArgusClient(
+  gateway: supportsLibrary
+      ? _LibraryPresentationGateway()
+      : _PresentationGateway(),
+);
+
+/// Minimal gateway used to make presentation tests explicit about capability
+/// support without initializing the native bridge.
+class _PresentationGateway
+    with SourcesGatewayStub, JobsGatewayStub
+    implements ArgusClientGateway {
+  static const _runtime = RuntimeInstanceId('cccccccccccccccccccccccccccccccc');
+
+  RuntimeState get _ready =>
+      const RuntimeState.ready(runtimeInstanceId: _runtime);
+
+  @override
+  Future<RuntimeState> getRuntimeState() async => _ready;
+
+  @override
+  Future<RuntimeState> initialize() async => _ready;
+
+  @override
+  Future<RuntimeState> retryStartup(RuntimeInstanceId expected) async => _ready;
+
+  @override
+  Future<RuntimeState> resetAppearanceSettings(
+    RuntimeInstanceId expected,
+  ) async => _ready;
+
+  @override
+  Future<RuntimeState> exitFailedRuntime(RuntimeInstanceId expected) async =>
+      _ready;
+
+  @override
+  Future<void> generalShutdown() async {}
+
+  @override
+  Future<void> closeEventConnection() async {}
+
+  @override
+  Future<AppearanceSettings> getAppearanceSettings() async =>
+      const AppearanceSettings(themeMode: ThemeMode.system);
+
+  @override
+  Future<void> updateAppearanceSettings(AppearanceSettings settings) async {}
+
+  @override
+  Future<DiagnosticsExport> exportStartupDiagnostics(
+    RuntimeInstanceId expected,
+    String destination,
+  ) => throw UnsupportedError('Presentation test diagnostics are not focused');
+
+  @override
+  Future<TechnicalDetails> startupTechnicalDetails(
+    RuntimeInstanceId expected,
+  ) => throw UnsupportedError('Presentation test diagnostics are not focused');
+
+  @override
+  Future<void> openStartupDataDirectory(RuntimeInstanceId expected) =>
+      throw UnsupportedError('Presentation test diagnostics are not focused');
+
+  @override
+  Future<EventBindResult> subscribeEvents(RuntimeInstanceId generation) async =>
+      const EventBindResult(stream: Stream.empty(), nativeAttached: true);
+}
+
+final class _LibraryPresentationGateway extends _PresentationGateway
+    implements LibraryPhase003Gateway {
+  @override
+  Future<LibraryOnboardingState> getLibraryOnboardingState() =>
+      throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<LibraryOnboardingState> confirmLibraryMetadataPreferences(
+    MetadataSettings settings,
+  ) => throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<LibraryOnboardingState> recordLibraryProviderSetup(
+    LibraryProviderSetupDecision decision,
+  ) => throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<CompleteLibraryOnboardingAndRefreshResult>
+  completeLibraryOnboardingAndRefresh() =>
+      throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<AddLibraryRootAndRefreshResult> addLibraryRootAndRefresh(
+    LocalFilesystemRootSelection selection,
+  ) => throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<MetadataSettings> getMetadataSettings() =>
+      throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<MetadataProviderSettings> getMetadataProviderSettings() =>
+      throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<MetadataSettingsUpdateResult> updateMetadataSettings(
+    MetadataSettings settings,
+  ) => throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<MetadataProviderSettingsUpdateResult> updateMetadataProviderSettings(
+    MetadataProviderSettings settings,
+  ) => throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<OperationHandle> startGameRefresh({
+    required List<GameId> gameIds,
+    required RefreshMode mode,
+  }) => throw UnsupportedError('Presentation test onboarding is injected');
+
+  @override
+  Future<OperationHandle> refreshLibrary() =>
+      throw UnsupportedError('Presentation test onboarding is injected');
 }

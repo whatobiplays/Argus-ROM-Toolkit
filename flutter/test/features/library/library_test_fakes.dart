@@ -100,6 +100,103 @@ final class FakeLibraryRefreshApi implements LibraryRefreshApi {
   }
 }
 
+/// Deterministic onboarding authority fake shared by routing and page tests.
+final class FakeLibraryOnboardingApi implements LibraryOnboardingApi {
+  FakeLibraryOnboardingApi(this.state);
+
+  LibraryOnboardingState state;
+  int getStateCalls = 0;
+  Object? getStateFailure;
+  Completer<LibraryOnboardingState>? getStateCompleter;
+  List<FutureOr<LibraryOnboardingState>>? getStateResponses;
+  int completeCalls = 0;
+  CompleteLibraryOnboardingAndRefreshResult? completionResultOverride;
+
+  @override
+  Future<LibraryOnboardingState> getState() async {
+    getStateCalls++;
+    final failure = getStateFailure;
+    if (failure != null) {
+      throw failure;
+    }
+    final responses = getStateResponses;
+    if (responses != null && responses.isNotEmpty) {
+      return await responses.removeAt(0);
+    }
+    final completer = getStateCompleter;
+    if (completer != null) return completer.future;
+    return state;
+  }
+
+  @override
+  Future<LibraryOnboardingState> confirmMetadataPreferences(
+    MetadataSettings settings,
+  ) async {
+    state = state.copyWith(
+      progress: state.progress.copyWith(metadataPreferencesConfirmed: true),
+    );
+    return state;
+  }
+
+  @override
+  Future<LibraryOnboardingState> recordProviderSetup(
+    LibraryProviderSetupDecision decision,
+  ) async {
+    state = state.copyWith(
+      progress: state.progress.copyWith(
+        providerSetupOutcome: switch (decision) {
+          LibraryProviderSetupDecision.configured =>
+            LibraryProviderSetupOutcome.configured,
+          LibraryProviderSetupDecision.skipped =>
+            LibraryProviderSetupOutcome.skipped,
+        },
+      ),
+    );
+    return state;
+  }
+
+  @override
+  Future<CompleteLibraryOnboardingAndRefreshResult> completeAndRefresh() async {
+    completeCalls++;
+    state = state.copyWith(
+      progress: state.progress.copyWith(completedAtMs: 1),
+      complete: true,
+    );
+    final resultOverride = completionResultOverride;
+    if (resultOverride != null) return resultOverride;
+    return CompleteLibraryOnboardingAndRefreshResult.admitted(
+      state: state,
+      handle: const OperationHandle(
+        jobRunId: JobRunId('11111111111111111111111111111111'),
+        operationType: 'library_refresh',
+      ),
+    );
+  }
+
+  @override
+  Future<AddLibraryRootAndRefreshResult> addLibraryRootAndRefresh(
+    LocalFilesystemRootSelection selection,
+  ) => throw UnsupportedError('The page uses the root-only add seam');
+}
+
+/// Returns a completed onboarding projection for application-composition
+/// tests whose focus is unrelated to the onboarding flow itself.
+LibraryOnboardingState completeLibraryOnboardingState() =>
+    const LibraryOnboardingState(
+      progress: LibraryOnboardingProgress(
+        acceptedPrivacyTermsVersion: 'terms',
+        acceptedPrivacyAtMs: 1,
+        metadataPreferencesConfirmed: true,
+        providerSetupOutcome: LibraryProviderSetupOutcome.skipped,
+        completedAtMs: 1,
+      ),
+      requiredPrivacyTermsVersion: 'terms',
+      requiresPrivacyAcceptance: false,
+      requiresRootSelection: false,
+      credentialConfigured: false,
+      complete: true,
+    );
+
 /// Deterministic single-Game read/refresh fake for detail tests.
 final class FakeGamesApi implements GamesApi {
   GetGameResult? result;

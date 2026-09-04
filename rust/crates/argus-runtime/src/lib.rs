@@ -139,6 +139,18 @@ type RuntimeCredentialService = MetadataProviderService<
 type EnrichmentSessionFactory =
     dyn Fn() -> Vec<Box<dyn EnrichmentProviderSession>> + Send + Sync + 'static;
 
+#[cfg(feature = "test-support")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[doc(hidden)]
+pub enum RefreshExecutionCheckpoint {
+    CommittedRoot,
+    Game,
+    LibraryResolution,
+}
+
+#[cfg(feature = "test-support")]
+type RefreshExecutionHook = dyn Fn(RefreshExecutionCheckpoint) + Send + Sync + 'static;
+
 fn production_enrichment_session_factory() -> Arc<EnrichmentSessionFactory> {
     Arc::new(|| ProductionProviderSessionFactory::new().create_sessions())
 }
@@ -159,6 +171,11 @@ fn sessions_require_credentials(
 // callers that construct the two public fields directly remain source-compatible.
 static TEST_ENRICHMENT_SESSION_FACTORIES: std::sync::OnceLock<
     Mutex<std::collections::HashMap<PathBuf, Arc<EnrichmentSessionFactory>>>,
+> = std::sync::OnceLock::new();
+
+#[cfg(feature = "test-support")]
+static TEST_REFRESH_EXECUTION_HOOKS: std::sync::OnceLock<
+    Mutex<std::collections::HashMap<PathBuf, Arc<RefreshExecutionHook>>>,
 > = std::sync::OnceLock::new();
 
 /// Platform naming policy used by the private path-resolution seam.
@@ -314,6 +331,34 @@ impl KernelBootstrapOptions {
                 .insert(directory.clone(), Arc::new(factory));
         }
         self
+    }
+
+    /// Installs a deterministic refresh execution hook for integration tests.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn with_refresh_execution_hook_for_tests<F>(self, hook: F) -> Self
+    where
+        F: Fn(RefreshExecutionCheckpoint) + Send + Sync + 'static,
+    {
+        if let Some(directory) = &self.data_directory_override {
+            TEST_REFRESH_EXECUTION_HOOKS
+                .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+                .lock()
+                .expect("test refresh-hook registry lock")
+                .insert(directory.clone(), Arc::new(hook));
+        }
+        self
+    }
+
+    #[cfg(feature = "test-support")]
+    fn refresh_execution_hook(&self) -> Option<Arc<RefreshExecutionHook>> {
+        self.data_directory_override.as_ref().and_then(|directory| {
+            TEST_REFRESH_EXECUTION_HOOKS
+                .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+                .lock()
+                .ok()
+                .and_then(|hooks| hooks.get(directory).cloned())
+        })
     }
 
     pub(crate) fn enrichment_session_factory(&self) -> Arc<EnrichmentSessionFactory> {
@@ -479,12 +524,41 @@ pub struct KernelBootstrap {
     credential_service: Arc<Mutex<RuntimeCredentialService>>,
     artwork_store: Arc<ArtworkObjectStore>,
     event_bus: Arc<EventBus>,
-    publication_diagnostics: Mutex<PublicationDiagnostics>,
+    publication_diagnostics: Arc<Mutex<PublicationDiagnostics>>,
     transformation_registry: TransformationRegistry,
     transformation_staging_root: PathBuf,
+    #[cfg(feature = "test-support")]
+    refresh_execution_hook: Option<Arc<RefreshExecutionHook>>,
     collector: StartupCollector,
     #[cfg(test)]
     fail_shutdown: bool,
+}
+
+/// Cloneable capability bundle used by long-running Library execution.
+///
+/// The bundle shares the kernel's transaction factory and side-effecting
+/// services without retaining the lifecycle mutex that protects the complete
+/// bootstrap value. Admission builds one from the ready kernel, after which a
+/// background handler can execute independently of runtime-generation control
+/// and foreground query admission.
+#[derive(Clone)]
+pub(crate) struct LibraryExecutionContext {
+    unit_of_work: KernelUnitOfWorkFactory,
+    metadata_provider_registry: MetadataProviderRegistry,
+    provider_session_factory: Arc<EnrichmentSessionFactory>,
+    credential_service: Arc<Mutex<RuntimeCredentialService>>,
+    artwork_store: Arc<ArtworkObjectStore>,
+    // Event finalization remains at the runtime command boundary, but the
+    // shared capabilities stay attached to this execution bundle so future
+    // execution stages cannot accidentally create a second publication path.
+    #[allow(dead_code)]
+    event_bus: Arc<EventBus>,
+    #[allow(dead_code)]
+    publication_diagnostics: Arc<Mutex<PublicationDiagnostics>>,
+    transformation_registry: TransformationRegistry,
+    transformation_staging_root: PathBuf,
+    #[cfg(feature = "test-support")]
+    refresh_execution_hook: Option<Arc<RefreshExecutionHook>>,
 }
 
 /// Bounded artwork bytes returned by the runtime without storage paths or
@@ -669,6 +743,35 @@ impl argus_application::JobRunRepository for KernelJobRunRepository<'_, '_> {
             terminal_safe_context,
             timestamp_ms,
         )
+    }
+
+    fn insert_library_refresh_intent(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+        trigger: argus_application::LibraryRefreshTrigger,
+        mode: argus_application::RefreshMode,
+    ) -> Result<(), PersistenceError> {
+        self.inner
+            .insert_library_refresh_intent(job_run_id, trigger, mode)
+    }
+
+    fn insert_game_refresh_intent(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+        game_ids: &[argus_application::GameId],
+        mode: argus_application::RefreshMode,
+    ) -> Result<(), PersistenceError> {
+        self.inner
+            .insert_game_refresh_intent(job_run_id, game_ids, mode)
+    }
+
+    fn insert_library_resolution_refresh_intent(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+        settings_revision: u64,
+    ) -> Result<(), PersistenceError> {
+        self.inner
+            .insert_library_resolution_refresh_intent(job_run_id, settings_revision)
     }
 }
 
@@ -1299,6 +1402,7 @@ impl KernelBootstrap {
         collector: StartupCollector,
         provider_session_factory: Arc<EnrichmentSessionFactory>,
         transformation_staging_root: PathBuf,
+        #[cfg(feature = "test-support")] refresh_execution_hook: Option<Arc<RefreshExecutionHook>>,
     ) -> Self {
         Self {
             trace_id,
@@ -1317,9 +1421,11 @@ impl KernelBootstrap {
             ))),
             artwork_store,
             event_bus,
-            publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
+            publication_diagnostics: Arc::new(Mutex::new(PublicationDiagnostics::new())),
             transformation_registry: TransformationRegistry::production(),
             transformation_staging_root,
+            #[cfg(feature = "test-support")]
+            refresh_execution_hook,
             collector,
             #[cfg(test)]
             fail_shutdown: false,
@@ -1374,6 +1480,8 @@ impl KernelBootstrap {
             StartupCollector::new(),
             production_enrichment_session_factory(),
             directory.join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
+            #[cfg(feature = "test-support")]
+            None,
         );
         kernel.fail_next_shutdown_for_tests();
         kernel
@@ -1404,15 +1512,21 @@ impl KernelBootstrap {
         self.collector.logs()
     }
 
-    /// Returns the immutable production transformation registry used by
-    /// composed source processing and identity dispatch.
-    pub(crate) fn transformation_registry(&self) -> &TransformationRegistry {
-        &self.transformation_registry
-    }
-
-    /// Returns the application-private root for operation-scoped staging.
-    pub(crate) fn transformation_staging_root(&self) -> &Path {
-        &self.transformation_staging_root
+    /// Creates the capability bundle owned by long-running Library work.
+    pub(crate) fn library_execution_context(&self) -> LibraryExecutionContext {
+        LibraryExecutionContext {
+            unit_of_work: self.unit_of_work.clone(),
+            metadata_provider_registry: self.metadata_provider_registry.clone(),
+            provider_session_factory: Arc::clone(&self.provider_session_factory),
+            credential_service: Arc::clone(&self.credential_service),
+            artwork_store: Arc::clone(&self.artwork_store),
+            event_bus: Arc::clone(&self.event_bus),
+            publication_diagnostics: Arc::clone(&self.publication_diagnostics),
+            transformation_registry: self.transformation_registry.clone(),
+            transformation_staging_root: self.transformation_staging_root.clone(),
+            #[cfg(feature = "test-support")]
+            refresh_execution_hook: self.refresh_execution_hook.clone(),
+        }
     }
 
     /// Returns bounded structured diagnostics from post-commit publication.
@@ -1550,31 +1664,8 @@ impl KernelBootstrap {
         &self,
         context: &OperationContext,
     ) -> Result<Vec<GameId>, ApplicationError> {
-        let mut game_ids = Vec::new();
-        let mut cursor = None;
-        loop {
-            let query = ListGamesQuery::builder()
-                .scope(LibraryScope::All)
-                .search(None)
-                .filters_empty(true)
-                .sort(LibrarySort::DisplayTitleAscending)
-                .cursor(cursor.clone())
-                .page_size(500)
-                .build()
-                .map_err(|_| {
-                    application_error_from_code(
-                        ErrorCode::ValidationInvalidArgument,
-                        context.trace_id(),
-                    )
-                })?;
-            let page = self.list_games_with_context(&query, context)?;
-            game_ids.extend(page.items().iter().map(|row| row.game_id()));
-            cursor = page.next_cursor().cloned();
-            if cursor.is_none() {
-                break;
-            }
-        }
-        Ok(game_ids)
+        self.library_execution_context()
+            .list_game_ids_with_context(context)
     }
 
     /// Reads one focused durable logical-game result in a short transaction.
@@ -1583,38 +1674,8 @@ impl KernelBootstrap {
         game_id: GameId,
         context: &OperationContext,
     ) -> Result<GetGameResult, ApplicationError> {
-        self.execute(context, move |mut work| {
-            let result = {
-                let mut logical = work.logical_content();
-                logical
-                    .get_game(game_id)
-                    .map_err(ApplicationPortError::Persistence)?
-            };
-            let result = match result {
-                GetGameResult::Found(detail) => {
-                    let canonical_game_id = detail.game_id();
-                    let resolved_metadata = {
-                        let mut metadata = work.metadata();
-                        metadata
-                            .resolved_metadata_for_game(canonical_game_id)
-                            .map_err(ApplicationPortError::Persistence)?
-                    };
-                    let resolved_artwork = {
-                        let mut artwork = work.artwork();
-                        artwork
-                            .resolved_artwork_for_game(canonical_game_id)
-                            .map_err(ApplicationPortError::Persistence)?
-                    };
-                    GetGameResult::Found(
-                        detail.with_enrichment(resolved_metadata, resolved_artwork),
-                    )
-                }
-                other => other,
-            };
-            work.commit()?;
-            Ok(result)
-        })
-        .map_err(|error| map_application_port_error(context.trace_id(), error))
+        self.library_execution_context()
+            .get_game_with_context(game_id, context)
     }
 
     /// Reads the durable onboarding record and composes it with the current
@@ -1914,18 +1975,8 @@ impl KernelBootstrap {
         &self,
         context: &OperationContext,
     ) -> Result<u64, ApplicationError> {
-        self.unit_of_work
-            .execute(context, |mut work| {
-                let revision = {
-                    let mut metadata = work.metadata();
-                    metadata
-                        .settings_revision()
-                        .map_err(ApplicationPortError::Persistence)?
-                };
-                work.commit()?;
-                Ok(revision)
-            })
-            .map_err(|error| map_application_port_error(context.trace_id(), error))
+        self.library_execution_context()
+            .metadata_settings_revision_with_context(context)
     }
 
     /// Commits provider enablement and reports whether the durable value
@@ -2059,6 +2110,134 @@ impl KernelBootstrap {
             .metadata_provider_registry
             .readiness_projection(&settings, credential_readiness))
     }
+}
+
+impl LibraryExecutionContext {
+    fn transformation_registry(&self) -> &TransformationRegistry {
+        &self.transformation_registry
+    }
+
+    fn transformation_staging_root(&self) -> &Path {
+        &self.transformation_staging_root
+    }
+
+    #[cfg(feature = "test-support")]
+    fn call_refresh_execution_hook(&self, checkpoint: RefreshExecutionCheckpoint) {
+        if let Some(hook) = &self.refresh_execution_hook {
+            hook(checkpoint);
+        }
+    }
+
+    fn list_games_with_context(
+        &self,
+        query: &ListGamesQuery,
+        context: &OperationContext,
+    ) -> Result<GameLibraryPage, ApplicationError> {
+        let query = query.clone();
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let mut logical = work.logical_content();
+                let page = logical
+                    .list_games(&query)
+                    .map_err(ApplicationPortError::Persistence)?;
+                work.commit()?;
+                Ok(page)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Enumerates canonical Game identities through the bounded Library
+    /// projection for a background local-resolution pass.
+    pub(crate) fn list_game_ids_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<GameId>, ApplicationError> {
+        let mut game_ids = Vec::new();
+        let mut cursor = None;
+        loop {
+            let query = ListGamesQuery::builder()
+                .scope(LibraryScope::All)
+                .search(None)
+                .filters_empty(true)
+                .sort(LibrarySort::DisplayTitleAscending)
+                .cursor(cursor.clone())
+                .page_size(500)
+                .build()
+                .map_err(|_| {
+                    application_error_from_code(
+                        ErrorCode::ValidationInvalidArgument,
+                        context.trace_id(),
+                    )
+                })?;
+            let page = self.list_games_with_context(&query, context)?;
+            game_ids.extend(page.items().iter().map(|row| row.game_id()));
+            cursor = page.next_cursor().cloned();
+            if cursor.is_none() {
+                break;
+            }
+        }
+        Ok(game_ids)
+    }
+
+    /// Reads one focused durable logical-game result in a short transaction.
+    pub(crate) fn get_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+    ) -> Result<GetGameResult, ApplicationError> {
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let result = {
+                    let mut logical = work.logical_content();
+                    logical
+                        .get_game(game_id)
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                let result = match result {
+                    GetGameResult::Found(detail) => {
+                        let canonical_game_id = detail.game_id();
+                        let resolved_metadata = {
+                            let mut metadata = work.metadata();
+                            metadata
+                                .resolved_metadata_for_game(canonical_game_id)
+                                .map_err(ApplicationPortError::Persistence)?
+                        };
+                        let resolved_artwork = {
+                            let mut artwork = work.artwork();
+                            artwork
+                                .resolved_artwork_for_game(canonical_game_id)
+                                .map_err(ApplicationPortError::Persistence)?
+                        };
+                        GetGameResult::Found(
+                            detail.with_enrichment(resolved_metadata, resolved_artwork),
+                        )
+                    }
+                    other => other,
+                };
+                work.commit()?;
+                Ok(result)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads the committed metadata-settings revision used by resolution jobs.
+    pub(crate) fn metadata_settings_revision_with_context(
+        &self,
+        context: &OperationContext,
+    ) -> Result<u64, ApplicationError> {
+        self.unit_of_work
+            .execute(context, |mut work| {
+                let revision = {
+                    let mut metadata = work.metadata();
+                    metadata
+                        .settings_revision()
+                        .map_err(ApplicationPortError::Persistence)?
+                };
+                work.commit()?;
+                Ok(revision)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
 
     /// Hydrates one already identified target on a dedicated backend worker.
     ///
@@ -2102,6 +2281,7 @@ impl KernelBootstrap {
         let trace_id = context.trace_id();
         let unit_of_work = self.unit_of_work.clone();
         let registry = self.metadata_provider_registry.clone();
+        let session_factory = Arc::clone(&self.provider_session_factory);
         let credential_service = Arc::clone(&self.credential_service);
         let artwork_store = Arc::clone(&self.artwork_store);
         let worker_context = context.clone();
@@ -2153,8 +2333,7 @@ impl KernelBootstrap {
                     metadata_settings.preferred_regions().to_vec(),
                     metadata_settings.preferred_languages().to_vec(),
                 );
-                let session_factory = ProductionProviderSessionFactory::new();
-                let mut sessions = session_factory.create_sessions();
+                let mut sessions = session_factory();
                 LibraryRefreshCoordinator::new(unit_of_work).hydrate(
                     &worker_context,
                     target,
@@ -2909,6 +3088,8 @@ impl KernelBootstrap {
         timestamps: ContentRefreshTimestamps,
         is_cancelled: &dyn Fn() -> bool,
     ) -> Result<(usize, u64), ApplicationError> {
+        #[cfg(feature = "test-support")]
+        self.call_refresh_execution_hook(RefreshExecutionCheckpoint::CommittedRoot);
         if is_cancelled() {
             return Err(cancelled_sources_error(context.trace_id()));
         }
@@ -3691,6 +3872,8 @@ impl KernelBootstrap {
         context: &OperationContext,
         now: i64,
     ) -> Result<u64, ApplicationError> {
+        #[cfg(feature = "test-support")]
+        self.call_refresh_execution_hook(RefreshExecutionCheckpoint::Game);
         let detail = match self.get_game_with_context(game_id, context)? {
             GetGameResult::Found(detail) => detail,
             GetGameResult::Redirected(_) | GetGameResult::NotFound => {
@@ -3735,6 +3918,8 @@ impl KernelBootstrap {
         context: &OperationContext,
         now: i64,
     ) -> Result<u64, ApplicationError> {
+        #[cfg(feature = "test-support")]
+        self.call_refresh_execution_hook(RefreshExecutionCheckpoint::LibraryResolution);
         let detail = match self.get_game_with_context(game_id, context)? {
             GetGameResult::Found(detail) => detail,
             GetGameResult::Redirected(_) | GetGameResult::NotFound => {
@@ -3828,6 +4013,42 @@ impl KernelBootstrap {
             issue_count = issue_count.saturating_add(report.issues().len() as u64);
         }
         Ok(issue_count)
+    }
+}
+
+impl KernelBootstrap {
+    /// Hydrates one already identified target through the shared execution
+    /// capability without retaining the lifecycle guard.
+    pub fn hydrate_game_content_with_context(
+        &self,
+        target: HydrationTarget,
+        context: &OperationContext,
+        now: i64,
+    ) -> Result<HydrationReport, ApplicationError> {
+        self.library_execution_context()
+            .hydrate_game_content_with_context(target, context, now)
+    }
+
+    /// Refreshes one logical Game through the shared execution capability.
+    pub fn refresh_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+        now: i64,
+    ) -> Result<u64, ApplicationError> {
+        self.library_execution_context()
+            .refresh_game_with_context(game_id, context, now)
+    }
+
+    /// Resolves one logical Game through the shared execution capability.
+    pub fn resolve_game_with_context(
+        &self,
+        game_id: GameId,
+        context: &OperationContext,
+        now: i64,
+    ) -> Result<u64, ApplicationError> {
+        self.library_execution_context()
+            .resolve_game_with_context(game_id, context, now)
     }
 
     /// Securely stores and validates a provider credential. The secret is
@@ -4339,6 +4560,8 @@ pub fn bootstrap_kernel_with_event_bus(
     event_bus: EventBus,
 ) -> Result<KernelBootstrap, KernelBootstrapFailure> {
     let provider_session_factory = options.enrichment_session_factory();
+    #[cfg(feature = "test-support")]
+    let refresh_execution_hook = options.refresh_execution_hook();
     let trace_id = new_trace_id();
     let context = startup_context(trace_id);
     // Host-standard data (including the Android production root) remains
@@ -4527,10 +4750,12 @@ pub fn bootstrap_kernel_with_event_bus(
         ))),
         artwork_store: Arc::new(artwork_store),
         event_bus: Arc::new(event_bus),
-        publication_diagnostics: Mutex::new(PublicationDiagnostics::new()),
+        publication_diagnostics: Arc::new(Mutex::new(PublicationDiagnostics::new())),
         transformation_registry: TransformationRegistry::production(),
         transformation_staging_root: data_directory
             .join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
+        #[cfg(feature = "test-support")]
+        refresh_execution_hook,
         collector,
         #[cfg(test)]
         fail_shutdown: false,

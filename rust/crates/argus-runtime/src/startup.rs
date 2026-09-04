@@ -597,6 +597,8 @@ impl StartupCoordinator {
             self.collector,
             self.options.enrichment_session_factory(),
             data_directory.join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
+            #[cfg(feature = "test-support")]
+            self.options.refresh_execution_hook(),
         );
         StartupResult {
             trace_id: self.trace_id,

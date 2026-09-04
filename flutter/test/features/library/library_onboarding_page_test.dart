@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:argus/core/client/client.dart';
+import 'package:argus/features/library/application/library_onboarding_routing.dart';
 import 'package:argus/features/library/library_composition.dart';
 import 'package:argus/features/library/presentation/library_onboarding_page.dart';
 import 'package:argus/features/settings/settings_composition.dart';
@@ -8,6 +11,7 @@ import 'package:flutter/material.dart' hide ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'library_test_fakes.dart';
 import '../sources/sources_test_fakes.dart';
 
 void main() {
@@ -22,6 +26,7 @@ void main() {
       sources.onAdd = (_) => AddLocalLibraryRootResult.added(fakeRoot());
       var openedLibrary = 0;
       var openedJobs = 0;
+      ProviderContainer? container;
 
       await tester.pumpWidget(
         _testApp(
@@ -35,8 +40,23 @@ void main() {
             displayName: 'Games',
             safeLocationPresentation: '/library/Games',
           ),
-          onOpenLibrary: () => openedLibrary++,
+          onOpenLibrary: () {
+            expect(
+              container!.read(libraryOnboardingRoutingProvider).value?.status,
+              LibraryOnboardingRoutingStatus.complete,
+            );
+            openedLibrary++;
+          },
           onOpenJob: (_) => openedJobs++,
+          onContainerReady: (value) {
+            container = value;
+            value.listen<AsyncValue<LibraryOnboardingRoutingState>>(
+              libraryOnboardingRoutingProvider,
+              (_, _) {},
+              fireImmediately: true,
+            );
+            unawaited(value.read(libraryOnboardingRoutingProvider.future));
+          },
         ),
       );
 
@@ -75,6 +95,7 @@ void main() {
     final metadata = FakeMetadataSettingsApi();
     final providers = FakeMetadataProvidersApi();
     final sources = FakeSourcesApi(roots: [fakeRoot()]);
+    ProviderContainer? container;
 
     await tester.pumpWidget(
       _testApp(
@@ -83,6 +104,21 @@ void main() {
         metadata: metadata,
         providers: providers,
         sources: sources,
+        onContainerReady: (value) {
+          container = value;
+          value.listen<AsyncValue<LibraryOnboardingRoutingState>>(
+            libraryOnboardingRoutingProvider,
+            (_, _) {},
+            fireImmediately: true,
+          );
+          unawaited(value.read(libraryOnboardingRoutingProvider.future));
+        },
+        onOpenLibrary: () {
+          expect(
+            container!.read(libraryOnboardingRoutingProvider).value?.status,
+            LibraryOnboardingRoutingStatus.complete,
+          );
+        },
       ),
     );
 
@@ -98,6 +134,73 @@ void main() {
     expect(onboarding.completeCalls, 1);
     expect(find.text('Library setup is complete'), findsOneWidget);
   });
+
+  testWidgets(
+    'reload publishes a completed authoritative snapshot after an ambiguous result',
+    (tester) async {
+      final initial = existingRootOnboardingState();
+      final reloadRead = Completer<LibraryOnboardingState>();
+      final onboarding = FakeLibraryOnboardingApi(initial)
+        ..getStateResponses = <FutureOr<LibraryOnboardingState>>[
+          initial,
+          initial,
+          reloadRead.future,
+        ]
+        ..completionResultOverride =
+            CompleteLibraryOnboardingAndRefreshResult.notAdmitted(
+              state: initial,
+              error: gameNotFoundFailure().error,
+            );
+      final privacy = FakeOnboardingSettingsApi(consented: true);
+      final metadata = FakeMetadataSettingsApi();
+      final providers = FakeMetadataProvidersApi();
+      final sources = FakeSourcesApi(roots: [fakeRoot()]);
+      ProviderContainer? container;
+      LibraryOnboardingRoutingStatus? statusAtNavigation;
+
+      await tester.pumpWidget(
+        _testApp(
+          onboarding: onboarding,
+          privacy: privacy,
+          metadata: metadata,
+          providers: providers,
+          sources: sources,
+          onContainerReady: (value) {
+            container = value;
+            value.listen<AsyncValue<LibraryOnboardingRoutingState>>(
+              libraryOnboardingRoutingProvider,
+              (_, _) {},
+              fireImmediately: true,
+            );
+            unawaited(value.read(libraryOnboardingRoutingProvider.future));
+          },
+          onOpenLibrary: () {
+            statusAtNavigation = container!
+                .read(libraryOnboardingRoutingProvider)
+                .value
+                ?.status;
+          },
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Finish & Refresh'));
+      await tester.tap(find.text('Finish & Refresh'));
+      await tester.pump();
+
+      expect(statusAtNavigation, LibraryOnboardingRoutingStatus.required);
+      expect(onboarding.completeCalls, 1);
+      expect(reloadRead.isCompleted, isFalse);
+
+      reloadRead.complete(onboarding.state);
+      await tester.pumpAndSettle();
+
+      expect(
+        container!.read(libraryOnboardingRoutingProvider).value?.status,
+        LibraryOnboardingRoutingStatus.complete,
+      );
+    },
+  );
 }
 
 Widget _testApp({
@@ -109,6 +212,7 @@ Widget _testApp({
   LibraryFolderPicker? picker,
   VoidCallback? onOpenLibrary,
   void Function(JobRunId jobRunId)? onOpenJob,
+  void Function(ProviderContainer container)? onContainerReady,
 }) => ProviderScope(
   overrides: [
     libraryOnboardingApiProvider.overrideWithValue(onboarding),
@@ -116,12 +220,19 @@ Widget _testApp({
     libraryMetadataSettingsApiProvider.overrideWithValue(metadata),
     libraryMetadataProvidersApiProvider.overrideWithValue(providers),
     librarySourcesApiProvider.overrideWithValue(sources),
+    libraryRuntimeContextProvider.overrideWithValue(readyLibraryRuntimeContext),
     if (picker != null) libraryFolderPickerProvider.overrideWithValue(picker),
   ],
   child: MaterialApp(
-    home: LibraryOnboardingPage(
-      onOpenLibrary: onOpenLibrary ?? () {},
-      onOpenJob: onOpenJob ?? (_) {},
+    home: Builder(
+      builder: (context) {
+        final container = ProviderScope.containerOf(context);
+        onContainerReady?.call(container);
+        return LibraryOnboardingPage(
+          onOpenLibrary: onOpenLibrary ?? () {},
+          onOpenJob: onOpenJob ?? (_) {},
+        );
+      },
     ),
   ),
 );
@@ -156,66 +267,6 @@ LibraryOnboardingState existingRootOnboardingState() =>
       credentialConfigured: false,
       complete: false,
     );
-
-final class FakeLibraryOnboardingApi implements LibraryOnboardingApi {
-  FakeLibraryOnboardingApi(this.state);
-
-  LibraryOnboardingState state;
-  int completeCalls = 0;
-
-  @override
-  Future<LibraryOnboardingState> getState() => Future.value(state);
-
-  @override
-  Future<LibraryOnboardingState> confirmMetadataPreferences(
-    MetadataSettings settings,
-  ) {
-    state = state.copyWith(
-      progress: state.progress.copyWith(metadataPreferencesConfirmed: true),
-    );
-    return Future.value(state);
-  }
-
-  @override
-  Future<LibraryOnboardingState> recordProviderSetup(
-    LibraryProviderSetupDecision decision,
-  ) {
-    state = state.copyWith(
-      progress: state.progress.copyWith(
-        providerSetupOutcome: switch (decision) {
-          LibraryProviderSetupDecision.configured =>
-            LibraryProviderSetupOutcome.configured,
-          LibraryProviderSetupDecision.skipped =>
-            LibraryProviderSetupOutcome.skipped,
-        },
-      ),
-    );
-    return Future.value(state);
-  }
-
-  @override
-  Future<CompleteLibraryOnboardingAndRefreshResult> completeAndRefresh() {
-    completeCalls++;
-    state = state.copyWith(
-      progress: state.progress.copyWith(completedAtMs: 1),
-      complete: true,
-    );
-    return Future.value(
-      CompleteLibraryOnboardingAndRefreshResult.admitted(
-        state: state,
-        handle: const OperationHandle(
-          jobRunId: JobRunId('11111111111111111111111111111111'),
-          operationType: 'library_refresh',
-        ),
-      ),
-    );
-  }
-
-  @override
-  Future<AddLibraryRootAndRefreshResult> addLibraryRootAndRefresh(
-    LocalFilesystemRootSelection selection,
-  ) => throw UnsupportedError('The page uses the root-only add seam');
-}
 
 final class FakeOnboardingSettingsApi implements SettingsApi {
   FakeOnboardingSettingsApi({this.consented = false});

@@ -39,8 +39,8 @@ use argus_application::{
 
 use crate::{
     FailedRuntimeRecoveryContext, InProcessNotificationSink, KernelBootstrap,
-    KernelBootstrapOptions, KernelUnitOfWorkFactory, RecoveryCoordinator, RuntimeNotificationSink,
-    StartupCoordinator, StartupPhaseObserver, StartupResult, SystemClock,
+    KernelBootstrapOptions, KernelUnitOfWorkFactory, LibraryExecutionContext, RecoveryCoordinator,
+    RuntimeNotificationSink, StartupCoordinator, StartupPhaseObserver, StartupResult, SystemClock,
     background::BackgroundOperationManager,
     events::{PendingEventCollector, finalize_library_roots_update},
     new_trace_id,
@@ -2613,6 +2613,7 @@ impl ApplicationHost {
             let kernel = kernel_guard.as_ref().ok_or_else(|| {
                 runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
             })?;
+            let execution = kernel.library_execution_context();
             let admission = kernel.start_library_refresh_with_context(
                 context,
                 Arc::new(move || guard.token().is_cancelled()),
@@ -2621,7 +2622,7 @@ impl ApplicationHost {
             if let Some(admitted) = admission.admitted_job() {
                 register_library_refresh(
                     &manager,
-                    Arc::clone(&handle),
+                    execution,
                     kernel,
                     context,
                     admitted,
@@ -2718,15 +2719,16 @@ impl ApplicationHost {
         let kernel = kernel_guard.as_ref().ok_or_else(|| {
             runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
         })?;
+        let execution = kernel.library_execution_context();
         let operation_handle =
             kernel.admit_game_refresh_with_context(context, game_ids.clone(), mode)?;
-        register_phase003_refresh(
+        register_library_focused_refresh(
             &manager,
-            Arc::clone(&kernel_handle),
+            execution,
             kernel,
             context,
             operation_handle.clone(),
-            Phase003RefreshKind::Game { game_ids },
+            LibraryFocusedRefreshKind::Game { game_ids },
         )?;
         Ok(operation_handle)
     }
@@ -2759,15 +2761,16 @@ impl ApplicationHost {
         let kernel = kernel_guard.as_ref().ok_or_else(|| {
             runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
         })?;
+        let execution = kernel.library_execution_context();
         let operation_handle =
             kernel.admit_library_resolution_refresh_with_context(context, settings_revision)?;
-        register_phase003_refresh(
+        register_library_focused_refresh(
             &manager,
-            Arc::clone(&kernel_handle),
+            execution,
             kernel,
             context,
             operation_handle.clone(),
-            Phase003RefreshKind::LibraryResolution { settings_revision },
+            LibraryFocusedRefreshKind::LibraryResolution { settings_revision },
         )?;
         Ok(operation_handle)
     }
@@ -2896,6 +2899,7 @@ impl ApplicationHost {
         let kernel = kernel_guard.as_ref().ok_or_else(|| {
             runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
         })?;
+        let execution = kernel.library_execution_context();
         let result = (|| {
             let admission = kernel.jobs_service.retry_job(
                 RetryJobCommand::new(job_run_id),
@@ -2923,7 +2927,7 @@ impl ApplicationHost {
                 if retry_operation_type == argus_application::OPERATION_TYPE_LIBRARY_REFRESH {
                     register_library_refresh(
                         &manager,
-                        Arc::clone(&handle),
+                        execution,
                         kernel,
                         context,
                         admitted_job,
@@ -3465,7 +3469,7 @@ fn register_library_scan_with_operation_type(
 /// coherently and returns a definite application error.
 fn register_library_refresh(
     manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
-    kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    execution: LibraryExecutionContext,
     kernel: &KernelBootstrap,
     context: &OperationContext,
     admitted: &AdmittedLibraryScanJob,
@@ -3475,7 +3479,7 @@ fn register_library_refresh(
         admitted.plans().to_vec(),
         kernel.unit_of_work_factory().clone(),
         crate::events::EventBusSink::new(kernel.event_bus().clone()),
-        kernel_handle,
+        execution,
         admitted.job_run_id(),
         100,
         exclusion_count,
@@ -3619,7 +3623,7 @@ struct LibraryRefreshOperationHandler {
     plans: Vec<LibraryScanExecutionPlan>,
     unit_of_work: KernelUnitOfWorkFactory,
     event_sink: crate::events::EventBusSink,
-    kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+    execution: LibraryExecutionContext,
     job_run_id: JobRunId,
     checkpoint_size: usize,
     exclusion_count: usize,
@@ -3630,7 +3634,7 @@ impl LibraryRefreshOperationHandler {
         plans: Vec<LibraryScanExecutionPlan>,
         unit_of_work: KernelUnitOfWorkFactory,
         event_sink: crate::events::EventBusSink,
-        kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+        execution: LibraryExecutionContext,
         job_run_id: JobRunId,
         checkpoint_size: usize,
         exclusion_count: usize,
@@ -3639,25 +3643,11 @@ impl LibraryRefreshOperationHandler {
             plans,
             unit_of_work,
             event_sink,
-            kernel,
+            execution,
             job_run_id,
             checkpoint_size: checkpoint_size.max(1),
             exclusion_count,
         }
-    }
-
-    fn with_kernel<T>(
-        &self,
-        context: &OperationContext,
-        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
-    ) -> Result<T, ApplicationError> {
-        let guard = self.kernel.lock().map_err(|_| {
-            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
-        })?;
-        let kernel = guard.as_ref().ok_or_else(|| {
-            runtime_error_with_trace(ErrorCode::RuntimeStopped, context.trace_id())
-        })?;
-        operation(kernel)
     }
 
     fn child_completion_state(completion: &OperationCompletion) -> LibraryScanChildCompletion {
@@ -3693,22 +3683,19 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
         .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
         progress.report(initial)?;
 
-        let mut sessions =
-            self.with_kernel(context, |kernel| Ok(kernel.create_enrichment_sessions()))?;
-        let mut parsing_session = self.with_kernel(context, |kernel| {
-            ParsingSession::new(
-                TransformationBudget::production(),
-                kernel.transformation_staging_root(),
-                || stop_reason().is_some(),
+        let mut sessions = self.execution.create_enrichment_sessions();
+        let mut parsing_session = ParsingSession::new(
+            TransformationBudget::production(),
+            self.execution.transformation_staging_root(),
+            || stop_reason().is_some(),
+        )
+        .map_err(|failure| {
+            ApplicationError::from_code(
+                argus_application::map_transformation_failure(failure),
+                context.trace_id(),
+                argus_application::SafeContext::new(),
             )
-            .map_err(|failure| {
-                ApplicationError::from_code(
-                    argus_application::map_transformation_failure(failure),
-                    context.trace_id(),
-                    argus_application::SafeContext::new(),
-                )
-                .expect("transformation failure uses an allowlisted empty context")
-            })
+            .expect("transformation failure uses an allowlisted empty context")
         })?;
         let mut child_states = Vec::with_capacity(self.plans.len());
         let mut issue_count = 0_u64;
@@ -3741,19 +3728,16 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             child_states.push(child_state);
 
             if !matches!(completion.state(), JobRunState::Cancelled) && stop_reason().is_none() {
-                match self.with_kernel(context, |kernel| {
-                    let is_cancelled = || stop_reason().is_some();
-                    let timestamps =
-                        crate::ContentRefreshTimestamps::from_millis(crate::now_millis());
-                    kernel.refresh_committed_root_with_context(
-                        plan,
-                        context,
-                        &mut sessions,
-                        &mut parsing_session,
-                        timestamps,
-                        &is_cancelled,
-                    )
-                }) {
+                let is_cancelled = || stop_reason().is_some();
+                let timestamps = crate::ContentRefreshTimestamps::from_millis(crate::now_millis());
+                match self.execution.refresh_committed_root_with_context(
+                    plan,
+                    context,
+                    &mut sessions,
+                    &mut parsing_session,
+                    timestamps,
+                    &is_cancelled,
+                ) {
                     Ok((_, root_issues)) => {
                         issue_count = issue_count.saturating_add(root_issues);
                     }
@@ -3830,42 +3814,28 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
     }
 }
 
-enum Phase003RefreshKind {
+enum LibraryFocusedRefreshKind {
     Game { game_ids: Vec<GameId> },
     LibraryResolution { settings_revision: u64 },
 }
 
-struct Phase003RefreshHandler {
-    kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+struct LibraryFocusedRefreshHandler {
+    execution: LibraryExecutionContext,
     job_run_id: JobRunId,
-    kind: Phase003RefreshKind,
+    kind: LibraryFocusedRefreshKind,
 }
 
-impl Phase003RefreshHandler {
+impl LibraryFocusedRefreshHandler {
     fn new(
-        kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+        execution: LibraryExecutionContext,
         job_run_id: JobRunId,
-        kind: Phase003RefreshKind,
+        kind: LibraryFocusedRefreshKind,
     ) -> Self {
         Self {
-            kernel,
+            execution,
             job_run_id,
             kind,
         }
-    }
-
-    fn with_kernel<T>(
-        &self,
-        context: &OperationContext,
-        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
-    ) -> Result<T, ApplicationError> {
-        let guard = self.kernel.lock().map_err(|_| {
-            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
-        })?;
-        let kernel = guard.as_ref().ok_or_else(|| {
-            runtime_error_with_trace(ErrorCode::RuntimeStopped, context.trace_id())
-        })?;
-        operation(kernel)
     }
 
     fn execute_game_refresh(
@@ -3901,9 +3871,9 @@ impl Phase003RefreshHandler {
             )
             .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
             progress.report(facts)?;
-            let unit_issues = self.with_kernel(context, |kernel| {
-                kernel.refresh_game_with_context(game_id, context, crate::now_millis())
-            })?;
+            let unit_issues =
+                self.execution
+                    .refresh_game_with_context(game_id, context, crate::now_millis())?;
             committed_units = committed_units.saturating_add(1);
             issue_count = issue_count.saturating_add(unit_issues);
         }
@@ -3944,12 +3914,10 @@ impl Phase003RefreshHandler {
             );
             return Ok(completion);
         }
-        let (game_ids, current_settings_revision) = self.with_kernel(context, |kernel| {
-            Ok((
-                kernel.list_game_ids_with_context(context)?,
-                kernel.metadata_settings_revision_with_context(context)?,
-            ))
-        })?;
+        let game_ids = self.execution.list_game_ids_with_context(context)?;
+        let current_settings_revision = self
+            .execution
+            .metadata_settings_revision_with_context(context)?;
         let total = u64::try_from(game_ids.len()).unwrap_or(u64::MAX);
         let status_key = if current_settings_revision == settings_revision {
             "resolving_committed_records"
@@ -3981,9 +3949,9 @@ impl Phase003RefreshHandler {
             )
             .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
             progress.report(facts)?;
-            let unit_issues = self.with_kernel(context, |kernel| {
-                kernel.resolve_game_with_context(game_id, context, crate::now_millis())
-            })?;
+            let unit_issues =
+                self.execution
+                    .resolve_game_with_context(game_id, context, crate::now_millis())?;
             committed_units = committed_units.saturating_add(1);
             issue_count = issue_count.saturating_add(unit_issues);
         }
@@ -4047,7 +4015,7 @@ impl Phase003RefreshHandler {
     }
 }
 
-impl BackgroundOperationHandler for Phase003RefreshHandler {
+impl BackgroundOperationHandler for LibraryFocusedRefreshHandler {
     fn execute(
         &self,
         context: &OperationContext,
@@ -4055,10 +4023,10 @@ impl BackgroundOperationHandler for Phase003RefreshHandler {
         progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
         match &self.kind {
-            Phase003RefreshKind::Game { game_ids } => {
+            LibraryFocusedRefreshKind::Game { game_ids } => {
                 self.execute_game_refresh(context, game_ids, stop_reason, progress)
             }
-            Phase003RefreshKind::LibraryResolution { settings_revision } => {
+            LibraryFocusedRefreshKind::LibraryResolution { settings_revision } => {
                 self.execute_library_resolution(context, *settings_revision, stop_reason, progress)
             }
         }
@@ -4083,26 +4051,26 @@ fn refresh_stop_completion(
     OperationCompletion::new(state, None, None)
 }
 
-fn register_phase003_refresh(
+fn register_library_focused_refresh(
     manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
-    kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    execution: LibraryExecutionContext,
     kernel: &KernelBootstrap,
     context: &OperationContext,
     operation_handle: OperationHandle,
-    kind: Phase003RefreshKind,
+    kind: LibraryFocusedRefreshKind,
 ) -> Result<(), ApplicationError> {
     let resources: &[ResourceClass] = match &kind {
-        Phase003RefreshKind::Game { .. } => [
+        LibraryFocusedRefreshKind::Game { .. } => [
             ResourceClass::MetadataProviderNetwork,
             ResourceClass::PersistenceWrite,
         ]
         .as_slice(),
-        Phase003RefreshKind::LibraryResolution { .. } => {
+        LibraryFocusedRefreshKind::LibraryResolution { .. } => {
             [ResourceClass::PersistenceWrite].as_slice()
         }
     };
     let job_run_id = operation_handle.job_run_id();
-    let handler = Phase003RefreshHandler::new(kernel_handle, job_run_id, kind);
+    let handler = LibraryFocusedRefreshHandler::new(execution, job_run_id, kind);
     match manager.register(&operation_handle, Arc::new(handler), resources) {
         Ok(()) => Ok(()),
         Err(registration_error) => {
@@ -4336,10 +4304,15 @@ mod tests {
 
     #[test]
     fn stop_completion_survives_terminal_progress_failure() {
-        let handler = super::Phase003RefreshHandler::new(
-            Arc::new(std::sync::Mutex::new(None)),
+        let directory = tempfile::tempdir().expect("tempdir");
+        let kernel = crate::bootstrap_kernel(crate::KernelBootstrapOptions::with_data_directory(
+            directory.path().join("data"),
+        ))
+        .expect("test kernel");
+        let handler = super::LibraryFocusedRefreshHandler::new(
+            kernel.library_execution_context(),
             JobRunId::from_bytes([1; 16]).expect("job run id"),
-            super::Phase003RefreshKind::Game {
+            super::LibraryFocusedRefreshKind::Game {
                 game_ids: vec![super::GameId::from_bytes([1; 16]).expect("game id")],
             },
         );

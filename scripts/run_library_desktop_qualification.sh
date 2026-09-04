@@ -10,6 +10,7 @@ HOST_EVIDENCE_DIR="${ROOT_DIR}/build/library-desktop-qualification"
 HOST_EVIDENCE_PATH="${HOST_EVIDENCE_DIR}/qualification.txt"
 BUILD_LOG="${HOST_EVIDENCE_DIR}/bridge-build.log"
 INTEGRATION_LOG="${HOST_EVIDENCE_DIR}/integration.log"
+RUNTIME_RESPONSIVENESS_LOG="${HOST_EVIDENCE_DIR}/runtime-responsiveness.log"
 
 mkdir -p "${HOST_EVIDENCE_DIR}"
 : > "${HOST_EVIDENCE_PATH}"
@@ -58,6 +59,22 @@ if ! data_dir="$(mktemp -d "${app_container_dir}/argus-library-qualification.XXX
   exit 2
 fi
 record 'data_directory=test-owned-macos-application-container'
+
+runtime_status=0
+bash "${ROOT_DIR}/scripts/run_rust.sh" cargo test \
+  --manifest-path "${ROOT_DIR}/rust/Cargo.toml" \
+  --package argus-runtime \
+  --all-features \
+  --locked \
+  --test background_operations \
+  library_refresh_does_not_starve_foreground_queries_or_job_control \
+  -- --exact > "${RUNTIME_RESPONSIVENESS_LOG}" 2>&1 || runtime_status=$?
+if (( runtime_status != 0 )); then
+  record 'result=FAIL'
+  record 'reason=Deterministic native foreground-responsiveness regression failed'
+  record 'detail=See runtime-responsiveness.log for the bounded tool output'
+  exit "${runtime_status}"
+fi
 
 if ! bash "${ROOT_DIR}/scripts/run_rust.sh" cargo build \
   --manifest-path "${ROOT_DIR}/rust/Cargo.toml" \

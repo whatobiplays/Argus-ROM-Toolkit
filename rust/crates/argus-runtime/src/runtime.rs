@@ -1402,17 +1402,19 @@ impl ApplicationHost {
             }
         } else {
             if let (Some(manager), Some(kernel_handle)) = (manager, kernel_handle) {
-                std::thread::Builder::new()
+                let reaper_manager = manager.clone();
+                let reaper_kernel_handle = Arc::clone(&kernel_handle);
+                let reaper = std::thread::Builder::new()
                     .name("argus-runtime-shutdown-reaper".to_owned())
                     .spawn(move || {
-                        manager.wait_until_idle();
-                        if let Ok(mut kernel_guard) = kernel_handle.lock()
-                            && let Some(kernel) = kernel_guard.take()
-                        {
-                            let _ = kernel.shutdown();
-                        }
-                    })
-                    .expect("shutdown reaper thread");
+                        Self::release_shutdown_lease(reaper_manager, reaper_kernel_handle);
+                    });
+                if reaper.is_err() {
+                    // Thread creation can fail under host resource pressure. The
+                    // current thread remains the cleanup owner in that case so
+                    // the retained kernel lease is not abandoned.
+                    Self::release_shutdown_lease(manager, kernel_handle);
+                }
             }
             None
         };
@@ -1431,6 +1433,23 @@ impl ApplicationHost {
         generation.events.close();
         self.clear_active_event();
         Ok(())
+    }
+
+    /// Waits for a timed-out background manager and releases its retained kernel.
+    ///
+    /// A bounded shutdown normally transfers this lease to a detached reaper.
+    /// The synchronous fallback uses the same cleanup path when the host cannot
+    /// create that reaper thread.
+    fn release_shutdown_lease(
+        manager: Arc<BackgroundOperationManager<KernelUnitOfWorkFactory>>,
+        kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    ) {
+        manager.wait_until_idle();
+        if let Ok(mut kernel_guard) = kernel_handle.lock()
+            && let Some(kernel) = kernel_guard.take()
+        {
+            let _ = kernel.shutdown();
+        }
     }
 
     /// Shuts down under an existing top-level context, excluding its own token.

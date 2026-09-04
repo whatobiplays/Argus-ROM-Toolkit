@@ -916,6 +916,8 @@ pub(crate) struct HostInner {
     active_event: Mutex<Option<ActiveEventConnection>>,
     next_connection_id: AtomicU64,
     shutdown_incomplete: AtomicBool,
+    #[cfg(test)]
+    fail_shutdown_reaper_spawn: AtomicBool,
     top_level_operations: Arc<Mutex<OperationTracker>>,
     startup_active: Mutex<bool>,
     startup_condvar: Condvar,
@@ -958,6 +960,8 @@ impl ApplicationHost {
                 active_event: Mutex::new(None),
                 next_connection_id: AtomicU64::new(1),
                 shutdown_incomplete: AtomicBool::new(false),
+                #[cfg(test)]
+                fail_shutdown_reaper_spawn: AtomicBool::new(false),
                 top_level_operations: Arc::new(Mutex::new(OperationTracker::new())),
                 startup_active: Mutex::new(false),
                 startup_condvar: Condvar::new(),
@@ -968,6 +972,14 @@ impl ApplicationHost {
     /// Returns whether the last bounded shutdown drain timed out.
     pub fn shutdown_was_incomplete(&self) -> bool {
         self.inner.shutdown_incomplete.load(Ordering::SeqCst)
+    }
+
+    /// Test-only seam to exercise the no-new-thread shutdown lease path.
+    #[cfg(test)]
+    fn fail_next_shutdown_reaper_spawn_for_tests(&self) {
+        self.inner
+            .fail_shutdown_reaper_spawn
+            .store(true, Ordering::SeqCst);
     }
 
     /// Test-only startup activity accessor.
@@ -1404,16 +1416,29 @@ impl ApplicationHost {
             if let (Some(manager), Some(kernel_handle)) = (manager, kernel_handle) {
                 let reaper_manager = manager.clone();
                 let reaper_kernel_handle = Arc::clone(&kernel_handle);
-                let reaper = std::thread::Builder::new()
-                    .name("argus-runtime-shutdown-reaper".to_owned())
-                    .spawn(move || {
-                        Self::release_shutdown_lease(reaper_manager, reaper_kernel_handle);
-                    });
+                #[cfg(test)]
+                let force_reaper_spawn_failure = self
+                    .inner
+                    .fail_shutdown_reaper_spawn
+                    .swap(false, Ordering::SeqCst);
+                #[cfg(not(test))]
+                let force_reaper_spawn_failure = false;
+                let reaper = if force_reaper_spawn_failure {
+                    Err(std::io::Error::other("test shutdown reaper spawn failure"))
+                } else {
+                    std::thread::Builder::new()
+                        .name("argus-runtime-shutdown-reaper".to_owned())
+                        .spawn(move || {
+                            Self::release_shutdown_lease(reaper_manager, reaper_kernel_handle);
+                        })
+                };
                 if reaper.is_err() {
-                    // Thread creation can fail under host resource pressure. The
-                    // current thread remains the cleanup owner in that case so
-                    // the retained kernel lease is not abandoned.
-                    Self::release_shutdown_lease(manager, kernel_handle);
+                    // Thread creation can fail under host resource pressure.
+                    // Transfer the lease to the existing manager instead of
+                    // making bounded shutdown wait for the active worker.
+                    manager.install_idle_cleanup(move || {
+                        Self::release_kernel_lease(kernel_handle);
+                    });
                 }
             }
             None
@@ -1438,13 +1463,18 @@ impl ApplicationHost {
     /// Waits for a timed-out background manager and releases its retained kernel.
     ///
     /// A bounded shutdown normally transfers this lease to a detached reaper.
-    /// The synchronous fallback uses the same cleanup path when the host cannot
-    /// create that reaper thread.
+    /// The manager-owned fallback uses the same cleanup path when the host
+    /// cannot create that reaper thread.
     fn release_shutdown_lease(
         manager: Arc<BackgroundOperationManager<KernelUnitOfWorkFactory>>,
         kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
     ) {
         manager.wait_until_idle();
+        Self::release_kernel_lease(kernel_handle);
+    }
+
+    /// Releases a kernel lease after its owning background work is idle.
+    fn release_kernel_lease(kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>) {
         if let Ok(mut kernel_guard) = kernel_handle.lock()
             && let Some(kernel) = kernel_guard.take()
         {
@@ -4571,6 +4601,17 @@ mod tests {
     #[cfg(feature = "test-support")]
     #[test]
     fn timed_out_refresh_keeps_kernel_alive_until_worker_finishes() {
+        assert_timed_out_refresh_kernel_lease_released(false);
+    }
+
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn shutdown_reaper_spawn_failure_uses_manager_owned_cleanup() {
+        assert_timed_out_refresh_kernel_lease_released(true);
+    }
+
+    #[cfg(feature = "test-support")]
+    fn assert_timed_out_refresh_kernel_lease_released(force_reaper_spawn_failure: bool) {
         let directory = tempfile::tempdir().expect("temporary directory");
         let data_directory = directory.path().join("data");
         let library = directory.path().join("Library");
@@ -4602,6 +4643,9 @@ mod tests {
         entered_rx
             .recv_timeout(Duration::from_secs(10))
             .expect("refresh reaches committed-root checkpoint");
+        if force_reaper_spawn_failure {
+            host.fail_next_shutdown_reaper_spawn_for_tests();
+        }
 
         let (kernel_handle, manager) = {
             let generation = host.lock_generation().expect("generation");
@@ -4616,11 +4660,19 @@ mod tests {
                 .general_shutdown_bounded(Duration::from_millis(50), None)
                 .expect("bounded shutdown");
         });
-        shutdown.join().expect("shutdown thread");
+        let shutdown_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !shutdown.is_finished() && std::time::Instant::now() < shutdown_deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            shutdown.is_finished(),
+            "shutdown must remain bounded when reaper creation fails"
+        );
 
         let kernel_retained_while_worker_blocked =
             kernel_handle.lock().expect("kernel handle").is_some();
         release_tx.send(()).expect("release refresh");
+        shutdown.join().expect("shutdown thread");
 
         let worker_deadline = std::time::Instant::now() + Duration::from_secs(10);
         while manager.active_len_for_tests() != 0 && std::time::Instant::now() < worker_deadline {

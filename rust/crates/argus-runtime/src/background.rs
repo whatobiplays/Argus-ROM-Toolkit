@@ -122,6 +122,7 @@ struct ManagerState {
     active: HashMap<JobRunId, RunningRun>,
     available: HashMap<ResourceClass, usize>,
     shutting_down: bool,
+    idle_cleanup: Option<Box<dyn FnOnce() + Send + 'static>>,
 }
 
 /// One runtime-owned generic background-operation manager.
@@ -168,6 +169,7 @@ where
                 active: HashMap::new(),
                 available,
                 shutting_down: false,
+                idle_cleanup: None,
             })),
             wake: Arc::new(Condvar::new()),
             unit_of_work,
@@ -305,6 +307,26 @@ where
         let mut state = self.state.lock().expect("manager state lock");
         while !state.active.is_empty() {
             state = self.wake.wait(state).expect("manager state wait");
+        }
+    }
+
+    /// Assigns one cleanup callback to the worker that releases the final
+    /// active run, or runs it immediately when the manager is already idle.
+    ///
+    /// Runtime shutdown uses this as a no-new-thread fallback for a retained
+    /// kernel lease when the detached reaper cannot be created.
+    pub(crate) fn install_idle_cleanup(&self, cleanup: impl FnOnce() + Send + 'static) {
+        let cleanup = {
+            let mut state = self.state.lock().expect("manager state lock");
+            if state.active.is_empty() {
+                Some(Box::new(cleanup) as Box<dyn FnOnce() + Send + 'static>)
+            } else {
+                state.idle_cleanup = Some(Box::new(cleanup));
+                None
+            }
+        };
+        if let Some(cleanup) = cleanup {
+            cleanup();
         }
     }
 
@@ -466,14 +488,24 @@ where
     }
 
     fn release_and_remove(&self, job_run_id: JobRunId) {
-        let mut state = self.state.lock().expect("manager state lock");
-        if let Some(run) = state.active.remove(&job_run_id) {
-            drop(run.acquired_resources);
-            if let Some(worker) = run.worker {
-                drop(worker);
+        let cleanup = {
+            let mut state = self.state.lock().expect("manager state lock");
+            if let Some(run) = state.active.remove(&job_run_id) {
+                drop(run.acquired_resources);
+                if let Some(worker) = run.worker {
+                    drop(worker);
+                }
             }
+            self.wake.notify_all();
+            if state.active.is_empty() {
+                state.idle_cleanup.take()
+            } else {
+                None
+            }
+        };
+        if let Some(cleanup) = cleanup {
+            cleanup();
         }
-        self.wake.notify_all();
     }
 
     /// Test-only seam: makes the next worker spawn fail deterministically.

@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-010  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-09-03  
 **Depends On:** ARCH-001, ARCH-002, PHASE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-BE-010, SPEC-BE-013, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-FE-009, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -188,6 +188,12 @@ A securely stored credential may remain configured when live validation is tempo
 
 Required privacy acceptance follows the existing architecture contract. If declined, the frontend exits the gated product flow and does not attempt provider calls or invent a reduced-consent bypass.
 
+### 6.5 Routing-safe onboarding projection
+
+The backend/client `LibraryOnboardingState` remains the only durable onboarding authority, but FE-004 routing consumes a narrow app-owned routing-safe projection rather than calling `LibraryOnboardingApi` from GoRouter redirect evaluation.
+
+The projection hydrates only after the current runtime generation and appearance authority are ready, is invalidated when the root client/runtime generation changes, and never persists or infers an independent completion flag from URI, roots, or Library rows. When `completeLibraryOnboardingAndRefresh` returns authoritative committed onboarding state, the frontend may publish that state into the projection immediately so the ready shell can activate without a second redirect-time native query. Other ambiguity/recovery paths continue to re-query the owning focused APIs outside routing policy.
+
 ## 7. Empty Library
 
 When no configured library roots exist, `/library` shows one focused primary state:
@@ -328,6 +334,8 @@ First-page loading may show a skeleton/contained loading state. Loading later pa
 ## 13. Progressive Hydration
 
 A running refresh does not make an existing Library unusable.
+
+Foreground query/control availability is part of this guarantee. The first Library read after onboarding and later Library/Sources/Jobs/onboarding reads must be able to complete while a Phase 003 refresh remains active; shell destination switching and Jobs cancellation/control do not wait for the whole refresh to terminalize. Background work may contend at normal persistence/resource boundaries, but it must not monopolize runtime lifecycle ownership and thereby turn provider/content duration into application-wide unresponsiveness.
 
 As committed backend state changes:
 
@@ -735,6 +743,8 @@ Tests cover:
 - root removal, credential removal, or provider disablement after completion does not reopen onboarding;
 - pre-completion configured credential removal makes that prerequisite incomplete again;
 - transport ambiguity reconciles through onboarding/root/Jobs queries without duplicate dispatch;
+- routing-safe onboarding projection hydration/replacement occurs outside GoRouter redirect evaluation, consumes authoritative completion results, and invalidates state on runtime/client replacement without a Flutter-persisted completion flag;
+- redirect evaluation itself performs no onboarding/focused API/FRB/native call;
 
 ### 36.4 Library
 
@@ -754,6 +764,8 @@ Widget/controller tests cover:
 - duplicate source counts without duplicate cards;
 - event loss/runtime replacement authoritative re-query.
 - provider disablement triggers local resolution, excludes retained provider values from current winners without deleting records, and re-enable can reuse current retained records;
+- while deterministic Phase 003 refresh execution is intentionally blocked, focused Library reads can still complete and an already usable Library does not revert to whole-page loading solely because background reconciliation remains active;
+- Library/Sources/Jobs/Settings branch navigation and Jobs control remain usable while that blocker is held;
 
 ### 36.5 Selection/input
 
@@ -834,6 +846,8 @@ SPEC-FE-010 is satisfied when:
 19. Onboarding completion is backend-query-authoritative, survives refresh-admission failure, and does not reopen merely because all roots are later removed.
 20. Metadata/provider setting changes preserve committed values independently from local resolution-job admission and never trigger provider networking implicitly.
 21. Artwork rendering uses `ArtworkAssetId`/bounded bytes and never exposes object-store paths or provider URLs to feature code.
+22. Product-onboarding routing uses one runtime-generation-aware app-owned projection of backend authority; redirect evaluation is synchronous and performs no focused API/FRB/native I/O.
+23. Active Phase 003 refresh work does not prevent foreground Library/Sources/Jobs/onboarding queries, shell branch switching, or job control from remaining usable, and a previously usable Library does not revert to global blocking loading solely because the refresh remains active.
 
 ## 40. Prohibited Patterns
 
@@ -852,6 +866,8 @@ SPEC-FE-010 is satisfied when:
 - second Back coordinator;
 - using notification state as job authority;
 - presenting background admission as completion.
+- persisting or URI-inferring a Flutter-only onboarding-completion authority;
+- querying onboarding/focused APIs from router redirect evaluation;
 
 ## 41. References
 

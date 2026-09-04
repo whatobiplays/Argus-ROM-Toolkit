@@ -980,6 +980,12 @@ Exercise all Phase 003 capabilities as first-class desktop and Android behavior,
 
 Complete every advertised identity row, equivalent-representation qualification, offline provider contracts, live-provider qualification, desktop native milestone, API 36 ARM64 milestone, 10,000+ item synthetic Library qualification, migration coverage, security/redaction checks, generated-source verification, documentation consistency, and full `just check`. No new feature scope belongs in this final hardening slice.
 
+### P03-010 — Foreground Responsiveness and Routing Admission Hardening
+
+Owner-observed macOS qualification exposed that Phase 003 refresh work could eventually complete while temporarily starving foreground Library/Jobs/Sources/onboarding queries because long-running committed-root enrichment executed while retaining the shared `KernelBootstrap` lifecycle mutex. The same qualification also exposed that GoRouter redirect evaluation performed `LibraryOnboardingApi` I/O, coupling branch switching to backend latency despite FE-004 already requiring redirect purity.
+
+P03-010 corrects both boundaries. `library_refresh`, `game_refresh`, and `library_resolution_refresh` execute from owned/cloneable operation capabilities acquired during short admission-time lifecycle access rather than retaining the kernel lifecycle handle across business execution. Routing consumes a routing-safe backend-authoritative onboarding/readiness projection hydrated outside redirect evaluation; redirect policy itself is synchronous and performs no focused API/FRB/native I/O. Replacing the mutex with `RwLock`, tuning provider timeouts, splitting ad-hoc lock scopes around individual provider calls, or caching onboarding completion as independent Flutter authority are explicitly rejected. The detailed approved design is `docs/superpowers/specs/2026-09-03-phase-003-foreground-responsiveness-and-routing-admission-hardening-design.md`.
+
 ## 16. Design Invariants
 
 Phase 003 is correct only if all of these remain true:
@@ -1002,6 +1008,8 @@ Phase 003 is correct only if all of these remain true:
 16. Library queries remain paged/backend-owned; Flutter never needs the whole Library for correctness.
 17. Desktop and Android share one semantic backend architecture.
 18. Arcade, RetroAchievements verification, collections, cross-platform grouping, and hosted cloud infrastructure remain outside Phase 003.
+19. Runtime lifecycle synchronization coordinates runtime generations only; Phase 003 background handlers do not hold the kernel lifecycle mutex across long-running business execution, and unrelated foreground reads/control remain available while refresh work is active.
+20. Routing policy is synchronous and pure over app-owned routing-safe readiness state; backend onboarding remains authoritative, but GoRouter redirect evaluation performs no focused API/FRB/native I/O and owns no duplicate completion flag.
 
 ## 17. Acceptance Summary
 

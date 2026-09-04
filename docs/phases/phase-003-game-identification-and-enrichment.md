@@ -3,7 +3,7 @@
 **Document ID:** PHASE-003  
 **Status:** In Progress
 **Owner:** Daniel  
-**Last Updated:** 2026-08-30
+**Last Updated:** 2026-09-03
 **Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -235,6 +235,7 @@ The architecture overview must also be reconciled with the approved Phase 003 Ga
 7. **P03-007 — Library Browsing and Game Detail Completeness**: complete grid/list/search/filter/sort/pagination/scopes, adaptive selection/detail, variants/discs/copies, availability, hydration/provenance/artwork detail, orphan/reappearance, and large-Library incremental projections.
 8. **P03-008 — Cross-Platform Integration and Lifecycle Hardening**: harden the full capability set across desktop and Android storage, credentials, removable media, lifecycle/foreground execution, process loss, Back/predictive Back, adaptive behavior, accessibility, and single-runtime guarantees.
 9. **P03-009 — Full Matrix Qualification and Phase Hardening**: complete all advertised identity rows, provider qualification, desktop/API36 ARM64 native milestones, 10,000+ synthetic Library qualification, migrations, security/redaction, generated-source verification, documentation consistency, and full `just check`; no new feature scope.
+10. **P03-010 — Foreground Responsiveness and Routing Admission Hardening**: detach Phase 003 background refresh execution from the runtime/kernel lifecycle mutex, preserve foreground query/job-control responsiveness while refresh work is active, replace redirect-time onboarding I/O with a routing-safe backend-authoritative projection, and add deterministic/native regression coverage for the owner-observed starvation failure.
 
 The contract/specification package in Section 7 is a readiness prerequisite, not an implementation slice.
 
@@ -289,6 +290,8 @@ Playmatch, GameTDB, and SteamGridDB have deterministic offline adapter-contract 
 
 Required scenarios include clean first refresh, no-op eligible refresh, one changed game, duplicates, unmatched content, partial provider failure, invalid SteamGridDB credentials, provider recovery, malformed/single-game archive behavior, multi-game rejection, cancellation through major stages, process-loss reconciliation plus explicit retry, Refresh Game, and Force Refresh.
 
+P03-010 additionally requires deterministic contention scenarios that deliberately hold Phase 003 refresh execution at a test-owned enrichment/provider seam while foreground Library, Sources, Jobs, onboarding, and cancellation/control queries continue to complete. Routing tests must prove that redirect evaluation performs no focused API/native I/O and that shell destination switching remains responsive while the background blocker is held.
+
 ### 11.5 Native/platform qualification
 
 - Desktop native milestone proves real source/provider filesystem boundaries, parser/container I/O, persistence, artwork object storage, restart/cancel/no-op/mutation behavior using safe deterministic data.
@@ -337,13 +340,15 @@ Phase 003 is complete when all of the following are true:
 33. Required result artifacts report executed and deferred evidence truthfully.
 34. Metadata/provider preference changes preserve the committed setting independently from local re-resolution admission, and their local-only reconciliation performs no provider network or artwork download work.
 35. Product onboarding is query-authoritative and durable: consent, confirmed preferences, and the explicit provider-setup outcome gate completion; first-folder success automatically completes/admit-refreshes, existing-root upgrades use explicit Finish & Refresh, and completion persists before child admission.
-36. Owner-executed manual closeout qualification covers release/production artifacts, fresh app state, macOS, physical supported ARM64 Android, representative content, targeted accessibility/visual probes, and restart/interrupted-work recovery; every applicable mandatory scenario is recorded `PASS` before the phase is Complete.
+36. Phase 003 background refresh execution does not retain the runtime/kernel lifecycle mutex across long-running filesystem, parser, provider/network, enrichment, artwork, or whole-job checkpoint work; foreground focused queries and job control remain usable while such work is active.
+37. Routing admission is synchronous and pure over app-owned routing-safe readiness state: GoRouter redirect evaluation performs no focused API/FRB/native call, while onboarding completion remains backend-authoritative and runtime-generation-aware.
+38. Owner-executed manual closeout qualification covers release/production artifacts, fresh app state, macOS, physical supported ARM64 Android, representative content, targeted accessibility/visual probes, active-refresh foreground responsiveness, and restart/interrupted-work recovery; every applicable mandatory scenario is recorded `PASS` before the phase is Complete.
 
 ### 12.1 Manual closeout gate
 
-Phase 003 remains **In Progress** until the owner records direct observations for every applicable mandatory scenario in `docs/implementation/phase-003-manual-qualification.md`. The gate covers the release or production artifact, fresh-state startup, macOS and physical supported ARM64 Android journeys, representative content and provider fallback, accessibility and visual checks, restart and interrupted-work recovery, and append-only retests where needed.
+Phase 003 remains **In Progress** until the owner records direct observations for every applicable mandatory scenario in `docs/implementation/phase-003-manual-qualification.md`. The gate covers the release or production artifact, fresh-state startup, macOS and physical supported ARM64 Android journeys, representative content and provider fallback, active-refresh foreground responsiveness, accessibility and visual checks, restart and interrupted-work recovery, and append-only retests where needed.
 
-Automated checks and native qualification establish implementation evidence but do not create human-observed manual evidence. This closeout gate is not a new implementation slice or a P03-010 requirement; it is the owner qualification required after the P03-001 through P03-009 implementation sequence. The phase must not be marked Complete while any applicable scenario remains `NOT RUN`, `BLOCKED`, or otherwise lacks direct evidence.
+Automated checks and native qualification establish implementation evidence but do not create human-observed manual evidence. This closeout gate is not itself an implementation slice; it is the owner qualification required after the P03-001 through P03-010 implementation sequence. The phase must not be marked Complete while any applicable scenario remains `NOT RUN`, `BLOCKED`, or otherwise lacks direct evidence.
 
 ## 13. Readiness Checklist
 
@@ -373,6 +378,7 @@ Automated checks and native qualification establish implementation evidence but 
 
 - `docs/superpowers/specs/2026-08-22-phase-003-game-identification-and-enrichment-design.md`
 - `docs/superpowers/specs/2026-08-30-phase-003-manual-qualification-closeout-design.md`
+- `docs/superpowers/specs/2026-09-03-phase-003-foreground-responsiveness-and-routing-admission-hardening-design.md`
 - `docs/implementation/phase-003-manual-qualification.md`
 - `docs/architecture/architecture-overview.md`
 - `docs/product-contract.json`

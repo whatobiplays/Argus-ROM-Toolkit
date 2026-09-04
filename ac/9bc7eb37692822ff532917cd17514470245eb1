@@ -1,0 +1,24 @@
+rust/crates/argus-runtime/src/runtime.rs
+  s_1a7359531e17c2::t_b975d67c41e1ac 13,926-930
+  s_1a7359531e17c2::t_4e9d06d2cd2705 1402-1416
+  s_1a7359531e17c2::t_efd1c21d9e3ad7 1425-1427,1460-1469
+rust/crates/argus-runtime/src/background.rs
+  s_1a7359531e17c2::t_4e9d06d2cd2705 320
+  s_1a7359531e17c2::t_c6b0df2ec734bc 314,317-319,321-323,325-326
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ac9bc7eb37692822ff532917cd17514470245eb1",
+  "prompts": {},
+  "sessions": {
+    "s_1a7359531e17c2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06b27-06ad-7662-a8d5-da8b028729b5",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

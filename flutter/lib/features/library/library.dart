@@ -15,6 +15,12 @@ export 'library_composition.dart'
         librarySourcesApiProvider;
 export 'application/library_controller.dart'
     show LibraryController, libraryControllerProvider;
+export 'application/library_onboarding_routing.dart'
+    show
+        LibraryOnboardingRouting,
+        LibraryOnboardingRoutingState,
+        LibraryOnboardingRoutingStatus,
+        libraryOnboardingRoutingProvider;
 export 'application/game_detail_controller.dart'
     show
         ArtworkBytesCache,

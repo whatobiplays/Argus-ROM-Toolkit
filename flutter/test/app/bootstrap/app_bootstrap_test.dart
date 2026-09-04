@@ -25,7 +25,47 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/settings/appearance_settings_test_fakes.dart';
+import '../../features/library/library_test_fakes.dart';
+import '../../features/sources/sources_test_fakes.dart';
 import '../../features/startup/startup_test_fakes.dart';
+
+ProviderScope _appCompositionScope({
+  required FakeClientBootstrap bootstrap,
+  required FakeSettingsApi settingsApi,
+  GoRouter? router,
+  required Widget child,
+}) => ProviderScope(
+  overrides: [
+    if (router != null) appRouterProvider.overrideWithValue(router),
+    clientBootstrapProvider.overrideWithValue(bootstrap),
+    runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
+    diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
+    runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
+    appearanceSettingsApiProvider.overrideWithValue(settingsApi),
+    libraryOnboardingApiProvider.overrideWithValue(
+      FakeLibraryOnboardingApi(completeLibraryOnboardingState()),
+    ),
+    libraryApiProvider.overrideWithValue(FakeLibraryReads()),
+    librarySourcesApiProvider.overrideWithValue(FakeSourcesApi()),
+    libraryRefreshApiProvider.overrideWithValue(FakeLibraryRefreshApi()),
+    libraryGamesApiProvider.overrideWithValue(FakeGamesApi()),
+    libraryRuntimeContextProvider.overrideWith((ref) {
+      final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+      return runtimeInstanceId == null
+          ? const LibraryRuntimeContext.preReady()
+          : LibraryRuntimeContext.ready(runtimeInstanceId: runtimeInstanceId);
+    }),
+    appearanceRuntimeContextProvider.overrideWith((ref) {
+      final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+      return runtimeInstanceId == null
+          ? const AppearanceRuntimeContext.preReady()
+          : AppearanceRuntimeContext.ready(
+              runtimeInstanceId: runtimeInstanceId,
+            );
+    }),
+  ],
+  child: child,
+);
 
 void main() {
   final androidSnapshot = PlatformHostSnapshot(
@@ -505,22 +545,9 @@ void main() {
     final settingsApi = FakeSettingsApi();
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          clientBootstrapProvider.overrideWithValue(bootstrap),
-          runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
-          diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
-          runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
-          appearanceSettingsApiProvider.overrideWithValue(settingsApi),
-          appearanceRuntimeContextProvider.overrideWith((ref) {
-            final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
-            return runtimeInstanceId == null
-                ? const AppearanceRuntimeContext.preReady()
-                : AppearanceRuntimeContext.ready(
-                    runtimeInstanceId: runtimeInstanceId,
-                  );
-          }),
-        ],
+      _appCompositionScope(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
         child: const ArgusApp(),
       ),
     );
@@ -564,23 +591,10 @@ void main() {
     addTearDown(testRouter.dispose);
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appRouterProvider.overrideWithValue(testRouter),
-          clientBootstrapProvider.overrideWithValue(bootstrap),
-          runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
-          diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
-          runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
-          appearanceSettingsApiProvider.overrideWithValue(settingsApi),
-          appearanceRuntimeContextProvider.overrideWith((ref) {
-            final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
-            return runtimeInstanceId == null
-                ? const AppearanceRuntimeContext.preReady()
-                : AppearanceRuntimeContext.ready(
-                    runtimeInstanceId: runtimeInstanceId,
-                  );
-          }),
-        ],
+      _appCompositionScope(
+        bootstrap: bootstrap,
+        settingsApi: settingsApi,
+        router: testRouter,
         child: const ArgusApp(),
       ),
     );

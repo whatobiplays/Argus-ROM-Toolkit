@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-09-03  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-004, SPEC-BE-007, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-X-001, SPEC-X-002, CONV-REPO-001, CONV-FLUTTER-001, CONV-TEST-001  
 **Supersedes:** None  
 **Superseded By:** None
@@ -632,11 +632,15 @@ routing policy
 
 SPEC-FE-005 owns backend readiness. SPEC-FE-006 owns the initial authoritative appearance prerequisite. SPEC-FE-010 consumes the backend/client-owned Library onboarding projection and exposes only routing-safe completion state to the pure combined readiness derivation.
 
+For Phase 003, authoritative onboarding state is hydrated/reconciled outside redirect evaluation into this routing-safe projection. Runtime/client generation replacement invalidates the old projection and requires re-hydration against the new authority. An authoritative completion result may update the projection immediately after commit; the router does not issue a confirming focused API call from `redirect`.
+
 ## 40. Redirect Purity
 
 Redirect/gating logic is pure routing policy.
 
 It may inspect routing-safe readiness state and requested location.
+
+Redirect evaluation is synchronous with respect to routing policy. It must not await backend work or return a decision whose completion depends on a focused API/FRB/native request.
 
 It must not:
 
@@ -1450,6 +1454,8 @@ Tests cover every relevant readiness/location combination used by the implemente
 
 No test relies on arbitrary timing delays.
 
+Phase 003 tests additionally prove that onboarding projection hydration occurs outside redirect execution, redirect evaluation performs zero onboarding/focused API calls, runtime/client replacement invalidates stale projected completion, and authoritative onboarding completion can enable the ready route without a redirect-time confirmation query.
+
 ## 122. Branch Navigation Tests
 
 Required behavioral tests include:
@@ -1663,6 +1669,8 @@ SPEC-FE-004 is satisfied when:
 34. Branch, redirect, restoration, route parsing, unknown-route, and adaptive-shell behavior are explicitly tested.
 35. Phase 000 registers only genuine implemented destinations; future-feature shell-validation placeholders are test-only and never enter the production route graph.
 36. Phase 001 registers genuine Sources and Jobs routes/branches; Jobs is directly reachable on Compact while Sources and Settings use the specified adaptive secondary placements without changing canonical route identity, and Diagnostics remains a reserved non-active destination.
+37. Phase 003 product-onboarding gating is driven by one runtime-generation-aware app-owned routing-safe projection hydrated from backend authority outside redirect evaluation; no duplicate Flutter completion authority is persisted or inferred from URI.
+38. While the ready shell is admitted, switching Library/Sources/Jobs/Settings branches does not wait for unrelated background refresh work or any redirect-time backend query.
 
 ## 138. Phase 000 Minimum Implementation
 
@@ -1753,6 +1761,8 @@ The Library branch participates in the same independent branch-history contract 
 Game detail route identity is invariant across width classes. Compact/Medium may present a full routed page while Expanded/Large may project the same route as a master-detail inspector. Live resize never changes `GameId`, canonical URI, destination identity, or branch history.
 
 Backend-reported `GameId` redirects are canonicalized through the routing/client boundary without redirect loops or using display-title/provider data as route identity.
+
+The Phase 003 onboarding gate is projected into routing-safe app state before redirect evaluation. GoRouter redirect logic performs no `LibraryOnboardingApi`, focused client, FRB, or native read. Once onboarding is complete and the shell is admitted, an active `library_refresh`, `game_refresh`, or `library_resolution_refresh` cannot make destination switching wait on onboarding re-query or unrelated backend work.
 
 ## 142. References
 

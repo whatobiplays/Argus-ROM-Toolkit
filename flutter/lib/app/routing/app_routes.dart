@@ -1,13 +1,11 @@
 import 'package:argus/app/routing/app_destination.dart';
 import 'package:argus/app/shell/application_shell.dart';
-import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/library/library.dart';
 import 'package:argus/features/settings/settings.dart';
 import 'package:argus/features/sources/sources.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'not_found_page.dart';
@@ -33,26 +31,15 @@ AppDestination? destinationForUri(Uri uri) {
   return null;
 }
 
-/// Canonical entry point that forwards the application to the ready default.
+/// Canonical entry point owned by the global readiness redirect.
 @TypedGoRoute<RootRoute>(path: '/')
 class RootRoute extends GoRouteData with $RootRoute {
   /// Creates the canonical root route.
   const RootRoute();
 
   @override
-  String? redirect(BuildContext context, GoRouterState state) {
-    try {
-      final client = ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(argusClientProvider);
-      return client.supportsLibraryPhase003
-          ? const LibraryRoute().location
-          : const SettingsRoute().location;
-    } on Object {
-      return const SettingsRoute().location;
-    }
-  }
+  Widget build(BuildContext context, GoRouterState state) =>
+      const SizedBox.shrink();
 }
 
 /// Product onboarding is outside the ready-state shell and is driven by the

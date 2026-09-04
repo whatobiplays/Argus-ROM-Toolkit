@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-004  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-09-03  
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -842,6 +842,16 @@ An operation owns:
 
 This separation is normative.
 
+### 24.1 Runtime lifecycle synchronization boundary
+
+Runtime-generation/lifecycle synchronization is a short-lived coordination boundary, not an execution resource class and not a whole-operation serialization mechanism.
+
+A background operation may briefly access the active runtime/kernel during admission to validate generation and construct or clone the owned capabilities needed for execution. Once admitted, long-running business execution must proceed from those capabilities without retaining a runtime/kernel lifecycle guard across filesystem traversal, parser/hash/transformation loops, provider/network I/O or retry waits, enrichment/artwork loops, sleeps/waits, or whole-job persistence/checkpoint sequences.
+
+Repository/database synchronization and BE-002 Unit-of-Work serialization remain valid at their owning boundaries. This rule does not require lock-free persistence; it prohibits unrelated foreground request starvation caused by holding runtime lifecycle ownership across independent background work.
+
+Shutdown/replacement may still use lifecycle synchronization for genuine generation invalidation and stopping policy. Background handlers must cooperate with those lifecycle rules without making the lifecycle mutex their business-execution dependency.
+
 Adding a new operation should normally require registering its handler and policy, not modifying runtime lifecycle rules.
 
 ## 25. Logical Resource Classes
@@ -1639,6 +1649,8 @@ SPEC-BE-004 is satisfied when:
 42. Adding operation types does not require tool-specific branches in core runtime orchestration.
 43. Runtime and recovery tests cover forced termination around durable boundaries.
 44. Phase 000 can implement its minimal runtime slice without prematurely implementing persisted user-visible jobs.
+45. Runtime/kernel lifecycle synchronization is short-lived generation coordination and does not span long-running background business execution.
+46. Background operations execute from owned/cloneable capabilities sufficient for their work so unrelated foreground queries and control paths are not serialized behind whole-operation lifecycle ownership.
 
 ## 53. Prohibited Patterns
 
@@ -1658,6 +1670,7 @@ SPEC-BE-004 is satisfied when:
 - overall weighted progress
 - backend-published presentation percentage
 - requiring graceful shutdown for consistency
+- holding a runtime/kernel lifecycle guard across filesystem, parser, provider/network, enrichment, artwork, waits, or whole-job checkpoint execution
 - long-lived transactions spanning entire background jobs
 - assuming event delivery for durable recovery
 - unbounded bridge event queues

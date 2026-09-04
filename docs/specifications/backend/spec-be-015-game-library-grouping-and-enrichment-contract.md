@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-015  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-09-03  
 **Depends On:** ARCH-001, ARCH-002, PHASE-003, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010, SPEC-BE-012, SPEC-BE-013, SPEC-BE-014, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -872,8 +872,12 @@ Required conflict policy:
 - provider request concurrency/rate limits remain provider-session policy;
 - canonicalization/parsing uses BE-012 budgets;
 - artwork downloads use bounded application/provider limits.
+- runtime/kernel lifecycle synchronization must not be retained across long-running `library_refresh`, `game_refresh`, or `library_resolution_refresh` execution;
+- while refresh execution is active or deliberately blocked at an owning provider/enrichment checkpoint, unrelated Library/Sources/Jobs/onboarding reads and job cancellation/control remain available subject only to their normal persistence/resource boundaries.
 
 No feature maintains a second job-state machine.
+
+Foreground responsiveness is a correctness requirement, not a best-effort performance target. The refresh handlers may own cloneable execution capabilities derived during admission, but they must not retain the runtime/kernel lifecycle handle as the mechanism for executing ordinary scan/identity/grouping/provider/resolution/artwork work. Provider latency or content volume must therefore not serialize all foreground runtime access behind the refresh lifetime.
 
 ## 26. Progress and Job Detail
 
@@ -1119,6 +1123,7 @@ Tests cover:
 - onboarding completion commits before initial refresh admission and survives child admission failure;
 - metadata/provider settings commit independently from `library_resolution_refresh` admission;
 - `library_resolution_refresh` success, partial failure, cancellation, process loss, and explicit retry with no source/provider/download I/O;
+- deterministic concurrency coverage holds each refresh seam as required by acceptance criterion 34, proves the scoped foreground query/control paths remain responsive, and proves normal terminalization after release;
 - Disabled and intentionally skipped MissingCredentials capabilities are exclusions, while InvalidCredentials/Misconfigured/Unavailable are scoped issues only when otherwise eligible;
 
 ### 35.6 Persistence/query
@@ -1177,6 +1182,8 @@ SPEC-BE-015 is satisfied when:
 30. Add-folder and onboarding composites preserve committed parent state, expose typed child-admission failures, and prohibit blind replay after transport ambiguity.
 31. Persisted artwork references contain no credential-bearing URL, and app-private artwork is addressed by `ArtworkAssetId` rather than a leaked storage path.
 32. Disabled and intentionally unconfigured metadata-provider capabilities are exclusions rather than automatic partial-failure causes.
+33. `library_refresh`, `game_refresh`, and `library_resolution_refresh` execute without retaining the runtime/kernel lifecycle mutex across long-running business work, and foreground focused reads/job control remain available while those operations are active.
+34. Deterministic concurrency coverage proves foreground query/control responsiveness while refresh execution is intentionally blocked at a test-owned provider/enrichment seam, then proves normal terminalization after release.
 
 ## 38. Prohibited Patterns
 
@@ -1201,6 +1208,7 @@ SPEC-BE-015 is satisfied when:
 - `Refresh Library` calling public scan admission to create an unrelated second top-level job;
 - `library_resolution_refresh` performing source, metadata-provider, artwork-discovery, or artwork-download I/O;
 - blindly replaying add-folder/onboarding/settings composite commands after transport ambiguity;
+- using the runtime/kernel lifecycle mutex as the business-execution lock for Phase 003 refresh stages;
 - automatic refresh on startup/timer/process recovery;
 - silently resuming abandoned work;
 - manual correction or collections leaking into Phase 003.

@@ -6,6 +6,8 @@ import '../../settings/settings_composition.dart';
 import '../../startup/startup.dart';
 import '../../sources/presentation/library_folder_picker.dart';
 import '../../sources/presentation/selected_library_folder.dart';
+import '../application/library_onboarding_routing.dart';
+import '../application/library_state.dart';
 import '../library_composition.dart';
 
 /// Query-authoritative Library onboarding. Durable progress comes from the
@@ -35,7 +37,37 @@ class _LibraryOnboardingPageState extends ConsumerState<LibraryOnboardingPage> {
     _future = _load();
   }
 
+  RuntimeInstanceId? _readyRuntimeInstanceId() {
+    final runtime = ref.read(libraryRuntimeContextProvider);
+    return switch (runtime) {
+      LibraryRuntimeContextReady(:final runtimeInstanceId) => runtimeInstanceId,
+      LibraryRuntimeContextPreReady() => null,
+    };
+  }
+
+  RuntimeInstanceId _requireReadyRuntimeInstanceId() {
+    final runtimeInstanceId = _readyRuntimeInstanceId();
+    if (runtimeInstanceId == null) {
+      throw const TransportFailure('Library runtime is not ready');
+    }
+    return runtimeInstanceId;
+  }
+
+  void _publishAuthoritativeState({
+    required RuntimeInstanceId runtimeInstanceId,
+    required LibraryOnboardingState state,
+  }) {
+    if (!mounted || !ref.exists(libraryOnboardingRoutingProvider)) return;
+    ref
+        .read(libraryOnboardingRoutingProvider.notifier)
+        .acceptAuthoritative(
+          runtimeInstanceId: runtimeInstanceId,
+          authoritative: state,
+        );
+  }
+
   Future<_OnboardingSnapshot> _load() async {
+    final initiatingRuntimeInstanceId = _readyRuntimeInstanceId();
     final onboarding = ref.read(libraryOnboardingApiProvider);
     final providers = ref.read(libraryMetadataProvidersApiProvider);
     final metadata = ref.read(libraryMetadataSettingsApiProvider);
@@ -43,6 +75,12 @@ class _LibraryOnboardingPageState extends ConsumerState<LibraryOnboardingPage> {
         .read(appearanceSettingsApiProvider)
         .getPrivacyConsent();
     final state = await onboarding.getState();
+    if (initiatingRuntimeInstanceId != null) {
+      _publishAuthoritativeState(
+        runtimeInstanceId: initiatingRuntimeInstanceId,
+        state: state,
+      );
+    }
     final settings = await metadata.getMetadataSettings();
     final readiness =
         privacy.satisfiesCurrentRequiredTerms &&
@@ -172,12 +210,20 @@ class _LibraryOnboardingPageState extends ConsumerState<LibraryOnboardingPage> {
 
   Future<void> _completeFreshOnboarding() async {
     try {
+      final initiatingRuntimeInstanceId = _requireReadyRuntimeInstanceId();
       final result = await ref
           .read(libraryOnboardingApiProvider)
           .completeAndRefresh();
       if (!mounted) return;
       switch (result) {
-        case CompleteLibraryOnboardingAndRefreshResultAdmitted(:final handle):
+        case CompleteLibraryOnboardingAndRefreshResultAdmitted(
+          :final state,
+          :final handle,
+        ):
+          _publishAuthoritativeState(
+            runtimeInstanceId: initiatingRuntimeInstanceId,
+            state: state,
+          );
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Library setup complete; refresh started'),
@@ -185,7 +231,14 @@ class _LibraryOnboardingPageState extends ConsumerState<LibraryOnboardingPage> {
           );
           widget.onOpenJob(handle.jobRunId);
           widget.onOpenLibrary();
-        case CompleteLibraryOnboardingAndRefreshResultNotAdmitted(:final error):
+        case CompleteLibraryOnboardingAndRefreshResultNotAdmitted(
+          :final state,
+          :final error,
+        ):
+          _publishAuthoritativeState(
+            runtimeInstanceId: initiatingRuntimeInstanceId,
+            state: state,
+          );
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -208,6 +261,38 @@ class _LibraryOnboardingPageState extends ConsumerState<LibraryOnboardingPage> {
       setState(() {
         _future = _load();
       });
+    }
+  }
+
+  Future<void> _completeExistingOnboarding() async {
+    final initiatingRuntimeInstanceId = _requireReadyRuntimeInstanceId();
+    final result = await ref
+        .read(libraryOnboardingApiProvider)
+        .completeAndRefresh();
+    if (!mounted) return;
+    switch (result) {
+      case CompleteLibraryOnboardingAndRefreshResultAdmitted(
+        :final state,
+        :final handle,
+      ):
+        _publishAuthoritativeState(
+          runtimeInstanceId: initiatingRuntimeInstanceId,
+          state: state,
+        );
+        widget.onOpenJob(handle.jobRunId);
+        widget.onOpenLibrary();
+      case CompleteLibraryOnboardingAndRefreshResultNotAdmitted(
+        :final state,
+        :final error,
+      ):
+        _publishAuthoritativeState(
+          runtimeInstanceId: initiatingRuntimeInstanceId,
+          state: state,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Setup saved: ${error.code.value}')),
+        );
+        widget.onOpenLibrary();
     }
   }
 
@@ -274,27 +359,7 @@ class _LibraryOnboardingPageState extends ConsumerState<LibraryOnboardingPage> {
                   .then<void>((_) {}),
             ),
             onAddRoot: _addRoot,
-            onComplete: () => _run(() async {
-              final messenger = ScaffoldMessenger.of(context);
-              final result = await ref
-                  .read(libraryOnboardingApiProvider)
-                  .completeAndRefresh();
-              if (!mounted) return;
-              switch (result) {
-                case CompleteLibraryOnboardingAndRefreshResultAdmitted(
-                  :final handle,
-                ):
-                  widget.onOpenJob(handle.jobRunId);
-                  widget.onOpenLibrary();
-                case CompleteLibraryOnboardingAndRefreshResultNotAdmitted(
-                  :final error,
-                ):
-                  messenger.showSnackBar(
-                    SnackBar(content: Text('Setup saved: ${error.code.value}')),
-                  );
-                  widget.onOpenLibrary();
-              }
-            }),
+            onComplete: () => _run(_completeExistingOnboarding),
             onOpenLibrary: widget.onOpenLibrary,
           );
         },

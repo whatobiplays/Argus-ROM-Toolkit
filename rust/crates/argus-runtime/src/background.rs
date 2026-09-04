@@ -122,6 +122,7 @@ struct ManagerState {
     active: HashMap<JobRunId, RunningRun>,
     available: HashMap<ResourceClass, usize>,
     shutting_down: bool,
+    idle_cleanup: Option<Box<dyn FnOnce() + Send + 'static>>,
 }
 
 /// One runtime-owned generic background-operation manager.
@@ -168,6 +169,7 @@ where
                 active: HashMap::new(),
                 available,
                 shutting_down: false,
+                idle_cleanup: None,
             })),
             wake: Arc::new(Condvar::new()),
             unit_of_work,
@@ -259,6 +261,14 @@ where
     /// Requests shutdown: closes admission, cancels active work, and drains
     /// within the configured deadline. Returns whether the drain completed.
     pub fn shutdown(&self) -> bool {
+        self.shutdown_until(Instant::now() + self.config.drain_deadline)
+    }
+
+    /// Requests shutdown and drains active work until the supplied deadline.
+    ///
+    /// Runtime shutdown supplies one global deadline so this manager cannot
+    /// extend lifecycle teardown with its own independent drain interval.
+    pub(crate) fn shutdown_until(&self, deadline: Instant) -> bool {
         {
             let mut state = self.state.lock().expect("manager state lock");
             state.shutting_down = true;
@@ -268,7 +278,6 @@ where
             }
             self.wake.notify_all();
         }
-        let deadline = Instant::now() + self.config.drain_deadline;
         loop {
             let mut state = self.state.lock().expect("manager state lock");
             if state.active.is_empty() {
@@ -287,6 +296,34 @@ where
                 return state.active.is_empty();
             }
         }
+    }
+
+    /// Waits until every active worker has released its manager entry.
+    ///
+    /// This is used by the detached shutdown lease after a bounded shutdown
+    /// has returned. It deliberately has no deadline: the lease keeps the
+    /// kernel alive until the worker can publish its terminal state.
+    pub(crate) fn wait_until_idle(&self) {
+        let mut state = self.state.lock().expect("manager state lock");
+        while !state.active.is_empty() {
+            state = self.wake.wait(state).expect("manager state wait");
+        }
+    }
+
+    /// Assigns one cleanup callback to the worker that releases the final
+    /// active run.
+    ///
+    /// Runtime shutdown uses this as a no-new-thread fallback for a retained
+    /// kernel lease when the detached reaper cannot be created. Returns
+    /// `false` when the manager is already idle, so the caller can choose a
+    /// separate cleanup owner without running the callback inline.
+    pub(crate) fn install_idle_cleanup(&self, cleanup: impl FnOnce() + Send + 'static) -> bool {
+        let mut state = self.state.lock().expect("manager state lock");
+        if state.active.is_empty() {
+            return false;
+        }
+        state.idle_cleanup = Some(Box::new(cleanup));
+        true
     }
 
     fn spawn_worker(&self, job_run_id: JobRunId) -> Result<(), ManagerAdmissionError> {
@@ -447,14 +484,24 @@ where
     }
 
     fn release_and_remove(&self, job_run_id: JobRunId) {
-        let mut state = self.state.lock().expect("manager state lock");
-        if let Some(run) = state.active.remove(&job_run_id) {
-            drop(run.acquired_resources);
-            if let Some(worker) = run.worker {
-                drop(worker);
+        let cleanup = {
+            let mut state = self.state.lock().expect("manager state lock");
+            if let Some(run) = state.active.remove(&job_run_id) {
+                drop(run.acquired_resources);
+                if let Some(worker) = run.worker {
+                    drop(worker);
+                }
             }
+            self.wake.notify_all();
+            if state.active.is_empty() {
+                state.idle_cleanup.take()
+            } else {
+                None
+            }
+        };
+        if let Some(cleanup) = cleanup {
+            cleanup();
         }
-        self.wake.notify_all();
     }
 
     /// Test-only seam: makes the next worker spawn fail deterministically.

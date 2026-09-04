@@ -6,25 +6,26 @@ use std::fs;
 use std::path::Path;
 use std::sync::mpsc;
 #[cfg(feature = "test-support")]
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use argus_application::{
     AddLocalLibraryRootResult, CancelJobResult, JobRunId, JobRunState, LibraryRefreshTrigger,
-    LibraryRootId, LibraryRootLastScanStatus, ListJobsQuery, ListJobsScope, OperationDetail,
+    LibraryRootId, LibraryRootLastScanStatus, ListGamesQuery, ListJobsQuery, ListJobsScope,
+    ListLibraryRootsQuery, MetadataSettings, MetadataSettingsUpdateResult, OperationDetail,
     RefreshMode, StartLibraryScanResult,
 };
 #[cfg(feature = "test-support")]
 use argus_application::{
     ArtworkCandidate, ArtworkReference, ArtworkType, EnrichmentProviderSession, ErrorCode,
     ExactMatchEvidence, GetGameResult, HydrationMappingCandidate, HydrationProviderError,
-    HydrationTarget, LibraryScope, LibrarySort, ListGamesQuery, PlatformId, ProviderId,
-    ProviderMetadata,
+    HydrationTarget, LibraryScope, LibrarySort, PlatformId, ProviderId, ProviderMetadata,
 };
 #[cfg(feature = "test-support")]
 use argus_infrastructure::content::{ContentReadError, ContentReader};
 use argus_runtime::{
-    ApplicationHost, KernelBootstrapOptions, RuntimeEventPayload, RuntimeLifecycle, test_support,
+    ApplicationHost, KernelBootstrapOptions, RefreshExecutionCheckpoint, RuntimeEventPayload,
+    RuntimeLifecycle, test_support,
 };
 
 fn context_ready(host: &ApplicationHost) {
@@ -247,6 +248,69 @@ impl EnrichmentProviderSession for FixtureProviderSession {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GateState {
+    Disarmed,
+    Armed,
+    Entered,
+    Released,
+}
+
+struct RefreshExecutionGate {
+    checkpoint: RefreshExecutionCheckpoint,
+    state: Mutex<GateState>,
+    wake: Condvar,
+}
+
+impl RefreshExecutionGate {
+    fn new(checkpoint: RefreshExecutionCheckpoint) -> Arc<Self> {
+        Arc::new(Self {
+            checkpoint,
+            state: Mutex::new(GateState::Disarmed),
+            wake: Condvar::new(),
+        })
+    }
+
+    fn arm(&self) {
+        *self.state.lock().expect("refresh gate") = GateState::Armed;
+    }
+
+    fn hook(&self, checkpoint: RefreshExecutionCheckpoint) {
+        if checkpoint != self.checkpoint {
+            return;
+        }
+        let mut state = self.state.lock().expect("refresh gate");
+        if *state != GateState::Armed {
+            return;
+        }
+        *state = GateState::Entered;
+        self.wake.notify_all();
+        while *state != GateState::Released {
+            state = self.wake.wait(state).expect("refresh gate wait");
+        }
+    }
+
+    fn wait_until_entered(&self) {
+        let state = self.state.lock().expect("refresh gate");
+        let (state, timeout) = self
+            .wake
+            .wait_timeout_while(state, Duration::from_secs(5), |value| {
+                *value != GateState::Entered
+            })
+            .expect("refresh gate entered wait");
+        assert!(
+            !timeout.timed_out(),
+            "refresh execution never reached the gate"
+        );
+        assert_eq!(*state, GateState::Entered);
+    }
+
+    fn release(&self) {
+        *self.state.lock().expect("refresh gate") = GateState::Released;
+        self.wake.notify_all();
+    }
+}
+
 fn wait_until<F>(mut predicate: F, timeout: Duration) -> bool
 where
     F: FnMut() -> bool,
@@ -259,6 +323,245 @@ where
         std::thread::sleep(Duration::from_millis(10));
     }
     predicate()
+}
+
+fn assert_foreground_returns<T: Send + 'static>(
+    label: &'static str,
+    operation: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let _ = sender.send(operation());
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap_or_else(|_| panic!("{label} was starved by background refresh"))
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn library_refresh_does_not_starve_foreground_queries_or_job_control() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let gate = RefreshExecutionGate::new(RefreshExecutionCheckpoint::CommittedRoot);
+    let gate_for_hook = Arc::clone(&gate);
+    let options = KernelBootstrapOptions::with_data_directory(directory.path().join("data"))
+        .with_provider_session_factory_for_tests(Vec::new)
+        .with_refresh_execution_hook_for_tests(move |checkpoint| gate_for_hook.hook(checkpoint));
+    let host = Arc::new(ApplicationHost::new(options));
+    context_ready(&host);
+
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("game.gb"), gb_fixture(1)).expect("game content");
+    add_root(&host, &library);
+    warm_onboarding_read(&host);
+
+    gate.arm();
+    let refresh_job_run_id = host
+        .refresh_library()
+        .expect("refresh admission")
+        .job_run_id();
+    gate.wait_until_entered();
+
+    let games_query = ListGamesQuery::builder()
+        .scope(argus_application::LibraryScope::All)
+        .search(None)
+        .filters_empty(true)
+        .sort(argus_application::LibrarySort::DisplayTitleAscending)
+        .page_size(50)
+        .build()
+        .expect("bounded Library query");
+
+    assert_foreground_returns("Library read", {
+        let host = Arc::clone(&host);
+        move || host.list_games(games_query)
+    })
+    .expect("Library read while refresh is blocked");
+
+    assert_foreground_returns("Sources read", {
+        let host = Arc::clone(&host);
+        move || host.list_library_roots(ListLibraryRootsQuery::new(0, 100))
+    })
+    .expect("Sources read while refresh is blocked");
+
+    assert_foreground_returns("Jobs read", {
+        let host = Arc::clone(&host);
+        move || host.list_jobs(ListJobsQuery::new(ListJobsScope::Active))
+    })
+    .expect("Jobs read while refresh is blocked");
+
+    assert_foreground_returns("Job detail", {
+        let host = Arc::clone(&host);
+        move || host.get_job(refresh_job_run_id)
+    })
+    .expect("Job detail while refresh is blocked");
+
+    assert_foreground_returns("Onboarding read", {
+        let host = Arc::clone(&host);
+        move || {
+            let (context, _guard) = host
+                .begin_operation("library", "foreground_onboarding_probe")
+                .expect("onboarding probe admission");
+            host.library_onboarding_state_with_context(&context)
+        }
+    })
+    .expect("onboarding read while refresh is blocked");
+
+    let cancel = assert_foreground_returns("Cancellation", {
+        let host = Arc::clone(&host);
+        move || host.cancel_job(refresh_job_run_id)
+    })
+    .expect("cancel while refresh is blocked");
+    assert!(matches!(
+        cancel,
+        CancelJobResult::CancellationRequested | CancelJobResult::NoLongerCancellable
+    ));
+
+    gate.release();
+    assert!(terminal_state(&host, refresh_job_run_id).is_terminal());
+    host.general_shutdown().expect("shutdown");
+}
+
+fn assert_focused_refresh_queries(host: &Arc<ApplicationHost>, job_run_id: JobRunId) {
+    let games_query = ListGamesQuery::builder()
+        .scope(LibraryScope::All)
+        .search(None)
+        .filters_empty(true)
+        .sort(LibrarySort::DisplayTitleAscending)
+        .page_size(50)
+        .build()
+        .expect("bounded Library query");
+
+    assert_foreground_returns("Library read", {
+        let host = Arc::clone(host);
+        move || host.list_games(games_query)
+    })
+    .expect("Library read while refresh is blocked");
+
+    assert_foreground_returns("Jobs read", {
+        let host = Arc::clone(host);
+        move || host.list_jobs(ListJobsQuery::new(ListJobsScope::Active))
+    })
+    .expect("Jobs read while refresh is blocked");
+
+    assert_foreground_returns("Job detail", {
+        let host = Arc::clone(host);
+        move || host.get_job(job_run_id)
+    })
+    .expect("Job detail while refresh is blocked");
+
+    assert_foreground_returns("Onboarding read", {
+        let host = Arc::clone(host);
+        move || {
+            let (context, _guard) = host
+                .begin_operation("library", "focused_onboarding_probe")
+                .expect("onboarding probe admission");
+            host.library_onboarding_state_with_context(&context)
+        }
+    })
+    .expect("onboarding read while refresh is blocked");
+}
+
+fn warm_onboarding_read(host: &Arc<ApplicationHost>) {
+    let (context, _guard) = host
+        .begin_operation("library", "onboarding_read_warmup")
+        .expect("onboarding warmup admission");
+    host.library_onboarding_state_with_context(&context)
+        .expect("onboarding warmup read");
+}
+
+fn seed_identified_game(
+    directory: &Path,
+    checkpoint: RefreshExecutionCheckpoint,
+) -> (Arc<ApplicationHost>, Arc<RefreshExecutionGate>, JobRunId) {
+    let gate = RefreshExecutionGate::new(checkpoint);
+    let gate_for_hook = Arc::clone(&gate);
+    let options = KernelBootstrapOptions::with_data_directory(directory.join("data"))
+        .with_provider_session_factory_for_tests(Vec::new)
+        .with_refresh_execution_hook_for_tests(move |checkpoint| gate_for_hook.hook(checkpoint));
+    let host = Arc::new(ApplicationHost::new(options));
+    context_ready(&host);
+
+    let library = directory.join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("game.gb"), gb_fixture(1)).expect("game content");
+    add_root(&host, &library);
+    let initial_job_run_id = host
+        .refresh_library()
+        .expect("initial refresh admission")
+        .job_run_id();
+    assert!(terminal_state(&host, initial_job_run_id).is_terminal());
+    warm_onboarding_read(&host);
+
+    (host, gate, initial_job_run_id)
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn game_refresh_does_not_starve_foreground_queries() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (host, gate, _) = seed_identified_game(directory.path(), RefreshExecutionCheckpoint::Game);
+    let game_id = host
+        .list_games(
+            ListGamesQuery::builder()
+                .scope(LibraryScope::All)
+                .search(None)
+                .filters_empty(true)
+                .sort(LibrarySort::DisplayTitleAscending)
+                .page_size(50)
+                .build()
+                .expect("bounded Library query"),
+        )
+        .expect("seeded Library query")
+        .items()[0]
+        .game_id();
+
+    gate.arm();
+    let (context, _guard) = host
+        .begin_operation("library", "game_refresh_concurrency")
+        .expect("Game refresh admission context");
+    let job_run_id = host
+        .start_game_refresh_with_context(vec![game_id], RefreshMode::EligibleOnly, &context)
+        .expect("Game refresh admission")
+        .job_run_id();
+    gate.wait_until_entered();
+
+    assert_focused_refresh_queries(&host, job_run_id);
+
+    gate.release();
+    assert!(terminal_state(&host, job_run_id).is_terminal());
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn library_resolution_refresh_does_not_starve_foreground_queries() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (host, gate, _) = seed_identified_game(
+        directory.path(),
+        RefreshExecutionCheckpoint::LibraryResolution,
+    );
+
+    gate.arm();
+    let (context, _guard) = host
+        .begin_operation("settings", "library_resolution_concurrency")
+        .expect("resolution admission context");
+    let update = host
+        .update_metadata_settings_with_context(&context, MetadataSettings::new(["jp"], ["ja"]))
+        .expect("metadata settings update");
+    let job_run_id = match update {
+        MetadataSettingsUpdateResult::CommittedAndResolutionAdmitted(_, handle) => {
+            handle.job_run_id()
+        }
+        other => panic!("expected admitted resolution refresh, got {other:?}"),
+    };
+    gate.wait_until_entered();
+
+    assert_focused_refresh_queries(&host, job_run_id);
+
+    gate.release();
+    assert!(terminal_state(&host, job_run_id).is_terminal());
+    host.general_shutdown().expect("shutdown");
 }
 
 fn add_root(host: &ApplicationHost, path: &Path) -> LibraryRootId {

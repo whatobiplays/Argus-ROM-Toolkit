@@ -10,7 +10,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::sync::{Arc, Condvar, Mutex, Weak, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use argus_application::{
@@ -39,8 +39,8 @@ use argus_application::{
 
 use crate::{
     FailedRuntimeRecoveryContext, InProcessNotificationSink, KernelBootstrap,
-    KernelBootstrapOptions, KernelUnitOfWorkFactory, RecoveryCoordinator, RuntimeNotificationSink,
-    StartupCoordinator, StartupPhaseObserver, StartupResult, SystemClock,
+    KernelBootstrapOptions, KernelUnitOfWorkFactory, LibraryExecutionContext, RecoveryCoordinator,
+    RuntimeNotificationSink, StartupCoordinator, StartupPhaseObserver, StartupResult, SystemClock,
     background::BackgroundOperationManager,
     events::{PendingEventCollector, finalize_library_roots_update},
     new_trace_id,
@@ -916,9 +916,18 @@ pub(crate) struct HostInner {
     active_event: Mutex<Option<ActiveEventConnection>>,
     next_connection_id: AtomicU64,
     shutdown_incomplete: AtomicBool,
+    #[cfg(test)]
+    fail_shutdown_reaper_spawn: AtomicBool,
     top_level_operations: Arc<Mutex<OperationTracker>>,
     startup_active: Mutex<bool>,
     startup_condvar: Condvar,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShutdownLeaseDecision {
+    Normal,
+    ReaperOwns,
+    ReleaseKernel,
 }
 
 /// Application-lifetime owner of one current runtime generation.
@@ -958,6 +967,8 @@ impl ApplicationHost {
                 active_event: Mutex::new(None),
                 next_connection_id: AtomicU64::new(1),
                 shutdown_incomplete: AtomicBool::new(false),
+                #[cfg(test)]
+                fail_shutdown_reaper_spawn: AtomicBool::new(false),
                 top_level_operations: Arc::new(Mutex::new(OperationTracker::new())),
                 startup_active: Mutex::new(false),
                 startup_condvar: Condvar::new(),
@@ -968,6 +979,14 @@ impl ApplicationHost {
     /// Returns whether the last bounded shutdown drain timed out.
     pub fn shutdown_was_incomplete(&self) -> bool {
         self.inner.shutdown_incomplete.load(Ordering::SeqCst)
+    }
+
+    /// Test-only seam to exercise the no-new-thread shutdown lease path.
+    #[cfg(test)]
+    fn fail_next_shutdown_reaper_spawn_for_tests(&self) {
+        self.inner
+            .fail_shutdown_reaper_spawn
+            .store(true, Ordering::SeqCst);
     }
 
     /// Test-only startup activity accessor.
@@ -1376,13 +1395,37 @@ impl ApplicationHost {
                 self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
             }
         }
-        let kernel = {
+        let (manager, kernel_handle) = {
             let mut generation = self.lock_generation_with_context(context)?;
-            if let Some(manager) = generation.background.take()
-                && !manager.shutdown()
-            {
-                self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
+            (generation.background.take(), generation.kernel_handle())
+        };
+        let (cleanup_decision_tx, cleanup_decision_rx) = mpsc::channel::<ShutdownLeaseDecision>();
+        let cleanup_installed =
+            if let (Some(manager), Some(kernel_handle)) = (&manager, &kernel_handle) {
+                let callback_kernel_handle = Arc::clone(kernel_handle);
+                manager.install_idle_cleanup(move || {
+                    if matches!(
+                        cleanup_decision_rx.recv(),
+                        Ok(ShutdownLeaseDecision::ReleaseKernel)
+                    ) {
+                        Self::release_kernel_lease(callback_kernel_handle);
+                    }
+                })
+            } else {
+                false
+            };
+        let manager_drained = match manager.as_ref() {
+            Some(manager) => manager.shutdown_until(deadline),
+            None => true,
+        };
+        if !manager_drained {
+            self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
+        }
+        let kernel = if manager_drained {
+            if cleanup_installed {
+                let _ = cleanup_decision_tx.send(ShutdownLeaseDecision::Normal);
             }
+            let generation = self.lock_generation_with_context(context)?;
             if generation.kernel_handle().is_some() {
                 match generation.try_take_kernel() {
                     Some(kernel) => Some(kernel),
@@ -1394,6 +1437,39 @@ impl ApplicationHost {
             } else {
                 None
             }
+        } else {
+            if let (Some(manager), Some(kernel_handle)) = (manager, kernel_handle) {
+                let reaper_manager = manager.clone();
+                let reaper_kernel_handle = Arc::clone(&kernel_handle);
+                #[cfg(test)]
+                let force_reaper_spawn_failure = self
+                    .inner
+                    .fail_shutdown_reaper_spawn
+                    .swap(false, Ordering::SeqCst);
+                #[cfg(not(test))]
+                let force_reaper_spawn_failure = false;
+                let reaper = if force_reaper_spawn_failure {
+                    Err(std::io::Error::other("test shutdown reaper spawn failure"))
+                } else {
+                    std::thread::Builder::new()
+                        .name("argus-runtime-shutdown-reaper".to_owned())
+                        .spawn(move || {
+                            Self::release_shutdown_lease(reaper_manager, reaper_kernel_handle);
+                        })
+                };
+                if cleanup_installed {
+                    let decision = if reaper.is_ok() {
+                        ShutdownLeaseDecision::ReaperOwns
+                    } else {
+                        // Thread creation can fail under host resource pressure.
+                        // Transfer the lease to the existing manager instead of
+                        // making bounded shutdown wait for the active worker.
+                        ShutdownLeaseDecision::ReleaseKernel
+                    };
+                    let _ = cleanup_decision_tx.send(decision);
+                }
+            }
+            None
         };
         if let Some(kernel) = kernel
             && kernel.shutdown().is_err()
@@ -1410,6 +1486,28 @@ impl ApplicationHost {
         generation.events.close();
         self.clear_active_event();
         Ok(())
+    }
+
+    /// Waits for a timed-out background manager and releases its retained kernel.
+    ///
+    /// A bounded shutdown normally transfers this lease to a detached reaper.
+    /// The manager-owned fallback uses the same cleanup path when the host
+    /// cannot create that reaper thread.
+    fn release_shutdown_lease(
+        manager: Arc<BackgroundOperationManager<KernelUnitOfWorkFactory>>,
+        kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    ) {
+        manager.wait_until_idle();
+        Self::release_kernel_lease(kernel_handle);
+    }
+
+    /// Releases a kernel lease after its owning background work is idle.
+    fn release_kernel_lease(kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>) {
+        if let Ok(mut kernel_guard) = kernel_handle.lock()
+            && let Some(kernel) = kernel_guard.take()
+        {
+            let _ = kernel.shutdown();
+        }
     }
 
     /// Shuts down under an existing top-level context, excluding its own token.
@@ -2613,6 +2711,7 @@ impl ApplicationHost {
             let kernel = kernel_guard.as_ref().ok_or_else(|| {
                 runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
             })?;
+            let execution = kernel.library_execution_context();
             let admission = kernel.start_library_refresh_with_context(
                 context,
                 Arc::new(move || guard.token().is_cancelled()),
@@ -2621,7 +2720,7 @@ impl ApplicationHost {
             if let Some(admitted) = admission.admitted_job() {
                 register_library_refresh(
                     &manager,
-                    Arc::clone(&handle),
+                    execution,
                     kernel,
                     context,
                     admitted,
@@ -2718,15 +2817,16 @@ impl ApplicationHost {
         let kernel = kernel_guard.as_ref().ok_or_else(|| {
             runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
         })?;
+        let execution = kernel.library_execution_context();
         let operation_handle =
             kernel.admit_game_refresh_with_context(context, game_ids.clone(), mode)?;
-        register_phase003_refresh(
+        register_library_focused_refresh(
             &manager,
-            Arc::clone(&kernel_handle),
+            execution,
             kernel,
             context,
             operation_handle.clone(),
-            Phase003RefreshKind::Game { game_ids },
+            LibraryFocusedRefreshKind::Game { game_ids },
         )?;
         Ok(operation_handle)
     }
@@ -2759,15 +2859,16 @@ impl ApplicationHost {
         let kernel = kernel_guard.as_ref().ok_or_else(|| {
             runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
         })?;
+        let execution = kernel.library_execution_context();
         let operation_handle =
             kernel.admit_library_resolution_refresh_with_context(context, settings_revision)?;
-        register_phase003_refresh(
+        register_library_focused_refresh(
             &manager,
-            Arc::clone(&kernel_handle),
+            execution,
             kernel,
             context,
             operation_handle.clone(),
-            Phase003RefreshKind::LibraryResolution { settings_revision },
+            LibraryFocusedRefreshKind::LibraryResolution { settings_revision },
         )?;
         Ok(operation_handle)
     }
@@ -2896,6 +2997,7 @@ impl ApplicationHost {
         let kernel = kernel_guard.as_ref().ok_or_else(|| {
             runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
         })?;
+        let execution = kernel.library_execution_context();
         let result = (|| {
             let admission = kernel.jobs_service.retry_job(
                 RetryJobCommand::new(job_run_id),
@@ -2923,7 +3025,7 @@ impl ApplicationHost {
                 if retry_operation_type == argus_application::OPERATION_TYPE_LIBRARY_REFRESH {
                     register_library_refresh(
                         &manager,
-                        Arc::clone(&handle),
+                        execution,
                         kernel,
                         context,
                         admitted_job,
@@ -3465,7 +3567,7 @@ fn register_library_scan_with_operation_type(
 /// coherently and returns a definite application error.
 fn register_library_refresh(
     manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
-    kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    execution: LibraryExecutionContext,
     kernel: &KernelBootstrap,
     context: &OperationContext,
     admitted: &AdmittedLibraryScanJob,
@@ -3475,7 +3577,7 @@ fn register_library_refresh(
         admitted.plans().to_vec(),
         kernel.unit_of_work_factory().clone(),
         crate::events::EventBusSink::new(kernel.event_bus().clone()),
-        kernel_handle,
+        execution,
         admitted.job_run_id(),
         100,
         exclusion_count,
@@ -3619,7 +3721,7 @@ struct LibraryRefreshOperationHandler {
     plans: Vec<LibraryScanExecutionPlan>,
     unit_of_work: KernelUnitOfWorkFactory,
     event_sink: crate::events::EventBusSink,
-    kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+    execution: LibraryExecutionContext,
     job_run_id: JobRunId,
     checkpoint_size: usize,
     exclusion_count: usize,
@@ -3630,7 +3732,7 @@ impl LibraryRefreshOperationHandler {
         plans: Vec<LibraryScanExecutionPlan>,
         unit_of_work: KernelUnitOfWorkFactory,
         event_sink: crate::events::EventBusSink,
-        kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+        execution: LibraryExecutionContext,
         job_run_id: JobRunId,
         checkpoint_size: usize,
         exclusion_count: usize,
@@ -3639,25 +3741,11 @@ impl LibraryRefreshOperationHandler {
             plans,
             unit_of_work,
             event_sink,
-            kernel,
+            execution,
             job_run_id,
             checkpoint_size: checkpoint_size.max(1),
             exclusion_count,
         }
-    }
-
-    fn with_kernel<T>(
-        &self,
-        context: &OperationContext,
-        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
-    ) -> Result<T, ApplicationError> {
-        let guard = self.kernel.lock().map_err(|_| {
-            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
-        })?;
-        let kernel = guard.as_ref().ok_or_else(|| {
-            runtime_error_with_trace(ErrorCode::RuntimeStopped, context.trace_id())
-        })?;
-        operation(kernel)
     }
 
     fn child_completion_state(completion: &OperationCompletion) -> LibraryScanChildCompletion {
@@ -3693,22 +3781,19 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
         .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
         progress.report(initial)?;
 
-        let mut sessions =
-            self.with_kernel(context, |kernel| Ok(kernel.create_enrichment_sessions()))?;
-        let mut parsing_session = self.with_kernel(context, |kernel| {
-            ParsingSession::new(
-                TransformationBudget::production(),
-                kernel.transformation_staging_root(),
-                || stop_reason().is_some(),
+        let mut sessions = self.execution.create_enrichment_sessions();
+        let mut parsing_session = ParsingSession::new(
+            TransformationBudget::production(),
+            self.execution.transformation_staging_root(),
+            || stop_reason().is_some(),
+        )
+        .map_err(|failure| {
+            ApplicationError::from_code(
+                argus_application::map_transformation_failure(failure),
+                context.trace_id(),
+                argus_application::SafeContext::new(),
             )
-            .map_err(|failure| {
-                ApplicationError::from_code(
-                    argus_application::map_transformation_failure(failure),
-                    context.trace_id(),
-                    argus_application::SafeContext::new(),
-                )
-                .expect("transformation failure uses an allowlisted empty context")
-            })
+            .expect("transformation failure uses an allowlisted empty context")
         })?;
         let mut child_states = Vec::with_capacity(self.plans.len());
         let mut issue_count = 0_u64;
@@ -3741,19 +3826,16 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             child_states.push(child_state);
 
             if !matches!(completion.state(), JobRunState::Cancelled) && stop_reason().is_none() {
-                match self.with_kernel(context, |kernel| {
-                    let is_cancelled = || stop_reason().is_some();
-                    let timestamps =
-                        crate::ContentRefreshTimestamps::from_millis(crate::now_millis());
-                    kernel.refresh_committed_root_with_context(
-                        plan,
-                        context,
-                        &mut sessions,
-                        &mut parsing_session,
-                        timestamps,
-                        &is_cancelled,
-                    )
-                }) {
+                let is_cancelled = || stop_reason().is_some();
+                let timestamps = crate::ContentRefreshTimestamps::from_millis(crate::now_millis());
+                match self.execution.refresh_committed_root_with_context(
+                    plan,
+                    context,
+                    &mut sessions,
+                    &mut parsing_session,
+                    timestamps,
+                    &is_cancelled,
+                ) {
                     Ok((_, root_issues)) => {
                         issue_count = issue_count.saturating_add(root_issues);
                     }
@@ -3830,42 +3912,28 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
     }
 }
 
-enum Phase003RefreshKind {
+enum LibraryFocusedRefreshKind {
     Game { game_ids: Vec<GameId> },
     LibraryResolution { settings_revision: u64 },
 }
 
-struct Phase003RefreshHandler {
-    kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+struct LibraryFocusedRefreshHandler {
+    execution: LibraryExecutionContext,
     job_run_id: JobRunId,
-    kind: Phase003RefreshKind,
+    kind: LibraryFocusedRefreshKind,
 }
 
-impl Phase003RefreshHandler {
+impl LibraryFocusedRefreshHandler {
     fn new(
-        kernel: Arc<Mutex<Option<KernelBootstrap>>>,
+        execution: LibraryExecutionContext,
         job_run_id: JobRunId,
-        kind: Phase003RefreshKind,
+        kind: LibraryFocusedRefreshKind,
     ) -> Self {
         Self {
-            kernel,
+            execution,
             job_run_id,
             kind,
         }
-    }
-
-    fn with_kernel<T>(
-        &self,
-        context: &OperationContext,
-        operation: impl FnOnce(&KernelBootstrap) -> Result<T, ApplicationError>,
-    ) -> Result<T, ApplicationError> {
-        let guard = self.kernel.lock().map_err(|_| {
-            runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id())
-        })?;
-        let kernel = guard.as_ref().ok_or_else(|| {
-            runtime_error_with_trace(ErrorCode::RuntimeStopped, context.trace_id())
-        })?;
-        operation(kernel)
     }
 
     fn execute_game_refresh(
@@ -3901,9 +3969,9 @@ impl Phase003RefreshHandler {
             )
             .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
             progress.report(facts)?;
-            let unit_issues = self.with_kernel(context, |kernel| {
-                kernel.refresh_game_with_context(game_id, context, crate::now_millis())
-            })?;
+            let unit_issues =
+                self.execution
+                    .refresh_game_with_context(game_id, context, crate::now_millis())?;
             committed_units = committed_units.saturating_add(1);
             issue_count = issue_count.saturating_add(unit_issues);
         }
@@ -3944,12 +4012,10 @@ impl Phase003RefreshHandler {
             );
             return Ok(completion);
         }
-        let (game_ids, current_settings_revision) = self.with_kernel(context, |kernel| {
-            Ok((
-                kernel.list_game_ids_with_context(context)?,
-                kernel.metadata_settings_revision_with_context(context)?,
-            ))
-        })?;
+        let game_ids = self.execution.list_game_ids_with_context(context)?;
+        let current_settings_revision = self
+            .execution
+            .metadata_settings_revision_with_context(context)?;
         let total = u64::try_from(game_ids.len()).unwrap_or(u64::MAX);
         let status_key = if current_settings_revision == settings_revision {
             "resolving_committed_records"
@@ -3981,9 +4047,9 @@ impl Phase003RefreshHandler {
             )
             .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
             progress.report(facts)?;
-            let unit_issues = self.with_kernel(context, |kernel| {
-                kernel.resolve_game_with_context(game_id, context, crate::now_millis())
-            })?;
+            let unit_issues =
+                self.execution
+                    .resolve_game_with_context(game_id, context, crate::now_millis())?;
             committed_units = committed_units.saturating_add(1);
             issue_count = issue_count.saturating_add(unit_issues);
         }
@@ -4047,7 +4113,7 @@ impl Phase003RefreshHandler {
     }
 }
 
-impl BackgroundOperationHandler for Phase003RefreshHandler {
+impl BackgroundOperationHandler for LibraryFocusedRefreshHandler {
     fn execute(
         &self,
         context: &OperationContext,
@@ -4055,10 +4121,10 @@ impl BackgroundOperationHandler for Phase003RefreshHandler {
         progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
         match &self.kind {
-            Phase003RefreshKind::Game { game_ids } => {
+            LibraryFocusedRefreshKind::Game { game_ids } => {
                 self.execute_game_refresh(context, game_ids, stop_reason, progress)
             }
-            Phase003RefreshKind::LibraryResolution { settings_revision } => {
+            LibraryFocusedRefreshKind::LibraryResolution { settings_revision } => {
                 self.execute_library_resolution(context, *settings_revision, stop_reason, progress)
             }
         }
@@ -4083,26 +4149,26 @@ fn refresh_stop_completion(
     OperationCompletion::new(state, None, None)
 }
 
-fn register_phase003_refresh(
+fn register_library_focused_refresh(
     manager: &BackgroundOperationManager<KernelUnitOfWorkFactory>,
-    kernel_handle: Arc<Mutex<Option<KernelBootstrap>>>,
+    execution: LibraryExecutionContext,
     kernel: &KernelBootstrap,
     context: &OperationContext,
     operation_handle: OperationHandle,
-    kind: Phase003RefreshKind,
+    kind: LibraryFocusedRefreshKind,
 ) -> Result<(), ApplicationError> {
     let resources: &[ResourceClass] = match &kind {
-        Phase003RefreshKind::Game { .. } => [
+        LibraryFocusedRefreshKind::Game { .. } => [
             ResourceClass::MetadataProviderNetwork,
             ResourceClass::PersistenceWrite,
         ]
         .as_slice(),
-        Phase003RefreshKind::LibraryResolution { .. } => {
+        LibraryFocusedRefreshKind::LibraryResolution { .. } => {
             [ResourceClass::PersistenceWrite].as_slice()
         }
     };
     let job_run_id = operation_handle.job_run_id();
-    let handler = Phase003RefreshHandler::new(kernel_handle, job_run_id, kind);
+    let handler = LibraryFocusedRefreshHandler::new(execution, job_run_id, kind);
     match manager.register(&operation_handle, Arc::new(handler), resources) {
         Ok(()) => Ok(()),
         Err(registration_error) => {
@@ -4278,8 +4344,9 @@ fn technical_details_text(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::sync::mpsc;
-    use std::sync::{Arc, Barrier};
+    use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
     use std::time::Duration;
 
@@ -4336,10 +4403,15 @@ mod tests {
 
     #[test]
     fn stop_completion_survives_terminal_progress_failure() {
-        let handler = super::Phase003RefreshHandler::new(
-            Arc::new(std::sync::Mutex::new(None)),
+        let directory = tempfile::tempdir().expect("tempdir");
+        let kernel = crate::bootstrap_kernel(crate::KernelBootstrapOptions::with_data_directory(
+            directory.path().join("data"),
+        ))
+        .expect("test kernel");
+        let handler = super::LibraryFocusedRefreshHandler::new(
+            kernel.library_execution_context(),
             JobRunId::from_bytes([1; 16]).expect("job run id"),
-            super::Phase003RefreshKind::Game {
+            super::LibraryFocusedRefreshKind::Game {
                 game_ids: vec![super::GameId::from_bytes([1; 16]).expect("game id")],
             },
         );
@@ -4552,6 +4624,104 @@ mod tests {
             .subscribe_events()
             .expect("fresh attach after recovery");
         drop(fresh);
+    }
+
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn timed_out_refresh_keeps_kernel_alive_until_worker_finishes() {
+        assert_timed_out_refresh_kernel_lease_released(false);
+    }
+
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn shutdown_reaper_spawn_failure_uses_manager_owned_cleanup() {
+        assert_timed_out_refresh_kernel_lease_released(true);
+    }
+
+    #[cfg(feature = "test-support")]
+    fn assert_timed_out_refresh_kernel_lease_released(force_reaper_spawn_failure: bool) {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let data_directory = directory.path().join("data");
+        let library = directory.path().join("Library");
+        fs::create_dir_all(&library).expect("library directory");
+
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Arc::new(Mutex::new(release_rx));
+        let hook_release_rx = Arc::clone(&release_rx);
+        let options = KernelBootstrapOptions::with_data_directory(data_directory)
+            .with_refresh_execution_hook_for_tests(move |checkpoint| {
+                if checkpoint == crate::RefreshExecutionCheckpoint::CommittedRoot {
+                    entered_tx.send(()).expect("refresh entered");
+                    hook_release_rx
+                        .lock()
+                        .expect("release receiver")
+                        .recv()
+                        .expect("release refresh");
+                }
+            });
+        let host = Arc::new(ApplicationHost::new(options));
+        host.initialize().expect("startup");
+        host.add_local_library_root(crate::test_support::local_filesystem_root_selection(
+            &library,
+        ))
+        .expect("add library root");
+
+        let _job = host.refresh_library().expect("refresh admission");
+        entered_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("refresh reaches committed-root checkpoint");
+        if force_reaper_spawn_failure {
+            host.fail_next_shutdown_reaper_spawn_for_tests();
+        }
+
+        let (kernel_handle, manager) = {
+            let generation = host.lock_generation().expect("generation");
+            (
+                generation.kernel_handle().expect("kernel handle"),
+                generation.background.clone().expect("background manager"),
+            )
+        };
+        let shutdown_host = Arc::clone(&host);
+        let shutdown = thread::spawn(move || {
+            shutdown_host
+                .general_shutdown_bounded(Duration::from_millis(50), None)
+                .expect("bounded shutdown");
+        });
+        let shutdown_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !shutdown.is_finished() && std::time::Instant::now() < shutdown_deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            shutdown.is_finished(),
+            "shutdown must remain bounded when reaper creation fails"
+        );
+
+        let kernel_retained_while_worker_blocked =
+            kernel_handle.lock().expect("kernel handle").is_some();
+        release_tx.send(()).expect("release refresh");
+        shutdown.join().expect("shutdown thread");
+
+        let worker_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while manager.active_len_for_tests() != 0 && std::time::Instant::now() < worker_deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(manager.active_len_for_tests(), 0);
+
+        let lease_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while kernel_handle.lock().expect("kernel handle").is_some()
+            && std::time::Instant::now() < lease_deadline
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            kernel_retained_while_worker_blocked,
+            "a timed-out worker must retain the kernel lease"
+        );
+        assert!(
+            kernel_handle.lock().expect("kernel handle").is_none(),
+            "the kernel lease must be released after the worker finishes"
+        );
     }
 
     #[test]

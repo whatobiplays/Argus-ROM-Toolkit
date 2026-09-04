@@ -4,7 +4,7 @@
 **Phase:** PHASE-003
 **Owner:** Daniel
 **Record state:** Owner execution pending
-**Last Updated:** 2026-08-30
+**Last Updated:** 2026-09-03
 
 Qualification result: BLOCKED
 Completion declaration: NOT COMPLETE
@@ -45,6 +45,12 @@ Manual execution requires the following context to be recorded before evidence c
 
 `NOT APPLICABLE` is permitted only in the `Applicability` field for UX-M05 when no shipping Phase 003 surface contains Argus-authored animation and a concrete reason is recorded. It is not a result status; the `Status` field remains one of `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`. AND-06 is mandatory and must be `BLOCKED`, not `NOT APPLICABLE`, when the selected physical device cannot exercise a genuine supported temporary-storage-unavailability condition.
 
+### 3.1 Pre-closeout defect discovery
+
+During owner exploratory execution of a development macOS build on 2026-09-03, onboarding completed and a real Library eventually populated, but the active initial `library_refresh` temporarily starved foreground runtime access: Library remained on its loading state, primary destinations showed interaction without switching views, and normal job/query observation did not become usable until the refresh advanced far enough to release the shared runtime/kernel lifecycle mutex. Repository inspection also confirmed that GoRouter redirect evaluation performed an onboarding focused-API read, coupling route switching to backend latency.
+
+This observation is a defect-discovery record, not qualifying `PASS`/`FAIL` evidence for the release/production scenarios below. P03-010 is required before closeout continues. MAC-06 is the mandatory owner retest against the corrected release/production artifact; historical P03-009 evidence remains unchanged.
+
 ## 4. Scenario ledger
 
 All scenarios below initially remain `NOT RUN`. Each row keeps independent applicability, expected result, status, actual observation, evidence, and defect/retest reference fields. The actual-observation and reference fields intentionally contain no inferred result.
@@ -56,6 +62,7 @@ All scenarios below initially remain `NOT RUN`. Each row keeps independent appli
 | MAC-03 | REQUIRED | Evaluate each provider according to its declared setup and role: verify zero-setup Playmatch readiness and exact-content matching/enrichment mappings; verify zero-setup GameTDB readiness and applicable-platform metadata/artwork; configure a test SteamGridDB API key through the product boundary and verify credentialed artwork discovery/download/display. Exercise disable/re-enable and recovery for each provider; perform credential setup, removal, or replacement only for SteamGridDB. | Playmatch reaches its supported zero-setup readiness state and returns a coherent match/enrichment mapping; GameTDB reaches its supported zero-setup readiness state and returns coherent applicable-platform metadata/artwork; SteamGridDB reaches its credentialed readiness state and returns coherent artwork. Provider disable/re-enable and SteamGridDB credential lifecycle, failures, and recovery are explicit, bounded, secret-safe, and non-destructive; unsupported output or credential operations are not required from any provider. | NOT RUN |  |  |  | — |
 | MAC-04 | REQUIRED | Complete onboarding, configure roots, and establish committed Library state on macOS; fully quit and relaunch the app. | Onboarding state, roots, committed Library records, metadata, and artwork persist across relaunch, and no significant scan/provider work starts silently. | NOT RUN |  |  |  | — |
 | MAC-05 | REQUIRED | Terminate the macOS app during an active refresh, relaunch it, inspect the interrupted-work state, and perform an explicit retry. | Relaunch reports the interrupted work truthfully, does not silently resume it, preserves committed results, and completes a successful explicit retry without destructive mutation. | NOT RUN |  |  |  | — |
+| MAC-06 | REQUIRED | On a supported macOS release/production artifact with a representative root, start or continue an initial/explicit Phase 003 refresh and, while it is still actively scanning/identifying/enriching, switch Library → Sources → Jobs → Settings → Library, query Jobs/Library state, and exercise an available job control such as cancellation when safe for the scenario. | Foreground destinations switch promptly without waiting for refresh terminalization; focused Library/Sources/Jobs/onboarding state remains queryable; an already usable Library is not replaced by whole-page loading solely because the refresh is active; job control remains available; background progress/terminalization stays truthful. | NOT RUN |  |  | P03-010 foreground responsiveness/routing admission hardening | — |
 | AND-01 | REQUIRED | On cleared data on a physical supported ARM64 Android device, use the release artifact, complete onboarding with native folder selection, choose Add & Scan, and inspect the populated Library. | Cleared-data onboarding and native folder selection complete; Add & Scan produces a usable populated Library with truthful progress and no unexplained loss or error. | NOT RUN |  |  |  | — |
 | AND-02 | REQUIRED | On Android, exercise the Library browse, search, filter, sort, and game-detail critical path. | Browse, search, filter, and sort show the correct records; selection opens the corresponding game detail and remains usable through the critical path. | NOT RUN |  |  |  | — |
 | AND-03 | REQUIRED | On Android, verify provider readiness/configuration, production credential storage, one real refresh or hydration path, and metadata/artwork presentation. Do not duplicate the full macOS provider matrix. | Provider readiness and configuration are bounded; the production credential boundary does not expose secrets; one real refresh/hydration path presents coherent metadata and artwork and recovers from an actionable failure. | NOT RUN |  |  |  | — |
@@ -96,7 +103,7 @@ No retests recorded.
 
 - [ ] Release or production artifact provenance recorded.
 - [ ] Fresh or cleared-state provenance recorded for first-run scenarios.
-- [ ] MAC-01 through MAC-05 directly observed and recorded.
+- [ ] MAC-01 through MAC-06 directly observed and recorded.
 - [ ] AND-01 through AND-06 directly observed and recorded on a physical supported ARM64 device; AND-06 is `BLOCKED` if its genuine supported temporary-unavailability condition cannot be exercised, never `NOT APPLICABLE`.
 - [ ] CNT-01 through CNT-12 directly observed and recorded.
 - [ ] UX-M01 through UX-M04 and UX-A01 through UX-A03 directly observed and recorded.

@@ -48,7 +48,7 @@ The mutex is not itself the defect. The defect is ownership: a runtime-lifecycle
 
 ### 3.2 Router I/O
 
-`app_router.dart` currently executes `client.onboarding.getState()` inside GoRouter redirect evaluation.
+Before this correction, `app_router.dart` executed `client.onboarding.getState()` inside GoRouter redirect evaluation.
 
 This contradicts the existing SPEC-FE-004 contract, which already requires:
 
@@ -57,7 +57,7 @@ This contradicts the existing SPEC-FE-004 contract, which already requires:
 - no focused API calls from redirects;
 - deterministic, convergent redirect behavior.
 
-Because the redirect awaits backend I/O, even a correct shell destination callback can appear inert whenever the onboarding query is delayed by runtime contention or other backend latency.
+Because that redirect awaited backend I/O, even a correct shell destination callback could appear inert whenever the onboarding query was delayed by runtime contention or other backend latency.
 
 ## 4. Design Goals
 

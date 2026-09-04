@@ -1123,6 +1123,7 @@ Tests cover:
 - onboarding completion commits before initial refresh admission and survives child admission failure;
 - metadata/provider settings commit independently from `library_resolution_refresh` admission;
 - `library_resolution_refresh` success, partial failure, cancellation, process loss, and explicit retry with no source/provider/download I/O;
+- deterministic concurrency coverage holds each refresh seam as required by acceptance criterion 34, proves the scoped foreground query/control paths remain responsive, and proves normal terminalization after release;
 - Disabled and intentionally skipped MissingCredentials capabilities are exclusions, while InvalidCredentials/Misconfigured/Unavailable are scoped issues only when otherwise eligible;
 
 ### 35.6 Persistence/query

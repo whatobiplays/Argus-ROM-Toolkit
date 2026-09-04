@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::mpsc;
 #[cfg(feature = "test-support")]
-use std::sync::{Arc, Condvar, Mutex, Once};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use argus_application::{
@@ -27,9 +27,6 @@ use argus_runtime::{
     ApplicationHost, KernelBootstrapOptions, RefreshExecutionCheckpoint, RuntimeEventPayload,
     RuntimeLifecycle, test_support,
 };
-
-#[cfg(feature = "test-support")]
-static ONBOARDING_READ_WARMUP: Once = Once::new();
 
 fn context_ready(host: &ApplicationHost) {
     let state = host.initialize().expect("initialize");
@@ -466,13 +463,11 @@ fn assert_focused_refresh_queries(host: &Arc<ApplicationHost>, job_run_id: JobRu
 }
 
 fn warm_onboarding_read(host: &Arc<ApplicationHost>) {
-    ONBOARDING_READ_WARMUP.call_once(|| {
-        let (context, _guard) = host
-            .begin_operation("library", "onboarding_read_warmup")
-            .expect("onboarding warmup admission");
-        host.library_onboarding_state_with_context(&context)
-            .expect("onboarding warmup read");
-    });
+    let (context, _guard) = host
+        .begin_operation("library", "onboarding_read_warmup")
+        .expect("onboarding warmup admission");
+    host.library_onboarding_state_with_context(&context)
+        .expect("onboarding warmup read");
 }
 
 fn seed_identified_game(

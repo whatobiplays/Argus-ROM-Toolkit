@@ -77,7 +77,8 @@ void main() {
     final sourcesApi = sources ?? FakeSourcesApi();
     final libraryReads = reads ?? FakeLibraryReads();
     final onboardingApi =
-        onboarding ?? FakeLibraryOnboardingApi(_completeOnboardingState());
+        onboarding ??
+        FakeLibraryOnboardingApi(completeLibraryOnboardingState());
     final container = ProviderContainer(
       overrides: [
         applicationPresentationReadinessProvider.overrideWithValue(readiness),
@@ -178,6 +179,34 @@ void main() {
     expect(router.routeInformationProvider.value.uri.path, '/settings');
     expect(find.bySemanticsLabel('Settings'), findsOneWidget);
   });
+
+  testWidgets(
+    'library-unavailable readiness redirects every Library destination to Settings',
+    (tester) async {
+      final host = createHost(
+        readiness: ApplicationPresentationReadiness.libraryUnavailable,
+      );
+      final router = host.container.read(appRouterProvider);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: host.container,
+          child: const _RouterHost(),
+        ),
+      );
+      await loadAppearance(tester, host.api);
+
+      for (final path in <String>[
+        '/library',
+        '/library/platforms/nintendo_gb',
+        '/games/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      ]) {
+        router.go(path);
+        await tester.pumpAndSettle();
+        expect(router.routeInformationProvider.value.uri.path, '/settings');
+      }
+    },
+  );
 
   testWidgets('valid scoped Library routes render their route-owned scope', (
     tester,
@@ -618,22 +647,6 @@ LibraryOnboardingState _incompleteOnboardingState() =>
       requiresRootSelection: true,
       credentialConfigured: false,
       complete: false,
-    );
-
-LibraryOnboardingState _completeOnboardingState() =>
-    const LibraryOnboardingState(
-      progress: LibraryOnboardingProgress(
-        acceptedPrivacyTermsVersion: 'terms',
-        acceptedPrivacyAtMs: 1,
-        metadataPreferencesConfirmed: true,
-        providerSetupOutcome: LibraryProviderSetupOutcome.skipped,
-        completedAtMs: 1,
-      ),
-      requiredPrivacyTermsVersion: 'terms',
-      requiresPrivacyAcceptance: false,
-      requiresRootSelection: false,
-      credentialConfigured: false,
-      complete: true,
     );
 
 final class _RouterMetadataSettingsApi implements MetadataSettingsApi {

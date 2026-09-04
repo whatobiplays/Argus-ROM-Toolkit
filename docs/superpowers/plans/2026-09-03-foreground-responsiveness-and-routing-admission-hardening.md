@@ -64,7 +64,7 @@
 - Modify `flutter/lib/features/library/presentation/library_onboarding_page.dart`
   - publish every authoritative onboarding snapshot into the routing projection;
   - publish the committed state returned by `completeAndRefresh()` before navigation.
-- Modify `Justfile`
+- Modify `justfile`
   - register `library_onboarding_routing.g.dart` in the generated-file allowlist.
 
 ### Flutter tests
@@ -736,7 +736,7 @@ git commit -m "fix: keep focused refreshes query responsive"
 - Modify: `flutter/lib/features/library/library.dart`
 - Modify: `flutter/test/features/library/library_test_fakes.dart`
 - Create: `flutter/test/features/library/library_onboarding_routing_test.dart`
-- Modify: `Justfile`
+- Modify: `justfile`
 
 **Interfaces:**
 - Consumes: `libraryOnboardingApiProvider`, `libraryRuntimeContextProvider`, `LibraryOnboardingState`.
@@ -782,14 +782,16 @@ test('failed authoritative read publishes AsyncError and retry re-queries', () a
 
 For generation replacement, begin with runtime `aaaaaaaa...`, hydrate incomplete state, publish completion, then change the injected runtime context to `bbbbbbbb...`. Assert the provider no longer exposes the old generation's complete state before the second backend read resolves, and assert the second authoritative result controls the new state.
 
-- [ ] **Step 3: Run the new test file and observe missing-provider failure**
+- [ ] **Step 3: Run the new routing-projection test at the pre-implementation baseline**
 
 ```bash
 cd flutter && fvm flutter test --no-pub \
   test/features/library/library_onboarding_routing_test.dart
 ```
 
-Expected: FAIL because the routing projection provider/types do not exist.
+Expected on the pre-implementation baseline: FAIL because the routing projection
+provider is not yet wired to the runtime-generation and authoritative onboarding
+read seams. The completed implementation must pass this test.
 
 - [ ] **Step 4: Implement `library_onboarding_routing.dart`**
 
@@ -890,7 +892,7 @@ export 'application/library_onboarding_routing.dart'
         libraryOnboardingRoutingProvider;
 ```
 
-Add this exact generated path to `registered_generated_files` in `Justfile`:
+Add this exact generated path to `registered_generated_files` in `justfile`:
 
 ```text
 flutter/lib/features/library/application/library_onboarding_routing.g.dart
@@ -909,7 +911,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit the routing projection**
 
 ```bash
-git add Justfile \
+git add justfile \
         flutter/lib/features/library/application/library_onboarding_routing.dart \
         flutter/lib/features/library/application/library_onboarding_routing.g.dart \
         flutter/lib/features/library/library.dart \
@@ -1136,10 +1138,12 @@ String? _redirectForPresentationReadiness(
   final settingsPath = const SettingsRoute().location;
   final isRoot = path == rootPath;
   final isOnboarding = path == onboardingPath;
+  final isLibraryDestination =
+      destinationForUri(state.uri) == AppDestination.library;
 
   return switch (readiness) {
     ApplicationPresentationReadiness.libraryUnavailable =>
-      isRoot || isOnboarding ? settingsPath : null,
+      isRoot || isOnboarding || isLibraryDestination ? settingsPath : null,
     ApplicationPresentationReadiness.onboardingRequired =>
       isOnboarding ? null : onboardingPath,
     ApplicationPresentationReadiness.ready =>
@@ -1277,8 +1281,6 @@ case CompleteLibraryOnboardingAndRefreshResultNotAdmitted(
 ```
 
 If no ready runtime identity exists when the action begins, reject the action through the existing controlled failure path rather than inventing a generation. Apply this to `_completeFreshOnboarding()` and the existing-root `onComplete` callback. Do not issue an extra `getState()` solely to allow routing.
-
-Apply this to `_completeFreshOnboarding()` and the existing-root `onComplete` callback. Do not issue an extra `getState()` solely to allow routing.
 
 - [ ] **Step 5: Run onboarding page and routing projection tests**
 

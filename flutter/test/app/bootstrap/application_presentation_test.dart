@@ -23,6 +23,54 @@ import '../../features/startup/startup_test_fakes.dart';
 import '../../core/client/jobs_gateway_stub.dart';
 import '../../core/client/sources_gateway_stub.dart';
 
+ProviderScope _libraryOverrides({
+  required FakeClientBootstrap bootstrap,
+  required FakeSettingsApi settingsApi,
+  FakeLibraryOnboardingApi? onboarding,
+  bool supportsLibrary = true,
+  FakeEventsApi? eventsApi,
+  GoRouter? router,
+  AppTerminator? terminator,
+  required Widget child,
+}) {
+  final onboardingApi =
+      onboarding ?? FakeLibraryOnboardingApi(_completeOnboardingState());
+  return ProviderScope(
+    overrides: [
+      argusClientProvider.overrideWithValue(
+        _presentationClient(supportsLibrary: supportsLibrary),
+      ),
+      if (router != null) appRouterProvider.overrideWithValue(router),
+      clientBootstrapProvider.overrideWithValue(bootstrap),
+      runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
+      diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
+      runtimeEventsProvider.overrideWithValue(eventsApi ?? FakeEventsApi()),
+      appearanceSettingsApiProvider.overrideWithValue(settingsApi),
+      libraryOnboardingApiProvider.overrideWithValue(onboardingApi),
+      libraryRuntimeContextProvider.overrideWith((ref) {
+        final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+        return runtimeInstanceId == null
+            ? const LibraryRuntimeContext.preReady()
+            : LibraryRuntimeContext.ready(runtimeInstanceId: runtimeInstanceId);
+      }),
+      appearanceRuntimeContextProvider.overrideWith((ref) {
+        final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
+        return runtimeInstanceId == null
+            ? const AppearanceRuntimeContext.preReady()
+            : AppearanceRuntimeContext.ready(
+                runtimeInstanceId: runtimeInstanceId,
+              );
+      }),
+      appearanceReconciliationDemandProvider.overrideWith(
+        (ref) => ref.watch(appearanceEventCoordinatorProvider),
+      ),
+      if (terminator != null)
+        appTerminatorProvider.overrideWithValue(terminator),
+    ],
+    child: child,
+  );
+}
+
 void main() {
   Widget buildGate({
     required FakeClientBootstrap bootstrap,
@@ -32,41 +80,12 @@ void main() {
     AppTerminator? terminator,
     required Widget child,
   }) {
-    final onboardingApi =
-        onboarding ?? FakeLibraryOnboardingApi(_completeOnboardingState());
-    return ProviderScope(
-      overrides: [
-        argusClientProvider.overrideWithValue(
-          _presentationClient(supportsLibrary: supportsLibrary),
-        ),
-        clientBootstrapProvider.overrideWithValue(bootstrap),
-        runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
-        diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
-        runtimeEventsProvider.overrideWithValue(FakeEventsApi()),
-        appearanceSettingsApiProvider.overrideWithValue(settingsApi),
-        libraryOnboardingApiProvider.overrideWithValue(onboardingApi),
-        libraryRuntimeContextProvider.overrideWith((ref) {
-          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
-          return runtimeInstanceId == null
-              ? const LibraryRuntimeContext.preReady()
-              : LibraryRuntimeContext.ready(
-                  runtimeInstanceId: runtimeInstanceId,
-                );
-        }),
-        appearanceRuntimeContextProvider.overrideWith((ref) {
-          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
-          return runtimeInstanceId == null
-              ? const AppearanceRuntimeContext.preReady()
-              : AppearanceRuntimeContext.ready(
-                  runtimeInstanceId: runtimeInstanceId,
-                );
-        }),
-        appearanceReconciliationDemandProvider.overrideWith(
-          (ref) => ref.watch(appearanceEventCoordinatorProvider),
-        ),
-        if (terminator != null)
-          appTerminatorProvider.overrideWithValue(terminator),
-      ],
+    return _libraryOverrides(
+      bootstrap: bootstrap,
+      settingsApi: settingsApi,
+      onboarding: onboarding,
+      supportsLibrary: supportsLibrary,
+      terminator: terminator,
       child: MaterialApp(home: ApplicationPresentationGate(child: child)),
     );
   }
@@ -79,40 +98,13 @@ void main() {
     required GoRouter router,
     FakeEventsApi? eventsApi,
   }) {
-    final onboardingApi =
-        onboarding ?? FakeLibraryOnboardingApi(_completeOnboardingState());
-    return ProviderScope(
-      overrides: [
-        argusClientProvider.overrideWithValue(
-          _presentationClient(supportsLibrary: supportsLibrary),
-        ),
-        appRouterProvider.overrideWithValue(router),
-        clientBootstrapProvider.overrideWithValue(bootstrap),
-        runtimeApiProvider.overrideWithValue(FakeRuntimeApi()),
-        diagnosticsApiProvider.overrideWithValue(FakeDiagnosticsApi()),
-        runtimeEventsProvider.overrideWithValue(eventsApi ?? FakeEventsApi()),
-        appearanceSettingsApiProvider.overrideWithValue(settingsApi),
-        libraryOnboardingApiProvider.overrideWithValue(onboardingApi),
-        libraryRuntimeContextProvider.overrideWith((ref) {
-          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
-          return runtimeInstanceId == null
-              ? const LibraryRuntimeContext.preReady()
-              : LibraryRuntimeContext.ready(
-                  runtimeInstanceId: runtimeInstanceId,
-                );
-        }),
-        appearanceRuntimeContextProvider.overrideWith((ref) {
-          final runtimeInstanceId = ref.watch(readyRuntimeInstanceIdProvider);
-          return runtimeInstanceId == null
-              ? const AppearanceRuntimeContext.preReady()
-              : AppearanceRuntimeContext.ready(
-                  runtimeInstanceId: runtimeInstanceId,
-                );
-        }),
-        appearanceReconciliationDemandProvider.overrideWith(
-          (ref) => ref.watch(appearanceEventCoordinatorProvider),
-        ),
-      ],
+    return _libraryOverrides(
+      bootstrap: bootstrap,
+      settingsApi: settingsApi,
+      onboarding: onboarding,
+      supportsLibrary: supportsLibrary,
+      eventsApi: eventsApi,
+      router: router,
       child: const ArgusApp(),
     );
   }

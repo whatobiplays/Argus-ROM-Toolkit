@@ -1,6 +1,6 @@
-import 'package:argus/core/client/client.dart' as client;
 import 'package:argus/app/bootstrap/client_bootstrap.dart';
 import 'package:argus/app/platform/platform_host.dart';
+import 'package:argus/core/client/client.dart' as client;
 import 'package:argus/features/library/application/library_onboarding_routing.dart';
 import 'package:argus/features/settings/settings_composition.dart';
 import 'package:argus/features/startup/startup.dart';

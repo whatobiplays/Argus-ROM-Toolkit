@@ -259,6 +259,14 @@ where
     /// Requests shutdown: closes admission, cancels active work, and drains
     /// within the configured deadline. Returns whether the drain completed.
     pub fn shutdown(&self) -> bool {
+        self.shutdown_until(Instant::now() + self.config.drain_deadline)
+    }
+
+    /// Requests shutdown and drains active work until the supplied deadline.
+    ///
+    /// Runtime shutdown supplies one global deadline so this manager cannot
+    /// extend lifecycle teardown with its own independent drain interval.
+    pub(crate) fn shutdown_until(&self, deadline: Instant) -> bool {
         {
             let mut state = self.state.lock().expect("manager state lock");
             state.shutting_down = true;
@@ -268,7 +276,6 @@ where
             }
             self.wake.notify_all();
         }
-        let deadline = Instant::now() + self.config.drain_deadline;
         loop {
             let mut state = self.state.lock().expect("manager state lock");
             if state.active.is_empty() {
@@ -286,6 +293,18 @@ where
             if wait_result.timed_out() {
                 return state.active.is_empty();
             }
+        }
+    }
+
+    /// Waits until every active worker has released its manager entry.
+    ///
+    /// This is used by the detached shutdown lease after a bounded shutdown
+    /// has returned. It deliberately has no deadline: the lease keeps the
+    /// kernel alive until the worker can publish its terminal state.
+    pub(crate) fn wait_until_idle(&self) {
+        let mut state = self.state.lock().expect("manager state lock");
+        while !state.active.is_empty() {
+            state = self.wake.wait(state).expect("manager state wait");
         }
     }
 

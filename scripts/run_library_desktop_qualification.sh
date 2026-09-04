@@ -75,6 +75,14 @@ if (( runtime_status != 0 )); then
   record 'detail=See runtime-responsiveness.log for the bounded tool output'
   exit "${runtime_status}"
 fi
+if ! grep -Fq \
+  'test library_refresh_does_not_starve_foreground_queries_or_job_control ... ok' \
+  "${RUNTIME_RESPONSIVENESS_LOG}"; then
+  record 'result=FAIL'
+  record 'reason=Deterministic native foreground-responsiveness test did not report a passing result'
+  record 'detail=See runtime-responsiveness.log for the bounded tool output'
+  exit 1
+fi
 
 if ! bash "${ROOT_DIR}/scripts/run_rust.sh" cargo build \
   --manifest-path "${ROOT_DIR}/rust/Cargo.toml" \

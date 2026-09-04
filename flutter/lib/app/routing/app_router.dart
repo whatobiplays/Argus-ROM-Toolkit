@@ -1,4 +1,5 @@
 import 'package:argus/app/bootstrap/application_presentation.dart';
+import 'package:argus/app/routing/app_destination.dart';
 import 'package:argus/app/routing/app_routes.dart';
 import 'package:argus/app/routing/not_found_page.dart';
 import 'package:flutter/foundation.dart';
@@ -56,10 +57,12 @@ String? _redirectForPresentationReadiness(
   final settingsPath = const SettingsRoute().location;
   final isRoot = path == rootPath;
   final isOnboarding = state.uri.path == onboardingPath;
+  final isLibraryDestination =
+      destinationForUri(state.uri) == AppDestination.library;
 
   return switch (readiness) {
     ApplicationPresentationReadiness.libraryUnavailable =>
-      isRoot || isOnboarding ? settingsPath : null,
+      isRoot || isOnboarding || isLibraryDestination ? settingsPath : null,
     ApplicationPresentationReadiness.onboardingRequired =>
       isOnboarding ? null : onboardingPath,
     ApplicationPresentationReadiness.ready =>

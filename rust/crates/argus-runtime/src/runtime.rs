@@ -1376,13 +1376,19 @@ impl ApplicationHost {
                 self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
             }
         }
-        let kernel = {
+        let (manager, kernel_handle) = {
             let mut generation = self.lock_generation_with_context(context)?;
-            if let Some(manager) = generation.background.take()
-                && !manager.shutdown()
-            {
-                self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
-            }
+            (generation.background.take(), generation.kernel_handle())
+        };
+        let manager_drained = match manager.as_ref() {
+            Some(manager) => manager.shutdown_until(deadline),
+            None => true,
+        };
+        if !manager_drained {
+            self.inner.shutdown_incomplete.store(true, Ordering::SeqCst);
+        }
+        let kernel = if manager_drained {
+            let generation = self.lock_generation_with_context(context)?;
             if generation.kernel_handle().is_some() {
                 match generation.try_take_kernel() {
                     Some(kernel) => Some(kernel),
@@ -1394,6 +1400,21 @@ impl ApplicationHost {
             } else {
                 None
             }
+        } else {
+            if let (Some(manager), Some(kernel_handle)) = (manager, kernel_handle) {
+                std::thread::Builder::new()
+                    .name("argus-runtime-shutdown-reaper".to_owned())
+                    .spawn(move || {
+                        manager.wait_until_idle();
+                        if let Ok(mut kernel_guard) = kernel_handle.lock()
+                            && let Some(kernel) = kernel_guard.take()
+                        {
+                            let _ = kernel.shutdown();
+                        }
+                    })
+                    .expect("shutdown reaper thread");
+            }
+            None
         };
         if let Some(kernel) = kernel
             && kernel.shutdown().is_err()
@@ -4246,8 +4267,9 @@ fn technical_details_text(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::sync::mpsc;
-    use std::sync::{Arc, Barrier};
+    use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
     use std::time::Duration;
 
@@ -4525,6 +4547,82 @@ mod tests {
             .subscribe_events()
             .expect("fresh attach after recovery");
         drop(fresh);
+    }
+
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn timed_out_refresh_keeps_kernel_alive_until_worker_finishes() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let data_directory = directory.path().join("data");
+        let library = directory.path().join("Library");
+        fs::create_dir_all(&library).expect("library directory");
+
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Arc::new(Mutex::new(release_rx));
+        let hook_release_rx = Arc::clone(&release_rx);
+        let options = KernelBootstrapOptions::with_data_directory(data_directory)
+            .with_refresh_execution_hook_for_tests(move |checkpoint| {
+                if checkpoint == crate::RefreshExecutionCheckpoint::CommittedRoot {
+                    entered_tx.send(()).expect("refresh entered");
+                    hook_release_rx
+                        .lock()
+                        .expect("release receiver")
+                        .recv()
+                        .expect("release refresh");
+                }
+            });
+        let host = Arc::new(ApplicationHost::new(options));
+        host.initialize().expect("startup");
+        host.add_local_library_root(crate::test_support::local_filesystem_root_selection(
+            &library,
+        ))
+        .expect("add library root");
+
+        let _job = host.refresh_library().expect("refresh admission");
+        entered_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("refresh reaches committed-root checkpoint");
+
+        let (kernel_handle, manager) = {
+            let generation = host.lock_generation().expect("generation");
+            (
+                generation.kernel_handle().expect("kernel handle"),
+                generation.background.clone().expect("background manager"),
+            )
+        };
+        let shutdown_host = Arc::clone(&host);
+        let shutdown = thread::spawn(move || {
+            shutdown_host
+                .general_shutdown_bounded(Duration::from_millis(50), None)
+                .expect("bounded shutdown");
+        });
+        shutdown.join().expect("shutdown thread");
+
+        let kernel_retained_while_worker_blocked =
+            kernel_handle.lock().expect("kernel handle").is_some();
+        release_tx.send(()).expect("release refresh");
+
+        let worker_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while manager.active_len_for_tests() != 0 && std::time::Instant::now() < worker_deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(manager.active_len_for_tests(), 0);
+
+        let lease_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while kernel_handle.lock().expect("kernel handle").is_some()
+            && std::time::Instant::now() < lease_deadline
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            kernel_retained_while_worker_blocked,
+            "a timed-out worker must retain the kernel lease"
+        );
+        assert!(
+            kernel_handle.lock().expect("kernel handle").is_none(),
+            "the kernel lease must be released after the worker finishes"
+        );
     }
 
     #[test]

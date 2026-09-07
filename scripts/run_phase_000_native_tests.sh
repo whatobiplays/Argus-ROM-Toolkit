@@ -11,10 +11,11 @@ set -euo pipefail
 #
 # Execution order:
 #   1. rebuild argus-bridge with locked Cargo inputs
-#   2. native bridge smoke test
-#   3. native startup-failure/recovery/diagnostics smoke test
-#   4. restart restoration seed phase (process one)
-#   5. restart restoration verify phase (process two, same data directory)
+#   2. build Debug app and verify stable signing and exact FRB process export
+#   3. native bridge smoke test
+#   4. native startup-failure/recovery/diagnostics smoke test
+#   5. restart restoration seed phase (process one)
+#   6. restart restoration verify phase (process two, same data directory)
 #
 # The temporary data directory is created here and removed by the EXIT trap;
 # the integration tests never delete it themselves.
@@ -59,6 +60,7 @@ bash "$ROOT_DIR/scripts/run_rust.sh" cargo build \
   printf 'Building macOS Debug app with stable development signing\n'
   fvm flutter build macos --debug --no-pub
   argus_verify_macos_debug_signature "$debug_app"
+  bash "$ROOT_DIR/scripts/check_macos_frb_exports.sh" "$debug_app/Contents/MacOS/argus"
 
   printf 'Running native bridge smoke test\n'
   fvm flutter test integration_test/native_bridge_smoke_test.dart -d macos

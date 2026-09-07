@@ -2,7 +2,7 @@
 
 **Document ID:** IMPL-P00-009-VERIFICATION
 **Owner:** Daniel
-**Last Updated:** 2026-08-14
+**Last Updated:** 2026-09-05
 **Status:** Active verification record for SLICE-P00-009
 
 ## Purpose
@@ -22,11 +22,46 @@ gate is intentionally outside the platform-neutral gate.
 | `just generate` | Regenerates all canonical FRB/Riverpod/Freezed output through the repository's generation commands. |
 | `just check-generated` | Registered generated files are current and reproducible, no unexpected generated output exists, and no machine-local absolute path appears in generated FRB output. |
 | `just check` | The platform-neutral quality gate passes: formatting, lint/static analysis (including shellcheck), Rust dependency architecture checks, and the full deterministic offline Rust/Flutter test suite. |
-| `just test-phase-000-native` | The macOS native milestone passes: the real Rust bridge rebuilds with locked inputs; native bridge smoke, native startup-failure/recovery/diagnostics smoke, and the real two-process restart restoration proof all pass against one test-owned temporary data directory. |
+| `just build-macos-release` | Builds the production macOS Release app through Flutter and the existing Xcode Rust Release build phase. |
+| `just test-macos-release-linkage` | Builds that Release app and requires the exact defined external `_frb_get_rust_content_hash` symbol in its Mach-O executable. |
+| `just test-macos-frb-exports` | Exercises export-checker success and failure handling, exact matching, and undefined-symbol rejection. |
+| `just test-phase-000-native` | The macOS native milestone passes: the real Rust bridge rebuilds with locked inputs; the signed Debug executable exports `_frb_get_rust_content_hash` before integration tests; native bridge smoke, native startup-failure/recovery/diagnostics smoke, and the real two-process restart restoration proof all pass against one test-owned temporary data directory. |
 
 `just check` does not include `just test-phase-000-native`. The native gate is
 kept separate because it launches real macOS application processes and is not
 part of the portable, deterministic, offline quality gate.
+
+## macOS Process-Export Contract
+
+FRB uses `ExternalLibrary.process(...)` to resolve
+`frb_get_rust_content_hash` from the running executable. The exact defined
+external Mach-O symbol is `_frb_get_rust_content_hash`. Its presence in the
+Rust static archive alone is insufficient. Debug and Release xcconfigs retain
+`-force_load` and pass Apple's `-export_dynamic` through `-Wl,-export_dynamic`;
+Debug and Release set `ENABLE_DEBUG_DYLIB = NO`, and Profile inherits Release.
+Newer Xcode defaults otherwise place the bridge in `argus.debug.dylib` behind a
+launcher stub, violating the executable-export invariant. Dead-code stripping
+remains enabled.
+
+Debug native qualification exercises real initialization, recovery, and
+persistence with stable development signing. Release linkage qualification
+builds the normal production entrypoint and checks its executable exports;
+it does not run Debug integration tests or claim owner-observed startup success.
+Both gates are required for macOS qualification and remain outside `just check`.
+
+The always-running `native-desktop` macOS CI leg retains the Debug compile,
+checks Debug exports, and runs `just test-macos-release-linkage`. The conditional,
+provisioned native milestone also runs the Release linkage target. Ordinary
+push/PR export protection does not depend on provisioned signing credentials.
+
+The allowlisted gpt-repo-local `build` profile continues to resolve
+`just build-macos-debug`; that target now runs `test-macos-release-linkage` as a
+prerequisite and then performs the existing Debug build. This keeps the Debug
+validation mapping while making the Release export proof executable through
+`repo_validate`.
+
+A technical launch observation is separate from the owner's clean Release,
+fresh-state MAC-01 retest and must not change its qualification status.
 
 ## What the Restart Restoration Proof Covers
 

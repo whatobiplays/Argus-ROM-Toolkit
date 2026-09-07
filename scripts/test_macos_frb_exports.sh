@@ -12,12 +12,14 @@ touch "$fixture_dir/app with spaces"
 cat > "$fixture_dir/bin/xcrun" <<'STUB'
 #!/usr/bin/env bash
 [[ "$#" == 3 && "$1" == nm && "$2" == -gUj ]] || exit 90
+[[ "$3" == "$EXPECTED_EXECUTABLE" ]] || exit 91
 cat "$NM_OUTPUT"
 printf '%s' "${NM_WARNING:-}" >&2
 exit "${NM_STATUS:-0}"
 STUB
 chmod +x "$fixture_dir/bin/xcrun"
 export NM_OUTPUT="$fixture_dir/symbols"
+export EXPECTED_EXECUTABLE="$fixture_dir/app with spaces"
 
 assert_result() {
   local expected="$1" message="$2"
@@ -35,7 +37,7 @@ assert_result 0 'exports _frb_get_rust_content_hash' "$fixture_dir/app with spac
 export NM_WARNING='nm: diagnostic warning'
 assert_result 0 'exports _frb_get_rust_content_hash' "$fixture_dir/app with spaces"
 unset NM_WARNING
-# An early grep exit must not SIGPIPE nm when its output exceeds a pipe buffer.
+# Large captured output must remain exact-match safe without truncation.
 awk 'BEGIN { print "_frb_get_rust_content_hash"; for (i=0; i<100000; i++) print "_other_" i }' > "$NM_OUTPUT"
 assert_result 0 'exports _frb_get_rust_content_hash' "$fixture_dir/app with spaces"
 printf '_other\n' > "$NM_OUTPUT"

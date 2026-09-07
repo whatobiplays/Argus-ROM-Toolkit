@@ -1,0 +1,19 @@
+scripts/test_macos_frb_exports.sh
+  s_95566cbdbb53d1::t_3b4e8d99dc64f3 15,22,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6df62093105f2a633ccbd11181467595ae5dacfe",
+  "prompts": {},
+  "sessions": {
+    "s_95566cbdbb53d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06eed-225d-75f2-8634-0122281cc57a",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

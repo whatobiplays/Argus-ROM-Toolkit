@@ -103,6 +103,31 @@ jobs:
             flutter build macos --debug
           fi
 
+      - name: Set up just for macOS linkage qualification
+        if: runner.os == 'macOS'
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Install CI FVM prerequisite
+        if: runner.os == 'macOS'
+        run: |
+          dart pub global activate fvm 4.1.2
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Verify macOS Debug process exports
+        if: runner.os == 'macOS'
+        run: bash scripts/check_macos_frb_exports.sh flutter/build/macos/Build/Products/Debug/argus.app/Contents/MacOS/argus
+
+      - name: Prepare pinned FVM SDK for macOS linkage qualification
+        if: runner.os == 'macOS'
+        working-directory: flutter
+        run: fvm install
+
+      - name: Verify macOS Release linkage
+        if: runner.os == 'macOS'
+        run: just test-macos-release-linkage
+
   provider-windows:
     name: Windows LocalFilesystem provider
     runs-on: windows-latest
@@ -199,6 +224,9 @@ jobs:
 
       - name: Phase 000 native regression
         run: just test-phase-000-native
+
+      - name: Release linkage regression
+        run: just test-macos-release-linkage
 
   android-arm64-package:
     name: Android ARM64 build and package verification

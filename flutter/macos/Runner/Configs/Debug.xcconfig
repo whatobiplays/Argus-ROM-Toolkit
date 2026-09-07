@@ -8,4 +8,10 @@
 // xcodebuild invocation so they override the project's ad-hoc Debug default.
 #include? "Debug.local.xcconfig"
 
-OTHER_LDFLAGS = $(inherited) -force_load "$(PROJECT_DIR)/../../rust/target/debug/libargus_bridge.a"
+// Keep the process-linked bridge in the executable. Xcode's debug-dylib mode
+// otherwise puts these exports in argus.debug.dylib behind a launcher stub.
+ENABLE_DEBUG_DYLIB = NO
+
+// FRB resolves C ABI symbols with dlsym against the main process. Force-load
+// includes the archive; export_dynamic preserves its global process exports.
+OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic -force_load "$(PROJECT_DIR)/../../rust/target/debug/libargus_bridge.a"

@@ -77,13 +77,24 @@ lint:
 test-macos-rust-build-contract:
     bash scripts/test_macos_rust_build_environment.sh
 
-build-macos-debug:
+test-macos-frb-exports:
+    bash scripts/test_macos_frb_exports.sh
+
+build-macos-release:
+    bash scripts/run_rust.sh cargo build --manifest-path rust/Cargo.toml --package argus-bridge --release --locked
+    cd flutter && fvm flutter build macos --release --no-pub
+
+test-macos-release-linkage: build-macos-release
+    bash scripts/check_macos_frb_exports.sh flutter/build/macos/Build/Products/Release/argus.app/Contents/MacOS/argus
+
+build-macos-debug: test-macos-release-linkage
     cd flutter && fvm flutter build macos --debug --no-pub
 
 _architecture:
     bash scripts/check_rust_dependencies.sh
 
 test:
+    bash scripts/test_macos_frb_exports.sh
     bash scripts/test_macos_rust_build_environment.sh
     @bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --workspace --all-features --locked
     cd flutter && fvm flutter test --no-pub

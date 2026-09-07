@@ -3,8 +3,8 @@
 **Document ID:** IMPL-P03-MANUAL-QUALIFICATION
 **Phase:** PHASE-003
 **Owner:** Daniel
-**Record state:** Owner execution pending
-**Last Updated:** 2026-09-03
+**Record state:** Owner execution begun; macOS qualification paused pending correction and a clean owner retest
+**Last Updated:** 2026-09-06
 
 Qualification result: BLOCKED
 Completion declaration: NOT COMPLETE
@@ -14,9 +14,9 @@ Phase status: In Progress
 
 This record is the owner-executed closeout ledger for the Phase 003 manual qualification gate. It records direct observations made against a release or production artifact on the supported desktop and Android environments. Automated test output, inferred behavior, and historical evidence do not substitute for a manual observation in this record.
 
-The phase cannot be declared complete until every applicable mandatory scenario below has a recorded `PASS`, with the environment, artifact, content, and evidence provenance needed to reproduce the observation. `NOT APPLICABLE` is permitted only as a predeclared applicability value for UX-M05, with a concrete reason; it is not a result status. No current scenario has been executed in this record.
+The phase cannot be declared complete until every applicable mandatory scenario below has a recorded `PASS`, with the environment, artifact, content, and evidence provenance needed to reproduce the observation. `NOT APPLICABLE` is permitted only as a predeclared applicability value for UX-M05, with a concrete reason; it is not a result status.
 
-The record is intentionally blocked before execution because the required release/production artifact and owner qualification context have not been recorded. This is a pre-execution gate, not a scenario result.
+Owner execution has begun. MAC-01 attempt 1 failed before onboarding. Further macOS qualification is paused pending correction and a clean owner Release/fresh-state retest; the remaining scenarios are still `NOT RUN`.
 
 The historical library-capability qualification record remains unchanged. This document is a new closeout record and does not rewrite historical P03-009 evidence.
 
@@ -51,13 +51,39 @@ During owner exploratory execution of a development macOS build on 2026-09-03, o
 
 This observation is a defect-discovery record, not qualifying `PASS`/`FAIL` evidence for the release/production scenarios below. P03-010 is required before closeout continues. MAC-06 is the mandatory owner retest against the corrected release/production artifact; historical P03-009 evidence remains unchanged.
 
+### 3.2 MAC-01 attempt 1 — FAIL
+
+The failed attempt is retained with the sanitized provenance required by
+Section 2:
+
+| Field | Attempt 1 record |
+| --- | --- |
+| Operator | Daniel |
+| Result | `FAIL` |
+| Artifact | macOS Release, Argus 0.1.0 (1) |
+| Source HEAD | `160d3d53a8b4f9a7d99ca860a0655a39247131b0` |
+| Platform | macOS 26.5, BuildVersion 25F71 |
+| Hardware class / ABI | Apple Silicon, arm64 |
+| App-state context | Fresh/cleared first-run state was used |
+| Content | Not reached; native initialization failed before onboarding |
+| Observation time (UTC) | Approximately 2026-09-04 23:54 UTC; the available record does not support finer precision |
+| Actual observation | Application launched but native initialization failed before onboarding |
+| Defect diagnosis | Missing process export of FRB `frb_get_rust_content_hash` |
+| Evidence | Sanitized owner observation recorded here; no private evidence is retained |
+| Retest | Pending clean Release/fresh-state owner retest |
+
+This failed attempt is retained permanently, including after any successful
+retest. A Codex technical startup observation is not MAC-01 qualification
+evidence. Daniel must perform the clean Release/fresh-state manual retest;
+record its outcome separately without erasing attempt 1.
+
 ## 4. Scenario ledger
 
-All scenarios below initially remain `NOT RUN`. Each row keeps independent applicability, expected result, status, actual observation, evidence, and defect/retest reference fields. The actual-observation and reference fields intentionally contain no inferred result.
+Unexecuted scenarios remain `NOT RUN`; MAC-01 preserves the owner-observed failed first attempt. Each row keeps independent applicability, expected result, status, actual observation, evidence, and defect/retest reference fields. The actual-observation and reference fields intentionally contain no inferred result.
 
 | ID | Applicability | Procedure | Expected result | Status | Actual observation | Evidence reference | Defect/retest reference | Latest retest |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| MAC-01 | REQUIRED | On a fresh supported macOS release build, complete onboarding, admit a real library root, run the initial scan and identification, and inspect the populated Library. | Onboarding and library-root admission complete; initial scan/identification produces a usable populated Library with truthful progress and no unexplained loss or error. | NOT RUN |  |  |  | — |
+| MAC-01 | REQUIRED | On a fresh supported macOS release build, complete onboarding, admit a real library root, run the initial scan and identification, and inspect the populated Library. | Onboarding and library-root admission complete; initial scan/identification produces a usable populated Library with truthful progress and no unexplained loss or error. | FAIL | Attempt 1: application launched but native initialization failed before onboarding. | Section 3.2, MAC-01 attempt 1 | FRB process export correction / owner clean Release fresh-state retest pending | — |
 | MAC-02 | REQUIRED | On macOS, exercise Library browsing, paging, search, representative filters/facets, sorting, stable selection, and game detail. | Paging, search, filters/facets, and sorting show the correct records; selection remains stable and opens the corresponding game detail without stale or misleading state. | NOT RUN |  |  |  | — |
 | MAC-03 | REQUIRED | Evaluate each provider according to its declared setup and role: verify zero-setup Playmatch readiness and exact-content matching/enrichment mappings; verify zero-setup GameTDB readiness and applicable-platform metadata/artwork; configure a test SteamGridDB API key through the product boundary and verify credentialed artwork discovery/download/display. Exercise disable/re-enable and recovery for each provider; perform credential setup, removal, or replacement only for SteamGridDB. | Playmatch reaches its supported zero-setup readiness state and returns a coherent match/enrichment mapping; GameTDB reaches its supported zero-setup readiness state and returns coherent applicable-platform metadata/artwork; SteamGridDB reaches its credentialed readiness state and returns coherent artwork. Provider disable/re-enable and SteamGridDB credential lifecycle, failures, and recovery are explicit, bounded, secret-safe, and non-destructive; unsupported output or credential operations are not required from any provider. | NOT RUN |  |  |  | — |
 | MAC-04 | REQUIRED | Complete onboarding, configure roots, and establish committed Library state on macOS; fully quit and relaunch the app. | Onboarding state, roots, committed Library records, metadata, and artwork persist across relaunch, and no significant scan/provider work starts silently. | NOT RUN |  |  |  | — |
@@ -101,8 +127,10 @@ No retests recorded.
 
 ## 6. Closeout conditions
 
-- [ ] Release or production artifact provenance recorded.
-- [ ] Fresh or cleared-state provenance recorded for first-run scenarios.
+- [x] macOS Release/production artifact provenance recorded for the current MAC-01 attempt.
+- [x] macOS fresh/cleared-state provenance recorded for the current MAC-01 attempt.
+- [ ] Android Release/production artifact provenance recorded for required Android qualification.
+- [ ] Android fresh/cleared-state provenance recorded for AND-01.
 - [ ] MAC-01 through MAC-06 directly observed and recorded.
 - [ ] AND-01 through AND-06 directly observed and recorded on a physical supported ARM64 device; AND-06 is `BLOCKED` if its genuine supported temporary-unavailability condition cannot be exercised, never `NOT APPLICABLE`.
 - [ ] CNT-01 through CNT-12 directly observed and recorded.
@@ -111,7 +139,11 @@ No retests recorded.
 - [ ] Every applicable mandatory scenario has direct evidence and status `PASS`.
 - [ ] Phase status is updated only after the owner verifies the complete applicable ledger.
 
-Manual qualification has not been executed by this record. The current owner action is to perform the scenarios against the required release/production environments and append direct observations; until then, the qualification result remains `BLOCKED` and the completion declaration remains `NOT COMPLETE`.
+Manual qualification remains incomplete. Owner execution has begun with MAC-01
+attempt 1 recorded as `FAIL`; the remaining scenarios are still `NOT RUN`, and
+macOS qualification is paused pending correction and a clean owner Release/fresh-state
+retest. The qualification result remains `BLOCKED` and the completion declaration
+remains `NOT COMPLETE`.
 
 ## 7. Evidence handling
 

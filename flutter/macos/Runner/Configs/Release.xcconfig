@@ -1,4 +1,10 @@
 #include "../../Flutter/Flutter-Release.xcconfig"
 #include "Warnings.xcconfig"
 
-OTHER_LDFLAGS = $(inherited) -force_load "$(PROJECT_DIR)/../../rust/target/release/libargus_bridge.a"
+// Keep process-linked bridge exports in the main executable for Release and
+// Profile. The debug-dylib launcher layout does not expose them to RTLD_DEFAULT.
+ENABLE_DEBUG_DYLIB = NO
+
+// FRB resolves C ABI symbols with dlsym against the main process. Force-load
+// includes the archive; export_dynamic preserves its global process exports.
+OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic -force_load "$(PROJECT_DIR)/../../rust/target/release/libargus_bridge.a"

@@ -81,6 +81,7 @@ test-macos-frb-exports:
     bash scripts/test_macos_frb_exports.sh
 
 build-macos-release:
+    bash scripts/run_rust.sh cargo build --manifest-path rust/Cargo.toml --package argus-bridge --release --locked
     cd flutter && fvm flutter build macos --release --no-pub
 
 test-macos-release-linkage: build-macos-release

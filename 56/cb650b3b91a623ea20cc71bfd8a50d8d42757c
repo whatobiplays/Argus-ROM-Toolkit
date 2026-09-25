@@ -1,0 +1,32 @@
+docs/agents/triage-labels.md
+  s_1c80f899cb39ac::t_f4ecf40d575705 1-15
+docs/agents/domain.md
+  s_1c80f899cb39ac::t_f4ecf40d575705 1-51
+.gitignore
+  h_2e7f3207901880 58
+docs/agents/issue-tracker.md
+  s_1c80f899cb39ac::t_f4ecf40d575705 1-45
+AGENTS.md
+  s_1c80f899cb39ac::t_f4ecf40d575705 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "56cb650b3b91a623ea20cc71bfd8a50d8d42757c",
+  "prompts": {},
+  "humans": {
+    "h_2e7f3207901880": {
+      "author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_1c80f899cb39ac": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d860-5622-7a30-b554-acaf7ee076cf",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

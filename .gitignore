@@ -55,6 +55,7 @@ _ReSharper*/
 # Environment variables, secrets, certificates, and signing material
 # -----------------------------------------------------------------------------
 .env
+.envrc
 .env.*
 !.env.example
 *.local

@@ -1,0 +1,64 @@
+flutter/test/core/bridge/frb_mapper_test.dart
+  s_66f791c4ab49f1::t_33e5de1314bc54 76-104
+flutter/test/features/jobs/jobs_feature_test.dart
+  s_66f791c4ab49f1::t_c72790874acd62 13-19
+  s_66f791c4ab49f1::t_7629fadb46332f 369-452
+rust/crates/argus-application/tests/phase_003_refresh_issues.rs
+  s_66f791c4ab49f1::t_f56a7fd07ce4d5 254-255,259-261,263-266
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_66f791c4ab49f1::t_f296de4ac11cd8 1461-1462,1506-1507
+  s_66f791c4ab49f1::t_497e534eeb26ce 1477,1480-1482,1491,1494-1504
+  s_66f791c4ab49f1::t_2c1b66c3925448 1438-1460,1463-1476,1478-1479,1483-1490,1492-1493,1505,1508-1520
+  s_66f791c4ab49f1::t_e92b6fd941372f 1409
+  s_66f791c4ab49f1::t_a9d775ebded25a 1685,1687,1725-1726,1729-1739
+  s_66f791c4ab49f1::t_8dcfad74779ba7 1727-1728
+flutter/lib/features/jobs/presentation/job_detail_page.dart
+  s_66f791c4ab49f1::t_696266dd00a554 548-551
+  s_66f791c4ab49f1::t_68f6cf1a88561c 516,521-527,530,554-562
+rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0018_library_refresh_issues.sql
+  s_66f791c4ab49f1::t_f1b1f1428c4472 52-57
+rust/crates/argus-infrastructure/tests/migration_v18.rs
+  s_66f791c4ab49f1::t_35d5464d5acda8 1-20,22-39,41-42,47-49
+  s_66f791c4ab49f1::t_00c17bdc53daff 21
+  s_66f791c4ab49f1::t_70df0bd4ab0623 40,43-46
+rust/crates/argus-runtime/src/lib.rs
+  s_66f791c4ab49f1::t_18849ddce63ba3 5349,5351-5352,5354-5355,5357,5359
+  s_66f791c4ab49f1::t_10ba18956d53c9 5671-5672,5681-5696,5711-5725
+  s_66f791c4ab49f1::t_af56e81c0fd068 5337,5339-5341,5345,5347,5350,5353,5356,5360,5362-5366
+  s_66f791c4ab49f1::t_439b2cbaeaf049 5673-5677,5705-5710,5726-5727
+  s_66f791c4ab49f1::t_a2c2f68a084417 5728-5756,5758-5770,5772-5787,5789
+  s_66f791c4ab49f1::t_d65e619026ced3 5757,5771,5788
+  s_66f791c4ab49f1::t_1d5029bc7788d9 3535,3538,5310-5312,5338,5342-5344,5346,5348,5358,5361
+  s_66f791c4ab49f1::t_d008c880e55948 5367-5368
+  s_66f791c4ab49f1::t_f84014ca2d302f 5790
+rust/crates/argus-runtime/src/runtime.rs
+  s_66f791c4ab49f1::t_6bb3142ff3155c 3809-3818,3992-3994
+  s_66f791c4ab49f1::t_445efb195ee7d1 3987-3991
+  s_66f791c4ab49f1::t_31b5dae03e963c 4486-4508
+  s_66f791c4ab49f1::t_0593d2b4340986 4485
+flutter/lib/features/jobs/presentation/jobs_messages.dart
+  s_66f791c4ab49f1::t_7558479d9e1a77 59-60
+flutter/test/features/jobs/jobs_test_fakes.dart
+  s_66f791c4ab49f1::t_7f907c07977769 195-198,201,207-220,222-235,238-239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ce416a0a7ccd8c0c6b7756dac3dd105c70a83af",
+  "prompts": {},
+  "humans": {
+    "h_2e7f3207901880": {
+      "author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

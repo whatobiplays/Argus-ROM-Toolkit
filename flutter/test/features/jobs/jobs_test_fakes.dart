@@ -195,7 +195,8 @@ JobDetail jobDetail({
 /// Builds one terminal-success Library refresh detail fixture.
 ///
 /// Completed fixtures have a terminal phase and fully completed unit counts;
-/// use [jobDetail] for running or unsuccessful lifecycle states.
+/// for running or unsuccessful Library refresh states, construct a `JobDetail`
+/// with `OperationDetail.libraryRefresh(...)` directly.
 JobDetail libraryRefreshJobDetail({
   String id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   JobLifecycleState state = JobLifecycleState.completedWithIssues,

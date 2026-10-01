@@ -1,0 +1,167 @@
+flutter/lib/core/client/src/models.dart
+  s_66f791c4ab49f1::t_f766fa7453ead6 693
+  s_66f791c4ab49f1::t_f1b2f3f1fcb801 637-638
+  s_66f791c4ab49f1::t_3d477317b81cc7 564-636,639-683
+rust/crates/argus-infrastructure/tests/slice_006_scan_all_recovery.rs
+  s_66f791c4ab49f1::t_090db3526f7592 135
+  s_66f791c4ab49f1::t_13568b0310fd34 136
+rust/crates/argus-application/tests/phase_003_jobs.rs
+  s_66f791c4ab49f1::t_3bbc65e1260791 4-5,32-35,37-41,47
+  s_66f791c4ab49f1::t_b8bb0ad6cc5175 70-75
+  s_66f791c4ab49f1::t_907701ec7f2d86 36
+rust/crates/argus-infrastructure/src/sqlite/migrations/mod.rs
+  s_66f791c4ab49f1::t_2edc34431b04d2 193-197
+rust/crates/argus-infrastructure/tests/sources.rs
+  s_66f791c4ab49f1::t_13568b0310fd34 82
+  s_66f791c4ab49f1::t_090db3526f7592 57,81
+rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0018_library_refresh_issues.sql
+  s_66f791c4ab49f1::t_a56d3a3321befa 5-9,11-14,35-39,42,44,49-50,52
+  s_66f791c4ab49f1::t_274bdd85e03d98 1-4,10,15-25,27-34,41,45-48,51
+  s_66f791c4ab49f1::t_1289f65fe12f61 26,40,43
+rust/crates/argus-runtime/tests/kernel_bootstrap.rs
+  s_66f791c4ab49f1::t_090db3526f7592 74
+flutter/test/features/jobs/jobs_test_fakes.dart
+  s_66f791c4ab49f1::t_fb7ba1398993e5 195-233
+rust/crates/argus-bridge/src/frb_generated.rs
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 3590-3601,4244-4259,4280,4287,7258-7275,7300,9374-9383,9930-9939,9964
+rust/crates/argus-application/src/jobs/refresh_issues.rs
+  s_66f791c4ab49f1::t_42bfc8c980c6bd 1-632
+rust/crates/argus-runtime/src/runtime.rs
+  s_66f791c4ab49f1::t_609772ca9fe1d8 3488-3503
+  s_66f791c4ab49f1::t_b581e742dfae4d 3794,3800
+  s_66f791c4ab49f1::t_995e451cdd5562 3843,3890-3894,3905-3915
+  s_66f791c4ab49f1::t_877f7030fca5d6 20-34,48,3884-3886
+  s_66f791c4ab49f1::t_9d4bef02d4c6cc 50
+  s_66f791c4ab49f1::t_c20390946890ea 3927-3971,3973,3977-3981
+  s_66f791c4ab49f1::t_fe6ec7098b8817 19
+  s_66f791c4ab49f1::t_d05b93de4b71d4 3782-3793,3795-3799,3801-3806
+rust/crates/argus-infrastructure/tests/migration_v15.rs
+  s_66f791c4ab49f1::t_090db3526f7592 106,344,466,808
+  s_66f791c4ab49f1::t_13568b0310fd34 345,467,809
+flutter/lib/features/jobs/presentation/jobs_messages.dart
+  s_66f791c4ab49f1::t_e3d5cfa180a545 1-2
+  s_66f791c4ab49f1::t_d0628ec8ca36e7 56-137,139-154
+  s_66f791c4ab49f1::t_fc742513a49989 138
+rust/crates/argus-infrastructure/src/sqlite/mod.rs
+  s_66f791c4ab49f1::t_cbf913713c057d 30-31
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 1338-1341,1381-1384,1482-1485,1502-1503
+  s_66f791c4ab49f1::t_208dced357289a 1324-1337,1342-1380,1385-1481,1486-1493
+  s_66f791c4ab49f1::t_69cb2e9cfdd855 6
+  s_66f791c4ab49f1::t_9afb5a13954eef 1494-1495,1500-1501,1509-1578,1580-1587,1595-1640
+  s_66f791c4ab49f1::t_e25b9f51e4150d 663-666,696-697
+  s_66f791c4ab49f1::t_946ddd0bcef51f 1187-1323
+  s_66f791c4ab49f1::t_6d6a69ac9bd750 151-153,173-178,757,930-933
+  s_66f791c4ab49f1::t_6a7d9a94679f10 647-662,667-695,698-719
+  s_66f791c4ab49f1::t_2bf80047dc62f2 1498-1499,1504-1508
+  s_66f791c4ab49f1::t_a916095b14ea31 825-848
+  s_66f791c4ab49f1::t_a8efb40fb6865c 1496-1497,1579,1588-1594
+  s_66f791c4ab49f1::t_11f5b259fc67d0 22-23
+  s_66f791c4ab49f1::t_4c7ac5f5a95c9e 1679-1682
+  s_66f791c4ab49f1::t_5a2e0a60ac14ea 1641-1678,1683-1684
+rust/crates/argus-infrastructure/tests/sqlite_kernel.rs
+  s_66f791c4ab49f1::t_13568b0310fd34 234
+  s_66f791c4ab49f1::t_090db3526f7592 233
+  s_66f791c4ab49f1::t_f86accbaf243e5 107
+flutter/lib/features/jobs/presentation/job_detail_page.dart
+  s_66f791c4ab49f1::t_8d0667729464df 537-539,543-546
+  s_66f791c4ab49f1::t_f1b2f3f1fcb801 540-542
+flutter/test/architecture/architecture_boundaries_test.dart
+  s_66f791c4ab49f1::t_36cea886f0390c 1005-1011
+rust/crates/argus-application/src/unit_of_work.rs
+  s_66f791c4ab49f1::t_525f7d5c012cb7 5,109-122
+  s_66f791c4ab49f1::t_a702af60670ac3 123-124
+flutter/lib/core/bridge/generated/lib.dart
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 11,13,2603-2638,2649,2657,2666-2667,2678-2679
+rust/crates/argus-infrastructure/tests/migration_v12.rs
+  s_66f791c4ab49f1::t_13568b0310fd34 201
+  s_66f791c4ab49f1::t_090db3526f7592 200
+rust/crates/argus-infrastructure/tests/migration_v14.rs
+  s_66f791c4ab49f1::t_090db3526f7592 190
+  s_66f791c4ab49f1::t_13568b0310fd34 191
+rust/crates/argus-application/tests/phase_003_refresh_issues.rs
+  s_66f791c4ab49f1::t_e5751061797d73 1-156,228-230,232,234-239,241-254,263-562
+  s_66f791c4ab49f1::t_4fa4364d5eeb03 231,233,240
+  s_66f791c4ab49f1::t_221883b3b60643 157-227
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 255-262
+flutter/lib/core/client/src/models.freezed.dart
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 5011,5013-5270,5276,5287,5292,5296,5307,5324,5331-5332,5414,5417,5435,5438,5452,5455,5467,5475-5481,5493,5498,5502,5513,5530,5537-5538
+  s_66f791c4ab49f1::t_49811fb1d66801 5012
+flutter/lib/core/bridge/generated/frb_generated.dart
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 3646-3655,4171-4184,4195-4196,4203,6685-6698,7385-7401,7419,7426,9748-9759,10349-10360,10381
+rust/crates/argus-application/src/lib.rs
+  s_66f791c4ab49f1::t_d77562c68ee757 85
+  s_66f791c4ab49f1::t_877f7030fca5d6 86-87
+  s_66f791c4ab49f1::t_897dc09a6a821b 62-64
+  s_66f791c4ab49f1::t_76226acb6db10b 179
+rust/crates/argus-infrastructure/src/sqlite/unit_of_work.rs
+  s_66f791c4ab49f1::t_8c1f423fd8c348 16-17
+  s_66f791c4ab49f1::t_6634883ff3b9fd 397-407
+rust/crates/argus-infrastructure/tests/logical_library.rs
+  s_66f791c4ab49f1::t_090db3526f7592 21
+rust/crates/argus-application/src/hydration.rs
+  s_66f791c4ab49f1::t_2b2a9decea77ee 373-384,405-417,429,437,453-461
+rust/crates/argus-application/src/jobs.rs
+  s_66f791c4ab49f1::t_87c1c7ec32b1df 94,99-104,110,122,147-164
+  s_66f791c4ab49f1::t_42bfc8c980c6bd 19-24
+  s_66f791c4ab49f1::t_827d6e5c8fbe98 25
+rust/crates/argus-infrastructure/tests/source_hierarchy.rs
+  s_66f791c4ab49f1::t_13568b0310fd34 373
+  s_66f791c4ab49f1::t_090db3526f7592 372
+flutter/lib/core/bridge/src/frb_argus_client_gateway.dart
+  s_66f791c4ab49f1::t_2c050b56371132 2301-2309
+rust/crates/argus-runtime/src/lib.rs
+  s_66f791c4ab49f1::t_e081a6978ea448 3119,3138,3167-3173,3212-3216,3911,3916,3927
+  s_66f791c4ab49f1::t_21f8e52e129166 1400-1412
+  s_66f791c4ab49f1::t_35cdbb8ed42d05 663-677
+  s_66f791c4ab49f1::t_877f7030fca5d6 48-49,3197-3201,3240-3244,3256-3260,3272-3276,3287-3291,3302-3306,3326-3330,3351-3355,3365-3369,3378-3382,3425-3429,3453-3457,3474-3478,3487-3491,3514-3518,3536-3540,3545-3549,3558-3562,3582-3586,3600-3604,3614-3618,3629-3633,3644-3648,3659-3663,3699-3703,3707-3711,3718-3722,3730-3734,3754-3758,3800-3804,3810-3814,3821-3825,3844-3848,3867-3871,3891-3895,3912-3915,3919-3923,4041-4048,4051-4055
+  s_66f791c4ab49f1::t_2126c1e9d56430 4011,4021,4059
+  s_66f791c4ab49f1::t_6c1d5a14c2254e 50
+  s_66f791c4ab49f1::t_8a55acf48a84c6 5285-5333
+  s_66f791c4ab49f1::t_e2db52f741de7c 79-80
+flutter/test/core/bridge/frb_mapper_test.dart
+  s_66f791c4ab49f1::t_f1b2f3f1fcb801 56
+  s_66f791c4ab49f1::t_4371530d896a07 10-17,19-55,57-75
+  s_66f791c4ab49f1::t_559e46b97bdf9c 18
+rust/crates/argus-bridge/src/lib.rs
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 37-41,2761-2762,4175-4177,4189-4193
+  s_66f791c4ab49f1::t_027862e75f8e1d 35-36
+  s_66f791c4ab49f1::t_1c6bab193f3a09 1147-1159,1168
+  s_66f791c4ab49f1::t_ba209533ac8acb 2710-2760,2763-2787
+  s_66f791c4ab49f1::t_3f113e26d552cf 4171-4174,4178-4181
+rust/crates/argus-infrastructure/src/sqlite/jobs.rs
+  s_66f791c4ab49f1::t_877f7030fca5d6 83-84,2591
+  s_66f791c4ab49f1::t_f4678cf4422442 2506-2507
+  s_66f791c4ab49f1::t_2a8eb6adb6a5ea 2501-2505,2508
+  s_66f791c4ab49f1::t_9172955f59b997 2514
+  s_66f791c4ab49f1::t_160ac3bde69d10 2587-2589,2594,2596,2599-2602
+  s_66f791c4ab49f1::t_654f7352b3bead 44-82,85-129
+  s_66f791c4ab49f1::t_639f28986e3ce1 2536-2586,2590,2592-2593,2595,2597-2598,2603-2608
+rust/crates/argus-infrastructure/tests/metadata_persistence.rs
+  s_66f791c4ab49f1::t_090db3526f7592 25
+flutter/test/features/jobs/jobs_feature_test.dart
+  s_66f791c4ab49f1::t_2fa16c1c1c56b7 305-349,351-356,358-361
+  s_66f791c4ab49f1::t_cd98c2fc0b197d 350,357
+rust/crates/argus-infrastructure/tests/slice_005_retry.rs
+  s_66f791c4ab49f1::t_090db3526f7592 97
+  s_66f791c4ab49f1::t_13568b0310fd34 98
+flutter/lib/core/bridge/generated/frb_generated.io.dart
+  s_66f791c4ab49f1::t_921a16dd8ab9e0 573-575,748-750,1585-1589,1804-1808,2814-2819,3072-3074
+  s_66f791c4ab49f1::t_a6ee72502a69d0 3075-3077
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f87e0e1043eacfbb08177b63f76dba216b57a4a",
+  "prompts": {},
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

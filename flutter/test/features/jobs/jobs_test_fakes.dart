@@ -192,44 +192,51 @@ JobDetail jobDetail({
   ),
 );
 
-/// Builds one composed Library refresh detail with durable progress facts.
+/// Builds one terminal-success Library refresh detail fixture.
+///
+/// Completed fixtures have a terminal phase and fully completed unit counts;
+/// use [jobDetail] for running or unsuccessful lifecycle states.
 JobDetail libraryRefreshJobDetail({
   String id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-  JobLifecycleState state = JobLifecycleState.running,
+  JobLifecycleState state = JobLifecycleState.completedWithIssues,
   bool cancellationRequested = false,
   bool canRetry = false,
   String? statusKey,
   int? issueCount,
   List<RefreshIssueFact> issues = const [],
-}) => JobDetail(
-  job: JobRunProjection(
-    jobRunId: JobRunId(id),
-    operationType: 'library_refresh',
-    lifecycleState: state,
-    createdAtMs: 1,
-    cancellationRequested: cancellationRequested,
-    controls: JobControlAvailability(
-      canCancel: state == JobLifecycleState.running && !cancellationRequested,
-      canRetry: canRetry,
+}) {
+  assert(
+    state == JobLifecycleState.completed ||
+        state == JobLifecycleState.completedWithIssues,
+    'Library refresh fixture progress describes a successful terminal run.',
+  );
+  return JobDetail(
+    job: JobRunProjection(
+      jobRunId: JobRunId(id),
+      operationType: 'library_refresh',
+      lifecycleState: state,
+      createdAtMs: 1,
+      cancellationRequested: cancellationRequested,
+      controls: JobControlAvailability(canCancel: false, canRetry: canRetry),
     ),
-  ),
-  operationDetail: OperationDetail.libraryRefresh(
-    LibraryRefreshJobDetail(
-      trigger: 'manual',
-      mode: 'eligible_only',
-      requestedRootIds: const [],
-      scanRuns: const [],
-      progress: RefreshProgressFacts(
-        phase: 'library_refresh.completed',
-        completedUnits: 1,
-        totalUnits: 1,
-        statusKey: statusKey,
-        issueCount: issueCount,
-        issues: issues,
+    operationDetail: OperationDetail.libraryRefresh(
+      LibraryRefreshJobDetail(
+        trigger: 'manual',
+        mode: 'eligible_only',
+        requestedRootIds: const [],
+        scanRuns: const [],
+        progress: RefreshProgressFacts(
+          phase: 'library_refresh.completed',
+          completedUnits: 1,
+          totalUnits: 1,
+          statusKey: statusKey,
+          issueCount: issueCount,
+          issues: issues,
+        ),
       ),
     ),
-  ),
-);
+  );
+}
 
 ApplicationFailure jobNotFoundFailure() => ApplicationFailure(
   ClientApplicationError(

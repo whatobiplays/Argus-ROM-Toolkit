@@ -3532,10 +3532,10 @@ impl LibraryExecutionContext {
 
             let recognized = match argus_infrastructure::content::recognize_content(&mut reader) {
                 Ok(recognized) => recognized,
-                Err(_) => {
+                Err(error) => {
                     record_content_issue(
                         &mut issues,
-                        RefreshIssueReason::ContentMalformedOrUnsupported,
+                        refresh_issue_reason_for_recognition_error(error),
                         context.trace_id(),
                     )?;
                     continue;
@@ -5307,6 +5307,9 @@ fn record_content_issue(
 /// distinction the backend does not possess.
 fn refresh_issue_reason_for_content_error(code: ErrorCode) -> RefreshIssueReason {
     match code {
+        ErrorCode::FilesystemSourceValidationIndeterminate => {
+            RefreshIssueReason::ContentUnavailable
+        }
         ErrorCode::ValidationContentMalformed
         | ErrorCode::ValidationContentUnsupportedRepresentation
         | ErrorCode::ValidationMultiGameContainerUnsupported => {
@@ -5329,6 +5332,38 @@ fn refresh_issue_reason_for_content_error(code: ErrorCode) -> RefreshIssueReason
         }
         _ => RefreshIssueReason::ContentRefreshFailed,
     }
+}
+
+/// Normalizes a direct recognition failure before deriving its refresh reason.
+///
+/// Using the same closed error vocabulary as other content refresh failures
+/// keeps the conversion to refresh reasons in one place while preserving the
+/// distinctions already provided by the recognizer.
+fn refresh_issue_reason_for_recognition_error(
+    error: argus_infrastructure::content::ContentRecognitionError,
+) -> RefreshIssueReason {
+    let code = match error {
+        argus_infrastructure::content::ContentRecognitionError::ReadFailure => {
+            ErrorCode::FilesystemSourceValidationIndeterminate
+        }
+        argus_infrastructure::content::ContentRecognitionError::EncryptedContentUnsupported => {
+            ErrorCode::ValidationContentEncryptedUnsupported
+        }
+        argus_infrastructure::content::ContentRecognitionError::ResourceLimitExceeded => {
+            ErrorCode::OperationTransformationResourceLimitExceeded
+        }
+        argus_infrastructure::content::ContentRecognitionError::AmbiguousContentRecognition => {
+            ErrorCode::ValidationContentRecognitionAmbiguous
+        }
+        argus_infrastructure::content::ContentRecognitionError::Truncated
+        | argus_infrastructure::content::ContentRecognitionError::Malformed => {
+            ErrorCode::ValidationContentMalformed
+        }
+        argus_infrastructure::content::ContentRecognitionError::UnsupportedRepresentation => {
+            ErrorCode::ValidationContentUnsupportedRepresentation
+        }
+    };
+    refresh_issue_reason_for_content_error(code)
 }
 
 fn map_sqlite_executor_error(trace_id: TraceId, error: SqliteExecutorError) -> ApplicationError {
@@ -5633,16 +5668,123 @@ fn hex_encode_bytes(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, resolve_data_directory, sessions_require_credentials, trace_id_from_entropy,
+        Platform, refresh_issue_reason_for_content_error,
+        refresh_issue_reason_for_recognition_error, resolve_data_directory,
+        sessions_require_credentials, trace_id_from_entropy,
     };
-    use argus_application::{EnrichmentProviderSession, MetadataProviderRegistry, ProviderId};
+    use argus_application::{
+        EnrichmentProviderSession, MetadataProviderRegistry, ProviderId, RefreshIssueReason,
+        TransformationFailure, map_transformation_failure,
+    };
     use std::path::PathBuf;
+
+    struct ReadFailureContentReader;
+
+    impl argus_infrastructure::content::ContentReader for ReadFailureContentReader {
+        fn len(&self) -> Result<u64, argus_infrastructure::content::ContentReadError> {
+            Ok(1)
+        }
+
+        fn read_at(
+            &mut self,
+            _offset: u64,
+            _destination: &mut [u8],
+        ) -> Result<usize, argus_infrastructure::content::ContentReadError> {
+            Err(argus_infrastructure::content::ContentReadError::Io)
+        }
+    }
 
     struct TestProviderSession(ProviderId);
 
     impl EnrichmentProviderSession for TestProviderSession {
         fn provider_id(&self) -> ProviderId {
             self.0
+        }
+    }
+
+    #[test]
+    fn transformation_read_failure_is_reported_as_content_unavailable() {
+        let normalized = map_transformation_failure(TransformationFailure::ReadFailure);
+
+        assert_eq!(
+            refresh_issue_reason_for_content_error(normalized),
+            RefreshIssueReason::ContentUnavailable
+        );
+    }
+
+    #[test]
+    fn direct_content_recognition_read_failure_is_reported_as_unavailable() {
+        let mut reader = ReadFailureContentReader;
+        let error = argus_infrastructure::content::recognize_content(&mut reader)
+            .expect_err("the controlled source read must fail");
+        assert_eq!(
+            error,
+            argus_infrastructure::content::ContentRecognitionError::ReadFailure
+        );
+        assert_eq!(
+            refresh_issue_reason_for_recognition_error(error),
+            RefreshIssueReason::ContentUnavailable
+        );
+    }
+
+    #[test]
+    fn direct_content_recognition_errors_preserve_typed_refresh_reasons() {
+        use argus_infrastructure::content::ContentRecognitionError;
+
+        let cases = [
+            (
+                ContentRecognitionError::ReadFailure,
+                RefreshIssueReason::ContentUnavailable,
+            ),
+            (
+                ContentRecognitionError::EncryptedContentUnsupported,
+                RefreshIssueReason::ContentEncryptedUnsupported,
+            ),
+            (
+                ContentRecognitionError::ResourceLimitExceeded,
+                RefreshIssueReason::ContentResourceLimitExceeded,
+            ),
+            (
+                ContentRecognitionError::AmbiguousContentRecognition,
+                RefreshIssueReason::ContentIdentificationFailed,
+            ),
+            (
+                ContentRecognitionError::Truncated,
+                RefreshIssueReason::ContentMalformedOrUnsupported,
+            ),
+            (
+                ContentRecognitionError::UnsupportedRepresentation,
+                RefreshIssueReason::ContentMalformedOrUnsupported,
+            ),
+            (
+                ContentRecognitionError::Malformed,
+                RefreshIssueReason::ContentMalformedOrUnsupported,
+            ),
+        ];
+
+        for (error, expected_reason) in cases {
+            assert_recognition_error_variant_is_listed(error);
+            assert_eq!(
+                refresh_issue_reason_for_recognition_error(error),
+                expected_reason,
+                "unexpected refresh reason for {error:?}"
+            );
+        }
+    }
+
+    fn assert_recognition_error_variant_is_listed(
+        error: argus_infrastructure::content::ContentRecognitionError,
+    ) {
+        use argus_infrastructure::content::ContentRecognitionError;
+
+        match error {
+            ContentRecognitionError::ReadFailure
+            | ContentRecognitionError::EncryptedContentUnsupported
+            | ContentRecognitionError::ResourceLimitExceeded
+            | ContentRecognitionError::AmbiguousContentRecognition
+            | ContentRecognitionError::Truncated
+            | ContentRecognitionError::UnsupportedRepresentation
+            | ContentRecognitionError::Malformed => {}
         }
     }
 

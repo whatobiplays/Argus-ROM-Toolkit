@@ -251,20 +251,19 @@ fn refresh_issue_summary_rejects_fact_count_above_the_durable_bound() {
 
 #[test]
 fn refresh_issue_summary_rejects_occurrence_overflow_without_wrapping() {
-    let saturated = content_fact(RefreshIssueReason::ContentUnavailable, i64::MAX as u64);
-    let other = content_fact(
-        RefreshIssueReason::ContentChangedDuringRefresh,
-        i64::MAX as u64,
-    );
-    let third = content_fact(
+    let unavailable = content_fact(RefreshIssueReason::ContentUnavailable, i64::MAX as u64);
+    let malformed = content_fact(
         RefreshIssueReason::ContentMalformedOrUnsupported,
         i64::MAX as u64,
     );
-    let facts = vec![other, saturated, third];
-    assert!(
-        RefreshIssueSummary::from_facts(facts).is_err(),
-        "a total that cannot be represented must be rejected instead of wrapping"
+    let changed = content_fact(
+        RefreshIssueReason::ContentChangedDuringRefresh,
+        i64::MAX as u64,
     );
+    let facts = vec![unavailable, malformed, changed];
+    let error = RefreshIssueSummary::from_facts(facts)
+        .expect_err("a checked sum outside SQLite's signed range must be rejected");
+    assert_eq!(error, argus_application::RefreshIssueError);
 }
 
 #[test]

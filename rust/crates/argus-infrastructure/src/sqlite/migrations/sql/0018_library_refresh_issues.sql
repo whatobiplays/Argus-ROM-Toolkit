@@ -49,4 +49,9 @@ CREATE TABLE library_refresh_issue_fact (
 -- One row per complete typed identity keeps the durable representation
 -- deterministic and keeps an aggregate total reconstructible.
 CREATE UNIQUE INDEX uq_library_refresh_issue_identity
-    ON library_refresh_issue_fact (job_run_id, issue_kind, issue_reason, provider_id);
+    ON library_refresh_issue_fact (
+        job_run_id,
+        issue_kind,
+        issue_reason,
+        COALESCE(provider_id, '')
+    );

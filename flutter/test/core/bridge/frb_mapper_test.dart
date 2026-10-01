@@ -73,6 +73,35 @@ void main() {
     );
   });
 
+  test('refresh progress DTO rejects an unknown issue kind', () {
+    expect(
+      () => refreshProgressFactsFromDto(
+        dto.RefreshProgressFactsDto(
+          phase: null,
+          completedUnits: null,
+          totalUnits: null,
+          statusKey: null,
+          issueCount: null,
+          issues: <dto.RefreshIssueFactDto>[
+            dto.RefreshIssueFactDto(
+              kind: 'raw scan detail',
+              reason: 'content_unavailable',
+              providerId: null,
+              occurrences: BigInt.one,
+            ),
+          ],
+        ),
+      ),
+      throwsA(
+        isA<TransportFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          TransportFailureKind.contractMismatch,
+        ),
+      ),
+    );
+  });
+
   test(
     'enrichment DTOs map provenance, readiness, and bounded artwork bytes',
     () {

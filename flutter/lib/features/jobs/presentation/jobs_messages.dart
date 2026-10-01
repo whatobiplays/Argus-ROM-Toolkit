@@ -56,8 +56,8 @@ abstract final class JobsMessages {
 
   /// Heading for the bounded explanation attached to a partial refresh.
   static const String refreshIssuesTitle = 'Why this finished with issues';
-  static const String refreshIssuesOverflow =
-      'More issue categories are recorded with this job.';
+  static const String refreshIssuesShowAll = 'Show all issue details';
+  static const String refreshIssuesShowLess = 'Show fewer issue details';
   static const int refreshIssuesVisible = 5;
 
   /// Returns the broad category shown for one durable refresh issue.

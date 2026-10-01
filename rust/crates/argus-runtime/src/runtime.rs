@@ -3806,6 +3806,16 @@ impl LibraryRefreshOperationHandler {
     }
 }
 
+/// Returns whether a refresh reached a terminal boundary whose issue summary
+/// is authoritative. Non-success lifecycle states leave the issue projection
+/// unknown because their requested scope did not reach refresh finalization.
+fn refresh_issue_summary_is_finalized(state: JobRunState) -> bool {
+    matches!(
+        state,
+        JobRunState::Completed | JobRunState::CompletedWithIssues
+    )
+}
+
 impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
     fn execute(
         &self,
@@ -3974,11 +3984,14 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             JobRunState::CompletedWithIssues => JobRunState::CompletedWithIssues,
             other => other,
         };
-        // The bounded issue detail is durable state of this execution, so it is
-        // written before the run reports its terminal progress. A reader can
-        // therefore never observe a terminal refresh whose detail is missing
-        // the explanation for that lifecycle state.
-        self.persist_refresh_issues(context, &summary)?;
+        // Completed and CompletedWithIssues refreshes persist their bounded
+        // issue summary before terminal progress is reported. Cancelled,
+        // Failed, Interrupted, and Abandoned refreshes intentionally do not
+        // synthesize a finalized summary; without an authoritative summary,
+        // their refresh issue projection remains unknown.
+        if refresh_issue_summary_is_finalized(state) {
+            self.persist_refresh_issues(context, &summary)?;
+        }
         let status_key = match state {
             JobRunState::Completed => "completed",
             JobRunState::CompletedWithIssues => "completed_with_issues",
@@ -4468,6 +4481,30 @@ mod tests {
         SubsystemName, TraceId,
     };
     use std::sync::Weak;
+
+    #[test]
+    fn only_successful_terminal_refreshes_finalize_issue_summaries() {
+        assert!(super::refresh_issue_summary_is_finalized(
+            JobRunState::Completed
+        ));
+        assert!(super::refresh_issue_summary_is_finalized(
+            JobRunState::CompletedWithIssues
+        ));
+        for state in [
+            JobRunState::Queued,
+            JobRunState::Preparing,
+            JobRunState::Running,
+            JobRunState::Cancelled,
+            JobRunState::Failed,
+            JobRunState::Interrupted,
+            JobRunState::Abandoned,
+        ] {
+            assert!(
+                !super::refresh_issue_summary_is_finalized(state),
+                "{state:?} does not carry a finalized refresh issue summary"
+            );
+        }
+    }
 
     #[test]
     fn host_stop_completion_preserves_partial_work() {

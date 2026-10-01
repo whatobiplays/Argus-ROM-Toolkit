@@ -10,6 +10,13 @@ TransportFailure transportFailure() =>
     const TransportFailure('fake transport failure');
 
 void main() {
+  test('Library refresh detail fake defaults to a terminal lifecycle', () {
+    expect(
+      libraryRefreshJobDetail().job.lifecycleState,
+      JobLifecycleState.completedWithIssues,
+    );
+  });
+
   ProviderContainer createContainer(JobsApi api) {
     final container = ProviderContainer(
       overrides: [
@@ -357,6 +364,90 @@ void main() {
       find.textContaining('Local content: admitted content could not be read'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('partial Library refresh can reveal every bounded issue fact', (
+    tester,
+  ) async {
+    final jobId = JobRunId('c' * 32);
+    final api = FakeJobsApi(
+      details: {
+        jobId: libraryRefreshJobDetail(
+          id: 'c' * 32,
+          state: JobLifecycleState.completedWithIssues,
+          statusKey: 'completed_with_issues',
+          issueCount: 6,
+          issues: const [
+            RefreshIssueFact(
+              kind: RefreshIssueKind.matching,
+              reason: RefreshIssueReason.providerUnavailable,
+              providerId: 'gametdb',
+              occurrences: 1,
+            ),
+            RefreshIssueFact(
+              kind: RefreshIssueKind.metadata,
+              reason: RefreshIssueReason.providerTimeout,
+              providerId: 'gametdb',
+              occurrences: 1,
+            ),
+            RefreshIssueFact(
+              kind: RefreshIssueKind.artworkDiscovery,
+              reason: RefreshIssueReason.providerRateLimited,
+              providerId: 'steamgriddb',
+              occurrences: 1,
+            ),
+            RefreshIssueFact(
+              kind: RefreshIssueKind.artworkDownload,
+              reason: RefreshIssueReason.providerInvalidResponse,
+              providerId: 'steamgriddb',
+              occurrences: 1,
+            ),
+            RefreshIssueFact(
+              kind: RefreshIssueKind.assetStore,
+              reason: RefreshIssueReason.artworkAssetStoreUnavailable,
+              occurrences: 1,
+            ),
+            RefreshIssueFact(
+              kind: RefreshIssueKind.content,
+              reason: RefreshIssueReason.contentUnavailable,
+              occurrences: 1,
+            ),
+          ],
+        ),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Why this finished with issues'), findsOneWidget);
+    expect(find.textContaining('Artwork storage:'), findsOneWidget);
+    expect(
+      find.textContaining('Local content: admitted content could not be read'),
+      findsNothing,
+    );
+    final showAll = find.text('Show all issue details');
+    expect(showAll, findsOneWidget);
+    await tester.ensureVisible(showAll);
+    await tester.tap(showAll);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Local content: admitted content could not be read'),
+      findsOneWidget,
+    );
+    expect(find.text('Show fewer issue details'), findsOneWidget);
   });
 
   testWidgets('clean Completed job detail has no Retry control', (

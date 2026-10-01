@@ -1406,6 +1406,7 @@ fn independent_refresh_failures_aggregate_into_deterministic_typed_facts() {
     assert_eq!(facts[1].provider_id(), Some(ProviderId::GameTdb));
     assert_eq!(facts[1].occurrences(), 1);
     assert_eq!(facts[2].kind(), RefreshIssueKind::Content);
+    assert_eq!(facts[2].reason(), RefreshIssueReason::ContentUnavailable);
     assert_eq!(facts[2].provider_id(), None);
     assert_eq!(facts[2].occurrences(), 1);
 
@@ -1432,6 +1433,89 @@ fn independent_refresh_failures_aggregate_into_deterministic_typed_facts() {
         "clean content must still commit its hydration: {titles:?}"
     );
     host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn clean_library_refresh_persists_an_explicit_zero_issue_summary() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let data_directory = directory.path().join("data");
+    let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        data_directory.clone(),
+    ));
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::Completed
+    );
+    let live = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(live.progress().issue_count(), Some(0));
+    assert!(live.progress().issues().is_empty());
+    host.general_shutdown().expect("shutdown");
+
+    let reopened =
+        ApplicationHost::new(KernelBootstrapOptions::with_data_directory(data_directory));
+    context_ready(&reopened);
+    let detail = reopened
+        .get_job(handle.job_run_id())
+        .expect("clean refresh detail after reopen");
+    let OperationDetail::LibraryRefresh(refresh) = detail.operation_detail() else {
+        panic!("expected composed refresh detail after reopen");
+    };
+    assert_eq!(refresh.progress().issue_count(), Some(0));
+    assert!(refresh.progress().issues().is_empty());
+    reopened.general_shutdown().expect("second shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn cancelled_refresh_detail_without_a_summary_remains_unknown_after_reopen() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let data_directory = directory.path().join("data");
+    let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        data_directory.clone(),
+    ));
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::Completed
+    );
+    host.general_shutdown().expect("shutdown");
+
+    // Model an accepted cancellation after the terminal lifecycle has been
+    // persisted. A non-success historical run has no finalized refresh issue
+    // summary, so GetJob must keep its issue projection unknown.
+    let job_run_id = handle.job_run_id();
+    let rewrite = format!(
+        "DELETE FROM library_refresh_issue_fact WHERE job_run_id = '{job_run_id}';
+         DELETE FROM library_refresh_issue_summary WHERE job_run_id = '{job_run_id}';
+         UPDATE job_run SET state = 'cancelled' WHERE job_run_id = '{job_run_id}';"
+    );
+    rewrite_refresh_issue_projection(&data_directory, &rewrite);
+
+    let reopened =
+        ApplicationHost::new(KernelBootstrapOptions::with_data_directory(data_directory));
+    context_ready(&reopened);
+    let detail = reopened
+        .get_job(handle.job_run_id())
+        .expect("cancelled refresh detail after reopen");
+    let OperationDetail::LibraryRefresh(refresh) = detail.operation_detail() else {
+        panic!("expected composed refresh detail after reopen");
+    };
+    assert_eq!(detail.job().state(), JobRunState::Cancelled);
+    assert_eq!(refresh.progress().issue_count(), None);
+    assert!(refresh.progress().issues().is_empty());
+    reopened.general_shutdown().expect("second shutdown");
 }
 
 #[test]
@@ -1598,8 +1682,9 @@ fn contradictory_persisted_refresh_issue_projection_is_rejected() {
 #[cfg(feature = "test-support")]
 fn fatal_refresh_execution_failure_remains_failed() {
     let directory = tempfile::tempdir().expect("tempdir");
+    let data_directory = directory.path().join("data");
     let trace = Arc::new(Mutex::new(ProviderTrace::default()));
-    let host = fixture_provider_host(directory.path().join("data"), &trace);
+    let host = fixture_provider_host(data_directory.clone(), &trace);
     context_ready(&host);
     let library = directory.path().join("Library");
     fs::create_dir_all(&library).expect("library root");
@@ -1637,6 +1722,21 @@ fn fatal_refresh_execution_failure_remains_failed() {
     );
     assert!(refresh.progress().issues().is_empty());
     host.general_shutdown().expect("shutdown");
+
+    fs::remove_file(&staging).expect("remove staging sabotage");
+    let reopened =
+        ApplicationHost::new(KernelBootstrapOptions::with_data_directory(data_directory));
+    context_ready(&reopened);
+    let detail = reopened
+        .get_job(handle.job_run_id())
+        .expect("failed refresh detail after reopen");
+    let OperationDetail::LibraryRefresh(refresh) = detail.operation_detail() else {
+        panic!("expected composed refresh detail after reopen");
+    };
+    assert_eq!(detail.job().state(), JobRunState::Failed);
+    assert_eq!(refresh.progress().issue_count(), None);
+    assert!(refresh.progress().issues().is_empty());
+    reopened.general_shutdown().expect("second shutdown");
 }
 
 #[test]

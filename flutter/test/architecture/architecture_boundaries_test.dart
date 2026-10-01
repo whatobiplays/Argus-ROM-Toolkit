@@ -1002,7 +1002,13 @@ bool _isApprovedP03EnrichmentConcept(String relativePath, String concept) {
       relativePath == 'features/library/library_composition.dart' ||
       relativePath ==
           'features/library/application/game_detail_controller.dart' ||
-      relativePath == 'features/library/presentation/game_detail_page.dart';
+      relativePath == 'features/library/presentation/game_detail_page.dart' ||
+      // The Jobs feature explains a partial Library refresh with bounded
+      // product copy derived from typed backend issue reasons; BE-015 names
+      // artwork discovery and download failures as refresh issue scope. The
+      // file presents those facts only and consumes no artwork identity,
+      // resolution, or ranking.
+      relativePath == 'features/jobs/presentation/jobs_messages.dart';
 }
 
 void _expectNoForbiddenImports(

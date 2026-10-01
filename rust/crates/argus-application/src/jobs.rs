@@ -16,6 +16,13 @@ use crate::{
 use crate::sources::{RelativeSourceLocator, RootLocator, SourceLocatorKey};
 use crate::transformation::{DerivedEntryKey, DerivedFingerprint, DerivedLocator};
 
+mod refresh_issues;
+
+pub use refresh_issues::{
+    RefreshIssueAccumulator, RefreshIssueError, RefreshIssueFact, RefreshIssueKind,
+    RefreshIssueReason, RefreshIssueRepository, RefreshIssueSummary,
+};
+
 /// Stable logical operation type for the built-in library scan.
 pub const OPERATION_TYPE_LIBRARY_SCAN: &str = "library_scan";
 
@@ -84,17 +91,23 @@ pub struct RefreshProgressFacts {
     completed_units: Option<u64>,
     total_units: Option<u64>,
     status_key: Option<String>,
-    issue_count: Option<u64>,
+    issues: Option<RefreshIssueSummary>,
 }
 
 impl RefreshProgressFacts {
     /// Creates truthful progress facts without fabricating a total.
+    ///
+    /// `issues` is the single authority for the issue count and the bounded
+    /// explanatory facts, so an inconsistent count-only projection cannot be
+    /// constructed here. `None` means the issue projection is unknown, which
+    /// is the truthful state for an execution that never reached its safe
+    /// terminal boundary.
     pub fn new(
         phase: Option<String>,
         completed_units: Option<u64>,
         total_units: Option<u64>,
         status_key: Option<String>,
-        issue_count: Option<u64>,
+        issues: Option<RefreshIssueSummary>,
     ) -> Result<Self, JobProgressError> {
         if let (Some(completed), Some(total)) = (completed_units, total_units)
             && completed > total
@@ -106,7 +119,7 @@ impl RefreshProgressFacts {
             completed_units,
             total_units,
             status_key,
-            issue_count,
+            issues,
         })
     }
 
@@ -131,8 +144,24 @@ impl RefreshProgressFacts {
     }
 
     /// Returns the bounded issue count, if known.
-    pub const fn issue_count(&self) -> Option<u64> {
-        self.issue_count
+    pub fn issue_count(&self) -> Option<u64> {
+        self.issues.as_ref().map(RefreshIssueSummary::issue_count)
+    }
+
+    /// Returns the bounded explanatory issue facts.
+    ///
+    /// An unknown issue projection and a clean execution both return an empty
+    /// slice; use [`Self::issue_count`] to distinguish `None` from `Some(0)`.
+    pub fn issues(&self) -> &[RefreshIssueFact] {
+        self.issues
+            .as_ref()
+            .map(RefreshIssueSummary::facts)
+            .unwrap_or(&[])
+    }
+
+    /// Returns the validated issue summary behind these facts, if known.
+    pub const fn issue_summary(&self) -> Option<&RefreshIssueSummary> {
+        self.issues.as_ref()
     }
 }
 

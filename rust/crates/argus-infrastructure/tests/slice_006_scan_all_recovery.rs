@@ -132,8 +132,8 @@ fn migration_0007_upgrades_0006_history_and_backfills_invalid_configuration_erro
         migration_test_support::current_registry(),
     )
     .expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 17);
-    assert_eq!(fresh.migration_summary().applied_count, 11);
+    assert_eq!(fresh.migration_summary().current_version, 18);
+    assert_eq!(fresh.migration_summary().applied_count, 12);
 
     let detail = SqliteJobsQueries::new(fresh.clone())
         .get_job(&context(), job_id(JOB_A))

@@ -302,6 +302,63 @@ void main() {
     expect(find.byKey(const ValueKey<String>('jobs-cancel-job')), findsNothing);
   });
 
+  testWidgets('partial Library refresh detail explains why it finished with '
+      'issues', (tester) async {
+    final jobId = JobRunId('b' * 32);
+    final api = FakeJobsApi(
+      details: {
+        jobId: libraryRefreshJobDetail(
+          id: 'b' * 32,
+          state: JobLifecycleState.completedWithIssues,
+          statusKey: 'completed_with_issues',
+          issueCount: 3,
+          issues: const [
+            RefreshIssueFact(
+              kind: RefreshIssueKind.matching,
+              reason: RefreshIssueReason.providerUnavailable,
+              providerId: 'gametdb',
+              occurrences: 2,
+            ),
+            RefreshIssueFact(
+              kind: RefreshIssueKind.content,
+              reason: RefreshIssueReason.contentUnavailable,
+              occurrences: 1,
+            ),
+          ],
+        ),
+      },
+    );
+    final container = createContainer(api);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Completed with issues'), findsOneWidget);
+    expect(find.text('Issues: 3'), findsOneWidget);
+    expect(find.text('Why this finished with issues'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Content matching: the metadata provider was unavailable '
+        '(GameTDB) (2 affected)',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Local content: admitted content could not be read'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('clean Completed job detail has no Retry control', (
     tester,
   ) async {

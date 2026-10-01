@@ -1,7 +1,8 @@
 use argus_application::{
     GameId, JobRunId, LibraryRefreshJobDetail, LibraryRefreshTrigger,
     LibraryResolutionRefreshJobDetail, OPERATION_TYPE_GAME_REFRESH, OPERATION_TYPE_LIBRARY_REFRESH,
-    OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH, RefreshMode, RefreshProgressFacts,
+    OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH, RefreshIssueFact, RefreshIssueKind,
+    RefreshIssueReason, RefreshIssueSummary, RefreshMode, RefreshProgressFacts,
 };
 
 fn job_run_id() -> JobRunId {
@@ -28,12 +29,22 @@ fn phase_003_operation_types_are_stable_and_distinct() {
 
 #[test]
 fn refresh_details_preserve_typed_intent_and_bounded_progress() {
+    let issues = RefreshIssueSummary::from_facts(vec![
+        RefreshIssueFact::new(
+            RefreshIssueKind::Metadata,
+            RefreshIssueReason::ProviderUnavailable,
+            Some(argus_application::ProviderId::GameTdb),
+            1,
+        )
+        .expect("bounded issue fact"),
+    ])
+    .expect("bounded issue summary");
     let progress = RefreshProgressFacts::new(
         Some("hydrating".to_owned()),
         Some(2),
         Some(3),
         Some("library_refresh.hydrating".to_owned()),
-        Some(1),
+        Some(issues),
     )
     .expect("bounded progress");
     let detail = LibraryRefreshJobDetail::new(
@@ -56,6 +67,12 @@ fn refresh_details_preserve_typed_intent_and_bounded_progress() {
         )
     );
     assert_eq!(detail.mode(), RefreshMode::EligibleOnly);
+    assert_eq!(detail.progress().issue_count(), Some(1));
+    assert_eq!(detail.progress().issues().len(), 1);
+    assert_eq!(
+        detail.progress().issues()[0].reason(),
+        RefreshIssueReason::ProviderUnavailable
+    );
     assert_eq!(detail.progress(), &progress);
     assert_eq!(detail.requested_root_ids().len(), 1);
 

@@ -16,20 +16,22 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use argus_application::{
     AddLibraryRootAndRefreshResult, AddLocalLibraryRootAndScanCommand,
     AddLocalLibraryRootAndScanResult, AddLocalLibraryRootResult, AdmittedLibraryScanJob,
-    AdmittedScan, AppearanceSettingsSubscriber, ApplicationError, BackgroundOperationHandler,
-    BackgroundOperationStopReason, CancelJobResult, CompleteLibraryOnboardingAndRefreshResult,
-    ErrorCode, EventSubscriberError, GameId, GameLibraryPage, GetGameResult, HydrationReport,
-    HydrationTarget, JobDetail, JobProgress, JobProgressChanged, JobProgressReporter, JobRunId,
-    JobRunRepository, JobRunState, JobStateChanged, JobSummaryPage, LibraryFacetQuery,
-    LibraryFacets, LibraryOnboardingState, LibraryProviderSetupDecision,
-    LibraryRefreshAdmissionOutcome, LibraryRefreshTrigger, LibraryRootId, LibraryRootPage,
-    LibraryRootProjection, LibraryScanAdmissionResult, LibraryScanAllRequestIdentity,
-    LibraryScanChildAdmission, LibraryScanChildCompletion, LibraryScanExecutionPlan,
-    ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
-    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
-    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MetadataProviderSettings,
-    MetadataProviderSettingsUpdateResult, MetadataSettings, MetadataSettingsUpdateResult,
-    OperationCompletion, OperationContext, OperationName, PrivacyConsent, RefreshMode,
+    AdmittedScan, AppearanceSettingsSubscriber, ApplicationError, ApplicationPortError,
+    BackgroundOperationHandler, BackgroundOperationStopReason, CancelJobResult,
+    CompleteLibraryOnboardingAndRefreshResult, ErrorCode, EventSubscriberError, GameId,
+    GameLibraryPage, GetGameResult, HydrationReport, HydrationTarget, JobDetail, JobProgress,
+    JobProgressChanged, JobProgressReporter, JobRunId, JobRunRepository, JobRunState,
+    JobStateChanged, JobSummaryPage, LibraryFacetQuery, LibraryFacets, LibraryOnboardingState,
+    LibraryProviderSetupDecision, LibraryRefreshAdmissionOutcome, LibraryRefreshTrigger,
+    LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionResult,
+    LibraryScanAllRequestIdentity, LibraryScanChildAdmission, LibraryScanChildCompletion,
+    LibraryScanExecutionPlan, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
+    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
+    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
+    MetadataProviderSettings, MetadataProviderSettingsUpdateResult, MetadataSettings,
+    MetadataSettingsUpdateResult, OperationCompletion, OperationContext, OperationName,
+    PrivacyConsent, RefreshIssueAccumulator, RefreshIssueKind, RefreshIssueReason,
+    RefreshIssueRepository, RefreshIssueSummary, RefreshMode, RefreshUnitOfWork,
     RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference,
     SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryChildrenPage,
     SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult, StartLibraryScanResult,
@@ -43,8 +45,9 @@ use crate::{
     RuntimeNotificationSink, StartupCoordinator, StartupPhaseObserver, StartupResult, SystemClock,
     background::BackgroundOperationManager,
     events::{PendingEventCollector, finalize_library_roots_update},
-    new_trace_id,
+    map_application_port_error, new_trace_id,
     operations::{OperationClass, OperationGuard, OperationTracker, ResourceClass},
+    record_content_issue,
     startup::SettingsReadPort,
 };
 use argus_application::LocalFilesystemProvider;
@@ -3482,6 +3485,22 @@ fn runtime_error(code: ErrorCode) -> ApplicationError {
     runtime_error_with_trace(code, trace)
 }
 
+/// Records one refresh issue owned by the composed operation rather than by
+/// local content processing.
+///
+/// The bounded issue projection only rejects an occurrence its durable
+/// representation cannot hold, so a rejection fails the run instead of
+/// silently dropping scope the lifecycle already reports as unsatisfied.
+fn record_scope_issue(
+    issues: &mut RefreshIssueAccumulator,
+    reason: RefreshIssueReason,
+    trace_id: TraceId,
+) -> Result<(), ApplicationError> {
+    issues
+        .record(RefreshIssueKind::Scope, reason, None)
+        .map_err(|_| runtime_error_with_trace(ErrorCode::InternalUnexpected, trace_id))
+}
+
 fn runtime_error_with_trace(code: ErrorCode, trace: TraceId) -> ApplicationError {
     ApplicationError::from_code(code, trace, argus_application::SafeContext::new())
         .expect("runtime lifecycle error uses an allowlisted empty context")
@@ -3760,6 +3779,31 @@ impl LibraryRefreshOperationHandler {
             }
         }
     }
+
+    /// Persists the bounded refresh issue projection for this execution.
+    ///
+    /// The projection is refresh-owned durable state rather than enrichment
+    /// state, so the write uses the focused refresh transaction capability on
+    /// the owning operation instead of the shared enrichment scope.
+    fn persist_refresh_issues(
+        &self,
+        context: &OperationContext,
+        summary: &RefreshIssueSummary,
+    ) -> Result<(), ApplicationError> {
+        let job_run_id = self.job_run_id;
+        let summary = summary.clone();
+        self.unit_of_work
+            .clone()
+            .execute(context, move |mut scope| {
+                scope
+                    .refresh_issues()
+                    .replace_for_job(job_run_id, &summary)
+                    .map_err(ApplicationPortError::Persistence)?;
+                scope.commit()?;
+                Ok(())
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
 }
 
 impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
@@ -3796,7 +3840,7 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             .expect("transformation failure uses an allowlisted empty context")
         })?;
         let mut child_states = Vec::with_capacity(self.plans.len());
-        let mut issue_count = 0_u64;
+        let mut issues = RefreshIssueAccumulator::new();
 
         for (index, plan) in self.plans.iter().enumerate() {
             let child = LibraryScanOperationHandler::new(
@@ -3837,11 +3881,17 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
                     &is_cancelled,
                 ) {
                     Ok((_, root_issues)) => {
-                        issue_count = issue_count.saturating_add(root_issues);
+                        issues
+                            .merge(&root_issues)
+                            .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
                     }
                     Err(error) if stop_reason().is_some() => return Err(error),
                     Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
+                        record_content_issue(
+                            &mut issues,
+                            RefreshIssueReason::ContentRefreshFailed,
+                            context.trace_id(),
+                        )?;
                     }
                 }
             }
@@ -3852,11 +3902,17 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
                 "library_refresh.hydrating",
                 Some(completed),
                 Some(total),
-                Some(if issue_count == 0 {
-                    "refreshing_committed_content"
-                } else {
-                    "refreshing_with_issues"
-                }),
+                Some(
+                    if issues
+                        .issue_count()
+                        .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?
+                        == 0
+                    {
+                        "refreshing_committed_content"
+                    } else {
+                        "refreshing_with_issues"
+                    },
+                ),
                 crate::now_millis(),
             )
             .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
@@ -3868,11 +3924,61 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             self.plans.len(),
             &child_states,
         );
+
+        // Requested scope that never reached safe terminal completion is part
+        // of this operation's issue projection. The generic lifecycle already
+        // reports CompletedWithIssues for it, so the bounded detail has to
+        // identify it instead of leaving that state unexplained. Child scan
+        // intake counters are deliberately not reused here: they carry no
+        // refresh-level typed reason and reusing them would fabricate provider
+        // or content facts the child never classified.
+        for child_state in &child_states {
+            match child_state {
+                LibraryScanChildCompletion::Partial => {
+                    record_scope_issue(
+                        &mut issues,
+                        RefreshIssueReason::ScopeRootScanIncomplete,
+                        context.trace_id(),
+                    )?;
+                }
+                LibraryScanChildCompletion::Failed => {
+                    record_scope_issue(
+                        &mut issues,
+                        RefreshIssueReason::ScopeRootScanFailed,
+                        context.trace_id(),
+                    )?;
+                }
+                LibraryScanChildCompletion::Complete
+                | LibraryScanChildCompletion::Cancelled
+                | LibraryScanChildCompletion::Abandoned => {}
+            }
+        }
+        if self.exclusion_count > 0 {
+            let excluded = u64::try_from(self.exclusion_count)
+                .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+            issues
+                .record_count(
+                    RefreshIssueKind::Scope,
+                    RefreshIssueReason::ScopeRootNotAdmitted,
+                    None,
+                    excluded,
+                )
+                .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+        }
+
+        let summary = issues
+            .finish()
+            .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
         let state = match scan_state {
-            JobRunState::Completed if issue_count > 0 => JobRunState::CompletedWithIssues,
+            JobRunState::Completed if summary.issue_count() > 0 => JobRunState::CompletedWithIssues,
             JobRunState::CompletedWithIssues => JobRunState::CompletedWithIssues,
             other => other,
         };
+        // The bounded issue detail is durable state of this execution, so it is
+        // written before the run reports its terminal progress. A reader can
+        // therefore never observe a terminal refresh whose detail is missing
+        // the explanation for that lifecycle state.
+        self.persist_refresh_issues(context, &summary)?;
         let status_key = match state {
             JobRunState::Completed => "completed",
             JobRunState::CompletedWithIssues => "completed_with_issues",

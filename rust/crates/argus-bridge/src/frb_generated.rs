@@ -3587,6 +3587,18 @@ impl SseDecode for Vec<crate::RecoveryActionDto> {
     }
 }
 
+impl SseDecode for Vec<crate::RefreshIssueFactDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::RefreshIssueFactDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::RegionFacetBucketDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4229,6 +4241,22 @@ impl SseDecode for crate::RecoveryActionKindDto {
     }
 }
 
+impl SseDecode for crate::RefreshIssueFactDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_reason = <String>::sse_decode(deserializer);
+        let mut var_providerId = <Option<String>>::sse_decode(deserializer);
+        let mut var_occurrences = <u64>::sse_decode(deserializer);
+        return crate::RefreshIssueFactDto {
+            kind: var_kind,
+            reason: var_reason,
+            provider_id: var_providerId,
+            occurrences: var_occurrences,
+        };
+    }
+}
+
 impl SseDecode for crate::RefreshModeDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4249,12 +4277,14 @@ impl SseDecode for crate::RefreshProgressFactsDto {
         let mut var_totalUnits = <Option<u64>>::sse_decode(deserializer);
         let mut var_statusKey = <Option<String>>::sse_decode(deserializer);
         let mut var_issueCount = <Option<u64>>::sse_decode(deserializer);
+        let mut var_issues = <Vec<crate::RefreshIssueFactDto>>::sse_decode(deserializer);
         return crate::RefreshProgressFactsDto {
             phase: var_phase,
             completed_units: var_completedUnits,
             total_units: var_totalUnits,
             status_key: var_statusKey,
             issue_count: var_issueCount,
+            issues: var_issues,
         };
     }
 }
@@ -7225,6 +7255,24 @@ impl flutter_rust_bridge::IntoIntoDart<crate::RecoveryActionKindDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::RefreshIssueFactDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.reason.into_into_dart().into_dart(),
+            self.provider_id.into_into_dart().into_dart(),
+            self.occurrences.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::RefreshIssueFactDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::RefreshIssueFactDto> for crate::RefreshIssueFactDto {
+    fn into_into_dart(self) -> crate::RefreshIssueFactDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::RefreshModeDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -7249,6 +7297,7 @@ impl flutter_rust_bridge::IntoDart for crate::RefreshProgressFactsDto {
             self.total_units.into_into_dart().into_dart(),
             self.status_key.into_into_dart().into_dart(),
             self.issue_count.into_into_dart().into_dart(),
+            self.issues.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -9322,6 +9371,16 @@ impl SseEncode for Vec<crate::RecoveryActionDto> {
     }
 }
 
+impl SseEncode for Vec<crate::RefreshIssueFactDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::RefreshIssueFactDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::RegionFacetBucketDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -9868,6 +9927,16 @@ impl SseEncode for crate::RecoveryActionKindDto {
     }
 }
 
+impl SseEncode for crate::RefreshIssueFactDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.reason, serializer);
+        <Option<String>>::sse_encode(self.provider_id, serializer);
+        <u64>::sse_encode(self.occurrences, serializer);
+    }
+}
+
 impl SseEncode for crate::RefreshModeDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -9892,6 +9961,7 @@ impl SseEncode for crate::RefreshProgressFactsDto {
         <Option<u64>>::sse_encode(self.total_units, serializer);
         <Option<String>>::sse_encode(self.status_key, serializer);
         <Option<u64>>::sse_encode(self.issue_count, serializer);
+        <Vec<crate::RefreshIssueFactDto>>::sse_encode(self.issues, serializer);
     }
 }
 

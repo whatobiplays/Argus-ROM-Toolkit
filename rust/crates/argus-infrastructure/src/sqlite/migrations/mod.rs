@@ -190,6 +190,11 @@ impl MigrationRegistry {
                 "0017_derived_provenance_fingerprints",
                 include_bytes!("sql/0017_derived_provenance_fingerprints.sql"),
             ),
+            Migration::sql(
+                18,
+                "0018_library_refresh_issues",
+                include_bytes!("sql/0018_library_refresh_issues.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

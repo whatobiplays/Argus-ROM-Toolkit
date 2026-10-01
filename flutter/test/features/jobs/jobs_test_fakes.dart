@@ -192,6 +192,45 @@ JobDetail jobDetail({
   ),
 );
 
+/// Builds one composed Library refresh detail with durable progress facts.
+JobDetail libraryRefreshJobDetail({
+  String id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  JobLifecycleState state = JobLifecycleState.running,
+  bool cancellationRequested = false,
+  bool canRetry = false,
+  String? statusKey,
+  int? issueCount,
+  List<RefreshIssueFact> issues = const [],
+}) => JobDetail(
+  job: JobRunProjection(
+    jobRunId: JobRunId(id),
+    operationType: 'library_refresh',
+    lifecycleState: state,
+    createdAtMs: 1,
+    cancellationRequested: cancellationRequested,
+    controls: JobControlAvailability(
+      canCancel: state == JobLifecycleState.running && !cancellationRequested,
+      canRetry: canRetry,
+    ),
+  ),
+  operationDetail: OperationDetail.libraryRefresh(
+    LibraryRefreshJobDetail(
+      trigger: 'manual',
+      mode: 'eligible_only',
+      requestedRootIds: const [],
+      scanRuns: const [],
+      progress: RefreshProgressFacts(
+        phase: 'library_refresh.completed',
+        completedUnits: 1,
+        totalUnits: 1,
+        statusKey: statusKey,
+        issueCount: issueCount,
+        issues: issues,
+      ),
+    ),
+  ),
+);
+
 ApplicationFailure jobNotFoundFailure() => ApplicationFailure(
   ClientApplicationError(
     code: const ErrorCode('ARGUS.V1.JOBS.JOB_RUN_NOT_FOUND'),

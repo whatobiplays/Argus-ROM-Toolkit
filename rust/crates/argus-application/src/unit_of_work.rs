@@ -2,7 +2,7 @@
 
 use crate::jobs::{
     JobRunRepository, LibraryScanAdmissionContextRepository, LibraryScanTargetRepository,
-    ScanRunRepository, SourceEntryRepository,
+    RefreshIssueRepository, ScanRunRepository, SourceEntryRepository,
 };
 use crate::settings::AppearanceSettingsRepository;
 use crate::sources::{LibraryRootRepository, LibrarySourceRepository};
@@ -104,6 +104,22 @@ pub trait EnrichmentUnitOfWork: UnitOfWork {
 
     /// Borrows the artwork repository from the active transaction.
     fn artwork(&mut self) -> Self::ArtworkRepository<'_>;
+}
+
+/// Additive refresh-execution capability layered on the enrichment scope.
+///
+/// Refresh-issue persistence belongs to the refresh operation rather than to
+/// enrichment, so it is a separate focused extension. Hydration and other
+/// enrichment consumers stay reusable without acquiring Jobs or reporting
+/// persistence responsibility they do not own.
+pub trait RefreshUnitOfWork: EnrichmentUnitOfWork {
+    /// Durable refresh-issue persistence for this transaction.
+    type RefreshIssueRepository<'scope>: RefreshIssueRepository + 'scope
+    where
+        Self: 'scope;
+
+    /// Borrows the refresh-issue repository from the active transaction.
+    fn refresh_issues(&mut self) -> Self::RefreshIssueRepository<'_>;
 }
 
 /// Creates one transaction scope on the implementation's execution boundary.

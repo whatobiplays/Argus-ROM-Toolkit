@@ -3,7 +3,7 @@
 //! Runtime-level Slice 002 background-operation integration tests.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 #[cfg(feature = "test-support")]
 use std::sync::{Arc, Condvar, Mutex};
@@ -19,7 +19,8 @@ use argus_application::{
 use argus_application::{
     ArtworkCandidate, ArtworkReference, ArtworkType, EnrichmentProviderSession, ErrorCode,
     ExactMatchEvidence, GetGameResult, HydrationMappingCandidate, HydrationProviderError,
-    HydrationTarget, LibraryScope, LibrarySort, PlatformId, ProviderId, ProviderMetadata,
+    HydrationTarget, LibraryRefreshJobDetail, LibraryScope, LibrarySort, PlatformId, ProviderId,
+    ProviderMetadata, RefreshIssueKind, RefreshIssueReason,
 };
 #[cfg(feature = "test-support")]
 use argus_infrastructure::content::{ContentReadError, ContentReader};
@@ -147,7 +148,9 @@ struct ProviderTrace {
     metadata_calls: usize,
     artwork_calls: usize,
     download_calls: usize,
-    failed_identity: Option<String>,
+    /// Identities whose exact matching deterministically fails, paired with
+    /// the normalized provider error the fixture session reports.
+    matching_failures: Vec<(String, HydrationProviderError)>,
 }
 
 #[cfg(feature = "test-support")]
@@ -167,8 +170,12 @@ impl EnrichmentProviderSession for FixtureProviderSession {
     ) -> Result<Vec<HydrationMappingCandidate>, HydrationProviderError> {
         let mut trace = self.trace.lock().expect("provider trace");
         trace.matching_calls += 1;
-        if trace.failed_identity.as_deref() == Some(target.submitted_identity()) {
-            return Err(HydrationProviderError::Unavailable);
+        if let Some((_, error)) = trace
+            .matching_failures
+            .iter()
+            .find(|(identity, _)| identity == target.submitted_identity())
+        {
+            return Err(*error);
         }
         Ok(vec![HydrationMappingCandidate::new(
             target.game_content_id(),
@@ -637,6 +644,79 @@ fn library_scan_completes_durably_and_updates_root_projections() {
     host.general_shutdown().expect("shutdown");
 }
 
+/// Guards the Jobs landing contract: every durable terminal run stays listed
+/// after a runtime restart, so `/jobs` never depends on in-memory session
+/// state to show its recent terminal history.
+#[test]
+#[cfg(feature = "test-support")]
+fn jobs_listing_retains_every_durable_terminal_run_across_restart() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let data_directory = directory.path().join("data");
+    let options = KernelBootstrapOptions::with_data_directory(data_directory.clone())
+        .with_provider_session_factory_for_tests(Vec::new);
+    let host = ApplicationHost::new(options);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    make_library(&library, 2);
+    let root_id = add_root(&host, &library);
+    let scan_job_run_id = start_scan(&host, root_id);
+    assert_eq!(
+        terminal_state(&host, scan_job_run_id),
+        JobRunState::Completed
+    );
+    let refresh_job_run_id = host
+        .refresh_library()
+        .expect("refresh admission")
+        .job_run_id();
+    assert_eq!(
+        terminal_state(&host, refresh_job_run_id),
+        JobRunState::Completed
+    );
+
+    let recent = host
+        .list_jobs(ListJobsQuery::new(ListJobsScope::RecentTerminal {
+            offset: 0,
+            page_size: 20,
+        }))
+        .expect("recent jobs");
+    assert_eq!(
+        recent.total_count(),
+        2,
+        "every durable terminal run is returned for the Jobs landing"
+    );
+    let listed: Vec<_> = recent
+        .items()
+        .iter()
+        .map(|item| item.job_run_id())
+        .collect();
+    assert!(listed.contains(&scan_job_run_id));
+    assert!(listed.contains(&refresh_job_run_id));
+    host.general_shutdown().expect("shutdown");
+
+    let reopened =
+        ApplicationHost::new(KernelBootstrapOptions::with_data_directory(data_directory));
+    context_ready(&reopened);
+    let reopened_recent = reopened
+        .list_jobs(ListJobsQuery::new(ListJobsScope::RecentTerminal {
+            offset: 0,
+            page_size: 20,
+        }))
+        .expect("recent jobs after restart");
+    assert_eq!(
+        reopened_recent.total_count(),
+        2,
+        "terminal history is durable rather than session state"
+    );
+    let reopened_listed: Vec<_> = reopened_recent
+        .items()
+        .iter()
+        .map(|item| item.job_run_id())
+        .collect();
+    assert!(reopened_listed.contains(&scan_job_run_id));
+    assert!(reopened_listed.contains(&refresh_job_run_id));
+    reopened.general_shutdown().expect("second shutdown");
+}
+
 #[test]
 fn manual_library_refresh_has_one_canonical_refresh_intent() {
     let directory = tempfile::tempdir().expect("tempdir");
@@ -674,7 +754,7 @@ fn manual_library_refresh_composes_committed_scan_identification_grouping_and_hy
     let good_second = gb_fixture(3);
     let bad = gb_fixture(2);
     let trace = Arc::new(Mutex::new(ProviderTrace {
-        failed_identity: Some(hex_digest(&bad)),
+        matching_failures: vec![(hex_digest(&bad), HydrationProviderError::Unavailable)],
         ..ProviderTrace::default()
     }));
     let provider_trace = Arc::clone(&trace);
@@ -741,6 +821,30 @@ fn manual_library_refresh_composes_committed_scan_identification_grouping_and_hy
     assert_eq!(
         refresh.progress().status_key(),
         Some("completed_with_issues")
+    );
+    // The composed refresh owns its issue accounting: the nested scan run is
+    // Complete, so a projection that reused scan intake counters would report
+    // "Issues: 0" for a refresh that legitimately terminalized with issues.
+    assert_eq!(
+        refresh.progress().issue_count(),
+        Some(1),
+        "a provider failure is an unsatisfied scope the refresh must account for"
+    );
+    let issues = refresh.progress().issues();
+    assert_eq!(issues.len(), 1, "one bounded typed fact per identity");
+    assert_eq!(issues[0].kind(), RefreshIssueKind::Matching);
+    assert_eq!(issues[0].reason(), RefreshIssueReason::ProviderUnavailable);
+    assert_eq!(issues[0].provider_id(), Some(ProviderId::GameTdb));
+    assert_eq!(issues[0].occurrences(), 1);
+    assert!(
+        !issues
+            .iter()
+            .any(|fact| fact.provider_id() == Some(ProviderId::SteamGridDb)),
+        "an unconfigured provider capability is an exclusion, not an issue"
+    );
+    assert!(
+        !format!("{issues:?}").contains("fixture.invalid"),
+        "durable issue detail must not carry provider locators"
     );
 
     let query = ListGamesQuery::builder()
@@ -823,7 +927,10 @@ fn manual_refresh_recognizes_new_nintendo_and_sega_content_with_provider_isolati
     let mut provider_failure = genesis.clone();
     provider_failure[0x200] ^= 0x01;
     let trace = Arc::new(Mutex::new(ProviderTrace {
-        failed_identity: Some(stream_hex_digest(provider_failure.clone())),
+        matching_failures: vec![(
+            stream_hex_digest(provider_failure.clone()),
+            HydrationProviderError::Unavailable,
+        )],
         ..ProviderTrace::default()
     }));
     let provider_trace = Arc::clone(&trace);
@@ -1075,5 +1182,503 @@ fn registration_spawn_failure_terminalizes_the_admitted_run() {
     // A fresh admission proceeds normally after the reconciled failure.
     let second = start_scan(&host, root_id);
     assert_eq!(terminal_state(&host, second), JobRunState::Completed);
+    host.general_shutdown().expect("shutdown");
+}
+
+/// Creates one host whose enrichment provider is the deterministic fixture
+/// session, so refresh tests never reach a real provider or the owner's
+/// credential store.
+#[cfg(feature = "test-support")]
+fn fixture_provider_host(
+    data_directory: PathBuf,
+    trace: &Arc<Mutex<ProviderTrace>>,
+) -> ApplicationHost {
+    let provider_trace = Arc::clone(trace);
+    let options = KernelBootstrapOptions::with_data_directory(data_directory)
+        .with_provider_session_factory_for_tests(move || {
+            provider_trace
+                .lock()
+                .expect("provider trace")
+                .session_factory_calls += 1;
+            vec![Box::new(FixtureProviderSession {
+                trace: Arc::clone(&provider_trace),
+            }) as Box<dyn EnrichmentProviderSession>]
+        });
+    ApplicationHost::new(options)
+}
+
+/// Returns the composed refresh detail for one terminal refresh job.
+#[cfg(feature = "test-support")]
+fn refresh_operation_detail(
+    host: &ApplicationHost,
+    job_run_id: JobRunId,
+) -> LibraryRefreshJobDetail {
+    let detail = host.get_job(job_run_id).expect("refresh job detail");
+    match detail.operation_detail() {
+        OperationDetail::LibraryRefresh(refresh) => refresh.clone(),
+        other => panic!("unexpected operation detail: {other:?}"),
+    }
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn satisfied_library_refresh_persists_an_explicit_zero_issue_summary() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let trace = Arc::new(Mutex::new(ProviderTrace::default()));
+    let host = fixture_provider_host(directory.path().join("data"), &trace);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("good.gb"), gb_fixture(21)).expect("good content");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::Completed,
+        "a fully satisfied eligible refresh is a clean completion"
+    );
+
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(
+        refresh.progress().phase(),
+        Some("library_refresh.completed")
+    );
+    assert_eq!(refresh.progress().status_key(), Some("completed"));
+    assert_eq!(
+        refresh.progress().issue_count(),
+        Some(0),
+        "a v18 execution persists an explicit zero-issue summary"
+    );
+    assert!(
+        refresh.progress().issues().is_empty(),
+        "a satisfied refresh must not invent issue detail"
+    );
+
+    host.general_shutdown().expect("shutdown");
+    let reopened = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        directory.path().join("data"),
+    ));
+    context_ready(&reopened);
+    let reopened_detail = reopened
+        .get_job(handle.job_run_id())
+        .expect("refresh detail after reopen");
+    assert_eq!(reopened_detail.job().state(), JobRunState::Completed);
+    let OperationDetail::LibraryRefresh(refresh) = reopened_detail.operation_detail() else {
+        panic!("expected composed refresh detail after reopen");
+    };
+    assert_eq!(
+        refresh.progress().issue_count(),
+        Some(0),
+        "the persisted zero-issue summary survives a runtime reopen"
+    );
+    assert!(refresh.progress().issues().is_empty());
+    reopened.general_shutdown().expect("second shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn refresh_without_executable_provider_scope_stays_completed() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let options = KernelBootstrapOptions::with_data_directory(directory.path().join("data"))
+        .with_provider_session_factory_for_tests(Vec::new);
+    let host = ApplicationHost::new(options);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("good.gb"), gb_fixture(31)).expect("good content");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::Completed,
+        "a provider capability that never became executable scope is an exclusion"
+    );
+
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(refresh.progress().status_key(), Some("completed"));
+    assert_eq!(
+        refresh.progress().issue_count(),
+        Some(0),
+        "an unconfigured provider capability must not create a false issue"
+    );
+    assert!(refresh.progress().issues().is_empty());
+
+    // Provider-independent work still commits, which is why the exclusion
+    // cannot be reported as an unsatisfied scope.
+    let page = host
+        .list_games(
+            ListGamesQuery::builder()
+                .scope(LibraryScope::All)
+                .filters_empty(true)
+                .sort(LibrarySort::DisplayTitleAscending)
+                .page_size(50)
+                .build()
+                .expect("bounded Library query"),
+        )
+        .expect("Library page");
+    assert_eq!(page.items().len(), 1);
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn independent_refresh_failures_aggregate_into_deterministic_typed_facts() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let good = gb_fixture(41);
+    let timed_out = gb_fixture(43);
+    let unavailable = gb_fixture(47);
+    let removed = gb_fixture(53);
+    let gate = RefreshExecutionGate::new(RefreshExecutionCheckpoint::CommittedRoot);
+    let gate_for_hook = Arc::clone(&gate);
+    let trace = Arc::new(Mutex::new(ProviderTrace {
+        matching_failures: vec![
+            (hex_digest(&timed_out), HydrationProviderError::Timeout),
+            (
+                hex_digest(&unavailable),
+                HydrationProviderError::Unavailable,
+            ),
+        ],
+        ..ProviderTrace::default()
+    }));
+    let provider_trace = Arc::clone(&trace);
+    let options = KernelBootstrapOptions::with_data_directory(directory.path().join("data"))
+        .with_provider_session_factory_for_tests(move || {
+            provider_trace
+                .lock()
+                .expect("provider trace")
+                .session_factory_calls += 1;
+            vec![Box::new(FixtureProviderSession {
+                trace: Arc::clone(&provider_trace),
+            }) as Box<dyn EnrichmentProviderSession>]
+        })
+        .with_refresh_execution_hook_for_tests(move |checkpoint| gate_for_hook.hook(checkpoint));
+    let host = ApplicationHost::new(options);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("good.gb"), &good).expect("good content");
+    fs::write(library.join("timed-out.gb"), &timed_out).expect("timeout content");
+    fs::write(library.join("unavailable.gb"), &unavailable).expect("unavailable content");
+    fs::write(library.join("removed.gb"), &removed).expect("removable content");
+    add_root(&host, &library);
+
+    // The committed child scan is complete before refresh-level content work
+    // starts, so removing one admitted file here deterministically fails only
+    // the refresh's own local read rather than the scan.
+    gate.arm();
+    let handle = host.refresh_library().expect("refresh admission");
+    gate.wait_until_entered();
+    fs::remove_file(library.join("removed.gb")).expect("remove admitted content");
+    gate.release();
+
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(
+        refresh.progress().status_key(),
+        Some("completed_with_issues")
+    );
+    assert_eq!(refresh.scan_runs().len(), 1);
+    assert_eq!(
+        refresh.scan_runs()[0].status(),
+        argus_application::ScanRunStatus::Complete,
+        "the nested scan is still complete; only refresh scope stayed unsatisfied"
+    );
+
+    let facts = refresh.progress().issues();
+    assert_eq!(
+        refresh.progress().issue_count(),
+        Some(3),
+        "every independent failure is counted exactly once"
+    );
+    assert_eq!(facts.len(), 3, "distinct typed identities never merge");
+    // Deterministic ordering: kind, then reason, then provider.
+    assert_eq!(facts[0].kind(), RefreshIssueKind::Matching);
+    assert_eq!(facts[0].reason(), RefreshIssueReason::ProviderTimeout);
+    assert_eq!(facts[0].provider_id(), Some(ProviderId::GameTdb));
+    assert_eq!(facts[0].occurrences(), 1);
+    assert_eq!(facts[1].kind(), RefreshIssueKind::Matching);
+    assert_eq!(facts[1].reason(), RefreshIssueReason::ProviderUnavailable);
+    assert_eq!(facts[1].provider_id(), Some(ProviderId::GameTdb));
+    assert_eq!(facts[1].occurrences(), 1);
+    assert_eq!(facts[2].kind(), RefreshIssueKind::Content);
+    assert_eq!(facts[2].provider_id(), None);
+    assert_eq!(facts[2].occurrences(), 1);
+
+    // Successful provider-independent work stays committed alongside the
+    // partial failures.
+    let page = host
+        .list_games(
+            ListGamesQuery::builder()
+                .scope(LibraryScope::All)
+                .filters_empty(true)
+                .sort(LibrarySort::DisplayTitleAscending)
+                .page_size(50)
+                .build()
+                .expect("bounded Library query"),
+        )
+        .expect("Library page");
+    let titles = page
+        .items()
+        .iter()
+        .map(|row| row.display_title().to_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        titles.iter().any(|title| title == "Fixture Game"),
+        "clean content must still commit its hydration: {titles:?}"
+    );
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn refresh_issue_projection_survives_runtime_reopen() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let failing = gb_fixture(59);
+    let trace = Arc::new(Mutex::new(ProviderTrace {
+        matching_failures: vec![(hex_digest(&failing), HydrationProviderError::RateLimited)],
+        ..ProviderTrace::default()
+    }));
+    let host = fixture_provider_host(directory.path().join("data"), &trace);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("failing.gb"), &failing).expect("failing content");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+    let live = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(live.progress().issue_count(), Some(1));
+    assert_eq!(live.progress().issues().len(), 1);
+    assert_eq!(
+        live.progress().issues()[0].reason(),
+        RefreshIssueReason::ProviderRateLimited
+    );
+    host.general_shutdown().expect("shutdown");
+
+    let reopened = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        directory.path().join("data"),
+    ));
+    context_ready(&reopened);
+    let reopened_detail = reopened
+        .get_job(handle.job_run_id())
+        .expect("refresh detail after reopen");
+    assert_eq!(
+        reopened_detail.job().state(),
+        JobRunState::CompletedWithIssues,
+        "the durable lifecycle state is not re-derived from current controllers"
+    );
+    let OperationDetail::LibraryRefresh(refresh) = reopened_detail.operation_detail() else {
+        panic!("expected composed refresh detail after reopen");
+    };
+    assert_eq!(
+        refresh.progress().status_key(),
+        Some("completed_with_issues")
+    );
+    assert_eq!(refresh.progress().issue_count(), Some(1));
+    assert_eq!(
+        refresh.progress().issues(),
+        live.progress().issues(),
+        "the bounded explanation is durable rather than reconstructed"
+    );
+    reopened.general_shutdown().expect("second shutdown");
+}
+
+/// Rewrites the durable refresh issue projection for one fixture job.
+///
+/// The database is opened separately from the running host so one test can
+/// exercise every contradictory representation without restarting the runtime,
+/// and through the plain driver so the fixture only changes data rows.
+#[cfg(feature = "test-support")]
+fn rewrite_refresh_issue_projection(data_directory: &Path, statement: &str) {
+    let connection =
+        rusqlite::Connection::open(data_directory.join("argus.sqlite3")).expect("fixture database");
+    connection
+        .busy_timeout(Duration::from_secs(5))
+        .expect("fixture busy timeout");
+    connection
+        .execute_batch(statement)
+        .expect("refresh issue fixture");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn contradictory_persisted_refresh_issue_projection_is_rejected() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let data_directory = directory.path().join("data");
+    let failing = gb_fixture(67);
+    let trace = Arc::new(Mutex::new(ProviderTrace {
+        matching_failures: vec![(hex_digest(&failing), HydrationProviderError::Unavailable)],
+        ..ProviderTrace::default()
+    }));
+    let host = fixture_provider_host(data_directory.clone(), &trace);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("failing.gb"), &failing).expect("failing content");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+    let job_run_id = handle.job_run_id();
+
+    // Restoring the truthful projection before every corruption keeps each
+    // contradiction independently responsible for its rejection.
+    const RESTORE: &str = "DELETE FROM library_refresh_issue_fact;
+         INSERT INTO library_refresh_issue_fact
+             (job_run_id, issue_ordinal, issue_kind, issue_reason, provider_id, occurrences)
+         SELECT job_run_id, 0, 'matching', 'provider_unavailable', 'gametdb', 1
+         FROM library_refresh_issue_summary;
+         UPDATE library_refresh_issue_summary SET issue_count = 1;";
+    let corruptions = [
+        (
+            "a summary total that no longer matches the checked fact sum",
+            "UPDATE library_refresh_issue_summary SET issue_count = 9;",
+        ),
+        (
+            "a persisted occurrence that is not positive",
+            "PRAGMA ignore_check_constraints = ON;
+             UPDATE library_refresh_issue_fact SET occurrences = 0;",
+        ),
+        (
+            "a persisted summary total outside the representable domain",
+            "PRAGMA ignore_check_constraints = ON;
+             UPDATE library_refresh_issue_summary SET issue_count = -1;",
+        ),
+        (
+            "a persisted reason outside the closed vocabulary",
+            "PRAGMA ignore_check_constraints = ON;
+             UPDATE library_refresh_issue_fact
+             SET issue_reason = 'raw provider transport failure text';",
+        ),
+        (
+            "a checked fact sum that cannot be represented",
+            "PRAGMA ignore_check_constraints = ON;
+             UPDATE library_refresh_issue_fact SET occurrences = 9223372036854775807;
+             INSERT INTO library_refresh_issue_fact
+                 (job_run_id, issue_ordinal, issue_kind, issue_reason, provider_id, occurrences)
+             SELECT job_run_id, 1, 'content', 'content_unavailable', NULL, 9223372036854775807
+             FROM library_refresh_issue_summary;",
+        ),
+    ];
+
+    for (label, corruption) in corruptions {
+        let batch = format!("{RESTORE}\n{corruption}");
+        rewrite_refresh_issue_projection(&data_directory, &batch);
+        let error = host
+            .get_job(job_run_id)
+            .expect_err("a contradictory durable projection is not a valid job detail");
+        assert_eq!(
+            error.code,
+            ErrorCode::PersistenceIncompatibleSchema,
+            "{label}"
+        );
+    }
+
+    // The truthful projection is readable again, so the rejection comes from
+    // the contradiction rather than from an unreadable job.
+    rewrite_refresh_issue_projection(&data_directory, RESTORE);
+    let refresh = refresh_operation_detail(&host, job_run_id);
+    assert_eq!(refresh.progress().issue_count(), Some(1));
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn fatal_refresh_execution_failure_remains_failed() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let trace = Arc::new(Mutex::new(ProviderTrace::default()));
+    let host = fixture_provider_host(directory.path().join("data"), &trace);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("good.gb"), gb_fixture(71)).expect("good content");
+    add_root(&host, &library);
+
+    // The refresh cannot start its content pipeline without a usable staging
+    // directory. That failure is propagated by the owning execution path, so
+    // it must stay fatal instead of becoming a bounded refresh issue.
+    let staging = directory
+        .path()
+        .join("data")
+        .join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY);
+    if staging.is_dir() {
+        fs::remove_dir_all(&staging).expect("clear staging directory");
+    }
+    fs::write(&staging, b"staging path is not a directory").expect("staging sabotage");
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::Failed,
+        "a propagated execution failure stays fatal"
+    );
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_ne!(
+        refresh.progress().status_key(),
+        Some("completed_with_issues"),
+        "a fatal run is never relabeled as a partial success"
+    );
+    assert_eq!(
+        refresh.progress().issue_count(),
+        None,
+        "a fatal run never persists a bounded issue summary"
+    );
+    assert!(refresh.progress().issues().is_empty());
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn historical_refresh_without_a_summary_reports_an_unknown_issue_projection() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let data_directory = directory.path().join("data");
+    let failing = gb_fixture(73);
+    let trace = Arc::new(Mutex::new(ProviderTrace {
+        matching_failures: vec![(hex_digest(&failing), HydrationProviderError::Unavailable)],
+        ..ProviderTrace::default()
+    }));
+    let host = fixture_provider_host(data_directory.clone(), &trace);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("failing.gb"), &failing).expect("failing content");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+
+    // A pre-v18 execution has no refresh-issue rows at all. The projection is
+    // then unknown rather than fabricated from the nested scan run.
+    rewrite_refresh_issue_projection(
+        &data_directory,
+        "DELETE FROM library_refresh_issue_fact;
+         DELETE FROM library_refresh_issue_summary;",
+    );
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(
+        refresh.progress().issue_count(),
+        None,
+        "an unknown historical projection is not zero"
+    );
+    assert!(refresh.progress().issues().is_empty());
+    assert_eq!(
+        refresh.progress().status_key(),
+        Some("completed_with_issues")
+    );
     host.general_shutdown().expect("shutdown");
 }

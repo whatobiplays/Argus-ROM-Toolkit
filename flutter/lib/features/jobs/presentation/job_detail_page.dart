@@ -534,6 +534,16 @@ class _RefreshProgressFacts extends StatelessWidget {
         if (progress.statusKey != null) Text(progress.statusKey!),
         if (progress.issueCount != null)
           Text('${JobsMessages.issues}: ${progress.issueCount}'),
+        if (progress.issues.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(JobsMessages.refreshIssuesTitle),
+          for (final fact in progress.issues.take(
+            JobsMessages.refreshIssuesVisible,
+          ))
+            Text('• ${JobsMessages.refreshIssueFactLabel(fact)}'),
+          if (progress.issues.length > JobsMessages.refreshIssuesVisible)
+            Text(JobsMessages.refreshIssuesOverflow),
+        ],
       ],
     );
   }

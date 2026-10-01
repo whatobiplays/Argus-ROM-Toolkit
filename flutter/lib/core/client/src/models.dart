@@ -561,6 +561,126 @@ sealed class ScanProgressFacts with _$ScanProgressFacts {
   }) = _ScanProgressFacts;
 }
 
+/// Closed broad category of one durable refresh issue.
+///
+/// The category groups related reasons for ordering and coarse presentation;
+/// [RefreshIssueReason] carries the actionable explanation that makes a
+/// partial refresh intelligible.
+enum RefreshIssueKind {
+  matching,
+  metadata,
+  artworkDiscovery,
+  artworkDownload,
+  assetStore,
+  content,
+  scope;
+
+  static RefreshIssueKind fromWire(String value) => switch (value) {
+    'matching' => RefreshIssueKind.matching,
+    'metadata' => RefreshIssueKind.metadata,
+    'artwork_discovery' => RefreshIssueKind.artworkDiscovery,
+    'artwork_download' => RefreshIssueKind.artworkDownload,
+    'asset_store' => RefreshIssueKind.assetStore,
+    'content' => RefreshIssueKind.content,
+    'scope' => RefreshIssueKind.scope,
+    _ => throw const TransportFailure(
+      'Unknown refresh issue category',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// Closed safe reason vocabulary for one durable refresh issue.
+///
+/// Every reason maps to a failure the owning backend subsystem already
+/// distinguishes, and none of them carries raw provider or native detail.
+enum RefreshIssueReason {
+  providerAuthenticationFailed,
+  providerAuthorizationFailed,
+  providerMisconfigured,
+  providerRateLimited,
+  providerTimeout,
+  providerUnavailable,
+  providerInvalidResponse,
+  providerUnsupportedCapability,
+  artworkAssetTooLarge,
+  artworkAssetInvalidImage,
+  artworkAssetDimensionsTooLarge,
+  artworkAssetStoreUnavailable,
+  contentUnavailable,
+  contentMalformedOrUnsupported,
+  contentEncryptedUnsupported,
+  contentDependencyMissing,
+  contentResourceLimitExceeded,
+  contentChangedDuringRefresh,
+  contentIdentityUnsupported,
+  contentIdentificationFailed,
+  contentGroupingFailed,
+  contentRefreshFailed,
+  scopeRootNotAdmitted,
+  scopeRootScanIncomplete,
+  scopeRootScanFailed;
+
+  static RefreshIssueReason fromWire(String value) => switch (value) {
+    'provider_authentication_failed' =>
+      RefreshIssueReason.providerAuthenticationFailed,
+    'provider_authorization_failed' =>
+      RefreshIssueReason.providerAuthorizationFailed,
+    'provider_misconfigured' => RefreshIssueReason.providerMisconfigured,
+    'provider_rate_limited' => RefreshIssueReason.providerRateLimited,
+    'provider_timeout' => RefreshIssueReason.providerTimeout,
+    'provider_unavailable' => RefreshIssueReason.providerUnavailable,
+    'provider_invalid_response' => RefreshIssueReason.providerInvalidResponse,
+    'provider_unsupported_capability' =>
+      RefreshIssueReason.providerUnsupportedCapability,
+    'artwork_asset_too_large' => RefreshIssueReason.artworkAssetTooLarge,
+    'artwork_asset_invalid_image' =>
+      RefreshIssueReason.artworkAssetInvalidImage,
+    'artwork_asset_dimensions_too_large' =>
+      RefreshIssueReason.artworkAssetDimensionsTooLarge,
+    'artwork_asset_store_unavailable' =>
+      RefreshIssueReason.artworkAssetStoreUnavailable,
+    'content_unavailable' => RefreshIssueReason.contentUnavailable,
+    'content_malformed_or_unsupported' =>
+      RefreshIssueReason.contentMalformedOrUnsupported,
+    'content_encrypted_unsupported' =>
+      RefreshIssueReason.contentEncryptedUnsupported,
+    'content_dependency_missing' => RefreshIssueReason.contentDependencyMissing,
+    'content_resource_limit_exceeded' =>
+      RefreshIssueReason.contentResourceLimitExceeded,
+    'content_changed_during_refresh' =>
+      RefreshIssueReason.contentChangedDuringRefresh,
+    'content_identity_unsupported' =>
+      RefreshIssueReason.contentIdentityUnsupported,
+    'content_identification_failed' =>
+      RefreshIssueReason.contentIdentificationFailed,
+    'content_grouping_failed' => RefreshIssueReason.contentGroupingFailed,
+    'content_refresh_failed' => RefreshIssueReason.contentRefreshFailed,
+    'scope_root_not_admitted' => RefreshIssueReason.scopeRootNotAdmitted,
+    'scope_root_scan_incomplete' => RefreshIssueReason.scopeRootScanIncomplete,
+    'scope_root_scan_failed' => RefreshIssueReason.scopeRootScanFailed,
+    _ => throw const TransportFailure(
+      'Unknown refresh issue reason',
+      kind: TransportFailureKind.contractMismatch,
+    ),
+  };
+}
+
+/// One bounded durable refresh issue fact.
+///
+/// Identity is the complete typed tuple of category, reason, and optional
+/// provider, so [occurrences] counts exactly one kind of unsatisfied scope
+/// rather than every failure that happened during one phase.
+@freezed
+sealed class RefreshIssueFact with _$RefreshIssueFact {
+  const factory RefreshIssueFact({
+    required RefreshIssueKind kind,
+    required RefreshIssueReason reason,
+    String? providerId,
+    required int occurrences,
+  }) = _RefreshIssueFact;
+}
+
 /// Shared bounded progress facts for composed refresh operations.
 @freezed
 sealed class RefreshProgressFacts with _$RefreshProgressFacts {
@@ -570,6 +690,7 @@ sealed class RefreshProgressFacts with _$RefreshProgressFacts {
     int? totalUnits,
     String? statusKey,
     int? issueCount,
+    required List<RefreshIssueFact> issues,
   }) = _RefreshProgressFacts;
 }
 

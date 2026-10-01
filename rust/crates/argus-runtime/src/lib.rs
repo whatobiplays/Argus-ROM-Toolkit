@@ -45,8 +45,9 @@ use argus_application::{
     MetadataRepository, MetadataResolutionPolicy, MetadataSettings, MigrationOutcome, NewJobRun,
     NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationHandle,
     OperationName, PathClass, PersistenceError, PlatformClass, PlatformId, PrivacyConsent,
-    ProvenanceMember, ProviderError, ProviderId, ProviderReadinessState, RefreshLibraryCommand,
-    RefreshMode, RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
+    ProvenanceMember, ProviderError, ProviderId, ProviderReadinessState, RefreshIssueAccumulator,
+    RefreshIssueKind, RefreshIssueReason, RefreshLibraryCommand, RefreshMode,
+    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
     SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
     SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository,
     SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
@@ -75,8 +76,8 @@ use argus_infrastructure::sqlite::{
     SqliteLibraryRootQueries, SqliteLibraryRootRepository,
     SqliteLibraryScanAdmissionContextRepository, SqliteLibraryScanTargetRepository,
     SqliteLibrarySourceRepository, SqliteLogicalContentRepository, SqliteMetadataRepository,
-    SqliteScanRunRepository, SqliteSourceEntryQueries, SqliteSourceEntryRepository,
-    SqliteUnitOfWork,
+    SqliteRefreshIssueRepository, SqliteScanRunRepository, SqliteSourceEntryQueries,
+    SqliteSourceEntryRepository, SqliteUnitOfWork,
 };
 
 pub mod background;
@@ -656,6 +657,21 @@ impl<'scope> KernelUnitOfWork<'scope> {
         self.inner
             .reset_appearance_theme_mode()
             .map_err(ApplicationPortError::Persistence)
+    }
+}
+
+/// Technology-neutral transaction-scoped durable refresh-issue repository.
+pub struct KernelRefreshIssueRepository<'scope, 'connection> {
+    inner: SqliteRefreshIssueRepository<'scope, 'connection>,
+}
+
+impl argus_application::RefreshIssueRepository for KernelRefreshIssueRepository<'_, '_> {
+    fn replace_for_job(
+        &mut self,
+        job_run_id: argus_application::JobRunId,
+        summary: &argus_application::RefreshIssueSummary,
+    ) -> Result<(), argus_application::PersistenceError> {
+        self.inner.replace_for_job(job_run_id, summary)
     }
 }
 
@@ -1377,6 +1393,19 @@ impl<'connection> argus_application::EnrichmentUnitOfWork for KernelUnitOfWork<'
     fn artwork(&mut self) -> Self::ArtworkRepository<'_> {
         KernelArtworkRepository {
             inner: self.inner.artwork(),
+        }
+    }
+}
+
+impl<'connection> argus_application::RefreshUnitOfWork for KernelUnitOfWork<'connection> {
+    type RefreshIssueRepository<'scope>
+        = KernelRefreshIssueRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn refresh_issues(&mut self) -> Self::RefreshIssueRepository<'_> {
+        KernelRefreshIssueRepository {
+            inner: self.inner.refresh_issues(),
         }
     }
 }
@@ -3087,7 +3116,7 @@ impl LibraryExecutionContext {
         parsing_session: &mut ParsingSession<'_>,
         timestamps: ContentRefreshTimestamps,
         is_cancelled: &dyn Fn() -> bool,
-    ) -> Result<(usize, u64), ApplicationError> {
+    ) -> Result<(usize, RefreshIssueAccumulator), ApplicationError> {
         #[cfg(feature = "test-support")]
         self.call_refresh_execution_hook(RefreshExecutionCheckpoint::CommittedRoot);
         if is_cancelled() {
@@ -3106,8 +3135,7 @@ impl LibraryExecutionContext {
         let mut optical_sources = Vec::new();
         let mut playlist_entries = Vec::new();
         let mut derived_playlist_groups = Vec::new();
-        let mut issue_count = 0_u64;
-        let mut transformation_issue_codes = Vec::new();
+        let mut issues = RefreshIssueAccumulator::new();
         let mut transformed_source_entries = std::collections::HashSet::new();
 
         // Process every non-relationship provider file through the same source
@@ -3136,7 +3164,13 @@ impl LibraryExecutionContext {
                 is_cancelled,
             ) {
                 Ok(result) => {
-                    transformation_issue_codes.extend(result.issue_codes);
+                    for issue_code in result.issue_codes {
+                        record_content_issue(
+                            &mut issues,
+                            refresh_issue_reason_for_content_error(issue_code),
+                            context.trace_id(),
+                        )?;
+                    }
                     derived_playlist_groups.extend(result.derived_playlists);
                     for candidate in result.candidates {
                         match self.identify_committed_source_entry_with_context(
@@ -3160,7 +3194,11 @@ impl LibraryExecutionContext {
                                     }
                                 }
                             }
-                            Err(_) => issue_count = issue_count.saturating_add(1),
+                            Err(_) => record_content_issue(
+                                &mut issues,
+                                RefreshIssueReason::ContentIdentificationFailed,
+                                context.trace_id(),
+                            )?,
                         }
                     }
                 }
@@ -3171,7 +3209,11 @@ impl LibraryExecutionContext {
                     if matches!(failure, TransformationFailure::Cancelled) {
                         return Err(cancelled_sources_error(context.trace_id()));
                     }
-                    transformation_issue_codes.push(map_transformation_failure(failure));
+                    record_content_issue(
+                        &mut issues,
+                        refresh_issue_reason_for_content_error(map_transformation_failure(failure)),
+                        context.trace_id(),
+                    )?;
                 }
             }
         }
@@ -3195,7 +3237,11 @@ impl LibraryExecutionContext {
             }
 
             let Some(entry_locator) = entry.relative_locator() else {
-                issue_count = issue_count.saturating_add(1);
+                record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentUnavailable,
+                    context.trace_id(),
+                )?;
                 continue;
             };
 
@@ -3207,7 +3253,11 @@ impl LibraryExecutionContext {
                         return Err(cancelled_sources_error(context.trace_id()));
                     }
                     Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
+                        record_content_issue(
+                            &mut issues,
+                            RefreshIssueReason::ContentUnavailable,
+                            context.trace_id(),
+                        )?;
                         continue;
                     }
                 };
@@ -3219,7 +3269,11 @@ impl LibraryExecutionContext {
                             return Err(cancelled_sources_error(context.trace_id()));
                         }
                         Err(_) => {
-                            issue_count = issue_count.saturating_add(1);
+                            record_content_issue(
+                                &mut issues,
+                                RefreshIssueReason::ContentUnavailable,
+                                context.trace_id(),
+                            )?;
                             continue;
                         }
                     };
@@ -3230,7 +3284,11 @@ impl LibraryExecutionContext {
                             if is_cancelled() {
                                 return Err(cancelled_sources_error(context.trace_id()));
                             }
-                            issue_count = issue_count.saturating_add(1);
+                            record_content_issue(
+                                &mut issues,
+                                RefreshIssueReason::ContentMalformedOrUnsupported,
+                                context.trace_id(),
+                            )?;
                             continue;
                         }
                     };
@@ -3241,7 +3299,11 @@ impl LibraryExecutionContext {
                 ) {
                     Ok(dependencies) => dependencies,
                     Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
+                        record_content_issue(
+                            &mut issues,
+                            RefreshIssueReason::ContentDependencyMissing,
+                            context.trace_id(),
+                        )?;
                         continue;
                     }
                 };
@@ -3261,7 +3323,11 @@ impl LibraryExecutionContext {
                     }
                 }
                 if !opened {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentUnavailable,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
                 let recognition = {
@@ -3282,7 +3348,11 @@ impl LibraryExecutionContext {
                             return Err(cancelled_sources_error(context.trace_id()));
                         }
                         Err(_) => {
-                            issue_count = issue_count.saturating_add(1);
+                            record_content_issue(
+                                &mut issues,
+                                RefreshIssueReason::ContentMalformedOrUnsupported,
+                                context.trace_id(),
+                            )?;
                             continue;
                         }
                     }
@@ -3292,7 +3362,11 @@ impl LibraryExecutionContext {
                         .iter()
                         .any(|reader| !ensure_reader_stable(&**reader).is_ok())
                 {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentChangedDuringRefresh,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
                 let Some(identity) = catalog.select_identity(
@@ -3301,7 +3375,11 @@ impl LibraryExecutionContext {
                     recognition.source_representation(),
                     recognition.identity_digest(),
                 ) else {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentIdentityUnsupported,
+                        context.trace_id(),
+                    )?;
                     continue;
                 };
                 let mut provenance = Vec::with_capacity(readers.len() + 1);
@@ -3344,7 +3422,11 @@ impl LibraryExecutionContext {
                     match self.identify_committed_source_entry_with_context(derivation, context) {
                         Ok(outcome) => outcome,
                         Err(_) => {
-                            issue_count = issue_count.saturating_add(1);
+                            record_content_issue(
+                                &mut issues,
+                                RefreshIssueReason::ContentIdentificationFailed,
+                                context.trace_id(),
+                            )?;
                             continue;
                         }
                     };
@@ -3368,7 +3450,11 @@ impl LibraryExecutionContext {
             let mut reader = match access.open_entry_reader(&resolved_root, entry_locator) {
                 Ok(reader) => reader,
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentUnavailable,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
             };
@@ -3385,7 +3471,11 @@ impl LibraryExecutionContext {
                 };
             if let Some(recognized) = native_optical {
                 if !reader.source_version_is_unchanged().unwrap_or(false) {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentChangedDuringRefresh,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
                 let Some(identity) = catalog.select_identity(
@@ -3394,7 +3484,11 @@ impl LibraryExecutionContext {
                     recognized.source_representation(),
                     recognized.identity_digest(),
                 ) else {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentIdentityUnsupported,
+                        context.trace_id(),
+                    )?;
                     continue;
                 };
                 let derivation = ValidatedContentDerivation::try_with_provenance(
@@ -3417,7 +3511,11 @@ impl LibraryExecutionContext {
                     match self.identify_committed_source_entry_with_context(derivation, context) {
                         Ok(outcome) => outcome,
                         Err(_) => {
-                            issue_count = issue_count.saturating_add(1);
+                            record_content_issue(
+                                &mut issues,
+                                RefreshIssueReason::ContentIdentificationFailed,
+                                context.trace_id(),
+                            )?;
                             continue;
                         }
                     };
@@ -3435,12 +3533,20 @@ impl LibraryExecutionContext {
             let recognized = match argus_infrastructure::content::recognize_content(&mut reader) {
                 Ok(recognized) => recognized,
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentMalformedOrUnsupported,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
             };
             if !reader.source_version_is_unchanged().unwrap_or(false) {
-                issue_count = issue_count.saturating_add(1);
+                record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentChangedDuringRefresh,
+                    context.trace_id(),
+                )?;
                 continue;
             }
             let Some(identity) = catalog.select_identity(
@@ -3449,7 +3555,11 @@ impl LibraryExecutionContext {
                 recognized.source_representation(),
                 recognized.identity_digest(),
             ) else {
-                issue_count = issue_count.saturating_add(1);
+                record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentIdentityUnsupported,
+                    context.trace_id(),
+                )?;
                 continue;
             };
             let derivation = ValidatedContentDerivation::new(
@@ -3469,7 +3579,11 @@ impl LibraryExecutionContext {
                 match self.identify_committed_source_entry_with_context(derivation, context) {
                     Ok(outcome) => outcome,
                     Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
+                        record_content_issue(
+                            &mut issues,
+                            RefreshIssueReason::ContentIdentificationFailed,
+                            context.trace_id(),
+                        )?;
                         continue;
                     }
                 };
@@ -3483,7 +3597,11 @@ impl LibraryExecutionContext {
                 return Err(cancelled_sources_error(context.trace_id()));
             }
             let Some(playlist_locator) = playlist.relative_locator() else {
-                issue_count = issue_count.saturating_add(1);
+                record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentUnavailable,
+                    context.trace_id(),
+                )?;
                 continue;
             };
             let resolver = ContentSourceResolver::new(&access, &resolved_root, &entries);
@@ -3493,7 +3611,11 @@ impl LibraryExecutionContext {
                     return Err(cancelled_sources_error(context.trace_id()));
                 }
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentUnavailable,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
             };
@@ -3504,7 +3626,11 @@ impl LibraryExecutionContext {
                         return Err(cancelled_sources_error(context.trace_id()));
                     }
                     Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
+                        record_content_issue(
+                            &mut issues,
+                            RefreshIssueReason::ContentUnavailable,
+                            context.trace_id(),
+                        )?;
                         continue;
                     }
                 };
@@ -3515,7 +3641,11 @@ impl LibraryExecutionContext {
                         return Err(cancelled_sources_error(context.trace_id()));
                     }
                     Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
+                        record_content_issue(
+                            &mut issues,
+                            RefreshIssueReason::ContentMalformedOrUnsupported,
+                            context.trace_id(),
+                        )?;
                         continue;
                     }
                 };
@@ -3526,7 +3656,11 @@ impl LibraryExecutionContext {
             ) {
                 Ok(members) => members,
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentDependencyMissing,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
             };
@@ -3562,18 +3696,30 @@ impl LibraryExecutionContext {
                 ));
             }
             if !valid {
-                issue_count = issue_count.saturating_add(1);
+                record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentGroupingFailed,
+                    context.trace_id(),
+                )?;
                 continue;
             }
             if !ensure_reader_stable(&*playlist_reader).is_ok() {
-                issue_count = issue_count.saturating_add(1);
+                record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentChangedDuringRefresh,
+                    context.trace_id(),
+                )?;
                 continue;
             }
             let grouping = match ValidatedM3uGrouping::new(
                 match source_version_for_entry(playlist) {
                     Ok(version) => version,
                     Err(_) => {
-                        issue_count = issue_count.saturating_add(1);
+                        record_content_issue(
+                            &mut issues,
+                            RefreshIssueReason::ContentGroupingFailed,
+                            context.trace_id(),
+                        )?;
                         continue;
                     }
                 },
@@ -3581,7 +3727,11 @@ impl LibraryExecutionContext {
             ) {
                 Ok(grouping) => grouping,
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentGroupingFailed,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
             };
@@ -3601,7 +3751,11 @@ impl LibraryExecutionContext {
                     active_playlists.push(playlist.source_entry_id());
                 }
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentGroupingFailed,
+                        context.trace_id(),
+                    )?;
                 }
             }
         }
@@ -3643,20 +3797,32 @@ impl LibraryExecutionContext {
                 ));
             }
             if !valid {
-                issue_count = issue_count.saturating_add(1);
+                record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentGroupingFailed,
+                    context.trace_id(),
+                )?;
                 continue;
             }
             let playlist_version = match source_version_for_entry(&playlist.playlist) {
                 Ok(version) => version,
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentGroupingFailed,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
             };
             let grouping = match ValidatedM3uGrouping::new(playlist_version, grouping_members) {
                 Ok(grouping) => grouping,
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentGroupingFailed,
+                        context.trace_id(),
+                    )?;
                     continue;
                 }
             };
@@ -3675,7 +3841,11 @@ impl LibraryExecutionContext {
                     add_game_id(&mut game_ids, game_id);
                     active_playlists.push(playlist.playlist.source_entry_id());
                 }
-                Err(_) => issue_count = issue_count.saturating_add(1),
+                Err(_) => record_content_issue(
+                    &mut issues,
+                    RefreshIssueReason::ContentGroupingFailed,
+                    context.trace_id(),
+                )?,
             }
         }
 
@@ -3694,7 +3864,11 @@ impl LibraryExecutionContext {
             })
             .is_err()
         {
-            issue_count = issue_count.saturating_add(1);
+            record_content_issue(
+                &mut issues,
+                RefreshIssueReason::ContentGroupingFailed,
+                context.trace_id(),
+            )?;
         }
 
         // Grouping may redirect one or more provisional Games to the stable
@@ -3714,7 +3888,11 @@ impl LibraryExecutionContext {
                     add_game_id(&mut hydration_game_ids, canonical_game_id);
                 }
                 Ok(GetGameResult::NotFound) | Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentRefreshFailed,
+                        context.trace_id(),
+                    )?;
                 }
             }
         }
@@ -3730,15 +3908,23 @@ impl LibraryExecutionContext {
                 timestamps.now_millis,
             ) {
                 Ok(game_issues) => {
-                    issue_count = issue_count.saturating_add(game_issues);
+                    issues.merge(&game_issues).map_err(|_| {
+                        application_error_from_code(
+                            ErrorCode::InternalUnexpected,
+                            context.trace_id(),
+                        )
+                    })?;
                 }
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentRefreshFailed,
+                        context.trace_id(),
+                    )?;
                 }
             }
         }
-        issue_count = issue_count.saturating_add(transformation_issue_codes.len() as u64);
-        Ok((hydration_game_ids.len(), issue_count))
+        Ok((hydration_game_ids.len(), issues))
     }
 
     pub(crate) fn create_enrichment_sessions(&self) -> Vec<Box<dyn EnrichmentProviderSession>> {
@@ -3822,7 +4008,7 @@ impl LibraryExecutionContext {
         context: &OperationContext,
         sessions: &mut [Box<dyn EnrichmentProviderSession>],
         now: i64,
-    ) -> Result<u64, ApplicationError> {
+    ) -> Result<RefreshIssueAccumulator, ApplicationError> {
         let detail = match self.get_game_with_context(game_id, context)? {
             GetGameResult::Found(detail) => detail,
             GetGameResult::Redirected(_) | GetGameResult::NotFound => {
@@ -3832,7 +4018,7 @@ impl LibraryExecutionContext {
                 ));
             }
         };
-        let mut issue_count = 0_u64;
+        let mut issues = RefreshIssueAccumulator::new();
         for content in detail.content() {
             if content.identification() != argus_domain::IdentificationState::Identified {
                 continue;
@@ -3852,14 +4038,25 @@ impl LibraryExecutionContext {
                 .hydrate_game_content_with_sessions_with_context(target, context, now, sessions)
             {
                 Ok(report) => {
-                    issue_count = issue_count.saturating_add(report.issues().len() as u64);
+                    issues
+                        .record_hydration_issues(report.issues())
+                        .map_err(|_| {
+                            application_error_from_code(
+                                ErrorCode::InternalUnexpected,
+                                context.trace_id(),
+                            )
+                        })?;
                 }
                 Err(_) => {
-                    issue_count = issue_count.saturating_add(1);
+                    record_content_issue(
+                        &mut issues,
+                        RefreshIssueReason::ContentRefreshFailed,
+                        context.trace_id(),
+                    )?;
                 }
             }
         }
-        Ok(issue_count)
+        Ok(issues)
     }
 
     /// Refreshes every currently identified content member of one bounded
@@ -5083,6 +5280,55 @@ pub(crate) fn map_application_port_error(
 fn application_error_from_code(code: ErrorCode, trace_id: TraceId) -> ApplicationError {
     ApplicationError::from_code(code, trace_id, SafeContext::new())
         .expect("runtime bridge error uses an allowlisted empty context")
+}
+
+/// Records one refresh issue produced by local content processing.
+///
+/// The durable issue projection only rejects an occurrence its bounded
+/// representation cannot hold, which is an internal invariant failure rather
+/// than a refresh issue. Execution branches that already treat a condition as
+/// recoverable call this helper; failures the owning path propagates stay
+/// propagated and never reach the issue projection.
+fn record_content_issue(
+    issues: &mut RefreshIssueAccumulator,
+    reason: RefreshIssueReason,
+    trace_id: TraceId,
+) -> Result<(), ApplicationError> {
+    issues
+        .record(RefreshIssueKind::Content, reason, None)
+        .map_err(|_| application_error_from_code(ErrorCode::InternalUnexpected, trace_id))
+}
+
+/// Maps one normalized content error into the closed refresh reason vocabulary.
+///
+/// The mapping only separates conditions the owning subsystems already
+/// distinguish. Any other normalized content error keeps the bounded
+/// "unclassified local refresh failure" reason instead of inventing a
+/// distinction the backend does not possess.
+fn refresh_issue_reason_for_content_error(code: ErrorCode) -> RefreshIssueReason {
+    match code {
+        ErrorCode::ValidationContentMalformed
+        | ErrorCode::ValidationContentUnsupportedRepresentation
+        | ErrorCode::ValidationMultiGameContainerUnsupported => {
+            RefreshIssueReason::ContentMalformedOrUnsupported
+        }
+        ErrorCode::ValidationContentEncryptedUnsupported => {
+            RefreshIssueReason::ContentEncryptedUnsupported
+        }
+        ErrorCode::FilesystemContentDependencyMissing => {
+            RefreshIssueReason::ContentDependencyMissing
+        }
+        ErrorCode::OperationTransformationResourceLimitExceeded => {
+            RefreshIssueReason::ContentResourceLimitExceeded
+        }
+        ErrorCode::OperationSourceChangedDuringProcessing => {
+            RefreshIssueReason::ContentChangedDuringRefresh
+        }
+        ErrorCode::ValidationContentRecognitionAmbiguous => {
+            RefreshIssueReason::ContentIdentificationFailed
+        }
+        _ => RefreshIssueReason::ContentRefreshFailed,
+    }
 }
 
 fn map_sqlite_executor_error(trace_id: TraceId, error: SqliteExecutorError) -> ApplicationError {

@@ -5011,9 +5011,269 @@ as int?,
 }
 
 /// @nodoc
+mixin _$RefreshIssueFact {
+
+ RefreshIssueKind get kind; RefreshIssueReason get reason; String? get providerId; int get occurrences;
+/// Create a copy of RefreshIssueFact
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RefreshIssueFactCopyWith<RefreshIssueFact> get copyWith => _$RefreshIssueFactCopyWithImpl<RefreshIssueFact>(this as RefreshIssueFact, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RefreshIssueFact&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.providerId, providerId) || other.providerId == providerId)&&(identical(other.occurrences, occurrences) || other.occurrences == occurrences));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,kind,reason,providerId,occurrences);
+
+@override
+String toString() {
+  return 'RefreshIssueFact(kind: $kind, reason: $reason, providerId: $providerId, occurrences: $occurrences)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RefreshIssueFactCopyWith<$Res>  {
+  factory $RefreshIssueFactCopyWith(RefreshIssueFact value, $Res Function(RefreshIssueFact) _then) = _$RefreshIssueFactCopyWithImpl;
+@useResult
+$Res call({
+ RefreshIssueKind kind, RefreshIssueReason reason, String? providerId, int occurrences
+});
+
+
+
+
+}
+/// @nodoc
+class _$RefreshIssueFactCopyWithImpl<$Res>
+    implements $RefreshIssueFactCopyWith<$Res> {
+  _$RefreshIssueFactCopyWithImpl(this._self, this._then);
+
+  final RefreshIssueFact _self;
+  final $Res Function(RefreshIssueFact) _then;
+
+/// Create a copy of RefreshIssueFact
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? kind = null,Object? reason = null,Object? providerId = freezed,Object? occurrences = null,}) {
+  return _then(_self.copyWith(
+kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as RefreshIssueKind,reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as RefreshIssueReason,providerId: freezed == providerId ? _self.providerId : providerId // ignore: cast_nullable_to_non_nullable
+as String?,occurrences: null == occurrences ? _self.occurrences : occurrences // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [RefreshIssueFact].
+extension RefreshIssueFactPatterns on RefreshIssueFact {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _RefreshIssueFact value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _RefreshIssueFact() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _RefreshIssueFact value)  $default,){
+final _that = this;
+switch (_that) {
+case _RefreshIssueFact():
+return $default(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _RefreshIssueFact value)?  $default,){
+final _that = this;
+switch (_that) {
+case _RefreshIssueFact() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( RefreshIssueKind kind,  RefreshIssueReason reason,  String? providerId,  int occurrences)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _RefreshIssueFact() when $default != null:
+return $default(_that.kind,_that.reason,_that.providerId,_that.occurrences);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( RefreshIssueKind kind,  RefreshIssueReason reason,  String? providerId,  int occurrences)  $default,) {final _that = this;
+switch (_that) {
+case _RefreshIssueFact():
+return $default(_that.kind,_that.reason,_that.providerId,_that.occurrences);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( RefreshIssueKind kind,  RefreshIssueReason reason,  String? providerId,  int occurrences)?  $default,) {final _that = this;
+switch (_that) {
+case _RefreshIssueFact() when $default != null:
+return $default(_that.kind,_that.reason,_that.providerId,_that.occurrences);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class _RefreshIssueFact implements RefreshIssueFact {
+  const _RefreshIssueFact({required this.kind, required this.reason, this.providerId, required this.occurrences});
+
+
+@override final  RefreshIssueKind kind;
+@override final  RefreshIssueReason reason;
+@override final  String? providerId;
+@override final  int occurrences;
+
+/// Create a copy of RefreshIssueFact
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$RefreshIssueFactCopyWith<_RefreshIssueFact> get copyWith => __$RefreshIssueFactCopyWithImpl<_RefreshIssueFact>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _RefreshIssueFact&&(identical(other.kind, kind) || other.kind == kind)&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.providerId, providerId) || other.providerId == providerId)&&(identical(other.occurrences, occurrences) || other.occurrences == occurrences));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,kind,reason,providerId,occurrences);
+
+@override
+String toString() {
+  return 'RefreshIssueFact(kind: $kind, reason: $reason, providerId: $providerId, occurrences: $occurrences)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$RefreshIssueFactCopyWith<$Res> implements $RefreshIssueFactCopyWith<$Res> {
+  factory _$RefreshIssueFactCopyWith(_RefreshIssueFact value, $Res Function(_RefreshIssueFact) _then) = __$RefreshIssueFactCopyWithImpl;
+@override @useResult
+$Res call({
+ RefreshIssueKind kind, RefreshIssueReason reason, String? providerId, int occurrences
+});
+
+
+
+
+}
+/// @nodoc
+class __$RefreshIssueFactCopyWithImpl<$Res>
+    implements _$RefreshIssueFactCopyWith<$Res> {
+  __$RefreshIssueFactCopyWithImpl(this._self, this._then);
+
+  final _RefreshIssueFact _self;
+  final $Res Function(_RefreshIssueFact) _then;
+
+/// Create a copy of RefreshIssueFact
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? kind = null,Object? reason = null,Object? providerId = freezed,Object? occurrences = null,}) {
+  return _then(_RefreshIssueFact(
+kind: null == kind ? _self.kind : kind // ignore: cast_nullable_to_non_nullable
+as RefreshIssueKind,reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as RefreshIssueReason,providerId: freezed == providerId ? _self.providerId : providerId // ignore: cast_nullable_to_non_nullable
+as String?,occurrences: null == occurrences ? _self.occurrences : occurrences // ignore: cast_nullable_to_non_nullable
+as int,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$RefreshProgressFacts {
 
- String? get phase; int? get completedUnits; int? get totalUnits; String? get statusKey; int? get issueCount;
+ String? get phase; int? get completedUnits; int? get totalUnits; String? get statusKey; int? get issueCount; List<RefreshIssueFact> get issues;
 /// Create a copy of RefreshProgressFacts
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -5024,16 +5284,16 @@ $RefreshProgressFactsCopyWith<RefreshProgressFacts> get copyWith => _$RefreshPro
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is RefreshProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.issueCount, issueCount) || other.issueCount == issueCount));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RefreshProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.issueCount, issueCount) || other.issueCount == issueCount)&&const DeepCollectionEquality().equals(other.issues, issues));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,issueCount);
+int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,issueCount,const DeepCollectionEquality().hash(issues));
 
 @override
 String toString() {
-  return 'RefreshProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, issueCount: $issueCount)';
+  return 'RefreshProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, issueCount: $issueCount, issues: $issues)';
 }
 
 
@@ -5044,7 +5304,7 @@ abstract mixin class $RefreshProgressFactsCopyWith<$Res>  {
   factory $RefreshProgressFactsCopyWith(RefreshProgressFacts value, $Res Function(RefreshProgressFacts) _then) = _$RefreshProgressFactsCopyWithImpl;
 @useResult
 $Res call({
- String? phase, int? completedUnits, int? totalUnits, String? statusKey, int? issueCount
+ String? phase, int? completedUnits, int? totalUnits, String? statusKey, int? issueCount, List<RefreshIssueFact> issues
 });
 
 
@@ -5061,14 +5321,15 @@ class _$RefreshProgressFactsCopyWithImpl<$Res>
 
 /// Create a copy of RefreshProgressFacts
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? issueCount = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? issueCount = freezed,Object? issues = null,}) {
   return _then(_self.copyWith(
 phase: freezed == phase ? _self.phase : phase // ignore: cast_nullable_to_non_nullable
 as String?,completedUnits: freezed == completedUnits ? _self.completedUnits : completedUnits // ignore: cast_nullable_to_non_nullable
 as int?,totalUnits: freezed == totalUnits ? _self.totalUnits : totalUnits // ignore: cast_nullable_to_non_nullable
 as int?,statusKey: freezed == statusKey ? _self.statusKey : statusKey // ignore: cast_nullable_to_non_nullable
 as String?,issueCount: freezed == issueCount ? _self.issueCount : issueCount // ignore: cast_nullable_to_non_nullable
-as int?,
+as int?,issues: null == issues ? _self.issues : issues // ignore: cast_nullable_to_non_nullable
+as List<RefreshIssueFact>,
   ));
 }
 
@@ -5150,10 +5411,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int? issueCount)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int? issueCount,  List<RefreshIssueFact> issues)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _RefreshProgressFacts() when $default != null:
-return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.issueCount);case _:
+return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.issueCount,_that.issues);case _:
   return orElse();
 
 }
@@ -5171,10 +5432,10 @@ return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKe
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int? issueCount)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int? issueCount,  List<RefreshIssueFact> issues)  $default,) {final _that = this;
 switch (_that) {
 case _RefreshProgressFacts():
-return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.issueCount);}
+return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.issueCount,_that.issues);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -5188,10 +5449,10 @@ return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKe
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int? issueCount)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? phase,  int? completedUnits,  int? totalUnits,  String? statusKey,  int? issueCount,  List<RefreshIssueFact> issues)?  $default,) {final _that = this;
 switch (_that) {
 case _RefreshProgressFacts() when $default != null:
-return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.issueCount);case _:
+return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKey,_that.issueCount,_that.issues);case _:
   return null;
 
 }
@@ -5203,7 +5464,7 @@ return $default(_that.phase,_that.completedUnits,_that.totalUnits,_that.statusKe
 
 
 class _RefreshProgressFacts implements RefreshProgressFacts {
-  const _RefreshProgressFacts({this.phase, this.completedUnits, this.totalUnits, this.statusKey, this.issueCount});
+  const _RefreshProgressFacts({this.phase, this.completedUnits, this.totalUnits, this.statusKey, this.issueCount, required final  List<RefreshIssueFact> issues}): _issues = issues;
 
 
 @override final  String? phase;
@@ -5211,6 +5472,13 @@ class _RefreshProgressFacts implements RefreshProgressFacts {
 @override final  int? totalUnits;
 @override final  String? statusKey;
 @override final  int? issueCount;
+ final  List<RefreshIssueFact> _issues;
+@override List<RefreshIssueFact> get issues {
+  if (_issues is EqualUnmodifiableListView) return _issues;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_issues);
+}
+
 
 /// Create a copy of RefreshProgressFacts
 /// with the given fields replaced by the non-null parameter values.
@@ -5222,16 +5490,16 @@ _$RefreshProgressFactsCopyWith<_RefreshProgressFacts> get copyWith => __$Refresh
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _RefreshProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.issueCount, issueCount) || other.issueCount == issueCount));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _RefreshProgressFacts&&(identical(other.phase, phase) || other.phase == phase)&&(identical(other.completedUnits, completedUnits) || other.completedUnits == completedUnits)&&(identical(other.totalUnits, totalUnits) || other.totalUnits == totalUnits)&&(identical(other.statusKey, statusKey) || other.statusKey == statusKey)&&(identical(other.issueCount, issueCount) || other.issueCount == issueCount)&&const DeepCollectionEquality().equals(other._issues, _issues));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,issueCount);
+int get hashCode => Object.hash(runtimeType,phase,completedUnits,totalUnits,statusKey,issueCount,const DeepCollectionEquality().hash(_issues));
 
 @override
 String toString() {
-  return 'RefreshProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, issueCount: $issueCount)';
+  return 'RefreshProgressFacts(phase: $phase, completedUnits: $completedUnits, totalUnits: $totalUnits, statusKey: $statusKey, issueCount: $issueCount, issues: $issues)';
 }
 
 
@@ -5242,7 +5510,7 @@ abstract mixin class _$RefreshProgressFactsCopyWith<$Res> implements $RefreshPro
   factory _$RefreshProgressFactsCopyWith(_RefreshProgressFacts value, $Res Function(_RefreshProgressFacts) _then) = __$RefreshProgressFactsCopyWithImpl;
 @override @useResult
 $Res call({
- String? phase, int? completedUnits, int? totalUnits, String? statusKey, int? issueCount
+ String? phase, int? completedUnits, int? totalUnits, String? statusKey, int? issueCount, List<RefreshIssueFact> issues
 });
 
 
@@ -5259,14 +5527,15 @@ class __$RefreshProgressFactsCopyWithImpl<$Res>
 
 /// Create a copy of RefreshProgressFacts
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? issueCount = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? phase = freezed,Object? completedUnits = freezed,Object? totalUnits = freezed,Object? statusKey = freezed,Object? issueCount = freezed,Object? issues = null,}) {
   return _then(_RefreshProgressFacts(
 phase: freezed == phase ? _self.phase : phase // ignore: cast_nullable_to_non_nullable
 as String?,completedUnits: freezed == completedUnits ? _self.completedUnits : completedUnits // ignore: cast_nullable_to_non_nullable
 as int?,totalUnits: freezed == totalUnits ? _self.totalUnits : totalUnits // ignore: cast_nullable_to_non_nullable
 as int?,statusKey: freezed == statusKey ? _self.statusKey : statusKey // ignore: cast_nullable_to_non_nullable
 as String?,issueCount: freezed == issueCount ? _self.issueCount : issueCount // ignore: cast_nullable_to_non_nullable
-as int?,
+as int?,issues: null == issues ? _self._issues : issues // ignore: cast_nullable_to_non_nullable
+as List<RefreshIssueFact>,
   ));
 }
 

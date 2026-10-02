@@ -1,0 +1,37 @@
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_66f791c4ab49f1::t_48e3214cc905eb 1440-1483
+  s_6e45b70b7be182::t_38c9bfe3d60ffb 1438-1439
+rust/crates/argus-runtime/src/runtime.rs
+  s_66f791c4ab49f1::t_9b81b0303fe39b 50,3899,3902
+rust/crates/argus-runtime/src/lib.rs
+  s_66f791c4ab49f1::t_25af5c27f9b6b0 5666,5734,5747-5765
+  s_66f791c4ab49f1::t_2897115366b653 5327,5735-5746,5766
+  s_66f791c4ab49f1::t_9bcdf524368217 5294,5320-5326
+  s_66f791c4ab49f1::t_68d099848ecac8 5295,5667
+  s_66f791c4ab49f1::t_2ea601dc487db6 3151,3153,3364,3367,3448,3451,3511,3514
+  s_66f791c4ab49f1::t_68bf0bd2e07e3b 5328-5329,5767
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "097c02f45e6010c4e158e344ac9b2dcffb2ae3da",
+  "prompts": {},
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_6e45b70b7be182": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e67d-0812-78b0-a9f2-1a3c3d5e671b",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

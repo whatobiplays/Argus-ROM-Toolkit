@@ -2664,12 +2664,7 @@ impl LibraryExecutionContext {
             }
             Err(error) => return Err(error),
         };
-        if !reader
-            .source_version_is_unchanged()
-            .map_err(|_| TransformationFailure::ReadFailure)?
-        {
-            return Err(TransformationFailure::SourceChanged);
-        }
+        ensure_reader_stable(&*reader)?;
 
         let children = self
             .reconcile_derived_scope_with_context(plan, context, entry, observed_at_seconds, &scope)
@@ -2792,17 +2787,7 @@ impl LibraryExecutionContext {
         let resolver = ContentSourceResolver::new(access, resolved_root, entries);
         let mut reader = resolver.open(entry, session)?;
         let bytes = read_content_bytes(&mut *reader, 1024 * 1024, session)?;
-        let parsed =
-            argus_infrastructure::content::parse_m3u(&bytes).map_err(|error| match error {
-                argus_infrastructure::content::M3uError::ResourceLimitExceeded => {
-                    TransformationFailure::ResourceLimitExceeded
-                }
-                argus_infrastructure::content::M3uError::Malformed
-                | argus_infrastructure::content::M3uError::InvalidMember
-                | argus_infrastructure::content::M3uError::DuplicateMember => {
-                    TransformationFailure::Malformed
-                }
-            })?;
+        let parsed = argus_infrastructure::content::parse_m3u(&bytes).map_err(map_m3u_error)?;
         let parent_id = entry
             .parent_source_entry_id()
             .ok_or(TransformationFailure::Malformed)?;
@@ -2821,20 +2806,7 @@ impl LibraryExecutionContext {
             parsed.members(),
             &candidates,
         )
-        .map_err(|error| match error {
-            argus_application::OpticalDependencyError::ResourceLimitExceeded => {
-                TransformationFailure::ResourceLimitExceeded
-            }
-            argus_application::OpticalDependencyError::Missing
-            | argus_application::OpticalDependencyError::Ambiguous
-            | argus_application::OpticalDependencyError::Duplicate => {
-                TransformationFailure::MissingDependency
-            }
-            argus_application::OpticalDependencyError::InvalidReference
-            | argus_application::OpticalDependencyError::CrossRoot => {
-                TransformationFailure::UnsupportedFeature
-            }
-        })?;
+        .map_err(map_optical_dependency_failure)?;
         Ok(Some(DerivedPlaylistGroup {
             playlist: entry.clone(),
             members,
@@ -2877,20 +2849,7 @@ impl LibraryExecutionContext {
             descriptor.dependencies(),
             &candidates,
         )
-        .map_err(|error| match error {
-            argus_application::OpticalDependencyError::ResourceLimitExceeded => {
-                TransformationFailure::ResourceLimitExceeded
-            }
-            argus_application::OpticalDependencyError::Missing
-            | argus_application::OpticalDependencyError::Ambiguous
-            | argus_application::OpticalDependencyError::Duplicate => {
-                TransformationFailure::MissingDependency
-            }
-            argus_application::OpticalDependencyError::InvalidReference
-            | argus_application::OpticalDependencyError::CrossRoot => {
-                TransformationFailure::UnsupportedFeature
-            }
-        })?;
+        .map_err(map_optical_dependency_failure)?;
 
         let mut readers: Vec<Box<dyn ContentReader>> = Vec::with_capacity(dependencies.len());
         for dependency in &dependencies {
@@ -3025,12 +2984,7 @@ impl LibraryExecutionContext {
             }
             Err(_) => return Ok(None),
         };
-        if !reader
-            .source_version_is_unchanged()
-            .map_err(|_| TransformationFailure::ReadFailure)?
-        {
-            return Err(TransformationFailure::SourceChanged);
-        }
+        ensure_reader_stable(reader)?;
         let Some(identity) = catalog.select_identity(
             recognition.platform(),
             recognition.content_type(),
@@ -3249,13 +3203,10 @@ impl LibraryExecutionContext {
                 let resolver = ContentSourceResolver::new(&access, &resolved_root, &entries);
                 let mut descriptor_reader = match resolver.open(entry, parsing_session) {
                     Ok(reader) => reader,
-                    Err(TransformationFailure::Cancelled) => {
-                        return Err(cancelled_sources_error(context.trace_id()));
-                    }
-                    Err(_) => {
-                        record_content_issue(
+                    Err(failure) => {
+                        record_transformation_content_failure(
                             &mut issues,
-                            RefreshIssueReason::ContentUnavailable,
+                            failure,
                             context.trace_id(),
                         )?;
                         continue;
@@ -3265,13 +3216,10 @@ impl LibraryExecutionContext {
                     match read_content_bytes(&mut *descriptor_reader, 1024 * 1024, parsing_session)
                     {
                         Ok(bytes) => bytes,
-                        Err(TransformationFailure::Cancelled) => {
-                            return Err(cancelled_sources_error(context.trace_id()));
-                        }
-                        Err(_) => {
-                            record_content_issue(
+                        Err(failure) => {
+                            record_transformation_content_failure(
                                 &mut issues,
-                                RefreshIssueReason::ContentUnavailable,
+                                failure,
                                 context.trace_id(),
                             )?;
                             continue;
@@ -3280,13 +3228,11 @@ impl LibraryExecutionContext {
                 let descriptor =
                     match argus_infrastructure::content::parse_descriptor(&descriptor_bytes) {
                         Ok(descriptor) => descriptor,
-                        Err(_) => {
-                            if is_cancelled() {
-                                return Err(cancelled_sources_error(context.trace_id()));
-                            }
-                            record_content_issue(
+                        Err(error) => {
+                            record_content_failure_if_not_cancelled(
                                 &mut issues,
-                                RefreshIssueReason::ContentMalformedOrUnsupported,
+                                map_optical_failure(error),
+                                is_cancelled,
                                 context.trace_id(),
                             )?;
                             continue;
@@ -3298,10 +3244,10 @@ impl LibraryExecutionContext {
                     &entries,
                 ) {
                     Ok(dependencies) => dependencies,
-                    Err(_) => {
-                        record_content_issue(
+                    Err(error) => {
+                        record_transformation_content_failure(
                             &mut issues,
-                            RefreshIssueReason::ContentDependencyMissing,
+                            map_optical_dependency_failure(error),
                             context.trace_id(),
                         )?;
                         continue;
@@ -3309,23 +3255,20 @@ impl LibraryExecutionContext {
                 };
                 let mut readers: Vec<Box<dyn ContentReader>> =
                     Vec::with_capacity(resolved_dependencies.len());
-                let mut opened = true;
+                let mut open_failure = None;
                 for dependency in &resolved_dependencies {
                     match resolver.open(dependency, parsing_session) {
                         Ok(reader) => readers.push(reader),
-                        Err(TransformationFailure::Cancelled) => {
-                            return Err(cancelled_sources_error(context.trace_id()));
-                        }
-                        Err(_) => {
-                            opened = false;
+                        Err(failure) => {
+                            open_failure = Some(failure);
                             break;
                         }
                     }
                 }
-                if !opened {
-                    record_content_issue(
+                if let Some(failure) = open_failure {
+                    record_transformation_content_failure(
                         &mut issues,
-                        RefreshIssueReason::ContentUnavailable,
+                        failure,
                         context.trace_id(),
                     )?;
                     continue;
@@ -3344,29 +3287,26 @@ impl LibraryExecutionContext {
                         is_cancelled,
                     ) {
                         Ok(recognition) => recognition,
-                        Err(argus_infrastructure::content::OpticalError::Cancelled) => {
-                            return Err(cancelled_sources_error(context.trace_id()));
-                        }
-                        Err(_) => {
-                            record_content_issue(
+                        Err(error) => {
+                            record_transformation_content_failure(
                                 &mut issues,
-                                RefreshIssueReason::ContentMalformedOrUnsupported,
+                                map_optical_failure(error),
                                 context.trace_id(),
                             )?;
                             continue;
                         }
                     }
                 };
-                if !ensure_reader_stable(&*descriptor_reader).is_ok()
-                    || readers
-                        .iter()
-                        .any(|reader| !ensure_reader_stable(&**reader).is_ok())
-                {
-                    record_content_issue(
-                        &mut issues,
-                        RefreshIssueReason::ContentChangedDuringRefresh,
-                        context.trace_id(),
-                    )?;
+                let stability_failed = std::iter::once(&*descriptor_reader)
+                    .chain(readers.iter().map(|reader| &**reader))
+                    .try_fold(false, |failed, reader| {
+                        if failed {
+                            Ok(true)
+                        } else {
+                            record_reader_stability_issue(&mut issues, reader, context.trace_id())
+                        }
+                    })?;
+                if stability_failed {
                     continue;
                 }
                 let Some(identity) = catalog.select_identity(
@@ -3470,12 +3410,7 @@ impl LibraryExecutionContext {
                     Err(_) => None,
                 };
             if let Some(recognized) = native_optical {
-                if !reader.source_version_is_unchanged().unwrap_or(false) {
-                    record_content_issue(
-                        &mut issues,
-                        RefreshIssueReason::ContentChangedDuringRefresh,
-                        context.trace_id(),
-                    )?;
+                if record_reader_stability_issue(&mut issues, &reader, context.trace_id())? {
                     continue;
                 }
                 let Some(identity) = catalog.select_identity(
@@ -3541,12 +3476,7 @@ impl LibraryExecutionContext {
                     continue;
                 }
             };
-            if !reader.source_version_is_unchanged().unwrap_or(false) {
-                record_content_issue(
-                    &mut issues,
-                    RefreshIssueReason::ContentChangedDuringRefresh,
-                    context.trace_id(),
-                )?;
+            if record_reader_stability_issue(&mut issues, &reader, context.trace_id())? {
                 continue;
             }
             let Some(identity) = catalog.select_identity(
@@ -3607,13 +3537,10 @@ impl LibraryExecutionContext {
             let resolver = ContentSourceResolver::new(&access, &resolved_root, &entries);
             let mut playlist_reader = match resolver.open(playlist, parsing_session) {
                 Ok(reader) => reader,
-                Err(TransformationFailure::Cancelled) => {
-                    return Err(cancelled_sources_error(context.trace_id()));
-                }
-                Err(_) => {
-                    record_content_issue(
+                Err(failure) => {
+                    record_transformation_content_failure(
                         &mut issues,
-                        RefreshIssueReason::ContentUnavailable,
+                        failure,
                         context.trace_id(),
                     )?;
                     continue;
@@ -3622,13 +3549,10 @@ impl LibraryExecutionContext {
             let bytes =
                 match read_content_bytes(&mut *playlist_reader, 1024 * 1024, parsing_session) {
                     Ok(bytes) => bytes,
-                    Err(TransformationFailure::Cancelled) => {
-                        return Err(cancelled_sources_error(context.trace_id()));
-                    }
-                    Err(_) => {
-                        record_content_issue(
+                    Err(failure) => {
+                        record_transformation_content_failure(
                             &mut issues,
-                            RefreshIssueReason::ContentUnavailable,
+                            failure,
                             context.trace_id(),
                         )?;
                         continue;
@@ -3637,13 +3561,11 @@ impl LibraryExecutionContext {
             let parsed =
                 match argus_infrastructure::content::parse_m3u(&bytes).map_err(map_m3u_error) {
                     Ok(parsed) => parsed,
-                    Err(TransformationFailure::Cancelled) => {
-                        return Err(cancelled_sources_error(context.trace_id()));
-                    }
-                    Err(_) => {
-                        record_content_issue(
+                    Err(failure) => {
+                        record_content_failure_if_not_cancelled(
                             &mut issues,
-                            RefreshIssueReason::ContentMalformedOrUnsupported,
+                            failure,
+                            is_cancelled,
                             context.trace_id(),
                         )?;
                         continue;
@@ -3655,10 +3577,10 @@ impl LibraryExecutionContext {
                 &entries,
             ) {
                 Ok(members) => members,
-                Err(_) => {
-                    record_content_issue(
+                Err(error) => {
+                    record_transformation_content_failure(
                         &mut issues,
-                        RefreshIssueReason::ContentDependencyMissing,
+                        map_optical_dependency_failure(error),
                         context.trace_id(),
                     )?;
                     continue;
@@ -3703,12 +3625,7 @@ impl LibraryExecutionContext {
                 )?;
                 continue;
             }
-            if !ensure_reader_stable(&*playlist_reader).is_ok() {
-                record_content_issue(
-                    &mut issues,
-                    RefreshIssueReason::ContentChangedDuringRefresh,
-                    context.trace_id(),
-                )?;
+            if record_reader_stability_issue(&mut issues, &*playlist_reader, context.trace_id())? {
                 continue;
             }
             let grouping = match ValidatedM3uGrouping::new(
@@ -5152,6 +5069,25 @@ fn map_optical_failure(error: OpticalError) -> TransformationFailure {
     }
 }
 
+fn map_optical_dependency_failure(
+    error: argus_application::OpticalDependencyError,
+) -> TransformationFailure {
+    match error {
+        argus_application::OpticalDependencyError::ResourceLimitExceeded => {
+            TransformationFailure::ResourceLimitExceeded
+        }
+        argus_application::OpticalDependencyError::Missing
+        | argus_application::OpticalDependencyError::Ambiguous
+        | argus_application::OpticalDependencyError::Duplicate => {
+            TransformationFailure::MissingDependency
+        }
+        argus_application::OpticalDependencyError::InvalidReference
+        | argus_application::OpticalDependencyError::CrossRoot => {
+            TransformationFailure::UnsupportedFeature
+        }
+    }
+}
+
 fn map_m3u_error(error: argus_infrastructure::content::M3uError) -> TransformationFailure {
     match error {
         argus_infrastructure::content::M3uError::Malformed
@@ -5297,6 +5233,54 @@ fn record_content_issue(
     issues
         .record(RefreshIssueKind::Content, reason, None)
         .map_err(|_| application_error_from_code(ErrorCode::InternalUnexpected, trace_id))
+}
+
+/// Records a recoverable content transformation failure through the shared
+/// normalized error vocabulary. Cancellation remains a propagated operation
+/// outcome and is never converted into a refresh issue fact.
+fn record_transformation_content_failure(
+    issues: &mut RefreshIssueAccumulator,
+    failure: TransformationFailure,
+    trace_id: TraceId,
+) -> Result<(), ApplicationError> {
+    if matches!(failure, TransformationFailure::Cancelled) {
+        return Err(cancelled_sources_error(trace_id));
+    }
+    record_content_issue(
+        issues,
+        refresh_issue_reason_for_content_error(map_transformation_failure(failure)),
+        trace_id,
+    )
+}
+
+/// Preserves cancellation requested during a synchronous parse before recording
+/// its normalized failure as a partial refresh issue.
+fn record_content_failure_if_not_cancelled(
+    issues: &mut RefreshIssueAccumulator,
+    failure: TransformationFailure,
+    is_cancelled: &dyn Fn() -> bool,
+    trace_id: TraceId,
+) -> Result<(), ApplicationError> {
+    if is_cancelled() {
+        return Err(cancelled_sources_error(trace_id));
+    }
+    record_transformation_content_failure(issues, failure, trace_id)
+}
+
+/// Revalidates a reader and records its typed stability failure when the
+/// refresh already owns that recoverable branch.
+fn record_reader_stability_issue(
+    issues: &mut RefreshIssueAccumulator,
+    reader: &dyn ContentReader,
+    trace_id: TraceId,
+) -> Result<bool, ApplicationError> {
+    match ensure_reader_stable(reader) {
+        Ok(()) => Ok(false),
+        Err(failure) => {
+            record_transformation_content_failure(issues, failure, trace_id)?;
+            Ok(true)
+        }
+    }
 }
 
 /// Maps one normalized content error into the closed refresh reason vocabulary.
@@ -5668,13 +5652,15 @@ fn hex_encode_bytes(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, refresh_issue_reason_for_content_error,
+        Platform, record_content_failure_if_not_cancelled, record_reader_stability_issue,
+        record_transformation_content_failure, refresh_issue_reason_for_content_error,
         refresh_issue_reason_for_recognition_error, resolve_data_directory,
         sessions_require_credentials, trace_id_from_entropy,
     };
     use argus_application::{
-        EnrichmentProviderSession, MetadataProviderRegistry, ProviderId, RefreshIssueReason,
-        TransformationFailure, map_transformation_failure,
+        EnrichmentProviderSession, ErrorCode, MetadataProviderRegistry, ProviderId,
+        RefreshIssueAccumulator, RefreshIssueReason, TransformationFailure,
+        map_transformation_failure,
     };
     use std::path::PathBuf;
 
@@ -5694,6 +5680,30 @@ mod tests {
         }
     }
 
+    struct StabilityContentReader {
+        result: Result<bool, argus_infrastructure::content::ContentReadError>,
+    }
+
+    impl argus_infrastructure::content::ContentReader for StabilityContentReader {
+        fn len(&self) -> Result<u64, argus_infrastructure::content::ContentReadError> {
+            Ok(0)
+        }
+
+        fn read_at(
+            &mut self,
+            _offset: u64,
+            _destination: &mut [u8],
+        ) -> Result<usize, argus_infrastructure::content::ContentReadError> {
+            Ok(0)
+        }
+
+        fn source_version_is_unchanged(
+            &self,
+        ) -> Result<bool, argus_infrastructure::content::ContentReadError> {
+            self.result
+        }
+    }
+
     struct TestProviderSession(ProviderId);
 
     impl EnrichmentProviderSession for TestProviderSession {
@@ -5710,6 +5720,81 @@ mod tests {
             refresh_issue_reason_for_content_error(normalized),
             RefreshIssueReason::ContentUnavailable
         );
+    }
+
+    #[test]
+    fn reader_stability_failures_keep_distinct_durable_refresh_reasons() {
+        let trace_id = trace_id_from_entropy(Some([1; 16]));
+        let cases = [
+            (Ok(true), false, None),
+            (
+                Ok(false),
+                true,
+                Some(RefreshIssueReason::ContentChangedDuringRefresh),
+            ),
+            (
+                Err(argus_infrastructure::content::ContentReadError::Io),
+                true,
+                Some(RefreshIssueReason::ContentUnavailable),
+            ),
+        ];
+
+        for (result, expected_failure, expected_reason) in cases {
+            let reader = StabilityContentReader { result };
+            let mut issues = RefreshIssueAccumulator::new();
+            assert_eq!(
+                record_reader_stability_issue(&mut issues, &reader, trace_id)
+                    .expect("stability result is a recoverable refresh issue"),
+                expected_failure
+            );
+            let summary = issues.finish().expect("bounded issue summary");
+            match expected_reason {
+                Some(reason) => {
+                    assert_eq!(summary.issue_count(), 1);
+                    assert_eq!(summary.facts().len(), 1);
+                    assert_eq!(summary.facts()[0].reason(), reason);
+                }
+                None => {
+                    assert_eq!(summary.issue_count(), 0);
+                    assert!(summary.facts().is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cancelled_transformation_failure_propagates_without_a_refresh_fact() {
+        let trace_id = trace_id_from_entropy(Some([2; 16]));
+        let mut issues = RefreshIssueAccumulator::new();
+        let error = record_transformation_content_failure(
+            &mut issues,
+            TransformationFailure::Cancelled,
+            trace_id,
+        )
+        .expect_err("cancellation must remain propagated");
+
+        assert_eq!(error.code, ErrorCode::OperationCancelled);
+        let summary = issues.finish().expect("empty issue summary");
+        assert_eq!(summary.issue_count(), 0);
+        assert!(summary.facts().is_empty());
+    }
+
+    #[test]
+    fn late_content_parse_cancellation_precedes_issue_recording() {
+        let trace_id = trace_id_from_entropy(Some([3; 16]));
+        let mut issues = RefreshIssueAccumulator::new();
+        let error = record_content_failure_if_not_cancelled(
+            &mut issues,
+            TransformationFailure::Malformed,
+            &|| true,
+            trace_id,
+        )
+        .expect_err("late cancellation must take precedence over a parsed issue");
+
+        assert_eq!(error.code, ErrorCode::OperationCancelled);
+        let summary = issues.finish().expect("empty issue summary");
+        assert_eq!(summary.issue_count(), 0);
+        assert!(summary.facts().is_empty());
     }
 
     #[test]

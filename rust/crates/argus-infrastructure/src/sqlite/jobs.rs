@@ -2499,12 +2499,19 @@ fn read_job_detail(
             }
         };
 
-        // The refresh issue projection is refresh-owned durable state. A
-        // historical pre-v18 refresh has no summary row and therefore reports
-        // an unknown projection instead of fabricating facts from the child
-        // scan run's intake counters.
-        let refresh_issue_summary =
-            read_refresh_issue_summary(connection, &job_run_id.to_string())?;
+        // Refresh issue summaries become authoritative only after a successful
+        // terminal transition. A process can persist the refresh-owned summary
+        // before the generic JobRun lifecycle commit, so non-success states
+        // must ignore any stale summary row without attempting to validate it.
+        // Historical successful runs without a summary remain unknown.
+        let refresh_issue_summary = if matches!(
+            state,
+            JobRunState::Completed | JobRunState::CompletedWithIssues
+        ) {
+            read_refresh_issue_summary(connection, &job_run_id.to_string())?
+        } else {
+            None
+        };
 
         let refresh_progress = RefreshProgressFacts::new(
             progress.phase().map(str::to_owned),

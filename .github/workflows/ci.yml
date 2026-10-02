@@ -265,9 +265,10 @@ jobs:
           rustup toolchain install "$rust_channel" --profile minimal
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: '12266719'
+          packages: ''
 
       - name: Install the Flutter-pinned Android NDK
         run: |

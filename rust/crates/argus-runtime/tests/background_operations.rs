@@ -1474,6 +1474,62 @@ fn clean_library_refresh_persists_an_explicit_zero_issue_summary() {
 
 #[test]
 #[cfg(feature = "test-support")]
+fn direct_descriptor_and_playlist_failures_keep_typed_content_reasons() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        directory.path().join("data"),
+    ));
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+
+    // Direct descriptor reads and M3U parsing have separate bounded inputs.
+    // Both resource-limit failures must retain that normalized reason.
+    fs::write(library.join("oversized.cue"), vec![b' '; 1024 * 1024 + 1])
+        .expect("oversized descriptor");
+    let too_many_playlist_members = (0..129)
+        .map(|index| format!("missing-{index}.iso\n"))
+        .collect::<String>();
+    fs::write(library.join("too-many.m3u"), too_many_playlist_members)
+        .expect("oversized playlist scope");
+
+    // Different backend parse outcomes still share the broad malformed or
+    // unsupported product reason, and identical typed facts aggregate.
+    fs::write(library.join("empty.cue"), b"").expect("malformed descriptor");
+    fs::write(library.join("unsupported.cue"), b"NOT A DESCRIPTOR\n")
+        .expect("unsupported descriptor");
+    fs::write(library.join("empty.m3u"), b"").expect("malformed playlist");
+    add_root(&host, &library);
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(refresh.progress().issue_count(), Some(5));
+    assert_eq!(refresh.progress().issues().len(), 2);
+    let resource_limit = refresh
+        .progress()
+        .issues()
+        .iter()
+        .find(|fact| fact.reason() == RefreshIssueReason::ContentResourceLimitExceeded)
+        .expect("resource-limit explanation");
+    assert_eq!(resource_limit.kind(), RefreshIssueKind::Content);
+    assert_eq!(resource_limit.occurrences(), 2);
+    let malformed = refresh
+        .progress()
+        .issues()
+        .iter()
+        .find(|fact| fact.reason() == RefreshIssueReason::ContentMalformedOrUnsupported)
+        .expect("malformed/unsupported explanation");
+    assert_eq!(malformed.kind(), RefreshIssueKind::Content);
+    assert_eq!(malformed.occurrences(), 3);
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
 fn cancelled_refresh_detail_without_a_summary_remains_unknown_after_reopen() {
     let directory = tempfile::tempdir().expect("tempdir");
     let data_directory = directory.path().join("data");

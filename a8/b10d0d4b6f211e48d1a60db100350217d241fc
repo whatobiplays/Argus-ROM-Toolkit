@@ -1,0 +1,44 @@
+rust/crates/argus-runtime/src/lib.rs
+  s_66f791c4ab49f1::t_4a504de8b7ce70 5238-5253,5268-5285
+  s_66f791c4ab49f1::t_5a4de06d3119d3 3235,5254-5255,5259,5261-5266
+  s_66f791c4ab49f1::t_367f6479e7abc2 3540-3541,3543,3552-3553,3555,3564,3567,3580-3581,3583
+  s_66f791c4ab49f1::t_f01e98c18daa5a 3232,3234,3565,3568,5256-5258,5260,5267,5655-5656
+  s_66f791c4ab49f1::t_a1bf5233942779 5661-5663,5683-5706,5725-5774,5793-5797
+  s_66f791c4ab49f1::t_6c62200b85436b 3306,3413,3479,3628
+  s_66f791c4ab49f1::t_2ebb7622422d6c 2790,2809,2852,2987
+  s_66f791c4ab49f1::t_50dab9fd4036b6 5775-5782,5784-5785,5787,5789-5791,5798
+  s_66f791c4ab49f1::t_c98b3d7f6fa87d 2667
+  s_66f791c4ab49f1::t_868043920e87ba 5072-5090
+  s_66f791c4ab49f1::t_78219c6596e6ce 5783,5786,5788,5792
+  s_66f791c4ab49f1::t_d9016dfda55e82 3206-3207,3209,3219-3220,3222,3231,3247-3248,3250,3258,3262-3263,3268-3269,3271,3290-3291,3293,3300-3305,3307-3309
+  s_66f791c4ab49f1::t_bc87f955510292 5799
+.github/workflows/ci.yml
+  s_66f791c4ab49f1::t_873cf7f1585458 268,271
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_66f791c4ab49f1::t_6c62200b85436b 1488-1489,1493-1494
+  s_66f791c4ab49f1::t_f95c005546e642 1477-1487,1490-1492,1495-1530
+  s_66f791c4ab49f1::t_736784c4616b76 1475-1476
+rust/crates/argus-infrastructure/src/sqlite/jobs.rs
+  s_66f791c4ab49f1::t_9abb24430997ba 2502-2514
+rust/crates/argus-infrastructure/tests/jobs_refresh_issues.rs
+  s_66f791c4ab49f1::t_083ec4b8f63fd4 49
+  s_66f791c4ab49f1::t_af5e8a152ed6b6 1-10,14-48,50-127,138-209,212-224
+  s_66f791c4ab49f1::t_6c62200b85436b 128-137,210-211
+  s_66f791c4ab49f1::t_55fa3cf9518113 11-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8b10d0d4b6f211e48d1a60db100350217d241fc",
+  "prompts": {},
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

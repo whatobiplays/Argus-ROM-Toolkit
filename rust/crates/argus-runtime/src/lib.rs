@@ -3148,9 +3148,9 @@ impl LibraryExecutionContext {
                                     }
                                 }
                             }
-                            Err(_) => record_content_issue(
+                            Err(error) => record_content_issue(
                                 &mut issues,
-                                RefreshIssueReason::ContentIdentificationFailed,
+                                refresh_issue_reason_for_identification_error(error.code),
                                 context.trace_id(),
                             )?,
                         }
@@ -3361,10 +3361,10 @@ impl LibraryExecutionContext {
                 let outcome =
                     match self.identify_committed_source_entry_with_context(derivation, context) {
                         Ok(outcome) => outcome,
-                        Err(_) => {
+                        Err(error) => {
                             record_content_issue(
                                 &mut issues,
-                                RefreshIssueReason::ContentIdentificationFailed,
+                                refresh_issue_reason_for_identification_error(error.code),
                                 context.trace_id(),
                             )?;
                             continue;
@@ -3445,10 +3445,10 @@ impl LibraryExecutionContext {
                 let outcome =
                     match self.identify_committed_source_entry_with_context(derivation, context) {
                         Ok(outcome) => outcome,
-                        Err(_) => {
+                        Err(error) => {
                             record_content_issue(
                                 &mut issues,
-                                RefreshIssueReason::ContentIdentificationFailed,
+                                refresh_issue_reason_for_identification_error(error.code),
                                 context.trace_id(),
                             )?;
                             continue;
@@ -3508,10 +3508,10 @@ impl LibraryExecutionContext {
             let outcome =
                 match self.identify_committed_source_entry_with_context(derivation, context) {
                     Ok(outcome) => outcome,
-                    Err(_) => {
+                    Err(error) => {
                         record_content_issue(
                             &mut issues,
-                            RefreshIssueReason::ContentIdentificationFailed,
+                            refresh_issue_reason_for_identification_error(error.code),
                             context.trace_id(),
                         )?;
                         continue;
@@ -5291,9 +5291,8 @@ fn record_reader_stability_issue(
 /// distinction the backend does not possess.
 fn refresh_issue_reason_for_content_error(code: ErrorCode) -> RefreshIssueReason {
     match code {
-        ErrorCode::FilesystemSourceValidationIndeterminate => {
-            RefreshIssueReason::ContentUnavailable
-        }
+        ErrorCode::FilesystemSourceValidationIndeterminate
+        | ErrorCode::FilesystemInvalidRootSelection => RefreshIssueReason::ContentUnavailable,
         ErrorCode::ValidationContentMalformed
         | ErrorCode::ValidationContentUnsupportedRepresentation
         | ErrorCode::ValidationMultiGameContainerUnsupported => {
@@ -5315,6 +5314,16 @@ fn refresh_issue_reason_for_content_error(code: ErrorCode) -> RefreshIssueReason
             RefreshIssueReason::ContentIdentificationFailed
         }
         _ => RefreshIssueReason::ContentRefreshFailed,
+    }
+}
+
+/// Preserves a source-change distinction while keeping other convergence
+/// failures within the identification-failure category.
+fn refresh_issue_reason_for_identification_error(code: ErrorCode) -> RefreshIssueReason {
+    if code == ErrorCode::OperationSourceChangedDuringProcessing {
+        RefreshIssueReason::ContentChangedDuringRefresh
+    } else {
+        RefreshIssueReason::ContentIdentificationFailed
     }
 }
 
@@ -5654,8 +5663,8 @@ mod tests {
     use super::{
         Platform, record_content_failure_if_not_cancelled, record_reader_stability_issue,
         record_transformation_content_failure, refresh_issue_reason_for_content_error,
-        refresh_issue_reason_for_recognition_error, resolve_data_directory,
-        sessions_require_credentials, trace_id_from_entropy,
+        refresh_issue_reason_for_identification_error, refresh_issue_reason_for_recognition_error,
+        resolve_data_directory, sessions_require_credentials, trace_id_from_entropy,
     };
     use argus_application::{
         EnrichmentProviderSession, ErrorCode, MetadataProviderRegistry, ProviderId,
@@ -5720,6 +5729,40 @@ mod tests {
             refresh_issue_reason_for_content_error(normalized),
             RefreshIssueReason::ContentUnavailable
         );
+    }
+
+    #[test]
+    fn missing_root_is_unavailable_but_unclassified_refresh_errors_stay_generic() {
+        assert_eq!(
+            refresh_issue_reason_for_content_error(ErrorCode::FilesystemInvalidRootSelection),
+            RefreshIssueReason::ContentUnavailable
+        );
+        assert_eq!(
+            refresh_issue_reason_for_content_error(ErrorCode::InternalUnexpected),
+            RefreshIssueReason::ContentRefreshFailed
+        );
+    }
+
+    #[test]
+    fn identity_convergence_preserves_source_change_without_reclassifying_other_errors() {
+        let cases = [
+            (
+                ErrorCode::OperationSourceChangedDuringProcessing,
+                RefreshIssueReason::ContentChangedDuringRefresh,
+            ),
+            (
+                ErrorCode::InternalUnexpected,
+                RefreshIssueReason::ContentIdentificationFailed,
+            ),
+        ];
+
+        for (code, expected_reason) in cases {
+            assert_eq!(
+                refresh_issue_reason_for_identification_error(code),
+                expected_reason,
+                "unexpected refresh reason for {code:?}"
+            );
+        }
     }
 
     #[test]

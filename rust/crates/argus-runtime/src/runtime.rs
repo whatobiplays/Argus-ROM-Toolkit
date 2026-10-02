@@ -47,7 +47,7 @@ use crate::{
     events::{PendingEventCollector, finalize_library_roots_update},
     map_application_port_error, new_trace_id,
     operations::{OperationClass, OperationGuard, OperationTracker, ResourceClass},
-    record_content_issue,
+    record_content_issue, refresh_issue_reason_for_content_error,
     startup::SettingsReadPort,
 };
 use argus_application::LocalFilesystemProvider;
@@ -3896,10 +3896,10 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
                             .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
                     }
                     Err(error) if stop_reason().is_some() => return Err(error),
-                    Err(_) => {
+                    Err(error) => {
                         record_content_issue(
                             &mut issues,
-                            RefreshIssueReason::ContentRefreshFailed,
+                            refresh_issue_reason_for_content_error(error.code),
                             context.trace_id(),
                         )?;
                     }

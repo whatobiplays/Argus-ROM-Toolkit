@@ -1437,6 +1437,52 @@ fn independent_refresh_failures_aggregate_into_deterministic_typed_facts() {
 
 #[test]
 #[cfg(feature = "test-support")]
+fn library_refresh_missing_root_after_complete_scan_reports_content_unavailable() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let gate = RefreshExecutionGate::new(RefreshExecutionCheckpoint::CommittedRoot);
+    let gate_for_hook = Arc::clone(&gate);
+    let options = KernelBootstrapOptions::with_data_directory(directory.path().join("data"))
+        .with_provider_session_factory_for_tests(Vec::new)
+        .with_refresh_execution_hook_for_tests(move |checkpoint| gate_for_hook.hook(checkpoint));
+    let host = ApplicationHost::new(options);
+    context_ready(&host);
+
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("game.gb"), gb_fixture(61)).expect("game content");
+    add_root(&host, &library);
+
+    // The checkpoint runs after the child scan commits but before refresh-level
+    // root resolution, so removing the directory isolates the refresh failure.
+    gate.arm();
+    let handle = host.refresh_library().expect("refresh admission");
+    gate.wait_until_entered();
+    fs::remove_dir_all(&library).expect("remove admitted root");
+    gate.release();
+
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(refresh.scan_runs().len(), 1);
+    assert_eq!(
+        refresh.scan_runs()[0].status(),
+        argus_application::ScanRunStatus::Complete,
+        "the child scan remains durably complete despite later root loss"
+    );
+    assert_eq!(refresh.progress().issue_count(), Some(1));
+    let facts = refresh.progress().issues();
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].kind(), RefreshIssueKind::Content);
+    assert_eq!(facts[0].reason(), RefreshIssueReason::ContentUnavailable);
+    assert_ne!(facts[0].reason(), RefreshIssueReason::ContentRefreshFailed);
+
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
 fn clean_library_refresh_persists_an_explicit_zero_issue_summary() {
     let directory = tempfile::tempdir().expect("tempdir");
     let data_directory = directory.path().join("data");

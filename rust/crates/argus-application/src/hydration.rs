@@ -309,6 +309,25 @@ impl HydrationProviderError {
             Self::UnsupportedCapability => "provider_unsupported_capability",
         }
     }
+
+    /// Decodes one stable application-facing issue key.
+    ///
+    /// This vocabulary is owned here, so callers that must rebuild the typed
+    /// error from durable text delegate to this decoder instead of repeating
+    /// the literals.
+    pub(crate) fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "provider_authentication_failed" => Some(Self::AuthenticationFailed),
+            "provider_authorization_failed" => Some(Self::AuthorizationFailed),
+            "provider_misconfigured" => Some(Self::Misconfigured),
+            "provider_rate_limited" => Some(Self::RateLimited),
+            "provider_timeout" => Some(Self::Timeout),
+            "provider_unavailable" => Some(Self::Unavailable),
+            "provider_invalid_response" => Some(Self::InvalidResponse),
+            "provider_unsupported_capability" => Some(Self::UnsupportedCapability),
+            _ => None,
+        }
+    }
 }
 
 /// Provider session port owned by one explicit hydration operation.
@@ -378,6 +397,21 @@ impl ArtworkAssetStoreError {
             Self::InvalidImage => "artwork_asset_invalid_image",
             Self::DimensionsTooLarge => "artwork_asset_dimensions_too_large",
             Self::Unavailable => "artwork_asset_store_unavailable",
+        }
+    }
+
+    /// Decodes one stable application-facing issue key.
+    ///
+    /// This vocabulary is owned here, so callers that must rebuild the typed
+    /// error from durable text delegate to this decoder instead of repeating
+    /// the literals.
+    pub(crate) fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "artwork_asset_too_large" => Some(Self::TooLarge),
+            "artwork_asset_invalid_image" => Some(Self::InvalidImage),
+            "artwork_asset_dimensions_too_large" => Some(Self::DimensionsTooLarge),
+            "artwork_asset_store_unavailable" => Some(Self::Unavailable),
+            _ => None,
         }
     }
 }

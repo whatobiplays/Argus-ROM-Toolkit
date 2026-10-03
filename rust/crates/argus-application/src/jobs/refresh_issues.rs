@@ -138,20 +138,31 @@ pub enum RefreshIssueReason {
 
 impl RefreshIssueReason {
     /// Returns the stable persisted reason key.
+    ///
+    /// Provider and artwork-store reasons inherit their key from the
+    /// hydration error that owns that vocabulary, so those arms delegate
+    /// instead of restating the literal. Content and scope reasons are owned
+    /// by this module and are spelled here.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::ProviderAuthenticationFailed => "provider_authentication_failed",
-            Self::ProviderAuthorizationFailed => "provider_authorization_failed",
-            Self::ProviderMisconfigured => "provider_misconfigured",
-            Self::ProviderRateLimited => "provider_rate_limited",
-            Self::ProviderTimeout => "provider_timeout",
-            Self::ProviderUnavailable => "provider_unavailable",
-            Self::ProviderInvalidResponse => "provider_invalid_response",
-            Self::ProviderUnsupportedCapability => "provider_unsupported_capability",
-            Self::ArtworkAssetTooLarge => "artwork_asset_too_large",
-            Self::ArtworkAssetInvalidImage => "artwork_asset_invalid_image",
-            Self::ArtworkAssetDimensionsTooLarge => "artwork_asset_dimensions_too_large",
-            Self::ArtworkAssetStoreUnavailable => "artwork_asset_store_unavailable",
+            Self::ProviderAuthenticationFailed => {
+                HydrationProviderError::AuthenticationFailed.code()
+            }
+            Self::ProviderAuthorizationFailed => HydrationProviderError::AuthorizationFailed.code(),
+            Self::ProviderMisconfigured => HydrationProviderError::Misconfigured.code(),
+            Self::ProviderRateLimited => HydrationProviderError::RateLimited.code(),
+            Self::ProviderTimeout => HydrationProviderError::Timeout.code(),
+            Self::ProviderUnavailable => HydrationProviderError::Unavailable.code(),
+            Self::ProviderInvalidResponse => HydrationProviderError::InvalidResponse.code(),
+            Self::ProviderUnsupportedCapability => {
+                HydrationProviderError::UnsupportedCapability.code()
+            }
+            Self::ArtworkAssetTooLarge => ArtworkAssetStoreError::TooLarge.code(),
+            Self::ArtworkAssetInvalidImage => ArtworkAssetStoreError::InvalidImage.code(),
+            Self::ArtworkAssetDimensionsTooLarge => {
+                ArtworkAssetStoreError::DimensionsTooLarge.code()
+            }
+            Self::ArtworkAssetStoreUnavailable => ArtworkAssetStoreError::Unavailable.code(),
             Self::ContentUnavailable => "content_unavailable",
             Self::ContentMalformedOrUnsupported => "content_malformed_or_unsupported",
             Self::ContentEncryptedUnsupported => "content_encrypted_unsupported",
@@ -169,20 +180,17 @@ impl RefreshIssueReason {
     }
 
     /// Decodes one persisted reason key.
+    ///
+    /// Inherited provider and artwork-store keys are decoded by the hydration
+    /// vocabulary that owns them and then converted into the matching reason.
     pub fn from_persisted(value: &str) -> Result<Self, RefreshIssueError> {
+        if let Some(error) = HydrationProviderError::from_code(value) {
+            return Ok(Self::from_provider_error(error));
+        }
+        if let Some(error) = ArtworkAssetStoreError::from_code(value) {
+            return Ok(Self::from_asset_store_error(error));
+        }
         match value {
-            "provider_authentication_failed" => Ok(Self::ProviderAuthenticationFailed),
-            "provider_authorization_failed" => Ok(Self::ProviderAuthorizationFailed),
-            "provider_misconfigured" => Ok(Self::ProviderMisconfigured),
-            "provider_rate_limited" => Ok(Self::ProviderRateLimited),
-            "provider_timeout" => Ok(Self::ProviderTimeout),
-            "provider_unavailable" => Ok(Self::ProviderUnavailable),
-            "provider_invalid_response" => Ok(Self::ProviderInvalidResponse),
-            "provider_unsupported_capability" => Ok(Self::ProviderUnsupportedCapability),
-            "artwork_asset_too_large" => Ok(Self::ArtworkAssetTooLarge),
-            "artwork_asset_invalid_image" => Ok(Self::ArtworkAssetInvalidImage),
-            "artwork_asset_dimensions_too_large" => Ok(Self::ArtworkAssetDimensionsTooLarge),
-            "artwork_asset_store_unavailable" => Ok(Self::ArtworkAssetStoreUnavailable),
             "content_unavailable" => Ok(Self::ContentUnavailable),
             "content_malformed_or_unsupported" => Ok(Self::ContentMalformedOrUnsupported),
             "content_encrypted_unsupported" => Ok(Self::ContentEncryptedUnsupported),
@@ -197,6 +205,35 @@ impl RefreshIssueReason {
             "scope_root_scan_incomplete" => Ok(Self::ScopeRootScanIncomplete),
             "scope_root_scan_failed" => Ok(Self::ScopeRootScanFailed),
             _ => Err(RefreshIssueError),
+        }
+    }
+
+    /// Converts one normalized provider error into the refresh reason that
+    /// carries it.
+    ///
+    /// Provider failures are inherited from hydration, so the pairing lives
+    /// here in one place instead of being restated at every call site.
+    const fn from_provider_error(error: HydrationProviderError) -> Self {
+        match error {
+            HydrationProviderError::AuthenticationFailed => Self::ProviderAuthenticationFailed,
+            HydrationProviderError::AuthorizationFailed => Self::ProviderAuthorizationFailed,
+            HydrationProviderError::Misconfigured => Self::ProviderMisconfigured,
+            HydrationProviderError::RateLimited => Self::ProviderRateLimited,
+            HydrationProviderError::Timeout => Self::ProviderTimeout,
+            HydrationProviderError::Unavailable => Self::ProviderUnavailable,
+            HydrationProviderError::InvalidResponse => Self::ProviderInvalidResponse,
+            HydrationProviderError::UnsupportedCapability => Self::ProviderUnsupportedCapability,
+        }
+    }
+
+    /// Converts one local artwork asset store error into the refresh reason
+    /// that carries it.
+    const fn from_asset_store_error(error: ArtworkAssetStoreError) -> Self {
+        match error {
+            ArtworkAssetStoreError::TooLarge => Self::ArtworkAssetTooLarge,
+            ArtworkAssetStoreError::InvalidImage => Self::ArtworkAssetInvalidImage,
+            ArtworkAssetStoreError::DimensionsTooLarge => Self::ArtworkAssetDimensionsTooLarge,
+            ArtworkAssetStoreError::Unavailable => Self::ArtworkAssetStoreUnavailable,
         }
     }
 
@@ -359,36 +396,10 @@ impl RefreshIssueFact {
         provider_id: Option<ProviderId>,
     ) -> Result<Self, RefreshIssueError> {
         let reason = match source {
-            HydrationIssueSource::Provider(error) => match error {
-                HydrationProviderError::AuthenticationFailed => {
-                    RefreshIssueReason::ProviderAuthenticationFailed
-                }
-                HydrationProviderError::AuthorizationFailed => {
-                    RefreshIssueReason::ProviderAuthorizationFailed
-                }
-                HydrationProviderError::Misconfigured => RefreshIssueReason::ProviderMisconfigured,
-                HydrationProviderError::RateLimited => RefreshIssueReason::ProviderRateLimited,
-                HydrationProviderError::Timeout => RefreshIssueReason::ProviderTimeout,
-                HydrationProviderError::Unavailable => RefreshIssueReason::ProviderUnavailable,
-                HydrationProviderError::InvalidResponse => {
-                    RefreshIssueReason::ProviderInvalidResponse
-                }
-                HydrationProviderError::UnsupportedCapability => {
-                    RefreshIssueReason::ProviderUnsupportedCapability
-                }
-            },
-            HydrationIssueSource::AssetStore(error) => match error {
-                ArtworkAssetStoreError::TooLarge => RefreshIssueReason::ArtworkAssetTooLarge,
-                ArtworkAssetStoreError::InvalidImage => {
-                    RefreshIssueReason::ArtworkAssetInvalidImage
-                }
-                ArtworkAssetStoreError::DimensionsTooLarge => {
-                    RefreshIssueReason::ArtworkAssetDimensionsTooLarge
-                }
-                ArtworkAssetStoreError::Unavailable => {
-                    RefreshIssueReason::ArtworkAssetStoreUnavailable
-                }
-            },
+            HydrationIssueSource::Provider(error) => RefreshIssueReason::from_provider_error(error),
+            HydrationIssueSource::AssetStore(error) => {
+                RefreshIssueReason::from_asset_store_error(error)
+            }
         };
         Self::new(
             RefreshIssueKind::from_hydration_kind(kind),

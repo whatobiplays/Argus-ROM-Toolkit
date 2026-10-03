@@ -512,6 +512,18 @@ fn hydration_provider_failures_map_to_typed_refresh_reasons() {
             assert_eq!(fact.reason(), reason);
             assert_eq!(fact.provider_id(), Some(ProviderId::GameTdb));
             assert_eq!(fact.occurrences(), 1);
+            // Provider keys are inherited vocabulary: the canonical encoder
+            // lives on the hydration error, and durable decoding has to
+            // round-trip through that same key rather than a local restatement.
+            assert_eq!(
+                reason.as_str(),
+                error.code(),
+                "the refresh reason must inherit the provider key verbatim"
+            );
+            assert_eq!(
+                RefreshIssueReason::from_persisted(error.code()).expect("decodable provider key"),
+                reason
+            );
         }
     }
 }
@@ -546,6 +558,16 @@ fn hydration_asset_store_failures_map_to_typed_refresh_reasons() {
         assert_eq!(fact.kind(), RefreshIssueKind::AssetStore);
         assert_eq!(fact.reason(), reason);
         assert_eq!(fact.provider_id(), None);
+        // Artwork-store keys are inherited vocabulary for the same reason.
+        assert_eq!(
+            reason.as_str(),
+            error.code(),
+            "the refresh reason must inherit the artwork-store key verbatim"
+        );
+        assert_eq!(
+            RefreshIssueReason::from_persisted(error.code()).expect("decodable artwork-store key"),
+            reason
+        );
     }
 }
 

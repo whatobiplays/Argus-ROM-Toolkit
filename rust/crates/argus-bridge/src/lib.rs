@@ -32,13 +32,13 @@ use argus_application::{
     MetadataProviderSettingsUpdateResult, MetadataSettings, MetadataSettingsUpdateResult,
     MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
     PersistedSettingsReason, PlatformClass, PlatformId, PrivacyConsent, ProviderCapability,
-    ProviderCapabilityReadiness, ProviderId, ProviderReadinessState, Recoverability, RefreshMode,
-    RefreshProgressFacts, RemoveLibraryRootResult, ResolvedArtwork, ResolvedMetadata,
-    RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship, SafeContext,
-    SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus,
-    SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
-    SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
-    SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
+    ProviderCapabilityReadiness, ProviderId, ProviderReadinessState, Recoverability,
+    RefreshIssueFact, RefreshMode, RefreshProgressFacts, RemoveLibraryRootResult, ResolvedArtwork,
+    ResolvedMetadata, RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship,
+    SafeContext, SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection,
+    ScanRunStatus, SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage,
+    SourceEntryClassification, SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId,
+    SourceEntryKind, SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
@@ -1144,6 +1144,19 @@ pub struct LibraryScanJobDetailDto {
     pub retry_successor_job_run_id: Option<String>,
 }
 
+/// One bounded durable refresh issue fact.
+///
+/// The fact is already normalized and safe: it carries the closed category and
+/// reason keys plus an optional provider identifier, and never a provider
+/// locator, path, URL, payload, or raw failure text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefreshIssueFactDto {
+    pub kind: String,
+    pub reason: String,
+    pub provider_id: Option<String>,
+    pub occurrences: u64,
+}
+
 /// Shared progress facts for a composed refresh operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefreshProgressFactsDto {
@@ -1152,6 +1165,7 @@ pub struct RefreshProgressFactsDto {
     pub total_units: Option<u64>,
     pub status_key: Option<String>,
     pub issue_count: Option<u64>,
+    pub issues: Vec<RefreshIssueFactDto>,
 }
 
 /// Typed composed Library refresh detail.
@@ -2693,6 +2707,84 @@ mod tests {
         assert!(debug.contains("credential_input_len"));
         assert!(!debug.contains("secret"));
     }
+
+    #[test]
+    fn refresh_progress_projects_bounded_typed_issue_facts() {
+        use argus_application::{
+            ProviderId, RefreshIssueFact, RefreshIssueKind, RefreshIssueReason, RefreshIssueSummary,
+        };
+
+        let summary = RefreshIssueSummary::from_facts(vec![
+            RefreshIssueFact::new(
+                RefreshIssueKind::Matching,
+                RefreshIssueReason::ProviderUnavailable,
+                Some(ProviderId::GameTdb),
+                2,
+            )
+            .expect("provider fact"),
+            RefreshIssueFact::new(
+                RefreshIssueKind::Content,
+                RefreshIssueReason::ContentUnavailable,
+                None,
+                1,
+            )
+            .expect("content fact"),
+        ])
+        .expect("validated summary");
+        let progress = super::RefreshProgressFacts::new(
+            Some("library_refresh.completed".to_owned()),
+            Some(1),
+            Some(1),
+            Some("completed_with_issues".to_owned()),
+            Some(summary),
+        )
+        .expect("progress facts");
+
+        let dto = super::refresh_progress_facts_dto(&progress);
+
+        assert_eq!(dto.issue_count, Some(3));
+        assert_eq!(dto.issues.len(), 2);
+        assert_eq!(dto.issues[0].kind, "matching");
+        assert_eq!(dto.issues[0].reason, "provider_unavailable");
+        assert_eq!(dto.issues[0].provider_id.as_deref(), Some("gametdb"));
+        assert_eq!(dto.issues[0].occurrences, 2);
+        assert_eq!(dto.issues[1].kind, "content");
+        assert_eq!(dto.issues[1].reason, "content_unavailable");
+        assert_eq!(dto.issues[1].provider_id, None);
+        assert_eq!(dto.issues[1].occurrences, 1);
+    }
+
+    #[test]
+    fn refresh_progress_without_a_summary_reports_an_unknown_projection() {
+        use argus_application::RefreshProgressFacts;
+
+        let progress = RefreshProgressFacts::new(None, None, None, Some("failed".to_owned()), None)
+            .expect("progress facts");
+
+        let dto = super::refresh_progress_facts_dto(&progress);
+
+        assert_eq!(dto.issue_count, None);
+        assert!(dto.issues.is_empty());
+    }
+
+    #[test]
+    fn refresh_progress_with_an_empty_summary_reports_zero_issues() {
+        use argus_application::{RefreshIssueSummary, RefreshProgressFacts};
+
+        let progress = RefreshProgressFacts::new(
+            Some("library_refresh.completed".to_owned()),
+            Some(1),
+            Some(1),
+            Some("completed".to_owned()),
+            Some(RefreshIssueSummary::empty()),
+        )
+        .expect("progress facts");
+
+        let dto = super::refresh_progress_facts_dto(&progress);
+
+        assert_eq!(dto.issue_count, Some(0));
+        assert!(dto.issues.is_empty());
+    }
 }
 
 fn host() -> &'static ApplicationHost {
@@ -4076,6 +4168,17 @@ fn library_scan_job_detail_dto(detail: &LibraryScanJobDetail) -> LibraryScanJobD
     }
 }
 
+fn refresh_issue_fact_dto(fact: &RefreshIssueFact) -> RefreshIssueFactDto {
+    RefreshIssueFactDto {
+        kind: fact.kind().as_str().to_owned(),
+        reason: fact.reason().as_str().to_owned(),
+        provider_id: fact
+            .provider_id()
+            .map(|provider| provider.as_str().to_owned()),
+        occurrences: fact.occurrences(),
+    }
+}
+
 fn refresh_progress_facts_dto(progress: &RefreshProgressFacts) -> RefreshProgressFactsDto {
     RefreshProgressFactsDto {
         phase: progress.phase().map(str::to_owned),
@@ -4083,6 +4186,11 @@ fn refresh_progress_facts_dto(progress: &RefreshProgressFacts) -> RefreshProgres
         total_units: progress.total_units(),
         status_key: progress.status_key().map(str::to_owned),
         issue_count: progress.issue_count(),
+        issues: progress
+            .issues()
+            .iter()
+            .map(refresh_issue_fact_dto)
+            .collect(),
     }
 }
 

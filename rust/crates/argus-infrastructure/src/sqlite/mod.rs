@@ -27,7 +27,8 @@ pub use errors::{MigrationError, SqliteExecutorError, SqliteOperationError};
 pub use executor::{DEFAULT_QUEUE_CAPACITY, SqliteDatabaseExecutor};
 pub use jobs::{
     SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryScanAdmissionContextRepository,
-    SqliteLibraryScanTargetRepository, SqliteScanRunRepository, SqliteSourceEntryRepository,
+    SqliteLibraryScanTargetRepository, SqliteRefreshIssueRepository, SqliteScanRunRepository,
+    SqliteSourceEntryRepository,
 };
 pub use logical::SqliteLogicalContentRepository;
 pub use metadata::SqliteMetadataRepository;

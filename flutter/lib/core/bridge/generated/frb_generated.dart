@@ -3644,6 +3644,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RefreshIssueFactDto> dco_decode_list_refresh_issue_fact_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_refresh_issue_fact_dto)
+        .toList();
+  }
+
+  @protected
   List<RegionFacetBucketDto> dco_decode_list_region_facet_bucket_dto(
     dynamic raw,
   ) {
@@ -4159,6 +4169,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RefreshIssueFactDto dco_decode_refresh_issue_fact_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return RefreshIssueFactDto(
+      kind: dco_decode_String(arr[0]),
+      reason: dco_decode_String(arr[1]),
+      providerId: dco_decode_opt_String(arr[2]),
+      occurrences: dco_decode_u_64(arr[3]),
+    );
+  }
+
+  @protected
   RefreshModeDto dco_decode_refresh_mode_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return RefreshModeDto.values[raw as int];
@@ -4168,14 +4192,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RefreshProgressFactsDto dco_decode_refresh_progress_facts_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return RefreshProgressFactsDto(
       phase: dco_decode_opt_String(arr[0]),
       completedUnits: dco_decode_opt_box_autoadd_u_64(arr[1]),
       totalUnits: dco_decode_opt_box_autoadd_u_64(arr[2]),
       statusKey: dco_decode_opt_String(arr[3]),
       issueCount: dco_decode_opt_box_autoadd_u_64(arr[4]),
+      issues: dco_decode_list_refresh_issue_fact_dto(arr[5]),
     );
   }
 
@@ -6658,6 +6683,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RefreshIssueFactDto> sse_decode_list_refresh_issue_fact_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RefreshIssueFactDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_refresh_issue_fact_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<RegionFacetBucketDto> sse_decode_list_region_facet_bucket_dto(
     SseDeserializer deserializer,
   ) {
@@ -7344,6 +7383,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RefreshIssueFactDto sse_decode_refresh_issue_fact_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_String(deserializer);
+    var var_reason = sse_decode_String(deserializer);
+    var var_providerId = sse_decode_opt_String(deserializer);
+    var var_occurrences = sse_decode_u_64(deserializer);
+    return RefreshIssueFactDto(
+      kind: var_kind,
+      reason: var_reason,
+      providerId: var_providerId,
+      occurrences: var_occurrences,
+    );
+  }
+
+  @protected
   RefreshModeDto sse_decode_refresh_mode_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -7360,12 +7416,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_totalUnits = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_statusKey = sse_decode_opt_String(deserializer);
     var var_issueCount = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_issues = sse_decode_list_refresh_issue_fact_dto(deserializer);
     return RefreshProgressFactsDto(
       phase: var_phase,
       completedUnits: var_completedUnits,
       totalUnits: var_totalUnits,
       statusKey: var_statusKey,
       issueCount: var_issueCount,
+      issues: var_issues,
     );
   }
 
@@ -9688,6 +9746,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_refresh_issue_fact_dto(
+    List<RefreshIssueFactDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_refresh_issue_fact_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_region_facet_bucket_dto(
     List<RegionFacetBucketDto> self,
     SseSerializer serializer,
@@ -10277,6 +10347,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_refresh_issue_fact_dto(
+    RefreshIssueFactDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.kind, serializer);
+    sse_encode_String(self.reason, serializer);
+    sse_encode_opt_String(self.providerId, serializer);
+    sse_encode_u_64(self.occurrences, serializer);
+  }
+
+  @protected
   void sse_encode_refresh_mode_dto(
     RefreshModeDto self,
     SseSerializer serializer,
@@ -10296,6 +10378,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_64(self.totalUnits, serializer);
     sse_encode_opt_String(self.statusKey, serializer);
     sse_encode_opt_box_autoadd_u_64(self.issueCount, serializer);
+    sse_encode_list_refresh_issue_fact_dto(self.issues, serializer);
   }
 
   @protected

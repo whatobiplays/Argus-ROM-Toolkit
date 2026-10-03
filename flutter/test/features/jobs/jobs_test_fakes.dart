@@ -192,6 +192,53 @@ JobDetail jobDetail({
   ),
 );
 
+/// Builds one terminal-success Library refresh detail fixture.
+///
+/// Completed fixtures have a terminal phase and fully completed unit counts;
+/// for running or unsuccessful Library refresh states, construct a `JobDetail`
+/// with `OperationDetail.libraryRefresh(...)` directly.
+JobDetail libraryRefreshJobDetail({
+  String id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  JobLifecycleState state = JobLifecycleState.completedWithIssues,
+  bool cancellationRequested = false,
+  bool canRetry = false,
+  String? statusKey,
+  int? issueCount,
+  List<RefreshIssueFact> issues = const [],
+}) {
+  assert(
+    state == JobLifecycleState.completed ||
+        state == JobLifecycleState.completedWithIssues,
+    'Library refresh fixture progress describes a successful terminal run.',
+  );
+  return JobDetail(
+    job: JobRunProjection(
+      jobRunId: JobRunId(id),
+      operationType: 'library_refresh',
+      lifecycleState: state,
+      createdAtMs: 1,
+      cancellationRequested: cancellationRequested,
+      controls: JobControlAvailability(canCancel: false, canRetry: canRetry),
+    ),
+    operationDetail: OperationDetail.libraryRefresh(
+      LibraryRefreshJobDetail(
+        trigger: 'manual',
+        mode: 'eligible_only',
+        requestedRootIds: const [],
+        scanRuns: const [],
+        progress: RefreshProgressFacts(
+          phase: 'library_refresh.completed',
+          completedUnits: 1,
+          totalUnits: 1,
+          statusKey: statusKey,
+          issueCount: issueCount,
+          issues: issues,
+        ),
+      ),
+    ),
+  );
+}
+
 ApplicationFailure jobNotFoundFailure() => ApplicationFailure(
   ClientApplicationError(
     code: const ErrorCode('ARGUS.V1.JOBS.JOB_RUN_NOT_FOUND'),

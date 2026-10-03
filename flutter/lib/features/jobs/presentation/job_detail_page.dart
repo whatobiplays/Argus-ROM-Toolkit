@@ -513,13 +513,21 @@ class _ProgressFacts extends StatelessWidget {
   }
 }
 
-class _RefreshProgressFacts extends StatelessWidget {
+class _RefreshProgressFacts extends StatefulWidget {
   const _RefreshProgressFacts({required this.progress});
 
   final RefreshProgressFacts progress;
 
   @override
+  State<_RefreshProgressFacts> createState() => _RefreshProgressFactsState();
+}
+
+class _RefreshProgressFactsState extends State<_RefreshProgressFacts> {
+  bool _showAllIssues = false;
+
+  @override
   Widget build(BuildContext context) {
+    final progress = widget.progress;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -534,6 +542,25 @@ class _RefreshProgressFacts extends StatelessWidget {
         if (progress.statusKey != null) Text(progress.statusKey!),
         if (progress.issueCount != null)
           Text('${JobsMessages.issues}: ${progress.issueCount}'),
+        if (progress.issues.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(JobsMessages.refreshIssuesTitle),
+          for (final fact
+              in (_showAllIssues
+                  ? progress.issues
+                  : progress.issues.take(JobsMessages.refreshIssuesVisible)))
+            Text('• ${JobsMessages.refreshIssueFactLabel(fact)}'),
+          if (progress.issues.length > JobsMessages.refreshIssuesVisible)
+            TextButton(
+              key: const ValueKey<String>('jobs-refresh-issues-toggle'),
+              onPressed: () => setState(() => _showAllIssues = !_showAllIssues),
+              child: Text(
+                _showAllIssues
+                    ? JobsMessages.refreshIssuesShowLess
+                    : JobsMessages.refreshIssuesShowAll,
+              ),
+            ),
+        ],
       ],
     );
   }

@@ -41,6 +41,92 @@ type RootLastScanRaw = (
     Option<i64>,
 );
 
+use argus_application::{
+    ProviderId, RefreshIssueFact, RefreshIssueKind, RefreshIssueReason, RefreshIssueRepository,
+    RefreshIssueSummary,
+};
+
+/// Transaction-scoped durable Library-refresh issue repository.
+pub struct SqliteRefreshIssueRepository<'scope, 'connection> {
+    work: &'scope mut SqliteUnitOfWork<'connection>,
+}
+
+impl<'scope, 'connection> SqliteRefreshIssueRepository<'scope, 'connection> {
+    pub(crate) fn new(work: &'scope mut SqliteUnitOfWork<'connection>) -> Self {
+        Self { work }
+    }
+}
+
+impl RefreshIssueRepository for SqliteRefreshIssueRepository<'_, '_> {
+    fn replace_for_job(
+        &mut self,
+        job_run_id: JobRunId,
+        summary: &RefreshIssueSummary,
+    ) -> Result<(), PersistenceError> {
+        let facts = summary.facts();
+        if facts.len() > RefreshIssueSummary::MAX_FACTS {
+            return Err(PersistenceError::CorruptOrIncompatible);
+        }
+        // Encode and validate the complete projection before mutating durable
+        // state so a rejected summary never leaves a partial replacement.
+        let mut encoded = Vec::with_capacity(facts.len());
+        let mut checked_total = 0_u64;
+        for fact in facts {
+            let occurrences = i64::try_from(fact.occurrences())
+                .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+            checked_total = checked_total
+                .checked_add(fact.occurrences())
+                .ok_or(PersistenceError::CorruptOrIncompatible)?;
+            encoded.push((
+                fact.kind().as_str().to_owned(),
+                fact.reason().as_str().to_owned(),
+                fact.provider_id()
+                    .map(|provider| provider.as_str().to_owned()),
+                occurrences,
+            ));
+        }
+        if checked_total != summary.issue_count() {
+            return Err(PersistenceError::CorruptOrIncompatible);
+        }
+        let issue_count = i64::try_from(summary.issue_count())
+            .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+        let job_run_id_text = job_run_id.to_string();
+        let transaction = self.work.transaction_mut()?;
+        transaction
+            .execute(
+                "DELETE FROM library_refresh_issue_fact WHERE job_run_id = ?1",
+                [&job_run_id_text],
+            )
+            .map_err(map_persistence_operation_error)?;
+        transaction
+            .execute(
+                "DELETE FROM library_refresh_issue_summary WHERE job_run_id = ?1",
+                [&job_run_id_text],
+            )
+            .map_err(map_persistence_operation_error)?;
+        transaction
+            .execute(
+                "INSERT INTO library_refresh_issue_summary (job_run_id, issue_count)
+                 VALUES (?1, ?2)",
+                rusqlite::params![job_run_id_text, issue_count],
+            )
+            .map_err(map_persistence_operation_error)?;
+        for (ordinal, (kind, reason, provider, occurrences)) in encoded.iter().enumerate() {
+            let ordinal =
+                i64::try_from(ordinal).map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+            transaction
+                .execute(
+                    "INSERT INTO library_refresh_issue_fact
+                        (job_run_id, issue_ordinal, issue_kind, issue_reason, provider_id, occurrences)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![job_run_id_text, ordinal, kind, reason, provider, occurrences],
+                )
+                .map_err(map_persistence_operation_error)?;
+        }
+        Ok(())
+    }
+}
+
 /// Transaction-scoped generic job-run repository.
 pub struct SqliteJobRunRepository<'scope, 'connection> {
     work: &'scope mut SqliteUnitOfWork<'connection>,
@@ -2412,12 +2498,27 @@ fn read_job_detail(
                 (trigger, RefreshMode::EligibleOnly)
             }
         };
+
+        // Refresh issue summaries become authoritative only after a successful
+        // terminal transition. A process can persist the refresh-owned summary
+        // before the generic JobRun lifecycle commit, so non-success states
+        // must ignore any stale summary row without attempting to validate it.
+        // Historical successful runs without a summary remain unknown.
+        let refresh_issue_summary = if matches!(
+            state,
+            JobRunState::Completed | JobRunState::CompletedWithIssues
+        ) {
+            read_refresh_issue_summary(connection, &job_run_id.to_string())?
+        } else {
+            None
+        };
+
         let refresh_progress = RefreshProgressFacts::new(
             progress.phase().map(str::to_owned),
             progress.completed_units(),
             progress.total_units(),
             progress.status_key().map(str::to_owned),
-            progress.issue_count(),
+            refresh_issue_summary,
         )
         .map_err(|_| {
             SqliteOperationError::Application(ApplicationPortError::Persistence(
@@ -2437,6 +2538,98 @@ fn read_job_detail(
         )
     };
     Ok(Some(JobDetail::new(job_projection, detail)))
+}
+
+/// Reads and validates the durable refresh issue projection for one job.
+///
+/// A missing summary row means the execution never persisted a refresh issue
+/// projection, which is the truthful state for pre-v18 history, but only when
+/// the execution also persisted no fact rows: facts without their owning
+/// summary are contradictory v18 persistence rather than a readable detail.
+/// Any present but contradictory representation is corrupt/incompatible
+/// persistence rather than a valid job detail: the fact count, deterministic
+/// ordinals, positive occurrences, typed decoding, signed-domain
+/// representation, and the agreement between the summary total and the
+/// checked fact sum are all enforced here.
+fn read_refresh_issue_summary(
+    connection: &mut SqliteConnection<'_>,
+    job_run_id: &str,
+) -> Result<Option<RefreshIssueSummary>, SqliteOperationError> {
+    let persisted_count: Option<i64> = connection
+        .connection
+        .query_row(
+            "SELECT issue_count FROM library_refresh_issue_summary WHERE job_run_id = ?1",
+            [job_run_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| super::errors::operation_error(&error))?;
+    let Some(persisted_count) = persisted_count else {
+        // Historical executions legitimately have neither a summary nor
+        // facts. An orphaned fact row is the only contradiction that can be
+        // observed without a summary, so it is checked here instead of
+        // reconstructing a summary the execution never wrote.
+        let orphan_fact: Option<i64> = connection
+            .connection
+            .query_row(
+                "SELECT 1 FROM library_refresh_issue_fact WHERE job_run_id = ?1 LIMIT 1",
+                [job_run_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| super::errors::operation_error(&error))?;
+        if orphan_fact.is_some() {
+            return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+        }
+        return Ok(None);
+    };
+    let mut statement = connection
+        .connection
+        .prepare(
+            "SELECT issue_ordinal, issue_kind, issue_reason, provider_id, occurrences
+             FROM library_refresh_issue_fact
+             WHERE job_run_id = ?1
+             ORDER BY issue_ordinal ASC",
+        )
+        .map_err(|error| super::errors::operation_error(&error))?;
+    let rows = statement
+        .query_map([job_run_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
+        })
+        .map_err(|error| super::errors::operation_error(&error))?;
+    let mut facts = Vec::new();
+    for row in rows {
+        let (ordinal, kind, reason, provider, occurrences) =
+            row.map_err(|error| super::errors::operation_error(&error))?;
+        if ordinal != facts.len() as i64 || facts.len() >= RefreshIssueSummary::MAX_FACTS {
+            return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+        }
+        let corrupt = || corrupt_sqlite(PersistenceError::CorruptOrIncompatible);
+        let kind = RefreshIssueKind::from_persisted(&kind).map_err(|_| corrupt())?;
+        let reason = RefreshIssueReason::from_persisted(&reason).map_err(|_| corrupt())?;
+        let provider = match provider {
+            Some(value) => Some(ProviderId::try_from(value.as_str()).map_err(|_| corrupt())?),
+            None => None,
+        };
+        let occurrences = u64::try_from(occurrences).map_err(|_| corrupt())?;
+        facts.push(
+            RefreshIssueFact::new(kind, reason, provider, occurrences).map_err(|_| corrupt())?,
+        );
+    }
+    let persisted_count = u64::try_from(persisted_count)
+        .map_err(|_| corrupt_sqlite(PersistenceError::CorruptOrIncompatible))?;
+    let summary = RefreshIssueSummary::from_facts(facts)
+        .map_err(|_| corrupt_sqlite(PersistenceError::CorruptOrIncompatible))?;
+    if summary.issue_count() != persisted_count {
+        return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+    }
+    Ok(Some(summary))
 }
 
 /// Aggregates nullable scan-run counters into one truthful projection.

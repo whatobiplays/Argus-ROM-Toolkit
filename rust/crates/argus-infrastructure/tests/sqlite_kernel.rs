@@ -104,7 +104,7 @@ fn reopening_current_database_preserves_migration_and_default() {
             ))
         })
         .expect("query reopened database");
-    assert_eq!(values, (17, 1, "dark".to_owned()));
+    assert_eq!(values, (18, 1, "dark".to_owned()));
     second.shutdown().expect("second shutdown");
 }
 
@@ -230,8 +230,8 @@ fn production_open_migrates_schema_8_and_preserves_existing_rows() {
     schema_8.shutdown().expect("schema 8 shutdown");
 
     let current = SqliteDatabaseExecutor::open(&path).expect("schema 8 upgrade");
-    assert_eq!(current.migration_summary().current_version, 17);
-    assert_eq!(current.migration_summary().applied_count, 9);
+    assert_eq!(current.migration_summary().current_version, 18);
+    assert_eq!(current.migration_summary().applied_count, 10);
     current
         .with_connection_for_tests(context(), |connection| {
             Ok::<_, argus_infrastructure::sqlite::SqliteOperationError>((

@@ -571,6 +571,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RecoveryActionDto> dco_decode_list_recovery_action_dto(dynamic raw);
 
   @protected
+  List<RefreshIssueFactDto> dco_decode_list_refresh_issue_fact_dto(dynamic raw);
+
+  @protected
   List<RegionFacetBucketDto> dco_decode_list_region_facet_bucket_dto(
     dynamic raw,
   );
@@ -741,6 +744,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecoveryActionKindDto dco_decode_recovery_action_kind_dto(dynamic raw);
+
+  @protected
+  RefreshIssueFactDto dco_decode_refresh_issue_fact_dto(dynamic raw);
 
   @protected
   RefreshModeDto dco_decode_refresh_mode_dto(dynamic raw);
@@ -1577,6 +1583,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<RefreshIssueFactDto> sse_decode_list_refresh_issue_fact_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<RegionFacetBucketDto> sse_decode_list_region_facet_bucket_dto(
     SseDeserializer deserializer,
   );
@@ -1787,6 +1798,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RecoveryActionKindDto sse_decode_recovery_action_kind_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RefreshIssueFactDto sse_decode_refresh_issue_fact_dto(
     SseDeserializer deserializer,
   );
 
@@ -2796,6 +2812,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_refresh_issue_fact_dto(
+    List<RefreshIssueFactDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_region_facet_bucket_dto(
     List<RegionFacetBucketDto> self,
     SseSerializer serializer,
@@ -3044,6 +3066,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_recovery_action_kind_dto(
     RecoveryActionKindDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_refresh_issue_fact_dto(
+    RefreshIssueFactDto self,
     SseSerializer serializer,
   );
 

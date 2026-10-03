@@ -59,8 +59,9 @@ pub use grouping::{
 };
 pub use hydration::{
     ArtworkAssetStore, ArtworkAssetStoreError, EnrichmentProviderSession, HydrationCoordinator,
-    HydrationIssue, HydrationIssueKind, HydrationMappingCandidate, HydrationPlanner,
-    HydrationProviderError, HydrationReport, HydrationTarget, HydrationTargetValidationError,
+    HydrationIssue, HydrationIssueKind, HydrationIssueSource, HydrationMappingCandidate,
+    HydrationPlanner, HydrationProviderError, HydrationReport, HydrationTarget,
+    HydrationTargetValidationError,
 };
 pub use jobs::{
     ActiveScanOwnership, AdmittedLibraryScanJob, AdmittedScan, ApplicationEventSink,
@@ -81,7 +82,9 @@ pub use jobs::{
     NewLibraryScanTarget, NewScanRun, NewSourceEntry, OPERATION_TYPE_GAME_REFRESH,
     OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
     OPERATION_TYPE_LIBRARY_SCAN, OperationCompletion, OperationDetail, OperationHandle,
-    RefreshMode, RefreshProgressFacts, RetryJobAdmissionResult, RetryJobCommand, RetryJobHandler,
+    RefreshIssueAccumulator, RefreshIssueError, RefreshIssueFact, RefreshIssueKind,
+    RefreshIssueReason, RefreshIssueRepository, RefreshIssueSummary, RefreshMode,
+    RefreshProgressFacts, RetryJobAdmissionResult, RetryJobCommand, RetryJobHandler,
     RetryJobResult, RetryNotAdmittedReason, ScanAdmissionReference, ScanProgressFacts,
     ScanRunProjection, ScanRunRepository, ScanRunStatus, ScanRunStatusParseError,
     SourceEntryCoordinates, SourceEntryRecord, SourceEntryRepository, StaleLibraryScanJob,
@@ -173,4 +176,4 @@ pub use transformation::{
     DerivedEntryKey, DerivedEntryObservation, DerivedFingerprint, DerivedLocator,
     DerivedScopeOutcome, TransformationBudget, TransformationFailure, TransformationOutput,
 };
-pub use unit_of_work::{EnrichmentUnitOfWork, UnitOfWork, UnitOfWorkFactory};
+pub use unit_of_work::{EnrichmentUnitOfWork, RefreshUnitOfWork, UnitOfWork, UnitOfWorkFactory};

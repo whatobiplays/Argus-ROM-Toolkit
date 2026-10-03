@@ -7,6 +7,101 @@ import 'dart:async';
 import 'dart:typed_data';
 
 void main() {
+  test('refresh progress DTO maps bounded typed issue facts', () {
+    final progress = refreshProgressFactsFromDto(
+      dto.RefreshProgressFactsDto(
+        phase: 'library_refresh.completed',
+        completedUnits: BigInt.one,
+        totalUnits: BigInt.one,
+        statusKey: 'completed_with_issues',
+        issueCount: BigInt.from(3),
+        issues: <dto.RefreshIssueFactDto>[
+          dto.RefreshIssueFactDto(
+            kind: 'matching',
+            reason: 'provider_unavailable',
+            providerId: 'gametdb',
+            occurrences: BigInt.from(2),
+          ),
+          dto.RefreshIssueFactDto(
+            kind: 'content',
+            reason: 'content_unavailable',
+            providerId: null,
+            occurrences: BigInt.one,
+          ),
+        ],
+      ),
+    );
+
+    expect(progress.issueCount, 3);
+    expect(progress.issues.length, 2);
+    expect(progress.issues[0].kind, RefreshIssueKind.matching);
+    expect(progress.issues[0].reason, RefreshIssueReason.providerUnavailable);
+    expect(progress.issues[0].providerId, 'gametdb');
+    expect(progress.issues[0].occurrences, 2);
+    expect(progress.issues[1].kind, RefreshIssueKind.content);
+    expect(progress.issues[1].reason, RefreshIssueReason.contentUnavailable);
+    expect(progress.issues[1].providerId, isNull);
+    expect(progress.issues[1].occurrences, 1);
+  });
+
+  test('refresh progress DTO rejects an unknown issue reason', () {
+    expect(
+      () => refreshProgressFactsFromDto(
+        dto.RefreshProgressFactsDto(
+          phase: null,
+          completedUnits: null,
+          totalUnits: null,
+          statusKey: null,
+          issueCount: null,
+          issues: <dto.RefreshIssueFactDto>[
+            dto.RefreshIssueFactDto(
+              kind: 'matching',
+              reason: 'raw provider transport failure text',
+              providerId: null,
+              occurrences: BigInt.one,
+            ),
+          ],
+        ),
+      ),
+      throwsA(
+        isA<TransportFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          TransportFailureKind.contractMismatch,
+        ),
+      ),
+    );
+  });
+
+  test('refresh progress DTO rejects an unknown issue kind', () {
+    expect(
+      () => refreshProgressFactsFromDto(
+        dto.RefreshProgressFactsDto(
+          phase: null,
+          completedUnits: null,
+          totalUnits: null,
+          statusKey: null,
+          issueCount: null,
+          issues: <dto.RefreshIssueFactDto>[
+            dto.RefreshIssueFactDto(
+              kind: 'raw scan detail',
+              reason: 'content_unavailable',
+              providerId: null,
+              occurrences: BigInt.one,
+            ),
+          ],
+        ),
+      ),
+      throwsA(
+        isA<TransportFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          TransportFailureKind.contractMismatch,
+        ),
+      ),
+    );
+  });
+
   test(
     'enrichment DTOs map provenance, readiness, and bounded artwork bytes',
     () {

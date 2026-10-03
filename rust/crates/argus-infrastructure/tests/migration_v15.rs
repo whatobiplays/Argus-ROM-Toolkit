@@ -103,7 +103,7 @@ fn migration_v15_adds_bounded_library_projection_columns_and_indexes() {
     let executor =
         SqliteDatabaseExecutor::open(directory.path().join("logical.sqlite3")).expect("database");
 
-    assert_eq!(executor.migration_summary().current_version, 17);
+    assert_eq!(executor.migration_summary().current_version, 18);
 
     executor
         .with_connection_for_tests(context(), |connection| {
@@ -341,8 +341,8 @@ fn migration_v15_preserves_populated_logical_and_enrichment_identity() {
     old.shutdown().expect("shutdown v14");
 
     let current = SqliteDatabaseExecutor::open(&database).expect("v15-v17 upgrade");
-    assert_eq!(current.migration_summary().current_version, 17);
-    assert_eq!(current.migration_summary().applied_count, 3);
+    assert_eq!(current.migration_summary().current_version, 18);
+    assert_eq!(current.migration_summary().applied_count, 4);
 
     current
         .with_connection_for_tests(context(), move |connection| {
@@ -463,8 +463,8 @@ fn migration_v16_bounds_existing_library_projection_keys() {
     old.shutdown().expect("shutdown v14");
 
     let current = SqliteDatabaseExecutor::open(&database).expect("v15-v17 upgrade");
-    assert_eq!(current.migration_summary().current_version, 17);
-    assert_eq!(current.migration_summary().applied_count, 3);
+    assert_eq!(current.migration_summary().current_version, 18);
+    assert_eq!(current.migration_summary().applied_count, 4);
 
     current
         .with_connection_for_tests(context(), move |connection| {
@@ -805,8 +805,8 @@ fn migration_v17_backfills_only_provable_derived_proof_versions() {
     old.shutdown().expect("shutdown v14");
 
     let current = SqliteDatabaseExecutor::open(&database).expect("v17 upgrade");
-    assert_eq!(current.migration_summary().current_version, 17);
-    assert_eq!(current.migration_summary().applied_count, 3);
+    assert_eq!(current.migration_summary().current_version, 18);
+    assert_eq!(current.migration_summary().applied_count, 4);
     current
         .with_connection_for_tests(context(), |connection| {
             for (table, column, id, expected) in [

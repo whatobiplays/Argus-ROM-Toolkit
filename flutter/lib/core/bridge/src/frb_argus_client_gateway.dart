@@ -2298,6 +2298,15 @@ RefreshProgressFacts refreshProgressFactsFromDto(
   totalUnits: value.totalUnits?.toInt(),
   statusKey: value.statusKey,
   issueCount: value.issueCount?.toInt(),
+  issues: [
+    for (final fact in value.issues)
+      RefreshIssueFact(
+        kind: RefreshIssueKind.fromWire(fact.kind),
+        reason: RefreshIssueReason.fromWire(fact.reason),
+        providerId: fact.providerId,
+        occurrences: fact.occurrences.toInt(),
+      ),
+  ],
 );
 
 ScanRunSummary scanRunSummaryFromDto(dto.ScanRunDto value) => ScanRunSummary(

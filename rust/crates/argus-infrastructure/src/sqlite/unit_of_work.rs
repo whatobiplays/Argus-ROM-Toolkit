@@ -13,7 +13,8 @@ use super::connection::SqliteValue;
 use super::errors::{SqliteOperationError, operation_error};
 use super::jobs::{
     SqliteJobRunRepository, SqliteLibraryScanAdmissionContextRepository,
-    SqliteLibraryScanTargetRepository, SqliteScanRunRepository, SqliteSourceEntryRepository,
+    SqliteLibraryScanTargetRepository, SqliteRefreshIssueRepository, SqliteScanRunRepository,
+    SqliteSourceEntryRepository,
 };
 use super::logical::SqliteLogicalContentRepository;
 use super::metadata::SqliteMetadataRepository;
@@ -390,6 +391,17 @@ impl<'connection> argus_application::EnrichmentUnitOfWork for SqliteUnitOfWork<'
 
     fn artwork(&mut self) -> Self::ArtworkRepository<'_> {
         SqliteArtworkRepository::new(self)
+    }
+}
+
+impl<'connection> argus_application::RefreshUnitOfWork for SqliteUnitOfWork<'connection> {
+    type RefreshIssueRepository<'scope>
+        = SqliteRefreshIssueRepository<'scope, 'connection>
+    where
+        Self: 'scope;
+
+    fn refresh_issues(&mut self) -> Self::RefreshIssueRepository<'_> {
+        SqliteRefreshIssueRepository::new(self)
     }
 }
 

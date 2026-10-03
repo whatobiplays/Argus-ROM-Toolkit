@@ -309,6 +309,25 @@ impl HydrationProviderError {
             Self::UnsupportedCapability => "provider_unsupported_capability",
         }
     }
+
+    /// Decodes one stable application-facing issue key.
+    ///
+    /// This vocabulary is owned here, so callers that must rebuild the typed
+    /// error from durable text delegate to this decoder instead of repeating
+    /// the literals.
+    pub(crate) fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "provider_authentication_failed" => Some(Self::AuthenticationFailed),
+            "provider_authorization_failed" => Some(Self::AuthorizationFailed),
+            "provider_misconfigured" => Some(Self::Misconfigured),
+            "provider_rate_limited" => Some(Self::RateLimited),
+            "provider_timeout" => Some(Self::Timeout),
+            "provider_unavailable" => Some(Self::Unavailable),
+            "provider_invalid_response" => Some(Self::InvalidResponse),
+            "provider_unsupported_capability" => Some(Self::UnsupportedCapability),
+            _ => None,
+        }
+    }
 }
 
 /// Provider session port owned by one explicit hydration operation.
@@ -370,6 +389,33 @@ pub enum ArtworkAssetStoreError {
     Unavailable,
 }
 
+impl ArtworkAssetStoreError {
+    /// Returns the stable application-facing issue key.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::TooLarge => "artwork_asset_too_large",
+            Self::InvalidImage => "artwork_asset_invalid_image",
+            Self::DimensionsTooLarge => "artwork_asset_dimensions_too_large",
+            Self::Unavailable => "artwork_asset_store_unavailable",
+        }
+    }
+
+    /// Decodes one stable application-facing issue key.
+    ///
+    /// This vocabulary is owned here, so callers that must rebuild the typed
+    /// error from durable text delegate to this decoder instead of repeating
+    /// the literals.
+    pub(crate) fn from_code(value: &str) -> Option<Self> {
+        match value {
+            "artwork_asset_too_large" => Some(Self::TooLarge),
+            "artwork_asset_invalid_image" => Some(Self::InvalidImage),
+            "artwork_asset_dimensions_too_large" => Some(Self::DimensionsTooLarge),
+            "artwork_asset_store_unavailable" => Some(Self::Unavailable),
+            _ => None,
+        }
+    }
+}
+
 /// One bounded issue retained by a hydration result.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HydrationIssueKind {
@@ -390,7 +436,19 @@ pub enum HydrationIssueKind {
 pub struct HydrationIssue {
     provider_id: Option<ProviderId>,
     kind: HydrationIssueKind,
-    code: &'static str,
+    source: HydrationIssueSource,
+}
+
+/// Normalized typed origin of one hydration issue.
+///
+/// Retaining the typed origin keeps the issue actionable downstream without
+/// ever exposing raw transport, payload, locator, or credential detail.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HydrationIssueSource {
+    /// One normalized provider session failure.
+    Provider(HydrationProviderError),
+    /// One local artwork asset store failure.
+    AssetStore(ArtworkAssetStoreError),
 }
 
 impl HydrationIssue {
@@ -402,21 +460,15 @@ impl HydrationIssue {
         Self {
             provider_id: Some(provider_id),
             kind,
-            code: error.code(),
+            source: HydrationIssueSource::Provider(error),
         }
     }
 
     fn asset_store(error: ArtworkAssetStoreError) -> Self {
-        let code = match error {
-            ArtworkAssetStoreError::TooLarge => "artwork_asset_too_large",
-            ArtworkAssetStoreError::InvalidImage => "artwork_asset_invalid_image",
-            ArtworkAssetStoreError::DimensionsTooLarge => "artwork_asset_dimensions_too_large",
-            ArtworkAssetStoreError::Unavailable => "artwork_asset_store_unavailable",
-        };
         Self {
             provider_id: None,
             kind: HydrationIssueKind::AssetStore,
-            code,
+            source: HydrationIssueSource::AssetStore(error),
         }
     }
 
@@ -432,7 +484,15 @@ impl HydrationIssue {
 
     /// Returns the stable issue code.
     pub const fn code(self) -> &'static str {
-        self.code
+        match self.source {
+            HydrationIssueSource::Provider(error) => error.code(),
+            HydrationIssueSource::AssetStore(error) => error.code(),
+        }
+    }
+
+    /// Returns the typed issue origin.
+    pub const fn source(self) -> HydrationIssueSource {
+        self.source
     }
 }
 

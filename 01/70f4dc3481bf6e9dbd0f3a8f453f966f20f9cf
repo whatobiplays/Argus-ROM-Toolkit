@@ -1,0 +1,20 @@
+rust/crates/argus-runtime/src/lib.rs
+  s_66f791c4ab49f1::t_6f376ed7010a88 6458,6496-6497
+  s_66f791c4ab49f1::t_faccc5de226304 5138-5143,5160-5164,5167-5168,5749-5750,6335-6457,6459-6495
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0170f4dc3481bf6e9dbd0f3a8f453f966f20f9cf",
+  "prompts": {},
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

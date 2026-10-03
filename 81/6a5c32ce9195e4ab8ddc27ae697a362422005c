@@ -1,0 +1,24 @@
+rust/crates/argus-infrastructure/src/sqlite/jobs.rs
+  s_66f791c4ab49f1::t_0bd7a397750d83 2581
+  s_66f791c4ab49f1::t_1c565fe85f6cfc 2546-2553,2568-2580,2582-2583
+rust/crates/argus-infrastructure/tests/jobs_refresh_issues.rs
+  s_66f791c4ab49f1::t_d6d30dcb37b430 79
+  s_66f791c4ab49f1::t_4ab7903d0ba9fb 74-78,80-91,243-297,300
+  s_66f791c4ab49f1::t_c3277d8e468b71 298-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "816a5c32ce9195e4ab8ddc27ae697a362422005c",
+  "prompts": {},
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

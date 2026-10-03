@@ -1,0 +1,29 @@
+rust/crates/argus-application/tests/phase_003_refresh_issues.rs
+  s_66f791c4ab49f1::t_74468c88569b93 568
+  s_66f791c4ab49f1::t_bb9dd6efe13c00 515-526,561-567,569-570
+rust/crates/argus-application/src/jobs/refresh_issues.rs
+  s_66f791c4ab49f1::t_b0ee00eaa7db16 211-238
+  s_66f791c4ab49f1::t_8f5052a89490e7 141-145,151-161,165
+  s_66f791c4ab49f1::t_53cbaa531011f8 400-402
+  s_66f791c4ab49f1::t_afc84ed67fef34 183-185,187-192
+  s_66f791c4ab49f1::t_74468c88569b93 148-150,162-164,399
+  s_66f791c4ab49f1::t_7bf6cb664a27f5 239
+rust/crates/argus-application/src/hydration.rs
+  s_66f791c4ab49f1::t_089ab6baa3aaa1 312-330,402-416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c3e7b537692968dbf08033b1f33c81c6ae9a2af",
+  "prompts": {},
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

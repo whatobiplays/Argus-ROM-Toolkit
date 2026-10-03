@@ -1220,6 +1220,55 @@ fn refresh_operation_detail(
     }
 }
 
+/// Collects the progress reports one refresh job publishes to the outward
+/// runtime stream, in stream order, ending with its terminal
+/// `library_refresh.completed` report.
+///
+/// The manager reports terminal progress before the durable terminal lifecycle
+/// becomes observable, so a caller that has already observed the durable
+/// terminal state can drain without waiting for further reports. The worker
+/// thread isolates the blocking subscription read from the test thread so a
+/// missing terminal report fails a bounded `recv_timeout` instead of hanging.
+#[cfg(feature = "test-support")]
+fn refresh_progress_reports(
+    subscription: argus_runtime::RuntimeEventSubscription,
+    job_run_id: JobRunId,
+) -> Vec<(String, Option<String>)> {
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        while let Ok(event) = subscription.recv() {
+            if let RuntimeEventPayload::JobProgress {
+                job_run_id: reported_job,
+                phase,
+                status_key,
+                ..
+            } = event.payload
+            {
+                let terminal = reported_job == job_run_id && phase == "library_refresh.completed";
+                let _ = sender.send((reported_job, phase, status_key));
+                if terminal {
+                    return;
+                }
+            }
+        }
+    });
+
+    let mut reports = Vec::new();
+    loop {
+        let (reported_job, phase, status_key) = receiver
+            .recv_timeout(Duration::from_secs(15))
+            .expect("refresh progress report before the terminal boundary");
+        if reported_job != job_run_id {
+            continue;
+        }
+        let terminal = phase == "library_refresh.completed";
+        reports.push((phase, status_key));
+        if terminal {
+            return reports;
+        }
+    }
+}
+
 #[test]
 #[cfg(feature = "test-support")]
 fn satisfied_library_refresh_persists_an_explicit_zero_issue_summary() {
@@ -1274,6 +1323,53 @@ fn satisfied_library_refresh_persists_an_explicit_zero_issue_summary() {
     );
     assert!(refresh.progress().issues().is_empty());
     reopened.general_shutdown().expect("second shutdown");
+}
+
+/// A refresh that already knows about an unsatisfied scope publishes that
+/// state on its transient progress, so a client watching the outward stream
+/// never sees a partial refresh reported as clean work.
+#[test]
+#[cfg(feature = "test-support")]
+fn refresh_progress_crosses_the_outward_stream_with_its_transient_status() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let failing = gb_fixture(61);
+    let trace = Arc::new(Mutex::new(ProviderTrace {
+        matching_failures: vec![(hex_digest(&failing), HydrationProviderError::Unavailable)],
+        ..ProviderTrace::default()
+    }));
+    let host = fixture_provider_host(directory.path().join("data"), &trace);
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    fs::create_dir_all(&library).expect("library root");
+    fs::write(library.join("failing.gb"), &failing).expect("failing content");
+    add_root(&host, &library);
+
+    let subscription = host.subscribe_events().expect("subscribe");
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues
+    );
+
+    let reports = refresh_progress_reports(subscription, handle.job_run_id());
+    let hydrating = reports
+        .iter()
+        .filter(|(phase, _)| phase == "library_refresh.hydrating")
+        .collect::<Vec<_>>();
+    assert_eq!(hydrating.len(), 1, "reports: {reports:?}");
+    assert_eq!(
+        hydrating[0].1.as_deref(),
+        Some("refreshing_with_issues"),
+        "the provider failure is already known when hydrating: {reports:?}"
+    );
+    assert_eq!(
+        reports
+            .last()
+            .map(|(phase, status)| (phase.as_str(), status.as_deref())),
+        Some(("library_refresh.completed", Some("completed_with_issues")))
+    );
+
+    host.general_shutdown().expect("shutdown");
 }
 
 #[test]

@@ -3501,6 +3501,53 @@ fn record_scope_issue(
         .map_err(|_| runtime_error_with_trace(ErrorCode::InternalUnexpected, trace_id))
 }
 
+/// Records the refresh-level scope issue owned by one terminal child scan.
+///
+/// A child that reached a safe terminal boundary with unsatisfied scope is
+/// part of this operation's issue projection, so the parent has to identify it
+/// instead of leaving the `CompletedWithIssues` lifecycle unexplained. A child
+/// that completed, was cancelled, or was abandoned owns no refresh-level scope
+/// issue here: its outcome is already carried by the aggregated lifecycle and
+/// by the child's own durable detail.
+fn record_refresh_child_scope_issue(
+    issues: &mut RefreshIssueAccumulator,
+    child_state: LibraryScanChildCompletion,
+    trace_id: TraceId,
+) -> Result<(), ApplicationError> {
+    match child_state {
+        LibraryScanChildCompletion::Partial => record_scope_issue(
+            issues,
+            RefreshIssueReason::ScopeRootScanIncomplete,
+            trace_id,
+        ),
+        LibraryScanChildCompletion::Failed => {
+            record_scope_issue(issues, RefreshIssueReason::ScopeRootScanFailed, trace_id)
+        }
+        LibraryScanChildCompletion::Complete
+        | LibraryScanChildCompletion::Cancelled
+        | LibraryScanChildCompletion::Abandoned => Ok(()),
+    }
+}
+
+/// Returns the transient hydrating status key for one refresh accumulator.
+///
+/// The key is derived from the same bounded projection that decides the
+/// terminal lifecycle, so a refresh can never report clean progress for scope
+/// it has already recorded as unsatisfied and then terminate with issues.
+fn refresh_hydrating_status_key(
+    issues: &RefreshIssueAccumulator,
+) -> Result<&'static str, ApplicationError> {
+    if issues
+        .issue_count()
+        .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?
+        == 0
+    {
+        Ok("refreshing_committed_content")
+    } else {
+        Ok("refreshing_with_issues")
+    }
+}
+
 fn runtime_error_with_trace(code: ErrorCode, trace: TraceId) -> ApplicationError {
     ApplicationError::from_code(code, trace, argus_application::SafeContext::new())
         .expect("runtime lifecycle error uses an allowlisted empty context")
@@ -3852,6 +3899,23 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
         let mut child_states = Vec::with_capacity(self.plans.len());
         let mut issues = RefreshIssueAccumulator::new();
 
+        // Requested scope that never reached this refresh is part of the
+        // operation's issue projection. It is recorded before the first
+        // progress report so the transient status already reflects every
+        // scope fact known at that point, matching the terminal summary.
+        if self.exclusion_count > 0 {
+            let excluded = u64::try_from(self.exclusion_count)
+                .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+            issues
+                .record_count(
+                    RefreshIssueKind::Scope,
+                    RefreshIssueReason::ScopeRootNotAdmitted,
+                    None,
+                    excluded,
+                )
+                .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
+        }
+
         for (index, plan) in self.plans.iter().enumerate() {
             let child = LibraryScanOperationHandler::new(
                 plan.clone(),
@@ -3878,7 +3942,16 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             };
             let child_state = Self::child_completion_state(&completion);
             child_states.push(child_state);
-
+            // Requested scope that never reached safe terminal completion is
+            // part of this operation's issue projection. The generic lifecycle
+            // already reports CompletedWithIssues for it, so the bounded detail
+            // has to identify it instead of leaving that state unexplained.
+            // Child scan intake counters are deliberately not reused here:
+            // they carry no refresh-level typed reason and reusing them would
+            // fabricate provider or content facts the child never classified.
+            // Recording the fact here keeps the hydrating progress consistent
+            // with the terminal summary built from the same accumulator.
+            record_refresh_child_scope_issue(&mut issues, child_state, context.trace_id())?;
             if !matches!(completion.state(), JobRunState::Cancelled) && stop_reason().is_none() {
                 let is_cancelled = || stop_reason().is_some();
                 let timestamps = crate::ContentRefreshTimestamps::from_millis(crate::now_millis());
@@ -3912,17 +3985,7 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
                 "library_refresh.hydrating",
                 Some(completed),
                 Some(total),
-                Some(
-                    if issues
-                        .issue_count()
-                        .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?
-                        == 0
-                    {
-                        "refreshing_committed_content"
-                    } else {
-                        "refreshing_with_issues"
-                    },
-                ),
+                Some(refresh_hydrating_status_key(&issues)?),
                 crate::now_millis(),
             )
             .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
@@ -3934,47 +3997,6 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
             self.plans.len(),
             &child_states,
         );
-
-        // Requested scope that never reached safe terminal completion is part
-        // of this operation's issue projection. The generic lifecycle already
-        // reports CompletedWithIssues for it, so the bounded detail has to
-        // identify it instead of leaving that state unexplained. Child scan
-        // intake counters are deliberately not reused here: they carry no
-        // refresh-level typed reason and reusing them would fabricate provider
-        // or content facts the child never classified.
-        for child_state in &child_states {
-            match child_state {
-                LibraryScanChildCompletion::Partial => {
-                    record_scope_issue(
-                        &mut issues,
-                        RefreshIssueReason::ScopeRootScanIncomplete,
-                        context.trace_id(),
-                    )?;
-                }
-                LibraryScanChildCompletion::Failed => {
-                    record_scope_issue(
-                        &mut issues,
-                        RefreshIssueReason::ScopeRootScanFailed,
-                        context.trace_id(),
-                    )?;
-                }
-                LibraryScanChildCompletion::Complete
-                | LibraryScanChildCompletion::Cancelled
-                | LibraryScanChildCompletion::Abandoned => {}
-            }
-        }
-        if self.exclusion_count > 0 {
-            let excluded = u64::try_from(self.exclusion_count)
-                .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
-            issues
-                .record_count(
-                    RefreshIssueKind::Scope,
-                    RefreshIssueReason::ScopeRootNotAdmitted,
-                    None,
-                    excluded,
-                )
-                .map_err(|_| runtime_error(ErrorCode::InternalUnexpected))?;
-        }
 
         let summary = issues
             .finish()
@@ -4477,8 +4499,9 @@ mod tests {
     };
     use argus_application::{
         ApplicationError, BackgroundOperationStopReason, ErrorCode, JobProgress,
-        JobProgressReporter, JobRunId, JobRunState, OperationContext, OperationName, SafeContext,
-        SubsystemName, TraceId,
+        JobProgressReporter, JobRunId, JobRunState, OperationContext, OperationName,
+        RefreshIssueAccumulator, RefreshIssueKind, RefreshIssueReason, SafeContext, SubsystemName,
+        TraceId,
     };
     use std::sync::Weak;
 
@@ -4579,6 +4602,190 @@ mod tests {
             boundary.attach(0),
             Err(RuntimeEventStreamError::Closed)
         ));
+    }
+
+    /// Records every progress report in order so a test can assert what an
+    /// execution reported before it reached its terminal boundary.
+    #[derive(Default)]
+    struct RecordingProgressReporter {
+        reports: Mutex<Vec<(String, Option<String>)>>,
+    }
+
+    impl RecordingProgressReporter {
+        fn reports(&self) -> Vec<(String, Option<String>)> {
+            self.reports.lock().expect("progress reports").clone()
+        }
+    }
+
+    impl JobProgressReporter for RecordingProgressReporter {
+        fn report(&self, progress: JobProgress) -> Result<(), ApplicationError> {
+            self.reports.lock().expect("progress reports").push((
+                progress.phase().to_owned(),
+                progress.status_key().map(str::to_owned),
+            ));
+            Ok(())
+        }
+    }
+
+    /// Requested scope that a refresh could not admit is part of the
+    /// operation's issue projection, so it has to be visible on the transient
+    /// progress rather than only on the terminal report.
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn unadmitted_requested_root_reports_issues_on_transient_refresh_progress() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let data_directory = directory.path().join("data");
+        let kernel = crate::bootstrap_kernel(
+            crate::KernelBootstrapOptions::with_data_directory(data_directory.clone())
+                .with_provider_session_factory_for_tests(Vec::new),
+        )
+        .expect("test kernel");
+        let context = fixed_context(2);
+        let library = directory.path().join("Library");
+        fs::create_dir_all(&library).expect("library root");
+        kernel
+            .add_local_library_root_with_context(
+                &context,
+                crate::test_support::local_filesystem_root_selection(&library),
+                Arc::new(|| false),
+            )
+            .expect("add root");
+        let admission = kernel
+            .start_library_refresh_with_context(
+                &context,
+                Arc::new(|| false),
+                argus_application::LibraryRefreshTrigger::Manual,
+            )
+            .expect("refresh admission");
+        let admitted = admission.admitted_job().expect("admitted refresh plans");
+        assert_eq!(admission.admitted_job_exclusion_count(), 0);
+
+        // A fresh refresh admits every configured root, so the handler is
+        // built directly with the one requested root this execution could not
+        // admit. That is the same registration shape the manager receives when
+        // an admission owns exclusions.
+        let handler = super::LibraryRefreshOperationHandler::new(
+            admitted.plans().to_vec(),
+            kernel.unit_of_work_factory().clone(),
+            crate::events::EventBusSink::new(kernel.event_bus().clone()),
+            kernel.library_execution_context(),
+            admitted.job_run_id(),
+            100,
+            1,
+        );
+        let reporter = RecordingProgressReporter::default();
+        let completion = argus_application::BackgroundOperationHandler::execute(
+            &handler,
+            &context,
+            &|| None,
+            &reporter,
+        )
+        .expect("refresh execution");
+
+        assert_eq!(completion.state(), JobRunState::CompletedWithIssues);
+        let reports = reporter.reports();
+        let hydrating = reports
+            .iter()
+            .filter(|(phase, _)| phase == "library_refresh.hydrating")
+            .collect::<Vec<_>>();
+        assert_eq!(hydrating.len(), 1, "reports: {reports:?}");
+        assert_eq!(
+            hydrating[0].1.as_deref(),
+            Some("refreshing_with_issues"),
+            "an unadmitted requested root is already known when hydrating: {reports:?}"
+        );
+        assert_eq!(
+            reports
+                .last()
+                .map(|(phase, status)| (phase.as_str(), status.as_deref())),
+            Some(("library_refresh.completed", Some("completed_with_issues")))
+        );
+
+        // Recording the scope fact before the child loop must not double its
+        // durable occurrence.
+        let connection = rusqlite::Connection::open_with_flags(
+            data_directory.join("argus.sqlite3"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("database");
+        let occurrences: i64 = connection
+            .query_row(
+                "SELECT occurrences FROM library_refresh_issue_fact
+                 WHERE job_run_id = ?1 AND issue_reason = 'scope_root_not_admitted'",
+                [admitted.job_run_id().to_string()],
+                |row| row.get(0),
+            )
+            .expect("persisted scope fact");
+        assert_eq!(occurrences, 1);
+    }
+
+    /// Only a child that reached a safe terminal boundary with unsatisfied
+    /// scope owns a refresh-level scope issue; a clean, cancelled, or
+    /// abandoned child must never invent one.
+    #[test]
+    fn refresh_child_scope_issues_are_recorded_for_unsatisfied_scope_only() {
+        let context = fixed_context(3);
+        for (child_state, expected) in [
+            (
+                super::LibraryScanChildCompletion::Partial,
+                RefreshIssueReason::ScopeRootScanIncomplete,
+            ),
+            (
+                super::LibraryScanChildCompletion::Failed,
+                RefreshIssueReason::ScopeRootScanFailed,
+            ),
+        ] {
+            let mut issues = RefreshIssueAccumulator::new();
+            super::record_refresh_child_scope_issue(&mut issues, child_state, context.trace_id())
+                .expect("recordable scope issue");
+            let summary = issues.finish().expect("bounded summary");
+            assert_eq!(summary.issue_count(), 1, "{child_state:?}");
+            assert_eq!(summary.facts().len(), 1, "{child_state:?}");
+            assert_eq!(summary.facts()[0].kind(), RefreshIssueKind::Scope);
+            assert_eq!(summary.facts()[0].reason(), expected);
+            assert_eq!(summary.facts()[0].provider_id(), None);
+            assert_eq!(summary.facts()[0].occurrences(), 1);
+        }
+
+        for child_state in [
+            super::LibraryScanChildCompletion::Complete,
+            super::LibraryScanChildCompletion::Cancelled,
+            super::LibraryScanChildCompletion::Abandoned,
+        ] {
+            let mut issues = RefreshIssueAccumulator::new();
+            super::record_refresh_child_scope_issue(&mut issues, child_state, context.trace_id())
+                .expect("no invented scope issue");
+            let summary = issues.finish().expect("bounded summary");
+            assert_eq!(summary.issue_count(), 0, "{child_state:?}");
+            assert!(summary.facts().is_empty(), "{child_state:?}");
+        }
+    }
+
+    /// The transient hydrating status has to be derived from the same
+    /// projection that decides the terminal lifecycle, so an already-known
+    /// scope issue can never be reported as clean progress.
+    #[test]
+    fn refresh_hydrating_status_key_reflects_known_scope_issues() {
+        let context = fixed_context(4);
+        let clean = RefreshIssueAccumulator::new();
+        assert_eq!(
+            super::refresh_hydrating_status_key(&clean).expect("clean status"),
+            "refreshing_committed_content"
+        );
+
+        for child_state in [
+            super::LibraryScanChildCompletion::Partial,
+            super::LibraryScanChildCompletion::Failed,
+        ] {
+            let mut issues = RefreshIssueAccumulator::new();
+            super::record_refresh_child_scope_issue(&mut issues, child_state, context.trace_id())
+                .expect("recordable scope issue");
+            assert_eq!(
+                super::refresh_hydrating_status_key(&issues).expect("partial status"),
+                "refreshing_with_issues",
+                "{child_state:?}"
+            );
+        }
     }
 
     #[test]

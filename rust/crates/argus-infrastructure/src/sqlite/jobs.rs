@@ -2543,11 +2543,14 @@ fn read_job_detail(
 /// Reads and validates the durable refresh issue projection for one job.
 ///
 /// A missing summary row means the execution never persisted a refresh issue
-/// projection, which is the truthful state for pre-v18 history. Any present but
-/// contradictory representation is corrupt/incompatible persistence rather than
-/// a valid job detail: the fact count, deterministic ordinals, positive
-/// occurrences, typed decoding, signed-domain representation, and the agreement
-/// between the summary total and the checked fact sum are all enforced here.
+/// projection, which is the truthful state for pre-v18 history, but only when
+/// the execution also persisted no fact rows: facts without their owning
+/// summary are contradictory v18 persistence rather than a readable detail.
+/// Any present but contradictory representation is corrupt/incompatible
+/// persistence rather than a valid job detail: the fact count, deterministic
+/// ordinals, positive occurrences, typed decoding, signed-domain
+/// representation, and the agreement between the summary total and the
+/// checked fact sum are all enforced here.
 fn read_refresh_issue_summary(
     connection: &mut SqliteConnection<'_>,
     job_run_id: &str,
@@ -2562,6 +2565,22 @@ fn read_refresh_issue_summary(
         .optional()
         .map_err(|error| super::errors::operation_error(&error))?;
     let Some(persisted_count) = persisted_count else {
+        // Historical executions legitimately have neither a summary nor
+        // facts. An orphaned fact row is the only contradiction that can be
+        // observed without a summary, so it is checked here instead of
+        // reconstructing a summary the execution never wrote.
+        let orphan_fact: Option<i64> = connection
+            .connection
+            .query_row(
+                "SELECT 1 FROM library_refresh_issue_fact WHERE job_run_id = ?1 LIMIT 1",
+                [job_run_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| super::errors::operation_error(&error))?;
+        if orphan_fact.is_some() {
+            return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+        }
         return Ok(None);
     };
     let mut statement = connection

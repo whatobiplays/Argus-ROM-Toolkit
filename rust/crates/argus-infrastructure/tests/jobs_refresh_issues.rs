@@ -71,6 +71,24 @@ fn get_refresh_progress(
     ))
 }
 
+/// Plants one fact row for a job that has no owning summary row.
+///
+/// Only contradicting persistence can produce this shape, so the helper is
+/// deliberately separate from the valid fixture seeding above.
+fn seed_orphan_refresh_issue_fact(executor: &SqliteDatabaseExecutor, id: &str) {
+    let id = id.to_owned();
+    executor
+        .with_connection_for_tests(context(), move |connection| {
+            connection.execute_batch(&format!(
+                "INSERT INTO library_refresh_issue_fact
+                     (job_run_id, issue_ordinal, issue_kind, issue_reason, provider_id, occurrences)
+                 VALUES ('{id}', 0, 'content', 'content_unavailable', NULL, 1);"
+            ))?;
+            Ok(())
+        })
+        .expect("seed orphan refresh issue fact");
+}
+
 #[test]
 fn non_success_library_refreshes_ignore_stale_issue_summaries() {
     let directory = tempfile::tempdir().expect("tempdir");
@@ -219,6 +237,64 @@ fn successful_library_refreshes_reject_summary_fact_mismatches() {
             PersistenceError::CorruptOrIncompatible
         );
     }
+
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn library_refreshes_reject_orphan_issue_facts_without_a_summary() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let executor =
+        SqliteDatabaseExecutor::open(directory.path().join("argus.sqlite3")).expect("database");
+    let fixtures = [
+        JobFixture {
+            id: "00000000000000000000000000000031",
+            state: "completed",
+            issue_count: None,
+        },
+        JobFixture {
+            id: "00000000000000000000000000000032",
+            state: "completed_with_issues",
+            issue_count: None,
+        },
+        JobFixture {
+            id: "00000000000000000000000000000033",
+            state: "running",
+            issue_count: None,
+        },
+    ];
+    seed_jobs(&executor, &fixtures);
+
+    // Historical executions without a v18 summary and without facts stay an
+    // unknown projection rather than an error.
+    for fixture in fixtures {
+        let (_, issue_count, issue_facts) =
+            get_refresh_progress(&executor, fixture.id).expect("historical detail");
+        assert_eq!(issue_count, None);
+        assert_eq!(issue_facts, 0);
+    }
+
+    // Facts without their owning summary are contradictory v18 persistence
+    // for every successful terminal refresh that reads the projection.
+    for fixture in &fixtures[..2] {
+        seed_orphan_refresh_issue_fact(&executor, fixture.id);
+        assert_eq!(
+            get_refresh_progress(&executor, fixture.id).unwrap_err(),
+            PersistenceError::CorruptOrIncompatible,
+            "state {} must reject orphan facts without a summary",
+            fixture.state
+        );
+    }
+
+    // A non-success lifecycle never reads the projection, so stale rows there
+    // must not make reconstruction fail.
+    let running = &fixtures[2];
+    seed_orphan_refresh_issue_fact(&executor, running.id);
+    let (state, issue_count, issue_facts) =
+        get_refresh_progress(&executor, running.id).expect("non-success detail");
+    assert_eq!(state, JobRunState::Running);
+    assert_eq!(issue_count, None);
+    assert_eq!(issue_facts, 0);
 
     executor.shutdown().expect("shutdown");
 }

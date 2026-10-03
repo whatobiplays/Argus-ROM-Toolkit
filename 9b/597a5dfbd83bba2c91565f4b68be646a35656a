@@ -1,0 +1,30 @@
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_66f791c4ab49f1::t_e4596fa3c3b92b 1223-1271,1328-1373
+  s_66f791c4ab49f1::t_032c54540c9f35 1374
+rust/crates/argus-runtime/src/runtime.rs
+  s_66f791c4ab49f1::t_62c25031ff5e61 3954
+  s_66f791c4ab49f1::t_93a273f30d92ab 3504-3550
+  s_66f791c4ab49f1::t_a5a21731d62427 4502-4504
+  s_66f791c4ab49f1::t_ea9171859fac0c 4722-4789
+  s_66f791c4ab49f1::t_7c6a94bbd7b462 3906-3917
+  s_66f791c4ab49f1::t_7b31092112a7ae 3902-3905,3945-3953
+  s_66f791c4ab49f1::t_322ff6a548e4cd 3988
+  s_66f791c4ab49f1::t_156e55a3d9cd69 4607-4721
+  s_66f791c4ab49f1::t_ba53ec7d444624 3918,4790
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b597a5dfbd83bba2c91565f4b68be646a35656a",
+  "prompts": {},
+  "sessions": {
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

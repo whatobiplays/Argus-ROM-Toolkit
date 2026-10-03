@@ -5135,9 +5135,12 @@ fn ensure_reader_stable(reader: &dyn ContentReader) -> Result<(), Transformation
 fn map_optical_failure(error: OpticalError) -> TransformationFailure {
     match error {
         OpticalError::Malformed | OpticalError::Truncated => TransformationFailure::Malformed,
-        OpticalError::MissingDependency | OpticalError::ConflictingDependency => {
-            TransformationFailure::MissingDependency
-        }
+        OpticalError::MissingDependency => TransformationFailure::MissingDependency,
+        // A conflicting dependency set describes duplicate or contradictory
+        // descriptor structure rather than absent data, so it keeps the
+        // malformed-content classification instead of claiming that a
+        // required file is missing.
+        OpticalError::ConflictingDependency => TransformationFailure::Malformed,
         OpticalError::Traversal => TransformationFailure::UnsupportedFeature,
         OpticalError::UnsupportedRepresentation => TransformationFailure::UnsupportedFeature,
         OpticalError::AmbiguousPlatform => TransformationFailure::AmbiguousRecognition,
@@ -5154,11 +5157,15 @@ fn map_optical_dependency_failure(
         argus_application::OpticalDependencyError::ResourceLimitExceeded => {
             TransformationFailure::ResourceLimitExceeded
         }
-        argus_application::OpticalDependencyError::Missing
-        | argus_application::OpticalDependencyError::Ambiguous
-        | argus_application::OpticalDependencyError::Duplicate => {
+        // Only a reference with no committed match is absent data. An
+        // ambiguous or repeated reference describes conflicting descriptor
+        // structure, so those keep the malformed-content classification
+        // instead of reporting that a required file is missing.
+        argus_application::OpticalDependencyError::Missing => {
             TransformationFailure::MissingDependency
         }
+        argus_application::OpticalDependencyError::Ambiguous
+        | argus_application::OpticalDependencyError::Duplicate => TransformationFailure::Malformed,
         argus_application::OpticalDependencyError::InvalidReference
         | argus_application::OpticalDependencyError::CrossRoot => {
             TransformationFailure::UnsupportedFeature
@@ -5739,7 +5746,8 @@ fn hex_encode_bytes(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, record_content_failure_if_not_cancelled, record_reader_stability_issue,
+        Platform, map_optical_dependency_failure, map_optical_failure,
+        record_content_failure_if_not_cancelled, record_reader_stability_issue,
         record_transformation_content_failure, refresh_issue_reason_for_content_error,
         refresh_issue_reason_for_identification_error, refresh_issue_reason_for_recognition_error,
         resolve_data_directory, sessions_require_credentials, trace_id_from_entropy,
@@ -6322,6 +6330,169 @@ mod tests {
             | ContentRecognitionError::UnsupportedRepresentation
             | ContentRecognitionError::Malformed => {}
         }
+    }
+
+    #[test]
+    fn optical_failures_preserve_typed_refresh_mappings() {
+        use argus_infrastructure::content::OpticalError;
+
+        let cases = [
+            (OpticalError::Malformed, TransformationFailure::Malformed),
+            (OpticalError::Truncated, TransformationFailure::Malformed),
+            (
+                OpticalError::MissingDependency,
+                TransformationFailure::MissingDependency,
+            ),
+            (
+                OpticalError::ConflictingDependency,
+                TransformationFailure::Malformed,
+            ),
+            (
+                OpticalError::Traversal,
+                TransformationFailure::UnsupportedFeature,
+            ),
+            (
+                OpticalError::UnsupportedRepresentation,
+                TransformationFailure::UnsupportedFeature,
+            ),
+            (
+                OpticalError::AmbiguousPlatform,
+                TransformationFailure::AmbiguousRecognition,
+            ),
+            (
+                OpticalError::ResourceLimitExceeded,
+                TransformationFailure::ResourceLimitExceeded,
+            ),
+            (OpticalError::Cancelled, TransformationFailure::Cancelled),
+            (
+                OpticalError::ReadFailure,
+                TransformationFailure::ReadFailure,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_optical_error_variant_is_listed(error);
+            assert_eq!(
+                map_optical_failure(error),
+                expected,
+                "unexpected transformation failure for {error:?}"
+            );
+        }
+    }
+
+    /// Forces every `OpticalError` variant to stay listed as the mapping table
+    /// grows, so a new variant cannot silently inherit generic handling.
+    fn assert_optical_error_variant_is_listed(error: argus_infrastructure::content::OpticalError) {
+        use argus_infrastructure::content::OpticalError;
+
+        match error {
+            OpticalError::Malformed
+            | OpticalError::Truncated
+            | OpticalError::MissingDependency
+            | OpticalError::ConflictingDependency
+            | OpticalError::Traversal
+            | OpticalError::UnsupportedRepresentation
+            | OpticalError::AmbiguousPlatform
+            | OpticalError::ResourceLimitExceeded
+            | OpticalError::Cancelled
+            | OpticalError::ReadFailure => {}
+        }
+    }
+
+    #[test]
+    fn optical_dependency_failures_preserve_typed_refresh_mappings() {
+        use argus_application::OpticalDependencyError;
+
+        let cases = [
+            (
+                OpticalDependencyError::Missing,
+                TransformationFailure::MissingDependency,
+            ),
+            (
+                OpticalDependencyError::Ambiguous,
+                TransformationFailure::Malformed,
+            ),
+            (
+                OpticalDependencyError::Duplicate,
+                TransformationFailure::Malformed,
+            ),
+            (
+                OpticalDependencyError::ResourceLimitExceeded,
+                TransformationFailure::ResourceLimitExceeded,
+            ),
+            (
+                OpticalDependencyError::InvalidReference,
+                TransformationFailure::UnsupportedFeature,
+            ),
+            (
+                OpticalDependencyError::CrossRoot,
+                TransformationFailure::UnsupportedFeature,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_optical_dependency_error_variant_is_listed(error);
+            assert_eq!(
+                map_optical_dependency_failure(error),
+                expected,
+                "unexpected transformation failure for {error:?}"
+            );
+        }
+    }
+
+    /// Forces every `OpticalDependencyError` variant to stay listed as the
+    /// mapping table grows, so a new variant cannot silently inherit generic
+    /// handling.
+    fn assert_optical_dependency_error_variant_is_listed(
+        error: argus_application::OpticalDependencyError,
+    ) {
+        use argus_application::OpticalDependencyError;
+
+        match error {
+            OpticalDependencyError::InvalidReference
+            | OpticalDependencyError::CrossRoot
+            | OpticalDependencyError::Missing
+            | OpticalDependencyError::Ambiguous
+            | OpticalDependencyError::Duplicate
+            | OpticalDependencyError::ResourceLimitExceeded => {}
+        }
+    }
+
+    #[test]
+    fn optical_dependency_failures_map_to_distinguishable_durable_refresh_reasons() {
+        use argus_application::OpticalDependencyError;
+        use argus_infrastructure::content::OpticalError;
+
+        let cases = [
+            (
+                OpticalDependencyError::Missing,
+                RefreshIssueReason::ContentDependencyMissing,
+            ),
+            (
+                OpticalDependencyError::Ambiguous,
+                RefreshIssueReason::ContentMalformedOrUnsupported,
+            ),
+            (
+                OpticalDependencyError::Duplicate,
+                RefreshIssueReason::ContentMalformedOrUnsupported,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            let failure = map_optical_dependency_failure(error);
+            assert_eq!(
+                refresh_issue_reason_for_content_error(map_transformation_failure(failure)),
+                expected,
+                "unexpected durable refresh reason for {error:?}"
+            );
+        }
+
+        let conflicting = map_optical_failure(OpticalError::ConflictingDependency);
+        assert_eq!(
+            refresh_issue_reason_for_content_error(map_transformation_failure(conflicting)),
+            RefreshIssueReason::ContentMalformedOrUnsupported,
+            "a conflicting dependency set must not be reported as a missing file"
+        );
     }
 
     #[test]

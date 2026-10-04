@@ -55,7 +55,7 @@ API discovery request, never to the CDN image request.
 | live-gametdb | PASS | evidence: the ignored production test passed against the official `https://www.gametdb.com/dstdb.txt?LANG=EN` DS catalog, resolving `product:A2DE` to external ID `A2DE`, then successfully repeating the exact metadata lookup for `nintendo.nds`. |
 | live-steamgriddb | PASS | evidence: the focused and aggregate ignored production tests authenticated through the keyring-backed session, discovered Game Boy game `5249689` and artwork `740598` through the documented v2 API, verified its stable full-size source, and retrieved non-empty original bytes without sending the credential to the CDN. |
 | library-scale | PASS | evidence: the 10,000-row Rust scale suite passed indexed page and cursor checks, facet/detail statement bounds, and one-row projection-write accounting. |
-| migration | PASS | evidence: the embedded migration-chain tests pass through schema version 17 and verify the existing derived-provenance backfill without network or filesystem work. |
+| migration | PASS | evidence: the embedded migration-chain tests pass through schema version 18 and verify the existing derived-provenance backfill without network or filesystem work. |
 | security-privacy | PASS | evidence: provider, archive, source-boundary, artwork-store, safe-context, and credential tests pass their redaction, resource, traversal, and app-private-storage assertions. |
 | generated-source | PASS | evidence: `just check-generated` regenerated FRB and Dart outputs and found no registered-output drift or machine-specific paths. |
 | documentation-consistency | PASS | evidence: this record contains one row for every mandatory gate and one row for every PAC/TAC criterion, with status-specific evidence. |
@@ -81,7 +81,7 @@ API discovery request, never to the CDN image request.
 | TAC-2 | PASS | offline adapter tests use no network and cover all three provider sessions, bounded payloads, failures, invalid credential paths, the Playmatch v2 and GameTDB DS wire fixtures, SteamGridDB v2 artwork endpoints and type mappings, and redaction. |
 | TAC-3 | PASS | evidence: the separate live-provider runner emitted exactly one PASS for Playmatch `nintendo.gb`, GameTDB `nintendo.nds`, and SteamGridDB `nintendo.gb`; SGDB discovery and original-byte retrieval passed through the production keyring boundary. |
 | TAC-4 | PASS | scale tests account for SQLite VM/full-scan work, stable query plans, statement growth, projection writes, and Flutter page ownership. |
-| TAC-5 | PASS | migration tests exercise supported historical chains through v17 and keep identity absent unless durable proof exists. |
+| TAC-5 | PASS | migration tests exercise supported historical chains through v18 and keep identity absent unless durable proof exists. |
 | TAC-6 | PASS | existing security/resource tests cover credential secrecy, safe diagnostics, archive traversal, parser budgets, bounded artwork, and private storage. |
 | TAC-7 | PASS | `just check-generated` passed after regeneration with no registered generated-output drift. |
 | TAC-8 | PASS | the qualification-record validator is wired into `just check` and enforces unique gates, statuses, and truthful completion state. |

@@ -3,7 +3,7 @@
 **Document ID:** IMPL-P03-MANUAL-QUALIFICATION
 **Phase:** PHASE-003
 **Owner:** Daniel
-**Record state:** Owner execution resumed; MAC-01 clean retest and MAC-06 foreground-responsiveness retest passed; remaining qualification scenarios are pending
+**Record state:** Owner execution resumed; MAC-01, MAC-05, and MAC-06 passed; remaining qualification scenarios are pending
 **Last Updated:** 2026-10-07
 
 Qualification result: BLOCKED
@@ -16,7 +16,7 @@ This record is the owner-executed closeout ledger for the Phase 003 manual quali
 
 The phase cannot be declared complete until every applicable mandatory scenario below has a recorded `PASS`, with the environment, artifact, content, and evidence provenance needed to reproduce the observation. `NOT APPLICABLE` is permitted only as a predeclared applicability value for UX-M05, with a concrete reason; it is not a result status.
 
-Owner execution has resumed. MAC-01 attempt 1 remains recorded as a historical failure, while the clean owner Release/fresh-state retest now passes. MAC-06 also passes on the corrected Release artifact. MAC-02 through MAC-05 and all Android, content, and UX scenarios that have not otherwise been recorded remain `NOT RUN`.
+Owner execution has resumed. MAC-01 attempt 1 remains recorded as a historical failure, while the clean owner Release/fresh-state retest now passes. MAC-05 process-loss recovery and MAC-06 foreground responsiveness also pass on the corrected Release artifact. MAC-02 through MAC-04 and all Android, content, and UX scenarios that have not otherwise been recorded remain `NOT RUN`.
 
 The historical library-capability qualification record remains unchanged. This document is a new closeout record and does not rewrite historical P03-009 evidence.
 
@@ -108,6 +108,20 @@ separately below.
 | Evidence | Direct owner observation reported in the project qualification session; no private ROM, path, screenshot, or recording is retained |
 | Defect reference | P03-010 foreground responsiveness/routing admission hardening; prior development-build starvation observation in Section 3.1 |
 
+### 3.5 MAC-05 attempt 1 — PASS
+
+| Field | Attempt 1 record |
+| --- | --- |
+| Operator | Daniel |
+| Result | `PASS` |
+| Artifact | Same macOS Release Argus 0.1.0 (1) artifact and source HEAD as MAC-01 retest 1 |
+| Platform / hardware | macOS 26.5, BuildVersion 25F71; Apple Silicon arm64 |
+| App-state context | Fresh container; onboarding completed and its `InitialOnboarding` `library_refresh` was deliberately interrupted by forced process termination while active |
+| Recorded UTC | 2026-10-07 17:07 UTC |
+| Actual observation | After relaunch, the interrupted work was reported truthfully and did not silently resume; committed onboarding/library state remained intact; an explicit retry created new work and completed successfully without destructive mutation. |
+| Evidence | Direct owner observation reported in the project qualification session; no private ROM, path, screenshot, or recording is retained |
+| Defect reference | Process-loss/restart recovery contract for non-auto-resumable Phase 003 refresh operations |
+
 ## 4. Scenario ledger
 
 Unexecuted scenarios remain `NOT RUN`; MAC-01 preserves the owner-observed failed first attempt in Section 3.2 while its current ledger status reflects the successful owner retest. Each row keeps independent applicability, expected result, status, actual observation, evidence, and defect/retest reference fields. The actual-observation and reference fields intentionally contain no inferred result.
@@ -118,7 +132,7 @@ Unexecuted scenarios remain `NOT RUN`; MAC-01 preserves the owner-observed faile
 | MAC-02 | REQUIRED | On macOS, exercise Library browsing, paging, search, representative filters/facets, sorting, stable selection, and game detail. | Paging, search, filters/facets, and sorting show the correct records; selection remains stable and opens the corresponding game detail without stale or misleading state. | NOT RUN |  |  |  | — |
 | MAC-03 | REQUIRED | Evaluate each provider according to its declared setup and role: verify zero-setup Playmatch readiness and exact-content matching/enrichment mappings; verify zero-setup GameTDB readiness and applicable-platform metadata/artwork; configure a test SteamGridDB API key through the product boundary and verify credentialed artwork discovery/download/display. Exercise disable/re-enable and recovery for each provider; perform credential setup, removal, or replacement only for SteamGridDB. | Playmatch reaches its supported zero-setup readiness state and returns a coherent match/enrichment mapping; GameTDB reaches its supported zero-setup readiness state and returns coherent applicable-platform metadata/artwork; SteamGridDB reaches its credentialed readiness state and returns coherent artwork. Provider disable/re-enable and SteamGridDB credential lifecycle, failures, and recovery are explicit, bounded, secret-safe, and non-destructive; unsupported output or credential operations are not required from any provider. | NOT RUN |  |  |  | — |
 | MAC-04 | REQUIRED | Complete onboarding, configure roots, and establish committed Library state on macOS; fully quit and relaunch the app. | Onboarding state, roots, committed Library records, metadata, and artwork persist across relaunch, and no significant scan/provider work starts silently. | NOT RUN |  |  |  | — |
-| MAC-05 | REQUIRED | Terminate the macOS app during an active refresh, relaunch it, inspect the interrupted-work state, and perform an explicit retry. | Relaunch reports the interrupted work truthfully, does not silently resume it, preserves committed results, and completes a successful explicit retry without destructive mutation. | NOT RUN |  |  |  | — |
+| MAC-05 | REQUIRED | Terminate the macOS app during an active refresh, relaunch it, inspect the interrupted-work state, and perform an explicit retry. | Relaunch reports the interrupted work truthfully, does not silently resume it, preserves committed results, and completes a successful explicit retry without destructive mutation. | PASS | Owner force-terminated the active initial-onboarding refresh, relaunched, observed truthful non-auto-resuming recovery with committed state preserved, then explicitly retried successfully without destructive mutation. | Section 3.5; retest R-003 | Process-loss/restart recovery contract | R-003 `PASS` |
 | MAC-06 | REQUIRED | On a supported macOS release/production artifact with a representative root, start or continue an initial/explicit Phase 003 refresh and, while it is still actively scanning/identifying/enriching, switch Library → Sources → Jobs → Settings → Library, query Jobs/Library state, and exercise an available job control such as cancellation when safe for the scenario. | Foreground destinations switch promptly without waiting for refresh terminalization; focused Library/Sources/Jobs/onboarding state remains queryable; an already usable Library is not replaced by whole-page loading solely because the refresh is active; job control remains available; background progress/terminalization stays truthful. | PASS | Owner observed prompt navigation and queryability throughout active refresh; usable Library state remained available, job control remained usable, and background progress/terminalization stayed truthful. | Section 3.4; retest R-002 | P03-010 foreground responsiveness/routing admission hardening | R-002 `PASS` |
 | AND-01 | REQUIRED | On cleared data on a physical supported ARM64 Android device, use the release artifact, complete onboarding with native folder selection, choose Add & Scan, and inspect the populated Library. | Cleared-data onboarding and native folder selection complete; Add & Scan produces a usable populated Library with truthful progress and no unexplained loss or error. | NOT RUN |  |  |  | — |
 | AND-02 | REQUIRED | On Android, exercise the Library browse, search, filter, sort, and game-detail critical path. | Browse, search, filter, and sort show the correct records; selection opens the corresponding game detail and remains usable through the critical path. | NOT RUN |  |  |  | — |
@@ -155,6 +169,7 @@ Retests are append-only. A retest must identify the scenario, trigger, complete 
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | R-001 | MAC-01 | 2026-10-07 16:10 UTC | Clean owner Release/fresh-state retest after FRB export, macOS deployment-floor, proc-macro build, and clean Xcode bridge wiring corrections | Argus 0.1.0 (1), source `90976ad093062cdb49e48f34b3fe3d8f19cceca6`; macOS 26.5 (25F71); Apple Silicon arm64; fresh state; real representative root | Complete onboarding/root admission/initial scan and reach a usable populated Library with truthful progress and no unexplained loss or error | Owner directly observed the complete expected flow and reported both scenario and result as passing | `PASS` | Section 3.3; sanitized owner report in project qualification session | Historical MAC-01 attempt 1 FRB process-export failure |
 | R-002 | MAC-06 | 2026-10-07 16:10 UTC | Mandatory owner retest of P03-010 during active refresh | Same Argus 0.1.0 (1) artifact/source as R-001; macOS 26.5 (25F71); Apple Silicon arm64; active refresh on representative root | Foreground navigation/querying/job control remain responsive and truthful while background refresh continues | Owner directly observed prompt route switching, queryable foreground state, usable Library presentation, available job control, and truthful background progress/terminalization | `PASS` | Section 3.4; sanitized owner report in project qualification session | P03-010 foreground responsiveness/routing admission hardening |
+| R-003 | MAC-05 | 2026-10-07 17:07 UTC | Forced process loss during the active `InitialOnboarding` Library refresh, followed by relaunch and explicit retry | Same Argus 0.1.0 (1) artifact/source as R-001; macOS 26.5 (25F71); Apple Silicon arm64; fresh container and representative real root | Relaunch reports interrupted work truthfully, performs no automatic resume, preserves committed state, and explicit retry succeeds without destructive mutation | Owner directly observed all expected recovery and retry behavior and reported the scenario as passing | `PASS` | Section 3.5; sanitized owner report in project qualification session | Phase 003 process-loss/restart recovery contract |
 
 ## 6. Closeout conditions
 
@@ -172,10 +187,11 @@ Retests are append-only. A retest must identify the scenario, trigger, complete 
 
 Manual qualification remains incomplete. MAC-01 now has a successful clean owner
 Release/fresh-state retest while its historical attempt 1 remains recorded as
-`FAIL`; MAC-06 also passes the mandatory P03-010 foreground-responsiveness
-retest. MAC-02 through MAC-05 and the remaining Android, content, and UX
-scenarios are still pending where not otherwise recorded. The qualification
-result remains `BLOCKED` and the completion declaration remains `NOT COMPLETE`.
+`FAIL`; MAC-05 passes process-loss/restart recovery and explicit retry; MAC-06
+passes the mandatory P03-010 foreground-responsiveness retest. MAC-02 through
+MAC-04 and the remaining Android, content, and UX scenarios are still pending
+where not otherwise recorded. The qualification result remains `BLOCKED` and
+the completion declaration remains `NOT COMPLETE`.
 
 ## 7. Evidence handling
 

@@ -1,0 +1,14 @@
+docs/implementation/phase-003-manual-qualification.md
+  h_2e7f3207901880 6,19,125-164,172-174,213-215,223,231-235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59a3864fef1106eacf08ce120107a9f6010a2527",
+  "prompts": {},
+  "humans": {
+    "h_2e7f3207901880": {
+      "author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

@@ -52,3 +52,18 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 
 [workspace.lints.rust]
 unsafe_code = "deny"
+
+# On the pinned Rust 1.97.1 toolchain, clean Release builds of the build-time
+# crate graph (build scripts, proc macros, and their dependencies) were
+# entering the `-C strip=debuginfo` failure mode: that stripping pass can emit
+# host proc-macro dylibs with a misaligned Mach-O LC_SYMTAB string pool, and
+# dyld then rejects them, so rustc reports the proc macro as a missing crate
+# (E0463). rust-lang/rust issue #157750 documents the stripping defect and its
+# malformed Mach-O result. Argus explicitly pins `strip = "none"` for Release
+# build-time crates so inherited or otherwise effective stripping cannot
+# corrupt proc-macro dylibs on the pinned affected toolchain. Build-time
+# crates are never shipped, so this override does not change how shipped
+# Release artifacts are stripped. Keep it until a future pinned-toolchain
+# upgrade is qualified without it.
+[profile.release.build-override]
+strip = "none"

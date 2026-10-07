@@ -208,11 +208,11 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 33CC10FB2044A3C60003C045 /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
+				33CC11252044A8840003C045 /* Build Argus native bridge */,
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
-				33CC11252044A8840003C045 /* Build Argus native bridge */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 			);
 			buildRules = (
@@ -317,11 +317,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(PROJECT_DIR)/../../rust/target/$(CONFIGURATION)/libargus_bridge.a",
+				"$(PROJECT_DIR)/../../rust/target/$(ARGUS_RUST_PROFILE)/libargus_bridge.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "mode=debug\nprofile=\ncase \"$CONFIGURATION\" in\n  Debug) ;;\n  *) mode=release; profile=--release ;;\nesac\n\"$PROJECT_DIR/../../scripts/run_rust.sh\" cargo build --manifest-path \"$PROJECT_DIR/../../rust/Cargo.toml\" --package argus-bridge $profile --locked\n";
+			shellScript = "profile=\ncase \"$ARGUS_RUST_PROFILE\" in\n  debug) ;;\n  release) profile=--release ;;\n  *) echo \"error: unsupported ARGUS_RUST_PROFILE: $ARGUS_RUST_PROFILE\" >&2; exit 1 ;;\nesac\n\"$PROJECT_DIR/../../scripts/run_rust.sh\" cargo build --manifest-path \"$PROJECT_DIR/../../rust/Cargo.toml\" --package argus-bridge $profile --locked\n";
 		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -494,7 +494,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				ARCHS = arm64;
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -577,7 +577,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				ARCHS = arm64;
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -628,7 +628,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				ARCHS = arm64;
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;

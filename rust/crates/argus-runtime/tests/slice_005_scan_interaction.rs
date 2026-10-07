@@ -111,8 +111,13 @@ fn add_and_scan_duplicate_returns_already_configured_without_a_new_job() {
     let library = directory.path().join("Library");
     make_library(&library, 50);
     let selection = test_support::local_filesystem_root_selection(&library);
-    host.add_local_library_root_and_scan(selection.clone())
+    let first = host
+        .add_local_library_root_and_scan(selection.clone())
         .expect("first add and scan");
+    let job_run_id = match first {
+        AddLocalLibraryRootAndScanResult::AddedAndScanAdmitted(_, handle) => handle.job_run_id(),
+        _ => panic!("expected added and admitted"),
+    };
     let second = host
         .add_local_library_root_and_scan(selection)
         .expect("second add and scan");
@@ -120,11 +125,15 @@ fn add_and_scan_duplicate_returns_already_configured_without_a_new_job() {
         second,
         AddLocalLibraryRootAndScanResult::AlreadyConfigured(_)
     ));
+    // Jobs scopes are independent snapshots, so settle the original execution before
+    // counting rows; otherwise the same durable job can appear in both scopes.
+    assert_eq!(terminal_state(&host, job_run_id), JobRunState::Completed);
     let active = host
         .list_jobs(argus_application::ListJobsQuery::new(
             argus_application::ListJobsScope::Active,
         ))
         .expect("active jobs");
+    assert_eq!(active.total_count(), 0);
     let recent = host
         .list_jobs(argus_application::ListJobsQuery::new(
             argus_application::ListJobsScope::RecentTerminal {
@@ -133,7 +142,9 @@ fn add_and_scan_duplicate_returns_already_configured_without_a_new_job() {
             },
         ))
         .expect("recent jobs");
-    assert_eq!(active.total_count() + recent.total_count(), 1);
+    assert_eq!(recent.total_count(), 1);
+    assert_eq!(recent.items().len(), 1);
+    assert_eq!(recent.items()[0].job_run_id(), job_run_id);
     host.general_shutdown().expect("shutdown");
 }
 

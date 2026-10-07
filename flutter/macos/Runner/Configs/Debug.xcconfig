@@ -15,3 +15,7 @@ ENABLE_DEBUG_DYLIB = NO
 // FRB resolves C ABI symbols with dlsym against the main process. Force-load
 // includes the archive; export_dynamic preserves its global process exports.
 OTHER_LDFLAGS = $(inherited) -Wl,-export_dynamic -force_load "$(PROJECT_DIR)/../../rust/target/debug/libargus_bridge.a"
+
+// Cargo profile the native bridge build phase produces. Must match the Cargo
+// output directory used by the phase's declared archive path (rust/target/debug).
+ARGUS_RUST_PROFILE = debug

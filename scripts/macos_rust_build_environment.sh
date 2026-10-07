@@ -2,8 +2,16 @@
 set -euo pipefail
 
 ARGUS_MACOS_RUST_TARGET="aarch64-apple-darwin"
-ARGUS_MACOS_DEPLOYMENT_TARGET_DEFAULT="11.0"
-ARGUS_MACOS_DEPLOYMENT_TARGET_METADATA_PREFIX="argus-macos-deployment-target-"
+# Product support floor for Apple Silicon macOS builds. The supported Xcode
+# toolchain no longer accepts 11.0 as a macOS deployment target, so 11.0 cannot
+# produce a linkable Release artifact. Callers that pass an explicit
+# MACOSX_DEPLOYMENT_TARGET keep their value; this default only applies when the
+# caller did not supply one.
+ARGUS_MACOS_DEPLOYMENT_TARGET_DEFAULT="12.0"
+# Cargo rebuilds when the effective Rustflags change, so the deployment target
+# only needs a benign marker in a Rustflags source. The marker is a custom cfg
+# token, which keeps Cargo's crate-identity metadata untouched.
+ARGUS_MACOS_DEPLOYMENT_TARGET_RUSTFLAGS_PREFIX="--cfg=argus_macos_deployment_target_fingerprint_"
 ARGUS_MACOS_DEPLOYMENT_TARGET_CFLAGS_PREFIX="-DARGUS_MACOS_DEPLOYMENT_TARGET_FINGERPRINT="
 ARGUS_MACOS_ENV_ASSIGNMENTS=()
 ARGUS_MACOS_TARGET_CFG_OUTPUT=""
@@ -776,9 +784,10 @@ argus_cargo_config_has_native_target_rustflags() {
   return 1
 }
 
-# Convert the deployment target into shell-safe bytes for the Cargo metadata
-# salt. This keeps an unusual explicit value from becoming executable flag
-# text while still making every distinct value a distinct Cargo input.
+# Convert the deployment target into shell-safe bytes for the Cargo Rust
+# fingerprint marker and the native CFLAGS fingerprint. This keeps an unusual
+# explicit value from becoming executable flag text while still making every
+# distinct deployment target a distinct build input.
 argus_deployment_target_fingerprint() {
   local deployment_target="$1"
 
@@ -861,9 +870,13 @@ argus_append_space_separated_value() {
   export "${variable_name?}"
 }
 
+# Append the deployment-target fingerprint marker to a space-separated
+# Rustflags source. The marker is a self-contained `--cfg=<name>` token, so
+# the same text can be appended to every Rustflags representation without
+# altering caller-supplied flags or Cargo's crate-identity metadata.
 argus_append_space_separated_rustflag() {
   local marker="$2"
-  argus_append_space_separated_value "$1" "-C metadata=${marker}" "$marker"
+  argus_append_space_separated_value "$1" "$marker" "$marker"
 }
 
 argus_append_encoded_rustflag() {
@@ -878,7 +891,7 @@ argus_append_encoded_rustflag() {
   if [[ -n "$existing_value" ]]; then
     existing_value+="$separator"
   fi
-  existing_value+="-C${separator}metadata=${marker}"
+  existing_value+="$marker"
   export CARGO_ENCODED_RUSTFLAGS="$existing_value"
 }
 
@@ -955,14 +968,15 @@ argus_configure_macos_rust_build_environment() {
   deployment_target_fingerprint="$(argus_deployment_target_fingerprint "$MACOSX_DEPLOYMENT_TARGET")"
 
   local deployment_target_marker
-  deployment_target_marker="${ARGUS_MACOS_DEPLOYMENT_TARGET_METADATA_PREFIX}${deployment_target_fingerprint}"
+  deployment_target_marker="${ARGUS_MACOS_DEPLOYMENT_TARGET_RUSTFLAGS_PREFIX}${deployment_target_fingerprint}"
 
   # Cargo 1.97.1 gives encoded environment flags and RUSTFLAGS precedence over
   # lower configuration sources. Matching target-specific environment flags
   # combine with matching target configuration, while target configuration
   # otherwise outranks build.rustflags. CARGO_BUILD_RUSTFLAGS combines with
-  # build.rustflags when no higher source is active. Add the fingerprint to
-  # the highest effective source so caller flags remain effective.
+  # build.rustflags when no higher source is active. Add the marker to the
+  # highest effective source so caller flags remain effective and Cargo sees a
+  # distinct Rustflags fingerprint for every deployment target.
   if declare -p CARGO_ENCODED_RUSTFLAGS >/dev/null 2>&1; then
     argus_append_encoded_rustflag "$deployment_target_marker"
   elif declare -p RUSTFLAGS >/dev/null 2>&1; then

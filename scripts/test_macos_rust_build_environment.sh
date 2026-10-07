@@ -70,7 +70,6 @@ assert_occurrences() {
 # metadata deployment marker. The deployment fingerprint must only ever appear
 # as the benign `--cfg=` marker so Cargo keeps ownership of crate identity.
 assert_no_cargo_metadata_deployment_marker() {
-  local description="${1:-effective Rust flags}"
   local variable_name
   local value
   for variable_name in \
@@ -80,7 +79,7 @@ assert_no_cargo_metadata_deployment_marker() {
     CARGO_BUILD_RUSTFLAGS; do
     value="${!variable_name-}"
     if [[ "$value" == *"metadata=argus-macos-deployment-target-"* ]]; then
-      fail "$description ($variable_name injects a Cargo metadata deployment marker)"
+      fail "effective Rust flags ($variable_name injects a Cargo metadata deployment marker)"
     fi
   done
 }

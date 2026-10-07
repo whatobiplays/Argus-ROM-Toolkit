@@ -1,0 +1,19 @@
+scripts/test_macos_rust_build_environment.sh
+  s_fe61cd68deb388::t_4a694d56923afd 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebf98983c783391b901b351df6fccdd2e06293ac",
+  "prompts": {},
+  "sessions": {
+    "s_fe61cd68deb388": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11777-4820-76f2-be4d-dd2d18a84dad",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

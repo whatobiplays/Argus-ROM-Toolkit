@@ -1,0 +1,19 @@
+.gitignore
+  s_77526cd259d6cd::t_8f2a4c09625e74 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c945062c0927508ae294c51c2b7d5719a35e5906",
+  "prompts": {},
+  "sessions": {
+    "s_77526cd259d6cd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1191a-7001-7860-9d83-e9e85282eb6c",
+        "model": "unknown"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

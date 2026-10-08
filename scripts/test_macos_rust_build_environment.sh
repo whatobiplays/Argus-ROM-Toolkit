@@ -472,9 +472,18 @@ assert_file_contains "$ROOT_DIR/flutter/macos/Runner/Configs/Debug.xcconfig" \
   'ARGUS_RUST_PROFILE = debug'
 assert_file_contains "$ROOT_DIR/flutter/macos/Runner/Configs/Release.xcconfig" \
   'ARGUS_RUST_PROFILE = release'
-assert_effective_argus_rust_profile Debug debug
-assert_effective_argus_rust_profile Release release
-assert_effective_argus_rust_profile Profile release
+# Resolving effective Xcode build settings requires the xcodebuild tool, which
+# only exists on Darwin. The static configuration assertions above remain
+# platform-neutral; a Darwin host without xcodebuild fails here rather than
+# silently skipping the dynamic proof.
+if [[ "$(uname -s)" == Darwin ]]; then
+  command -v xcodebuild >/dev/null 2>&1 ||
+    fail "Required developer tool missing: xcodebuild"
+
+  assert_effective_argus_rust_profile Debug debug
+  assert_effective_argus_rust_profile Release release
+  assert_effective_argus_rust_profile Profile release
+fi
 assert_file_contains "$ROOT_DIR/justfile" "build-macos-debug:"
 assert_file_contains "$ROOT_DIR/justfile" \
   "fvm flutter build macos --debug --no-pub"

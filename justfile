@@ -94,6 +94,7 @@ _architecture:
     bash scripts/check_rust_dependencies.sh
 
 test:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/phase_003_android_physical_qualification -p 'test_*.py'
     bash scripts/test_macos_frb_exports.sh
     bash scripts/test_macos_rust_build_environment.sh
     @bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --workspace --all-features --locked

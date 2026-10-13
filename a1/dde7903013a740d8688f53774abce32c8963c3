@@ -1,0 +1,53 @@
+flutter/lib/core/bridge/generated/frb_generated.dart
+  s_114f2ab5f373bf::t_d3f92d2b09c78c 4460-4461,4471,7758,7768,10657
+flutter/lib/core/bridge/generated/lib.dart
+  s_114f2ab5f373bf::t_e1bbbed4acb4d5 11,3080,3091-3093,3103,3115-3116,3130-3131
+flutter/lib/core/bridge/src/frb_argus_client_gateway.dart
+  s_5d62df6b616a0e::t_0d162f5da6d4c5 2213,2309
+flutter/lib/core/client/src/models.dart
+  s_5d62df6b616a0e::t_9064752fe51d48 509,521
+flutter/lib/core/client/src/models.freezed.dart
+  s_114f2ab5f373bf::t_574949957ace2e 3922,3933,3938,3942,3953,3970,3980-3981,4063,4066,4084,4087,4101,4104,4116,4127,4139,4144,4148,4159,4176,4186-4187
+flutter/lib/features/jobs/presentation/job_detail_page.dart
+  s_5d62df6b616a0e::t_9ef7187c9750cd 342,379-397,479
+flutter/lib/features/jobs/presentation/jobs_messages.dart
+  s_5d62df6b616a0e::t_47bd90820cf353 56-79
+flutter/test/core/bridge/frb_mapper_test.dart
+  s_5d62df6b616a0e::t_8276c044a1ebbf 2-4,11-86,1299-1375
+flutter/test/features/jobs/jobs_feature_test.dart
+  s_5d62df6b616a0e::t_1accff1177a8f4 3,14-65,365-587,805,811-813,825-829,849-859,881-883,886,889-932
+rust/crates/argus-application/src/jobs.rs
+  s_5d62df6b616a0e::t_90c3af3f866c74 696,707,722,733,776-780
+rust/crates/argus-bridge/src/frb_generated.rs
+  s_114f2ab5f373bf::t_70492c5222aed4 4633,4643,7693,10245
+rust/crates/argus-bridge/src/lib.rs
+  s_5d62df6b616a0e::t_17f06ed24cf666 1089,1100-1101,4312-4328,4346-4523
+rust/crates/argus-infrastructure/src/sqlite/jobs.rs
+  s_5d62df6b616a0e::t_c08290596cd669 526,542,551,561,2287,2306,2323,2334
+rust/crates/argus-infrastructure/tests/jobs.rs
+  s_5d62df6b616a0e::t_d3b0ac9614ee2f 203-353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1dde7903013a740d8688f53774abce32c8963c3",
+  "prompts": {},
+  "sessions": {
+    "s_114f2ab5f373bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a131eb-094b-7511-b8c2-968e753db58d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_5d62df6b616a0e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a131c2-ae01-7141-874c-cf889bf8eb74",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

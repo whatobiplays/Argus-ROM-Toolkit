@@ -339,13 +339,7 @@ class _JobDetailContent extends StatelessWidget {
                         : Text(exclusion.applicationError!.code.value),
                   ),
               ],
-              for (final scan in scanDetail.scanRuns)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.folder_outlined),
-                  title: Text(scan.displayName),
-                  subtitle: Text(_scanStatusLabel(scan.status)),
-                ),
+              ..._buildScanRunTiles(scanDetail.scanRuns),
               if (scanDetail.retrySourceJobRunId != null ||
                   scanDetail.retrySuccessorJobRunId != null) ...[
                 const Divider(height: 32),
@@ -381,6 +375,25 @@ class _JobDetailContent extends StatelessWidget {
     RetryNotAdmittedReasonNoEligibleTargets() =>
       JobsMessages.retryNoEligibleTargets,
   };
+
+  List<Widget> _buildScanRunTiles(List<ScanRunSummary> scanRuns) => [
+    for (final scan in scanRuns)
+      ListTile(
+        dense: true,
+        leading: const Icon(Icons.folder_outlined),
+        title: Text(scan.displayName),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_scanStatusLabel(scan.status)),
+            if (scan.status == JobScanStatus.failed ||
+                scan.status == JobScanStatus.partial)
+              Text(JobsMessages.scanFailureReasonLabel(scan.failureReason)),
+          ],
+        ),
+      ),
+  ];
 
   Widget _buildNonScanDetail(BuildContext context, JobDetail detail) {
     final operationLabel = switch (detail.operationDetail) {
@@ -463,6 +476,7 @@ class _JobDetailContent extends StatelessWidget {
                 Text('Mode: ${detail.mode}'),
                 if (detail.triggerRootId != null)
                   Text('Root: ${detail.triggerRootId}'),
+                ..._buildScanRunTiles(detail.scanRuns),
               ],
               if (detail.operationDetail case OperationDetailGameRefresh(
                 :final detail,

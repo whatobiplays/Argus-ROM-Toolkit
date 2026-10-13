@@ -1,12 +1,89 @@
 import 'package:argus/core/bridge/generated/frb_generated.dart' as frb;
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:argus/core/bridge/generated/lib.dart' as dto;
 import 'package:argus/core/bridge/src/frb_argus_client_gateway.dart';
 import 'package:argus/core/client/client.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'dart:async';
-import 'dart:typed_data';
 
 void main() {
+  test('scan run DTO preserves failure reason and child identity', () {
+    final summary = scanRunSummaryFromDto(
+      dto.ScanRunDto(
+        scanRunId: '22222222222222222222222222222222',
+        jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        libraryRootId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        displayName: 'ROMs',
+        safeLocationDisplay: '/library/ROMs',
+        status: dto.ScanRunStatusDto.failed,
+        startedAtMs: 1,
+        failureReason: 'execution_host_timeout',
+      ),
+    );
+
+    expect(summary.scanRunId.value, '22222222222222222222222222222222');
+    expect(summary.libraryRootId.value, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    expect(summary.failureReason, 'execution_host_timeout');
+  });
+
+  test('library scan detail maps scan run failure reasons', () {
+    final detail = libraryScanJobDetailFromDto(
+      dto.LibraryScanJobDetailDto(
+        requestedRoots: const [],
+        admittedRoots: const [],
+        exclusions: const [],
+        scanRuns: [
+          dto.ScanRunDto(
+            scanRunId: '11111111111111111111111111111111',
+            jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            libraryRootId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            displayName: 'Games',
+            safeLocationDisplay: '/library/Games',
+            status: dto.ScanRunStatusDto.failed,
+            startedAtMs: 10,
+            completedAtMs: 20,
+            failureReason: 'incomplete_scope',
+          ),
+          dto.ScanRunDto(
+            scanRunId: '22222222222222222222222222222222',
+            jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            libraryRootId: 'cccccccccccccccccccccccccccccccc',
+            displayName: 'ROMs',
+            safeLocationDisplay: '/library/ROMs',
+            status: dto.ScanRunStatusDto.complete,
+            startedAtMs: 30,
+          ),
+        ],
+        progress: const dto.ScanProgressFactsDto(
+          rootsRequested: 2,
+          rootsAdmitted: 2,
+          rootsTerminal: 2,
+        ),
+      ),
+    );
+
+    expect(detail.scanRuns.map((scan) => scan.scanRunId.value), [
+      '11111111111111111111111111111111',
+      '22222222222222222222222222222222',
+    ]);
+    expect(detail.scanRuns.map((scan) => scan.libraryRootId.value), [
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      'cccccccccccccccccccccccccccccccc',
+    ]);
+    expect(detail.scanRuns.map((scan) => scan.displayName), ['Games', 'ROMs']);
+    expect(detail.scanRuns.map((scan) => scan.status), [
+      JobScanStatus.failed,
+      JobScanStatus.complete,
+    ]);
+    expect(detail.scanRuns.map((scan) => scan.startedAtMs), [10, 30]);
+    expect(detail.scanRuns.map((scan) => scan.completedAtMs), [20, null]);
+    expect(detail.scanRuns.map((scan) => scan.failureReason), [
+      'incomplete_scope',
+      null,
+    ]);
+  });
+
   test('refresh progress DTO maps bounded typed issue facts', () {
     final progress = refreshProgressFactsFromDto(
       dto.RefreshProgressFactsDto(
@@ -1217,6 +1294,83 @@ void main() {
     expect(detail.job.controls.canCancel, isTrue);
     final scanDetail = detail.operationDetail as OperationDetailLibraryScan;
     expect(scanDetail.detail.progress.entriesCommitted, 3);
+  });
+
+  test('failed Library refresh DTO maps child scan runs in order', () {
+    final detail = jobDetailFromDto(
+      dto.JobDetailDto(
+        job: dto.JobRunDto(
+          jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          operationType: 'library_refresh',
+          state: dto.JobRunStateDto.failed,
+          phase: 'library_refresh.completed',
+          completedUnits: BigInt.from(4),
+          totalUnits: BigInt.from(5),
+          statusKey: 'failed',
+          createdAtMs: 1,
+          cancellationRequested: false,
+          controls: const dto.JobControlAvailabilityDto(
+            canCancel: false,
+            canRetry: true,
+          ),
+          boundedTerminalFailure: null,
+        ),
+        operationDetail: dto.OperationDetailDto_LibraryRefresh(
+          dto.LibraryRefreshJobDetailDto(
+            trigger: 'manual',
+            mode: 'eligible_only',
+            requestedRootIds: const [
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              'cccccccccccccccccccccccccccccccc',
+            ],
+            scanRuns: [
+              dto.ScanRunDto(
+                scanRunId: '11111111111111111111111111111111',
+                jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                libraryRootId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                displayName: 'Games',
+                safeLocationDisplay: '/library/Games',
+                status: dto.ScanRunStatusDto.failed,
+                startedAtMs: 1,
+                failureReason: 'execution_host_timeout',
+              ),
+              dto.ScanRunDto(
+                scanRunId: '22222222222222222222222222222222',
+                jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                libraryRootId: 'cccccccccccccccccccccccccccccccc',
+                displayName: 'ROMs',
+                safeLocationDisplay: '/library/ROMs',
+                status: dto.ScanRunStatusDto.partial,
+                startedAtMs: 2,
+              ),
+            ],
+            progress: dto.RefreshProgressFactsDto(
+              phase: 'library_refresh.completed',
+              completedUnits: BigInt.from(4),
+              totalUnits: BigInt.from(5),
+              statusKey: 'failed',
+              issues: [],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(detail.job.lifecycleState, JobLifecycleState.failed);
+    expect(detail.job.phase, 'library_refresh.completed');
+    expect(detail.job.controls.canRetry, isTrue);
+    final refreshDetail =
+        (detail.operationDetail as OperationDetailLibraryRefresh).detail;
+    expect(refreshDetail.scanRuns.map((scan) => scan.scanRunId.value), [
+      '11111111111111111111111111111111',
+      '22222222222222222222222222222222',
+    ]);
+    expect(refreshDetail.scanRuns.map((scan) => scan.libraryRootId.value), [
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      'cccccccccccccccccccccccccccccccc',
+    ]);
+    expect(refreshDetail.scanRuns[0].failureReason, 'execution_host_timeout');
+    expect(refreshDetail.scanRuns[1].failureReason, isNull);
   });
 
   test('job and source-entry event payloads map with bounded identity', () {

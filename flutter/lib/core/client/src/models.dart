@@ -506,7 +506,7 @@ sealed class JobRunProjection with _$JobRunProjection {
   }) = _JobRunProjection;
 }
 
-/// One per-root scan projection with its historical display snapshot.
+/// One per-root scan projection with its historical display snapshot and stored failure code.
 @freezed
 sealed class ScanRunSummary with _$ScanRunSummary {
   const factory ScanRunSummary({
@@ -518,6 +518,7 @@ sealed class ScanRunSummary with _$ScanRunSummary {
     required JobScanStatus status,
     required int startedAtMs,
     int? completedAtMs,
+    String? failureReason,
   }) = _ScanRunSummary;
 }
 

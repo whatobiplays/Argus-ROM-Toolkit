@@ -4630,6 +4630,7 @@ impl SseDecode for crate::ScanRunDto {
         let mut var_status = <crate::ScanRunStatusDto>::sse_decode(deserializer);
         let mut var_startedAtMs = <i64>::sse_decode(deserializer);
         let mut var_completedAtMs = <Option<i64>>::sse_decode(deserializer);
+        let mut var_failureReason = <Option<String>>::sse_decode(deserializer);
         return crate::ScanRunDto {
             scan_run_id: var_scanRunId,
             job_run_id: var_jobRunId,
@@ -4639,6 +4640,7 @@ impl SseDecode for crate::ScanRunDto {
             status: var_status,
             started_at_ms: var_startedAtMs,
             completed_at_ms: var_completedAtMs,
+            failure_reason: var_failureReason,
         };
     }
 }
@@ -7688,6 +7690,7 @@ impl flutter_rust_bridge::IntoDart for crate::ScanRunDto {
             self.status.into_into_dart().into_dart(),
             self.started_at_ms.into_into_dart().into_dart(),
             self.completed_at_ms.into_into_dart().into_dart(),
+            self.failure_reason.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -10239,6 +10242,7 @@ impl SseEncode for crate::ScanRunDto {
         <crate::ScanRunStatusDto>::sse_encode(self.status, serializer);
         <i64>::sse_encode(self.started_at_ms, serializer);
         <Option<i64>>::sse_encode(self.completed_at_ms, serializer);
+        <Option<String>>::sse_encode(self.failure_reason, serializer);
     }
 }
 

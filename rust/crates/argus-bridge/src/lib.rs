@@ -1086,7 +1086,7 @@ pub struct JobRunDto {
     pub bounded_terminal_failure: Option<BoundedTerminalFailureDto>,
 }
 
-/// One per-root scan projection with its historical display snapshot.
+/// One per-root scan projection with its bounded historical display and failure data.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScanRunDto {
     pub scan_run_id: String,
@@ -1097,6 +1097,8 @@ pub struct ScanRunDto {
     pub status: ScanRunStatusDto,
     pub started_at_ms: i64,
     pub completed_at_ms: Option<i64>,
+    /// Recognized durable failure code for this child, when one is available.
+    pub failure_reason: Option<String>,
 }
 
 /// Bounded historical root display summary.
@@ -4307,6 +4309,23 @@ pub fn library_scan_all_request_resolution_dto(
     }
 }
 
+/// Keeps only producer-owned failure codes at the public bridge boundary.
+fn safe_scan_failure_reason(reason: Option<&str>) -> Option<String> {
+    let reason = reason?;
+    matches!(
+        reason,
+        "source_access_failed"
+            | "source_unavailable"
+            | "admission_registration_failed"
+            | "execution_host_timeout"
+            | "execution_host_lost"
+            | "finalization_authority_changed"
+            | "incomplete_scope"
+            | "internal"
+    )
+    .then(|| reason.to_owned())
+}
+
 fn scan_run_dto(scan: &ScanRunProjection) -> ScanRunDto {
     ScanRunDto {
         scan_run_id: scan.scan_run_id().to_string(),
@@ -4324,6 +4343,184 @@ fn scan_run_dto(scan: &ScanRunProjection) -> ScanRunDto {
         },
         started_at_ms: scan.started_at_ms(),
         completed_at_ms: scan.completed_at_ms(),
+        failure_reason: safe_scan_failure_reason(scan.failure_reason()),
+    }
+}
+
+#[cfg(test)]
+mod scan_run_dto_tests {
+    use super::*;
+
+    fn scan_run(
+        scan_run_id: &str,
+        library_root_id: &str,
+        status: ScanRunStatus,
+        failure_reason: Option<&str>,
+    ) -> ScanRunProjection {
+        ScanRunProjection::new(
+            argus_application::ScanRunId::try_from(scan_run_id).expect("scan run id"),
+            JobRunId::from_bytes([0xaa; 16]).expect("job run id"),
+            LibraryRootId::try_from(library_root_id).expect("library root id"),
+            library_root_id,
+            "/library/root",
+            status,
+            1,
+            Some(2),
+            failure_reason.map(str::to_owned),
+        )
+    }
+
+    #[test]
+    fn maps_known_child_reasons_to_their_own_identity() {
+        let scan_runs = [
+            scan_run(
+                "22222222222222222222222222222222",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                ScanRunStatus::Failed,
+                Some("execution_host_timeout"),
+            ),
+            scan_run(
+                "33333333333333333333333333333333",
+                "cccccccccccccccccccccccccccccccc",
+                ScanRunStatus::Partial,
+                Some("incomplete_scope"),
+            ),
+        ]
+        .map(|scan| scan_run_dto(&scan));
+
+        assert_eq!(scan_runs[0].scan_run_id, "22222222222222222222222222222222");
+        assert_eq!(
+            scan_runs[0].library_root_id,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+        assert_eq!(scan_runs[0].status, ScanRunStatusDto::Failed);
+        assert_eq!(
+            scan_runs[0].failure_reason.as_deref(),
+            Some("execution_host_timeout")
+        );
+        assert_eq!(scan_runs[1].scan_run_id, "33333333333333333333333333333333");
+        assert_eq!(
+            scan_runs[1].library_root_id,
+            "cccccccccccccccccccccccccccccccc"
+        );
+        assert_eq!(scan_runs[1].status, ScanRunStatusDto::Partial);
+        assert_eq!(
+            scan_runs[1].failure_reason.as_deref(),
+            Some("incomplete_scope")
+        );
+
+        for reason in [
+            "source_access_failed",
+            "source_unavailable",
+            "admission_registration_failed",
+            "execution_host_timeout",
+            "execution_host_lost",
+            "finalization_authority_changed",
+            "incomplete_scope",
+            "internal",
+        ] {
+            assert_eq!(
+                safe_scan_failure_reason(Some(reason)).as_deref(),
+                Some(reason)
+            );
+        }
+    }
+
+    #[test]
+    fn library_refresh_dto_retains_child_runs_and_sanitizes_reasons() {
+        let root_values = [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cccccccccccccccccccccccccccccccc",
+            "dddddddddddddddddddddddddddddddd",
+        ];
+        let root_ids = root_values.map(|id| LibraryRootId::try_from(id).expect("root id"));
+        let detail = argus_application::LibraryRefreshJobDetail::new(
+            argus_application::LibraryRefreshTrigger::Manual,
+            argus_application::RefreshMode::EligibleOnly,
+            root_ids.to_vec(),
+            argus_application::RefreshProgressFacts::new(
+                Some("library_refresh.completed".to_owned()),
+                Some(4),
+                Some(5),
+                Some("failed".to_owned()),
+                None,
+            )
+            .expect("refresh progress"),
+            None,
+            None,
+        )
+        .with_scan_runs(vec![
+            scan_run(
+                "22222222222222222222222222222222",
+                root_values[0],
+                ScanRunStatus::Failed,
+                Some("execution_host_timeout"),
+            ),
+            scan_run(
+                "33333333333333333333333333333333",
+                root_values[1],
+                ScanRunStatus::Partial,
+                None,
+            ),
+            scan_run(
+                "44444444444444444444444444444444",
+                root_values[2],
+                ScanRunStatus::Failed,
+                Some("/private/test/path SELECT * FROM credentials"),
+            ),
+        ]);
+
+        let dto = library_refresh_job_detail_dto(&detail);
+
+        assert_eq!(
+            dto.progress.phase.as_deref(),
+            Some("library_refresh.completed")
+        );
+        assert_eq!(dto.scan_runs.len(), 3);
+        assert_eq!(
+            dto.scan_runs[0].scan_run_id,
+            "22222222222222222222222222222222"
+        );
+        assert_eq!(dto.scan_runs[0].library_root_id, root_ids[0].to_string());
+        assert_eq!(
+            dto.scan_runs[0].failure_reason.as_deref(),
+            Some("execution_host_timeout")
+        );
+        assert_eq!(
+            dto.scan_runs[1].scan_run_id,
+            "33333333333333333333333333333333"
+        );
+        assert_eq!(dto.scan_runs[1].library_root_id, root_ids[1].to_string());
+        assert_eq!(dto.scan_runs[1].failure_reason, None);
+        assert_eq!(
+            dto.scan_runs[2].scan_run_id,
+            "44444444444444444444444444444444"
+        );
+        assert_eq!(dto.scan_runs[2].library_root_id, root_ids[2].to_string());
+        assert_eq!(dto.scan_runs[2].failure_reason, None);
+    }
+
+    #[test]
+    fn strips_unknown_and_hostile_reasons_from_the_public_dto() {
+        let scan = scan_run(
+            "44444444444444444444444444444444",
+            "dddddddddddddddddddddddddddddddd",
+            ScanRunStatus::Failed,
+            Some("/data/user/0/app/private.key SELECT * FROM credentials"),
+        );
+
+        let dto = scan_run_dto(&scan);
+        assert_eq!(dto.scan_run_id, "44444444444444444444444444444444");
+        assert_eq!(dto.library_root_id, "dddddddddddddddddddddddddddddddd");
+        assert_eq!(dto.failure_reason, None);
+
+        let absent = scan_run(
+            "55555555555555555555555555555555",
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            ScanRunStatus::Failed,
+            None,
+        );
+        assert_eq!(scan_run_dto(&absent).failure_reason, None);
     }
 }
 

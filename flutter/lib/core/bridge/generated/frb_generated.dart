@@ -4457,8 +4457,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ScanRunDto dco_decode_scan_run_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return ScanRunDto(
       scanRunId: dco_decode_String(arr[0]),
       jobRunId: dco_decode_String(arr[1]),
@@ -4468,6 +4468,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       status: dco_decode_scan_run_status_dto(arr[5]),
       startedAtMs: dco_decode_i_64(arr[6]),
       completedAtMs: dco_decode_opt_box_autoadd_i_64(arr[7]),
+      failureReason: dco_decode_opt_String(arr[8]),
     );
   }
 
@@ -7754,6 +7755,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_status = sse_decode_scan_run_status_dto(deserializer);
     var var_startedAtMs = sse_decode_i_64(deserializer);
     var var_completedAtMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_failureReason = sse_decode_opt_String(deserializer);
     return ScanRunDto(
       scanRunId: var_scanRunId,
       jobRunId: var_jobRunId,
@@ -7763,6 +7765,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       status: var_status,
       startedAtMs: var_startedAtMs,
       completedAtMs: var_completedAtMs,
+      failureReason: var_failureReason,
     );
   }
 
@@ -10651,6 +10654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_scan_run_status_dto(self.status, serializer);
     sse_encode_i_64(self.startedAtMs, serializer);
     sse_encode_opt_box_autoadd_i_64(self.completedAtMs, serializer);
+    sse_encode_opt_String(self.failureReason, serializer);
   }
 
   @protected

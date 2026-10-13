@@ -693,7 +693,7 @@ impl std::fmt::Display for ScanRunStatusParseError {
 
 impl std::error::Error for ScanRunStatusParseError {}
 
-/// One per-root scan projection with its historical display snapshot.
+/// One per-root scan projection with its historical display snapshot and stored failure code.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScanRunProjection {
     scan_run_id: ScanRunId,
@@ -704,6 +704,7 @@ pub struct ScanRunProjection {
     status: ScanRunStatus,
     started_at_ms: i64,
     completed_at_ms: Option<i64>,
+    failure_reason: Option<String>,
 }
 
 impl ScanRunProjection {
@@ -718,6 +719,7 @@ impl ScanRunProjection {
         status: ScanRunStatus,
         started_at_ms: i64,
         completed_at_ms: Option<i64>,
+        failure_reason: Option<String>,
     ) -> Self {
         Self {
             scan_run_id,
@@ -728,6 +730,7 @@ impl ScanRunProjection {
             status,
             started_at_ms,
             completed_at_ms,
+            failure_reason,
         }
     }
 
@@ -769,6 +772,11 @@ impl ScanRunProjection {
     /// Returns the scan terminal timestamp.
     pub fn completed_at_ms(&self) -> Option<i64> {
         self.completed_at_ms
+    }
+
+    /// Returns the stored failure code for this scan, when one was recorded.
+    pub fn failure_reason(&self) -> Option<&str> {
+        self.failure_reason.as_deref()
     }
 }
 

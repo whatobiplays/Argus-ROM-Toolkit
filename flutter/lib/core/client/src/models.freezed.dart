@@ -3919,7 +3919,7 @@ $BoundedTerminalFailureCopyWith<$Res>? get boundedTerminalFailure {
 /// @nodoc
 mixin _$ScanRunSummary {
 
- ScanRunId get scanRunId; JobRunId get jobRunId; LibraryRootId get libraryRootId; String get displayName; String get safeLocationDisplay; JobScanStatus get status; int get startedAtMs; int? get completedAtMs;
+ ScanRunId get scanRunId; JobRunId get jobRunId; LibraryRootId get libraryRootId; String get displayName; String get safeLocationDisplay; JobScanStatus get status; int get startedAtMs; int? get completedAtMs; String? get failureReason;
 /// Create a copy of ScanRunSummary
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -3930,16 +3930,16 @@ $ScanRunSummaryCopyWith<ScanRunSummary> get copyWith => _$ScanRunSummaryCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ScanRunSummary&&(identical(other.scanRunId, scanRunId) || other.scanRunId == scanRunId)&&(identical(other.jobRunId, jobRunId) || other.jobRunId == jobRunId)&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.safeLocationDisplay, safeLocationDisplay) || other.safeLocationDisplay == safeLocationDisplay)&&(identical(other.status, status) || other.status == status)&&(identical(other.startedAtMs, startedAtMs) || other.startedAtMs == startedAtMs)&&(identical(other.completedAtMs, completedAtMs) || other.completedAtMs == completedAtMs));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ScanRunSummary&&(identical(other.scanRunId, scanRunId) || other.scanRunId == scanRunId)&&(identical(other.jobRunId, jobRunId) || other.jobRunId == jobRunId)&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.safeLocationDisplay, safeLocationDisplay) || other.safeLocationDisplay == safeLocationDisplay)&&(identical(other.status, status) || other.status == status)&&(identical(other.startedAtMs, startedAtMs) || other.startedAtMs == startedAtMs)&&(identical(other.completedAtMs, completedAtMs) || other.completedAtMs == completedAtMs)&&(identical(other.failureReason, failureReason) || other.failureReason == failureReason));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,scanRunId,jobRunId,libraryRootId,displayName,safeLocationDisplay,status,startedAtMs,completedAtMs);
+int get hashCode => Object.hash(runtimeType,scanRunId,jobRunId,libraryRootId,displayName,safeLocationDisplay,status,startedAtMs,completedAtMs,failureReason);
 
 @override
 String toString() {
-  return 'ScanRunSummary(scanRunId: $scanRunId, jobRunId: $jobRunId, libraryRootId: $libraryRootId, displayName: $displayName, safeLocationDisplay: $safeLocationDisplay, status: $status, startedAtMs: $startedAtMs, completedAtMs: $completedAtMs)';
+  return 'ScanRunSummary(scanRunId: $scanRunId, jobRunId: $jobRunId, libraryRootId: $libraryRootId, displayName: $displayName, safeLocationDisplay: $safeLocationDisplay, status: $status, startedAtMs: $startedAtMs, completedAtMs: $completedAtMs, failureReason: $failureReason)';
 }
 
 
@@ -3950,7 +3950,7 @@ abstract mixin class $ScanRunSummaryCopyWith<$Res>  {
   factory $ScanRunSummaryCopyWith(ScanRunSummary value, $Res Function(ScanRunSummary) _then) = _$ScanRunSummaryCopyWithImpl;
 @useResult
 $Res call({
- ScanRunId scanRunId, JobRunId jobRunId, LibraryRootId libraryRootId, String displayName, String safeLocationDisplay, JobScanStatus status, int startedAtMs, int? completedAtMs
+ ScanRunId scanRunId, JobRunId jobRunId, LibraryRootId libraryRootId, String displayName, String safeLocationDisplay, JobScanStatus status, int startedAtMs, int? completedAtMs, String? failureReason
 });
 
 
@@ -3967,7 +3967,7 @@ class _$ScanRunSummaryCopyWithImpl<$Res>
 
 /// Create a copy of ScanRunSummary
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? scanRunId = null,Object? jobRunId = null,Object? libraryRootId = null,Object? displayName = null,Object? safeLocationDisplay = null,Object? status = null,Object? startedAtMs = null,Object? completedAtMs = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? scanRunId = null,Object? jobRunId = null,Object? libraryRootId = null,Object? displayName = null,Object? safeLocationDisplay = null,Object? status = null,Object? startedAtMs = null,Object? completedAtMs = freezed,Object? failureReason = freezed,}) {
   return _then(_self.copyWith(
 scanRunId: null == scanRunId ? _self.scanRunId : scanRunId // ignore: cast_nullable_to_non_nullable
 as ScanRunId,jobRunId: null == jobRunId ? _self.jobRunId : jobRunId // ignore: cast_nullable_to_non_nullable
@@ -3977,7 +3977,8 @@ as String,safeLocationDisplay: null == safeLocationDisplay ? _self.safeLocationD
 as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as JobScanStatus,startedAtMs: null == startedAtMs ? _self.startedAtMs : startedAtMs // ignore: cast_nullable_to_non_nullable
 as int,completedAtMs: freezed == completedAtMs ? _self.completedAtMs : completedAtMs // ignore: cast_nullable_to_non_nullable
-as int?,
+as int?,failureReason: freezed == failureReason ? _self.failureReason : failureReason // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -4059,10 +4060,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( ScanRunId scanRunId,  JobRunId jobRunId,  LibraryRootId libraryRootId,  String displayName,  String safeLocationDisplay,  JobScanStatus status,  int startedAtMs,  int? completedAtMs)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( ScanRunId scanRunId,  JobRunId jobRunId,  LibraryRootId libraryRootId,  String displayName,  String safeLocationDisplay,  JobScanStatus status,  int startedAtMs,  int? completedAtMs,  String? failureReason)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ScanRunSummary() when $default != null:
-return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.displayName,_that.safeLocationDisplay,_that.status,_that.startedAtMs,_that.completedAtMs);case _:
+return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.displayName,_that.safeLocationDisplay,_that.status,_that.startedAtMs,_that.completedAtMs,_that.failureReason);case _:
   return orElse();
 
 }
@@ -4080,10 +4081,10 @@ return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.display
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( ScanRunId scanRunId,  JobRunId jobRunId,  LibraryRootId libraryRootId,  String displayName,  String safeLocationDisplay,  JobScanStatus status,  int startedAtMs,  int? completedAtMs)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( ScanRunId scanRunId,  JobRunId jobRunId,  LibraryRootId libraryRootId,  String displayName,  String safeLocationDisplay,  JobScanStatus status,  int startedAtMs,  int? completedAtMs,  String? failureReason)  $default,) {final _that = this;
 switch (_that) {
 case _ScanRunSummary():
-return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.displayName,_that.safeLocationDisplay,_that.status,_that.startedAtMs,_that.completedAtMs);}
+return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.displayName,_that.safeLocationDisplay,_that.status,_that.startedAtMs,_that.completedAtMs,_that.failureReason);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -4097,10 +4098,10 @@ return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.display
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( ScanRunId scanRunId,  JobRunId jobRunId,  LibraryRootId libraryRootId,  String displayName,  String safeLocationDisplay,  JobScanStatus status,  int startedAtMs,  int? completedAtMs)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( ScanRunId scanRunId,  JobRunId jobRunId,  LibraryRootId libraryRootId,  String displayName,  String safeLocationDisplay,  JobScanStatus status,  int startedAtMs,  int? completedAtMs,  String? failureReason)?  $default,) {final _that = this;
 switch (_that) {
 case _ScanRunSummary() when $default != null:
-return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.displayName,_that.safeLocationDisplay,_that.status,_that.startedAtMs,_that.completedAtMs);case _:
+return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.displayName,_that.safeLocationDisplay,_that.status,_that.startedAtMs,_that.completedAtMs,_that.failureReason);case _:
   return null;
 
 }
@@ -4112,7 +4113,7 @@ return $default(_that.scanRunId,_that.jobRunId,_that.libraryRootId,_that.display
 
 
 class _ScanRunSummary implements ScanRunSummary {
-  const _ScanRunSummary({required this.scanRunId, required this.jobRunId, required this.libraryRootId, required this.displayName, required this.safeLocationDisplay, required this.status, required this.startedAtMs, this.completedAtMs});
+  const _ScanRunSummary({required this.scanRunId, required this.jobRunId, required this.libraryRootId, required this.displayName, required this.safeLocationDisplay, required this.status, required this.startedAtMs, this.completedAtMs, this.failureReason});
 
 
 @override final  ScanRunId scanRunId;
@@ -4123,6 +4124,7 @@ class _ScanRunSummary implements ScanRunSummary {
 @override final  JobScanStatus status;
 @override final  int startedAtMs;
 @override final  int? completedAtMs;
+@override final  String? failureReason;
 
 /// Create a copy of ScanRunSummary
 /// with the given fields replaced by the non-null parameter values.
@@ -4134,16 +4136,16 @@ _$ScanRunSummaryCopyWith<_ScanRunSummary> get copyWith => __$ScanRunSummaryCopyW
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ScanRunSummary&&(identical(other.scanRunId, scanRunId) || other.scanRunId == scanRunId)&&(identical(other.jobRunId, jobRunId) || other.jobRunId == jobRunId)&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.safeLocationDisplay, safeLocationDisplay) || other.safeLocationDisplay == safeLocationDisplay)&&(identical(other.status, status) || other.status == status)&&(identical(other.startedAtMs, startedAtMs) || other.startedAtMs == startedAtMs)&&(identical(other.completedAtMs, completedAtMs) || other.completedAtMs == completedAtMs));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ScanRunSummary&&(identical(other.scanRunId, scanRunId) || other.scanRunId == scanRunId)&&(identical(other.jobRunId, jobRunId) || other.jobRunId == jobRunId)&&(identical(other.libraryRootId, libraryRootId) || other.libraryRootId == libraryRootId)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.safeLocationDisplay, safeLocationDisplay) || other.safeLocationDisplay == safeLocationDisplay)&&(identical(other.status, status) || other.status == status)&&(identical(other.startedAtMs, startedAtMs) || other.startedAtMs == startedAtMs)&&(identical(other.completedAtMs, completedAtMs) || other.completedAtMs == completedAtMs)&&(identical(other.failureReason, failureReason) || other.failureReason == failureReason));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,scanRunId,jobRunId,libraryRootId,displayName,safeLocationDisplay,status,startedAtMs,completedAtMs);
+int get hashCode => Object.hash(runtimeType,scanRunId,jobRunId,libraryRootId,displayName,safeLocationDisplay,status,startedAtMs,completedAtMs,failureReason);
 
 @override
 String toString() {
-  return 'ScanRunSummary(scanRunId: $scanRunId, jobRunId: $jobRunId, libraryRootId: $libraryRootId, displayName: $displayName, safeLocationDisplay: $safeLocationDisplay, status: $status, startedAtMs: $startedAtMs, completedAtMs: $completedAtMs)';
+  return 'ScanRunSummary(scanRunId: $scanRunId, jobRunId: $jobRunId, libraryRootId: $libraryRootId, displayName: $displayName, safeLocationDisplay: $safeLocationDisplay, status: $status, startedAtMs: $startedAtMs, completedAtMs: $completedAtMs, failureReason: $failureReason)';
 }
 
 
@@ -4154,7 +4156,7 @@ abstract mixin class _$ScanRunSummaryCopyWith<$Res> implements $ScanRunSummaryCo
   factory _$ScanRunSummaryCopyWith(_ScanRunSummary value, $Res Function(_ScanRunSummary) _then) = __$ScanRunSummaryCopyWithImpl;
 @override @useResult
 $Res call({
- ScanRunId scanRunId, JobRunId jobRunId, LibraryRootId libraryRootId, String displayName, String safeLocationDisplay, JobScanStatus status, int startedAtMs, int? completedAtMs
+ ScanRunId scanRunId, JobRunId jobRunId, LibraryRootId libraryRootId, String displayName, String safeLocationDisplay, JobScanStatus status, int startedAtMs, int? completedAtMs, String? failureReason
 });
 
 
@@ -4171,7 +4173,7 @@ class __$ScanRunSummaryCopyWithImpl<$Res>
 
 /// Create a copy of ScanRunSummary
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? scanRunId = null,Object? jobRunId = null,Object? libraryRootId = null,Object? displayName = null,Object? safeLocationDisplay = null,Object? status = null,Object? startedAtMs = null,Object? completedAtMs = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? scanRunId = null,Object? jobRunId = null,Object? libraryRootId = null,Object? displayName = null,Object? safeLocationDisplay = null,Object? status = null,Object? startedAtMs = null,Object? completedAtMs = freezed,Object? failureReason = freezed,}) {
   return _then(_ScanRunSummary(
 scanRunId: null == scanRunId ? _self.scanRunId : scanRunId // ignore: cast_nullable_to_non_nullable
 as ScanRunId,jobRunId: null == jobRunId ? _self.jobRunId : jobRunId // ignore: cast_nullable_to_non_nullable
@@ -4181,7 +4183,8 @@ as String,safeLocationDisplay: null == safeLocationDisplay ? _self.safeLocationD
 as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as JobScanStatus,startedAtMs: null == startedAtMs ? _self.startedAtMs : startedAtMs // ignore: cast_nullable_to_non_nullable
 as int,completedAtMs: freezed == completedAtMs ? _self.completedAtMs : completedAtMs // ignore: cast_nullable_to_non_nullable
-as int?,
+as int?,failureReason: freezed == failureReason ? _self.failureReason : failureReason // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

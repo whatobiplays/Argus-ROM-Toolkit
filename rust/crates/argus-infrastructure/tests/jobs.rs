@@ -201,6 +201,157 @@ fn job_scan_target_and_entry_records_persist_and_survive_restart() {
 }
 
 #[test]
+fn failed_library_refresh_child_reasons_survive_reopen_in_job_detail_projection() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let database = directory.path().join("argus.sqlite3");
+    let executor = SqliteDatabaseExecutor::open(&database).expect("database");
+    let now = 2_000;
+
+    let (job_run_id, mut expected_scans) = executor
+        .execute(&context(), move |mut scope| {
+            let source_id = scope.library_source().ensure_local_filesystem_source()?;
+            let job_run_id = scope
+                .job_runs()
+                .insert(NewJobRun::new("library_refresh", now))?;
+
+            let mut expected_scans = Vec::new();
+            for (display_name, safe_location, status, reason) in [
+                (
+                    "Games",
+                    "/library/Games",
+                    ScanRunStatus::Failed,
+                    Some("execution_host_timeout"),
+                ),
+                (
+                    "ROMs",
+                    "/library/ROMs",
+                    ScanRunStatus::Partial,
+                    Some("incomplete_scope"),
+                ),
+                ("BIOS", "/library/BIOS", ScanRunStatus::Failed, None),
+                (
+                    "Extras",
+                    "/library/Extras",
+                    ScanRunStatus::Failed,
+                    Some("/private/test/path SELECT * FROM credentials"),
+                ),
+            ] {
+                let root_id = scope.library_roots().insert(NewLibraryRoot::new(
+                    source_id,
+                    RootLocator::from_provider(safe_location.to_owned()),
+                    display_name.to_owned(),
+                    safe_location.to_owned(),
+                    LibraryRootAvailability::Available,
+                    1,
+                ))?;
+                let scan_run_id = scope.scan_runs().insert(NewScanRun::new(
+                    job_run_id,
+                    root_id,
+                    RootLocator::from_provider(safe_location.to_owned()),
+                    display_name,
+                    safe_location,
+                    1,
+                    1,
+                    now,
+                ))?;
+                scope
+                    .library_scan_targets()
+                    .insert(NewLibraryScanTarget::new(
+                        job_run_id,
+                        LibraryScanTargetKind::Requested,
+                        root_id,
+                        display_name,
+                        safe_location,
+                        None,
+                        None,
+                    ))?;
+                scope
+                    .library_scan_targets()
+                    .insert(NewLibraryScanTarget::new(
+                        job_run_id,
+                        LibraryScanTargetKind::Admitted,
+                        root_id,
+                        display_name,
+                        safe_location,
+                        Some(scan_run_id),
+                        None,
+                    ))?;
+                expected_scans.push((
+                    root_id,
+                    scan_run_id,
+                    display_name.to_owned(),
+                    status,
+                    reason.map(str::to_owned),
+                ));
+            }
+
+            scope
+                .job_runs()
+                .set_state(job_run_id, JobRunState::Running, now + 1)?;
+            let progress = JobProgress::new(
+                job_run_id,
+                "library_refresh.completed",
+                Some(4),
+                Some(4),
+                Some("library_refresh.completed"),
+                now + 2,
+            )
+            .expect("refresh progress");
+            scope.job_runs().set_progress(job_run_id, &progress)?;
+            for (_, scan_run_id, _, status, reason) in &expected_scans {
+                scope.scan_runs().set_status(
+                    *scan_run_id,
+                    *status,
+                    Some(now + 2),
+                    reason.clone(),
+                )?;
+            }
+            scope.job_runs().set_terminal_failure(
+                job_run_id,
+                JobRunState::Failed,
+                Some("ARGUS.V1.RUNTIME.STALE_INSTANCE".to_owned()),
+                Some("parent bounded failure context".to_owned()),
+                now + 3,
+            )?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>((job_run_id, expected_scans))
+        })
+        .expect("failed historical scan");
+    executor.shutdown().expect("shutdown");
+    expected_scans.sort_by_key(|(root_id, _, _, _, _)| root_id.to_string());
+
+    let reopened = SqliteDatabaseExecutor::open(&database).expect("reopened");
+    let detail = SqliteJobsQueries::new(reopened.clone())
+        .get_job(&context(), job_run_id)
+        .expect("get job")
+        .expect("job detail");
+    assert_eq!(detail.job().state(), JobRunState::Failed);
+    assert_eq!(
+        detail.job().terminal_error_code(),
+        Some("ARGUS.V1.RUNTIME.STALE_INSTANCE")
+    );
+    assert_eq!(
+        detail.job().terminal_safe_context(),
+        Some("parent bounded failure context")
+    );
+    assert_eq!(detail.job().phase(), Some("library_refresh.completed"));
+    assert_eq!(detail.job().status_key(), Some("library_refresh.completed"));
+    assert!(detail.job().controls().can_retry());
+    let OperationDetail::LibraryRefresh(refresh_detail) = detail.operation_detail() else {
+        panic!("expected library refresh operation detail");
+    };
+    assert_eq!(refresh_detail.scan_runs().len(), expected_scans.len());
+    for (scan, expected) in refresh_detail.scan_runs().iter().zip(expected_scans) {
+        assert_eq!(scan.library_root_id(), expected.0);
+        assert_eq!(scan.scan_run_id(), expected.1);
+        assert_eq!(scan.display_name(), expected.2);
+        assert_eq!(scan.status(), expected.3);
+        assert_eq!(scan.failure_reason(), expected.4.as_deref());
+    }
+    reopened.shutdown().expect("shutdown");
+}
+
+#[test]
 fn active_scan_blocks_a_second_scan_run_for_the_same_root() {
     let directory = tempfile::tempdir().expect("tempdir");
     let executor =

@@ -2210,19 +2210,7 @@ LibraryScanJobDetail libraryScanJobDetailFromDto(
     for (final exclusion in value.exclusions)
       libraryScanAdmissionExclusionFromDto(exclusion),
   ],
-  scanRuns: [
-    for (final scan in value.scanRuns)
-      ScanRunSummary(
-        scanRunId: scanRunIdFromDto(scan.scanRunId),
-        jobRunId: jobRunIdFromDto(scan.jobRunId),
-        libraryRootId: libraryRootIdFromDto(scan.libraryRootId),
-        displayName: scan.displayName,
-        safeLocationDisplay: scan.safeLocationDisplay,
-        status: jobScanStatusFromDto(scan.status),
-        startedAtMs: scan.startedAtMs.toInt(),
-        completedAtMs: scan.completedAtMs?.toInt(),
-      ),
-  ],
+  scanRuns: [for (final scan in value.scanRuns) scanRunSummaryFromDto(scan)],
   progress: ScanProgressFacts(
     phase: value.progress.phase,
     completedUnits: value.progress.completedUnits?.toInt(),
@@ -2318,4 +2306,5 @@ ScanRunSummary scanRunSummaryFromDto(dto.ScanRunDto value) => ScanRunSummary(
   status: jobScanStatusFromDto(value.status),
   startedAtMs: value.startedAtMs.toInt(),
   completedAtMs: value.completedAtMs?.toInt(),
+  failureReason: value.failureReason,
 );

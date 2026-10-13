@@ -1,5 +1,6 @@
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/jobs/jobs.dart';
+import 'package:argus/features/jobs/presentation/jobs_messages.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,58 @@ TransportFailure transportFailure() =>
     const TransportFailure('fake transport failure');
 
 void main() {
+  test(
+    'scan failure copy allowlists durable reasons and hides unknown input',
+    () {
+      expect(
+        JobsMessages.scanFailureReasonLabel('source_access_failed'),
+        'The scan could not read this folder\'s contents.',
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('source_unavailable'),
+        'This folder was unavailable during the scan.',
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('admission_registration_failed'),
+        'The scan could not be started for this folder.',
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('execution_host_timeout'),
+        'The scan stopped because its execution host timed out.',
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('execution_host_lost'),
+        'The scan stopped because its execution host was lost.',
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('finalization_authority_changed'),
+        'The scan result could not be finalized because its source changed.',
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('incomplete_scope'),
+        'Some contents of this folder could not be fully scanned.',
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('internal'),
+        JobsMessages.scanFailureInternal,
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel('internal'),
+        isNot('internal'),
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel(
+          '/data/user/0/app/private.key SELECT * FROM credentials',
+        ),
+        JobsMessages.scanFailureUnknown,
+      );
+      expect(
+        JobsMessages.scanFailureReasonLabel(null),
+        JobsMessages.scanFailureUnknown,
+      );
+    },
+  );
+
   test('Library refresh detail fake defaults to a terminal lifecycle', () {
     expect(
       libraryRefreshJobDetail().job.lifecycleState,
@@ -309,6 +362,229 @@ void main() {
     expect(find.byKey(const ValueKey<String>('jobs-cancel-job')), findsNothing);
   });
 
+  testWidgets('failed Library refresh shows historical child scan outcomes', (
+    tester,
+  ) async {
+    final jobId = JobRunId('d' * 32);
+    const hostileReason = '/private/test/path SELECT * FROM credentials';
+    final scans = [
+      ScanRunSummary(
+        scanRunId: const ScanRunId('11111111111111111111111111111111'),
+        jobRunId: jobId,
+        libraryRootId: LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+        displayName: 'Games',
+        safeLocationDisplay: '/library/Games',
+        status: JobScanStatus.failed,
+        startedAtMs: 1,
+        failureReason: 'execution_host_timeout',
+      ),
+      ScanRunSummary(
+        scanRunId: const ScanRunId('22222222222222222222222222222222'),
+        jobRunId: jobId,
+        libraryRootId: LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+        displayName: 'ROMs',
+        safeLocationDisplay: '/library/ROMs',
+        status: JobScanStatus.failed,
+        startedAtMs: 2,
+      ),
+      ScanRunSummary(
+        scanRunId: const ScanRunId('33333333333333333333333333333333'),
+        jobRunId: jobId,
+        libraryRootId: LibraryRootId('cccccccccccccccccccccccccccccccc'),
+        displayName: 'BIOS',
+        safeLocationDisplay: '/library/BIOS',
+        status: JobScanStatus.failed,
+        startedAtMs: 3,
+        failureReason: 'future_producer_reason',
+      ),
+      ScanRunSummary(
+        scanRunId: const ScanRunId('44444444444444444444444444444444'),
+        jobRunId: jobId,
+        libraryRootId: LibraryRootId('dddddddddddddddddddddddddddddddd'),
+        displayName: 'Extras',
+        safeLocationDisplay: '/library/Extras',
+        status: JobScanStatus.failed,
+        startedAtMs: 4,
+        failureReason: hostileReason,
+      ),
+      ScanRunSummary(
+        scanRunId: const ScanRunId('55555555555555555555555555555555'),
+        jobRunId: jobId,
+        libraryRootId: LibraryRootId('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'),
+        displayName: 'Arcade',
+        safeLocationDisplay: '/library/Arcade',
+        status: JobScanStatus.complete,
+        startedAtMs: 5,
+        failureReason: 'execution_host_lost',
+      ),
+    ];
+    final detail = JobDetail(
+      job: JobRunProjection(
+        jobRunId: jobId,
+        operationType: 'library_refresh',
+        lifecycleState: JobLifecycleState.failed,
+        phase: 'library_refresh.completed',
+        completedUnits: 4,
+        totalUnits: 5,
+        statusKey: 'failed',
+        createdAtMs: 1,
+        cancellationRequested: false,
+        controls: const JobControlAvailability(
+          canCancel: false,
+          canRetry: true,
+        ),
+      ),
+      operationDetail: OperationDetail.libraryRefresh(
+        LibraryRefreshJobDetail(
+          trigger: 'manual',
+          mode: 'eligible_only',
+          requestedRootIds: scans.map((scan) => scan.libraryRootId).toList(),
+          scanRuns: scans,
+          progress: const RefreshProgressFacts(
+            phase: 'library_refresh.completed',
+            completedUnits: 4,
+            totalUnits: 5,
+            statusKey: 'failed',
+            issues: [],
+          ),
+        ),
+      ),
+    );
+    final api = FakeJobsApi(details: {jobId: detail});
+    final container = createContainer(api);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Library refresh'), findsOneWidget);
+    expect(find.text('Failed'), findsAtLeastNWidgets(1));
+    expect(find.text('Trigger: manual'), findsOneWidget);
+    expect(find.text('Mode: eligible_only'), findsOneWidget);
+    expect(
+      find.widgetWithText(FilledButton, JobsMessages.retryJob),
+      findsOneWidget,
+    );
+    Finder scanTile(String title) =>
+        find.ancestor(of: find.text(title), matching: find.byType(ListTile));
+    expect(
+      find.descendant(
+        of: scanTile('Games'),
+        matching: find.text(
+          'The scan stopped because its execution host timed out.',
+        ),
+      ),
+      findsOneWidget,
+    );
+    for (final title in ['ROMs', 'BIOS', 'Extras']) {
+      expect(
+        find.descendant(
+          of: scanTile(title),
+          matching: find.text(JobsMessages.scanFailureUnknown),
+        ),
+        findsOneWidget,
+      );
+    }
+    expect(find.text(JobsMessages.scanFailureUnknown), findsNWidgets(3));
+    expect(find.text(hostileReason), findsNothing);
+    expect(find.text('future_producer_reason'), findsNothing);
+    final arcadeTile = scanTile('Arcade');
+    expect(
+      find.descendant(
+        of: arcadeTile,
+        matching: find.text(
+          JobsMessages.scanFailureReasonLabel('execution_host_lost'),
+        ),
+      ),
+      findsNothing,
+    );
+    final titles = tester
+        .widgetList<ListTile>(find.byType(ListTile))
+        .map((tile) => (tile.title! as Text).data)
+        .toList();
+    expect(titles, ['Games', 'ROMs', 'BIOS', 'Extras', 'Arcade']);
+  });
+
+  testWidgets('failed Library refresh explains incomplete folder contents', (
+    tester,
+  ) async {
+    final jobId = JobRunId('f' * 32);
+    const rootId = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    final detail = JobDetail(
+      job: JobRunProjection(
+        jobRunId: jobId,
+        operationType: 'library_refresh',
+        lifecycleState: JobLifecycleState.failed,
+        phase: 'library_refresh.completed',
+        completedUnits: 1,
+        totalUnits: 1,
+        statusKey: 'failed',
+        createdAtMs: 1,
+        cancellationRequested: false,
+        controls: const JobControlAvailability(
+          canCancel: false,
+          canRetry: true,
+        ),
+      ),
+      operationDetail: OperationDetail.libraryRefresh(
+        LibraryRefreshJobDetail(
+          trigger: 'manual',
+          mode: 'eligible_only',
+          requestedRootIds: const [rootId],
+          scanRuns: [
+            ScanRunSummary(
+              scanRunId: const ScanRunId('66666666666666666666666666666666'),
+              jobRunId: jobId,
+              libraryRootId: rootId,
+              displayName: 'Games',
+              safeLocationDisplay: '/library/Games',
+              status: JobScanStatus.failed,
+              startedAtMs: 1,
+              failureReason: 'incomplete_scope',
+            ),
+          ],
+          progress: const RefreshProgressFacts(
+            phase: 'library_refresh.completed',
+            completedUnits: 1,
+            totalUnits: 1,
+            statusKey: 'failed',
+            issues: [],
+          ),
+        ),
+      ),
+    );
+    final api = FakeJobsApi(details: {jobId: detail});
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: createContainer(api),
+        child: MaterialApp(
+          home: JobDetailPage(
+            jobRunId: jobId,
+            onMissingJob: () {},
+            onOpenJob: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Some contents of this folder could not be fully scanned.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('partial Library refresh detail explains why it finished with '
       'issues', (tester) async {
     final jobId = JobRunId('b' * 32);
@@ -526,14 +802,15 @@ void main() {
     final jobId = JobRunId('a' * 32);
     final rootA = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     final rootB = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    final rootC = LibraryRootId('cccccccccccccccccccccccccccccccc');
     final api = FakeJobsApi(
       details: {
         jobId: jobDetail(
           id: 'a' * 32,
           state: JobLifecycleState.completedWithIssues,
-          rootsRequested: 2,
-          rootsAdmitted: 2,
-          rootsTerminal: 2,
+          rootsRequested: 3,
+          rootsAdmitted: 3,
+          rootsTerminal: 3,
           requestedRoots: const [
             LibraryScanRootSummary(
               libraryRootId: LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
@@ -544,6 +821,11 @@ void main() {
               libraryRootId: LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
               displayName: 'ROMs',
               safeLocationDisplay: '/library/ROMs',
+            ),
+            LibraryScanRootSummary(
+              libraryRootId: LibraryRootId('cccccccccccccccccccccccccccccccc'),
+              displayName: 'BIOS',
+              safeLocationDisplay: '/library/BIOS',
             ),
           ],
           scanRuns: [
@@ -564,6 +846,17 @@ void main() {
               safeLocationDisplay: '/library/ROMs',
               status: JobScanStatus.failed,
               startedAtMs: 1,
+              failureReason: 'execution_host_timeout',
+            ),
+            ScanRunSummary(
+              scanRunId: const ScanRunId('33333333333333333333333333333333'),
+              jobRunId: jobId,
+              libraryRootId: rootC,
+              displayName: 'BIOS',
+              safeLocationDisplay: '/library/BIOS',
+              status: JobScanStatus.partial,
+              startedAtMs: 1,
+              failureReason: 'incomplete_scope',
             ),
           ],
         ),
@@ -585,13 +878,58 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Completed with issues'), findsOneWidget);
-    expect(find.text('Roots requested: 2'), findsOneWidget);
-    expect(find.text('Roots admitted: 2'), findsOneWidget);
-    expect(find.text('Roots terminal: 2'), findsOneWidget);
+    expect(find.text('Roots requested: 3'), findsOneWidget);
+    expect(find.text('Roots admitted: 3'), findsOneWidget);
+    expect(find.text('Roots terminal: 3'), findsOneWidget);
     expect(find.text('Games'), findsWidgets);
     expect(find.text('ROMs'), findsWidgets);
+    expect(find.text('BIOS'), findsWidgets);
     expect(find.text('Complete'), findsOneWidget);
     expect(find.text('Failed'), findsOneWidget);
+    expect(find.text('Partial'), findsOneWidget);
+    expect(
+      find.text('The scan stopped because its execution host timed out.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Some contents of this folder could not be fully scanned.'),
+      findsOneWidget,
+    );
+    expect(find.text('execution_host_timeout'), findsNothing);
+    final failedScanTile = find.ancestor(
+      of: find.text('Failed'),
+      matching: find.byType(ListTile),
+    );
+    expect(
+      find.descendant(of: failedScanTile, matching: find.text('ROMs')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: failedScanTile,
+        matching: find.text(
+          'The scan stopped because its execution host timed out.',
+        ),
+      ),
+      findsOneWidget,
+    );
+    final partialScanTile = find.ancestor(
+      of: find.text('Partial'),
+      matching: find.byType(ListTile),
+    );
+    expect(
+      find.descendant(of: partialScanTile, matching: find.text('BIOS')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: partialScanTile,
+        matching: find.text(
+          'Some contents of this folder could not be fully scanned.',
+        ),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('job detail labels typed exclusions including bounded errors', (

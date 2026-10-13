@@ -523,7 +523,7 @@ impl ScanRunRepository for SqliteScanRunRepository<'_, '_> {
             .prepare(
                 "SELECT scan_run_id, job_run_id, historical_library_root_id,
                         root_display_name, safe_location_display, status,
-                        started_at, completed_at
+                        started_at, completed_at, failure_reason
                  FROM scan_run WHERE job_run_id = ?1
                  ORDER BY historical_library_root_id ASC",
             )
@@ -539,6 +539,7 @@ impl ScanRunRepository for SqliteScanRunRepository<'_, '_> {
                     row.get::<_, String>(5)?,
                     row.get::<_, i64>(6)?,
                     row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
                 ))
             })
             .map_err(map_persistence_operation_error)?;
@@ -547,7 +548,7 @@ impl ScanRunRepository for SqliteScanRunRepository<'_, '_> {
             .map_err(map_persistence_operation_error)?;
         raw.into_iter()
             .map(
-                |(scan_run_id, job, root, display, safe, status, started, completed)| {
+                |(scan_run_id, job, root, display, safe, status, started, completed, reason)| {
                     Ok(ScanRunProjection::new(
                         parse_scan_run_id(scan_run_id)?,
                         parse_job_run_id(job)?,
@@ -557,6 +558,7 @@ impl ScanRunRepository for SqliteScanRunRepository<'_, '_> {
                         parse_scan_status(&status)?,
                         started,
                         completed,
+                        reason,
                     ))
                 },
             )
@@ -2282,7 +2284,7 @@ fn read_job_detail(
                 "SELECT scan_run_id, job_run_id, historical_library_root_id,
                         root_display_name, safe_location_display, status,
                         started_at, completed_at, entries_observed,
-                        entries_committed, issue_count
+                        entries_committed, issue_count, failure_reason
                  FROM scan_run WHERE job_run_id = ?1
                  ORDER BY historical_library_root_id ASC",
             )
@@ -2301,6 +2303,7 @@ fn read_job_detail(
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, Option<i64>>(9)?,
                     row.get::<_, Option<i64>>(10)?,
+                    row.get::<_, Option<String>>(11)?,
                 ))
             })
             .map_err(|error| super::errors::operation_error(&error))?;
@@ -2317,6 +2320,7 @@ fn read_job_detail(
                 entries_observed,
                 entries_committed,
                 issue_count,
+                failure_reason,
             ) = row.map_err(|error| super::errors::operation_error(&error))?;
             scan_runs.push(ScanRunProjection::new(
                 parse_scan_run_id(scan_run_id).map_err(corrupt_sqlite)?,
@@ -2327,6 +2331,7 @@ fn read_job_detail(
                 parse_scan_status(&status).map_err(corrupt_sqlite)?,
                 started_at,
                 completed_at,
+                failure_reason,
             ));
             observed_counts.push(entries_observed.map(|value| value as u64));
             committed_counts.push(entries_committed.map(|value| value as u64));

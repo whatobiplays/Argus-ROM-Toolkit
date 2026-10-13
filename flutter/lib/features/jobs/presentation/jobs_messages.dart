@@ -53,6 +53,30 @@ abstract final class JobsMessages {
       'No original folder remains eligible, so no new scan was created.';
   static const String retriedFrom = 'Retried from';
   static const String retriedAs = 'Retried as';
+  static const String scanFailureUnknown =
+      'No further failure reason is available.';
+  static const String scanFailureInternal =
+      'The scan stopped because of an internal problem.';
+
+  /// Maps the closed set of stored scan failure codes to safe product copy.
+  /// Unknown and absent codes never reach the screen as raw stored text.
+  static String scanFailureReasonLabel(String? reason) => switch (reason) {
+    'source_access_failed' =>
+      'The scan could not read this folder\'s contents.',
+    'source_unavailable' => 'This folder was unavailable during the scan.',
+    'admission_registration_failed' =>
+      'The scan could not be started for this folder.',
+    'execution_host_timeout' =>
+      'The scan stopped because its execution host timed out.',
+    'execution_host_lost' =>
+      'The scan stopped because its execution host was lost.',
+    'finalization_authority_changed' =>
+      'The scan result could not be finalized because its source changed.',
+    'incomplete_scope' =>
+      'Some contents of this folder could not be fully scanned.',
+    'internal' => scanFailureInternal,
+    _ => scanFailureUnknown,
+  };
 
   /// Heading for the bounded explanation attached to a partial refresh.
   static const String refreshIssuesTitle = 'Why this finished with issues';

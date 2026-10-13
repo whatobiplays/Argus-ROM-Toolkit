@@ -1,0 +1,51 @@
+docs/implementation/phase-003-android-physical-automation.md
+  s_114f2ab5f373bf::t_129ca39e09e243 1-370
+justfile
+  s_6ab7a14ec660b5::t_c390382cba42d4 97
+scripts/phase_003_android_physical_qualification/core.py
+  s_114f2ab5f373bf::t_a297bf304211da 1-634
+scripts/phase_003_android_physical_qualification/fixtures.py
+  s_114f2ab5f373bf::t_35a6e269bdb6e7 1-546
+scripts/phase_003_android_physical_qualification/runner.py
+  s_114f2ab5f373bf::t_60463bc991571e 1-568
+scripts/phase_003_android_physical_qualification/test_core.py
+  s_114f2ab5f373bf::t_fbca23226aa6f7 1-468
+scripts/phase_003_android_physical_qualification/test_fixtures.py
+  s_114f2ab5f373bf::t_dcb73a202db36d 1-630
+scripts/phase_003_android_physical_qualification/test_recipe.py
+  s_114f2ab5f373bf::t_bb1d4c9d66eb4b 1-32
+scripts/phase_003_android_physical_qualification/test_runner.py
+  s_114f2ab5f373bf::t_c4f436e8a959ed 1-1578
+scripts/phase_003_android_physical_qualification/test_storage_access.py
+  s_114f2ab5f373bf::t_18827bfff421af 1-196
+scripts/phase_003_android_physical_qualification/test_ui.py
+  s_114f2ab5f373bf::t_73f953364ecb4e 1-799
+scripts/phase_003_android_physical_qualification/ui.py
+  s_114f2ab5f373bf::t_6c5a5a08f0afce 1-614
+scripts/run_phase_003_android_physical_qualification.sh
+  s_114f2ab5f373bf::t_f1c50d690f61ef 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "779ea9c3aeb77ea0a17f1a686129f6cdb80eeaa7",
+  "prompts": {},
+  "sessions": {
+    "s_114f2ab5f373bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a131eb-094b-7511-b8c2-968e753db58d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_6ab7a14ec660b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a131c9-d961-7373-9821-c4cab4e5cae5",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

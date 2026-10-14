@@ -11,9 +11,10 @@ use std::time::{Duration, Instant};
 
 use argus_application::{
     AddLocalLibraryRootResult, CancelJobResult, JobRunId, JobRunState, LibraryRefreshTrigger,
-    LibraryRootId, LibraryRootLastScanStatus, ListGamesQuery, ListJobsQuery, ListJobsScope,
-    ListLibraryRootsQuery, MetadataSettings, MetadataSettingsUpdateResult, OperationDetail,
-    RefreshMode, StartLibraryScanResult,
+    LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, ListGamesQuery,
+    ListJobsQuery, ListJobsScope, ListLibraryRootsQuery, LocalFilesystemRootSelection,
+    MetadataSettings, MetadataSettingsUpdateResult, MountedLocalFilesystemVolume, OperationDetail,
+    RefreshMode, StartLibraryScanResult, SyncLocalFilesystemMountedVolumesCommand,
 };
 #[cfg(feature = "test-support")]
 use argus_application::{
@@ -915,6 +916,347 @@ fn manual_library_refresh_composes_committed_scan_identification_grouping_and_hy
         trace.download_calls >= 1,
         "resolved artwork is downloaded and committed"
     );
+    host.general_shutdown().expect("shutdown");
+}
+
+/// A Direct Scan whose execution-scoped provider access cannot be opened
+/// must still return the already-admitted handle, with the JobRun and
+/// ScanRun durably failed under the source-access reason.
+#[test]
+#[cfg(feature = "test-support")]
+fn direct_scan_source_access_failure_terminalizes_admitted_run() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        directory.path().join("data"),
+    ));
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    make_library(&library, 8);
+    let root_id = add_root(&host, &library);
+
+    assert!(
+        host.fail_next_source_open_for_tests(
+            argus_application::SourceAccessError::SourceUnavailable,
+        ),
+        "test-support injection requires a ready kernel"
+    );
+
+    let start = host.start_library_scan(root_id);
+    let handle = match start {
+        Ok(StartLibraryScanResult::Admitted(handle)) => handle,
+        Ok(StartLibraryScanResult::AlreadyScanning { .. }) => panic!("expected admitted"),
+        Err(error) => {
+            let root = host
+                .get_library_root(root_id)
+                .expect("root after failed open");
+            assert!(
+                root.active_scan().is_none(),
+                "provider-open error {error:?} left admitted scan ownership active: {:?}",
+                root.active_scan()
+            );
+            panic!("provider-open failure must return the admitted operation handle");
+        }
+    };
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::Failed,
+        "a source-open failure must durably fail the admitted JobRun"
+    );
+    let detail = host.get_job(handle.job_run_id()).expect("job detail");
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan operation detail");
+    };
+    assert_eq!(operation.scan_runs().len(), 1);
+    let run = &operation.scan_runs()[0];
+    assert_eq!(run.library_root_id(), root_id);
+    assert_eq!(run.status(), argus_application::ScanRunStatus::Failed);
+    assert_eq!(
+        run.failure_reason(),
+        Some("source_unavailable"),
+        "source-open failures must not be reported as registration failures"
+    );
+    let root = host.get_library_root(root_id).expect("root projection");
+    assert_eq!(root.availability(), LibraryRootAvailability::Unavailable);
+    assert_eq!(
+        root.last_scan().expect("last scan").status(),
+        LibraryRootLastScanStatus::Unavailable
+    );
+
+    // The failed attempt must release scan ownership for the root.
+    let retry = match host.start_library_scan(root_id).expect("second scan") {
+        StartLibraryScanResult::Admitted(handle) => handle,
+        StartLibraryScanResult::AlreadyScanning { .. } => {
+            panic!("failed source-open scan still owns the root")
+        }
+    };
+    assert_eq!(
+        terminal_state(&host, retry.job_run_id()),
+        JobRunState::Completed
+    );
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn refresh_source_access_failure_terminalizes_child_and_continues_sibling() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        directory.path().join("data"),
+    ));
+    context_ready(&host);
+    let first = directory.path().join("First");
+    let second = directory.path().join("Second");
+    make_library(&first, 8);
+    make_library(&second, 8);
+    let first_root = add_root(&host, &first);
+    let second_root = add_root(&host, &second);
+    assert!(
+        host.fail_next_source_open_for_tests(
+            argus_application::SourceAccessError::SourceUnavailable,
+        )
+    );
+
+    let handle = host.refresh_library().expect("refresh admission");
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::CompletedWithIssues,
+        "a failed admitted child must not abort the parent or skip later roots"
+    );
+    let detail = host.get_job(handle.job_run_id()).expect("refresh detail");
+    let OperationDetail::LibraryRefresh(refresh) = detail.operation_detail() else {
+        panic!("expected refresh detail");
+    };
+    assert_eq!(refresh.scan_runs().len(), 2);
+    assert_eq!(
+        refresh.progress().status_key(),
+        Some("completed_with_issues")
+    );
+    assert_eq!(refresh.progress().issue_count(), Some(1));
+    assert_eq!(refresh.progress().issues().len(), 1);
+    assert_eq!(
+        refresh.progress().issues()[0].kind(),
+        argus_application::RefreshIssueKind::Scope
+    );
+    assert_eq!(
+        refresh.progress().issues()[0].reason(),
+        argus_application::RefreshIssueReason::ScopeRootScanFailed
+    );
+    let failed: Vec<_> = refresh
+        .scan_runs()
+        .iter()
+        .filter(|run| run.status() == argus_application::ScanRunStatus::Failed)
+        .collect();
+    assert_eq!(failed.len(), 1, "only the injected child should fail");
+    assert_eq!(failed[0].failure_reason(), Some("source_unavailable"));
+    assert_eq!(
+        refresh
+            .scan_runs()
+            .iter()
+            .filter(|run| run.status() == argus_application::ScanRunStatus::Complete)
+            .count(),
+        1,
+        "the later healthy sibling must execute and complete"
+    );
+
+    for root_id in [first_root, second_root] {
+        assert!(
+            host.get_library_root(root_id)
+                .expect("root projection")
+                .active_scan()
+                .is_none(),
+            "terminal parent must release every admitted child root"
+        );
+    }
+    let failed_root = failed[0].library_root_id();
+    assert_eq!(
+        host.get_library_root(failed_root)
+            .expect("failed root")
+            .last_scan()
+            .expect("failed scan projection")
+            .status(),
+        LibraryRootLastScanStatus::Unavailable
+    );
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn direct_scan_access_permission_failure_keeps_typed_reason_and_releases_root() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let host = ApplicationHost::new(KernelBootstrapOptions::with_data_directory(
+        directory.path().join("data"),
+    ));
+    context_ready(&host);
+    let library = directory.path().join("Library");
+    make_library(&library, 1);
+    let root_id = add_root(&host, &library);
+    assert!(
+        host.fail_next_source_open_for_tests(
+            argus_application::SourceAccessError::PermissionDenied,
+        )
+    );
+
+    let handle = match host.start_library_scan(root_id).expect("scan admission") {
+        StartLibraryScanResult::Admitted(handle) => handle,
+        StartLibraryScanResult::AlreadyScanning { .. } => panic!("expected admitted scan"),
+    };
+    assert_eq!(
+        terminal_state(&host, handle.job_run_id()),
+        JobRunState::Failed
+    );
+    let detail = host.get_job(handle.job_run_id()).expect("job detail");
+    let OperationDetail::LibraryScan(operation) = detail.operation_detail() else {
+        panic!("expected library scan detail");
+    };
+    assert_eq!(operation.scan_runs().len(), 1);
+    assert_eq!(
+        operation.scan_runs()[0].failure_reason(),
+        Some("source_access_failed")
+    );
+    let root = host.get_library_root(root_id).expect("root projection");
+    assert!(root.active_scan().is_none());
+    assert_eq!(root.availability(), LibraryRootAvailability::Available);
+    assert_eq!(
+        root.last_scan().expect("last scan").status(),
+        LibraryRootLastScanStatus::Failed
+    );
+    host.general_shutdown().expect("shutdown");
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn provider_root_refresh_scans_and_identifies_registered_mount() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let nes = nes_fixture();
+    let genesis = genesis_fixture();
+    let primary_mount = directory.path().join("primary");
+    let primary_library = primary_mount.join("PrimaryGames");
+    let removable_mount = directory.path().join("removable");
+    let qualification_root = removable_mount.join("ArgusPhase003Qualification");
+    fs::create_dir_all(&primary_library).expect("primary library");
+    fs::create_dir_all(&qualification_root).expect("qualification root");
+    fs::write(primary_library.join("genesis.bin"), &genesis).expect("Genesis fixture");
+    fs::write(qualification_root.join("fixture.nes"), &nes).expect("NES fixture");
+
+    let options = KernelBootstrapOptions::with_data_directory(directory.path().join("data"))
+        .with_provider_session_factory_for_tests(Vec::new);
+    let host = ApplicationHost::new(options);
+    context_ready(&host);
+    host.sync_local_filesystem_mounted_volumes(SyncLocalFilesystemMountedVolumesCommand::new(
+        vec![
+            MountedLocalFilesystemVolume::new(
+                "primary".to_owned(),
+                primary_mount.to_string_lossy().into_owned(),
+                "Internal storage".to_owned(),
+                true,
+                false,
+            ),
+            MountedLocalFilesystemVolume::new(
+                "qualification-volume".to_owned(),
+                removable_mount.to_string_lossy().into_owned(),
+                "Qualification storage".to_owned(),
+                false,
+                true,
+            ),
+        ],
+    ))
+    .expect("registered mount snapshot");
+    add_root(&host, &primary_library);
+
+    let browse_root = host
+        .list_local_filesystem_browse_roots()
+        .expect("browse roots")
+        .into_iter()
+        .find(|root| root.display_name() == "Qualification storage")
+        .expect("registered removable root");
+    let page = host
+        .list_local_filesystem_browse_directories(browse_root.location().clone(), None, 10)
+        .expect("browse qualification directory");
+    let selected = page
+        .directories()
+        .iter()
+        .find(|entry| entry.display_name() == "ArgusPhase003Qualification")
+        .expect("qualification directory");
+    let added = host
+        .add_local_library_root(LocalFilesystemRootSelection::provider_selection(
+            selected.location().as_provider_value().to_owned(),
+        ))
+        .expect("add provider root");
+    let root_id = match added {
+        AddLocalLibraryRootResult::Added(root) => root.root_id(),
+        other => panic!("expected provider root, got {other:?}"),
+    };
+    assert_eq!(
+        host.get_library_root(root_id)
+            .expect("registered root projection")
+            .availability(),
+        LibraryRootAvailability::Available,
+        "the configured Android-style root resolves through the registered provider mount"
+    );
+
+    let handle = host.refresh_library().expect("refresh admission");
+    let state = terminal_state(&host, handle.job_run_id());
+    assert_eq!(
+        state,
+        JobRunState::Completed,
+        "provider-backed and local roots should complete without refresh issues"
+    );
+    let refresh = refresh_operation_detail(&host, handle.job_run_id());
+    assert_eq!(refresh.scan_runs().len(), 2);
+    assert!(refresh.scan_runs().iter().all(|scan| {
+        scan.status() == argus_application::ScanRunStatus::Complete
+            && scan.failure_reason().is_none()
+    }));
+    assert_eq!(
+        refresh.progress().phase(),
+        Some("library_refresh.completed")
+    );
+    assert_eq!(refresh.progress().status_key(), Some("completed"));
+
+    let direct_scan_job_run_id = start_scan(&host, root_id);
+    assert_eq!(
+        terminal_state(&host, direct_scan_job_run_id),
+        JobRunState::Completed,
+        "a provider-backed root remains scannable through the direct Scan operation"
+    );
+    let direct_scan_job = host
+        .get_job(direct_scan_job_run_id)
+        .expect("direct Scan detail");
+    let OperationDetail::LibraryScan(direct_scan) = direct_scan_job.operation_detail() else {
+        panic!("expected direct Library Scan detail");
+    };
+    assert_eq!(direct_scan.scan_runs().len(), 1);
+    assert_eq!(direct_scan.scan_runs()[0].library_root_id(), root_id);
+    assert_eq!(
+        direct_scan.scan_runs()[0].status(),
+        argus_application::ScanRunStatus::Complete
+    );
+    assert_eq!(direct_scan.scan_runs()[0].failure_reason(), None);
+
+    let games = host
+        .list_games(
+            ListGamesQuery::builder()
+                .scope(LibraryScope::All)
+                .filters_empty(true)
+                .sort(LibrarySort::DisplayTitleAscending)
+                .page_size(10)
+                .build()
+                .expect("library query"),
+        )
+        .expect("identified games");
+    assert_eq!(games.items().len(), 2, "both roots must be identified");
+    let platforms = games
+        .items()
+        .iter()
+        .map(
+            |row| match host.get_game(row.game_id()).expect("game detail") {
+                GetGameResult::Found(detail) => detail.platform_id(),
+                other => panic!("unexpected game result: {other:?}"),
+            },
+        )
+        .collect::<std::collections::HashSet<_>>();
+    assert!(platforms.contains(&PlatformId::NintendoNes));
+    assert!(platforms.contains(&PlatformId::SegaGenesis));
     host.general_shutdown().expect("shutdown");
 }
 

@@ -115,6 +115,7 @@ struct StartupResources {
             InfraLocalFilesystemProvider,
         >,
     >,
+    local_filesystem_provider: Option<InfraLocalFilesystemProvider>,
     jobs_service: Option<JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>>,
     unit_of_work: Option<KernelUnitOfWorkFactory>,
     artwork_store: Option<Arc<ArtworkObjectStore>>,
@@ -452,15 +453,17 @@ impl StartupCoordinator {
                 SqliteJobsQueries::new(executor.clone()),
                 unit_of_work.clone(),
             );
+            let local_filesystem_provider = InfraLocalFilesystemProvider::default();
             let library_service = LibraryService::new(
                 SqliteLibraryRootQueries::new(executor.clone()),
                 SqliteSourceEntryQueries::new(executor.clone()),
                 executor.clone(),
-                InfraLocalFilesystemProvider::default(),
+                local_filesystem_provider.clone(),
             );
             self.resources.unit_of_work = Some(unit_of_work);
             self.resources.jobs_service = Some(jobs_service);
             self.resources.library_service = Some(library_service);
+            self.resources.local_filesystem_provider = Some(local_filesystem_provider);
             StaleOperationRecoveryHandler::new(
                 SqliteJobsQueries::new(executor.clone()),
                 self.resources
@@ -510,6 +513,7 @@ impl StartupCoordinator {
             || self.resources.executor.is_none()
             || self.resources.settings_service.is_none()
             || self.resources.library_service.is_none()
+            || self.resources.local_filesystem_provider.is_none()
             || self.resources.jobs_service.is_none()
             || self.resources.unit_of_work.is_none()
             || self.resources.artwork_store.is_none()
@@ -545,6 +549,11 @@ impl StartupCoordinator {
             .library_service
             .take()
             .expect("readiness validated library service");
+        let local_filesystem_provider = self
+            .resources
+            .local_filesystem_provider
+            .take()
+            .expect("readiness validated local filesystem provider");
         let jobs_service = self
             .resources
             .jobs_service
@@ -591,6 +600,7 @@ impl StartupCoordinator {
             unit_of_work,
             settings_service,
             library_service,
+            local_filesystem_provider,
             jobs_service,
             artwork_store,
             event_bus,

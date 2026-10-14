@@ -777,6 +777,125 @@ void main() {
     },
   );
 
+  test('Library Refresh refreshes mounts before admission', () async {
+    final api = _SourcesRecordingRustLibApi();
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+      mountedVolumesReader: () async => const [],
+    );
+
+    await gateway.refreshLibrary();
+
+    expect(api.calls, ['sync', 'refresh']);
+  });
+
+  test('Library Refresh is not invoked after mount refresh failure', () async {
+    final api = _SourcesRecordingRustLibApi();
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+      mountedVolumesReader: () async => throw StateError('discovery failed'),
+    );
+
+    await expectLater(
+      gateway.refreshLibrary(),
+      throwsA(isA<TransportFailure>()),
+    );
+    expect(api.calls, isEmpty);
+  });
+
+  test(
+    'desktop Refresh and Retry work without a mounted-volume reader',
+    () async {
+      final api = _SourcesRecordingRustLibApi(
+        retryOperationType: 'library_refresh',
+      );
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+      );
+
+      await gateway.refreshLibrary();
+      await gateway.retryJob(
+        const JobRunId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+      );
+
+      expect(api.calls, ['refresh', 'getJob', 'retry']);
+    },
+  );
+
+  test('source-dependent Retry refreshes mounts before admission', () async {
+    final api = _SourcesRecordingRustLibApi(
+      retryOperationType: 'renamed_source_operation',
+      retryOperationDetail:
+          _SourcesRecordingRustLibApi.libraryRefreshRetryDetail(),
+    );
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+      mountedVolumesReader: () async => const [
+        MountedLocalFilesystemVolumeFact(
+          providerVolumeId: 'updated-removable',
+          transientMountPath: '/storage/emulated/1',
+          safeDisplayName: 'Qualification storage',
+          isPrimary: false,
+          isRemovable: true,
+        ),
+      ],
+    );
+
+    await gateway.retryJob(const JobRunId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'));
+
+    expect(api.calls, ['getJob', 'sync', 'retry']);
+    expect(api.syncedVolumes, hasLength(1));
+    expect(api.syncedVolumes.single.providerVolumeId, 'updated-removable');
+    expect(api.syncedVolumes.single.transientMountPath, '/storage/emulated/1');
+    expect(api.syncedVolumes.single.isRemovable, isTrue);
+  });
+
+  test('non-source Retry does not require mounted-volume discovery', () async {
+    final api = _SourcesRecordingRustLibApi(
+      retryOperationType: 'library_scan',
+      retryOperationDetail:
+          _SourcesRecordingRustLibApi.gameRefreshRetryDetail(),
+    );
+    var reads = 0;
+    final gateway = FrbArgusClientGateway(
+      api: api,
+      initializeNative: () async {},
+      mountedVolumesReader: () async {
+        reads++;
+        return const [];
+      },
+    );
+
+    await gateway.retryJob(const JobRunId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'));
+
+    expect(reads, 0);
+    expect(api.calls, ['getJob', 'retry']);
+  });
+
+  test(
+    'source-dependent Retry is not invoked after mount refresh failure',
+    () async {
+      final api = _SourcesRecordingRustLibApi(
+        retryOperationType: 'library_scan',
+      );
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+        mountedVolumesReader: () async => throw StateError('discovery failed'),
+      );
+
+      await expectLater(
+        gateway.retryJob(const JobRunId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')),
+        throwsA(isA<TransportFailure>()),
+      );
+      expect(api.calls, ['getJob']);
+    },
+  );
+
   test(
     'provider-dependent Sources calls refresh mounts before the operation',
     () async {
@@ -1641,12 +1760,97 @@ final class _RecordingRustLibApi implements frb.RustLibApi {
 }
 
 final class _SourcesRecordingRustLibApi implements frb.RustLibApi {
+  _SourcesRecordingRustLibApi({
+    this.retryOperationType = 'library_refresh',
+    dto.OperationDetailDto? retryOperationDetail,
+  }) : retryOperationDetail =
+           retryOperationDetail ??
+           _defaultRetryOperationDetail(retryOperationType);
+
+  final String retryOperationType;
+  final dto.OperationDetailDto retryOperationDetail;
   final List<String> calls = [];
   final List<dto.MountedLocalFilesystemVolumeDto> syncedVolumes = [];
+
+  static dto.OperationDetailDto libraryRefreshRetryDetail() =>
+      dto.OperationDetailDto.libraryRefresh(
+        dto.LibraryRefreshJobDetailDto(
+          trigger: 'manual',
+          mode: 'eligible_only',
+          requestedRootIds: const [],
+          scanRuns: const [],
+          progress: const dto.RefreshProgressFactsDto(issues: []),
+        ),
+      );
+
+  static dto.OperationDetailDto gameRefreshRetryDetail() =>
+      dto.OperationDetailDto.gameRefresh(
+        dto.GameRefreshJobDetailDto(
+          gameIds: const [],
+          mode: 'manual',
+          progress: const dto.RefreshProgressFactsDto(issues: []),
+        ),
+      );
+
+  static dto.OperationDetailDto _defaultRetryOperationDetail(
+    String operationType,
+  ) => switch (operationType) {
+    'library_refresh' => libraryRefreshRetryDetail(),
+    'game_refresh' => gameRefreshRetryDetail(),
+    _ => dto.OperationDetailDto.libraryScan(
+      dto.LibraryScanJobDetailDto(
+        requestedRoots: const [],
+        admittedRoots: const [],
+        exclusions: const [],
+        scanRuns: const [],
+        progress: const dto.ScanProgressFactsDto(
+          rootsRequested: 0,
+          rootsAdmitted: 0,
+          rootsTerminal: 0,
+        ),
+      ),
+    ),
+  };
+
+  dto.JobDetailDto get _retryJobDetail => dto.JobDetailDto(
+    job: dto.JobRunDto(
+      jobRunId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      operationType: retryOperationType,
+      state: dto.JobRunStateDto.failed,
+      createdAtMs: 1,
+      cancellationRequested: false,
+      controls: const dto.JobControlAvailabilityDto(
+        canCancel: false,
+        canRetry: true,
+      ),
+    ),
+    operationDetail: retryOperationDetail,
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) {
     final method = invocation.memberName;
+    if (method == #crateRefreshLibrary) {
+      calls.add('refresh');
+      return Future<dto.OperationHandleDto>.value(
+        const dto.OperationHandleDto(
+          jobRunId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          operationType: 'library_refresh',
+        ),
+      );
+    }
+    if (method == #crateGetJob) {
+      calls.add('getJob');
+      return Future<dto.JobDetailDto>.value(_retryJobDetail);
+    }
+    if (method == #crateRetryJob) {
+      calls.add('retry');
+      return Future<dto.RetryJobResultDto>.value(
+        const dto.RetryJobResultDto.notAdmitted(
+          dto.RetryNotAdmittedReasonDto.operationNotRetryable(),
+        ),
+      );
+    }
     if (method == #crateSyncLocalFilesystemMountedVolumes) {
       calls.add('sync');
       final request =

@@ -1364,6 +1364,30 @@ impl ProductionProviderSessionFactory {
 
     /// Constructs one transient session per fixed provider without I/O.
     pub fn create_sessions(&self) -> Vec<Box<dyn EnrichmentProviderSession>> {
+        self.create_sessions_with_credential_store(
+            KeyringSecureCredentialStore::new_for_application(),
+        )
+    }
+
+    /// Constructs production sessions with native credentials for live tests.
+    ///
+    /// This test-support-only entry point is reserved for the ignored live
+    /// provider qualification suite. Ordinary test-support sessions remain
+    /// guarded against native credential access.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn create_sessions_for_live_qualification(
+        &self,
+    ) -> Vec<Box<dyn EnrichmentProviderSession>> {
+        self.create_sessions_with_credential_store(
+            KeyringSecureCredentialStore::new_for_live_qualification(),
+        )
+    }
+
+    fn create_sessions_with_credential_store(
+        &self,
+        steamgriddb_credentials: KeyringSecureCredentialStore,
+    ) -> Vec<Box<dyn EnrichmentProviderSession>> {
         vec![
             Box::new(PlaymatchSession::new(
                 UreqTransport::new(),
@@ -1376,7 +1400,7 @@ impl ProductionProviderSessionFactory {
             Box::new(SteamGridDbSession::new(
                 UreqTransport::new(),
                 self.steamgriddb_base_url.clone(),
-                KeyringSecureCredentialStore::new(),
+                steamgriddb_credentials,
             )),
         ]
     }

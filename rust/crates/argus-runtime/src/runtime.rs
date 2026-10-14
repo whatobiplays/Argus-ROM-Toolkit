@@ -912,6 +912,8 @@ pub struct TechnicalDetails {
 
 pub(crate) struct HostInner {
     options: KernelBootstrapOptions,
+    #[cfg(feature = "test-support")]
+    test_credential_store_mode: Option<crate::TestCredentialStoreMode>,
     notification_sink: Arc<dyn RuntimeNotificationSink>,
     _recovery_coordinator: RecoveryCoordinator,
     current: Mutex<ApplicationRuntime>,
@@ -960,9 +962,42 @@ impl ApplicationHost {
         options: KernelBootstrapOptions,
         notification_sink: Arc<dyn RuntimeNotificationSink>,
     ) -> Self {
+        #[cfg(feature = "test-support")]
+        {
+            Self::with_notification_sink_inner(options, notification_sink, None)
+        }
+        #[cfg(not(feature = "test-support"))]
+        {
+            Self::with_notification_sink_inner(options, notification_sink)
+        }
+    }
+
+    /// Creates a host with an explicitly selected test-only credential store.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn new_with_test_credential_store_for_tests(
+        options: KernelBootstrapOptions,
+        mode: crate::TestCredentialStoreMode,
+    ) -> Self {
+        Self::with_notification_sink_inner(
+            options,
+            Arc::new(InProcessNotificationSink::new()),
+            Some(mode),
+        )
+    }
+
+    fn with_notification_sink_inner(
+        options: KernelBootstrapOptions,
+        notification_sink: Arc<dyn RuntimeNotificationSink>,
+        #[cfg(feature = "test-support")] test_credential_store_mode: Option<
+            crate::TestCredentialStoreMode,
+        >,
+    ) -> Self {
         Self {
             inner: Arc::new(HostInner {
                 options,
+                #[cfg(feature = "test-support")]
+                test_credential_store_mode,
                 notification_sink,
                 _recovery_coordinator: RecoveryCoordinator,
                 current: Mutex::new(ApplicationRuntime::new()),
@@ -1205,6 +1240,31 @@ impl ApplicationHost {
                 })
                 .unwrap_or(true)
         };
+        #[cfg(feature = "test-support")]
+        let result = match self.inner.test_credential_store_mode {
+            Some(mode) => StartupCoordinator::run_with_test_credential_store(
+                self.inner.options.clone(),
+                mode,
+                generation_id,
+                boundary,
+                &SystemClock,
+                observer,
+                &should_cancel,
+                settings_read,
+                Some(Arc::clone(&self.inner.notification_sink)),
+            ),
+            None => StartupCoordinator::run(
+                self.inner.options.clone(),
+                generation_id,
+                boundary,
+                &SystemClock,
+                observer,
+                &should_cancel,
+                settings_read,
+                Some(Arc::clone(&self.inner.notification_sink)),
+            ),
+        };
+        #[cfg(not(feature = "test-support"))]
         let result = StartupCoordinator::run(
             self.inner.options.clone(),
             generation_id,

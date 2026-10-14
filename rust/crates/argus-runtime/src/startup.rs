@@ -128,6 +128,8 @@ struct StartupResources {
 /// The single authoritative Phase 000 startup orchestrator.
 pub struct StartupCoordinator {
     options: KernelBootstrapOptions,
+    #[cfg(feature = "test-support")]
+    test_credential_store_mode: Option<crate::TestCredentialStoreMode>,
     generation: RuntimeInstanceId,
     trace_id: TraceId,
     context: OperationContext,
@@ -151,7 +153,81 @@ impl StartupCoordinator {
         settings_read: Option<Box<dyn SettingsReadPort>>,
         outward_sink: Option<Arc<dyn RuntimeNotificationSink>>,
     ) -> StartupResult {
+        #[cfg(feature = "test-support")]
+        {
+            Self::run_inner(
+                options,
+                None,
+                generation,
+                boundary,
+                clock,
+                observer,
+                should_cancel,
+                settings_read,
+                outward_sink,
+            )
+        }
+        #[cfg(not(feature = "test-support"))]
+        {
+            Self::run_inner(
+                options,
+                generation,
+                boundary,
+                clock,
+                observer,
+                should_cancel,
+                settings_read,
+                outward_sink,
+            )
+        }
+    }
+
+    /// Runs startup with an explicitly selected test-only credential store.
+    #[cfg(feature = "test-support")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn run_with_test_credential_store(
+        options: KernelBootstrapOptions,
+        test_credential_store_mode: crate::TestCredentialStoreMode,
+        generation: RuntimeInstanceId,
+        boundary: Arc<EventBoundary>,
+        clock: &dyn Clock,
+        observer: &dyn StartupPhaseObserver,
+        should_cancel: &dyn Fn() -> bool,
+        settings_read: Option<Box<dyn SettingsReadPort>>,
+        outward_sink: Option<Arc<dyn RuntimeNotificationSink>>,
+    ) -> StartupResult {
+        Self::run_inner(
+            options,
+            Some(test_credential_store_mode),
+            generation,
+            boundary,
+            clock,
+            observer,
+            should_cancel,
+            settings_read,
+            outward_sink,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_inner(
+        options: KernelBootstrapOptions,
+        #[cfg(feature = "test-support")] test_credential_store_mode: Option<
+            crate::TestCredentialStoreMode,
+        >,
+        generation: RuntimeInstanceId,
+        boundary: Arc<EventBoundary>,
+        clock: &dyn Clock,
+        observer: &dyn StartupPhaseObserver,
+        should_cancel: &dyn Fn() -> bool,
+        settings_read: Option<Box<dyn SettingsReadPort>>,
+        outward_sink: Option<Arc<dyn RuntimeNotificationSink>>,
+    ) -> StartupResult {
         let mut coordinator = Self::new(options);
+        #[cfg(feature = "test-support")]
+        {
+            coordinator.test_credential_store_mode = test_credential_store_mode;
+        }
         coordinator.generation = generation;
         coordinator.settings_read = settings_read;
         coordinator.emit_started();
@@ -236,6 +312,8 @@ impl StartupCoordinator {
         let trace_id = new_trace_id();
         Self {
             options,
+            #[cfg(feature = "test-support")]
+            test_credential_store_mode: None,
             generation: RuntimeInstanceId::new(),
             trace_id,
             context: startup_context(trace_id),
@@ -593,6 +671,10 @@ impl StartupCoordinator {
             .data_directory
             .as_ref()
             .expect("readiness validated data directory");
+        #[cfg(feature = "test-support")]
+        let credential_store = crate::runtime_credential_store(self.test_credential_store_mode);
+        #[cfg(not(feature = "test-support"))]
+        let credential_store = crate::runtime_credential_store();
         let kernel = KernelBootstrap::from_parts(
             self.trace_id,
             path_class,
@@ -606,6 +688,7 @@ impl StartupCoordinator {
             event_bus,
             self.collector,
             self.options.enrichment_session_factory(),
+            credential_store,
             data_directory.join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
             #[cfg(feature = "test-support")]
             self.options.refresh_execution_hook(),

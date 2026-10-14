@@ -14,7 +14,8 @@ use argus_application::{
     LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, ListGamesQuery,
     ListJobsQuery, ListJobsScope, ListLibraryRootsQuery, LocalFilesystemRootSelection,
     MetadataSettings, MetadataSettingsUpdateResult, MountedLocalFilesystemVolume, OperationDetail,
-    RefreshMode, StartLibraryScanResult, SyncLocalFilesystemMountedVolumesCommand,
+    ProviderReadinessState, RefreshMode, StartLibraryScanResult,
+    SyncLocalFilesystemMountedVolumesCommand,
 };
 #[cfg(feature = "test-support")]
 use argus_application::{
@@ -27,7 +28,7 @@ use argus_application::{
 use argus_infrastructure::content::{ContentReadError, ContentReader};
 use argus_runtime::{
     ApplicationHost, KernelBootstrapOptions, RefreshExecutionCheckpoint, RuntimeEventPayload,
-    RuntimeLifecycle, test_support,
+    RuntimeLifecycle, TestCredentialStoreMode, test_support,
 };
 
 fn context_ready(host: &ApplicationHost) {
@@ -347,6 +348,159 @@ fn assert_foreground_returns<T: Send + 'static>(
 }
 
 #[test]
+fn onboarding_and_provider_readiness_use_isolated_test_credentials() {
+    let configured_directory = tempfile::tempdir().expect("configured host directory");
+    let missing_directory = tempfile::tempdir().expect("missing host directory");
+    let configured_host = Arc::new(ApplicationHost::new_with_test_credential_store_for_tests(
+        KernelBootstrapOptions::with_data_directory(configured_directory.path().join("data")),
+        TestCredentialStoreMode::Configured,
+    ));
+    let missing_host = Arc::new(ApplicationHost::new_with_test_credential_store_for_tests(
+        KernelBootstrapOptions::with_data_directory(missing_directory.path().join("data")),
+        TestCredentialStoreMode::Missing,
+    ));
+    context_ready(&configured_host);
+    context_ready(&missing_host);
+
+    let configured_readiness = configured_host
+        .metadata_provider_readiness()
+        .expect("configured test-store readiness");
+    let configured_provider = configured_readiness
+        .iter()
+        .find(|provider| provider.provider_id() == ProviderId::SteamGridDb)
+        .expect("SteamGridDB readiness");
+    assert!(configured_provider.credential_configured());
+
+    let missing_readiness = missing_host
+        .metadata_provider_readiness()
+        .expect("missing test-store readiness");
+    let missing_provider = missing_readiness
+        .iter()
+        .find(|provider| provider.provider_id() == ProviderId::SteamGridDb)
+        .expect("SteamGridDB readiness");
+    assert!(!missing_provider.credential_configured());
+    assert!(
+        missing_provider
+            .capability_readiness()
+            .iter()
+            .any(|capability| capability.state() == ProviderReadinessState::MissingCredentials)
+    );
+
+    let (configured_context, _configured_guard) = configured_host
+        .begin_operation("library", "test_onboarding_configured_credentials")
+        .expect("configured onboarding admission");
+    assert!(
+        configured_host
+            .library_onboarding_state_with_context(&configured_context)
+            .expect("configured onboarding read")
+            .credential_configured()
+    );
+
+    let (missing_context, _missing_guard) = missing_host
+        .begin_operation("library", "test_onboarding_missing_credentials")
+        .expect("missing onboarding admission");
+    assert!(
+        !missing_host
+            .library_onboarding_state_with_context(&missing_context)
+            .expect("missing onboarding read")
+            .credential_configured()
+    );
+
+    configured_host
+        .general_shutdown()
+        .expect("configured host shutdown");
+    missing_host
+        .general_shutdown()
+        .expect("missing host shutdown");
+}
+
+#[test]
+fn accidental_platform_store_is_rejected_by_onboarding_and_readiness() {
+    let readiness_directory = tempfile::tempdir().expect("readiness host directory");
+    let readiness_host = ApplicationHost::new_with_test_credential_store_for_tests(
+        KernelBootstrapOptions::with_data_directory(readiness_directory.path().join("data")),
+        TestCredentialStoreMode::RejectNativeAccess,
+    );
+    context_ready(&readiness_host);
+
+    assert!(
+        readiness_host.metadata_provider_readiness().is_err(),
+        "metadata readiness must fail before opening the platform store"
+    );
+    readiness_host
+        .general_shutdown()
+        .expect("readiness host shutdown");
+
+    let onboarding_directory = tempfile::tempdir().expect("onboarding host directory");
+    let onboarding_host = ApplicationHost::new_with_test_credential_store_for_tests(
+        KernelBootstrapOptions::with_data_directory(onboarding_directory.path().join("data")),
+        TestCredentialStoreMode::RejectNativeAccess,
+    );
+    context_ready(&onboarding_host);
+    let (context, _guard) = onboarding_host
+        .begin_operation("library", "test_platform_credential_store_guard")
+        .expect("onboarding operation admission");
+
+    assert!(
+        onboarding_host
+            .library_onboarding_state_with_context(&context)
+            .is_err(),
+        "onboarding must fail before opening the platform store"
+    );
+    onboarding_host
+        .general_shutdown()
+        .expect("onboarding host shutdown");
+}
+
+#[test]
+fn concurrent_hosts_do_not_share_test_credential_state() {
+    let configured_directory = tempfile::tempdir().expect("configured host directory");
+    let missing_directory = tempfile::tempdir().expect("missing host directory");
+    let configured_host = Arc::new(ApplicationHost::new_with_test_credential_store_for_tests(
+        KernelBootstrapOptions::with_data_directory(configured_directory.path().join("data")),
+        TestCredentialStoreMode::Configured,
+    ));
+    let missing_host = Arc::new(ApplicationHost::new_with_test_credential_store_for_tests(
+        KernelBootstrapOptions::with_data_directory(missing_directory.path().join("data")),
+        TestCredentialStoreMode::Missing,
+    ));
+    context_ready(&configured_host);
+    context_ready(&missing_host);
+
+    let configured_reader = {
+        let host = Arc::clone(&configured_host);
+        std::thread::spawn(move || {
+            host.metadata_provider_readiness()
+                .expect("configured readiness")
+                .into_iter()
+                .find(|provider| provider.provider_id() == ProviderId::SteamGridDb)
+                .expect("configured provider")
+                .credential_configured()
+        })
+    };
+    let missing_reader = {
+        let host = Arc::clone(&missing_host);
+        std::thread::spawn(move || {
+            host.metadata_provider_readiness()
+                .expect("missing readiness")
+                .into_iter()
+                .find(|provider| provider.provider_id() == ProviderId::SteamGridDb)
+                .expect("missing provider")
+                .credential_configured()
+        })
+    };
+
+    assert!(configured_reader.join().expect("configured query thread"));
+    assert!(!missing_reader.join().expect("missing query thread"));
+    configured_host
+        .general_shutdown()
+        .expect("configured host shutdown");
+    missing_host
+        .general_shutdown()
+        .expect("missing host shutdown");
+}
+
+#[test]
 #[cfg(feature = "test-support")]
 fn library_refresh_does_not_starve_foreground_queries_or_job_control() {
     let directory = tempfile::tempdir().expect("tempdir");
@@ -355,7 +509,10 @@ fn library_refresh_does_not_starve_foreground_queries_or_job_control() {
     let options = KernelBootstrapOptions::with_data_directory(directory.path().join("data"))
         .with_provider_session_factory_for_tests(Vec::new)
         .with_refresh_execution_hook_for_tests(move |checkpoint| gate_for_hook.hook(checkpoint));
-    let host = Arc::new(ApplicationHost::new(options));
+    let host = Arc::new(ApplicationHost::new_with_test_credential_store_for_tests(
+        options,
+        TestCredentialStoreMode::Missing,
+    ));
     context_ready(&host);
 
     let library = directory.path().join("Library");
@@ -487,7 +644,10 @@ fn seed_identified_game(
     let options = KernelBootstrapOptions::with_data_directory(directory.join("data"))
         .with_provider_session_factory_for_tests(Vec::new)
         .with_refresh_execution_hook_for_tests(move |checkpoint| gate_for_hook.hook(checkpoint));
-    let host = Arc::new(ApplicationHost::new(options));
+    let host = Arc::new(ApplicationHost::new_with_test_credential_store_for_tests(
+        options,
+        TestCredentialStoreMode::Missing,
+    ));
     context_ready(&host);
 
     let library = directory.join("Library");

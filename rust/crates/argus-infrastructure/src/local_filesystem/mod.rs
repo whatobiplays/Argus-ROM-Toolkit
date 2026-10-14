@@ -1059,12 +1059,21 @@ fn classify_access_error(error: std::io::Error) -> SourceAccessError {
 #[derive(Clone, Debug)]
 pub struct LocalFilesystemProvider {
     mounted_volumes: Arc<RwLock<MountedVolumeRegistry>>,
+    /// One-shot forced failure for execution-scoped access opening.
+    ///
+    /// Present only under the `test-support` feature so failure-injection
+    /// tests can deterministically exercise how callers handle a source
+    /// access that cannot be opened.
+    #[cfg(feature = "test-support")]
+    forced_open_failure: Arc<std::sync::Mutex<Option<SourceAccessError>>>,
 }
 
 impl Default for LocalFilesystemProvider {
     fn default() -> Self {
         Self {
             mounted_volumes: mounted_volume_registry(),
+            #[cfg(feature = "test-support")]
+            forced_open_failure: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 }
@@ -1170,14 +1179,45 @@ impl LocalFilesystemProviderPort for LocalFilesystemProvider {
         &self,
         locator: &RootLocator,
     ) -> Result<Box<dyn LibrarySourceAccess>, SourceAccessError> {
-        Ok(Box::new(LocalFilesystemSourceAccess::new_with_registry(
-            locator,
-            Some(Arc::clone(&self.mounted_volumes)),
-        )))
+        #[cfg(feature = "test-support")]
+        if let Some(error) = self
+            .forced_open_failure
+            .lock()
+            .expect("forced open failure lock")
+            .take()
+        {
+            return Err(error);
+        }
+        Ok(Box::new(self.open_source_access(locator)))
     }
 }
 
 impl LocalFilesystemProvider {
+    /// Schedules one deterministic access-opening failure for tests.
+    ///
+    /// The next `open_access` call performed by this provider or any of its
+    /// clones returns the supplied error once; later calls behave normally.
+    #[cfg(feature = "test-support")]
+    pub fn fail_next_open_for_tests(&self, error: SourceAccessError) {
+        *self
+            .forced_open_failure
+            .lock()
+            .expect("forced open failure lock") = Some(error);
+    }
+
+    /// Opens a concrete source-access view using this provider's mounted-volume registry.
+    ///
+    /// Content identification needs the local reader capabilities of
+    /// `LocalFilesystemSourceAccess` in addition to the provider-neutral scan
+    /// interface. Keeping construction here ensures stable provider locators
+    /// resolve against the same mount snapshot used by library operations.
+    pub fn open_source_access(&self, locator: &RootLocator) -> LocalFilesystemSourceAccess {
+        LocalFilesystemSourceAccess::new_with_registry(
+            locator,
+            Some(Arc::clone(&self.mounted_volumes)),
+        )
+    }
+
     #[cfg(not(target_os = "macos"))]
     fn validate_path_selection(&self, raw: &str) -> Result<ValidatedLocalRoot, ProviderError> {
         let path = Path::new(raw);

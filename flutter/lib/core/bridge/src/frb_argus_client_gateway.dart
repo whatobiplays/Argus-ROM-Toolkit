@@ -313,7 +313,9 @@ final class FrbArgusClientGateway
 
   @override
   Future<OperationHandle> refreshLibrary() => _call(
-    () async => operationHandleFromDto(await _rustApi.crateRefreshLibrary()),
+    () async => _sourcesCall(
+      () async => operationHandleFromDto(await _rustApi.crateRefreshLibrary()),
+    ),
   );
 
   @override
@@ -566,11 +568,19 @@ final class FrbArgusClientGateway
   );
 
   @override
-  Future<RetryJobResult> retryJob(JobRunId jobRunId) => _call(
-    () async => retryJobResultFromDto(
+  Future<RetryJobResult> retryJob(JobRunId jobRunId) => _call(() async {
+    final detail = jobDetailFromDto(
+      await _rustApi.crateGetJob(jobRunId: jobRunId.value),
+    );
+    Future<RetryJobResult> retry() async => retryJobResultFromDto(
       await _rustApi.crateRetryJob(jobRunId: jobRunId.value),
-    ),
-  );
+    );
+    if (detail.operationDetail is OperationDetailLibraryScan ||
+        detail.operationDetail is OperationDetailLibraryRefresh) {
+      return _sourcesCall(retry);
+    }
+    return retry();
+  });
 
   @override
   Future<LibraryRootScanAdmission?> getRootScanAdmission(

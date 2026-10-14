@@ -1058,6 +1058,32 @@ impl ApplicationHost {
         generation.background.clone()
     }
 
+    /// Test-only: forces the next execution-scoped source access open to
+    /// return the supplied error once.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn fail_next_source_open_for_tests(
+        &self,
+        error: argus_application::SourceAccessError,
+    ) -> bool {
+        let Ok(generation) = self.lock_generation() else {
+            return false;
+        };
+        let Some(handle) = generation.kernel_handle() else {
+            return false;
+        };
+        let Ok(kernel_guard) = handle.lock() else {
+            return false;
+        };
+        let Some(kernel) = kernel_guard.as_ref() else {
+            return false;
+        };
+        kernel
+            .local_filesystem_provider()
+            .fail_next_open_for_tests(error);
+        true
+    }
+
     /// Begins one top-level request/response bridge operation.
     pub fn begin_operation(
         &self,
@@ -3581,10 +3607,9 @@ fn register_library_scan_with_operation_type(
     admitted: &AdmittedScan,
     operation_type: &'static str,
 ) -> Result<(), ApplicationError> {
-    let access = InfraLocalFilesystemProvider::default()
-        .open_access(admitted.plan().root_locator())
-        .map_err(|_| runtime_error_with_trace(ErrorCode::InternalUnexpected, context.trace_id()))?;
-    let handler = LibraryScanOperationHandler::new(
+    let provider = kernel.local_filesystem_provider();
+    let access = provider.open_access(admitted.plan().root_locator());
+    let handler = LibraryScanOperationHandler::new_with_access_result(
         admitted.plan().clone(),
         access,
         kernel.unit_of_work_factory().clone(),
@@ -3713,6 +3738,7 @@ fn register_library_scan_all_with_operation_type(
         admitted.plans().to_vec(),
         kernel.unit_of_work_factory().clone(),
         crate::events::EventBusSink::new(kernel.event_bus().clone()),
+        kernel.local_filesystem_provider().clone(),
         100,
         exclusion_count,
     );
@@ -3917,9 +3943,10 @@ impl BackgroundOperationHandler for LibraryRefreshOperationHandler {
         }
 
         for (index, plan) in self.plans.iter().enumerate() {
-            let child = LibraryScanOperationHandler::new(
+            let provider = self.execution.local_filesystem_provider();
+            let child = LibraryScanOperationHandler::new_with_access_result(
                 plan.clone(),
-                LocalFilesystemSourceAccess::new(plan.root_locator()),
+                provider.open_access(plan.root_locator()),
                 self.unit_of_work.clone(),
                 self.event_sink.clone(),
                 self.checkpoint_size,
@@ -4333,6 +4360,7 @@ struct LibraryScanAllOperationHandler {
     plans: Vec<LibraryScanExecutionPlan>,
     unit_of_work: KernelUnitOfWorkFactory,
     event_sink: crate::events::EventBusSink,
+    source_access_provider: InfraLocalFilesystemProvider,
     checkpoint_size: usize,
     exclusion_count: usize,
 }
@@ -4342,6 +4370,7 @@ impl LibraryScanAllOperationHandler {
         plans: Vec<LibraryScanExecutionPlan>,
         unit_of_work: KernelUnitOfWorkFactory,
         event_sink: crate::events::EventBusSink,
+        source_access_provider: InfraLocalFilesystemProvider,
         checkpoint_size: usize,
         exclusion_count: usize,
     ) -> Self {
@@ -4349,6 +4378,7 @@ impl LibraryScanAllOperationHandler {
             plans,
             unit_of_work,
             event_sink,
+            source_access_provider,
             checkpoint_size: checkpoint_size.max(1),
             exclusion_count,
         }
@@ -4364,10 +4394,9 @@ impl argus_application::BackgroundOperationHandler for LibraryScanAllOperationHa
     ) -> Result<OperationCompletion, ApplicationError> {
         let mut child_completions = Vec::with_capacity(self.plans.len());
         for plan in &self.plans {
-            let access = LocalFilesystemSourceAccess::new(plan.root_locator());
-            let child = LibraryScanOperationHandler::new(
+            let child = LibraryScanOperationHandler::new_with_access_result(
                 plan.clone(),
-                access,
+                self.source_access_provider.open_access(plan.root_locator()),
                 self.unit_of_work.clone(),
                 self.event_sink.clone(),
                 self.checkpoint_size,

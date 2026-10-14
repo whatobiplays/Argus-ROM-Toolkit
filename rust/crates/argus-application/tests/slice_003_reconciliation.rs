@@ -662,6 +662,11 @@ impl FakeAccess {
         self
     }
 
+    fn with_resolve_error(mut self, error: SourceAccessError) -> Self {
+        self.resolve_error = Some(error);
+        self
+    }
+
     fn next(&self) -> Result<EnumerationResult, SourceAccessError> {
         self.script
             .lock()
@@ -773,9 +778,18 @@ fn run_scan(
     scan_index: u8,
     cancel: Arc<AtomicBool>,
 ) -> (OperationCompletion, Vec<ApplicationEvent>, Vec<JobProgress>) {
+    run_scan_with_access_result(store, Ok(access), scan_index, cancel)
+}
+
+fn run_scan_with_access_result(
+    store: Arc<Mutex<Store>>,
+    access: Result<FakeAccess, SourceAccessError>,
+    scan_index: u8,
+    cancel: Arc<AtomicBool>,
+) -> (OperationCompletion, Vec<ApplicationEvent>, Vec<JobProgress>) {
     let events = Arc::new(Mutex::new(Vec::new()));
     let reports = Arc::new(Mutex::new(Vec::new()));
-    let handler = LibraryScanOperationHandler::new(
+    let handler = LibraryScanOperationHandler::new_with_access_result(
         plan(scan_index),
         access,
         FakeFactory {
@@ -1403,6 +1417,52 @@ fn root_level_unavailable_outcome_maps_to_failed_unavailable() {
     assert_eq!(
         store.lock().expect("store lock").availability,
         Some(LibraryRootAvailability::Unavailable)
+    );
+}
+
+#[test]
+fn cancellation_precedes_an_admitted_source_access_open_failure() {
+    let store = Arc::new(Mutex::new(Store::default()));
+    let (completion, _, _) = run_scan_with_access_result(
+        Arc::clone(&store),
+        Err(SourceAccessError::SourceUnavailable),
+        1,
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    assert_eq!(completion.state(), JobRunState::Cancelled);
+    let store = store.lock().expect("store lock");
+    assert_eq!(
+        store.last_scan.as_ref().expect("last scan").status(),
+        LibraryRootLastScanStatus::Cancelled,
+        "cancellation must terminalize the admitted scan before classifying provider failure"
+    );
+    assert_eq!(
+        store.availability, None,
+        "an unobserved source-access failure must not overwrite cancellation state"
+    );
+}
+
+#[test]
+fn cancellation_precedes_an_admitted_root_resolution_failure() {
+    let store = Arc::new(Mutex::new(Store::default()));
+    let (completion, _, _) = run_scan(
+        Arc::clone(&store),
+        FakeAccess::new(Vec::new()).with_resolve_error(SourceAccessError::SourceUnavailable),
+        1,
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    assert_eq!(completion.state(), JobRunState::Cancelled);
+    let store = store.lock().expect("store lock");
+    assert_eq!(
+        store.last_scan.as_ref().expect("last scan").status(),
+        LibraryRootLastScanStatus::Cancelled,
+        "cancellation must terminalize the admitted scan before classifying root-resolution failure"
+    );
+    assert_eq!(
+        store.availability, None,
+        "an unobserved root-resolution failure must not overwrite cancellation state"
     );
 }
 

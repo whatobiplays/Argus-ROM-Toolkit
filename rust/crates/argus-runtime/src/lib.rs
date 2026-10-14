@@ -518,6 +518,7 @@ pub struct KernelBootstrap {
         SqliteDatabaseExecutor,
         InfraLocalFilesystemProvider,
     >,
+    local_filesystem_provider: InfraLocalFilesystemProvider,
     jobs_service: JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>,
     unit_of_work: KernelUnitOfWorkFactory,
     metadata_provider_registry: MetadataProviderRegistry,
@@ -545,6 +546,7 @@ pub struct KernelBootstrap {
 #[derive(Clone)]
 pub(crate) struct LibraryExecutionContext {
     unit_of_work: KernelUnitOfWorkFactory,
+    local_filesystem_provider: InfraLocalFilesystemProvider,
     metadata_provider_registry: MetadataProviderRegistry,
     provider_session_factory: Arc<EnrichmentSessionFactory>,
     credential_service: Arc<Mutex<RuntimeCredentialService>>,
@@ -1425,6 +1427,7 @@ impl KernelBootstrap {
             SqliteDatabaseExecutor,
             InfraLocalFilesystemProvider,
         >,
+        local_filesystem_provider: InfraLocalFilesystemProvider,
         jobs_service: JobsService<SqliteJobsQueries, KernelUnitOfWorkFactory>,
         artwork_store: Arc<ArtworkObjectStore>,
         event_bus: Arc<EventBus>,
@@ -1440,6 +1443,7 @@ impl KernelBootstrap {
             executor: Some(unit_of_work.executor.clone()),
             settings_service,
             library_service,
+            local_filesystem_provider,
             jobs_service,
             unit_of_work,
             metadata_provider_registry: MetadataProviderRegistry::production(),
@@ -1473,11 +1477,12 @@ impl KernelBootstrap {
             SqliteAppearanceSettingsQueries::new(executor.clone()),
             executor.clone(),
         );
+        let local_filesystem_provider = InfraLocalFilesystemProvider::default();
         let library_service = LibraryService::new(
             SqliteLibraryRootQueries::new(executor.clone()),
             SqliteSourceEntryQueries::new(executor.clone()),
             executor.clone(),
-            InfraLocalFilesystemProvider::default(),
+            local_filesystem_provider.clone(),
         );
         let unit_of_work = KernelUnitOfWorkFactory::new(executor.clone());
         let jobs_service = JobsService::new(
@@ -1495,6 +1500,7 @@ impl KernelBootstrap {
             unit_of_work,
             settings_service,
             library_service,
+            local_filesystem_provider,
             jobs_service,
             Arc::new(
                 ArtworkObjectStore::new(directory.join("artwork-assets"))
@@ -1545,6 +1551,7 @@ impl KernelBootstrap {
     pub(crate) fn library_execution_context(&self) -> LibraryExecutionContext {
         LibraryExecutionContext {
             unit_of_work: self.unit_of_work.clone(),
+            local_filesystem_provider: self.local_filesystem_provider.clone(),
             metadata_provider_registry: self.metadata_provider_registry.clone(),
             provider_session_factory: Arc::clone(&self.provider_session_factory),
             credential_service: Arc::clone(&self.credential_service),
@@ -1556,6 +1563,10 @@ impl KernelBootstrap {
             #[cfg(feature = "test-support")]
             refresh_execution_hook: self.refresh_execution_hook.clone(),
         }
+    }
+
+    pub(crate) fn local_filesystem_provider(&self) -> &InfraLocalFilesystemProvider {
+        &self.local_filesystem_provider
     }
 
     /// Returns bounded structured diagnostics from post-commit publication.
@@ -2142,6 +2153,10 @@ impl KernelBootstrap {
 }
 
 impl LibraryExecutionContext {
+    pub(crate) fn local_filesystem_provider(&self) -> &InfraLocalFilesystemProvider {
+        &self.local_filesystem_provider
+    }
+
     fn transformation_registry(&self) -> &TransformationRegistry {
         &self.transformation_registry
     }
@@ -3086,7 +3101,9 @@ impl LibraryExecutionContext {
         if is_cancelled() {
             return Err(cancelled_sources_error(context.trace_id()));
         }
-        let access = LocalFilesystemSourceAccess::new(plan.root_locator());
+        let access = self
+            .local_filesystem_provider
+            .open_source_access(plan.root_locator());
         let resolved_root = access.resolve_root().map_err(|_| {
             application_error_from_code(
                 ErrorCode::FilesystemInvalidRootSelection,
@@ -4817,11 +4834,12 @@ pub fn bootstrap_kernel_with_event_bus(
         SqliteAppearanceSettingsQueries::new(executor.clone()),
         executor.clone(),
     );
+    let local_filesystem_provider = InfraLocalFilesystemProvider::default();
     let library_service = LibraryService::new(
         SqliteLibraryRootQueries::new(executor.clone()),
         SqliteSourceEntryQueries::new(executor.clone()),
         executor.clone(),
-        InfraLocalFilesystemProvider::default(),
+        local_filesystem_provider.clone(),
     );
     let unit_of_work = KernelUnitOfWorkFactory::new(executor.clone());
     let jobs_service = JobsService::new(
@@ -4874,6 +4892,7 @@ pub fn bootstrap_kernel_with_event_bus(
         executor: Some(executor),
         settings_service,
         library_service,
+        local_filesystem_provider,
         jobs_service,
         unit_of_work,
         metadata_provider_registry: MetadataProviderRegistry::production(),

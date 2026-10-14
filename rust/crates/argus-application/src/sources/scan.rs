@@ -72,7 +72,7 @@ enum FinalizeWork {
 /// Application-owned library scan execution handler.
 pub struct LibraryScanOperationHandler<A, U, S> {
     plan: crate::LibraryScanExecutionPlan,
-    access: A,
+    access: Result<A, SourceAccessError>,
     unit_of_work: U,
     event_sink: S,
     checkpoint_size: usize,
@@ -89,6 +89,19 @@ where
     pub fn new(
         plan: crate::LibraryScanExecutionPlan,
         access: A,
+        unit_of_work: U,
+        event_sink: S,
+        checkpoint_size: usize,
+    ) -> Self {
+        Self::new_with_access_result(plan, Ok(access), unit_of_work, event_sink, checkpoint_size)
+    }
+
+    /// Composes a scan with the result of opening its execution-scoped source
+    /// access. An opening error remains attached to the admitted scan so it
+    /// can be durably terminalized through the normal typed failure path.
+    pub fn new_with_access_result(
+        plan: crate::LibraryScanExecutionPlan,
+        access: Result<A, SourceAccessError>,
         unit_of_work: U,
         event_sink: S,
         checkpoint_size: usize,
@@ -145,9 +158,21 @@ where
         stop_reason: &dyn Fn() -> Option<BackgroundOperationStopReason>,
         progress: &dyn JobProgressReporter,
     ) -> Result<OperationCompletion, ApplicationError> {
-        let root = match self.access.resolve_root() {
+        let access = match &self.access {
+            Ok(access) => access,
+            Err(error) => {
+                if let Some(reason) = stop_reason() {
+                    return self.finish_stopped(context, reason, 0, 0, 0);
+                }
+                return self.root_failure(context, *error);
+            }
+        };
+        let root = match access.resolve_root() {
             Ok(root) => root,
             Err(error) => {
+                if let Some(reason) = stop_reason() {
+                    return self.finish_stopped(context, reason, 0, 0, 0);
+                }
                 return self.root_failure(context, error);
             }
         };
@@ -173,14 +198,10 @@ where
             }
             let should_stop = || stop_reason().is_some();
             let enumeration = match &scope {
-                Scope::Root => self
-                    .access
-                    .enumerate_root_direct_children(&root, &should_stop),
+                Scope::Root => access.enumerate_root_direct_children(&root, &should_stop),
                 Scope::Child {
                     relative_locator, ..
-                } => self
-                    .access
-                    .enumerate_direct_children(&root, relative_locator, &should_stop),
+                } => access.enumerate_direct_children(&root, relative_locator, &should_stop),
             };
             let enumeration = match enumeration {
                 Ok(result) => result,

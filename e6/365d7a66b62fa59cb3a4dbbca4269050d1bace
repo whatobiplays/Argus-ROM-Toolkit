@@ -1,0 +1,96 @@
+rust/crates/argus-runtime/tests/slice_006_scan_all.rs
+  s_114f2ab5f373bf::t_5f19513d2416aa 10-14,284-351,354,358-359
+  s_114f2ab5f373bf::t_120b6782cf3526 134-221
+  s_114f2ab5f373bf::t_ef0e84903f124b 222-224,352-353,355-357
+rust/crates/argus-infrastructure/src/local_filesystem/mod.rs
+  s_114f2ab5f373bf::t_9b11f2eddf7f35 1062-1068,1075-1076
+  s_114f2ab5f373bf::t_a25f7571d02b68 1182-1190,1196-1207
+  s_114f2ab5f373bf::t_b16b5acc72cd82 1191,1208-1220
+flutter/test/core/bridge/frb_mapper_test.dart
+  s_114f2ab5f373bf::t_de2be2fbb66c81 801-804,833,878-890,892-896,898
+  s_114f2ab5f373bf::t_b02a2e8318173b 780-800,805-807,827,849-850,855-857,862-871,873-877,897,1767-1768,1775-1781,1786-1790,1808-1809,1826-1829,1833-1851
+  s_114f2ab5f373bf::t_11a10f0ed29c2a 818,823,828-829,834-848,851-852,854,872,891
+  s_114f2ab5f373bf::t_43674211854e9a 1770-1771,1852-1853
+  s_114f2ab5f373bf::t_104ee1ba61df22 808-817,819-822,824-826,830-832,853,858-861,1763-1766,1769,1782-1785,1791-1807,1810-1825
+rust/crates/argus-runtime/src/runtime.rs
+  s_114f2ab5f373bf::t_f32052199139d6 1061-1080,1084-1086
+  s_114f2ab5f373bf::t_f9a5067fcf3ba2 1081-1083,3611-3612,3947,3949,4397,4399
+  s_114f2ab5f373bf::t_2b3c82157daa40 3741
+  s_114f2ab5f373bf::t_01bd84604688a9 4363,4373,4381
+  s_114f2ab5f373bf::t_826d5f9aa5b82a 3610,3946
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_114f2ab5f373bf::t_a1113757e235ff 1140,1212
+  s_114f2ab5f373bf::t_2952bbfdadf179 1214-1233
+  s_114f2ab5f373bf::t_102026b31f992e 944-948,952-958,995-1012,1018-1029,1044-1077
+  s_114f2ab5f373bf::t_5bbac324c83cdd 1260
+  s_114f2ab5f373bf::t_4d4a6196bc7261 1249-1254
+  s_114f2ab5f373bf::t_ab90296b489262 1129,1131,1134,1136-1137,1162,1196,1203-1207,1245-1248,1255-1257
+  s_114f2ab5f373bf::t_dab306c874581b 949-951,1013-1017,1030-1043,1078-1119
+  s_114f2ab5f373bf::t_6fd741656e43a6 1197-1200
+  s_114f2ab5f373bf::t_bb47cfb4f4b4e1 1139,1141
+  s_114f2ab5f373bf::t_8aadce6cab9916 922-943,959-994,1120-1123,1258-1259
+  s_114f2ab5f373bf::t_e01c46f22641c0 14-17,1124-1125,1127,1130,1132-1133,1135,1138,1142-1161,1163-1195,1201-1202,1208-1211,1261-1262
+  s_114f2ab5f373bf::t_cfd2ca89f54a36 1126,1128,1213,1234-1244
+rust/crates/argus-runtime/src/lib.rs
+  s_f27734bb238262::t_f5ae791d093260 3105
+  s_66f791c4ab49f1::t_e081a6978ea448 3106
+  s_f27734bb238262::t_030788c708dd5f 1446,1503
+  s_f27734bb238262::t_c0990e6def4900 4895
+  s_f27734bb238262::t_1f126f1b7fc9f4 3104
+rust/crates/argus-runtime/src/startup.rs
+  s_114f2ab5f373bf::t_43342a6720dc6d 118,456,461,466,516,552-556,603
+rust/crates/argus-application/src/sources/scan.rs
+  s_114f2ab5f373bf::t_8d6870bd9d80a8 173-175
+  s_5d62df6b616a0e::t_7064e2738d69af 95,97-98,163,168
+  s_114f2ab5f373bf::t_0d552c06be3fa3 103,105-107
+  s_114f2ab5f373bf::t_63d4f65a3dd660 96,161-162,169-170,201,204
+  s_114f2ab5f373bf::t_1d0b9c6c6192a6 75,99-102,104,164-167
+flutter/lib/core/bridge/src/frb_argus_client_gateway.dart
+  s_114f2ab5f373bf::t_a494c82db72333 578-579
+  s_114f2ab5f373bf::t_0fe93a70a64005 316-318,571-574,577,580-583
+  s_114f2ab5f373bf::t_dfda949bf0a97d 575
+rust/crates/argus-application/tests/slice_003_reconciliation.rs
+  s_5d62df6b616a0e::t_0382f912ffd8af 780,1468
+  s_114f2ab5f373bf::t_885fc7ba9a306c 665-669,1443-1467
+  s_114f2ab5f373bf::t_1f17d4fddc4fe0 781-788,792,1423-1442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6365d7a66b62fa59cb3a4dbbca4269050d1bace",
+  "prompts": {},
+  "sessions": {
+    "s_114f2ab5f373bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a131eb-094b-7511-b8c2-968e753db58d",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_5d62df6b616a0e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a131c2-ae01-7141-874c-cf889bf8eb74",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_66f791c4ab49f1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f3ae-5178-7a42-8e9f-531122b57503",
+        "model": "unknown"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_f27734bb238262": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03f7f-6186-7003-9d63-c9a18d8eb7af",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

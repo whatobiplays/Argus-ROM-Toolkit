@@ -1,0 +1,58 @@
+rust/crates/argus-runtime/tests/background_operations.rs
+  s_114f2ab5f373bf::t_cc5b6b68de7506 420-423,435-438
+  s_114f2ab5f373bf::t_d728b59f1a611d 426-429,444-449
+  s_114f2ab5f373bf::t_3787fc44e474c7 17-18,31,350-381,388-391,398-401,408-411,453-497,501-502,512-515,647-650
+  s_114f2ab5f373bf::t_c359b209bbba7a 382-387,392-397,402-407,412-419,424-425,430-434,439-443,450-452,498-500
+rust/crates/argus-runtime/src/runtime.rs
+  s_114f2ab5f373bf::t_1fe5b3aa987f56 915-916,964-994,999-1000
+  s_114f2ab5f373bf::t_61db2313bf2ee8 1243-1267
+rust/crates/argus-infrastructure/src/providers.rs
+  s_114f2ab5f373bf::t_db638ec0e88ed2 1368-1388
+  s_114f2ab5f373bf::t_3b7e1a339bdeec 1367
+  s_114f2ab5f373bf::t_01b544c5731004 1389-1390,1403
+rust/crates/argus-infrastructure/src/credentials.rs
+  s_114f2ab5f373bf::t_2de7ad8806ba8a 55,70,73-74,89-90,93-95,122,124-125,234-237
+  s_114f2ab5f373bf::t_6c8ac42910d102 115,120,126,135,144,154,173
+  s_114f2ab5f373bf::t_8498d5b08acb28 116-119
+  s_114f2ab5f373bf::t_392308e85fec32 30-43,241-242
+  s_114f2ab5f373bf::t_9fde7084818118 29,72,187,190,193-194,208-209
+  s_114f2ab5f373bf::t_c436a2eab34781 121,136,145,155,174
+  s_114f2ab5f373bf::t_efdfc790d46e05 188-189,191-192,204-207
+  s_114f2ab5f373bf::t_3040161e6fac6c 238
+  s_114f2ab5f373bf::t_708ad93f6b7da5 56,71,75-88,91-92,96-98,123,239-240
+  s_114f2ab5f373bf::t_2fc445d25c009e 61,210-233
+rust/crates/argus-runtime/src/startup.rs
+  s_114f2ab5f373bf::t_1e347b38a4b3d4 131-132,155-224,227-230,315-316,674-677,691
+rust/crates/argus-runtime/src/lib.rs
+  s_114f2ab5f373bf::t_44de9f7b871fc1 336-339,387-393,395-399,401-403,408-411,416,420,422-424,426-432,437-438
+  s_114f2ab5f373bf::t_43f17217613659 151-152,163-164,170,175-179,244,246-247,261-263,276,278-279,297,299-300,318-324
+  s_114f2ab5f373bf::t_cb7e0580bf075f 51,136
+  s_114f2ab5f373bf::t_4d93b05ae8dac0 200-204,353-356,361
+  s_114f2ab5f373bf::t_d28ada429fb23d 314-317,325-335,340,342-352,357-360,362,394,439-441
+  s_114f2ab5f373bf::t_f455a3bdedc09c 52-54,185-187,251-253,274,341,400,412,417,419,421,425,433-436
+  s_114f2ab5f373bf::t_560d707570d1e5 363-386,404-407,413-415,418
+  s_114f2ab5f373bf::t_21a753cebc3595 140-150,153-162,165-169,171-174,180-184,188-199,205-243,245,248-250,254-260,264-273,275,277,280-296,298,301-313
+  s_114f2ab5f373bf::t_98d98a75cc1224 1738,1755,1820
+  s_114f2ab5f373bf::t_4c4aa67706c4fa 5205
+rust/crates/argus-infrastructure/tests/provider_live_qualification.rs
+  s_114f2ab5f373bf::t_e8796c2f39272d 338
+  s_114f2ab5f373bf::t_59818a1412a1f3 18-20,325-332,375
+  s_114f2ab5f373bf::t_fc1e9a647f895b 1-2
+  s_114f2ab5f373bf::t_c2185d49b94ece 333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "52cde84a9cb19e3b567cdd8e96dbd6345f8df104",
+  "prompts": {},
+  "sessions": {
+    "s_114f2ab5f373bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a131eb-094b-7511-b8c2-968e753db58d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

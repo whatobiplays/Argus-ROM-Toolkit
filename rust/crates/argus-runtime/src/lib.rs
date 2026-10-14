@@ -48,10 +48,10 @@ use argus_application::{
     ProvenanceMember, ProviderError, ProviderId, ProviderReadinessState, RefreshIssueAccumulator,
     RefreshIssueKind, RefreshIssueReason, RefreshLibraryCommand, RefreshMode,
     RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
-    SafeContextValue, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
-    SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository,
-    SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
-    StartLibraryScanCommand, StartupCollector, SubsystemName,
+    SafeContextValue, SecureCredentialStore, SettingsService, SourceEntryChildrenPage,
+    SourceEntryDetailProjection, SourceEntryId, SourceEntryKind, SourceEntryRecord,
+    SourceEntryRepository, SourceVersionEvidence, StartLibraryScanAllCommand,
+    StartLibraryScanAllResult, StartLibraryScanCommand, StartupCollector, SubsystemName,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, TraceEvent, TraceEventPhase, TraceId,
     TransformationFailure, TransformationRegistry, UnitOfWork, UnitOfWorkFactory,
     UpdateAppearanceSettingsCommand, ValidatedContentDerivation, ValidatedM3uGrouping, Version,
@@ -133,9 +133,311 @@ pub mod test_support {
 const STEAMGRIDDB_API_BASE_URL: &str = "https://www.steamgriddb.com/api/v2";
 
 type RuntimeCredentialService = MetadataProviderService<
-    KeyringSecureCredentialStore,
+    RuntimeSecureCredentialStore,
     SteamGridDbCredentialValidator<UreqTransport>,
 >;
+
+/// Closed test-only credential states used to build isolated runtime hosts.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TestCredentialStoreMode {
+    /// Start with no provider credential configured.
+    Missing,
+    /// Start with a synthetic in-memory credential for readiness tests.
+    Configured,
+    /// Make secure-store operations fail with the normal unavailable result.
+    Unavailable,
+    /// Reject credential access before any platform store can be opened.
+    RejectNativeAccess,
+}
+
+/// Private credential-store adapter used by runtime composition.
+///
+/// Production hosts always select the platform-backed variant. Test hosts can
+/// select an isolated in-memory variant through the explicit test-support
+/// host constructor; compiling tests alone never changes backend selection.
+enum RuntimeSecureCredentialStore {
+    Platform(KeyringSecureCredentialStore),
+    #[cfg(feature = "test-support")]
+    RejectNativeAccess,
+    #[cfg(feature = "test-support")]
+    InMemory(TestInMemoryCredentialStore),
+}
+
+impl RuntimeSecureCredentialStore {
+    fn platform() -> Self {
+        Self::Platform(KeyringSecureCredentialStore::new_for_application())
+    }
+
+    #[cfg(feature = "test-support")]
+    fn in_memory(mode: TestCredentialStoreMode) -> Self {
+        assert_ne!(
+            mode,
+            TestCredentialStoreMode::RejectNativeAccess,
+            "native-access rejection is not an in-memory credential mode"
+        );
+        Self::InMemory(TestInMemoryCredentialStore::new(mode))
+    }
+
+    #[cfg(feature = "test-support")]
+    fn reject_platform_access_in_test_support() -> ! {
+        panic!(
+            "test-support host attempted platform credential-store access; select an explicit in-memory test store"
+        )
+    }
+}
+
+#[cfg(feature = "test-support")]
+struct TestInMemoryCredentialStore {
+    secrets: std::collections::HashMap<ProviderId, zeroize::Zeroizing<Vec<u8>>>,
+    unavailable: bool,
+}
+
+#[cfg(feature = "test-support")]
+impl TestInMemoryCredentialStore {
+    fn new(mode: TestCredentialStoreMode) -> Self {
+        assert_ne!(
+            mode,
+            TestCredentialStoreMode::RejectNativeAccess,
+            "native-access rejection cannot create an in-memory credential store"
+        );
+        let mut secrets = std::collections::HashMap::new();
+        let unavailable = mode == TestCredentialStoreMode::Unavailable;
+        if mode == TestCredentialStoreMode::Configured {
+            secrets.insert(
+                ProviderId::SteamGridDb,
+                zeroize::Zeroizing::new(b"argus-test-credential".to_vec()),
+            );
+        }
+        Self {
+            secrets,
+            unavailable,
+        }
+    }
+
+    fn validate_provider(provider_id: ProviderId) -> Result<(), CredentialMutationError> {
+        match provider_id {
+            ProviderId::SteamGridDb => Ok(()),
+            ProviderId::Playmatch | ProviderId::GameTdb => {
+                Err(CredentialMutationError::UnsupportedProvider)
+            }
+        }
+    }
+
+    fn ensure_available(&self) -> Result<(), CredentialMutationError> {
+        if self.unavailable {
+            Err(CredentialMutationError::StoreUnavailable)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl SecureCredentialStore for RuntimeSecureCredentialStore {
+    fn set(
+        &mut self,
+        provider_id: ProviderId,
+        secret: &[u8],
+    ) -> Result<(), CredentialMutationError> {
+        match self {
+            Self::Platform(store) => store.set(provider_id, secret),
+            #[cfg(feature = "test-support")]
+            Self::RejectNativeAccess => Self::reject_platform_access_in_test_support(),
+            #[cfg(feature = "test-support")]
+            Self::InMemory(store) => {
+                TestInMemoryCredentialStore::validate_provider(provider_id)?;
+                store.ensure_available()?;
+                store
+                    .secrets
+                    .insert(provider_id, zeroize::Zeroizing::new(secret.to_vec()));
+                Ok(())
+            }
+        }
+    }
+
+    fn remove(&mut self, provider_id: ProviderId) -> Result<(), CredentialMutationError> {
+        match self {
+            Self::Platform(store) => store.remove(provider_id),
+            #[cfg(feature = "test-support")]
+            Self::RejectNativeAccess => Self::reject_platform_access_in_test_support(),
+            #[cfg(feature = "test-support")]
+            Self::InMemory(store) => {
+                TestInMemoryCredentialStore::validate_provider(provider_id)?;
+                store.ensure_available()?;
+                store.secrets.remove(&provider_id);
+                Ok(())
+            }
+        }
+    }
+
+    fn is_configured(&mut self, provider_id: ProviderId) -> Result<bool, CredentialMutationError> {
+        match self {
+            Self::Platform(store) => store.is_configured(provider_id),
+            #[cfg(feature = "test-support")]
+            Self::RejectNativeAccess => Self::reject_platform_access_in_test_support(),
+            #[cfg(feature = "test-support")]
+            Self::InMemory(store) => {
+                TestInMemoryCredentialStore::validate_provider(provider_id)?;
+                store.ensure_available()?;
+                Ok(store
+                    .secrets
+                    .get(&provider_id)
+                    .is_some_and(|secret| !secret.is_empty()))
+            }
+        }
+    }
+
+    fn with_secret<T>(
+        &mut self,
+        provider_id: ProviderId,
+        operation: &mut dyn FnMut(&[u8]) -> T,
+    ) -> Result<T, CredentialMutationError> {
+        match self {
+            Self::Platform(store) => store.with_secret(provider_id, operation),
+            #[cfg(feature = "test-support")]
+            Self::RejectNativeAccess => Self::reject_platform_access_in_test_support(),
+            #[cfg(feature = "test-support")]
+            Self::InMemory(store) => {
+                TestInMemoryCredentialStore::validate_provider(provider_id)?;
+                store.ensure_available()?;
+                let secret = store
+                    .secrets
+                    .get(&provider_id)
+                    .ok_or(CredentialMutationError::StoreUnavailable)?;
+                Ok(operation(secret.as_slice()))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn runtime_credential_store(
+    test_mode: Option<TestCredentialStoreMode>,
+) -> RuntimeSecureCredentialStore {
+    match test_mode {
+        None => RuntimeSecureCredentialStore::platform(),
+        Some(TestCredentialStoreMode::RejectNativeAccess) => {
+            RuntimeSecureCredentialStore::RejectNativeAccess
+        }
+        Some(mode) => RuntimeSecureCredentialStore::in_memory(mode),
+    }
+}
+
+#[cfg(not(feature = "test-support"))]
+pub(crate) fn runtime_credential_store() -> RuntimeSecureCredentialStore {
+    RuntimeSecureCredentialStore::platform()
+}
+
+#[cfg(all(test, feature = "test-support"))]
+mod credential_store_composition_tests {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use argus_application::{
+        CredentialMutationError, CredentialValidationError, CredentialValidator,
+        MetadataProviderService, ProviderId, ProviderReadinessState, SecureCredentialStore,
+    };
+
+    use super::{RuntimeSecureCredentialStore, TestCredentialStoreMode, runtime_credential_store};
+
+    #[test]
+    fn platform_store_remains_the_default_until_test_mode_is_explicit() {
+        assert!(matches!(
+            runtime_credential_store(None),
+            RuntimeSecureCredentialStore::Platform(_)
+        ));
+        assert!(matches!(
+            runtime_credential_store(Some(TestCredentialStoreMode::Missing)),
+            RuntimeSecureCredentialStore::InMemory(_)
+        ));
+        assert!(matches!(
+            runtime_credential_store(Some(TestCredentialStoreMode::RejectNativeAccess)),
+            RuntimeSecureCredentialStore::RejectNativeAccess
+        ));
+    }
+
+    #[test]
+    fn test_support_guard_rejects_all_platform_operations_before_keyring_access() {
+        let mut store = RuntimeSecureCredentialStore::RejectNativeAccess;
+
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                let _ = store.set(ProviderId::SteamGridDb, b"synthetic");
+            }))
+            .is_err()
+        );
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                let _ = store.remove(ProviderId::SteamGridDb);
+            }))
+            .is_err()
+        );
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                let _ = store.is_configured(ProviderId::SteamGridDb);
+            }))
+            .is_err()
+        );
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                let _ = store.with_secret(ProviderId::SteamGridDb, &mut |_| ());
+            }))
+            .is_err()
+        );
+    }
+
+    struct AcceptingCredentialValidator;
+
+    impl CredentialValidator for AcceptingCredentialValidator {
+        fn validate(&self, _secret: &[u8]) -> Result<(), CredentialValidationError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn in_memory_store_preserves_missing_configured_and_unavailable_states() {
+        let mut missing = RuntimeSecureCredentialStore::in_memory(TestCredentialStoreMode::Missing);
+        assert_eq!(missing.is_configured(ProviderId::SteamGridDb), Ok(false));
+        assert_eq!(
+            missing.with_secret(ProviderId::SteamGridDb, &mut |_| ()),
+            Err(CredentialMutationError::StoreUnavailable)
+        );
+        assert_eq!(
+            missing.set(ProviderId::Playmatch, b"unsupported"),
+            Err(CredentialMutationError::UnsupportedProvider)
+        );
+
+        let mut configured =
+            RuntimeSecureCredentialStore::in_memory(TestCredentialStoreMode::Configured);
+        assert_eq!(configured.is_configured(ProviderId::SteamGridDb), Ok(true));
+        configured
+            .set(ProviderId::SteamGridDb, b"argus-test-updated-credential")
+            .expect("set synthetic credential in memory");
+        let observed_secret = configured
+            .with_secret(ProviderId::SteamGridDb, &mut |secret| {
+                secret == b"argus-test-updated-credential"
+            })
+            .expect("synthetic secret is readable in memory");
+        assert!(observed_secret);
+        configured
+            .remove(ProviderId::SteamGridDb)
+            .expect("remove synthetic credential");
+        assert_eq!(configured.is_configured(ProviderId::SteamGridDb), Ok(false));
+
+        let unavailable =
+            RuntimeSecureCredentialStore::in_memory(TestCredentialStoreMode::Unavailable);
+        let mut service = MetadataProviderService::new(unavailable, AcceptingCredentialValidator);
+        assert_eq!(
+            service.refresh_readiness_from_store(),
+            Err(CredentialMutationError::StoreUnavailable)
+        );
+        assert_eq!(
+            service.readiness().state(),
+            ProviderReadinessState::Unavailable
+        );
+        assert!(!service.readiness().credential_configured());
+    }
+}
 
 type EnrichmentSessionFactory =
     dyn Fn() -> Vec<Box<dyn EnrichmentProviderSession>> + Send + Sync + 'static;
@@ -1433,6 +1735,7 @@ impl KernelBootstrap {
         event_bus: Arc<EventBus>,
         collector: StartupCollector,
         provider_session_factory: Arc<EnrichmentSessionFactory>,
+        credential_store: RuntimeSecureCredentialStore,
         transformation_staging_root: PathBuf,
         #[cfg(feature = "test-support")] refresh_execution_hook: Option<Arc<RefreshExecutionHook>>,
     ) -> Self {
@@ -1449,7 +1752,7 @@ impl KernelBootstrap {
             metadata_provider_registry: MetadataProviderRegistry::production(),
             provider_session_factory,
             credential_service: Arc::new(Mutex::new(MetadataProviderService::new(
-                KeyringSecureCredentialStore::new(),
+                credential_store,
                 SteamGridDbCredentialValidator::new(UreqTransport::new(), STEAMGRIDDB_API_BASE_URL),
             ))),
             artwork_store,
@@ -1514,6 +1817,7 @@ impl KernelBootstrap {
             )),
             StartupCollector::new(),
             production_enrichment_session_factory(),
+            RuntimeSecureCredentialStore::platform(),
             directory.join(argus_infrastructure::content::TRANSFORMATION_STAGING_DIRECTORY),
             #[cfg(feature = "test-support")]
             None,
@@ -4898,7 +5202,7 @@ pub fn bootstrap_kernel_with_event_bus(
         metadata_provider_registry: MetadataProviderRegistry::production(),
         provider_session_factory,
         credential_service: Arc::new(Mutex::new(MetadataProviderService::new(
-            KeyringSecureCredentialStore::new(),
+            RuntimeSecureCredentialStore::platform(),
             SteamGridDbCredentialValidator::new(UreqTransport::new(), STEAMGRIDDB_API_BASE_URL),
         ))),
         artwork_store: Arc::new(artwork_store),

@@ -1,3 +1,5 @@
+#![cfg(feature = "test-support")]
+
 //! Opt-in live qualification for the production enrichment boundary.
 //!
 //! These tests use only non-secret provider record identifiers supplied by the
@@ -13,7 +15,9 @@ use argus_application::{
     MetadataProviderService, ProviderId, ProviderReadinessState,
 };
 use argus_domain::{GameContentId, GameId, PlatformId};
-use argus_infrastructure::credentials::KeyringSecureCredentialStore;
+use argus_infrastructure::credentials::{
+    KeyringSecureCredentialStore, initialize_secure_store_for_live_qualification,
+};
 use argus_infrastructure::providers::{
     ProductionProviderSessionFactory, SteamGridDbCredentialValidator, UreqTransport,
 };
@@ -318,11 +322,20 @@ fn production_steamgriddb_live_qualification() {
         return;
     };
 
+    if initialize_secure_store_for_live_qualification().is_err() {
+        print_not_run(
+            "steamgriddb",
+            STEAMGRIDDB_PROBE_PROVIDER_PLATFORM,
+            "native credential backend is unavailable",
+        );
+        return;
+    }
+
     // This is the same application-owned credential service used by runtime
     // bootstrap. It reports only readiness; the secret remains in the keyring
     // and is borrowed internally by the production session.
     let mut credential_service = MetadataProviderService::new(
-        KeyringSecureCredentialStore::new(),
+        KeyringSecureCredentialStore::new_for_live_qualification(),
         SteamGridDbCredentialValidator::new(UreqTransport::new(), STEAMGRIDDB_API_BASE_URL),
     );
     let readiness = match credential_service.refresh_readiness_from_store() {
@@ -359,7 +372,7 @@ fn production_steamgriddb_live_qualification() {
         1,
     );
     let mut session = production_session(
-        ProductionProviderSessionFactory::new().create_sessions(),
+        ProductionProviderSessionFactory::new().create_sessions_for_live_qualification(),
         ProviderId::SteamGridDb,
     );
     let Some(artwork) = live_result_or_not_run(

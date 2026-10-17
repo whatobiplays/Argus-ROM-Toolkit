@@ -1,0 +1,54 @@
+README.md
+  s_8ac92ae211bb9c::t_64113030b4ea6b 59-61,65-71,76-88,91-122
+  s_8ac92ae211bb9c::t_e38bee029d3c24 62-64,72-75
+  s_8ac92ae211bb9c::t_7ba921b47e1cb1 89-90
+scripts/android_qualification/manifest.py
+  s_8ac92ae211bb9c::t_103878eac66545 1-242
+scripts/qualify_android_no_reset.sh
+  s_8ac92ae211bb9c::t_103878eac66545 1-5
+scripts/android_qualification/test_admission.py
+  s_8ac92ae211bb9c::t_b6a6e537093d72 1-80,82-91
+  s_8ac92ae211bb9c::t_3eb918242839e2 81
+scripts/android_qualification/test_cli.py
+  s_8ac92ae211bb9c::t_b6a6e537093d72 1-9,11-136,154-156
+  s_8ac92ae211bb9c::t_efab8e45a09eb4 10,137-153
+scripts/android_qualification/test_entrypoints.py
+  s_8ac92ae211bb9c::t_e38bee029d3c24 162-180
+  s_8ac92ae211bb9c::t_b6a6e537093d72 1-161,181-217
+scripts/android_qualification/fresh.py
+  s_8ac92ae211bb9c::t_103878eac66545 1-10
+  s_8ac92ae211bb9c::t_66ea1be7eabe40 11-23
+scripts/android_qualification/no_reset.py
+  s_8ac92ae211bb9c::t_103878eac66545 1-10
+  s_8ac92ae211bb9c::t_6be6a1c338480b 11-23
+justfile
+  s_8ac92ae211bb9c::t_37d2bf81b62e33 103-105,108,111,178
+  s_8ac92ae211bb9c::t_e38bee029d3c24 106-107,109-110
+scripts/android_qualification/test_manifest.py
+  s_8ac92ae211bb9c::t_efab8e45a09eb4 6,10-11,98-105,197-204,208-215,217-242
+  s_8ac92ae211bb9c::t_b6a6e537093d72 1-5,7-9,12-97,106-196,205-207,216,243-258
+scripts/android_qualification/cli.py
+  s_8ac92ae211bb9c::t_103878eac66545 1-119
+scripts/qualify_android_fresh.sh
+  s_8ac92ae211bb9c::t_103878eac66545 1-5
+scripts/android_qualification/admission.py
+  s_8ac92ae211bb9c::t_103878eac66545 1-50
+scripts/android_qualification/__init__.py
+  s_8ac92ae211bb9c::t_6dba98f70007d2 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ecdbaf52ffbcb22923f98297ea5f2728c7dcd0f",
+  "prompts": {},
+  "sessions": {
+    "s_8ac92ae211bb9c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14945-6ea2-74a2-868b-d4fbebc83b0e",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

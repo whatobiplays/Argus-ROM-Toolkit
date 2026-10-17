@@ -284,6 +284,7 @@ Before moving to Ready or Complete:
 |---|---|---|
 | ARCH-001 | [Architecture Overview](architecture-overview.md) | Complete |
 | ARCH-002 | Documentation Architecture | Complete |
+| ARCH-003 | [Argus Product Qualification Architecture](qualification-architecture.md) | Complete |
 
 ## 15. Active Implementation Scope
 

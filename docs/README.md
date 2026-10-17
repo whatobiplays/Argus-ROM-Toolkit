@@ -52,3 +52,13 @@ Do not rely on chat history as the durable specification. Material decisions mad
 Lower-level documents may refine higher-level documents but must not contradict them. When a conflict exists, the higher-level document controls until it is formally revised.
 
 `Ready for Implementation` describes design maturity, not blanket implementation authorization. An agent implements only the intersection of the active phase, active slice or approved plan, explicit task authority, and governing documents; later-ready specifications constrain compatibility without expanding current scope.
+
+
+## Qualification authority
+
+- [Qualification architecture (ARCH-003)](architecture/qualification-architecture.md) defines the planning-cycle-neutral system boundary and invariants.
+- [Qualification contract (SPEC-X-003)](specifications/cross-cutting/spec-x-003-qualification-contract.md) defines acceptance, evidence, applicability, owner verdict, and readiness requirements.
+- [Qualification glossary (REF-QUAL-001)](../CONTEXT.md) provides canonical vocabulary.
+- [Qualification decision and approval record (REF-QUAL-002)](reference/qualification-design-decisions.md) preserves all 126 source decisions and the verified package/hash approval record.
+- [ADR-001 through ADR-003](adr/README.md) record the three accepted decisions.
+- [Original implementation plan](superpowers/plans/2026-10-15-argus-qualification-implementation-plan.md) is preserved as a planning artifact only. Its broader PR sequence does not authorize implementation or script migration in Issue #19.

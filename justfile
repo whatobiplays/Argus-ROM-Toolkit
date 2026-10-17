@@ -100,6 +100,15 @@ test:
     @bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --workspace --all-features --locked
     cd flutter && fvm flutter test --no-pub
 
+test-android-qualification:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/android_qualification -p 'test_*.py'
+
+qualify-android-fresh manifest host_flag="":
+    @bash {{ quote(justfile_directory() + "/scripts/qualify_android_fresh.sh") }} --manifest {{ quote(manifest) }} {{ if host_flag == "" { "" } else { quote(host_flag) } }}
+
+qualify-android-no-reset manifest host_flag="":
+    @bash {{ quote(justfile_directory() + "/scripts/qualify_android_no_reset.sh") }} --manifest {{ quote(manifest) }} {{ if host_flag == "" { "" } else { quote(host_flag) } }}
+
 test-phase-000-native:
     bash scripts/run_phase_000_native_tests.sh
 
@@ -166,4 +175,4 @@ test-phase-002-android-final:
 test-library-android-qualification:
     bash scripts/run_library_android_qualification.sh
 
-check: check-generated _format-check lint _architecture test check-qualification-record
+check: check-generated _format-check lint _architecture test test-android-qualification check-qualification-record

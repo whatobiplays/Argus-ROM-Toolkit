@@ -1,0 +1,45 @@
+CONTEXT.md
+  s_774283236c6012::t_7a872ebee7d552 1-273
+docs/README.md
+  s_774283236c6012::t_497c63ddfcc802 55-64
+docs/adr/README.md
+  s_774283236c6012::t_cc014999fc1005 12-22
+docs/adr/adr-001-qualification-artifact-separation.md
+  s_774283236c6012::t_f921c402f7e073 1-29
+docs/adr/adr-002-independent-owner-verdicts.md
+  s_774283236c6012::t_449c287835baee 1-29
+docs/adr/adr-003-reversible-source-unavailability.md
+  s_774283236c6012::t_449124b241c773 1-29
+docs/architecture/documentation-architecture.md
+  s_774283236c6012::t_ff862b12143953 287
+docs/architecture/qualification-architecture.md
+  s_774283236c6012::t_8e7bdbef4b6857 1-143
+docs/implementation/phase-003-manual-qualification.md
+  s_774283236c6012::t_abd8b31810006b 17,46,176,182,193,197-199,224-229,240-248
+docs/reference/README.md
+  s_774283236c6012::t_a01600eff67ed6 20-25
+docs/reference/qualification-design-decisions.md
+  s_774283236c6012::t_7a53c0e8b9e43c 1-307
+docs/specifications/cross-cutting/README.md
+  s_774283236c6012::t_2b70a8fbc62eab 13,16-20
+docs/specifications/cross-cutting/spec-x-003-qualification-contract.md
+  s_774283236c6012::t_3d701745e8554a 1-217
+docs/superpowers/plans/2026-10-15-argus-qualification-implementation-plan.md
+  s_774283236c6012::t_8898d050e2c1ea 1-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9f77bc6601ae7c270f7c6c2cf2f9f342bfcc81c",
+  "prompts": {},
+  "sessions": {
+    "s_774283236c6012": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a140f4-fbc7-78a3-97e7-bb6f8a21f2b6",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

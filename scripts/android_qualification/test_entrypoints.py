@@ -14,7 +14,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 FRESH_WRAPPER = ROOT / "scripts" / "qualify_android_fresh.sh"
 NO_RESET_WRAPPER = ROOT / "scripts" / "qualify_android_no_reset.sh"
-LEGACY_RUNNER = ROOT / "scripts" / "run_phase_003_android_physical_qualification.sh"
+ARCHIVE_MANIFEST = ROOT / "docs/archive/qualification/issue-21-v1/archive-manifest-v1.json"
+_archive = json.loads(ARCHIVE_MANIFEST.read_text(encoding="utf-8"))
+_retired_entry = next(
+    entry for entry in _archive["entries"] if entry["role"] == "retired_entrypoint"
+)
+RETIRED_ENTRYPOINT = ROOT / _retired_entry["original_path"]
 
 
 class EntrypointTests(unittest.TestCase):
@@ -188,10 +193,8 @@ class EntrypointTests(unittest.TestCase):
                 self.assertIn("--preflight", result.stdout)
                 self._assert_no_adb()
 
-    def test_legacy_runner_help_is_unchanged_and_device_free(self) -> None:
-        result = self._run(["bash", str(LEGACY_RUNNER), "--help"])
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--preflight-only", result.stdout)
+    def test_archived_physical_entrypoint_is_not_active(self) -> None:
+        self.assertFalse(RETIRED_ENTRYPOINT.exists())
         self._assert_no_adb()
 
 

@@ -56,9 +56,10 @@ Lower-level documents may refine higher-level documents but must not contradict 
 
 ## Qualification authority
 
-- [Qualification architecture (ARCH-003)](architecture/qualification-architecture.md) defines the planning-cycle-neutral system boundary and invariants.
+- [Qualification operations](qualification/README.md) documents the public host-validation commands, exit semantics, internal test-harness boundary, and retired-route policy.
+- [Archive index](archive/README.md) locates preserved qualification records and the reviewed surface-classification artifact.
+- [Qualification architecture (ARCH-003)](architecture/qualification-architecture.md) defines the system boundary and invariants.
 - [Qualification contract (SPEC-X-003)](specifications/cross-cutting/spec-x-003-qualification-contract.md) defines acceptance, evidence, applicability, owner verdict, and readiness requirements.
 - [Qualification glossary (REF-QUAL-001)](../CONTEXT.md) provides canonical vocabulary.
 - [Qualification decision and approval record (REF-QUAL-002)](reference/qualification-design-decisions.md) preserves all 126 source decisions and the verified package/hash approval record.
 - [ADR-001 through ADR-003](adr/README.md) record the three accepted decisions.
-- [Original implementation plan](superpowers/plans/2026-10-15-argus-qualification-implementation-plan.md) is preserved as a planning artifact only. Its broader PR sequence does not authorize implementation or script migration in Issue #19.

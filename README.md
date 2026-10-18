@@ -58,7 +58,7 @@ just test
 
 ## Android qualification entrypoints
 
-The phase-neutral host entrypoints accept an owner-private qualification
+The host-only entrypoints accept an owner-private qualification
 manifest and an optional host-only flag. The Justfile forwards the manifest as
 `--manifest` and forwards a supplied final argument unchanged to the Python
 CLI:
@@ -114,11 +114,13 @@ Exit status `0` reports `HOST_VALIDATED`, `2` reports a sanitized CLI or
 manifest validation block, and `3` reports that live execution is blocked
 because live authorization and device admission are not implemented.
 
-The historical `scripts/run_phase_003_android_physical_qualification.sh`
-command and its `--preflight-only` flag retain their legacy behavior. That flag
-is not a device-free dry-run: the historical path can perform ADB/device
-preflight work. Use only the new host-only entrypoints above when device
-access is not authorized.
+The former physical qualification command is retired. See
+[Qualification operations](docs/qualification/README.md) for the canonical host
+suite and device-isolation rules, and the [archive index](docs/archive/README.md)
+for preserved records, surface classifications, and archive provenance.
+
+The separate qualification APK packaging work in Issue #22 and the live-device
+authorization and admission controls in Issue #23 are deferred follow-on work.
 
 ## Documentation
 

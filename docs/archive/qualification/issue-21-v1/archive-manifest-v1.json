@@ -1,0 +1,79 @@
+{
+  "manifest_version": 1,
+  "fetched_base_commit": "5d3cc1e166a0760bc1076c648a47052ac268bddc",
+  "historical_device_owned_directory": "/sdcard/ArgusPhase003Qualification",
+  "entries": [
+    {
+      "role": "retired_entrypoint",
+      "original_path": "scripts/run_phase_003_android_physical_qualification.sh",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/run_phase_003_android_physical_qualification.sh",
+      "sha256": "4014179356c5567c29ceb0ed59d3fee92b2a403d4cb9cabdbcc374b815f413b7"
+    },
+    {
+      "role": "physical_source",
+      "original_path": "scripts/phase_003_android_physical_qualification/core.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/core.py",
+      "sha256": "b30cf6708973593c9b7134b9b6d718688056bd0e365a9ce50b58a6a0d1d6a0fd"
+    },
+    {
+      "role": "physical_source",
+      "original_path": "scripts/phase_003_android_physical_qualification/fixtures.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/fixtures.py",
+      "sha256": "7caf20c2124ba7bbc45419476fbc0fbbc4d0bd4fd8c6fe612f7339e0562cfab4"
+    },
+    {
+      "role": "physical_source",
+      "original_path": "scripts/phase_003_android_physical_qualification/runner.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/runner.py",
+      "sha256": "c95c07cd88a8bb6ee23303804b11a806187580278c7e3a67bf94af9b36ad04d6"
+    },
+    {
+      "role": "physical_test",
+      "original_path": "scripts/phase_003_android_physical_qualification/test_core.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/test_core.py",
+      "sha256": "83f33e85a541de4087a2ead02a14318bfd454548550ec6feba6e979935737ffd"
+    },
+    {
+      "role": "physical_test",
+      "original_path": "scripts/phase_003_android_physical_qualification/test_fixtures.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/test_fixtures.py",
+      "sha256": "262457bcae71bf09aa4a9aeb16cabbfa263419881dc3c48be9cb1c469c32023f"
+    },
+    {
+      "role": "physical_test",
+      "original_path": "scripts/phase_003_android_physical_qualification/test_recipe.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/test_recipe.py",
+      "sha256": "937fe97f156d836f88847cca5a19fecc781d0c7b2c92fb2b4bde5e1727f69209"
+    },
+    {
+      "role": "physical_test",
+      "original_path": "scripts/phase_003_android_physical_qualification/test_runner.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/test_runner.py",
+      "sha256": "85886ec96fa54e7643225cae9a800c8d43faab4c080b695190917526c0d7a7c8"
+    },
+    {
+      "role": "physical_test",
+      "original_path": "scripts/phase_003_android_physical_qualification/test_storage_access.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/test_storage_access.py",
+      "sha256": "f6202362adc6856a2da9dcd71f324c45b2d244a52575ec1cf7b4408b6ee0709a"
+    },
+    {
+      "role": "physical_test",
+      "original_path": "scripts/phase_003_android_physical_qualification/test_ui.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/test_ui.py",
+      "sha256": "dbd6b1dc6076c8c34d568a6103e11b963e5083ae17c8da4a313c6432114902a7"
+    },
+    {
+      "role": "physical_source",
+      "original_path": "scripts/phase_003_android_physical_qualification/ui.py",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/scripts/phase_003_android_physical_qualification/ui.py",
+      "sha256": "82b81e83a2fb04fdf547fd022d10308fa850c459d62d3969fe6fd0d1d22a1e95"
+    },
+    {
+      "role": "historical_technical_document",
+      "original_path": "docs/implementation/phase-003-android-physical-automation.md",
+      "archived_path": "docs/archive/qualification/issue-21-v1/original/docs/implementation/phase-003-android-physical-automation.md",
+      "sha256": "f6305688122f409219e57ee9a83916a5f078628d0ca3cc409e7e7caaa61d320b"
+    }
+  ]
+}

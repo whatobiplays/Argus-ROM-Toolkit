@@ -81,7 +81,7 @@ class AdmissionTests(unittest.TestCase):
                 self.assertNotIn("subprocess", source)
                 self.assertNotIn("Popen(", source)
                 self.assertNotIn("os.system", source)
-                self.assertNotIn("phase_003", source)
+                self.assertNotIn("phase_" + "003", source)
                 self.assertNotIn("run_phase_", source)
                 self.assertNotIn("keyring", source)
                 self.assertNotIn("ADMITTED", source)

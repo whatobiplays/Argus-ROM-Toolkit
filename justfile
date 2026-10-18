@@ -94,14 +94,20 @@ _architecture:
     bash scripts/check_rust_dependencies.sh
 
 test:
-    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/phase_003_android_physical_qualification -p 'test_*.py'
+    just test-android-qualification
     bash scripts/test_macos_frb_exports.sh
     bash scripts/test_macos_rust_build_environment.sh
     @bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --workspace --all-features --locked
     cd flutter && fvm flutter test --no-pub
 
 test-android-qualification:
-    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/android_qualification -p 'test_*.py'
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/android_qualification -p 'test_*.py' -t .
+
+check-qualification-archive:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m scripts.android_qualification.repository_checks archive
+
+check-qualification-naming:
+    PYTHONDONTWRITEBYTECODE=1 python3 -m scripts.android_qualification.repository_checks naming
 
 qualify-android-fresh manifest host_flag="":
     @bash {{ quote(justfile_directory() + "/scripts/qualify_android_fresh.sh") }} --manifest {{ quote(manifest) }} {{ if host_flag == "" { "" } else { quote(host_flag) } }}
@@ -175,4 +181,4 @@ test-phase-002-android-final:
 test-library-android-qualification:
     bash scripts/run_library_android_qualification.sh
 
-check: check-generated _format-check lint _architecture test test-android-qualification check-qualification-record
+check: check-generated _format-check lint _architecture test check-qualification-archive check-qualification-naming check-qualification-record

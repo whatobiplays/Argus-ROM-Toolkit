@@ -1,0 +1,58 @@
+scripts/android_qualification/packaging.py
+  s_72518cb02f7859::t_2a87d163bfa2c9 1-2556
+flutter/test/architecture/android_host_contract_test.dart
+  s_72518cb02f7859::t_59bba9cfb2685d 153-161,183-185,320-432
+flutter/.gitignore
+  s_72518cb02f7859::t_3a39683c6bb912 43
+docs/qualification/android-qualification-artifact.md
+  s_72518cb02f7859::t_ce5d5002514b14 125-128
+  s_72518cb02f7859::t_6edbfd6660fff2 1-81,87-124,129-272
+  s_72518cb02f7859::t_4b52a91418d008 82-86
+  s_72518cb02f7859::t_b265ad85c9c236 273
+scripts/android_qualification/test_packaging.py
+  s_72518cb02f7859::t_db0f1021f6e69a 986-1002
+  s_72518cb02f7859::t_0e34a7633ec03b 1-14,16,18-28,59-961,966-980,1003,1088-1994
+  s_72518cb02f7859::t_c5122c25e09564 15,17,29-58
+  s_72518cb02f7859::t_73e78d5d17425a 981-985
+  s_72518cb02f7859::t_82b13ca32d443f 1004-1087
+  s_72518cb02f7859::t_2a87d163bfa2c9 962-965
+docs/qualification/README.md
+  s_72518cb02f7859::t_ecf8f91c6b9143 9-10,82-86,118-131,133-140
+scripts/build_android_qualification.sh
+  s_72518cb02f7859::t_9013e1a6c520d4 53-65,71-91
+  s_72518cb02f7859::t_19eb4e726fe921 1-52,66-70,92-195
+.github/workflows/ci.yml
+  s_72518cb02f7859::t_3374394de5fc1e 302-432
+README.md
+  s_72518cb02f7859::t_6de923987992e9 117-137,143-144
+docs/archive/qualification/issue-21-v1/surface-classifications-v1.json
+  s_72518cb02f7859::t_479212cfacad26 102-111
+flutter/android/app/build.gradle.kts
+  s_72518cb02f7859::t_38f7f660ced192 3-16,58-85,99-130,135-137,139-197,200-203,206-216
+flutter/android/build.gradle.kts
+  s_72518cb02f7859::t_930cad7c1370ce 22-41
+justfile
+  s_72518cb02f7859::t_df53665d7ae72e 137-145
+scripts/android_sdk_common.sh
+  s_72518cb02f7859::t_99d790b4283895 37-63
+scripts/build_android_bridge.sh
+  s_72518cb02f7859::t_52f945f66a4271 4-7,12-90,97-104,107-111,116-134,138-176,183,186-191,197-297
+scripts/check_android_qualification_artifact.sh
+  s_72518cb02f7859::t_68eb2926c14265 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c4b185747de86d37450639136535eb976b0a71c",
+  "prompts": {},
+  "sessions": {
+    "s_72518cb02f7859": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1512b-d881-7622-9d47-62b8384ec45c",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

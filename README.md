@@ -114,13 +114,34 @@ Exit status `0` reports `HOST_VALIDATED`, `2` reports a sanitized CLI or
 manifest validation block, and `3` reports that live execution is blocked
 because live authorization and device admission are not implemented.
 
+### Android qualification APK
+
+```bash
+just build-android-qualification
+just verify-android-qualification
+```
+
+The build produces a Flutter Release AOT APK with the separate
+`com.argusromtoolkit.argus.qualification` application ID and ordinary Android
+debug signing. The ordinary application ID and distributable Release signing
+requirements remain unchanged. Verification independently checks the merged
+manifest, exact permission inventory, FileProvider URI grants and path mapping,
+signature, version identity including the Rust workspace version, ARM64 native
+libraries without compiler debug sections, Flutter Release payload, and source
+provenance. It compares every packaged native library with the declared
+release-profile build metadata. A dirty worktree is reported as
+`PROVISIONAL_ARTIFACT` and is not eligible for physical admission.
+
+See [Android qualification artifact packaging](docs/qualification/android-qualification-artifact.md)
+for the host-only build contract, outputs, provenance fields, and limitations.
+
 The former physical qualification command is retired. See
 [Qualification operations](docs/qualification/README.md) for the canonical host
 suite and device-isolation rules, and the [archive index](docs/archive/README.md)
 for preserved records, surface classifications, and archive provenance.
 
-The separate qualification APK packaging work in Issue #22 and the live-device
-authorization and admission controls in Issue #23 are deferred follow-on work.
+Live-device authorization, installation, fixtures, and admission controls remain
+the deferred follow-on work.
 
 ## Documentation
 

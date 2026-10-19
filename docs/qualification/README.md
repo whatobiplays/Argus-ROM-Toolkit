@@ -6,6 +6,8 @@ manifest is only a host validation result; it is not device admission or an
 owner qualification verdict. The governing system boundary and acceptance
 rules remain in [ARCH-003](../architecture/qualification-architecture.md) and
 [SPEC-X-003](../specifications/cross-cutting/spec-x-003-qualification-contract.md).
+The separately identified Android qualification APK can be built and inspected
+without a device; see [Android qualification artifact packaging](android-qualification-artifact.md).
 
 ## Public host validation
 
@@ -77,7 +79,11 @@ from the [archive index](../archive/README.md).
 that same invocation through `test`; it does not invoke the combined Python
 recipe a second time. The quality gate also runs the archive and naming checks
 through `check-qualification-archive` and `check-qualification-naming`. CI's
-quality job runs the canonical `just check` gate.
+quality job runs the canonical `just check` gate. The separate
+`android-qualification-release` CI job packages and verifies the qualification
+APK without production signing values, then checks that ordinary Release
+packaging fails closed. The existing `android-arm64-package` Debug job remains
+unchanged.
 
 ## Archive and naming checks
 
@@ -109,12 +115,29 @@ crosswalk. They are not active commands or supported interfaces.
 | `docs/implementation/phase-003-android-physical-automation.md` | Retired and archived | `docs/qualification/README.md` |
 | `ArgusPhase003Qualification` | Retired and archived | `ArgusQualification` |
 
-## Deferred follow-on work
+## Android qualification artifact
 
-[Issue #22](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/22)
-covers a separately identified, debug-signed Release-mode qualification APK
-and verification of its package identity and native components. That
-packaging work is outside host manifest validation.
+`just build-android-qualification` packages a Flutter Release AOT APK with the
+separate `com.argusromtoolkit.argus.qualification` identity and ordinary Android
+debug signing. `just verify-android-qualification` independently inspects the
+APK, its exact permission inventory, FileProvider URI grants and path mapping,
+signature, ARM64 native libraries and release-profile absence of compiler debug
+sections, Rust-versus-Flutter version agreement, Release payload, and embedded
+source record. Neither command starts ADB or contacts a device.
+
+The artifact and provenance workflow is documented in
+[Android qualification artifact packaging](android-qualification-artifact.md).
+A dirty worktree produces only `PROVISIONAL_ARTIFACT`; clean-revision
+`ARTIFACT_VALIDATED` output is required before physical admission.
+
+A cold checkout does not need a Debug build first. The qualification build
+runs Flutter's Release `--config-only` preparation to generate the ignored
+Android Gradle wrapper and local configuration, then captures the source-state
+fingerprint and packages the isolated qualification variant. Generated Kotlin
+session files under `flutter/android/.kotlin/` are ignored and do not make the
+source appear dirty.
+
+## Deferred follow-on work
 
 [Issue #23](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/23)
 covers authorization and safe targeting of the approved device, qualification

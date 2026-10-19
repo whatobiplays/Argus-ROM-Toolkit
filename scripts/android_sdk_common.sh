@@ -34,3 +34,30 @@ argus_resolve_build_tool() {
   fi
   return 1
 }
+
+# Resolve the NDK version pinned by the repository's Flutter SDK. Repositories
+# with several installed NDKs cannot safely choose one by directory order, so
+# callers use this before falling back to an unambiguous single installation.
+argus_resolve_pinned_ndk_home() {
+  local repository_root="$1"
+  local local_properties="${repository_root}/flutter/android/local.properties"
+  local flutter_sdk=""
+  local sdk_root=""
+  local ndk_version=""
+  local flutter_extension=""
+  local candidate=""
+
+  [[ -f "${local_properties}" ]] || return 1
+  flutter_sdk="$(sed -n 's/^flutter.sdk=//p' "${local_properties}" | head -n 1)"
+  [[ -n "${flutter_sdk}" ]] || return 1
+  flutter_extension="${flutter_sdk}/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
+  [[ -f "${flutter_extension}" ]] || return 1
+  ndk_version="$(sed -n \
+    's/.*val ndkVersion: String = "\([^"]*\)".*/\1/p' \
+    "${flutter_extension}" | head -n 1)"
+  [[ -n "${ndk_version}" ]] || return 1
+  sdk_root="$(argus_resolve_sdk_root)" || return 1
+  candidate="${sdk_root}/ndk/${ndk_version}"
+  [[ -d "${candidate}" ]] || return 1
+  printf '%s\n' "${candidate}"
+}

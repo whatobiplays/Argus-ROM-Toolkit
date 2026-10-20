@@ -32,6 +32,67 @@ sha256_file() {
 # shellcheck disable=SC1091
 source "$ROOT_DIR/scripts/android_sdk_common.sh"
 
+# Resolve the debug keystore with the same precedence as the qualification
+# verifier. Gradle and the verifier must use one location so the package
+# signature can be inspected on a host that has never built an Android app.
+if [[ -n "${ANDROID_USER_HOME:-}" ]]; then
+  debug_keystore_directory="$ANDROID_USER_HOME"
+elif [[ -n "${ANDROID_PREFS_ROOT:-}" ]]; then
+  debug_keystore_directory="$ANDROID_PREFS_ROOT/.android"
+elif [[ -n "${ANDROID_SDK_HOME:-}" ]]; then
+  debug_keystore_directory="$ANDROID_SDK_HOME/.android"
+elif [[ -n "${HOME:-}" ]]; then
+  debug_keystore_directory="$HOME/.android"
+else
+  fail "the Android debug keystore directory cannot be resolved: set ANDROID_USER_HOME, ANDROID_PREFS_ROOT, ANDROID_SDK_HOME, or HOME"
+fi
+
+# Android Gradle Plugin 9 rejects deprecated preference variables that differ
+# from ANDROID_USER_HOME. The resolved path is the single authoritative
+# location for the build and verifier.
+unset ANDROID_PREFS_ROOT
+unset ANDROID_SDK_HOME
+
+mkdir -p "$debug_keystore_directory" || \
+  fail "the Android debug keystore directory could not be created"
+debug_keystore_directory="$(cd "$debug_keystore_directory" && pwd -P)"
+export ANDROID_USER_HOME="$debug_keystore_directory"
+debug_keystore="$ANDROID_USER_HOME/debug.keystore"
+
+if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/keytool" ]]; then
+  keytool_binary="$JAVA_HOME/bin/keytool"
+elif command -v keytool >/dev/null 2>&1; then
+  keytool_binary="$(command -v keytool)"
+else
+  fail "keytool is required for Android qualification signing: set JAVA_HOME or add keytool to PATH"
+fi
+
+if [[ ! -f "$debug_keystore" ]]; then
+  debug_keystore_temporary_directory="$(mktemp -d "$debug_keystore_directory/.debug-keystore.XXXXXX")" || \
+    fail "a temporary Android debug keystore directory could not be created"
+  debug_keystore_temporary="$debug_keystore_temporary_directory/debug.keystore"
+  if ! "$keytool_binary" -genkeypair \
+    -keystore "$debug_keystore_temporary" \
+    -storepass android \
+    -keypass android \
+    -alias androiddebugkey \
+    -keyalg RSA \
+    -keysize 2048 \
+    -validity 10000 \
+    -dname "CN=Android Debug,O=Android,C=US" \
+    -noprompt; then
+    rm -f -- "$debug_keystore_temporary"
+    rmdir -- "$debug_keystore_temporary_directory" 2>/dev/null || true
+    fail "the Android debug keystore could not be created"
+  fi
+  if ! mv -- "$debug_keystore_temporary" "$debug_keystore"; then
+    rm -f -- "$debug_keystore_temporary"
+    rmdir -- "$debug_keystore_temporary_directory" 2>/dev/null || true
+    fail "the Android debug keystore could not be installed"
+  fi
+  rmdir -- "$debug_keystore_temporary_directory"
+fi
+
 if [[ ! -f "$ROOT_DIR/flutter/android/local.properties" ]]; then
   (
     cd "$ROOT_DIR/flutter"
@@ -155,6 +216,8 @@ verification_arguments=(
   verify
   --root "$ROOT_DIR"
   --apk "$QUALIFICATION_APK"
+  --debug-keystore "$debug_keystore"
+  --keytool "$keytool_binary"
   --native-metadata "$NATIVE_METADATA"
   --provenance-out "$QUALIFICATION_PROVENANCE"
   --prebuild-source-state "$PREBUILD_SOURCE"

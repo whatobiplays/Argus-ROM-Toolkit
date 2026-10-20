@@ -1126,6 +1126,273 @@ class SourceEligibilityTests(unittest.TestCase):
             self.assertEqual(with_untracked.changed_path_count, 2)
 
 
+class QualificationBuildScriptTests(unittest.TestCase):
+    _FAKE_KEYTOOL = (
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$@" > "$QUALIFICATION_TEST_KEYTOOL_ARGUMENTS"\n'
+        'while [ "$#" -gt 0 ]; do\n'
+        '  if [ "$1" = "-keystore" ]; then\n'
+        "    shift\n"
+        '    : > "$1"\n'
+        "  fi\n"
+        "  shift\n"
+        "done\n"
+    )
+    _FAKE_PYTHON = (
+        "#!/bin/sh\n"
+        'mode=""\n'
+        'output=""\n'
+        "output_next=0\n"
+        'for argument in "$@"; do\n'
+        '  case "$argument" in\n'
+        "    source-state) mode=source ;;\n"
+        "    verify) mode=verify ;;\n"
+        "    --output) output_next=1; continue ;;\n"
+        "  esac\n"
+        '  if [ "$output_next" = 1 ]; then\n'
+        '    output="$argument"\n'
+        "    output_next=0\n"
+        "  fi\n"
+        "done\n"
+        'if [ "$mode" = source ]; then\n'
+        "  printf '{}\\n' > \"$output\"\n"
+        'elif [ "$mode" = verify ]; then\n'
+        "  printf '%s\\n' \"$@\" > \"$QUALIFICATION_TEST_VERIFY_ARGUMENTS\"\n"
+        "else\n"
+        "  exit 2\n"
+        "fi\n"
+    )
+    _FAKE_GRADLEW = (
+        "#!/bin/sh\n"
+        'output="$PWD/../build/app/outputs/apk/qualification"\n'
+        'mkdir -p "$output"\n'
+        'cp "$QUALIFICATION_TEST_APK_TEMPLATE" "$output/app-qualification.apk"\n'
+        'mkdir -p "$PWD/../build/native-jni/release"\n'
+        "printf '{}\\n' > \"$PWD/../build/native-jni/release/native-build.json\"\n"
+    )
+
+    def _write_executable(self, path: Path, body: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+
+    def _minimal_bin(self, root: Path) -> Path:
+        directory = root / "minimal-bin"
+        directory.mkdir()
+        for name in ("dirname", "mkdir", "mktemp", "mv", "rm", "rmdir"):
+            source = shutil.which(name)
+            self.assertIsNotNone(source, name)
+            (directory / name).symlink_to(source)
+        return directory
+
+    def _shell_environment(
+        self,
+        root: Path,
+        *,
+        fvm_body: str = "exit 42",
+        keytool: str = "path",
+        restricted_path: bool = False,
+    ) -> tuple[Path, dict[str, str], Path]:
+        script, environment = _qualification_shell_environment(root, fvm_body)
+        for name in (
+            "ANDROID_USER_HOME",
+            "ANDROID_PREFS_ROOT",
+            "ANDROID_SDK_HOME",
+        ):
+            environment.pop(name, None)
+        environment["HOME"] = str(root / "home")
+        environment["JAVA_HOME"] = str(root / "missing-java-home")
+        arguments_file = root / "keytool-arguments.txt"
+        environment["QUALIFICATION_TEST_KEYTOOL_ARGUMENTS"] = str(arguments_file)
+        if restricted_path:
+            environment["PATH"] = (
+                f"{root / 'bin'}{os.pathsep}{self._minimal_bin(root)}"
+            )
+        if keytool == "path":
+            self._write_executable(root / "bin" / "keytool", self._FAKE_KEYTOOL)
+        elif keytool == "java_home":
+            self._write_executable(
+                root / "java-home" / "bin" / "keytool", self._FAKE_KEYTOOL
+            )
+            environment["JAVA_HOME"] = str(root / "java-home")
+        elif keytool != "absent":
+            raise AssertionError(f"unknown keytool location: {keytool}")
+        return script, environment, arguments_file
+
+    def _run(
+        self, script: Path, root: Path, environment: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [shutil.which("bash") or "/bin/bash", str(script)],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_resolves_debug_keystore_with_documented_precedence(self) -> None:
+        cases = (
+            (
+                "ANDROID_USER_HOME",
+                {"ANDROID_USER_HOME": "user-home"},
+                Path("user-home/debug.keystore"),
+            ),
+            (
+                "ANDROID_PREFS_ROOT",
+                {"ANDROID_PREFS_ROOT": "prefs-root"},
+                Path("prefs-root/.android/debug.keystore"),
+            ),
+            (
+                "ANDROID_SDK_HOME",
+                {"ANDROID_SDK_HOME": "sdk-home"},
+                Path("sdk-home/.android/debug.keystore"),
+            ),
+            ("HOME", {}, Path("home/.android/debug.keystore")),
+        )
+        for label, overrides, relative_keystore in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                script, environment, arguments_file = self._shell_environment(root)
+                for name, value in overrides.items():
+                    environment[name] = str(root / value)
+                result = self._run(script, root, environment)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(
+                    "Flutter Android configuration could not be initialized",
+                    result.stderr,
+                )
+                self.assertTrue((root / relative_keystore).is_file())
+                self.assertTrue(arguments_file.is_file())
+
+    def test_existing_debug_keystore_is_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script, environment, arguments_file = self._shell_environment(root)
+            environment["ANDROID_USER_HOME"] = str(root / "user-home")
+            keystore = root / "user-home" / "debug.keystore"
+            keystore.parent.mkdir(parents=True)
+            keystore.write_bytes(b"existing keystore bytes")
+            result = self._run(script, root, environment)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(keystore.read_bytes(), b"existing keystore bytes")
+            self.assertFalse(arguments_file.exists())
+
+    def test_java_home_keytool_creates_keystore_when_path_has_none(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script, environment, arguments_file = self._shell_environment(
+                root, keytool="java_home", restricted_path=True
+            )
+            environment["ANDROID_USER_HOME"] = str(root / "user-home")
+            result = self._run(script, root, environment)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn(
+                "Flutter Android configuration could not be initialized",
+                result.stderr,
+            )
+            self.assertTrue((root / "user-home" / "debug.keystore").is_file())
+            self.assertTrue(arguments_file.is_file())
+
+    def test_missing_keytool_fails_clearly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script, environment, arguments_file = self._shell_environment(
+                root, keytool="absent", restricted_path=True
+            )
+            environment["ANDROID_USER_HOME"] = str(root / "user-home")
+            result = self._run(script, root, environment)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn(
+                "keytool is required for Android qualification signing",
+                result.stderr,
+            )
+            self.assertFalse((root / "user-home" / "debug.keystore").exists())
+            self.assertFalse(arguments_file.exists())
+
+    def test_verifier_receives_resolved_debug_keystore_and_keytool(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script, environment, keytool_arguments = self._shell_environment(
+                root, fvm_body="exit 0", keytool="java_home"
+            )
+            environment["ANDROID_USER_HOME"] = str(root / "user-home")
+            verify_arguments = root / "verifier-arguments.txt"
+            environment["QUALIFICATION_TEST_VERIFY_ARGUMENTS"] = str(
+                verify_arguments
+            )
+            template = root / "template.apk"
+            with zipfile.ZipFile(template, "w") as archive:
+                archive.writestr("assets/qualification-build.json", "{}")
+            environment["QUALIFICATION_TEST_APK_TEMPLATE"] = str(template)
+            self._write_executable(root / "bin" / "python3", self._FAKE_PYTHON)
+            self._write_executable(
+                root / "flutter" / "android" / "gradlew", self._FAKE_GRADLEW
+            )
+            for name in ("aapt2", "apksigner", "zipalign"):
+                self._write_executable(root / "bin" / name, "#!/bin/sh\nexit 0\n")
+
+            result = self._run(script, root, environment)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            arguments = verify_arguments.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                Path(arguments[arguments.index("--debug-keystore") + 1]),
+                (root / "user-home" / "debug.keystore").resolve(),
+            )
+            self.assertEqual(
+                Path(arguments[arguments.index("--keytool") + 1]).resolve(),
+                (root / "java-home" / "bin" / "keytool").resolve(),
+            )
+            self.assertTrue(keytool_arguments.is_file())
+
+
+class DefaultDebugKeystoreTests(unittest.TestCase):
+    def test_precedence_matches_build_script(self) -> None:
+        cases = (
+            (
+                {
+                    "ANDROID_USER_HOME": "/user",
+                    "ANDROID_PREFS_ROOT": "/prefs",
+                    "ANDROID_SDK_HOME": "/sdk",
+                    "HOME": "/home",
+                },
+                Path("/user/debug.keystore"),
+            ),
+            (
+                {
+                    "ANDROID_PREFS_ROOT": "/prefs",
+                    "ANDROID_SDK_HOME": "/sdk",
+                    "HOME": "/home",
+                },
+                Path("/prefs/.android/debug.keystore"),
+            ),
+            (
+                {"ANDROID_SDK_HOME": "/sdk", "HOME": "/home"},
+                Path("/sdk/.android/debug.keystore"),
+            ),
+            ({"HOME": "/home"}, Path("/home/.android/debug.keystore")),
+        )
+        for environment, expected in cases:
+            with self.subTest(environment=environment):
+                with mock.patch.dict(os.environ, environment, clear=True):
+                    self.assertEqual(packaging._default_debug_keystore(), expected)
+
+
+class ToolResolutionTests(unittest.TestCase):
+    def test_keytool_falls_back_to_java_home(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            java_home = Path(directory) / "java-home"
+            keytool = java_home / "bin" / "keytool"
+            keytool.parent.mkdir(parents=True)
+            keytool.write_text("#!/bin/sh\n", encoding="utf-8")
+            keytool.chmod(0o755)
+            with mock.patch.dict(os.environ, {"JAVA_HOME": str(java_home)}, clear=True):
+                with mock.patch("shutil.which", return_value=None):
+                    resolved = packaging._resolve_tool("keytool", None, "KEYTOOL")
+            self.assertEqual(resolved, keytool)
+
+
 class ComparisonValidationTests(unittest.TestCase):
     def test_comparison_records_source_parity_without_binary_parity(self) -> None:
         facts = _valid_facts()

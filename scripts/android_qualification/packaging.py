@@ -952,6 +952,12 @@ def _resolve_tool(name: str, explicit: str | None, environment: str) -> Path:
     found = shutil.which(name)
     if found:
         return Path(found)
+    if name == "keytool":
+        java_home = os.environ.get("JAVA_HOME")
+        if java_home:
+            candidate = Path(java_home) / "bin" / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate
     sdk_roots = [
         os.environ.get("ANDROID_SDK_ROOT"),
         os.environ.get("ANDROID_HOME"),
@@ -2260,6 +2266,9 @@ def _default_debug_keystore() -> Path:
     android_user_home = os.environ.get("ANDROID_USER_HOME")
     if android_user_home:
         return Path(android_user_home) / "debug.keystore"
+    android_prefs_root = os.environ.get("ANDROID_PREFS_ROOT")
+    if android_prefs_root:
+        return Path(android_prefs_root) / ".android/debug.keystore"
     android_sdk_home = os.environ.get("ANDROID_SDK_HOME")
     if android_sdk_home:
         return Path(android_sdk_home) / ".android/debug.keystore"

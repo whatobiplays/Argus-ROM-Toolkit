@@ -35,8 +35,12 @@ packaging fails closed when any required signing value is absent.
 
 The expected debug certificate fingerprint is read from the configured Android
 debug keystore with `keytool`. It is not inferred from the APK being inspected.
-Gradle or the build script initializes the standard debug keystore on a fresh
-host before verification.
+The qualification build script resolves the debug keystore from
+`ANDROID_USER_HOME`, then `ANDROID_PREFS_ROOT/.android`, then
+`ANDROID_SDK_HOME/.android`, then `$HOME/.android`. It creates a debug
+keystore with the standard alias and passwords when absent and directs both
+Gradle and the independent verifier to that same file. The verifier also
+receives the keytool binary selected by the script.
 
 ## Build and verify
 

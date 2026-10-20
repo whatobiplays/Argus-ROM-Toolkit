@@ -1,0 +1,30 @@
+docs/qualification/android-qualification-artifact.md
+  s_72518cb02f7859::t_a1db132f9cd92f 39-43
+  s_72518cb02f7859::t_2ff09b3d07560b 38
+scripts/android_qualification/packaging.py
+  s_72518cb02f7859::t_b870d36ecbc369 955-960,2269-2271
+scripts/build_android_qualification.sh
+  s_72518cb02f7859::t_ca95cc5ca3066b 40-41,47,50,53,62-69,71-75,83-93,220
+  s_72518cb02f7859::t_2ff09b3d07560b 35-39,42-46,48-49,56-61,70,76-82,94-95,219
+  s_72518cb02f7859::t_a22a63dda9354d 51-52,54-55
+scripts/android_qualification/test_packaging.py
+  s_72518cb02f7859::t_3d5d262db92eec 1344
+  s_72518cb02f7859::t_2ac2f9685c1339 1129,1232,1240,1252,1267,1269-1270,1280,1286,1289-1293,1295,1339,1343,1346,1394-1395
+  s_72518cb02f7859::t_8be3bc7e0f5055 1130-1231,1233-1239,1241-1251,1253-1266,1268,1271-1279,1281-1285,1287-1288,1294,1296-1338,1340-1342,1345,1347-1393
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "121804128c23d2fdcce0c4615551eab7c938965a",
+  "prompts": {},
+  "sessions": {
+    "s_72518cb02f7859": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1512b-d881-7622-9d47-62b8384ec45c",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

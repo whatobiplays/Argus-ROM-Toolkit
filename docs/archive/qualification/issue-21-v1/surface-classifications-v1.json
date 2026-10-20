@@ -99,6 +99,15 @@
     {"path": "scripts/run_phase_002_android_permission_reconciliation_tests.sh", "classification": "unrelated_development_test", "region": {"kind": "file"}},
     {"path": "scripts/run_phase_002_android_removable_volume_helper_tests.sh", "classification": "unrelated_development_test", "region": {"kind": "file"}},
     {"path": "scripts/run_phase_002_android_removable_volume_tests.sh", "classification": "unrelated_development_test", "region": {"kind": "file"}},
-    {"path": "scripts/run_phase_002_android_scan_tests.sh", "classification": "unrelated_development_test", "region": {"kind": "file"}}
+    {"path": "scripts/run_phase_002_android_scan_tests.sh", "classification": "unrelated_development_test", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/packaging.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_packaging.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/build_android_qualification.sh", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/check_android_qualification_artifact.sh", "classification": "active", "region": {"kind": "file"}},
+    {"path": "docs/qualification/android-qualification-artifact.md", "classification": "active", "region": {"kind": "file"}},
+    {"path": "README.md", "classification": "active", "region": {"kind": "markdown_section", "heading": "Android qualification APK"}},
+    {"path": "justfile", "classification": "active", "region": {"kind": "just_recipe", "name": "build-android-qualification"}},
+    {"path": "justfile", "classification": "active", "region": {"kind": "just_recipe", "name": "verify-android-qualification"}},
+    {"path": ".github/workflows/ci.yml", "classification": "active", "region": {"kind": "yaml_job", "name": "android-qualification-release"}}
   ]
 }

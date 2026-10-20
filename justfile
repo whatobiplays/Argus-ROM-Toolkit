@@ -134,7 +134,15 @@ test-deterministic-qualification:
     bash scripts/run_deterministic_qualification.sh
 
 build-android-bridge:
-    bash scripts/build_android_bridge.sh
+    bash scripts/build_android_bridge.sh --debug
+
+build-android-qualification:
+    bash scripts/build_android_qualification.sh
+
+verify-android-qualification apk="flutter/build/qualification/argus-qualification.apk" native_metadata="flutter/build/qualification/native-build.json":
+    bash scripts/check_android_qualification_artifact.sh \
+        --apk {{ quote(apk) }} \
+        --native-metadata {{ quote(native_metadata) }}
 
 build-android-debug:
     cd flutter && fvm flutter build apk --debug --target-platform android-arm64

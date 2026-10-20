@@ -150,7 +150,15 @@ void main() {
       '../scripts/build_android_release.sh',
     ).readAsStringSync();
 
-    expect(appBuild, isNot(contains('signingConfigs.getByName("debug")')));
+    final qualificationStart = appBuild.indexOf('create("qualification")');
+    expect(qualificationStart, greaterThan(0));
+    final releaseBuildType = appBuild.substring(0, qualificationStart);
+    expect(releaseBuildType, contains('release {'));
+    expect(
+      releaseBuildType,
+      contains('signingConfig = signingConfigs.getByName("release")'),
+    );
+    expect(releaseBuildType, isNot(contains('getByName("debug")')));
     expect(appBuild, contains('ARGUS_RELEASE_KEYSTORE'));
     expect(appBuild, contains('ARGUS_RELEASE_STORE_PASSWORD'));
     expect(appBuild, contains('ARGUS_RELEASE_KEY_ALIAS'));
@@ -172,6 +180,9 @@ void main() {
       expect(ci, contains('just check-android-contract'));
       expect(ci, contains('just build-android-debug'));
       expect(ci, contains('just check-android-package'));
+      expect(ci, contains('just test-android-qualification'));
+      expect(ci, contains('actions/upload-artifact@v4'));
+      expect(ci, contains('ripgrep'));
       expect(ci, isNot(contains('avdmanager')));
       expect(ci, isNot(contains('emulator')));
       expect(ci, isNot(contains('test-phase-002-android-final')));
@@ -306,4 +317,117 @@ void main() {
     expect(androidHostApi, isNot(contains('android_qualification')));
     expect(hostApi, isNot(contains('readActivityInstanceId')));
   });
+
+  test(
+    'Android qualification keeps Release profiles and identities separate',
+    () {
+      final appBuild = File('android/app/build.gradle.kts').readAsStringSync();
+      final androidBuild = File('android/build.gradle.kts').readAsStringSync();
+      final bridgeScript = File(
+        '../scripts/build_android_bridge.sh',
+      ).readAsStringSync();
+      final qualificationScript = File(
+        '../scripts/build_android_qualification.sh',
+      ).readAsStringSync();
+      final verificationScript = File(
+        '../scripts/check_android_qualification_artifact.sh',
+      ).readAsStringSync();
+      final verifier = File(
+        '../scripts/android_qualification/packaging.py',
+      ).readAsStringSync();
+      final qualificationIgnores = File('.gitignore').readAsStringSync();
+      final justfile = File('../justfile').readAsStringSync();
+      final workflow = File('../.github/workflows/ci.yml').readAsStringSync();
+
+      expect(appBuild, contains('create("qualification")'));
+      expect(appBuild, contains('initWith(getByName("release"))'));
+      expect(appBuild, contains('applicationIdSuffix = ".qualification"'));
+      expect(
+        appBuild,
+        contains('signingConfig = signingConfigs.getByName("debug")'),
+      );
+      final qualificationStart = appBuild.indexOf('create("qualification")');
+      final qualificationEnd = appBuild.indexOf(
+        'matchingFallbacks.add("release")',
+        qualificationStart,
+      );
+      expect(qualificationStart, greaterThan(0));
+      expect(qualificationEnd, greaterThan(qualificationStart));
+      final qualificationBuildType = appBuild.substring(
+        qualificationStart,
+        qualificationEnd,
+      );
+      expect(
+        qualificationBuildType,
+        contains('signingConfig = signingConfigs.getByName("debug")'),
+      );
+      expect(
+        qualificationBuildType,
+        isNot(contains('signingConfigs.getByName("release")')),
+      );
+      expect(appBuild, contains('isDebuggable = false'));
+      expect(appBuild, contains('isJniDebuggable = false'));
+      expect(appBuild, contains('matchingFallbacks.add("release")'));
+      expect(appBuild, contains('buildAndroidBridgeRelease'));
+      expect(appBuild, contains('"--release"'));
+      expect(appBuild, contains(r'merge${variant}JniLibFolders'));
+      expect(appBuild, contains('mergeQualificationAssets'));
+      expect(appBuild, contains('packageQualification'));
+      expect(appBuild, contains('startsWith("packageRelease")'));
+      expect(
+        appBuild,
+        isNot(contains('it.name.contains("Release", ignoreCase = true)')),
+      );
+      expect(androidBuild, contains('isMinifyEnabled = false'));
+
+      expect(bridgeScript, contains('cargo ndk'));
+      expect(bridgeScript, contains('--release'));
+      expect(bridgeScript, contains('--locked'));
+      expect(bridgeScript, contains('--output-dir'));
+      expect(bridgeScript, contains('native-build.json'));
+      expect(bridgeScript, contains('native-output-dir'));
+
+      expect(qualificationScript, contains(':app:packageQualification'));
+      expect(qualificationScript, isNot(contains(':app:clean')));
+      expect(qualificationScript, contains('--allow-provisional'));
+      expect(qualificationIgnores, contains('/android/.kotlin/'));
+      final configOnlyStart = qualificationScript.indexOf(
+        'fvm flutter build apk --release --config-only --target-platform android-arm64',
+      );
+      final sourceSnapshotStart = qualificationScript.indexOf(
+        'packaging source-state',
+      );
+      final gradleStart = qualificationScript.indexOf('./gradlew');
+      expect(configOnlyStart, greaterThan(0));
+      expect(sourceSnapshotStart, greaterThan(configOnlyStart));
+      expect(gradleStart, greaterThan(sourceSnapshotStart));
+      expect(
+        qualificationScript,
+        contains('Flutter Android configuration could not be initialized'),
+      );
+      expect(qualificationScript, isNot(contains('build-android-debug')));
+      expect(
+        qualificationScript,
+        contains('ARGUS_QUALIFICATION_COMPARISON_APK'),
+      );
+      expect(
+        verificationScript,
+        contains('scripts.android_qualification.packaging'),
+      );
+      expect(verifier, contains('PROVISIONAL_ARTIFACT'));
+      expect(verifier, contains('ARTIFACT_VALIDATED'));
+      expect(verifier, contains('binary equivalence'));
+      expect(verifier, contains('QUALIFICATION_PERMISSIONS'));
+      expect(verifier, contains('grant_uri_permissions'));
+      expect(verifier, contains('UNEXPECTED_DEBUG_SECTIONS'));
+      expect(verifier, contains('read_rust_workspace_version'));
+      expect(verifier, contains('unowned native output directory'));
+
+      expect(justfile, contains('build-android-qualification:'));
+      expect(justfile, contains('verify-android-qualification'));
+      expect(workflow, contains('android-qualification-release:'));
+      expect(workflow, contains('just build-android-qualification'));
+      expect(workflow, contains('just verify-android-qualification'));
+    },
+  );
 }

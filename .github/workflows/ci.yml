@@ -299,3 +299,134 @@ jobs:
 
       - name: Verify Android ARM64 package
         run: just check-android-package
+
+  android-qualification-release:
+    name: Android qualification Release packaging and provenance
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: flutter/.fvmrc
+          cache: true
+          pub-cache: true
+
+      - name: Install CI FVM prerequisite
+        run: |
+          dart pub global activate fvm 4.1.2
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$rust_channel" --profile minimal
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+
+      - name: Install Flutter-pinned Android NDK
+        run: |
+          flutter_root="${FLUTTER_ROOT:-$(dirname "$(dirname "$(command -v flutter)")")}"
+          flutter_ndk_version="$(
+            sed -n 's/.*val ndkVersion: String = "\([^"]*\)".*/\1/p' \
+              "${flutter_root}/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt" \
+              | head -n 1
+          )"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "ndk;${flutter_ndk_version}"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${flutter_ndk_version}" \
+            >> "$GITHUB_ENV"
+
+      - name: Install ripgrep prerequisite
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ripgrep
+
+      - name: Bootstrap repository
+        run: just bootstrap
+
+      - name: Normalize FVM-generated metadata
+        run: |
+          set -euo pipefail
+          # FVM 4.1.2 rewrites .fvmrc and appends to .gitignore during install.
+          # Restore the committed files so the source fingerprint and strict
+          # verification bind the checked-out revision.
+          git checkout -- flutter/.fvmrc flutter/.gitignore
+
+      - name: Initialize Android Gradle tooling
+        run: |
+          set -euo pipefail
+          cd flutter
+          fvm flutter build apk --release --config-only --target-platform android-arm64
+          test -x android/gradlew
+          test -f android/gradle/wrapper/gradle-wrapper.jar
+          test ! -f build/app/outputs/flutter-apk/app-release.apk
+          test ! -f build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Test Android qualification verifier
+        run: just test-android-qualification
+
+      - name: Verify production Release signing fails closed
+        working-directory: flutter/android
+        shell: bash
+        run: |
+          set +e
+          ./gradlew :app:packageRelease --console=plain \
+            -Ptarget=lib/main.dart \
+            -Ptarget-platform=android-arm64 \
+            -Ptrack-widget-creation=false \
+            -Ptree-shake-icons=true \
+            > "$RUNNER_TEMP/release-signing.log" 2>&1
+          status=$?
+          set -e
+          if [[ $status -eq 0 ]]; then
+            printf 'ordinary packageRelease unexpectedly succeeded without signing values\n' >&2
+            exit 1
+          fi
+          for field in \
+            ARGUS_RELEASE_KEYSTORE \
+            ARGUS_RELEASE_STORE_PASSWORD \
+            ARGUS_RELEASE_KEY_ALIAS \
+            ARGUS_RELEASE_KEY_PASSWORD; do
+            if ! grep -q "$field" "$RUNNER_TEMP/release-signing.log"; then
+              printf 'release failure did not identify %s\n' "$field" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build Android qualification Release APK
+        run: just build-android-qualification
+
+      - name: Verify Android qualification APK provenance
+        run: just verify-android-qualification
+
+      - name: Upload Android qualification artifact and provenance
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-qualification-release
+          if-no-files-found: warn
+          path: |
+            flutter/build/qualification/argus-qualification.apk
+            flutter/build/qualification/argus-qualification-provenance.json
+            flutter/build/qualification/qualification-build.json
+            flutter/build/qualification/native-build.json
+            flutter/build/qualification/prebuild-source.json

@@ -6,6 +6,8 @@ manifest is only a host validation result; it is not device admission or an
 owner qualification verdict. The governing system boundary and acceptance
 rules remain in [ARCH-003](../architecture/qualification-architecture.md) and
 [SPEC-X-003](../specifications/cross-cutting/spec-x-003-qualification-contract.md).
+The private authorization contract and current device-admission limits are
+described in [Owner-authorized device admission](device-authorization.md).
 The separately identified Android qualification APK can be built and inspected
 without a device; see [Android qualification artifact packaging](android-qualification-artifact.md).
 
@@ -47,10 +49,12 @@ The result and process status have these exact meanings:
 | Sanitized CLI or manifest validation block | `2` | The command or manifest is invalid. This takes precedence over a live request. |
 | `LIVE_ADMISSION_NOT_IMPLEMENTED` | `3` | A structurally valid request omitted the host-only flag and requested live execution. The request was blocked before device access. |
 
-Omitting both host-only flags requests live execution. Until the required
-authorization and device-admission controls exist, a valid request exits with
-`LIVE_ADMISSION_NOT_IMPLEMENTED`. An exit status of `0` never means that a
-device was reached, a qualification session began, or qualification passed.
+Omitting both host-only flags requests live execution. The public entrypoints
+continue to return `LIVE_ADMISSION_NOT_IMPLEMENTED` before device access. The
+private authorization and admission interfaces documented below are injected
+host-side controls; they do not add a public live command or a concrete device
+transport. An exit status of `0` never means a device was reached, a
+qualification session began, or qualification passed.
 
 ## Internal host test harness
 
@@ -139,9 +143,12 @@ source appear dirty.
 
 ## Deferred follow-on work
 
-[Issue #23](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/23)
-covers authorization and safe targeting of the approved device, qualification
-app, fixtures, and bounded operations. Its immutable authorization manifest,
-allowlisted device operations, and admission controls are not implemented by
-these commands. Live requests therefore remain fail-closed until that work is
-completed.
+The Issue #23 safety layer provides a private authorization contract, injected
+read-only admission, and a typed permission-operation boundary. These controls
+are not connected to the public commands above. No live ADB transport is
+included, no-reset admission remains blocked until an independent baseline
+observer exists, and the public live route remains fail-closed. Fixture
+staging, durable evidence, product scenarios, and physical qualification
+remain deferred to their separately scoped issues. See
+[Owner-authorized device admission](device-authorization.md) for the
+authorization format, evidence limits, and supported operation.

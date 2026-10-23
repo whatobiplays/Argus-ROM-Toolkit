@@ -13,7 +13,12 @@ generator="$root_dir/.dart_tool/frb/bin/flutter_rust_bridge_codegen"
 
 if [[ ! -x "$generator" ]]; then
   mkdir -p "$root_dir/.dart_tool/frb"
-  bash "$root_dir/scripts/run_rust.sh" cargo install \
+  # Cargo install uses the release profile. On macOS 27 with Rust 1.97.1,
+  # release stripping can misalign proc-macro dylib symbol tables and make
+  # rustc report the macro crates as missing. Limit the workaround to
+  # proc-macro build units; the installed generator keeps normal stripping.
+  CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=none \
+    bash "$root_dir/scripts/run_rust.sh" cargo install \
     flutter_rust_bridge_codegen --version 2.12.0 --locked \
     --root "$root_dir/.dart_tool/frb"
 fi

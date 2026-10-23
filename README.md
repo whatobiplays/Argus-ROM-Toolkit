@@ -140,8 +140,10 @@ The former physical qualification command is retired. See
 suite and device-isolation rules, and the [archive index](docs/archive/README.md)
 for preserved records, surface classifications, and archive provenance.
 
-Live-device authorization, installation, fixtures, and admission controls remain
-the deferred follow-on work.
+Host-only owner fixture preparation is documented in
+[Owner fixture preparation](docs/qualification/fixture-staging.md). Live-device
+authorization, installation, device-side fixture admission, and product
+qualification remain deferred follow-on work.
 
 ## Documentation
 

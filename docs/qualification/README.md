@@ -11,6 +11,9 @@ described in [Owner-authorized device admission](device-authorization.md).
 The separately identified Android qualification APK can be built and inspected
 without a device; see [Android qualification artifact packaging](android-qualification-artifact.md).
 
+The host-only owner fixture preparation contract is described in
+[Owner fixture preparation](fixture-staging.md).
+
 ## Public host validation
 
 The fresh and no-reset entrypoints accept a qualification manifest and one of
@@ -70,6 +73,19 @@ and explicit dependencies. The public `run()` and `main()` entrypoints, as
 well as direct module execution, fail closed before constructing a device.
 There is no active public compatibility command for the retired physical
 route.
+
+## Owner fixture preparation
+
+The `fixture_staging` module validates ephemeral grants from loaded
+authorization and approval inputs, the pinned plan, and the exact fixture
+manifest. Public staging and cleanup remain fail-closed with
+`BLOCKED_UNSUPPORTED_EXCLUSIVITY` until the host provides an OS-enforced
+namespace boundary for the complete destination lifecycle. Transfer,
+verification, publication, and recovery mechanics are exercised only through
+private synthetic test adapters; they do not establish production isolation.
+The result meanings, private manifest contract, capacity reserves, ownership
+records, and recovery limits are documented in
+[Owner fixture preparation](fixture-staging.md).
 
 Cleanup is restricted to the neutral, device-owned directory
 `/sdcard/ArgusQualification`. A cleanup request must name that directory
@@ -147,8 +163,14 @@ The Issue #23 safety layer provides a private authorization contract, injected
 read-only admission, and a typed permission-operation boundary. These controls
 are not connected to the public commands above. No live ADB transport is
 included, no-reset admission remains blocked until an independent baseline
-observer exists, and the public live route remains fail-closed. Fixture
-staging, durable evidence, product scenarios, and physical qualification
-remain deferred to their separately scoped issues. See
+observer exists, and the public live route remains fail-closed. Host-only
+transfer and publication mechanics are implemented only behind private
+synthetic test adapters; public production staging remains blocked pending an
+OS-enforced namespace boundary. Its evidence reports matches against
+owner-approved expectations and does not independently establish game identity.
+Device-side fixture admission, durable execution evidence, product scenarios,
+and physical qualification remain deferred to their separately scoped issues.
+See [Owner-authorized fixture preparation](fixture-staging.md)
+for the manifest, coverage, timeout, and recovery contract, and see
 [Owner-authorized device admission](device-authorization.md) for the
 authorization format, evidence limits, and supported operation.

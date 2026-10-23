@@ -108,6 +108,19 @@
     {"path": "README.md", "classification": "active", "region": {"kind": "markdown_section", "heading": "Android qualification APK"}},
     {"path": "justfile", "classification": "active", "region": {"kind": "just_recipe", "name": "build-android-qualification"}},
     {"path": "justfile", "classification": "active", "region": {"kind": "just_recipe", "name": "verify-android-qualification"}},
-    {"path": ".github/workflows/ci.yml", "classification": "active", "region": {"kind": "yaml_job", "name": "android-qualification-release"}}
+    {"path": ".github/workflows/ci.yml", "classification": "active", "region": {"kind": "yaml_job", "name": "android-qualification-release"}},
+    {"path": "scripts/android_qualification/_fixture_staging_content.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_destination.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_manifest.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_model.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_orchestration.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_ownership.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_transfer.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_test_support.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/fixture_staging.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_staging_authorization.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_staging_content.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_staging_destination.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_staging_recovery.py", "classification": "active", "region": {"kind": "file"}}
   ]
 }

@@ -51,7 +51,7 @@ The authorization uses schema version `1` and has these fields:
 | `application` | The isolated package `com.argusromtoolkit.argus.qualification` |
 | `artifact` | APK SHA-256, certificate SHA-256, embedded source revision, version code, and declared permissions |
 | `plan` | Plan and rules digests plus scenario identifiers |
-| `fixture_manifest_sha256` | Digest of the separately maintained private fixture manifest |
+| `fixture_manifest_sha256` | Canonical JSON SHA-256 digest of the separately maintained private fixture manifest |
 | `state` | `fresh` or `no-reset`, inherited session identifier, and optional no-reset baseline |
 | `operations` | Exact typed operation records and the nested permission restoration authorization |
 | `approved_remediation` | Empty without the permission operation; otherwise exactly `restore_permission_snapshot` |
@@ -78,12 +78,23 @@ and input values. Do not copy private identifiers into shared logs or results.
 
 The typed operation vocabulary can represent read-only work, permission
 app-ops, reset, reinstall, launch, force-stop, navigation, refresh, fixture
-staging, shell, and path mutation. Only the reversible
-`MANAGE_EXTERNAL_STORAGE` permission/app-op transition is enabled. It must
+staging, shell, and path mutation. The reversible
+`MANAGE_EXTERNAL_STORAGE` permission/app-op transition is the only device
+operation enabled. It must
 name the qualification package, the exact target, the expected prior state,
 and the desired `allowed` or `denied` state. The permission must appear in the
 pinned artifact's declared permission list. Unknown categories are rejected;
 known unsupported categories are denied before a transport mutation call.
+
+## Host-only fixture preparation
+
+The `fixture_staging` category can authorize an ephemeral host preparation
+grant when the exact operation, loaded authorization, loaded owner approval,
+plan digest, and fixture-manifest digest agree. That grant can only use the
+host preparation API documented in [Owner fixture preparation](fixture-staging.md).
+It does not grant an ADB command, remote path write, device admission, product
+Library insertion, or permission change. Host staging leaves the session's
+single-use device-admission authority unused.
 
 Before changing the permission, the injected transport rechecks the target,
 foreground package, and installed qualification package identity. It captures
@@ -133,9 +144,9 @@ does not authenticate its owner or provide a cryptographic tamper-proof
 guarantee.
 
 Reset or clear-data, reinstall, launch, force-stop, navigation or refresh,
-fixture staging, arbitrary shell or path changes, ordinary-app operations,
-and scenario behavior are not enabled by this slice. The broader typed
-authorization vocabulary does not grant those actions.
+device-side fixture staging, arbitrary shell or path changes, ordinary-app
+operations, and scenario behavior are not enabled by this slice. The broader
+typed authorization vocabulary does not grant those actions.
 
 ## Safe validation
 

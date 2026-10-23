@@ -1,0 +1,19 @@
+scripts/generate_frb.sh
+  s_9fca9aee43ce94::t_48ab75023d2f3a 16-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5046d117c833891531ff4dde4896fb56b1f9f902",
+  "prompts": {},
+  "sessions": {
+    "s_9fca9aee43ce94": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a15b35-460e-7d82-8c5d-aad38b92ed3c",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

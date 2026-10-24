@@ -22,6 +22,20 @@ PHYSICAL_IMPLEMENTATIONS = (
     "scripts/android_qualification/physical/runner.py",
     "scripts/android_qualification/physical/ui.py",
 )
+CURRENT_CLASSIFICATION_RELATIVE_PATH = (
+    "docs/qualification/surface-classifications-v1.json"
+)
+ARCHIVED_ISSUE21_CLASSIFICATION_SHA256 = (
+    "4ed807af23fecaf66db498cd64625bda79d5f89ebb92db88d23f368a6943e58a"
+)
+ISSUE25_CLASSIFICATIONS = (
+    "scripts/android_qualification/evidence.py",
+    "scripts/android_qualification/_evidence_storage.py",
+    "scripts/android_qualification/_evidence_review.py",
+    "scripts/android_qualification/test_evidence_storage.py",
+    "scripts/android_qualification/test_evidence_review.py",
+    "scripts/android_qualification/test_evidence_issue24_boundary.py",
+)
 
 
 def _copy_naming_fixture(root: Path) -> list[dict[str, object]]:
@@ -81,6 +95,14 @@ class ArchiveContractTests(unittest.TestCase):
                 root / repository_checks.ARCHIVE_DIRECTORY,
             )
             self.assertEqual(repository_checks.archive_violations(root), ())
+
+    def test_archive_verification_is_independent_of_current_naming_inventory(self) -> None:
+        with mock.patch.object(
+            repository_checks,
+            "CLASSIFICATION_RELATIVE_PATH",
+            "missing-current-inventory.json",
+        ):
+            self.assertEqual(repository_checks.archive_violations(ROOT), ())
 
     def _synthetic_archive(self) -> tuple[tempfile.TemporaryDirectory[str], Path, dict[str, bytes]]:
         temporary = tempfile.TemporaryDirectory()
@@ -367,6 +389,127 @@ class ClassificationSchemaTests(unittest.TestCase):
             )
         self.assertTrue(any("unsafe classified path" in item for item in errors))
 
+
+
+class CurrentNamingInventoryTests(unittest.TestCase):
+    def test_current_inventory_is_the_naming_authority(self) -> None:
+        self.assertEqual(
+            repository_checks.CLASSIFICATION_RELATIVE_PATH,
+            CURRENT_CLASSIFICATION_RELATIVE_PATH,
+        )
+        self.assertEqual(repository_checks.classification_violations(ROOT), ())
+
+    def test_current_inventory_carries_archived_entries_then_issue25_surfaces(self) -> None:
+        archive_path = (
+            ROOT
+            / repository_checks.ARCHIVE_DIRECTORY
+            / "surface-classifications-v1.json"
+        )
+        current_path = ROOT / CURRENT_CLASSIFICATION_RELATIVE_PATH
+        self.assertTrue(current_path.is_file())
+        archived = json.loads(archive_path.read_text(encoding="utf-8"))
+        current = json.loads(current_path.read_text(encoding="utf-8"))
+
+        archived_surfaces = archived["surfaces"]
+        expected_issue25 = [
+            {
+                "path": relative,
+                "classification": "active",
+                "region": {"kind": "file"},
+            }
+            for relative in ISSUE25_CLASSIFICATIONS
+        ]
+        self.assertEqual(len(archived_surfaces), 121)
+        self.assertEqual(current["schema_version"], archived["schema_version"])
+        self.assertEqual(current["surfaces"][:121], archived_surfaces)
+        self.assertEqual(current["surfaces"][121:], expected_issue25)
+        self.assertEqual(len(current["surfaces"]), 127)
+
+    def test_issue25_files_are_active_whole_file_classifications(self) -> None:
+        data = repository_checks._read_classification(ROOT)
+        rows = {surface["path"]: surface for surface in data["surfaces"]}
+        for relative in ISSUE25_CLASSIFICATIONS:
+            with self.subTest(relative=relative):
+                self.assertIn(relative, rows)
+                self.assertEqual(rows[relative]["classification"], "active")
+                self.assertEqual(rows[relative]["region"], {"kind": "file"})
+
+    def test_current_inventory_requires_each_surface_once(self) -> None:
+        data = repository_checks._read_classification(ROOT)
+        required = next(
+            surface
+            for surface in data["surfaces"]
+            if surface["path"] == ISSUE25_CLASSIFICATIONS[0]
+        )
+        remaining = [
+            surface for surface in data["surfaces"] if surface != required
+        ]
+        with mock.patch.object(repository_checks, "REQUIRED_SURFACES", (required,)):
+            missing = repository_checks.classification_schema_violations(
+                {"schema_version": 1, "surfaces": remaining}
+            )
+            duplicated = repository_checks.classification_schema_violations(
+                {"schema_version": 1, "surfaces": [required, required]}
+            )
+
+        self.assertTrue(any("missing required surface" in item for item in missing))
+        self.assertTrue(any("duplicate classified surface" in item for item in duplicated))
+
+    def test_unexpected_python_surface_and_archival_exception_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / "scripts/android_qualification"
+            package.mkdir(parents=True)
+            relative = "scripts/android_qualification/unexpected.py"
+            (root / relative).write_text("pass\n", encoding="utf-8")
+
+            unclassified = repository_checks._closed_world_classification_violations(
+                root, []
+            )
+            with mock.patch.object(repository_checks, "REQUIRED_SURFACES", ()):
+                archival_exception = (
+                    repository_checks._closed_world_classification_violations(
+                        root,
+                        [
+                            {
+                                "path": relative,
+                                "classification": "archival_planning",
+                                "region": {"kind": "file"},
+                            }
+                        ],
+                    )
+                )
+
+        self.assertIn(
+            f"unclassified qualification candidate surface: {relative}",
+            unclassified,
+        )
+        self.assertIn(
+            f"qualification implementation surface must be active: {relative}",
+            archival_exception,
+        )
+
+    def test_archived_issue21_classification_hash_remains_pinned(self) -> None:
+        archive_path = (
+            ROOT
+            / repository_checks.ARCHIVE_DIRECTORY
+            / "surface-classifications-v1.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+            ARCHIVED_ISSUE21_CLASSIFICATION_SHA256,
+        )
+
+    def test_current_naming_diagnostics_are_deterministic(self) -> None:
+        outputs: list[tuple[str, str]] = []
+        for _ in range(2):
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = repository_checks.main(["naming"])
+            self.assertEqual(result, 0)
+            outputs.append((stdout.getvalue(), stderr.getvalue()))
+        self.assertEqual(outputs[0], outputs[1])
 
 
 class ActiveNamingContractTests(unittest.TestCase):

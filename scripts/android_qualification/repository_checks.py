@@ -24,7 +24,9 @@ HISTORICAL_MANUAL_DOCUMENT = "docs/implementation/pha" + "se-003-manual-qualific
 PHYSICAL_SCENARIO_HELPER = "scripts/run_pha" + "se_002_android_scenario_common.sh"
 PHYSICAL_SCENARIO_SOURCE_LINE = 'source "${ROOT_DIR}/scripts/run_pha' + 'se_002_android_scenario_common.sh"'
 CI_HISTORICAL_TEST_JOB = "pha" + "se-001-native"
-CLASSIFICATION_RELATIVE_PATH = f"{ARCHIVE_DIRECTORY}/surface-classifications-v1.json"
+# Current naming checks use this live registry. Archive verification uses the
+# manifest and pinned baseline constants and deliberately does not read it.
+CLASSIFICATION_RELATIVE_PATH = "docs/qualification/surface-classifications-v1.json"
 
 # These two non-source paths are pinned separately from Git tree discovery.
 EXPLICIT_BASELINE_ENTRIES = (

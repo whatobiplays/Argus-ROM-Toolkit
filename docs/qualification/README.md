@@ -8,6 +8,9 @@ rules remain in [ARCH-003](../architecture/qualification-architecture.md) and
 [SPEC-X-003](../specifications/cross-cutting/spec-x-003-qualification-contract.md).
 The private authorization contract and current device-admission limits are
 described in [Owner-authorized device admission](device-authorization.md).
+The host-only append-only execution ledger, recovery contract, owner verdict
+stream, and deterministic review packet are described in
+[Durable qualification evidence](evidence-records.md).
 The separately identified Android qualification APK can be built and inspected
 without a device; see [Android qualification artifact packaging](android-qualification-artifact.md).
 
@@ -118,12 +121,13 @@ original and preserved paths, roles, and SHA-256 digests. The archive check
 compares the preserved files with the fixed baseline. Historical source and
 observations do not define current acceptance criteria.
 
-The [surface classification artifact](../archive/README.md#qualification-surface-classification)
-is the reviewed inventory used by the naming check. Its four classifications
-and authority are defined in the archive index. The naming check validates the
-artifact and each declared region, then checks active regions for prohibited
-planning labels. A compatibility-only entry records history; it does not make
-a retired route callable.
+The [current surface classification registry](surface-classifications-v1.json)
+is the reviewed inventory used by the naming check. It carries forward the
+[archived Issue21 inventory](../archive/qualification/issue-21-v1/surface-classifications-v1.json)
+as historical provenance and adds the current qualification surfaces. The
+naming check validates the current registry and each declared region, then
+checks active regions for prohibited planning labels. A compatibility-only
+entry records history; it does not make a retired route callable.
 
 The exact historical names below are retained only as the reviewed naming
 crosswalk. They are not active commands or supported interfaces.
@@ -168,8 +172,11 @@ transfer and publication mechanics are implemented only behind private
 synthetic test adapters; public production staging remains blocked pending an
 OS-enforced namespace boundary. Its evidence reports matches against
 owner-approved expectations and does not independently establish game identity.
-Device-side fixture admission, durable execution evidence, product scenarios,
+Device-side fixture admission, live execution orchestration, product scenarios,
 and physical qualification remain deferred to their separately scoped issues.
+The host-only durable execution and owner-review storage contract described in
+[Durable qualification evidence](evidence-records.md) is implemented without a
+CLI, device transport, live runner, release assessor, or product verdict.
 See [Owner-authorized fixture preparation](fixture-staging.md)
 for the manifest, coverage, timeout, and recovery contract, and see
 [Owner-authorized device admission](device-authorization.md) for the

@@ -13,11 +13,17 @@ records the fixed baseline, preserved file inventory, original and archived
 paths, file roles, and SHA-256 digests. The preserved source and technical
 record are under `qualification/issue-21-v1/original/`.
 
-### Qualification surface classification
+### Qualification surface registries
 
-The [surface classification artifact](qualification/issue-21-v1/surface-classifications-v1.json)
-lists reviewed qualification surfaces by path and region. The four
-classification values have these meanings:
+The archived [Issue21 surface classification inventory](qualification/issue-21-v1/surface-classifications-v1.json)
+preserves the 121 entries reviewed when that archive was created. Its paths,
+regions, and classifications are historical provenance and must remain
+unchanged. It is not the current naming authority.
+
+The [current qualification surface classification registry](../qualification/surface-classifications-v1.json)
+is authoritative for naming checks. It carries forward every reviewed Issue21
+entry and adds the current qualification surfaces. The four classification
+values have these meanings:
 
 | Classification | Meaning |
 |---|---|
@@ -28,7 +34,7 @@ classification values have these meanings:
 
 ## Authority and checks
 
-The classification artifact is the reviewed inventory that scopes
+The current classification registry is the reviewed inventory that scopes
 `just check-qualification-naming`. The check validates the artifact's schema,
 required surfaces, categories, and declared file regions, then searches only
 `active` regions for prohibited numbered planning labels. A compatibility-only
@@ -37,6 +43,7 @@ route.
 
 The archive manifest is authoritative for the preserved file list and byte
 digests. `just check-qualification-archive` verifies those files against the
-fixed repository baseline. Neither artifact changes the active qualification
-contract in [ARCH-003](../architecture/qualification-architecture.md) or
+fixed repository baseline without reading the current naming registry. Neither
+check changes the active qualification contract in
+[ARCH-003](../architecture/qualification-architecture.md) or
 [SPEC-X-003](../specifications/cross-cutting/spec-x-003-qualification-contract.md).

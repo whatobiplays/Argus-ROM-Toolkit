@@ -305,3 +305,9 @@ Status: 126 interview decisions settled; consolidated design drafts pending expl
 
 The 126 design answers establish consensus for drafting, not authorization to commit code, publish a PR, install APKs, reset app data, change device settings, or begin physical execution. Approve the consolidated architecture/specification and subsequent bounded implementation work separately. Physical sessions require their own exact owner-approved authorization manifests.
 <!-- END APPROVED SOURCE design-decisions.md SHA-256 ab198ecf0fde7b357a7cd0a81dce1ec50cc7ec86c802259df1d38d6dd3a054cf -->
+
+## Prospective Q100 clarification
+
+**Provenance:** Issue #25, approved for the durable evidence implementation. The approved source block above remains byte-for-byte identical to archive member `design-decisions.md` (SHA-256 `ab198ecf0fde7b357a7cd0a81dce1ec50cc7ec86c802259df1d38d6dd3a054cf`). This section records a prospective interpretation and is not part of that archived source.
+
+- `NOT_RUN` is a fourth explicit owner verdict. It records that the owner did not run the required observation. It is distinct from an absent verdict, an objective failure, and `BLOCKED`. This clarification adds a supported outcome without changing the historical Q100A decision or any retained record.

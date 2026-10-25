@@ -127,6 +127,8 @@
     {"path": "scripts/android_qualification/_evidence_review.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_evidence_storage.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_evidence_review.py", "classification": "active", "region": {"kind": "file"}},
-    {"path": "scripts/android_qualification/test_evidence_issue24_boundary.py", "classification": "active", "region": {"kind": "file"}}
+    {"path": "scripts/android_qualification/test_evidence_issue24_boundary.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/staging_resources.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_staging_resources.py", "classification": "active", "region": {"kind": "file"}}
   ]
 }

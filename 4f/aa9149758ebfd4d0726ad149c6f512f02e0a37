@@ -1,0 +1,37 @@
+scripts/android_qualification/_fixture_staging_model.py
+  s_36360575f7d95a::t_0937dd8799d946 298-303,309,313
+docs/qualification/fixture-staging.md
+  s_36360575f7d95a::t_2b418ee1f9a4f2 207-222
+scripts/android_qualification/_fixture_staging_test_support.py
+  s_36360575f7d95a::t_116fed6ecb467c 328
+  s_36360575f7d95a::t_543da11cf8c945 324-325
+docs/qualification/staging-isolation-feasibility.md
+  s_36360575f7d95a::t_1f995d19b7423f 81-87,90-91,104-110,371-372
+  s_36360575f7d95a::t_2b418ee1f9a4f2 1-80,88-89,92-103,111-150,160-243,246-257,272-273,288-292,297-323,328-351,361-370,373-379,383-401
+  s_36360575f7d95a::t_7c90632e31f8da 151-159,244-245,324-327,352-360,380-382
+  s_36360575f7d95a::t_53d235dde1dd38 258-271,274-287,293-296
+scripts/android_qualification/_fixture_staging_ownership.py
+  s_36360575f7d95a::t_0937dd8799d946 243-244,246-251
+scripts/android_qualification/test_fixture_staging_destination.py
+  s_36360575f7d95a::t_116fed6ecb467c 683,711,765
+scripts/android_qualification/test_fixture_staging_authorization.py
+  s_36360575f7d95a::t_116fed6ecb467c 1001-1004,1044,1061,1204-1207,1274,1284,1304,1313,1447-1449,1454-1455,1502-1505,1570,1572,1611
+  s_36360575f7d95a::t_14cd5fa5d0830c 27-93
+  s_36360575f7d95a::t_aee16da05df954 94-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4faa9149758ebfd4d0726ad149c6f512f02e0a37",
+  "prompts": {},
+  "sessions": {
+    "s_36360575f7d95a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1710a-240e-7923-975d-4a38be1b1d29",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

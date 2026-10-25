@@ -295,18 +295,22 @@ def _datetime_ns(value: datetime) -> int:
 
 
 def _read_monotonic_ns(clock) -> int:
-    """Read the trusted monotonic clock as integer nanoseconds."""
+    """Read a nonnegative integer-nanosecond clock without unit conversion.
+
+    Production uses ``time.monotonic_ns``. Private synthetic clocks use the
+    same units so an exact deadline never passes through float seconds.
+    Existing persisted deadlines retain their original values and clock domain.
+    """
     try:
         value = clock()
     except Exception:
         raise FixtureStagingError(FixtureStagingErrorCode.OPERATION_TIMEOUT) from None
     if (
-        type(value) not in {int, float}
-        or not math.isfinite(value)
+        type(value) is not int
         or value < 0
     ):
         raise FixtureStagingError(FixtureStagingErrorCode.OPERATION_TIMEOUT)
-    return int(value * 1_000_000_000)
+    return value
 
 
 def _boot_identity() -> tuple[str, str]:

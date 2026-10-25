@@ -24,6 +24,113 @@ from datetime import timedelta
 import threading
 
 class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
+    def test_integer_clock_preserves_nanosecond_deadline_boundaries(self) -> None:
+        """Integer clock readings must not move the original expiry boundary."""
+        grant = self._authorize()
+        timing = staging_model._new_operation_timing(
+            grant, NOW, lambda: 17_052_823_080_000
+        )
+        self.assertEqual(timing["monotonic_start_ns"], 17_052_823_080_000)
+        self.assertEqual(timing["operation_deadline_monotonic_ns"], 17_082_823_080_000)
+        original = copy.deepcopy(timing)
+        for current, expired in (
+            (17_082_823_079_999, False),
+            (17_082_823_080_000, True),
+            (17_082_823_080_001, True),
+        ):
+            with self.subTest(current=current):
+                if expired:
+                    with self.assertRaises(staging_model.FixtureStagingError) as caught:
+                        staging_model._check_operation_timing(
+                            timing, clock=lambda: current, mode="cleanup"
+                        )
+                    self.assertEqual(
+                        caught.exception.code, staging_model.FixtureStagingErrorCode.OPERATION_TIMEOUT
+                    )
+                else:
+                    staging_model._check_operation_timing(
+                        timing, clock=lambda: current, mode="cleanup"
+                    )
+                self.assertEqual(timing, original)
+
+    def test_production_clock_reads_integer_nanoseconds_without_float_seconds(self) -> None:
+        """Production timing must retain a one-nanosecond expiry distinction."""
+        grant = self._authorize()
+        with (
+            patch.object(staging_ownership.time, "monotonic_ns", return_value=17_052_823_080_000),
+            patch.object(staging_ownership.time, "monotonic", side_effect=AssertionError("float clock used")),
+        ):
+            timing = staging_model._new_operation_timing(
+                grant, NOW, staging_ownership._monotonic_now
+            )
+        self.assertEqual(timing["operation_deadline_monotonic_ns"], 17_082_823_080_000)
+        for current, expired in (
+            (17_082_823_079_999, False),
+            (17_082_823_080_000, True),
+            (17_082_823_080_001, True),
+        ):
+            with self.subTest(current=current), patch.object(
+                staging_ownership.time, "monotonic_ns", return_value=current
+            ):
+                if expired:
+                    with self.assertRaises(staging_model.FixtureStagingError) as caught:
+                        staging_model._check_operation_timing(
+                            timing, clock=staging_ownership._monotonic_now, mode="cleanup"
+                        )
+                    self.assertEqual(caught.exception.code, staging_model.FixtureStagingErrorCode.OPERATION_TIMEOUT)
+                else:
+                    staging_model._check_operation_timing(
+                        timing, clock=staging_ownership._monotonic_now, mode="cleanup"
+                    )
+
+    def test_nanosecond_clock_rejects_seconds_and_invalid_readings(self) -> None:
+        """A clock with ambiguous units cannot authorize fixture mutations."""
+        for value in (True, False, -1, 1.0, float("nan"), float("inf"), "1", None):
+            with self.subTest(value=value):
+                with self.assertRaises(staging_model.FixtureStagingError) as caught:
+                    staging_model._read_monotonic_ns(lambda: value)
+                self.assertEqual(caught.exception.code, staging_model.FixtureStagingErrorCode.OPERATION_TIMEOUT)
+
+    def test_persisted_nanosecond_authorization_boundaries_are_not_rebased(self) -> None:
+        """Loaded timing records expire at their original authorization boundary."""
+        timing = staging_model._new_operation_timing(
+            self._authorize(), NOW, lambda: 17_052_823_080_000
+        )
+        # Schema 1 already stores integer nanoseconds, including values rounded
+        # by older float-based writers. Never round or regenerate those values.
+        timing["staging_authorization_deadline_monotonic_ns"] = 17_052_823_080_099
+        timing["cleanup_authorization_deadline_monotonic_ns"] = 17_052_823_080_199
+        original = copy.deepcopy(timing)
+        for mode, boundary in (("staging", 17_052_823_080_099), ("cleanup", 17_052_823_080_199)):
+            for offset in (-1, 0, 1):
+                with self.subTest(mode=mode, offset=offset):
+                    if offset < 0:
+                        staging_model._check_operation_timing(
+                            timing, clock=lambda: boundary + offset, mode=mode
+                        )
+                    else:
+                        with self.assertRaises(staging_model.FixtureStagingError) as caught:
+                            staging_model._check_operation_timing(
+                                timing, clock=lambda: boundary + offset, mode=mode
+                            )
+                        self.assertEqual(caught.exception.code, staging_model.FixtureStagingErrorCode.AUTHORIZATION_EXPIRED)
+                    self.assertEqual(timing, original)
+
+    def test_uptime_timing_does_not_silently_acquire_sleep_inclusive_semantics(self) -> None:
+        """A UTC jump cannot reinterpret existing uptime-domain timing records."""
+        timing = staging_model._new_operation_timing(
+            self._authorize(), NOW, lambda: 17_052_823_080_000
+        )
+        original = copy.deepcopy(timing)
+        # Model a suspended host: UTC advances while the uptime clock is held.
+        # The separate grant validator still checks UTC; this persisted-clock
+        # check alone must preserve schema 1's existing sleep exclusion.
+        with patch.object(staging_manifest, "_utc_now", return_value=NOW + timedelta(hours=1)):
+            staging_model._check_operation_timing(
+                timing, clock=lambda: 17_052_823_080_001, mode="cleanup"
+            )
+        self.assertEqual(timing, original)
+
     def test_public_staging_gate_precedes_uninitialized_grant_and_filesystem_work(
         self,
     ) -> None:
@@ -891,9 +998,10 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
             observations[0] += 1
             if observations[0] == 2:
                 self.staging_now[0] = grant_holder[0]._approval.valid_until
-                self.staging_monotonic[0] += (
-                    grant_holder[0]._approval.valid_until - NOW
-                ).total_seconds()
+                self.staging_monotonic_ns[0] += (
+                    staging_model._datetime_ns(grant_holder[0]._approval.valid_until)
+                    - staging_model._datetime_ns(NOW)
+                )
             return api.CapacityObservation(10**12, 10**12)
 
         api, source_root, destination, grant = self._make_staging_inputs(
@@ -933,7 +1041,7 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
         self.approval = manifest.load_owner_approval(
             self.approval_path, self.authorization, now=NOW
         )
-        elapsed = [0.0]
+        elapsed = [0]
 
         class SlowDestination(api.FilesystemFixtureDestination):
             def _write_file(
@@ -950,7 +1058,7 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
             ):
                 def delayed_chunks():
                     for chunk in chunks:
-                        elapsed[0] = 11.0
+                        elapsed[0] = 11_000_000_000
                         yield chunk
 
                 return super()._write_file(
@@ -1093,9 +1201,10 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
             now=NOW,
         )
         self.staging_now[0] = grant._approval.valid_until
-        self.staging_monotonic[0] += (
-            grant._approval.valid_until - NOW
-        ).total_seconds()
+        self.staging_monotonic_ns[0] += (
+            staging_model._datetime_ns(grant._approval.valid_until)
+            - staging_model._datetime_ns(NOW)
+        )
 
         cleanup = _cleanup_fixture_staging_for_synthetic_mechanics(self.synthetic_capability,
             grant,
@@ -1162,7 +1271,7 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
         plan = copy.deepcopy(self.plan_document)
         plan["cleanup_authorized"] = True
         self._rebind_inputs(plan=plan)
-        self.staging_monotonic[0] = 100.0
+        self.staging_monotonic_ns[0] = 100_000_000_000
         api, source_root, destination, grant = self._make_staging_inputs(
             capability=self.synthetic_capability,)
         staged = _stage_fixtures_for_synthetic_mechanics(self.synthetic_capability,
@@ -1172,7 +1281,7 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
             now=NOW,
         )
         restarted_destination = api.FilesystemFixtureDestination(destination.root)
-        self.staging_monotonic[0] = 101.0
+        self.staging_monotonic_ns[0] = 101_000_000_000
 
         cleanup = _cleanup_fixture_staging_for_synthetic_mechanics(self.synthetic_capability,
             grant,
@@ -1192,7 +1301,7 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
         plan = copy.deepcopy(self.plan_document)
         plan["cleanup_authorized"] = True
         self._rebind_inputs(plan=plan)
-        self.staging_monotonic[0] = 100.0
+        self.staging_monotonic_ns[0] = 100_000_000_000
         api, source_root, destination, grant = self._make_staging_inputs(
             capability=self.synthetic_capability,)
         staged = _stage_fixtures_for_synthetic_mechanics(self.synthetic_capability,
@@ -1201,7 +1310,7 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
             destination=destination,
             now=NOW,
         )
-        self.staging_monotonic[0] = 99.0
+        self.staging_monotonic_ns[0] = 99_000_000_000
 
         rewound = _cleanup_fixture_staging_for_synthetic_mechanics(self.synthetic_capability,
             grant,
@@ -1335,15 +1444,15 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
         expiry = grant._authorization.cleanup_deadline
         self.staging_now[0] = expiry - timedelta(seconds=1)
         elapsed = [
-            self.staging_monotonic[0]
-            + (expiry - NOW).total_seconds()
-            - 1.0
+            self.staging_monotonic_ns[0]
+            + staging_model._datetime_ns(expiry) - staging_model._datetime_ns(NOW)
+            - 1_000_000_000
         ]
         original_proof = destination._ownership._ownership_is_proven
 
         def pass_expiry_and_move_wall_clock_back(record, session_id):
-            elapsed[0] += 2.0
-            self.staging_monotonic[0] = elapsed[0]
+            elapsed[0] += 2_000_000_000
+            self.staging_monotonic_ns[0] = elapsed[0]
             self.staging_now[0] = NOW
             return original_proof(record, session_id)
 
@@ -1390,9 +1499,10 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
             now=NOW,
         )
         self.staging_now[0] = grant._authorization.session_deadline + timedelta(seconds=1)
-        self.staging_monotonic[0] += (
-            grant._authorization.session_deadline + timedelta(seconds=1) - NOW
-        ).total_seconds()
+        self.staging_monotonic_ns[0] += (
+            staging_model._datetime_ns(grant._authorization.session_deadline + timedelta(seconds=1))
+            - staging_model._datetime_ns(NOW)
+        )
 
         cleanup = _cleanup_fixture_staging_for_synthetic_mechanics(self.synthetic_capability,
             grant, destination=destination, session_id=staged.session_id, now=NOW
@@ -1457,9 +1567,9 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
         )
 
         restarted = api.FilesystemFixtureDestination(destination.root)
-        self.staging_monotonic[0] = (
+        self.staging_monotonic_ns[0] = (
             timing["monotonic_start_ns"] + 25 * 1_000_000_000
-        ) / 1_000_000_000
+        )
         recovery = _cleanup_fixture_staging_for_synthetic_mechanics(self.synthetic_capability,
             grant,
             destination=restarted,
@@ -1498,9 +1608,7 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
         timing = destination._ownership._load_state(
             staged.session_id
         )["operation_timing"]
-        self.staging_monotonic[0] = (
-            timing["operation_deadline_monotonic_ns"] / 1_000_000_000
-        )
+        self.staging_monotonic_ns[0] = timing["operation_deadline_monotonic_ns"]
 
         cleanup = _cleanup_fixture_staging_for_synthetic_mechanics(self.synthetic_capability,
             grant,

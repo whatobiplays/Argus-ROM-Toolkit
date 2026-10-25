@@ -321,10 +321,11 @@ class FixtureStagingTestCase(unittest.TestCase):
         )
         self.staging_clock_patch.start()
         self.addCleanup(self.staging_clock_patch.stop)
-        self.staging_monotonic = [time.monotonic()]
+        # Share the production clock domain with concurrent test capabilities.
+        self.staging_monotonic_ns = [time.monotonic_ns()]
 
         def test_monotonic_clock():
-            return self.staging_monotonic[0]
+            return self.staging_monotonic_ns[0]
 
         self.synthetic_owner = object()
         self.synthetic_capability = (

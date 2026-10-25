@@ -240,10 +240,15 @@ def _coordinated_state_change(
     return decorate
 
 
-def _monotonic_now() -> float:
-    """Return the private monotonic clock used to bound cleanup authority."""
+def _monotonic_now() -> int:
+    """Return nanoseconds in the existing uptime-based monotonic clock domain.
 
-    return time.monotonic()
+    On macOS this clock excludes system sleep. Using its integer API avoids
+    float precision loss without changing persisted timing evidence semantics.
+    A sleep-inclusive clock requires a separately versioned timing contract.
+    """
+
+    return time.monotonic_ns()
 
 
 class FixtureStagingOwnership:

@@ -680,7 +680,7 @@ class FixtureStagingDestinationTests(FixtureStagingTestCase):
         self.authorization_document["operations"][0]["restoration"]["timeout_seconds"] = 10
         self.authorization_document["reserves"]["cleanup_seconds"] = 10
         self._rebind_inputs()
-        self.staging_monotonic[0] = 11.0
+        self.staging_monotonic_ns[0] = 11_000_000_000
         api, source_root, destination, grant = self._make_staging_inputs(
             capability=self.synthetic_capability,)
 
@@ -708,7 +708,7 @@ class FixtureStagingDestinationTests(FixtureStagingTestCase):
         api = self._require_staging_module()
 
         def slow_observer(_root):
-            self.staging_monotonic[0] += 31.0
+            self.staging_monotonic_ns[0] += 31_000_000_000
             return api.CapacityObservation(10**12, 10**12)
 
         api, source_root, destination, grant = self._make_staging_inputs(
@@ -762,7 +762,7 @@ class FixtureStagingDestinationTests(FixtureStagingTestCase):
         def slow_transfer_observer(_root):
             observations[0] += 1
             if observations[0] == 3:
-                self.staging_monotonic[0] += 31.0
+                self.staging_monotonic_ns[0] += 31_000_000_000
             return api.CapacityObservation(10**12, 10**12)
 
         api, source_root, destination, grant = self._make_staging_inputs(

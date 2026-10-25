@@ -204,6 +204,22 @@ clock, or an unreadable record blocks the operation. Expiry leaves any owned
 data in place for explicit owner review; it does not convert a partial result
 into an eligible fixture.
 
+Clock acquisition and private synthetic clocks use integer nanoseconds through
+`time.monotonic_ns()` and the internal timing interface. Persisted schema 1
+already stores integer nanoseconds: previously written starts and deadlines
+remain unchanged, including any rounding introduced by older float-based
+writers. No existing record is regenerated or migrated.
+
+On macOS, Python's monotonic clock uses `mach_absolute_time()` and excludes
+system sleep. Linux `CLOCK_MONOTONIC` also excludes suspend. This differs from
+Darwin's sleep-inclusive `CLOCK_MONOTONIC` and `mach_continuous_time()`. The
+precision correction does not change those clock domains. UTC grant checks
+remain independently required; a paused uptime budget alone does not prove
+that elapsed real time remains authorized. A sleep-inclusive timing contract
+requires separate approval and a new clock discriminator/version, without
+reinterpreting retained records. The proposed boundary and that separate
+decision are described in [Staging isolation feasibility](staging-isolation-feasibility.md).
+
 ### Ownership generations and publication
 
 Each run reserves a unique 32-character session identifier and writes state

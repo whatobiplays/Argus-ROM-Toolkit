@@ -1,0 +1,31 @@
+docs/qualification/production-staging/implementation-ledger.md
+  s_b88c991a15a600::t_7a348a2011cea7 99,109-115
+  s_b88c991a15a600::t_65439c254f6782 1-47,50-94
+  s_b88c991a15a600::t_3021db3e6e80de 48-49,95-98,100-108
+scripts/android_qualification/test_staging_resources.py
+  s_b88c991a15a600::t_8aa860acced4f2 3-5,16-26
+  s_b88c991a15a600::t_0e389ed08faf83 42-50
+  s_b88c991a15a600::t_8f8fceaa7e9948 1-2,6-15,27-41,51-66
+scripts/android_qualification/staging_resources.py
+  s_b88c991a15a600::t_2857ae6cac0a91 1-9,11-20,22-39,52-60,62-81
+  s_b88c991a15a600::t_419bdcccba9aa3 10,40-51
+  s_b88c991a15a600::t_15dc79cac614e4 21,61
+docs/qualification/surface-classifications-v1.json
+  s_b88c991a15a600::t_e497bcdc728b92 130-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b8cf887d48013167c4d0f863d7c6077a5cf8125f",
+  "prompts": {},
+  "sessions": {
+    "s_b88c991a15a600": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17168-15be-72b3-8856-050674c248c1",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+scripts/just_cleanup.py
+  s_5115ca474bf205::t_fb9980f28572ea 641-645
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08399b7a45d7f75558be6b40ad8677508d7059e3",
+  "prompts": {},
+  "sessions": {
+    "s_5115ca474bf205": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16d28-a945-7353-921f-e3c95a755ed6",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

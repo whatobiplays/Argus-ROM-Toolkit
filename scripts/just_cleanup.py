@@ -638,7 +638,11 @@ def _find_python_cache_candidates(
                 continue
             if child.is_symlink():
                 continue
-            if _has_git_marker(child):
+            try:
+                if _has_git_marker(child):
+                    continue
+            except OSError as error:
+                record_walk_error(error)
                 continue
             retained_directories.append(directory_name)
         directory_names[:] = retained_directories

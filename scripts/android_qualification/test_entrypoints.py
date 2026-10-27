@@ -74,6 +74,34 @@ class EntrypointTests(unittest.TestCase):
             check=False,
         )
 
+    def test_canonical_justfile_entrypoints_work_from_arbitrary_directory(self) -> None:
+        for recipe, flag in (
+            ("qualify-android-fresh", "--dry-run"),
+            ("qualify-android-fresh", "--preflight"),
+            ("qualify-android-no-reset", "--dry-run"),
+        ):
+            with self.subTest(recipe=recipe, flag=flag):
+                manifest_path = self.manifest_path
+                if recipe == "qualify-android-no-reset":
+                    manifest_path = self.directory / "no-reset manifest.json"
+                    document = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+                    document["state_mode"] = "no-reset"
+                    document["inherited_state_session_ref"] = "prior-session-synthetic"
+                    manifest_path.write_text(json.dumps(document), encoding="utf-8")
+                result = self._run(
+                    [
+                        "just",
+                        "--justfile",
+                        str(ROOT / "justfile"),
+                        recipe,
+                        str(manifest_path),
+                        flag,
+                    ]
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["status"], "HOST_VALIDATED")
+                self._assert_no_adb()
+
     def test_shell_entrypoints_work_from_arbitrary_directory(self) -> None:
         for wrapper, flag in (
             (FRESH_WRAPPER, "--dry-run"),
@@ -84,7 +112,9 @@ class EntrypointTests(unittest.TestCase):
                 manifest_path = self.manifest_path
                 if wrapper == NO_RESET_WRAPPER:
                     manifest_path = self.directory / "no-reset manifest.json"
-                    document = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+                    document = json.loads(
+                        self.manifest_path.read_text(encoding="utf-8")
+                    )
                     document["state_mode"] = "no-reset"
                     document["inherited_state_session_ref"] = "prior-session-synthetic"
                     manifest_path.write_text(json.dumps(document), encoding="utf-8")

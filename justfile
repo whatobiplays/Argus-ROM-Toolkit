@@ -3,6 +3,23 @@ set shell := ["bash", "-uc"]
 bootstrap:
     bash scripts/bootstrap.sh
 
+clean-preview:
+    @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" preview
+
+clean-deep-preview:
+    @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" preview-deep
+
+clean-preview-deep: clean-deep-preview
+
+clean:
+    @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" apply
+
+clean-deep:
+    @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" apply-deep
+
+test-cleanup:
+    @PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.test_just_cleanup
+
 registered_generated_files := "flutter/lib/app/bootstrap/application_lifecycle_coordinator.g.dart flutter/lib/app/bootstrap/application_presentation.g.dart flutter/lib/app/bootstrap/appearance_event_coordinator.g.dart flutter/lib/app/bootstrap/client_bootstrap.g.dart flutter/lib/app/bootstrap/foreground_execution_coordinator.g.dart flutter/lib/app/bootstrap/jobs_event_coordinator.g.dart flutter/lib/app/bootstrap/sources_event_coordinator.g.dart flutter/lib/app/platform/application/foreground_execution_host_composition.g.dart flutter/lib/app/platform/application/platform_readiness_controller.g.dart flutter/lib/app/routing/app_routes.g.dart flutter/lib/app/routing/app_router.g.dart flutter/lib/core/bridge/generated/frb_generated.dart flutter/lib/core/bridge/generated/frb_generated.io.dart flutter/lib/core/bridge/generated/lib.dart flutter/lib/core/bridge/generated/lib.freezed.dart flutter/lib/core/client/src/models.freezed.dart flutter/lib/features/jobs/application/active_job_summary_controller.g.dart flutter/lib/features/jobs/application/job_detail_controller.freezed.dart flutter/lib/features/jobs/application/job_detail_controller.g.dart flutter/lib/features/jobs/application/jobs_list_controller.freezed.dart flutter/lib/features/jobs/application/jobs_list_controller.g.dart flutter/lib/features/jobs/application/jobs_state.freezed.dart flutter/lib/features/jobs/jobs_composition.g.dart flutter/lib/features/library/application/library_state.freezed.dart flutter/lib/features/library/application/library_onboarding_routing.g.dart flutter/lib/features/library/library_composition.g.dart flutter/lib/features/settings/application/appearance_settings_controller.g.dart flutter/lib/features/settings/application/appearance_settings_dependencies.g.dart flutter/lib/features/settings/application/appearance_settings_state.freezed.dart flutter/lib/features/settings/settings_composition.g.dart flutter/lib/features/sources/application/add_library_folder_controller.freezed.dart flutter/lib/features/sources/application/add_library_folder_controller.g.dart flutter/lib/features/sources/application/local_filesystem_browser_controller.freezed.dart flutter/lib/features/sources/application/local_filesystem_browser_controller.g.dart flutter/lib/features/sources/application/root_detail_controller.freezed.dart flutter/lib/features/sources/application/root_detail_controller.g.dart flutter/lib/features/sources/application/root_list_controller.freezed.dart flutter/lib/features/sources/application/root_list_controller.g.dart flutter/lib/features/sources/application/sources_session_presentation.g.dart flutter/lib/features/sources/application/sources_state.freezed.dart flutter/lib/features/sources/application/source_entry_detail_controller.g.dart flutter/lib/features/sources/application/source_hierarchy_controller.g.dart flutter/lib/features/sources/application/source_hierarchy_state.freezed.dart flutter/lib/features/sources/presentation/library_folder_picker.g.dart flutter/lib/features/sources/sources_composition.g.dart flutter/lib/features/startup/application/app_readiness.g.dart flutter/lib/features/startup/application/startup_controller.g.dart flutter/lib/features/startup/application/startup_state.freezed.dart flutter/lib/features/startup/presentation/presentation_seams.g.dart"
 
 generate:
@@ -95,6 +112,7 @@ _architecture:
 
 test:
     just test-android-qualification
+    just test-cleanup
     bash scripts/test_macos_frb_exports.sh
     bash scripts/test_macos_rust_build_environment.sh
     @bash scripts/run_rust.sh cargo test --manifest-path rust/Cargo.toml --workspace --all-features --locked

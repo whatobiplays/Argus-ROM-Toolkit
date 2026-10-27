@@ -27,6 +27,9 @@ jobs:
         with:
           just-version: 1.58.0
 
+      - name: Run focused cleanup contract tests
+        run: just test-cleanup
+
       - name: Set up pinned Flutter
         uses: subosito/flutter-action@v2.23.0
         with:
@@ -65,6 +68,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Run focused cleanup contract tests
+        run: just test-cleanup
+
       - name: Set up pinned Flutter
         uses: subosito/flutter-action@v2.23.0
         with:
@@ -102,12 +113,6 @@ jobs:
             cd flutter
             flutter build macos --debug
           fi
-
-      - name: Set up just for macOS linkage qualification
-        if: runner.os == 'macOS'
-        uses: extractions/setup-just@v4
-        with:
-          just-version: 1.58.0
 
       - name: Install CI FVM prerequisite
         if: runner.os == 'macOS'

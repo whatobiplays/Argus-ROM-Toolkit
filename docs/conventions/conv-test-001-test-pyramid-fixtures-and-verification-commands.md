@@ -212,6 +212,11 @@ just format
 just lint
 just test
 just check
+just test-cleanup
+just clean-preview
+just clean
+just clean-deep-preview
+just clean-deep
 ```
 
 This convention defines the test meaning of those commands.
@@ -222,6 +227,7 @@ This convention defines the test meaning of those commands.
 
 It must include, as applicable:
 
+- cleanup confinement, retention, idle-checkout, and delete-policy contract tests;
 - Rust unit/component/integration tests that are platform-neutral;
 - repository/migration contract tests;
 - bridge contract tests that can run without native UI automation;
@@ -253,6 +259,62 @@ formatting
 ```
 
 Passing `just test` alone does not imply formatting, lints, generated source, or non-test architecture checks are clean.
+
+### 12.2.1 Cleanup Tests and Idle-Checkout Contract
+
+`just test-cleanup` runs the focused, offline cleanup contract suite. Every
+preview or deletion test runs in a disposable synthetic Git repository or
+linked worktree. The suite must not preview or delete files in a developer
+checkout. It invokes the real Just recipes and direct CLI entrypoint against
+fixtures that contain copies of the cleanup helper and policy.
+
+The cleanup contract covers:
+
+1. Routine and deep positive allowlists, including the compatibility alias
+   `clean-preview-deep`.
+2. Preview/apply policy parity and read-only preview, with Python bytecode
+   writes disabled before the local policy import.
+3. Tracked files; unknown and unclassified entries; ignored files; nested Git
+   repositories; other worktrees; durable assets; qualification and release
+   artifacts; APKs; and shared or global cache retention.
+4. Static symbolic-link refusal for the candidate root and parent components,
+   intermediate Git boundaries from nested repositories or linked worktrees,
+   physical worktree-root resolution, filesystem-boundary confinement, and
+   symbolic links inside an inspected candidate.
+5. Producer-path and file-signature policy, protected-name precedence,
+   `CARGO_TARGET_DIR` redirection, and effective-ignore checks.
+6. Hard-link accounting, apply byte accounting, repeated-clean idempotence,
+   ordinary permission failures, Python cache-walk failures, recursive child
+   failures, and truthful nonzero failed or partial reports.
+
+Preview does not modify candidate or protected fixture content. The bytecode
+test removes inherited `PYTHONDONTWRITEBYTECODE` and `PYTHONPYCACHEPREFIX`
+values from both Just and direct helper invocations, while Git metadata is not
+part of the cleanup-managed-content snapshot. Background Git tooling metadata
+therefore cannot affect cleanup correctness or the preview assertion.
+
+Cleanup requires an idle checkout. The operator must not run a build, test,
+code-generation task, IDE operation, package manager, or another cleanup
+command while previewing or applying cleanup. The cleanup command performs no
+active-build detection, process coordination, or concurrency guarantee. This
+idle-checkout assumption is part of the supported contract.
+
+Preview and apply share one positive policy and reporting core. Preview labels
+its logical total as an estimate. Apply labels logical bytes for entries that
+are gone after successful deletion as verified reclamation; it does not claim
+filesystem allocation bytes. A failed inspection or deletion returns a
+nonzero status and preserves a retryable report. Cleanup reports a candidate
+as partial when some of its content was removed and failed when nothing was
+removed. Across multiple candidates, any failure prevents a complete status
+while completed work remains visible.
+
+The quality and native desktop CI jobs run the focused suite where the job
+provides Git, Just, and Python. Filesystem fixture cases that require POSIX
+semantics are skipped on Windows; Windows contributors use Git Bash for the
+repository shell as documented in the README. Cleanup behavior relies on
+ordinary Python filesystem operations and does not provide crash recovery,
+transactional rollback, or protection from concurrent processes changing the
+checkout.
 
 ### 12.3 Focused Native Commands
 

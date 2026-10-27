@@ -137,9 +137,12 @@ assert_effective_argus_rust_profile() {
   local project_dir
   local settings
   project_dir="$(dirname "$xcode_project")"
-  settings="$(xcodebuild -project "$project_dir" -target Runner \
-    -configuration "$configuration" -showBuildSettings 2>/dev/null)" ||
+  # Keep the real diagnostic on failure rather than suppressing xcodebuild stderr.
+  if ! settings="$(xcodebuild -project "$project_dir" -target Runner \
+    -configuration "$configuration" -showBuildSettings 2>&1)"; then
+    printf '%s\n' "$settings" | tail -n 24 >&2
     fail "xcodebuild could not resolve $configuration build settings"
+  fi
   assert_contains "ARGUS_RUST_PROFILE = $expected" "$settings" \
     "$configuration configuration must resolve ARGUS_RUST_PROFILE to $expected"
 }
@@ -479,6 +482,20 @@ assert_file_contains "$ROOT_DIR/flutter/macos/Runner/Configs/Release.xcconfig" \
 if [[ "$(uname -s)" == Darwin ]]; then
   command -v xcodebuild >/dev/null 2>&1 ||
     fail "Required developer tool missing: xcodebuild"
+
+  # Flutter's ignored SwiftPM package and generated xcconfig are not copied
+  # into new Git worktrees, but xcodebuild resolves the package even for
+  # -showBuildSettings. Recreate them from pinned, cached dependencies.
+  swift_package="$ROOT_DIR/flutter/macos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift"
+  flutter_xcconfig="$ROOT_DIR/flutter/macos/Flutter/ephemeral/Flutter-Generated.xcconfig"
+  if [[ ! -f "$swift_package" || ! -f "$flutter_xcconfig" ]]; then
+    command -v fvm >/dev/null 2>&1 ||
+      fail "Required developer tool missing: fvm (run just bootstrap first)"
+    (cd "$ROOT_DIR/flutter" && fvm flutter pub get --offline --enforce-lockfile) ||
+      fail "Could not regenerate Flutter macOS configuration offline; run just bootstrap"
+    [[ -f "$swift_package" && -f "$flutter_xcconfig" ]] ||
+      fail "Flutter pub get did not generate the required macOS Swift package and xcconfig"
+  fi
 
   assert_effective_argus_rust_profile Debug debug
   assert_effective_argus_rust_profile Release release

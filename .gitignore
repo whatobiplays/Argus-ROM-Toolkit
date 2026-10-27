@@ -306,3 +306,4 @@ node_modules/
 # output, despite the generic Windows `Debug/` directory rule above.
 !flutter/android/app/src/debug/
 !flutter/android/app/src/debug/AndroidManifest.xml
+scripts/**/__pycache__/

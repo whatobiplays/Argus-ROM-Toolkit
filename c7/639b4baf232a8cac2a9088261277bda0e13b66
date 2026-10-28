@@ -1,0 +1,45 @@
+docs/qualification/fixture-staging.md
+  s_b88c991a15a600::t_763db7d64b4a5a 125-129,168-181,185-188
+  s_b88c991a15a600::t_01c1f330391960 79,90-105
+  s_b88c991a15a600::t_280777c8a74e5b 182-184
+  s_12a5aa5356506e::t_a6ca21e9531e51 106
+scripts/android_qualification/fixture_staging_runs.py
+  s_b88c991a15a600::t_e296eb86aa71fa 5,39,201,367-372,384-385,387,389,392,394-401,411,431,433-435,441-442,452-456,459-460,462-464,471-479,483,494,496-499,503,505-506,508,512
+  s_b88c991a15a600::t_2bf3f0c37c3f9c 430,432,436-440,446
+scripts/android_qualification/fixture_staging_manifest.py
+  s_b88c991a15a600::t_fbdf2daf361221 112-138,199-201
+scripts/android_qualification/fixture_staging_files.py
+  s_b88c991a15a600::t_c63346a638d815 259-260,264,271-272
+docs/adr/adr-004-best-effort-fixture-staging.md
+  s_b88c991a15a600::t_bef722cbc23eab 81-86
+  s_b88c991a15a600::t_2c7a01b347bddb 64-80
+scripts/android_qualification/test_fixture_staging_simple.py
+  s_b88c991a15a600::t_df021c6cc41dea 832,835-878,938-944,957,970-973,975-976,978-979,981-993,995-1001,1003,1006-1056,1059-1088,1141-1150,1172-1173
+  s_b88c991a15a600::t_a59e1ec0527e52 709-713,715,719-720,723,730-735,738,958-969,974,977,980,994,1002,1004-1005,1057-1058
+  s_b88c991a15a600::t_2147ebd752daa6 104-109,113,120-128,138,150-153,161-191,624-708,714,716-718,721-722,724-729,736-737,739-751
+  s_b88c991a15a600::t_dc1c6f63572412 752
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7639b4baf232a8cac2a9088261277bda0e13b66",
+  "prompts": {},
+  "sessions": {
+    "s_12a5aa5356506e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17420-826e-7d51-9bd9-d61b4fe696a4",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_b88c991a15a600": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17168-15be-72b3-8856-050674c248c1",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

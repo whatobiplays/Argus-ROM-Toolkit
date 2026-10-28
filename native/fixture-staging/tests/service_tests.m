@@ -697,11 +697,19 @@ static xpc_object_t TestWireHelloMessage(NSDictionary *hello, NSData * _Nullable
     [wireRequest removeObjectForKey:@"authorization"];
     NSData *requestData = AQCanonicalJSON(wireRequest, NULL);
     if (requestData == nil) return NULL;
+    const void * _Nullable authorizationBytes = NULL;
+    if (authorization != nil) {
+        if (authorization.length == 0) return NULL;
+        authorizationBytes = authorization.bytes;
+        if (authorizationBytes == NULL) return NULL;
+    }
     xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
     xpc_dictionary_set_uint64(message, "version", 1);
     xpc_dictionary_set_data(message, "request", requestData.bytes, requestData.length);
     if (authorization != nil) {
-        xpc_dictionary_set_data(message, "authorization", authorization.bytes,
+        const void * _Nonnull validatedAuthorizationBytes =
+            (const void * _Nonnull)authorizationBytes;
+        xpc_dictionary_set_data(message, "authorization", validatedAuthorizationBytes,
                                 authorization.length);
     }
     return message;

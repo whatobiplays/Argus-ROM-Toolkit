@@ -69,7 +69,8 @@ from whichever source files happen to be present.
 
 ## Fixture manifest
 
-The version 1 fixture manifest is strict JSON with `schema_version`,
+The version 1 fixture manifest remains the legacy owner-approved form. It is
+strict JSON with `schema_version`,
 `plan_sha256`, `rules_sha256`, `coverage_mode`, `selected_fixture_ids`, and
 `fixtures`. Each fixture has:
 
@@ -80,7 +81,33 @@ The version 1 fixture manifest is strict JSON with `schema_version`,
 - `companions`, an ordered list of `{ "source": "...", "target": "..." }`
   edges for descriptor-to-member references; and
 - `identity_evidence`, which must be
-  `owner_approved_expectation_match` for a staging grant.
+  `owner_approved_expectation_match` for a schema 1 staging grant.
+
+Schema 2 manifests are admitted through the snapshot contract in
+`fixture_oracle.py` during `authorize_fixture_staging`, before a grant is
+issued. They require the fixed `service_protected_snapshot_v1` source authority,
+the authorization's plan and rules digests, a nonempty ordered fixture list, and
+one oracle pin per fixture. The caller supplies the oracle and evidence files as
+explicit owner-private paths; the staging loader acquires them with the same
+no-follow file checks used for the plan and manifest. Missing, mutable, invalid,
+unused, cyclic, and digest-mismatched records block grant issuance.
+
+Schema 2 preserves the independent-support classifications per fixture:
+
+1. `synthetic_only` means the oracle and evidence declarations are synthetic.
+2. `pinned_unverified` means genuine evidence has an immutable source pin but
+   no authenticated independent provider established that source and its claims.
+3. `verified_independent_reference` is reserved for a future authenticated
+   native provider. The Python loader and native contract validator have no
+   callback, block, Boolean, or document field that can produce it. Genuine
+   records remain `pinned_unverified`; the production service fails closed when
+   admission requires the reserved tier.
+
+These classifications remain distinct from the separately loaded owner approval
+for the staging session. Successful contract validation does not authenticate
+the owner, establish the manifest as snapshot authority, verify copied bytes,
+admit a device, or enable production staging. Byte integrity remains a staging
+operation result after source readback.
 
 Paths use relative POSIX syntax. Absolute paths, drive prefixes, backslashes,
 empty or dot components, traversal, non-normalized Unicode, duplicate paths,
@@ -94,12 +121,11 @@ Dangling tracks and changed source descriptors block preparation. Files are
 copied with their exact relative names and layout; descriptors are not
 rewritten and archives are not extracted.
 
-`owner_approved_expectation_match` means only that copied bytes match the
-owner-approved manifest expectations. It is not an independently verified
-game identity or an external oracle result. A separate pinned and verified
-oracle record is not part of this contract. Header, filename, and structural
-recognition are never treated as game identity. An expectation marked
-`structural_only` remains distinguishable and is blocked from staging.
+`owner_approved_expectation_match` in schema 1 means only that copied bytes
+match the owner-approved manifest expectations. It is not an independently
+verified game identity or an external oracle result. Header, filename, and
+structural recognition are never treated as game identity. An expectation
+marked `structural_only` remains distinguishable and is blocked from staging.
 
 ## Source and destination safety
 
@@ -135,7 +161,12 @@ There is no fixed per-ROM or aggregate fixture byte ceiling.
 Successful production staging requires kernel-enforced isolation between the
 destination namespace and every writable source namespace. The supported host
 does not currently install that boundary, so production admission always
-raises `BLOCKED_UNSUPPORTED_EXCLUSIVITY`. The public `stage_fixtures` and
+raises `BLOCKED_UNSUPPORTED_EXCLUSIVITY`. With `destination=None`, the public
+staging entry point probes only the fixed installed native implementation and
+reports the same blocker when its authenticated peer or kernel-isolation proof
+is unavailable; it does not construct a synthetic or caller-selected adapter.
+For every other destination value, production admission raises the blocker.
+The public `stage_fixtures` and
 `cleanup_fixture_staging` entry points check that boundary before validating
 the grant, converting or inspecting caller paths, reading destination or
 ancestor state, invoking callbacks, observing capacity, reserving a session,
@@ -203,6 +234,13 @@ different boot identity, a monotonic clock that moved backward, an unavailable
 clock, or an unreadable record blocks the operation. Expiry leaves any owned
 data in place for explicit owner review; it does not convert a partial result
 into an eligible fixture.
+
+The source-level `create_production_owner_export_preparation` factory exposes
+no clock override, and public `OwnerSessionExportClient.recover_export` accepts
+no caller-supplied `now_ns`; both read the operating system monotonic clock
+internally. Native export preparation is deferred until staging validates the
+grant and passes production namespace admission. Clock injection remains
+confined to the private test constructor.
 
 Clock acquisition and private synthetic clocks use integer nanoseconds through
 `time.monotonic_ns()` and the internal timing interface. Persisted schema 1
@@ -313,22 +351,47 @@ durable eligibility transition leaves a final-looking tree that is not
 eligible and is not automatically deleted. The implementation does not retry a
 failed mutation or delete a partial automatically.
 
+Journal replay accepts any number of distinct session identities across the
+single global journal ordinal sequence. Each recovered session remains
+`blocked_retained` with its last verified generation. A later service action
+may admit a new, unused session identity without replaying an old operation;
+the former identity cannot be re-admitted. Request digests are single-use
+within a session and may match a digest used by a different session.
+
 Cleanup requires `cleanup_authorized: true` in the pinned plan and a still-valid
 grant. The current host cannot prove exclusive destructive authority over a
 pathname against another process running as the same user. Public cleanup
-therefore returns `BLOCKED_UNSUPPORTED_EXCLUSIVITY` before validating the grant,
-reading the destination, converting paths, invoking callbacks, acquiring the
-coordination lock, loading or replacing ownership state, creating a quarantine,
-or attempting deletion. It creates no new durable blocker record or recovery
-obligation. Existing ownership, recovery, quarantine, and fixture state remains
-unchanged for owner follow-up, including when an interrupted cleanup is
-recovering previously persisted state. A private advisory lock serializes
-cooperating staging, state-transition, and cleanup calls. It does not prevent a
-same-user process
-from replacing a pathname and is not evidence that deletion is safe. Ownership
-checks reject symlinks, hard links, special files, unrecorded entries, changed
-ownership, and uncertain state. The ownership record is safety state, not
-Issue #25's execution evidence ledger.
+therefore returns `BLOCKED_UNSUPPORTED_EXCLUSIVITY` and never invokes the
+destructive cleanup implementation.
+
+When the public call has a sealed grant and an exact
+`FilesystemFixtureDestination`, the blocked outcome creates or reuses one
+non-authoritative owner-follow-up record named
+`<session-id>.cleanup-blocked.json` below the destination's private
+`.fixture-staging-state` directory. The record identifies the destination by
+path, device, and inode; names the final and partial candidate resources; binds
+the operation and authorization digests; records the operation deadline,
+cleanup-authorization deadline, cleanup-reserve start, and host/destination
+reserves; and states that the resource must be retained for owner inspection.
+It does not contain or imply a cleanup capability, ownership token, or deletion
+authority. `recovery_obligations()` reports the session with
+`ownership_proven=False`, so a later caller cannot promote the follow-up into
+destructive authority.
+
+Creating that private record is the only destination mutation on this path. The
+public boundary does not acquire the coordination lock, load or replace an
+ownership generation, create quarantine, or unlink fixture content. Existing
+ownership, recovery, quarantine, and fixture state remains unchanged, including
+when a prior interrupted cleanup exists. Hostile or invalid grant/destination
+objects do not supply enough trustworthy identity to write a useful follow-up;
+they remain blocked without attribute introspection.
+
+A private advisory lock serializes cooperating staging, state-transition, and
+cleanup calls. It does not prevent a same-user process from replacing a pathname
+and is not evidence that deletion is safe. Ownership checks reject symlinks,
+hard links, special files, unrecorded entries, changed ownership, and uncertain
+state. The ownership record is safety state, not Issue #25's execution evidence
+ledger.
 
 ## Result meaning and validation
 
@@ -360,5 +423,12 @@ qualification, or owner verdict.
 
 The deterministic tests generate synthetic bytes and use temporary host
 directories only. Run `just test-android-qualification` for the host suite.
-The suite is ADB free; full-format and physical-device verification remain
+Run `just test-fixture-staging-native` for the deterministic macOS ARM64
+contract, store, security, timing, service, broker, and proof self-check
+suites. The Python boundary also checks the native response's required,
+selected, and mandatory fixture identifier lists against the issued grant.
+Neither command installs or signs a helper,
+enrolls an owner key, starts a VM, opens the production staging root, or uses a
+real ROM. The Python suite is ADB free; full-format and physical-device
+verification remain
 unperformed and belong to later qualification work.

@@ -6,6 +6,7 @@ from scripts.android_qualification import _fixture_staging_manifest as staging_m
 from scripts.android_qualification import _fixture_staging_model as staging_model
 from scripts.android_qualification import _fixture_staging_orchestration
 from scripts.android_qualification import _fixture_staging_transfer
+from scripts.android_qualification import fixture_oracle
 from scripts.android_qualification import manifest
 from scripts.android_qualification._fixture_staging_test_support import _sync_oracle
 from scripts.android_qualification._fixture_staging_test_support import _cleanup_fixture_staging_for_synthetic_mechanics, _stage_fixtures_for_synthetic_mechanics
@@ -21,6 +22,7 @@ from scripts.android_qualification._fixture_staging_test_support import (
 )
 from scripts.android_qualification import _fixture_staging_ownership as staging_ownership
 from datetime import timedelta
+from pathlib import Path
 import threading
 
 class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
@@ -1670,3 +1672,127 @@ class FixtureStagingAuthorizationTests(FixtureStagingTestCase):
             [f"{fixed_session_id}.00000000.json"],
         )
         self.assertFalse(tuple(state_directory.glob("*.tmp")))
+
+
+class SnapshotInputLimitTests(FixtureStagingTestCase):
+    def _write_snapshot_manifest(self) -> Path:
+        fixture = copy.deepcopy(self.fixture_document["fixtures"][0])
+        fixture.pop("identity_evidence")
+        fixture.pop("oracle_pin", None)
+        rules_sha256 = fixture_oracle.manifest_sha256(self.plan_document["rules"])
+        oracle_document = {
+            "schema_version": 1,
+            "oracle_ref": "oracle-synthetic",
+            "revision": "revision-1",
+            "fixture": fixture,
+            "corpus_origin": "synthetic",
+            "acceptance_rule_sha256": rules_sha256,
+            "method": "synthetic_expectation",
+            "provenance": "Synthetic deterministic test record",
+            "limitations": ["No external source is authenticated"],
+            "conflicts": [],
+            "evidence_refs": [],
+        }
+        snapshot_fixture = copy.deepcopy(fixture)
+        snapshot_fixture.update(
+            {
+                "identity_evidence": "synthetic_expectation_v2",
+                "oracle_pin": {
+                    "schema_version": 1,
+                    "oracle_ref": oracle_document["oracle_ref"],
+                    "revision": oracle_document["revision"],
+                    "sha256": fixture_oracle.oracle_sha256(oracle_document),
+                },
+            }
+        )
+        snapshot_manifest = {
+            "schema_version": 2,
+            "source_authority": fixture_oracle.SOURCE_AUTHORITY,
+            "plan_sha256": self.fixture_document["plan_sha256"],
+            "rules_sha256": rules_sha256,
+            "coverage_mode": self.fixture_document["coverage_mode"],
+            "selected_fixture_ids": self.fixture_document["selected_fixture_ids"],
+            "fixtures": [snapshot_fixture],
+        }
+        self._rebind_inputs(fixture_manifest=snapshot_manifest)
+        return write_private_json(self.directory, "oracle-synthetic.json", oracle_document)
+
+    def _authorize_snapshot(
+        self, oracle_paths: tuple[Path, ...], evidence_paths: tuple[Path, ...] = ()
+    ):
+        return self._require_staging_module().authorize_fixture_staging(
+            self.authorization,
+            self.approval,
+            plan_path=self.plan_path,
+            fixture_manifest_path=self.fixture_path,
+            operation_id="fixture-stage-synthetic",
+            oracle_paths=oracle_paths,
+            evidence_paths=evidence_paths,
+        )
+
+    def test_oversized_schema_two_document_is_rejected_before_opening_content(
+        self,
+    ) -> None:
+        for document_kind in ("oracle", "evidence"):
+            with self.subTest(document_kind=document_kind):
+                oracle_path = self._write_snapshot_manifest()
+                if document_kind == "oracle":
+                    oversized_path = oracle_path
+                    oracle_paths = (oracle_path,)
+                    evidence_paths = ()
+                else:
+                    oversized_path = write_private_json(
+                        self.directory, "evidence-synthetic.json", {}
+                    )
+                    oracle_paths = (oracle_path,)
+                    evidence_paths = (oversized_path,)
+                prefix = b'{"padding":"'
+                suffix = b'"}'
+                oversized_path.write_bytes(
+                    prefix + b"x" * (65_537 - len(prefix) - len(suffix)) + suffix
+                )
+                original_open = os.open
+                opened_file_names: list[str] = []
+
+                def track_open(path, flags, *args, **kwargs):
+                    if isinstance(path, str):
+                        opened_file_names.append(path)
+                    return original_open(path, flags, *args, **kwargs)
+
+                with patch.object(staging_manifest.os, "open", side_effect=track_open):
+                    with self.assertRaises(staging_model.FixtureStagingError) as caught:
+                        self._authorize_snapshot(oracle_paths, evidence_paths)
+
+                self.assertEqual(
+                    caught.exception.code,
+                    staging_model.FixtureStagingErrorCode.INPUT_TOO_LARGE,
+                )
+                self.assertNotIn(oversized_path.name, opened_file_names)
+
+    def test_schema_two_record_count_is_rejected_before_opening_documents(self) -> None:
+        self._write_snapshot_manifest()
+        oracle_paths = tuple(
+            write_private_json(self.directory, f"oracle-record-{index}.json", {})
+            for index in range(64)
+        )
+        evidence_paths = tuple(
+            write_private_json(self.directory, f"evidence-record-{index}.json", {})
+            for index in range(65)
+        )
+        record_names = {path.name for path in oracle_paths + evidence_paths}
+        original_open = os.open
+        opened_record_names: list[str] = []
+
+        def track_open(path, flags, *args, **kwargs):
+            if isinstance(path, str) and path in record_names:
+                opened_record_names.append(path)
+            return original_open(path, flags, *args, **kwargs)
+
+        with patch.object(staging_manifest.os, "open", side_effect=track_open):
+            with self.assertRaises(staging_model.FixtureStagingError) as caught:
+                self._authorize_snapshot(oracle_paths, evidence_paths)
+
+        self.assertEqual(
+            caught.exception.code, staging_model.FixtureStagingErrorCode.INPUT_TOO_LARGE
+        )
+        self.assertEqual(opened_record_names, [])

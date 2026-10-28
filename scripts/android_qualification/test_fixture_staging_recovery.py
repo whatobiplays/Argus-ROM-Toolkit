@@ -968,6 +968,24 @@ class FixtureStagingRecoveryTests(FixtureStagingTestCase):
         self.assertEqual(fixture.read_bytes(), b"synthetic-rom-content-v1")
         self.assertEqual(source_fixture.read_bytes(), source_bytes)
 
+    def test_public_cleanup_denies_before_reading_caller_inputs(self) -> None:
+        class Unreadable:
+            def __getattribute__(self, _name):
+                raise AssertionError("cleanup inspected caller input before admission")
+
+        cleanup = self.production_cleanup_fixture_staging(
+            Unreadable(),
+            destination=Unreadable(),
+            session_id=Unreadable(),
+            now=Unreadable(),
+        )
+
+        self.assertEqual(cleanup.status, "BLOCKED")
+        self.assertEqual(
+            cleanup.blocker_code,
+            "BLOCKED_UNSUPPORTED_EXCLUSIVITY",
+        )
+
     def test_cleanup_never_marks_complete_without_exclusivity(self) -> None:
         api = self._require_staging_module()
 

@@ -90,11 +90,35 @@ class CoverageMode(str, Enum):
 
 
 class IdentityEvidenceKind(str, Enum):
-    """Owner-approved expectations are distinct from independent game identity."""
+    """Expectation support, kept distinct from session owner approval."""
 
     OWNER_APPROVED_EXPECTATION_MATCH = "owner_approved_expectation_match"
     STRUCTURAL_ONLY = "structural_only"
     UNVERIFIED = "unverified"
+    SYNTHETIC_ONLY = "synthetic_only"
+    PINNED_UNVERIFIED = "pinned_unverified"
+    VERIFIED_INDEPENDENT_REFERENCE = "verified_independent_reference"
+
+
+def _classify_identity_evidence(
+    values: set[IdentityEvidenceKind],
+) -> IdentityEvidenceKind:
+    """Describe the weakest complete support tier without granting approval."""
+
+    if values == {IdentityEvidenceKind.OWNER_APPROVED_EXPECTATION_MATCH}:
+        return IdentityEvidenceKind.OWNER_APPROVED_EXPECTATION_MATCH
+    if values == {IdentityEvidenceKind.SYNTHETIC_ONLY}:
+        return IdentityEvidenceKind.SYNTHETIC_ONLY
+    snapshot_values = {
+        IdentityEvidenceKind.SYNTHETIC_ONLY,
+        IdentityEvidenceKind.PINNED_UNVERIFIED,
+        IdentityEvidenceKind.VERIFIED_INDEPENDENT_REFERENCE,
+    }
+    if IdentityEvidenceKind.PINNED_UNVERIFIED in values and values <= snapshot_values:
+        return IdentityEvidenceKind.PINNED_UNVERIFIED
+    if values == {IdentityEvidenceKind.VERIFIED_INDEPENDENT_REFERENCE}:
+        return IdentityEvidenceKind.VERIFIED_INDEPENDENT_REFERENCE
+    raise FixtureStagingError(FixtureStagingErrorCode.EXPECTATION_UNVERIFIED)
 
 
 @dataclass(frozen=True)
@@ -117,7 +141,7 @@ class CompanionEdge:
 
 @dataclass(frozen=True)
 class FixtureExpectation:
-    """Owner-approved logical expectations and exact source membership."""
+    """Pinned fixture metadata, exact membership, and support classification."""
 
     fixture_id: str
     platform: str
@@ -160,11 +184,15 @@ class _PrivateInputPin:
 
 @dataclass(frozen=True)
 class FixtureStagingGrant:
-    """Ephemeral authority to prepare only the pinned owner fixture inputs.
+    """Ephemeral authority to prepare pinned owner-authorized fixture inputs.
 
     A grant is issued by :func:`authorize_fixture_staging` only when the exact
     authorization and approval objects came from their strict loaders and the
-    owner-approved plan and fixture manifest still match their pinned digests.
+    plan and fixture declarations still match their pinned digests. Fixture
+    support classifications describe expectation provenance; they do not
+    replace the separately loaded owner approval or the grant's preparation
+    authority. The selected and mandatory fixture identifier tuples preserve
+    the distinct plan coverage obligations for native-response validation.
     """
 
     authorization_sha256: str
@@ -177,6 +205,7 @@ class FixtureStagingGrant:
     operation_timeout_seconds: int
     required_fixture_ids: tuple[str, ...]
     fixture_ids: tuple[str, ...]
+    mandatory_fixture_ids: tuple[str, ...]
     coverage_mode: str
     scenario_ids: tuple[str, ...]
     host_reserve_bytes: int

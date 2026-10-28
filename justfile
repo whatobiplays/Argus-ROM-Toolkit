@@ -103,6 +103,15 @@ test:
 test-android-qualification:
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/android_qualification -p 'test_*.py' -t .
 
+test-fixture-staging-native:
+    bash scripts/build_fixture_staging_native.sh test
+
+build-fixture-staging-native:
+    bash scripts/build_fixture_staging_native.sh build
+
+sanitize-fixture-staging-native:
+    bash scripts/build_fixture_staging_native.sh sanitize
+
 check-qualification-archive:
     PYTHONDONTWRITEBYTECODE=1 python3 -m scripts.android_qualification.repository_checks archive
 

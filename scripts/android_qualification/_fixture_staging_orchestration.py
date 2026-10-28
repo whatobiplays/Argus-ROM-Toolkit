@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 from datetime import datetime
+from collections.abc import Mapping
 from pathlib import Path
+import os
 import re
 import time
-from ._fixture_staging_model import FixtureCleanupResult, FixtureStagingError, FixtureStagingErrorCode, FixtureStagingGrant, FixtureStagingResult, IdentityEvidenceKind, _new_operation_timing
+from ._fixture_staging_model import FixtureCleanupResult, FixtureStagingError, FixtureStagingErrorCode, FixtureStagingGrant, FixtureStagingResult, IdentityEvidenceKind, _classify_identity_evidence, _new_operation_timing
 from . import _fixture_staging_manifest as _authority
 from ._fixture_staging_manifest import _validate_grant_for_use
 from ._fixture_staging_transfer import (
@@ -20,6 +22,16 @@ from ._fixture_staging_destination import (
 )
 from ._fixture_staging_ownership import _exists_nofollow, _validate_session_id
 from . import _fixture_staging_ownership as staging_ownership
+from . import _fixture_staging_native
+from ._fixture_staging_session import (
+    AuthenticatedXPCReply,
+    OwnerExportDispatch,
+    OwnerSessionExportClient,
+)
+from ._fixture_staging_export_evidence import (
+    ExportEvidenceV1,
+    ProductionAdmissionIssuer,
+)
 
 
 def _blocked_result(
@@ -77,6 +89,152 @@ def _blocked_production_staging_result(
     )
 
 
+def _consume_production_export(
+    grant: FixtureStagingGrant,
+    owner_export: OwnerExportDispatch,
+) -> FixtureStagingResult:
+    """Build an export result only from the dispatch client's verified receipt."""
+
+    try:
+        reply = owner_export.dispatch()
+    except Exception:
+        # The durable owner journal retains any uncertain mutation for query-only
+        # recovery; convert transport or journal failures into a blocked result.
+        return _blocked_production_staging_result(
+            FixtureStagingErrorCode.BLOCKED_UNSUPPORTED_EXCLUSIVITY
+        )
+    attempt = owner_export.attempt
+    receipt = reply.receipt if isinstance(reply, AuthenticatedXPCReply) else None
+    members = receipt.get("members") if isinstance(receipt, Mapping) else None
+    if (
+        not isinstance(reply, AuthenticatedXPCReply)
+        or reply.service_identity
+        != getattr(owner_export.client, "_service_identity", None)
+        or reply.broker_identity
+        != getattr(owner_export.client, "_broker_identity", None)
+        or not isinstance(receipt, Mapping)
+        or receipt.get("status") != "VERIFIED_RECEIVER_COMPLETION"
+        or receipt.get("code") != "BROKER_RECEIVER_RECEIPT_DURABLE"
+        or receipt.get("durable") is not True
+        or receipt.get("request_id") != attempt.get("request_id")
+        or receipt.get("session_id") != attempt.get("session_id")
+        or receipt.get("service_boot_id") != attempt.get("service_boot_id")
+        or receipt.get("sequence") != attempt.get("sequence")
+        or receipt.get("deadline_ns") != attempt.get("deadline_ns")
+        or receipt.get("manifest_sha256") != grant.fixture_manifest_sha256
+        or receipt.get("generation") != attempt.get("generation")
+        or receipt.get("authorization_sha256") != grant.authorization_sha256
+        or not isinstance(members, list)
+        or members != attempt.get("members")
+        or type(receipt.get("member_count")) is not int
+        or receipt.get("member_count") != len(members)
+        or not isinstance(receipt.get("frame_sha256"), str)
+        or not isinstance(receipt.get("receipt_sha256"), str)
+        or not isinstance(receipt.get("receipt_path"), str)
+        or not os.path.isabs(receipt["receipt_path"])
+    ):
+        raise FixtureStagingError(FixtureStagingErrorCode.INVALID_AUTHORITY)
+
+    # Preserve the native receipt as an opaque, authenticated member of the
+    # versioned owner record. The contract independently binds it to the
+    # journal attempt before any production export result is constructed.
+    evidence = ProductionAdmissionIssuer(owner_export.client).issue(attempt, receipt)
+
+    fixture_count = len(grant._fixture_expectations)
+    required_fixture_count = len(grant.required_fixture_ids)
+    return FixtureStagingResult(
+        "VERIFIED_FIXTURE",
+        "PRODUCTION_NATIVE_EXPORT",
+        "DURABLE_RECEIVER_COMPLETION",
+        None,
+        evidence.session,
+        fixture_count,
+        receipt["member_count"],
+        sum(member["size"] for member in members),
+        IdentityEvidenceKind.UNVERIFIED.value,
+        grant.coverage_mode,
+        required_fixture_count,
+        fixture_count,
+        False,
+        False,
+    )
+
+
+def _stage_production_export(
+    grant: FixtureStagingGrant,
+    preparation: _fixture_staging_native.ProductionOwnerExportPreparation | None,
+) -> FixtureStagingResult:
+    """Bind a deferred export preparation to the grant before native work."""
+
+    try:
+        _admit_production_staging_namespace()
+    except FixtureStagingError as error:
+        return _blocked_production_staging_result(error.code)
+
+    try:
+        validated_grant = _validate_grant_for_use(grant, _authority._utc_now())
+        if (
+            not isinstance(
+                preparation,
+                _fixture_staging_native.ProductionOwnerExportPreparation,
+            )
+            or preparation._seal
+            is not _fixture_staging_native._OWNER_EXPORT_PREPARATION_SEAL
+            or preparation.grant is not validated_grant
+            or preparation.attempt_manifest_sha256
+            != validated_grant.fixture_manifest_sha256
+            or preparation.attempt_authorization_sha256
+            != validated_grant.authorization_sha256
+        ):
+            raise FixtureStagingError(FixtureStagingErrorCode.INVALID_AUTHORITY)
+        _fixture_staging_native._validate_production_owner_export_preparation_inputs(
+            validated_grant, preparation
+        )
+    except FixtureStagingError as error:
+        return _blocked_production_staging_result(error.code)
+
+    try:
+        native = _fixture_staging_native.select_verified_native_installation()
+    except FixtureStagingError:
+        native = None
+    if (
+        not isinstance(native, _fixture_staging_native.VerifiedNativeInstallation)
+        or not native.operation_enabled
+    ):
+        return _blocked_production_staging_result(
+            FixtureStagingErrorCode.BLOCKED_UNSUPPORTED_EXCLUSIVITY
+        )
+
+    try:
+        owner_export = preparation._prepare(native)
+        if (
+            not isinstance(owner_export, OwnerExportDispatch)
+            or not isinstance(owner_export.client, OwnerSessionExportClient)
+            or owner_export.client._test_transport
+            or owner_export.client._installation is not native
+            or owner_export.client._installation._seal is not native._seal
+        ):
+            return _blocked_production_staging_result(
+                FixtureStagingErrorCode.BLOCKED_UNSUPPORTED_EXCLUSIVITY
+            )
+        if not isinstance(owner_export.attempt, Mapping):
+            raise FixtureStagingError(FixtureStagingErrorCode.INVALID_AUTHORITY)
+        attempt = owner_export.attempt
+        if (
+            attempt.get("manifest_sha256") != validated_grant.fixture_manifest_sha256
+            or attempt.get("authorization_sha256")
+            != validated_grant.authorization_sha256
+        ):
+            raise FixtureStagingError(FixtureStagingErrorCode.INVALID_AUTHORITY)
+        return _consume_production_export(validated_grant, owner_export)
+    except FixtureStagingError as error:
+        return _blocked_production_staging_result(error.code)
+    except Exception:
+        return _blocked_production_staging_result(
+            FixtureStagingErrorCode.BLOCKED_UNSUPPORTED_EXCLUSIVITY
+        )
+
+
 def _stage_fixtures_impl(
     grant: FixtureStagingGrant,
     *,
@@ -84,15 +242,7 @@ def _stage_fixtures_impl(
     destination: FilesystemFixtureDestination,
     cancellation=None,
 ) -> FixtureStagingResult:
-    """Fail production staging before inspecting any caller-supplied value.
-
-    The host does not provide kernel-enforced destination exclusivity. The
-    public entry point reaches this function without touching its arguments,
-    and the admission check must therefore be the first operation here. If a
-    future host supplies an admitted production namespace, the existing grant
-    validation, destination rebuilding, source preflight, and mutation checks
-    remain as defense in depth.
-    """
+    """Stage fixture files through the filesystem staging workflow."""
 
     try:
         _admit_production_staging_namespace()
@@ -175,6 +325,9 @@ def _stage_fixtures_with_capability(
     destination._require_admitted_capability(capability)
     instant = _authority._utc_now()
     grant = _validate_grant_for_use(grant, instant)
+    identity_evidence = _classify_identity_evidence(
+        {item.identity_evidence for item in grant._fixture_expectations}
+    )
     fixture_count = len(grant._fixture_expectations)
     file_count = sum(len(item.files) for item in grant._fixture_expectations)
     required_fixture_count = len(grant.required_fixture_ids)
@@ -363,7 +516,7 @@ def _stage_fixtures_with_capability(
         fixture_count,
         file_count,
         verified_bytes[0],
-        IdentityEvidenceKind.OWNER_APPROVED_EXPECTATION_MATCH.value,
+        identity_evidence.value,
         grant.coverage_mode,
         required_fixture_count,
         fixture_count,
@@ -374,19 +527,27 @@ def stage_fixtures(
     grant: FixtureStagingGrant,
     *,
     source_roots: dict[str, Path],
-    destination: FilesystemFixtureDestination,
+    destination: FilesystemFixtureDestination | None,
     now: datetime | None = None,
     cancellation=None,
+    owner_export_preparation: (
+        _fixture_staging_native.ProductionOwnerExportPreparation | None
+    ) = None,
 ) -> FixtureStagingResult:
     """Stage a complete fixture set only behind kernel-enforced isolation.
 
     On hosts without that isolation, return ``BLOCKED_UNSUPPORTED_EXCLUSIVITY``
-    without reading the grant, converting source paths, consulting the
-    destination, invoking callbacks, creating locks or state, or mutating the
-    filesystem. A future admitted implementation retains source and capacity
-    preflight plus mutation checks as defense in depth.
+    before reading the grant, export request, source descriptors, or destination.
+    After admission, production export requires a sealed native installation
+    and a deferred preparation bound to the exact grant and its manifest and
+    authorization digests. Staging checks that binding before it invokes native
+    preparation, then checks the returned attempt before dispatch. The lifecycle
+    journal records the attempt before the broker attaches open source
+    descriptors over XPC.
     """
 
+    if destination is None:
+        return _stage_production_export(grant, owner_export_preparation)
     return _stage_fixtures_impl(
         grant,
         source_roots=source_roots,
@@ -402,7 +563,7 @@ def _cleanup_fixture_staging_impl(
     session_id: str,
     now: datetime | None = None,
 ) -> FixtureCleanupResult:
-    """Refuse production cleanup before inspecting grant or destination."""
+    """Refuse deletion and record a durable follow-up when exclusivity is absent."""
     try:
         _admit_production_staging_namespace()
     except FixtureStagingError as error:

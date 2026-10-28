@@ -129,6 +129,17 @@
     {"path": "scripts/android_qualification/test_evidence_review.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_evidence_issue24_boundary.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/staging_resources.py", "classification": "active", "region": {"kind": "file"}},
-    {"path": "scripts/android_qualification/test_staging_resources.py", "classification": "active", "region": {"kind": "file"}}
+    {"path": "scripts/android_qualification/test_staging_resources.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/fixture_oracle.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_oracle.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_native.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_staging_native.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_lifecycle.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_staging_lifecycle.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_session.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_fixture_staging_export_evidence.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_fixture_staging_export_evidence.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "justfile", "classification": "active", "region": {"kind": "just_recipe", "name": "test-fixture-staging-native"}},
+    {"path": ".github/workflows/ci.yml", "classification": "active", "region": {"kind": "yaml_job", "name": "fixture-staging-native"}}
   ]
 }

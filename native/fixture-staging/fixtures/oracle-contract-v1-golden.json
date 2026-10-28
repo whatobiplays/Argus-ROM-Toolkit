@@ -1,0 +1,254 @@
+{
+  "vector_schema_version": 1,
+  "provenance": "Synthetic, non-qualification test vectors. Expected canonical strings use literal UTF-8 / an independent Node encoder; stored literal digests computed with OpenSSL, not fixture_oracle.py.",
+  "canonical_vectors": [
+    {
+      "id": "unicode-signed64-booleans",
+      "input_json": "{ \"z\":null,\"name\":\"Café\",\"min\":-9223372036854775808,\"max\":9223372036854775807,\"b\":1,\"a\":true }",
+      "canonical_utf8": "{\"a\":true,\"b\":1,\"max\":9223372036854775807,\"min\":-9223372036854775808,\"name\":\"Café\",\"z\":null}",
+      "canonical_utf8_hex": "7b2261223a747275652c2262223a312c226d6178223a393232333337323033363835343737353830372c226d696e223a2d393232333337323033363835343737353830382c226e616d65223a22436166c3a9222c227a223a6e756c6c7d",
+      "manifest_sha256": "843d3351adb6c379030493e952aa27680890618920fec7a5025b82c7f1689ef7",
+      "oracle_sha256": "6732f297f4e2aa76f7f9a5532ab0739234742fb460b911d328c7ae19f700fe36",
+      "evidence_sha256": "f023a4499fa582c1e1dda15140c7604ef9ee71ccaa207182f8ca88cb43c81d4b"
+    },
+    {
+      "id": "escaping-and-containers",
+      "input_json": "{\"array\":[false,0,[],{}],\"text\":\"quote\\\" slash/ backslash\\\\ tab\\t newline\\n café ü 😀 \"}",
+      "canonical_utf8": "{\"array\":[false,0,[],{}],\"text\":\"quote\\\" slash/ backslash\\\\ tab\\t newline\\n café ü 😀 \"}",
+      "canonical_utf8_hex": "7b226172726179223a5b66616c73652c302c5b5d2c7b7d5d2c2274657874223a2271756f74655c2220736c6173682f206261636b736c6173685c5c207461625c74206e65776c696e655c6e20636166c3a920c3bc20f09f9880e280a8227d",
+      "manifest_sha256": "c21c6c773d415d6918e7e2d52310d441b33fe01b5d286180e7de4c30c0b7f4dc",
+      "oracle_sha256": "f8a2d8b36605e6e22661578c1f892506e699d177c159f205790bf64fa5ccdc7d",
+      "evidence_sha256": "27e7d02de920992f5f1b945cbd04a08adbe297923b87c65d397dcdbfc242052d"
+    }
+  ],
+  "invalid_json_vectors": [
+    {
+      "id": "duplicate-key",
+      "input_json": "{\"a\":1,\"a\":2}"
+    },
+    {
+      "id": "nested-duplicate",
+      "input_json": "{\"a\":{\"b\":1,\"b\":2}}"
+    },
+    {
+      "id": "float",
+      "input_json": "{\"a\":1.0}"
+    },
+    {
+      "id": "exponent",
+      "input_json": "{\"a\":1e0}"
+    },
+    {
+      "id": "negative-zero",
+      "input_json": "{\"a\":-0}"
+    },
+    {
+      "id": "integer-overflow",
+      "input_json": "{\"a\":9223372036854775808}"
+    },
+    {
+      "id": "integer-underflow",
+      "input_json": "{\"a\":-9223372036854775809}"
+    },
+    {
+      "id": "non-nfc",
+      "input_json": "{\"a\":\"Café\"}"
+    },
+    {
+      "id": "non-ascii-key",
+      "input_json": "{\"é\":1}"
+    },
+    {
+      "id": "surrogate",
+      "input_json": "{\"a\":\"\\ud800\"}"
+    },
+    {
+      "id": "root-array",
+      "input_json": "[]"
+    },
+    {
+      "id": "unknown-schema-not-canonical-error",
+      "input_json": "{\"schema_version\":99}",
+      "parse_only_valid": true
+    }
+  ],
+  "snapshot_vector": {
+    "manifest": {
+      "schema_version": 2,
+      "source_authority": "service_protected_snapshot_v1",
+      "plan_sha256": "42fa695eb607508e7875c327874c84b2952b9745e712191668111835d20099ed",
+      "rules_sha256": "6433a059d35c34ce098ab3c58b972daa2a66c4c3d7bfb74ebd6f371a3c4f941c",
+      "coverage_mode": "mandatory_full_plan",
+      "selected_fixture_ids": [
+        "tiny-disc"
+      ],
+      "fixtures": [
+        {
+          "fixture_id": "tiny-disc",
+          "platform": "synthetic",
+          "representation": "cue_bin",
+          "identity": "Café synthetic disc",
+          "group_id": "demo-set",
+          "order": 0,
+          "entrypoint": "disc.cue",
+          "files": [
+            {
+              "path": "disc.cue",
+              "role": "descriptor",
+              "size": 1,
+              "sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+            },
+            {
+              "path": "track.bin",
+              "role": "track",
+              "size": 3,
+              "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            }
+          ],
+          "companions": [
+            {
+              "source": "disc.cue",
+              "target": "track.bin"
+            }
+          ],
+          "facts": {
+            "edition": "デモ",
+            "region": "test",
+            "disc_set": "demo-set"
+          },
+          "identity_evidence": "synthetic_expectation_v2",
+          "oracle_pin": {
+            "schema_version": 1,
+            "oracle_ref": "synthetic-oracle",
+            "revision": "r1",
+            "sha256": "e92ca89c732e986a1d439fad675bb3042c7f00e05e48c5fb8eeb7542e3ef98b8"
+          }
+        }
+      ]
+    },
+    "oracles": [
+      {
+        "schema_version": 1,
+        "revision": "r1",
+        "fixture": {
+          "fixture_id": "tiny-disc",
+          "platform": "synthetic",
+          "representation": "cue_bin",
+          "identity": "Café synthetic disc",
+          "group_id": "demo-set",
+          "order": 0,
+          "entrypoint": "disc.cue",
+          "files": [
+            {
+              "path": "disc.cue",
+              "role": "descriptor",
+              "size": 1,
+              "sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+            },
+            {
+              "path": "track.bin",
+              "role": "track",
+              "size": 3,
+              "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            }
+          ],
+          "companions": [
+            {
+              "source": "disc.cue",
+              "target": "track.bin"
+            }
+          ],
+          "facts": {
+            "edition": "デモ",
+            "region": "test",
+            "disc_set": "demo-set"
+          }
+        },
+        "corpus_origin": "synthetic",
+        "acceptance_rule_sha256": "6433a059d35c34ce098ab3c58b972daa2a66c4c3d7bfb74ebd6f371a3c4f941c",
+        "method": "synthetic_expectation",
+        "provenance": "Synthetic declarations only; no real ROM or authenticated reference.",
+        "limitations": [
+          "Tier A only; no observed content or genuine identity."
+        ],
+        "conflicts": [],
+        "evidence_refs": [
+          {
+            "schema_version": 1,
+            "evidence_ref": "synthetic-evidence",
+            "revision": "r1",
+            "sha256": "0b879153ef831544562080085e4c5a9f8d5fb09114bc8c94bef78df90dbbd449"
+          }
+        ],
+        "oracle_ref": "synthetic-oracle"
+      }
+    ],
+    "evidence": [
+      {
+        "schema_version": 1,
+        "evidence_ref": "synthetic-evidence",
+        "revision": "r1",
+        "fixture": {
+          "fixture_id": "tiny-disc",
+          "platform": "synthetic",
+          "representation": "cue_bin",
+          "identity": "Café synthetic disc",
+          "group_id": "demo-set",
+          "order": 0,
+          "entrypoint": "disc.cue",
+          "files": [
+            {
+              "path": "disc.cue",
+              "role": "descriptor",
+              "size": 1,
+              "sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+            },
+            {
+              "path": "track.bin",
+              "role": "track",
+              "size": 3,
+              "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            }
+          ],
+          "companions": [
+            {
+              "source": "disc.cue",
+              "target": "track.bin"
+            }
+          ],
+          "facts": {
+            "edition": "デモ",
+            "region": "test",
+            "disc_set": "demo-set"
+          }
+        },
+        "corpus_origin": "synthetic",
+        "acceptance_rule_sha256": "6433a059d35c34ce098ab3c58b972daa2a66c4c3d7bfb74ebd6f371a3c4f941c",
+        "method": "synthetic_expectation",
+        "provenance": "Synthetic declarations only; no real ROM or authenticated reference.",
+        "limitations": [
+          "Tier A only; no observed content or genuine identity."
+        ],
+        "conflicts": [],
+        "evidence_refs": []
+      }
+    ],
+    "authorized_manifest_sha256": "aa6c3764326fbdc9160357433a4e3b52b494ea17a9d0c30ebf5beef953beb3be",
+    "authorized_plan_sha256": "42fa695eb607508e7875c327874c84b2952b9745e712191668111835d20099ed",
+    "authorized_rules_sha256": "6433a059d35c34ce098ab3c58b972daa2a66c4c3d7bfb74ebd6f371a3c4f941c",
+    "manifest_canonical_utf8": "{\"coverage_mode\":\"mandatory_full_plan\",\"fixtures\":[{\"companions\":[{\"source\":\"disc.cue\",\"target\":\"track.bin\"}],\"entrypoint\":\"disc.cue\",\"facts\":{\"disc_set\":\"demo-set\",\"edition\":\"デモ\",\"region\":\"test\"},\"files\":[{\"path\":\"disc.cue\",\"role\":\"descriptor\",\"sha256\":\"2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881\",\"size\":1},{\"path\":\"track.bin\",\"role\":\"track\",\"sha256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\",\"size\":3}],\"fixture_id\":\"tiny-disc\",\"group_id\":\"demo-set\",\"identity\":\"Café synthetic disc\",\"identity_evidence\":\"synthetic_expectation_v2\",\"oracle_pin\":{\"oracle_ref\":\"synthetic-oracle\",\"revision\":\"r1\",\"schema_version\":1,\"sha256\":\"e92ca89c732e986a1d439fad675bb3042c7f00e05e48c5fb8eeb7542e3ef98b8\"},\"order\":0,\"platform\":\"synthetic\",\"representation\":\"cue_bin\"}],\"plan_sha256\":\"42fa695eb607508e7875c327874c84b2952b9745e712191668111835d20099ed\",\"rules_sha256\":\"6433a059d35c34ce098ab3c58b972daa2a66c4c3d7bfb74ebd6f371a3c4f941c\",\"schema_version\":2,\"selected_fixture_ids\":[\"tiny-disc\"],\"source_authority\":\"service_protected_snapshot_v1\"}",
+    "oracle_canonical_utf8": [
+      "{\"acceptance_rule_sha256\":\"6433a059d35c34ce098ab3c58b972daa2a66c4c3d7bfb74ebd6f371a3c4f941c\",\"conflicts\":[],\"corpus_origin\":\"synthetic\",\"evidence_refs\":[{\"evidence_ref\":\"synthetic-evidence\",\"revision\":\"r1\",\"schema_version\":1,\"sha256\":\"0b879153ef831544562080085e4c5a9f8d5fb09114bc8c94bef78df90dbbd449\"}],\"fixture\":{\"companions\":[{\"source\":\"disc.cue\",\"target\":\"track.bin\"}],\"entrypoint\":\"disc.cue\",\"facts\":{\"disc_set\":\"demo-set\",\"edition\":\"デモ\",\"region\":\"test\"},\"files\":[{\"path\":\"disc.cue\",\"role\":\"descriptor\",\"sha256\":\"2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881\",\"size\":1},{\"path\":\"track.bin\",\"role\":\"track\",\"sha256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\",\"size\":3}],\"fixture_id\":\"tiny-disc\",\"group_id\":\"demo-set\",\"identity\":\"Café synthetic disc\",\"order\":0,\"platform\":\"synthetic\",\"representation\":\"cue_bin\"},\"limitations\":[\"Tier A only; no observed content or genuine identity.\"],\"method\":\"synthetic_expectation\",\"oracle_ref\":\"synthetic-oracle\",\"provenance\":\"Synthetic declarations only; no real ROM or authenticated reference.\",\"revision\":\"r1\",\"schema_version\":1}"
+    ],
+    "evidence_canonical_utf8": [
+      "{\"acceptance_rule_sha256\":\"6433a059d35c34ce098ab3c58b972daa2a66c4c3d7bfb74ebd6f371a3c4f941c\",\"conflicts\":[],\"corpus_origin\":\"synthetic\",\"evidence_ref\":\"synthetic-evidence\",\"evidence_refs\":[],\"fixture\":{\"companions\":[{\"source\":\"disc.cue\",\"target\":\"track.bin\"}],\"entrypoint\":\"disc.cue\",\"facts\":{\"disc_set\":\"demo-set\",\"edition\":\"デモ\",\"region\":\"test\"},\"files\":[{\"path\":\"disc.cue\",\"role\":\"descriptor\",\"sha256\":\"2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881\",\"size\":1},{\"path\":\"track.bin\",\"role\":\"track\",\"sha256\":\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\",\"size\":3}],\"fixture_id\":\"tiny-disc\",\"group_id\":\"demo-set\",\"identity\":\"Café synthetic disc\",\"order\":0,\"platform\":\"synthetic\",\"representation\":\"cue_bin\"},\"limitations\":[\"Tier A only; no observed content or genuine identity.\"],\"method\":\"synthetic_expectation\",\"provenance\":\"Synthetic declarations only; no real ROM or authenticated reference.\",\"revision\":\"r1\",\"schema_version\":1}"
+    ],
+    "oracle_sha256": [
+      "e92ca89c732e986a1d439fad675bb3042c7f00e05e48c5fb8eeb7542e3ef98b8"
+    ],
+    "evidence_sha256": [
+      "0b879153ef831544562080085e4c5a9f8d5fb09114bc8c94bef78df90dbbd449"
+    ],
+    "expected_independent_support": "synthetic_only"
+  }
+}

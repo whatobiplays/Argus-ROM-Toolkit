@@ -13,10 +13,12 @@ import re
 import stat
 import unicodedata
 import weakref
-from ._fixture_staging_model import CompanionEdge, CoverageMode, FixtureCoverage, FixtureExpectation, FixtureFileExpectation, FixtureStagingError, FixtureStagingErrorCode, FixtureStagingGrant, IdentityEvidenceKind, _PrivateInputPin
+from . import fixture_oracle
+from ._fixture_staging_model import CompanionEdge, CoverageMode, FixtureCoverage, FixtureExpectation, FixtureFileExpectation, FixtureStagingError, FixtureStagingErrorCode, FixtureStagingGrant, IdentityEvidenceKind, _PrivateInputPin, _classify_identity_evidence
 
 
 FIXTURE_MANIFEST_SCHEMA_VERSION = 1
+FIXTURE_SNAPSHOT_MANIFEST_SCHEMA_VERSION = 2
 
 
 FIXTURE_PLAN_SCHEMA_VERSION = 1
@@ -65,9 +67,20 @@ def _object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _private_document(path: Path) -> tuple[dict[str, Any], bytes, _PrivateInputPin]:
-    """Read one owner-private JSON document without following file aliases."""
+def _private_document(
+    path: Path,
+    *,
+    maximum_bytes: int = MAX_PRIVATE_DOCUMENT_BYTES,
+) -> tuple[dict[str, Any], bytes, _PrivateInputPin]:
+    """Read one owner-private JSON object without following file aliases.
 
+    Reject files above the selected byte limit from filesystem metadata before
+    opening them, then enforce the same limit while reading in case the file
+    grows after the metadata check.
+    """
+
+    if type(maximum_bytes) is not int or maximum_bytes < 1:
+        raise FixtureStagingError(FixtureStagingErrorCode.INPUT_TOO_LARGE)
     try:
         absolute = Path(path).absolute()
         parent_path = absolute.parent
@@ -85,7 +98,7 @@ def _private_document(path: Path) -> tuple[dict[str, Any], bytes, _PrivateInputP
         or status.st_nlink != 1
     ):
         raise FixtureStagingError(FixtureStagingErrorCode.INPUT_UNSAFE)
-    if status.st_size > MAX_PRIVATE_DOCUMENT_BYTES:
+    if status.st_size > maximum_bytes:
         raise FixtureStagingError(FixtureStagingErrorCode.INPUT_TOO_LARGE)
     directory_flags = (
         os.O_RDONLY
@@ -126,12 +139,12 @@ def _private_document(path: Path) -> tuple[dict[str, Any], bytes, _PrivateInputP
         chunks: list[bytes] = []
         total = 0
         while True:
-            chunk = os.read(descriptor, min(64 * 1024, MAX_PRIVATE_DOCUMENT_BYTES + 1 - total))
+            chunk = os.read(descriptor, min(64 * 1024, maximum_bytes + 1 - total))
             if not chunk:
                 break
             chunks.append(chunk)
             total += len(chunk)
-            if total > MAX_PRIVATE_DOCUMENT_BYTES:
+            if total > maximum_bytes:
                 raise FixtureStagingError(FixtureStagingErrorCode.INPUT_TOO_LARGE)
         encoded = b"".join(chunks)
         after = os.fstat(descriptor)
@@ -507,6 +520,84 @@ def _parse_fixture_manifest(
     return fixtures
 
 
+def _parse_snapshot_fixture_manifest(
+    document: dict[str, Any],
+    raw_manifest: bytes,
+    authorization: manifest.SessionAuthorization,
+    coverage: FixtureCoverage,
+    oracle_documents: tuple[bytes, ...],
+    evidence_documents: tuple[bytes, ...],
+) -> tuple[FixtureExpectation, ...]:
+    """Validate schema-2 documents and retain their support classification."""
+
+    try:
+        contract = fixture_oracle.validate_snapshot_contract(
+            raw_manifest,
+            oracle_documents,
+            evidence_documents,
+            authorized_manifest_sha256=authorization.fixture_manifest_sha256,
+            authorized_plan_sha256=authorization.plan_sha256,
+            authorized_rules_sha256=authorization.rules_sha256,
+        )
+    except fixture_oracle.OracleError as error:
+        code = {
+            "PIN_MISMATCH": FixtureStagingErrorCode.DIGEST_MISMATCH,
+            "REFERENCE_UNVERIFIED": FixtureStagingErrorCode.EXPECTATION_UNVERIFIED,
+            "EVIDENCE_CONFLICT": FixtureStagingErrorCode.EXPECTATION_UNVERIFIED,
+            "LIMIT_EXCEEDED": FixtureStagingErrorCode.INPUT_TOO_LARGE,
+            "MISSING_REFERENCE": FixtureStagingErrorCode.EXPECTATION_UNVERIFIED,
+        }.get(error.code, FixtureStagingErrorCode.MANIFEST_INVALID)
+        raise FixtureStagingError(code) from error
+
+    support_identity = {
+        "synthetic_only": IdentityEvidenceKind.SYNTHETIC_ONLY.value,
+        "pinned_unverified": IdentityEvidenceKind.PINNED_UNVERIFIED.value,
+        "verified_independent_reference": (
+            IdentityEvidenceKind.VERIFIED_INDEPENDENT_REFERENCE.value
+        ),
+    }
+    raw_fixtures = document.get("fixtures")
+    if not isinstance(raw_fixtures, list) or len(raw_fixtures) != len(contract.fixtures):
+        raise FixtureStagingError(FixtureStagingErrorCode.MANIFEST_INVALID)
+    normalized: list[dict[str, object]] = []
+    for fixture, assessment in zip(raw_fixtures, contract.fixtures, strict=True):
+        if not isinstance(fixture, dict) or fixture.get("fixture_id") != assessment.fixture_id:
+            raise FixtureStagingError(FixtureStagingErrorCode.MANIFEST_INVALID)
+        try:
+            identity_evidence = support_identity[assessment.independent_support]
+        except KeyError as error:
+            raise FixtureStagingError(
+                FixtureStagingErrorCode.EXPECTATION_UNVERIFIED
+            ) from error
+        normalized.append(
+            {
+                key: value
+                for key, value in fixture.items()
+                if key in {
+                    "fixture_id",
+                    "platform",
+                    "representation",
+                    "identity",
+                    "group_id",
+                    "order",
+                    "entrypoint",
+                    "files",
+                    "companions",
+                }
+            }
+            | {"identity_evidence": identity_evidence}
+        )
+    legacy_document = {
+        "schema_version": FIXTURE_MANIFEST_SCHEMA_VERSION,
+        "plan_sha256": document.get("plan_sha256"),
+        "rules_sha256": document.get("rules_sha256"),
+        "coverage_mode": document.get("coverage_mode"),
+        "selected_fixture_ids": document.get("selected_fixture_ids"),
+        "fixtures": normalized,
+    }
+    return _parse_fixture_manifest(legacy_document, authorization, coverage)
+
+
 def _register_grant(grant: FixtureStagingGrant) -> None:
     identity = id(grant)
 
@@ -545,6 +636,7 @@ def _grant_integrity(grant: FixtureStagingGrant) -> tuple[object, ...]:
         grant.operation_timeout_seconds,
         grant.required_fixture_ids,
         grant.fixture_ids,
+        grant.mandatory_fixture_ids,
         grant.coverage_mode,
         grant.scenario_ids,
         grant.host_reserve_bytes,
@@ -578,6 +670,8 @@ def authorize_fixture_staging(
     plan_path: Path,
     fixture_manifest_path: Path,
     operation_id: str,
+    oracle_paths: tuple[Path, ...] = (),
+    evidence_paths: tuple[Path, ...] = (),
 ) -> FixtureStagingGrant:
     """Issue an ephemeral grant bound to loader-validated owner inputs."""
 
@@ -638,17 +732,58 @@ def authorize_fixture_staging(
             raise FixtureStagingError(FixtureStagingErrorCode.PLAN_INVALID) from None
         raise
     try:
-        expectations = _parse_fixture_manifest(fixture_document, authorization, coverage)
+        schema_version = fixture_document.get("schema_version")
+        if schema_version == FIXTURE_SNAPSHOT_MANIFEST_SCHEMA_VERSION:
+            if type(oracle_paths) is not tuple or any(
+                not isinstance(path, Path) for path in oracle_paths
+            ):
+                raise FixtureStagingError(FixtureStagingErrorCode.MANIFEST_INVALID)
+            if type(evidence_paths) is not tuple or any(
+                not isinstance(path, Path) for path in evidence_paths
+            ):
+                raise FixtureStagingError(FixtureStagingErrorCode.MANIFEST_INVALID)
+            if len(oracle_paths) + len(evidence_paths) > fixture_oracle.MAX_GRAPH_RECORDS:
+                raise FixtureStagingError(FixtureStagingErrorCode.INPUT_TOO_LARGE)
+            oracle_documents = tuple(
+                _private_document(
+                    path, maximum_bytes=fixture_oracle.MAX_DOCUMENT_BYTES
+                )[1]
+                for path in oracle_paths
+            )
+            evidence_documents = tuple(
+                _private_document(
+                    path, maximum_bytes=fixture_oracle.MAX_DOCUMENT_BYTES
+                )[1]
+                for path in evidence_paths
+            )
+            expectations = _parse_snapshot_fixture_manifest(
+                fixture_document,
+                _fixture_bytes,
+                authorization,
+                coverage,
+                oracle_documents,
+                evidence_documents,
+            )
+        elif schema_version == FIXTURE_MANIFEST_SCHEMA_VERSION:
+            expectations = _parse_fixture_manifest(
+                fixture_document, authorization, coverage
+            )
+        else:
+            raise FixtureStagingError(FixtureStagingErrorCode.MANIFEST_INVALID)
     except FixtureStagingError as error:
         if error.code is FixtureStagingErrorCode.INPUT_INVALID:
             raise FixtureStagingError(FixtureStagingErrorCode.MANIFEST_INVALID) from None
         raise
     if any(item.identity_evidence is IdentityEvidenceKind.STRUCTURAL_ONLY for item in expectations):
         raise FixtureStagingError(FixtureStagingErrorCode.STRUCTURAL_ONLY)
-    if not expectations or any(
-        item.identity_evidence
-        is not IdentityEvidenceKind.OWNER_APPROVED_EXPECTATION_MATCH
-        for item in expectations
+    if not expectations:
+        raise FixtureStagingError(FixtureStagingErrorCode.EXPECTATION_UNVERIFIED)
+    identity_evidence = _classify_identity_evidence(
+        {item.identity_evidence for item in expectations}
+    )
+    if (
+        schema_version == FIXTURE_MANIFEST_SCHEMA_VERSION
+        and identity_evidence is not IdentityEvidenceKind.OWNER_APPROVED_EXPECTATION_MATCH
     ):
         raise FixtureStagingError(FixtureStagingErrorCode.EXPECTATION_UNVERIFIED)
     grant = FixtureStagingGrant(
@@ -662,6 +797,7 @@ def authorize_fixture_staging(
         operation.timeout_seconds,
         coverage.required_fixture_ids,
         tuple(item.fixture_id for item in expectations),
+        coverage.mandatory_fixture_ids,
         coverage.mode.value,
         authorization.scenario_ids,
         coverage.host_reserve_bytes,

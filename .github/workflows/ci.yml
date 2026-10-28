@@ -170,6 +170,32 @@ jobs:
       - name: Run real LocalFilesystem provider tests
         run: just test-local-filesystem-native
 
+  fixture-staging-native:
+    name: Fixture staging native (macOS ARM64)
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+
+      - name: Assert Apple silicon hosted runner
+        run: test "$(uname -m)" = arm64
+
+      - name: Build production native surfaces
+        run: just build-fixture-staging-native
+
+      - name: Run deterministic native qualification suites
+        run: just test-fixture-staging-native
+
+      - name: Record unavailable privileged qualification
+        run: |
+          echo "PRIVILEGED_INSTALL_SIGNING_OWNER_ENROLLMENT_VM_PROOF=SKIPPED_NOT_RUN"
+          echo "NATIVE_HOST_TESTS_ARE_NOT_SIGNED_PROCESS_EVIDENCE"
+
   phase-001-native:
     name: Phase 001 native milestone
     # Hosted runners do not contain the owner-local Apple Development

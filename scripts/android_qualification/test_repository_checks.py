@@ -399,7 +399,7 @@ class CurrentNamingInventoryTests(unittest.TestCase):
         )
         self.assertEqual(repository_checks.classification_violations(ROOT), ())
 
-    def test_current_inventory_carries_archived_entries_then_issue25_surfaces(self) -> None:
+    def test_current_inventory_lists_archived_history_and_present_issue_surfaces(self) -> None:
         archive_path = (
             ROOT
             / repository_checks.ARCHIVE_DIRECTORY
@@ -419,11 +419,94 @@ class CurrentNamingInventoryTests(unittest.TestCase):
             }
             for relative in ISSUE25_CLASSIFICATIONS
         ]
+        expected_issue24 = [
+            {
+                "path": relative,
+                "classification": "active",
+                "region": {"kind": "file"},
+            }
+            for relative in (
+                "scripts/android_qualification/staging_resources.py",
+                "scripts/android_qualification/test_staging_resources.py",
+                "scripts/android_qualification/fixture_oracle.py",
+                "scripts/android_qualification/test_fixture_oracle.py",
+            )
+        ]
+        expected_native_boundary = [
+            {
+                "path": "scripts/android_qualification/_fixture_staging_native.py",
+                "classification": "active",
+                "region": {"kind": "file"},
+            },
+            {
+                "path": "scripts/android_qualification/test_fixture_staging_native.py",
+                "classification": "active",
+                "region": {"kind": "file"},
+            },
+            {
+                "path": "scripts/android_qualification/_fixture_staging_lifecycle.py",
+                "classification": "active",
+                "region": {"kind": "file"},
+            },
+            {
+                "path": "scripts/android_qualification/test_fixture_staging_lifecycle.py",
+                "classification": "active",
+                "region": {"kind": "file"},
+            },
+            {
+                "path": "scripts/android_qualification/_fixture_staging_session.py",
+                "classification": "active",
+                "region": {"kind": "file"},
+            },
+            {
+                "path": "scripts/android_qualification/_fixture_staging_export_evidence.py",
+                "classification": "active",
+                "region": {"kind": "file"},
+            },
+            {
+                "path": "scripts/android_qualification/test_fixture_staging_export_evidence.py",
+                "classification": "active",
+                "region": {"kind": "file"},
+            },
+            {
+                "path": "justfile",
+                "classification": "active",
+                "region": {"kind": "just_recipe", "name": "test-fixture-staging-native"},
+            },
+            {
+                "path": ".github/workflows/ci.yml",
+                "classification": "active",
+                "region": {"kind": "yaml_job", "name": "fixture-staging-native"},
+            },
+        ]
         self.assertEqual(len(archived_surfaces), 121)
         self.assertEqual(current["schema_version"], archived["schema_version"])
         self.assertEqual(current["surfaces"][:121], archived_surfaces)
-        self.assertEqual(current["surfaces"][121:], expected_issue25)
-        self.assertEqual(len(current["surfaces"]), 127)
+        self.assertEqual(
+            current["surfaces"][121:],
+            expected_issue25
+            + expected_issue24
+            + expected_native_boundary,
+        )
+        for relative in (
+            "scripts/android_qualification/_fixture_staging_lifecycle.py",
+            "scripts/android_qualification/test_fixture_staging_lifecycle.py",
+        ):
+            self.assertEqual(
+                [
+                    surface
+                    for surface in current["surfaces"]
+                    if surface["path"] == relative
+                ],
+                [
+                    {
+                        "path": relative,
+                        "classification": "active",
+                        "region": {"kind": "file"},
+                    }
+                ],
+            )
+        self.assertEqual(len(current["surfaces"]), 140)
 
     def test_issue25_files_are_active_whole_file_classifications(self) -> None:
         data = repository_checks._read_classification(ROOT)

@@ -1,0 +1,19 @@
+native/fixture-staging/broker/main.m
+  s_b88c991a15a600::t_034f32055565c3 382-385
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43ca1ab520534d4818a728330fe9b0555e259686",
+  "prompts": {},
+  "sessions": {
+    "s_b88c991a15a600": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17168-15be-72b3-8856-050674c248c1",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

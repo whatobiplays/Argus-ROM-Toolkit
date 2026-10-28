@@ -1,0 +1,50 @@
+native/fixture-staging/tests/proof_tests.m
+  s_b88c991a15a600::t_788d26d3818091 2
+  s_b88c991a15a600::t_fa01b5812e189a 265-269
+  s_b88c991a15a600::t_c16b6ffb52fe0a 1,3-234,259-263,270-271,273-279
+  s_b88c991a15a600::t_0ce4196b3dcea9 235-258,272
+  s_b88c991a15a600::t_97d92539f707d3 264
+native/fixture-staging/proof/AQProofActor.h
+  s_b88c991a15a600::t_b7bfa30be891c5 1-8,17-18,20,29
+  s_b88c991a15a600::t_0e6627f51e8330 27
+  s_b88c991a15a600::t_788d26d3818091 19
+  s_b88c991a15a600::t_0b8a7e3e612a38 21-26,28
+  s_b88c991a15a600::t_687bc61be96dda 9-16
+native/fixture-staging/proof/driver.m
+  s_b88c991a15a600::t_5ad3023c264393 2,18-32,38-43
+scripts/build_fixture_staging_native.sh
+  s_b88c991a15a600::t_861827af8001ef 206,215-222,229,240
+  s_b88c991a15a600::t_9ba11515f55523 348-355
+  s_b88c991a15a600::t_3e413f591d816d 347,356-364
+  s_b88c991a15a600::t_acd8725d8df796 297,301,431-432,469-470,484-485
+  s_b88c991a15a600::t_9917a4e563a877 435-446
+docs/qualification/production-staging/service-broker-proof.md
+  s_b88c991a15a600::t_39a1a0a577b4fe 216-229,236-238,257-260
+native/fixture-staging/proof/actor.m
+  s_b88c991a15a600::t_db822b3ef2e8fd 20,129-131,140
+  s_b88c991a15a600::t_c85681b86345eb 114,124,142,204
+  s_b88c991a15a600::t_0b8a7e3e612a38 62-92,94-113,115-123,125-128,132-134,136-139,141,143-203,205-207,219,221-231
+  s_b88c991a15a600::t_97d92539f707d3 93,220
+  s_b88c991a15a600::t_59fbd5af113e0d 135
+  s_b88c991a15a600::t_b7bfa30be891c5 2-19,21-50,52-54,56-60
+  s_b88c991a15a600::t_4de3163bde7096 51,55
+  s_b88c991a15a600::t_b721cfff8fc4d1 61
+native/fixture-staging/security-contract.md
+  s_b88c991a15a600::t_39a1a0a577b4fe 166-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "afed67d191d930c5e57357f0a8926fd51f4b7cc6",
+  "prompts": {},
+  "sessions": {
+    "s_b88c991a15a600": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17168-15be-72b3-8856-050674c248c1",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

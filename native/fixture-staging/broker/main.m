@@ -379,7 +379,10 @@ static xpc_object_t _Nullable AQBrokerCreateXPCRequestMessage(
     xpc_dictionary_set_data(message, "request", serviceRequestData.bytes,
                             serviceRequestData.length);
     if (authorizationData != nil) {
-        xpc_dictionary_set_data(message, "authorization", authorizationBytes,
+        /* XPC requires a nonnull buffer; the guard above validates this cast. */
+        const void * _Nonnull validatedAuthorizationBytes =
+            (const void * _Nonnull)authorizationBytes;
+        xpc_dictionary_set_data(message, "authorization", validatedAuthorizationBytes,
                                 authorizationData.length);
     }
     if (documents != nil) {

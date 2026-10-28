@@ -1,0 +1,21 @@
+native/fixture-staging/tests/broker_tests.m
+  s_b88c991a15a600::t_688c508e19e9c4 1089-1103,2127
+native/fixture-staging/broker/main.m
+  s_b88c991a15a600::t_f990a9f1d7c815 371-375,382
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "785a0ecfb422d507bf3255c6fa892d0b190ebd8a",
+  "prompts": {},
+  "sessions": {
+    "s_b88c991a15a600": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17168-15be-72b3-8856-050674c248c1",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

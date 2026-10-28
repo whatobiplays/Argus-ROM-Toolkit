@@ -163,6 +163,13 @@ establish IPC isolation, copied-binary resistance, same-UID exclusion, reconnect
 behavior, Secure Enclave ACL enforcement or a qualified installation.
 Disposable-VM adversarial tests and an approved signed production deployment
 remain required.
+
+The proof actor's synthetic suite also attempts real filesystem syscalls against
+a newly created, private temporary directory. It verifies rename, swap, link,
+symlink, unlink, and directory-removal behavior, and records an actual
+permission-denied result after removing access from that test directory. This
+demonstrates local filesystem behavior only; it is not evidence that the
+operator UID is isolated from the service-owned staging namespace.
 Test authorities live only in `tests/security_tests.m` and the
 `AQ_SECURITY_TESTING` build. That flag exposes pure predicates and a policy
 provenance override solely for the disposable executable. It also supplies a

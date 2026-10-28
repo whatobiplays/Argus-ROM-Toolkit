@@ -213,15 +213,29 @@ proof demonstrates kernel-enforced namespace denial and crash behavior.
 ## Isolation proof harness
 
 `native/fixture-staging/proof/driver.m` and `actor.m` are bounded entry points
-for the separately reviewed proof bundle. This source tree has neither an
-owner-approved proof manifest nor a disposable VM authorization. Consequently:
+for the separately reviewed proof bundle. The actor also exposes a fixed,
+nonprivileged synthetic syscall suite. Its `--synthetic-self-test` command
+creates a new mode-0700 temporary directory owned by the invoking user and
+attempts `renameat`, `renameatx_np(RENAME_SWAP)`, `linkat`, `symlinkat`,
+`unlinkat`, and directory removal only against fixed synthetic entry names in
+that directory. It records the effective UID, syscall result, and actual
+`errno`, then removes only its synthetic entries. The suite changes the
+temporary directory mode to 000 and confirms that an unlink attempt is denied
+by the host filesystem before restoring the mode.
+
+These checks are synthetic filesystem tests. They do not prove that the
+ordinary operator UID is excluded from the service-owned production namespace.
+The source tree has neither an owner-approved signed proof manifest nor a
+disposable VM authorization. Consequently:
 
 - privileged mutation commands fail closed with
   `PRIVILEGED_PROOF_EXECUTION_NOT_AUTHORIZED`;
 - missing bundle authority reports
   `PROOF_BUNDLE_AND_OWNER_APPROVAL_UNAVAILABLE`;
 - actor cases report `KERNEL_ISOLATION_AUTHORITY_UNAVAILABLE`; and
-- both executables support prompt-free `--self-check` failure validation.
+- both executables support prompt-free `--self-check` failure validation; and
+- both executables support `--synthetic-self-test`, which reports
+  `SYNTHETIC_ONLY` and never opens the installed staging namespace.
 
 The proof must run only from a reviewed, signed, hash-pinned bundle in a
 disposable macOS ARM64 VM. The development checkout is not an installation
@@ -240,9 +254,10 @@ bash scripts/build_fixture_staging_native.sh test
 
 `service` builds the daemon and deterministic session tests. `broker` builds the
 broker bundle and tests the export transcript and uncertain-reconnect guard.
-`proof` builds both proof executables and checks their nonprivileged fail-closed
-output. `test` builds all production targets and runs the deterministic
-contract, store, security, timing, service, broker, and proof self-check suites.
+`proof` builds both proof executables, checks their nonprivileged fail-closed
+output, and runs the synthetic syscall suite. `test` builds all production
+targets and runs the deterministic contract, store, security, timing, service,
+broker, and proof suites.
 Every mode passes through the repository's checked 2 GiB reserve admission
 before invoking the compiler.
 

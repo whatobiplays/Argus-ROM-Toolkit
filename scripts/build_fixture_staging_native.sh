@@ -203,6 +203,7 @@ production_service_object="$build_root/objects/production-service-main.o"
 production_broker_object="$build_root/objects/production-broker-main.o"
 production_proof_driver_object="$build_root/objects/production-proof-driver.o"
 production_proof_actor_object="$build_root/objects/production-proof-actor.o"
+production_proof_driver_actor_object="$build_root/objects/production-proof-driver-actor.o"
 # Give each production entry point a stable object path for reproducible linking.
 compile_production_main_object() {
   local object="$1"
@@ -211,12 +212,21 @@ compile_production_main_object() {
   "${compiler[@]}" "${flags[@]}" -fobjc-arc -c "$source" -o "$object"
   production_main_objects+=("$object")
 }
+compile_proof_driver_actor_object() {
+  local object="$production_proof_driver_actor_object"
+  local source="$native_root/proof/actor.m"
+  capacity
+  "${compiler[@]}" "${flags[@]}" -fobjc-arc -Dmain=AQProofActorProductionMain \
+    -c "$source" -o "$object"
+  production_main_objects+=("$object")
+}
 case "$mode" in
   build)
     compile_production_main_object "$production_service_object" "$native_root/service/main.m"
     compile_production_main_object "$production_broker_object" "$native_root/broker/main.m"
     compile_production_main_object "$production_proof_driver_object" "$native_root/proof/driver.m"
     compile_production_main_object "$production_proof_actor_object" "$native_root/proof/actor.m"
+    compile_proof_driver_actor_object
     ;;
   service)
     compile_production_main_object "$production_service_object" "$native_root/service/main.m"
@@ -227,6 +237,7 @@ case "$mode" in
   proof)
     compile_production_main_object "$production_proof_driver_object" "$native_root/proof/driver.m"
     compile_production_main_object "$production_proof_actor_object" "$native_root/proof/actor.m"
+    compile_proof_driver_actor_object
     ;;
 esac
 
@@ -283,10 +294,11 @@ link_target() {
 link_production_target() {
   local output="$1"
   local main_object="$2"
+  shift 2
   local dwarf_bundle="${output}.dSYM"
   capacity
   "${compiler[@]}" "${flags[@]}" -fobjc-arc "$main_object" \
-    "${objects[@]}" "${frameworks[@]}" -Wl,-reproducible -o "$output"
+    "${objects[@]}" "$@" "${frameworks[@]}" -Wl,-reproducible -o "$output"
   capacity
   # Replace only this script-owned bundle so repeated builds start from a clean dSYM output.
   /bin/rm -rf -- "$dwarf_bundle"
@@ -330,6 +342,24 @@ run_blocked_proof_checks() {
   set -e
   [[ $status -eq 2 && "$output" == *BLOCKED* ]] || {
     printf '%s\n' 'PROOF_ACTOR_FAIL_CLOSED_CHECK_FAILED' >&2
+    exit 1
+  }
+  set +e
+  output=$("$build_root/argus-proof-actor" --case cleanup 2>&1)
+  status=$?
+  set -e
+  [[ $status -eq 2 && "$output" == *KERNEL_ISOLATION_AUTHORITY_UNAVAILABLE* ]] || {
+    printf '%s\n' 'PROOF_ACTOR_AUTHORIZATION_GATE_CHECK_FAILED' >&2
+    exit 1
+  }
+  set +e
+  output=$("$build_root/argus-proof-driver" --synthetic-self-test 2>&1)
+  status=$?
+  set -e
+  [[ $status -eq 0 && "$output" == *SYNTHETIC_PASS* &&
+      "$output" == *SYNTHETIC_ONLY* && "$output" == *renameatx_np* ]] || {
+    printf '%s\n' 'PROOF_DRIVER_SYNTHETIC_SYSCALL_CHECK_FAILED' >&2
+    printf '%s\n' "$output" >&2
     exit 1
   }
 }
@@ -398,9 +428,22 @@ if [[ "$mode" == broker ]]; then
 fi
 
 if [[ "$mode" == proof ]]; then
-  link_production_target "$build_root/argus-proof-driver" "$production_proof_driver_object"
+  link_production_target "$build_root/argus-proof-driver" \
+    "$production_proof_driver_object" "$production_proof_driver_actor_object"
   link_production_target "$build_root/argus-proof-actor" "$production_proof_actor_object"
   run_blocked_proof_checks
+
+  # Exercise the same fixed syscall implementation in an isolated synthetic
+  # directory. The test executable never receives the production namespace.
+  capacity
+  proof_test_actor_object="$build_root/objects/proof-test-actor.o"
+  "${compiler[@]}" "${flags[@]}" -fobjc-arc -Dmain=AQProofActorProductionMain \
+    -c "$native_root/proof/actor.m" -o "$proof_test_actor_object"
+  capacity
+  "${compiler[@]}" "${flags[@]}" -fobjc-arc \
+    "$native_root/tests/proof_tests.m" "$proof_test_actor_object" \
+    -framework Foundation -o "$build_root/proof-tests"
+  "$build_root/proof-tests"
   exit 0
 fi
 
@@ -423,7 +466,8 @@ if [[ "$mode" == build ]]; then
   assert_production_binary_has_no_test_symbols \
     "$build_root/ArgusStagingBroker.app/Contents/MacOS/ArgusStagingBroker"
   cp -- "$native_root/broker/Info.plist" "$build_root/ArgusStagingBroker.app/Contents/Info.plist"
-  link_production_target "$build_root/argus-proof-driver" "$production_proof_driver_object"
+  link_production_target "$build_root/argus-proof-driver" \
+    "$production_proof_driver_object" "$production_proof_driver_actor_object"
   link_production_target "$build_root/argus-proof-actor" "$production_proof_actor_object"
   exit 0
 fi
@@ -437,5 +481,6 @@ link_production_target \
 assert_production_binary_has_no_test_symbols \
   "$build_root/ArgusStagingBroker.app/Contents/MacOS/ArgusStagingBroker"
 cp -- "$native_root/broker/Info.plist" "$build_root/ArgusStagingBroker.app/Contents/Info.plist"
-link_production_target "$build_root/argus-proof-driver" "$production_proof_driver_object"
+link_production_target "$build_root/argus-proof-driver" \
+  "$production_proof_driver_object" "$production_proof_driver_actor_object"
 link_production_target "$build_root/argus-proof-actor" "$production_proof_actor_object"

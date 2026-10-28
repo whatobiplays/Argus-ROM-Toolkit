@@ -1086,6 +1086,21 @@ static void TestXPCEnvelopeRelaysExactAuthorization(void) {
     close(descriptors[1]);
 }
 
+@interface BrokerNullBytesData : NSData
+@end
+
+@implementation BrokerNullBytesData
+- (NSUInteger)length { return 1; }
+- (const void *)bytes { return NULL; }
+@end
+
+static void TestXPCEnvelopeRejectsAuthorizationWithoutBytes(void) {
+    NSData *request = [@"{\"operation\":\"hello\"}" dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *authorization = [[BrokerNullBytesData alloc] init];
+    xpc_object_t message = AQBrokerCreateXPCRequestMessage(request, @[], nil, authorization);
+    BROKER_CHECK(message == NULL);
+}
+
 static void TestReconnectPreservesImmutableDeadline(void) {
     __block uint64_t now = 100;
     AQBrokerSequentialSession *session = [[AQBrokerSequentialSession alloc]
@@ -2109,6 +2124,7 @@ int AQRunBrokerTests(void) {
     TestDeadlineAndLateReply();
         TestReconnectGuard();
         TestXPCEnvelopeRelaysExactAuthorization();
+        TestXPCEnvelopeRejectsAuthorizationWithoutBytes();
         TestReconnectPreservesImmutableDeadline();
         TestDeadlineBoundedWrite();
         TestDeadlineIsRecheckedImmediatelyBeforeWrite();

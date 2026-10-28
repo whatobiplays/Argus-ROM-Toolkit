@@ -368,13 +368,18 @@ static xpc_object_t _Nullable AQBrokerCreateXPCRequestMessage(
           authorizationData.length > AQServiceMaximumDocumentBytes))) {
         return NULL;
     }
+    const void * _Nullable authorizationBytes = NULL;
+    if (authorizationData != nil) {
+        authorizationBytes = authorizationData.bytes;
+        if (authorizationBytes == NULL) return NULL;
+    }
     xpc_object_t message = xpc_dictionary_create(NULL, NULL, 0);
     if (message == NULL) return NULL;
     xpc_dictionary_set_uint64(message, "version", 1);
     xpc_dictionary_set_data(message, "request", serviceRequestData.bytes,
                             serviceRequestData.length);
     if (authorizationData != nil) {
-        xpc_dictionary_set_data(message, "authorization", authorizationData.bytes,
+        xpc_dictionary_set_data(message, "authorization", authorizationBytes,
                                 authorizationData.length);
     }
     if (documents != nil) {

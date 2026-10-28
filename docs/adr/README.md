@@ -18,5 +18,6 @@ Use [the ADR template](../templates/adr.md).
 | [ADR-001](adr-001-qualification-artifact-separation.md) | Isolated functional qualification and exact-distributable smoke use distinct artifacts and results | Complete |
 | [ADR-002](adr-002-independent-owner-verdicts.md) | Owner verdicts are independent, evidence-linked, and append-only | Complete |
 | [ADR-003](adr-003-reversible-source-unavailability.md) | Both simulated source-loss mechanisms are mandatory and reversible; physical removal is supplemental | Complete |
+| [ADR-004](adr-004-best-effort-fixture-staging.md) | Owner fixture staging uses an unprivileged best-effort filesystem workflow | Complete |
 
 `Complete` follows the governed status lifecycle. The accepted decision is stated in each ADR's Decision section; `Accepted` is not introduced as a status value.

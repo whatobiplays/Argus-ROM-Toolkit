@@ -1,18 +1,25 @@
-# Production staging isolation feasibility
+# Historical: Production Staging Isolation Feasibility
+
+> This document records the earlier privileged isolation proposal. It is
+> retained as design history and is superseded for Issue #24 host staging by
+> [ADR-004](../adr/adr-004-best-effort-fixture-staging.md). It is not current
+> operating guidance. The privileged service, signing, and isolation procedure
+> described below was not installed or qualified.
 
 ## 1. Status and boundaries
 
-1. This is a prospective design for macOS-hosted Android qualification. It is
-   not an installed mechanism, a security attestation, or permission to execute
-   the privileged procedure below. Production stage and cleanup continue to
-   return `BLOCKED_UNSUPPORTED_EXCLUSIVITY` before caller inspection.
+1. This was a prospective design for macOS-hosted Android qualification. It was
+   not installed, was not a security attestation, and did not authorize the
+   privileged procedure below. At the time of this proposal, production stage
+   and cleanup returned `BLOCKED_UNSUPPORTED_EXCLUSIVITY` before caller
+   inspection.
 2. Host staging and Android staging are different namespaces. The proposed
    macOS anchor does not protect `/sdcard/ArgusQualification`, qualify an
    Android storage implementation, authorize ADB, or unblock Issue #26.
-3. The approved implementation in this change is limited to integer clock
-   precision and deterministic regressions. PR #47, Issue #23 authorization,
-   Issue #25 evidence, ordinary application state, private ROM originals, and
-   historical blocked results retain their existing contracts.
+3. The earlier correction associated with this proposal was limited to integer
+   clock precision and deterministic regressions. PR #47, Issue #23
+   authorization, Issue #25 evidence, ordinary application state, private ROM
+   originals, and historical blocked results retained their contracts.
 4. The hostile actor is a distinct concurrent process with the operator's UID,
    including a process that ignores locks, launches legitimate executables,
    supplies malicious IPC, and races publication/recovery/cleanup. Root,

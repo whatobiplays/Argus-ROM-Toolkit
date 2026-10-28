@@ -1,52 +1,22 @@
-"""Public host-only API for validating and staging fixture expectations.
+"""Public best-effort fixture staging API."""
 
-Private implementation modules separate authority parsing, content validation,
-transfers, durable destination recovery, and orchestration.
-"""
+from __future__ import annotations
 
-from ._fixture_staging_model import (
-    CapacityObservation,
-    CompanionEdge,
-    CoverageMode,
-    FixtureCleanupResult,
-    FixtureCoverage,
-    FixtureExpectation,
-    FixtureFileExpectation,
-    FixtureStagingError,
-    FixtureStagingErrorCode,
-    FixtureStagingGrant,
-    FixtureStagingResult,
-    IdentityEvidenceKind,
-    RecoveryObligation,
+from scripts.android_qualification.fixture_staging_contract import (
+    CleanupResult,
+    FixtureAssessment,
+    StagingResult,
+    default_staging_root,
 )
-from ._fixture_staging_manifest import (
-    FIXTURE_MANIFEST_SCHEMA_VERSION,
-    FIXTURE_PLAN_SCHEMA_VERSION,
-    MAX_PRIVATE_DOCUMENT_BYTES,
-    authorize_fixture_staging,
-)
-from ._fixture_staging_destination import FilesystemFixtureDestination
-from ._fixture_staging_orchestration import cleanup_fixture_staging, stage_fixtures
+from scripts.android_qualification.fixture_staging_orchestration import stage_fixtures
+from scripts.android_qualification.fixture_staging_runs import cleanup_staging, inspect_staging
 
 __all__ = [
-    'CapacityObservation',
-    'CompanionEdge',
-    'CoverageMode',
-    'FixtureCleanupResult',
-    'FixtureCoverage',
-    'FixtureExpectation',
-    'FixtureFileExpectation',
-    'FixtureStagingError',
-    'FixtureStagingErrorCode',
-    'FixtureStagingGrant',
-    'FixtureStagingResult',
-    'FilesystemFixtureDestination',
-    'IdentityEvidenceKind',
-    'RecoveryObligation',
-    'FIXTURE_MANIFEST_SCHEMA_VERSION',
-    'FIXTURE_PLAN_SCHEMA_VERSION',
-    'MAX_PRIVATE_DOCUMENT_BYTES',
-    'authorize_fixture_staging',
-    'cleanup_fixture_staging',
-    'stage_fixtures',
+    "CleanupResult",
+    "FixtureAssessment",
+    "StagingResult",
+    "cleanup_staging",
+    "default_staging_root",
+    "inspect_staging",
+    "stage_fixtures",
 ]

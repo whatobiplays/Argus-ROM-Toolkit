@@ -88,13 +88,14 @@ known unsupported categories are denied before a transport mutation call.
 
 ## Host-only fixture preparation
 
-The `fixture_staging` category can authorize an ephemeral host preparation
-grant when the exact operation, loaded authorization, loaded owner approval,
-plan digest, and fixture-manifest digest agree. That grant can only use the
-host preparation API documented in [Owner fixture preparation](fixture-staging.md).
-It does not grant an ADB command, remote path write, device admission, product
-Library insertion, or permission change. Host staging leaves the session's
-single-use device-admission authority unused.
+The local fixture workflow documented in [Owner Fixture Staging](fixture-staging.md)
+uses explicit owner selection and approval. It does not consume device
+authorization or grant ADB, remote path writes, device admission, product
+Library insertion, or permission changes. The `fixture_staging` operation
+category remains a known unsupported category in the generic device
+authorization vocabulary; it does not authorize or execute the local staging
+workflow. This preserves the device authorization contract without coupling
+local fixture copying to device grants.
 
 Before changing the permission, the injected transport rechecks the target,
 foreground package, and installed qualification package identity. It captures

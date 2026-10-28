@@ -256,18 +256,20 @@ def _validate_structure(root: Path, fixture: Mapping[str, object]) -> None:
         references = _m3u_references(root / entrypoint, entrypoint)
         if not references:
             raise _StagingFailure("STRUCTURE_MISMATCH")
-        declared = [_safe_descriptor_reference(target, entrypoint) for target in outgoing.get(entrypoint, [])]
+        # Manifest targets already use fixture-root-relative paths.
+        declared = outgoing.get(entrypoint, [])
         if references != declared or any(reference not in paths for reference in references):
             raise _StagingFailure("STRUCTURE_MISMATCH")
         disc_count = expectations.get("disc_count")
-        if disc_count is not None and (type(disc_count) is not int or disc_count != len(references)):
+        if type(disc_count) is not int or disc_count != len(references):
             raise _StagingFailure("STRUCTURE_MISMATCH")
     cue_paths = [path for path in paths if PurePosixPath(path).suffix.casefold() == ".cue"]
     if kind == "cue" and entrypoint not in cue_paths:
         cue_paths.append(entrypoint)
     for cue_path in cue_paths:
         references = _cue_references(root / cue_path, cue_path)
-        declared = [_safe_descriptor_reference(target, cue_path) for target in outgoing.get(cue_path, [])]
+        # Companion targets are canonical fixture-root-relative paths too.
+        declared = outgoing.get(cue_path, [])
         if references != declared or any(reference not in paths for reference in references):
             raise _StagingFailure("STRUCTURE_MISMATCH")
 

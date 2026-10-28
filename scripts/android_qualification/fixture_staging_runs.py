@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -35,6 +36,7 @@ from scripts.android_qualification.fixture_staging_manifest import (
     _identifier,
     _relative_path,
     _text,
+    _validate_structural_expectations,
 )
 
 
@@ -196,12 +198,7 @@ def _validate_run_record(record: object, run_id: str) -> dict[str, object]:
             fixture_ids.append(fixture_id)
             entrypoint = _relative_path(fixture["entrypoint"])
             expectations = fixture["structural_expectations"]
-            if type(expectations) is not dict or not expectations:
-                raise _StagingFailure("RUN_RECORD_INVALID")
-            for key, value in expectations.items():
-                _text(key, limit=128)
-                if type(value) not in {str, int, bool} or (type(value) is str and not value):
-                    raise _StagingFailure("RUN_RECORD_INVALID")
+            _validate_structural_expectations(expectations, entrypoint)
             expected_identity = fixture["expected_identity"]
             if type(expected_identity) is not dict or not expected_identity:
                 raise _StagingFailure("RUN_RECORD_INVALID")
@@ -367,7 +364,12 @@ def inspect_staging(run_id: str, *, staging_root: str | Path | None = None) -> S
             run_directory=run_directory, error_code="RUN_UNAVAILABLE",
         )
 
-def _remove_recognized_tree(root: Path, fixture_records: Sequence[Mapping[str, object]]) -> tuple[int, bool]:
+def _remove_recognized_tree(
+    root: Path,
+    fixture_records: Sequence[Mapping[str, object]],
+    *,
+    allow_partial_files: bool = False,
+) -> tuple[int, bool, bool]:
     expected_files = {
         f'{fixture["fixture_id"]}/{item["path"]}': item
         for fixture in fixture_records for item in fixture["files"]
@@ -377,18 +379,26 @@ def _remove_recognized_tree(root: Path, fixture_records: Sequence[Mapping[str, o
         parts = relative.split("/")
         for index in range(1, len(parts)):
             expected_directories.add("/".join(parts[:index]))
-    if not root.exists() and not root.is_symlink():
-        return 0, False
     try:
         root_info = root.lstat()
+    except FileNotFoundError:
+        return 0, False, False
     except OSError:
-        return 0, True
+        return 0, False, True
     if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
-        return 0, True
+        return 0, True, False
     removed = 0
     unrecognized = False
+    cleanup_failed = False
     directories: list[Path] = []
-    for directory, names, files in os.walk(root, topdown=True, followlinks=False):
+
+    def note_walk_error(_error: OSError) -> None:
+        nonlocal cleanup_failed
+        cleanup_failed = True
+
+    for directory, names, files in os.walk(
+        root, topdown=True, followlinks=False, onerror=note_walk_error,
+    ):
         current = Path(directory)
         directories.append(current)
         retained = []
@@ -398,7 +408,7 @@ def _remove_recognized_tree(root: Path, fixture_records: Sequence[Mapping[str, o
             try:
                 info = child.lstat()
             except OSError:
-                unrecognized = True
+                cleanup_failed = True
                 continue
             if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
                 unrecognized = True
@@ -417,52 +427,60 @@ def _remove_recognized_tree(root: Path, fixture_records: Sequence[Mapping[str, o
                 if expected is None or not stat.S_ISREG(info.st_mode):
                     unrecognized = True
                     continue
-                if not _matches_file_spec(child, expected, info):
-                    unrecognized = True
+                if not allow_partial_files:
+                    try:
+                        matches = _matches_file_spec(child, expected, info)
+                    except OSError:
+                        cleanup_failed = True
+                        continue
+                    if not matches:
+                        unrecognized = True
+                        continue
+                try:
+                    child.unlink()
+                except OSError:
+                    cleanup_failed = True
                     continue
-                child.unlink()
                 removed += 1
             except OSError:
-                unrecognized = True
+                cleanup_failed = True
     for directory in reversed(directories):
         if directory == root:
             continue
         try:
             directory.rmdir()
-        except OSError:
-            pass
+        except OSError as failure:
+            if failure.errno in {errno.ENOTEMPTY, errno.EEXIST}:
+                unrecognized = True
+            else:
+                cleanup_failed = True
     try:
         root.rmdir()
-    except OSError:
-        try:
-            remains = any(root.iterdir())
-        except OSError:
-            remains = True
-        if remains:
+    except OSError as failure:
+        if failure.errno in {errno.ENOTEMPTY, errno.EEXIST}:
             unrecognized = True
-    return removed, unrecognized
+        else:
+            cleanup_failed = True
+    return removed, unrecognized, cleanup_failed
 
 def _matches_file_spec(path: Path, expected: Mapping[str, object], before: os.stat_result) -> bool:
     if before.st_size != expected["size"]:
         return False
     digest = hashlib.sha256()
     count = 0
-    try:
-        with _open_readonly(path) as reader:
-            while True:
-                chunk = reader.read(COPY_CHUNK_BYTES)
-                if not chunk:
-                    break
-                digest.update(chunk)
-                count += len(chunk)
-                if count > expected["size"]:
-                    return False
-    except OSError:
-        return False
+    with _open_readonly(path) as reader:
+        while True:
+            chunk = reader.read(COPY_CHUNK_BYTES)
+            if not chunk:
+                break
+            digest.update(chunk)
+            count += len(chunk)
+            if count > expected["size"]:
+                return False
     return count == expected["size"] and digest.hexdigest() == expected["sha256"]
 
 def cleanup_staging(run_id: str, *, staging_root: str | Path | None = None) -> CleanupResult:
-    """Remove only manifest-listed regular files and preserve the run tombstone."""
+    """Remove recognized run content and preserve its tombstone for inspection."""
 
     run_directory: Path | None = None
     removed_files = 0
@@ -473,20 +491,25 @@ def cleanup_staging(run_id: str, *, staging_root: str | Path | None = None) -> C
             RUN_RECORD_NAME, "published", "incomplete"
         }
         unrecognized = bool(unexpected_entries)
+        cleanup_failed = False
         for name in ("published", "incomplete"):
-            removed, found_unrecognized = _remove_recognized_tree(
-                run_directory / name, record["fixtures"],
+            removed, found_unrecognized, found_failure = _remove_recognized_tree(
+                run_directory / name,
+                record["fixtures"],
+                allow_partial_files=name == "incomplete",
             )
             removed_files += removed
             unrecognized = unrecognized or found_unrecognized
+            cleanup_failed = cleanup_failed or found_failure
         record["updated_at"] = datetime.now(timezone.utc).isoformat()
-        if unrecognized:
+        if unrecognized or cleanup_failed:
+            error_code = "CLEANUP_FAILED" if cleanup_failed else "UNRECOGNIZED_CONTENT"
             record["status"] = "cleanup_pending"
-            record["error_code"] = "UNRECOGNIZED_CONTENT"
+            record["error_code"] = error_code
             _write_record(run_directory, record)
             return CleanupResult(
                 status="cleanup_pending", run_id=normalized_id,
-                removed_files=removed_files, error_code="UNRECOGNIZED_CONTENT",
+                removed_files=removed_files, error_code=error_code,
             )
         record["status"] = "cleaned"
         record.pop("error_code", None)

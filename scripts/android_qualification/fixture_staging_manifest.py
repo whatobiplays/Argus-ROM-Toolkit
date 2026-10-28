@@ -109,6 +109,33 @@ def _relative_path(value: object) -> str:
         raise _StagingFailure("MANIFEST_INVALID")
     return text
 
+def _validate_structural_expectations(
+    value: object, entrypoint: str,
+) -> dict[str, object]:
+    """Validate the complete, currently supported structure contract."""
+
+    if type(value) is not dict or not value:
+        raise _StagingFailure("MANIFEST_INVALID")
+    kind = value.get("entrypoint_kind")
+    if type(kind) is not str or kind not in {"raw-file", "cue", "m3u"}:
+        raise _StagingFailure("MANIFEST_INVALID")
+    suffix = PurePosixPath(entrypoint).suffix.casefold()
+    if kind == "raw-file":
+        if set(value) != {"entrypoint_kind"} or suffix in {".m3u", ".cue"}:
+            raise _StagingFailure("MANIFEST_INVALID")
+    elif kind == "cue":
+        if set(value) != {"entrypoint_kind"} or suffix != ".cue":
+            raise _StagingFailure("MANIFEST_INVALID")
+    else:
+        if (
+            set(value) != {"entrypoint_kind", "disc_count"}
+            or suffix != ".m3u"
+            or type(value["disc_count"]) is not int
+            or value["disc_count"] < 1
+        ):
+            raise _StagingFailure("MANIFEST_INVALID")
+    return value
+
 def _digest(value: object) -> str:
     if type(value) is not str or _SHA256.fullmatch(value) is None:
         raise _StagingFailure("MANIFEST_INVALID")
@@ -169,13 +196,9 @@ def _parse_manifest(value: object) -> FixturePlan:
             _text(key, limit=128)
             if type(fact) not in {str, int, bool} or (type(fact) is str and not fact):
                 raise _StagingFailure("MANIFEST_INVALID")
-        structural = raw["structural_expectations"]
-        if type(structural) is not dict or not structural:
-            raise _StagingFailure("MANIFEST_INVALID")
-        for key, fact in structural.items():
-            _text(key, limit=128)
-            if type(fact) not in {str, int, bool} or (type(fact) is str and not fact):
-                raise _StagingFailure("MANIFEST_INVALID")
+        structural = _validate_structural_expectations(
+            raw["structural_expectations"], entrypoint,
+        )
         raw_files = raw["files"]
         if type(raw_files) is not list or not raw_files:
             raise _StagingFailure("MANIFEST_INVALID")

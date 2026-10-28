@@ -61,13 +61,29 @@ selected source root for each selected fixture, and affirmative owner approval.
 It streams files in bounded chunks, checks free-space reserve during transfer,
 verifies the staged bytes and declared playlist/CUE relationships, then
 publishes the complete set with a same-filesystem rename. It records a small
-run marker for inspection and best-effort cleanup.
+run marker for inspection and best-effort cleanup. Cleanup is explicit and
+follows the location-sensitive rules in the clarification below.
 
-Cleanup removes only manifest-listed regular files beneath recognizable run
-directories whose size and digest still match the manifest. It never follows
-or removes symlinks, does not remove changed or unknown files, and retains the
-run marker when cleanup is incomplete. Interrupted mutations are never resumed
-automatically.
+Interrupted mutations are never resumed automatically.
+
+## Cleanup policy clarification (2026-10-28)
+
+The corrective implementation distinguishes the two fixed content trees under
+the validated run directory. Explicit cleanup may remove any manifest-listed
+ordinary file under `incomplete/` without requiring its final size or digest,
+so interrupted transfers can reclaim partial bytes. Under `published/`, a file
+is removable only when its size and SHA-256 match the run record. This published
+rule also applies if the final record update was interrupted after the atomic
+publication rename.
+
+Symlinks, unexpected filesystem objects, unlisted files, and unexpected
+directories are retained. Cleanup does not recursively delete arbitrary
+directories. When the marker remains writable, unknown content or filesystem
+errors leave it in `cleanup_pending`, with the corresponding error recorded
+for a later explicit retry. If updating the marker also fails, cleanup returns
+`failed` rather than claiming success. This correction assumes cooperative
+access to the owner-controlled staging directory and does not add same-user
+adversarial race protection.
 
 ## Rationale
 

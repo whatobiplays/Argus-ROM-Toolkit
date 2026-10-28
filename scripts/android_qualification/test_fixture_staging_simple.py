@@ -101,17 +101,31 @@ class SimpleFixtureStagingTests(unittest.TestCase):
         self.assertIsInstance(ordered_fixture.companions[0], fixture_staging_contract.FixtureCompanion)
 
     def _multidisc_input(
-        self, playlist: bytes, first_cue: bytes
+        self,
+        playlist: bytes,
+        first_cue: bytes,
+        *,
+        nested: bool = False,
+        playlist_at_root: bool = False,
     ) -> tuple[dict[str, object], Path, dict[str, bytes]]:
         source_root = self.root / "multidisc-source"
         source_root.mkdir()
-        contents = {
+        source_contents = {
             "playlist.m3u": playlist,
             "disc1.cue": first_cue,
             "disc1.bin": b"disc one bytes",
             "disc2.cue": b'FILE "disc2.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
             "disc2.bin": b"disc two bytes",
         }
+        path_map = {
+            path: (
+                path
+                if not nested or (playlist_at_root and path == "playlist.m3u")
+                else f"games/{path}"
+            )
+            for path in source_contents
+        }
+        contents = {path_map[path]: data for path, data in source_contents.items()}
         for relative, data in contents.items():
             destination = source_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +135,7 @@ class SimpleFixtureStagingTests(unittest.TestCase):
             {
                 "group_id": "disc-set-demo",
                 "representation": "m3u-cue-bin",
-                "entrypoint": "playlist.m3u",
+                "entrypoint": path_map["playlist.m3u"],
                 "structural_expectations": {"entrypoint_kind": "m3u", "disc_count": 2},
                 "files": [
                     {
@@ -133,15 +147,46 @@ class SimpleFixtureStagingTests(unittest.TestCase):
                     for relative, data in contents.items()
                 ],
                 "companions": [
-                    {"source": "playlist.m3u", "target": "disc1.cue"},
-                    {"source": "playlist.m3u", "target": "disc2.cue"},
-                    {"source": "disc1.cue", "target": "disc1.bin"},
-                    {"source": "disc2.cue", "target": "disc2.bin"},
+                    {"source": path_map["playlist.m3u"], "target": path_map["disc1.cue"]},
+                    {"source": path_map["playlist.m3u"], "target": path_map["disc2.cue"]},
+                    {"source": path_map["disc1.cue"], "target": path_map["disc1.bin"]},
+                    {"source": path_map["disc2.cue"], "target": path_map["disc2.bin"]},
                 ],
             }
         )
         manifest = dict(self.manifest)
         manifest["fixtures"] = [fixture]
+        return manifest, source_root, contents
+
+    def _cue_input(self) -> tuple[dict[str, object], Path, dict[str, bytes]]:
+        contents = {
+            "disc/disc.cue": b'FILE "track.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+            "disc/track.bin": b"cue track bytes",
+        }
+        source_root = self.root / "cue-source"
+        for relative, data in contents.items():
+            destination = source_root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+        manifest = copy.deepcopy(self.manifest)
+        fixture = manifest["fixtures"][0]
+        fixture.update(
+            {
+                "representation": "cue-bin",
+                "entrypoint": "disc/disc.cue",
+                "structural_expectations": {"entrypoint_kind": "cue"},
+                "files": [
+                    {
+                        "path": relative,
+                        "role": "descriptor" if relative.endswith(".cue") else "track",
+                        "size": len(data),
+                        "sha256": hashlib.sha256(data).hexdigest(),
+                    }
+                    for relative, data in contents.items()
+                ],
+                "companions": [{"source": "disc/disc.cue", "target": "disc/track.bin"}],
+            }
+        )
         return manifest, source_root, contents
 
     def test_stages_and_publishes_an_explicitly_approved_fixture(self) -> None:
@@ -576,6 +621,135 @@ class SimpleFixtureStagingTests(unittest.TestCase):
         for relative, data in contents.items():
             self.assertEqual(data, (result.published_path / "fixture-demo" / relative).read_bytes())
 
+    def test_nested_playlist_and_cue_references_resolve_from_descriptor_directory(self) -> None:
+        manifest, source_root, contents = self._multidisc_input(
+            b"#EXTM3U\ndisc1.cue\ndisc2.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+            nested=True,
+        )
+
+        result = self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        self.assertEqual("verified", result.status)
+        self.assertEqual(5, result.file_count)
+        for relative, data in contents.items():
+            self.assertEqual(data, (result.published_path / "fixture-demo" / relative).read_bytes())
+
+    def test_root_playlist_resolves_nested_discs_once_and_preserves_order(self) -> None:
+        manifest, source_root, contents = self._multidisc_input(
+            b"#EXTM3U\ngames/disc2.cue\ngames/disc1.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+            nested=True,
+            playlist_at_root=True,
+        )
+        fixture = manifest["fixtures"][0]
+        fixture["companions"][:2] = reversed(fixture["companions"][:2])
+
+        result = self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        self.assertEqual("verified", result.status)
+        self.assertEqual(5, result.file_count)
+        self.assertEqual(
+            b"#EXTM3U\ngames/disc2.cue\ngames/disc1.cue\n",
+            (result.published_path / "fixture-demo/playlist.m3u").read_bytes(),
+        )
+        for relative, data in contents.items():
+            self.assertEqual(data, (result.published_path / "fixture-demo" / relative).read_bytes())
+
+    def test_cue_entrypoint_expectation_is_supported(self) -> None:
+        manifest, source_root, contents = self._cue_input()
+
+        result = self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        self.assertEqual("verified", result.status)
+        for relative, data in contents.items():
+            self.assertEqual(data, (result.published_path / "fixture-demo" / relative).read_bytes())
+
+    def test_wrong_manifest_companion_target_blocks_publication(self) -> None:
+        manifest, source_root, _ = self._multidisc_input(
+            b"#EXTM3U\ndisc1.cue\ndisc2.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+            nested=True,
+        )
+        fixture = manifest["fixtures"][0]
+        fixture["companions"][:2] = reversed(fixture["companions"][:2])
+
+        result = self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual("STRUCTURE_MISMATCH", result.error_code)
+        self.assertIsNone(result.published_path)
+
+    def test_missing_playlist_companion_blocks_publication(self) -> None:
+        manifest, source_root, _ = self._multidisc_input(
+            b"#EXTM3U\ndisc1.cue\nmissing.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+        )
+
+        result = self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual("STRUCTURE_MISMATCH", result.error_code)
+        self.assertIsNone(result.published_path)
+
+    def test_unsafe_playlist_reference_cannot_escape_fixture_root(self) -> None:
+        manifest, source_root, _ = self._multidisc_input(
+            b"#EXTM3U\n../outside.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+        )
+
+        result = self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual("STRUCTURE_MISMATCH", result.error_code)
+        self.assertIsNone(result.published_path)
+
+    def test_manifest_rejects_unsupported_structural_expectations_before_destination_creation(self) -> None:
+        cases = [
+            ("unknown key", {"entrypoint_kind": "raw-file", "unvalidated": True}),
+            ("unsupported kind", {"entrypoint_kind": "archive"}),
+            ("invalid kind type", {"entrypoint_kind": True}),
+            ("playlist count on raw file", {"entrypoint_kind": "raw-file", "disc_count": 1}),
+            ("cue kind on raw entrypoint", {"entrypoint_kind": "cue"}),
+        ]
+        for name, expectations in cases:
+            with self.subTest(name=name):
+                manifest = copy.deepcopy(self.manifest)
+                manifest["fixtures"][0]["structural_expectations"] = expectations
+                case_root = self.root / f"staging-{name.replace(' ', '-')}"
+                result = self._stage(manifest=manifest, staging_root=case_root)
+                self.assertEqual("failed", result.status)
+                self.assertEqual("MANIFEST_INVALID", result.error_code)
+                self.assertFalse(case_root.exists())
+
+        manifest, source_root, _ = self._multidisc_input(
+            b"#EXTM3U\ndisc1.cue\ndisc2.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+        )
+        manifest["fixtures"][0]["structural_expectations"]["disc_count"] = True
+        invalid_root = self.root / "staging-boolean-disc-count"
+        result = self._stage(
+            manifest=manifest,
+            sources={"fixture-demo": source_root},
+            staging_root=invalid_root,
+        )
+        self.assertEqual("failed", result.status)
+        self.assertEqual("MANIFEST_INVALID", result.error_code)
+        self.assertFalse(invalid_root.exists())
+
+    def test_incorrect_playlist_disc_count_blocks_publication(self) -> None:
+        manifest, source_root, _ = self._multidisc_input(
+            b"#EXTM3U\ndisc1.cue\ndisc2.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+        )
+        manifest["fixtures"][0]["structural_expectations"]["disc_count"] = 1
+
+        result = self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        self.assertEqual("failed", result.status)
+        self.assertEqual("STRUCTURE_MISMATCH", result.error_code)
+        self.assertIsNone(result.published_path)
+
     def test_playlist_order_mismatch_blocks_publication(self) -> None:
         playlist = b"#EXTM3U\ndisc2.cue\ndisc1.cue\n"
         cue = b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n'
@@ -655,10 +829,53 @@ class SimpleFixtureStagingTests(unittest.TestCase):
         self.assertEqual("verified", retry.status)
         self.assertNotEqual(incomplete_run.name, retry.run_id)
         self.assertEqual(b"partial", partial.read_bytes())
+        self.assertLess(partial.stat().st_size, len(self.data))
 
         cleanup = fixture_staging.cleanup_staging(incomplete_run.name, staging_root=self.staging_root)
-        self.assertEqual("cleanup_pending", cleanup.status)
-        self.assertEqual(b"partial", partial.read_bytes())
+        self.assertEqual("cleaned", cleanup.status)
+        self.assertEqual(1, cleanup.removed_files)
+        self.assertFalse(partial.exists())
+        self.assertEqual(self.data, (self.source_root / "game.rom").read_bytes())
+        repeated = fixture_staging.cleanup_staging(incomplete_run.name, staging_root=self.staging_root)
+        self.assertEqual("cleaned", repeated.status)
+        self.assertEqual(0, repeated.removed_files)
+
+    def test_cleanup_reclaims_completed_and_partial_files_from_incomplete_tree(self) -> None:
+        manifest, source_root, contents = self._multidisc_input(
+            b"#EXTM3U\ndisc1.cue\ndisc2.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+        )
+        copy_file = fixture_staging_orchestration._copy_file
+
+        def interrupt_last_file(source, destination, expected, root, remaining, reserve):
+            if expected.path == "disc2.bin":
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(b"partial track")
+                raise KeyboardInterrupt
+            return copy_file(source, destination, expected, root, remaining, reserve)
+
+        with mock.patch.object(
+            fixture_staging_orchestration,
+            "_copy_file",
+            side_effect=interrupt_last_file,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        run_directory = next(self.staging_root.iterdir())
+        partial = run_directory / "incomplete/fixture-demo/disc2.bin"
+        self.assertEqual(b"partial track", partial.read_bytes())
+        for relative, data in contents.items():
+            self.assertEqual(data, (source_root / relative).read_bytes())
+
+        cleanup = fixture_staging.cleanup_staging(run_directory.name, staging_root=self.staging_root)
+
+        self.assertEqual("cleaned", cleanup.status)
+        self.assertEqual(5, cleanup.removed_files)
+        self.assertFalse((run_directory / "incomplete").exists())
+        self.assertTrue((run_directory / fixture_staging_runs.RUN_RECORD_NAME).is_file())
+        for relative, data in contents.items():
+            self.assertEqual(data, (source_root / relative).read_bytes())
 
     def test_crash_after_publish_rename_preserves_counts_as_incomplete(self) -> None:
         path_type = type(self.source_root)
@@ -718,6 +935,13 @@ class SimpleFixtureStagingTests(unittest.TestCase):
         self.assertEqual("RUN_RECORD_WRITE_FAILED", inspected.error_code)
         self.assertIsNone(inspected.published_path)
 
+        published_file = staged.run_directory / "published/fixture-demo/game.rom"
+        published_file.write_bytes(b"modified after interrupted finalization")
+        cleanup = fixture_staging.cleanup_staging(staged.run_id, staging_root=self.staging_root)
+        self.assertEqual("cleanup_pending", cleanup.status)
+        self.assertEqual("UNRECOGNIZED_CONTENT", cleanup.error_code)
+        self.assertEqual(b"modified after interrupted finalization", published_file.read_bytes())
+
     def test_cleanup_removes_only_manifest_listed_content_and_keeps_tombstone(self) -> None:
         staged = self._stage()
         result = fixture_staging.cleanup_staging(staged.run_id, staging_root=self.staging_root)
@@ -729,6 +953,138 @@ class SimpleFixtureStagingTests(unittest.TestCase):
             (staged.run_directory / fixture_staging_runs.RUN_RECORD_NAME).read_text(encoding="utf-8")
         )
         self.assertEqual("cleaned", record["status"])
+
+    def test_cleanup_reports_filesystem_failure_and_allows_retry(self) -> None:
+        manifest, source_root, contents = self._multidisc_input(
+            b"#EXTM3U\ndisc1.cue\ndisc2.cue\n",
+            b'FILE "disc1.bin" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n',
+        )
+        copy_file = fixture_staging_orchestration._copy_file
+
+        def interrupt_last_file(source, destination, expected, root, remaining, reserve):
+            if expected.path == "disc2.bin":
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(b"partial track")
+                raise KeyboardInterrupt
+            return copy_file(source, destination, expected, root, remaining, reserve)
+
+        with mock.patch.object(
+            fixture_staging_orchestration,
+            "_copy_file",
+            side_effect=interrupt_last_file,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                self._stage(manifest=manifest, sources={"fixture-demo": source_root})
+
+        run_directory = next(self.staging_root.iterdir())
+        partial = run_directory / "incomplete/fixture-demo/disc2.bin"
+        original_unlink = Path.unlink
+
+        def fail_partial_unlink(path, *args, **kwargs):
+            if path == partial:
+                raise PermissionError("synthetic unlink failure")
+            return original_unlink(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "unlink", autospec=True, side_effect=fail_partial_unlink):
+            cleanup = fixture_staging.cleanup_staging(run_directory.name, staging_root=self.staging_root)
+
+        self.assertEqual("cleanup_pending", cleanup.status)
+        self.assertEqual("CLEANUP_FAILED", cleanup.error_code)
+        self.assertTrue(partial.is_file())
+        self.assertEqual(4, cleanup.removed_files)
+        record = json.loads(
+            (run_directory / fixture_staging_runs.RUN_RECORD_NAME).read_text(encoding="utf-8")
+        )
+        self.assertEqual("cleanup_pending", record["status"])
+
+        retried = fixture_staging.cleanup_staging(run_directory.name, staging_root=self.staging_root)
+        self.assertEqual("cleaned", retried.status)
+        self.assertEqual(1, retried.removed_files)
+        self.assertFalse(partial.exists())
+        for relative, data in contents.items():
+            self.assertEqual(data, (source_root / relative).read_bytes())
+
+    def test_cleanup_preserves_unknown_content_in_incomplete_tree(self) -> None:
+        def interrupt_after_partial_copy(source, destination, _expected, _root, _remaining, _reserve):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"partial")
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_staging_orchestration,
+            "_copy_file",
+            side_effect=interrupt_after_partial_copy,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                self._stage()
+
+        run_directory = next(self.staging_root.iterdir())
+        partial_root = run_directory / "incomplete/fixture-demo"
+        partial = partial_root / "game.rom"
+        note = partial_root / "owner-note.txt"
+        note.write_text("keep", encoding="utf-8")
+
+        cleanup = fixture_staging.cleanup_staging(run_directory.name, staging_root=self.staging_root)
+
+        self.assertEqual("cleanup_pending", cleanup.status)
+        self.assertEqual("UNRECOGNIZED_CONTENT", cleanup.error_code)
+        self.assertFalse(partial.exists())
+        self.assertEqual("keep", note.read_text(encoding="utf-8"))
+
+    def test_cleanup_preserves_unexpected_directory_in_incomplete_tree(self) -> None:
+        def interrupt_after_partial_copy(source, destination, _expected, _root, _remaining, _reserve):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"partial")
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_staging_orchestration,
+            "_copy_file",
+            side_effect=interrupt_after_partial_copy,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                self._stage()
+
+        run_directory = next(self.staging_root.iterdir())
+        fixture_directory = run_directory / "incomplete/fixture-demo"
+        unknown = fixture_directory / "owner-data"
+        unknown.mkdir()
+        (unknown / "keep.txt").write_text("keep", encoding="utf-8")
+
+        cleanup = fixture_staging.cleanup_staging(run_directory.name, staging_root=self.staging_root)
+
+        self.assertEqual("cleanup_pending", cleanup.status)
+        self.assertEqual("UNRECOGNIZED_CONTENT", cleanup.error_code)
+        self.assertFalse((fixture_directory / "game.rom").exists())
+        self.assertTrue(unknown.is_dir())
+        self.assertEqual("keep", (unknown / "keep.txt").read_text(encoding="utf-8"))
+
+    def test_cleanup_does_not_follow_incomplete_tree_symlink(self) -> None:
+        def interrupt_after_partial_copy(source, destination, _expected, _root, _remaining, _reserve):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"partial")
+            raise KeyboardInterrupt
+
+        with mock.patch.object(
+            fixture_staging_orchestration,
+            "_copy_file",
+            side_effect=interrupt_after_partial_copy,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                self._stage()
+
+        run_directory = next(self.staging_root.iterdir())
+        target = self.root / "owner-file.txt"
+        target.write_text("keep", encoding="utf-8")
+        partial = run_directory / "incomplete/fixture-demo/game.rom"
+        partial.unlink()
+        partial.symlink_to(target)
+
+        cleanup = fixture_staging.cleanup_staging(run_directory.name, staging_root=self.staging_root)
+
+        self.assertEqual("cleanup_pending", cleanup.status)
+        self.assertTrue(partial.is_symlink())
+        self.assertEqual("keep", target.read_text(encoding="utf-8"))
 
     def test_cleanup_preserves_unrecognized_files(self) -> None:
         staged = self._stage()
@@ -782,6 +1138,16 @@ class SimpleFixtureStagingTests(unittest.TestCase):
         self.assertEqual("RUN_RECORD_INVALID", cleaned.error_code)
         self.assertTrue((staged.published_path / "fixture-demo/game.rom").exists())
 
+    def test_missing_run_record_blocks_cleanup(self) -> None:
+        staged = self._stage()
+        (staged.run_directory / fixture_staging_runs.RUN_RECORD_NAME).unlink()
+
+        cleaned = fixture_staging.cleanup_staging(staged.run_id, staging_root=self.staging_root)
+
+        self.assertEqual("failed", cleaned.status)
+        self.assertEqual("RUN_RECORD_INVALID", cleaned.error_code)
+        self.assertTrue((staged.published_path / "fixture-demo/game.rom").exists())
+
     def test_inspection_rejects_malformed_run_record_fields(self) -> None:
         staged = self._stage()
         marker = staged.run_directory / fixture_staging_runs.RUN_RECORD_NAME
@@ -803,6 +1169,8 @@ class SimpleFixtureStagingTests(unittest.TestCase):
             ("unknown fixture field", lambda record: record["fixtures"][0].update(extra=True)),
             ("invalid entrypoint", lambda record: record["fixtures"][0].update(entrypoint="../outside")),
             ("empty structure", lambda record: record["fixtures"][0].update(structural_expectations={})),
+            ("unknown structural expectation", lambda record: record["fixtures"][0]["structural_expectations"].update(unvalidated=True)),
+            ("inapplicable playlist count", lambda record: record["fixtures"][0]["structural_expectations"].update(disc_count=1)),
             ("invalid identity support", lambda record: record["fixtures"][0].update(identity_support=[])),
             ("unknown identity support", lambda record: record["fixtures"][0].update(identity_support="independently_verified")),
             ("identity support does not match evidence", lambda record: record["fixtures"][0].update(identity_support="synthetic_only")),

@@ -76,7 +76,7 @@ The top-level object contains exactly `schema_version`, `coverage`, and
 | `platform`, `representation` | Human-readable platform and source format. |
 | `entrypoint` | A relative path to the file used to launch or interpret the fixture. |
 | `expected_identity` | Expected game identity facts. These remain owner-reviewed expectations. |
-| `structural_expectations` | Simple expected structure fields, including `entrypoint_kind` and, for playlists, `disc_count`. |
+| `structural_expectations` | Supported structure claims: `entrypoint_kind` is `raw-file`, `cue`, or `m3u`; an M3U entrypoint also requires a positive integer `disc_count`. |
 | `files` | Exact relative path, role, byte size, and lowercase SHA-256 for every regular source file. |
 | `companions` | Ordered `source` to `target` relationships. Every file must be reachable from the entrypoint. |
 | `identity_evidence` | `null`, synthetic provenance, or a pinned independent reference. A pinned reference is still unverified and does not qualify the fixture. |
@@ -86,6 +86,23 @@ duplicate paths, case-fold collisions, and file/directory name conflicts are
 rejected. Each selected source directory must contain exactly the manifest's
 files. Symlinks, non-regular files, unlisted files, and missing files block
 staging.
+
+Manifest file paths, entrypoints, and companion `source` and `target` paths are
+relative to the fixture root. Paths inside M3U and CUE descriptors are relative
+to the directory containing that descriptor. The validator resolves each
+descriptor reference to a fixture-root-relative path once, then compares it
+with the manifest's ordered companion targets. For example, `disc1.cue` in
+`games/playlist.m3u` resolves to `games/disc1.cue`; a root-level playlist entry
+of `games/disc1.cue` resolves to that same path.
+
+`structural_expectations` has a closed schema. `raw-file` requires a non-M3U,
+non-CUE entrypoint and permits no other expectation field. `cue` requires a
+`.cue` entrypoint and permits no other expectation field. `m3u` requires a
+`.m3u` entrypoint and a positive integer `disc_count`; Boolean values are not
+integers for this contract. Unknown keys, unsupported kinds, invalid types,
+and expectations that do not apply to the entrypoint are rejected as an
+invalid manifest before a staging run is created. Persisted run records are
+checked against the same contract before inspection or cleanup.
 
 Coverage is explicit. A full plan cannot omit a listed fixture. A partial plan
 must name a strict subset and include every mandatory fixture. The selection
@@ -105,11 +122,11 @@ staged tree must contain exactly the manifest files and expected directories;
 extra files, directories, links, or content mismatches prevent publication.
 `entrypoint_kind: "raw-file"` is a single-file representation and cannot
 declare companion edges because no on-disk descriptor can verify those
-relationships. For `entrypoint_kind: "m3u"`, UTF-8 playlist entries must match the manifest's
-ordered playlist companion edges. For each CUE file, its `FILE` references
-must match that CUE's ordered companion edges. Descriptor input is bounded to
-8 MiB. Unsafe, missing, unlisted, or reordered references fail with
-`STRUCTURE_MISMATCH`.
+relationships. For `entrypoint_kind: "m3u"`, UTF-8 playlist entries must match
+the manifest's ordered playlist companion edges, and `disc_count` must equal
+the number of entries. For each CUE file, its `FILE` references must match that
+CUE's ordered companion edges. Descriptor input is bounded to 8 MiB. Unsafe,
+missing, unlisted, or reordered references fail with `STRUCTURE_MISMATCH`.
 
 After bytes and relationships verify, the complete run directory contains a
 `published` tree. The move from `incomplete` to `published` is atomic within
@@ -148,19 +165,27 @@ rehash a published set. An interrupted `staging` marker is reported as
 incomplete, even if a complete tree was renamed immediately before the
 interruption. Inspection never resumes a copy or promotes an interrupted run.
 
-Use `cleanup_staging(run_id, staging_root=...)` to remove a run's content.
-Cleanup validates the run ID and marker, then unlinks only regular files whose
-relative paths, byte size, and SHA-256 still match that marker's manifest. It
-does not follow or unlink symlinks, remove changed replacement files, or
-remove unknown files. Partial files whose bytes do not match are retained for
-owner inspection. Empty recognized directories are removed without recursive
-deletion. If foreign or unrecognized entries remain, the result is
-`cleanup_pending`, and the marker stays for owner inspection. A fully cleaned
-run retains its small `run.json` tombstone.
+Use `cleanup_staging(run_id, staging_root=...)` to explicitly remove a run's
+content. Cleanup validates the run ID and run marker before examining either
+tree. Under `incomplete/`, it may remove manifest-listed ordinary files without
+requiring their final size or SHA-256; this reclaims partial transfers and
+files completed before an interruption. It never follows or removes a symlink,
+or removes an unlisted file or unexpected directory.
 
-The same-user threat limit applies to cleanup as well: another process running
-under the same account can replace the marker or entries between checks. The
-module does not claim race-free ownership against that actor. Do not use this
+Under `published/`, cleanup removes a file only when its size and SHA-256 still
+match the validated run record. A modified, replaced, foreign, or otherwise
+ambiguous published file is retained. This rule also applies when publication
+completed but the final run-record update was interrupted. Empty recognized
+directories are removed without recursive deletion. Unknown content leaves the
+run in `cleanup_pending` with `UNRECOGNIZED_CONTENT`; a filesystem error leaves
+it `cleanup_pending` with `CLEANUP_FAILED`. Retries are explicit. Successful
+cleanup retains the small `run.json` tombstone. If the marker cannot be updated
+after a cleanup failure, the API returns `failed` and does not claim cleanup
+succeeded.
+
+The workflow assumes cooperative, owner-controlled access to the staging
+directory. Another same-user process can change the marker or entries between
+checks; cleanup does not claim adversarial race protection. Do not use this
 workflow on paths shared with other programs or on irreplaceable source
 material without an independent backup.
 

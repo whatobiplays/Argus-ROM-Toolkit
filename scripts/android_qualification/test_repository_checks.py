@@ -36,6 +36,32 @@ ISSUE25_CLASSIFICATIONS = (
     "scripts/android_qualification/test_evidence_review.py",
     "scripts/android_qualification/test_evidence_issue24_boundary.py",
 )
+RETIRED_ISSUE24_STAGING_SURFACES = frozenset(
+    {
+        "scripts/android_qualification/_fixture_staging_content.py",
+        "scripts/android_qualification/_fixture_staging_destination.py",
+        "scripts/android_qualification/_fixture_staging_manifest.py",
+        "scripts/android_qualification/_fixture_staging_model.py",
+        "scripts/android_qualification/_fixture_staging_orchestration.py",
+        "scripts/android_qualification/_fixture_staging_ownership.py",
+        "scripts/android_qualification/_fixture_staging_transfer.py",
+        "scripts/android_qualification/_fixture_staging_test_support.py",
+        "scripts/android_qualification/test_fixture_staging_authorization.py",
+        "scripts/android_qualification/test_fixture_staging_content.py",
+        "scripts/android_qualification/test_fixture_staging_destination.py",
+        "scripts/android_qualification/test_fixture_staging_recovery.py",
+    }
+)
+ISSUE24_STAGING_CLASSIFICATIONS = (
+    "scripts/android_qualification/fixture_staging_contract.py",
+    "scripts/android_qualification/fixture_staging_files.py",
+    "scripts/android_qualification/fixture_staging_manifest.py",
+    "scripts/android_qualification/fixture_staging_orchestration.py",
+    "scripts/android_qualification/fixture_staging_runs.py",
+    "scripts/android_qualification/fixture_oracle.py",
+    "scripts/android_qualification/test_fixture_oracle.py",
+    "scripts/android_qualification/test_fixture_staging_simple.py",
+)
 
 
 def _copy_naming_fixture(root: Path) -> list[dict[str, object]]:
@@ -399,7 +425,7 @@ class CurrentNamingInventoryTests(unittest.TestCase):
         )
         self.assertEqual(repository_checks.classification_violations(ROOT), ())
 
-    def test_current_inventory_carries_archived_entries_then_issue25_surfaces(self) -> None:
+    def test_current_inventory_retires_old_issue24_surfaces_then_lists_current_work(self) -> None:
         archive_path = (
             ROOT
             / repository_checks.ARCHIVE_DIRECTORY
@@ -411,6 +437,18 @@ class CurrentNamingInventoryTests(unittest.TestCase):
         current = json.loads(current_path.read_text(encoding="utf-8"))
 
         archived_surfaces = archived["surfaces"]
+        retained_archived = [
+            surface for surface in archived_surfaces
+            if surface["path"] not in RETIRED_ISSUE24_STAGING_SURFACES
+        ]
+        expected_issue24 = [
+            {
+                "path": relative,
+                "classification": "active",
+                "region": {"kind": "file"},
+            }
+            for relative in ISSUE24_STAGING_CLASSIFICATIONS
+        ]
         expected_issue25 = [
             {
                 "path": relative,
@@ -421,9 +459,15 @@ class CurrentNamingInventoryTests(unittest.TestCase):
         ]
         self.assertEqual(len(archived_surfaces), 121)
         self.assertEqual(current["schema_version"], archived["schema_version"])
-        self.assertEqual(current["surfaces"][:121], archived_surfaces)
-        self.assertEqual(current["surfaces"][121:], expected_issue25)
-        self.assertEqual(len(current["surfaces"]), 127)
+        self.assertEqual(current["surfaces"][:len(retained_archived)], retained_archived)
+        issue24_start = len(retained_archived)
+        issue24_end = issue24_start + len(expected_issue24)
+        self.assertEqual(current["surfaces"][issue24_start:issue24_end], expected_issue24)
+        self.assertEqual(current["surfaces"][issue24_end:], expected_issue25)
+        self.assertEqual(
+            len(current["surfaces"]),
+            len(retained_archived) + len(expected_issue24) + len(expected_issue25),
+        )
 
     def test_issue25_files_are_active_whole_file_classifications(self) -> None:
         data = repository_checks._read_classification(ROOT)

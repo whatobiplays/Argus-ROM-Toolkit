@@ -79,16 +79,14 @@ route.
 
 ## Owner fixture preparation
 
-The `fixture_staging` module validates ephemeral grants from loaded
-authorization and approval inputs, the pinned plan, and the exact fixture
-manifest. Public staging and cleanup remain fail-closed with
-`BLOCKED_UNSUPPORTED_EXCLUSIVITY` until the host provides an OS-enforced
-namespace boundary for the complete destination lifecycle. Transfer,
-verification, publication, and recovery mechanics are exercised only through
-private synthetic test adapters; they do not establish production isolation.
-The result meanings, private manifest contract, capacity reserves, ownership
-records, and recovery limits are documented in
-[Owner fixture preparation](fixture-staging.md).
+Issue #24 uses the unprivileged best-effort host workflow documented in
+[Owner Fixture Staging](fixture-staging.md) and selected by
+[ADR-004](../adr/adr-004-best-effort-fixture-staging.md). It checks an explicit
+manifest and owner selection, stages exact source bytes, verifies declared
+structure, and supports run inspection and conservative cleanup. It is not a
+same-user security boundary and does not qualify genuine game identity.
+Synthetic host tests do not satisfy the independent owner-corpus acceptance
+criteria.
 
 Cleanup is restricted to the neutral, device-owned directory
 `/sdcard/ArgusQualification`. A cleanup request must name that directory

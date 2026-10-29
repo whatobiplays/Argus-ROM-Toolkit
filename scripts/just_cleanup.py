@@ -2,9 +2,11 @@
 """Preview and reclaim repository-owned generated build output.
 
 Cleanup is an offline maintenance command for an idle checkout. Preview and
-apply use the same positive allowlists and producer-content policy. The helper
-never follows a candidate symlink, deletes tracked content or configured
-protected paths, enters nested repositories, or removes global caches.
+apply use the same safety admission and approved-directory inventory. Once a
+root is admitted, the helper removes that entire tree independently of file
+names. It never follows a candidate symlink, deletes tracked content, enters
+nested repositories, crosses a filesystem-device boundary, or removes global
+caches.
 
 Bytecode writes are disabled before the local policy import so preview remains
 read-only when invoked directly.
@@ -28,28 +30,14 @@ sys.dont_write_bytecode = True
 
 try:
     from just_cleanup_policy import (
-        _protected_nested_entry,
-        _producer_content_allowed,
-        _producer_directory_allowed,
+        GIT_CONTEXT_ENVIRONMENT,
+        PROTECTED_PATHS,
     )
 except ModuleNotFoundError:
     from scripts.just_cleanup_policy import (
-        _protected_nested_entry,
-        _producer_content_allowed,
-        _producer_directory_allowed,
+        GIT_CONTEXT_ENVIRONMENT,
+        PROTECTED_PATHS,
     )
-
-
-GIT_CONTEXT_ENVIRONMENT = (
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_CEILING_DIRECTORIES",
-    "GIT_COMMON_DIR",
-    "GIT_DIR",
-    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_WORK_TREE",
-)
 
 
 class CleanupError(RuntimeError):
@@ -61,12 +49,12 @@ class UnsafeWorktreeError(CleanupError):
 
 
 class UnsafeCandidateError(CleanupError):
-    """A candidate does not satisfy the retention policy."""
+    """A candidate does not satisfy the directory safety policy."""
 
 
 @dataclass(frozen=True)
 class CandidateSpec:
-    """One reviewed, producer-owned deletion root."""
+    """One repository-owned directory approved for complete removal."""
 
     category: str
     relative_path: str
@@ -85,7 +73,7 @@ class CountedEntry:
 
 @dataclass(frozen=True)
 class CandidateSnapshot:
-    """Read-only size and path inventory for one reviewable candidate."""
+    """Read-only size and path inventory for one approved candidate."""
 
     estimated_bytes: int
     entries: int
@@ -148,7 +136,9 @@ DEFAULT_CANDIDATES: tuple[CandidateSpec, ...] = (
         category="android",
         relative_path="flutter/build/app/generated",
         default_clean=True,
-        regeneration_note="Gradle regenerates Android source and resource intermediates.",
+        regeneration_note=(
+            "Gradle regenerates Android source and resource intermediates."
+        ),
     ),
     CandidateSpec(
         category="android",
@@ -184,38 +174,10 @@ DEFAULT_CANDIDATES: tuple[CandidateSpec, ...] = (
         category="kotlin",
         relative_path="flutter/android/.kotlin",
         default_clean=False,
-        regeneration_note="Deep cleanup removes Kotlin compiler state for this checkout.",
+        regeneration_note=(
+            "Deep cleanup removes Kotlin compiler state for this checkout."
+        ),
     ),
-)
-
-PROTECTED_PATHS: tuple[tuple[str, str], ...] = (
-    (".chatgpt", "Review and run evidence is retained."),
-    (".codex", "Local Codex state is retained."),
-    ("build", "The root build directory is retained."),
-    ("docs/archive", "Archived evidence is retained."),
-    ("docs/qualification", "Qualification records are retained."),
-    ("flutter/.fvm", "The pinned Flutter SDK/cache is retained."),
-    (
-        "flutter/android/app/outputs",
-        "Android IDE/build outputs are retained because they may contain packages.",
-    ),
-    (
-        "flutter/android/local.properties",
-        "Machine-local Android configuration is retained.",
-    ),
-    (
-        "flutter/build/app/outputs",
-        "Debug and Release APKs are retained.",
-    ),
-    (
-        "flutter/build/native-jni",
-        "Native JNI artifacts and metadata are retained.",
-    ),
-    (
-        "flutter/build/qualification",
-        "Qualification APKs and provenance are retained.",
-    ),
-    ("flutter/lib", "Tracked and generated Dart source is retained."),
 )
 
 
@@ -298,7 +260,7 @@ def discover_worktree(root: Path | None = None) -> Worktree:
 
 
 def _safe_relative_path(value: str) -> tuple[str, ...]:
-    """Split a reviewed repository-relative path without traversal syntax."""
+    """Split an approved repository-relative path without traversal syntax."""
 
     path = Path(value)
     if path.is_absolute() or not path.parts:
@@ -312,7 +274,7 @@ def _first_symlink_parent(
     worktree: Worktree,
     parts: Sequence[str],
 ) -> str | None:
-    """Return the first symlinked parent component of a reviewed candidate."""
+    """Return the first symlinked parent component of an approved candidate."""
 
     current = worktree.root
     for part in parts[:-1]:
@@ -323,7 +285,8 @@ def _first_symlink_parent(
             return None
         except OSError as error:
             raise UnsafeCandidateError(
-                f"Cannot inspect candidate parent {current.relative_to(worktree.root)}: "
+                "Cannot inspect candidate parent "
+                f"{current.relative_to(worktree.root)}: "
                 f"{error}"
             ) from error
         if stat.S_ISLNK(metadata.st_mode):
@@ -343,6 +306,31 @@ def _has_git_marker(path: Path) -> bool:
     return _lexists(path / ".git")
 
 
+def _is_bare_git_repository(directory: Path) -> bool:
+    """Return whether Git positively identifies a directory as bare.
+
+    A bare repository must have a HEAD entry, so ordinary output directories
+    can be skipped without starting a Git process. Git remains the authority
+    for directories that contain that marker.
+
+    Git performs repository discovery from the supplied directory, so the
+    result also covers bare repositories whose configuration, object store, or
+    refs use nonstandard locations. Filenames alone never make a directory a
+    repository.
+    """
+
+    try:
+        (directory / "HEAD").lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        # Preserve Git's existing check when the marker cannot be inspected.
+        pass
+
+    result = _run_git(directory, ("rev-parse", "--is-bare-repository"))
+    return result.stdout.strip() == b"true"
+
+
 def _first_intermediate_git_boundary(
     worktree: Worktree,
     parts: Sequence[str],
@@ -353,6 +341,29 @@ def _first_intermediate_git_boundary(
     for part in parts[:-1]:
         current /= part
         if _has_git_marker(current):
+            return current.relative_to(worktree.root).as_posix()
+    return None
+
+
+def _first_intermediate_bare_git_boundary(
+    worktree: Worktree,
+    parts: Sequence[str],
+) -> str | None:
+    """Return the nearest bare Git repository above an approved candidate."""
+
+    current = worktree.root
+    for part in parts[:-1]:
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise UnsafeCandidateError(
+                f"Cannot inspect candidate parent "
+                f"{current.relative_to(worktree.root)}: {error}"
+            ) from error
+        if stat.S_ISDIR(metadata.st_mode) and _is_bare_git_repository(current):
             return current.relative_to(worktree.root).as_posix()
     return None
 
@@ -384,14 +395,25 @@ def _is_ignored_generated_path(worktree: Worktree, relative_path: str) -> bool:
 def _inspect_directory(
     directory: Path,
     *,
-    worktree: Worktree,
     relative_path: str,
-    category: str,
     expected_device: int,
     counted_identities: set[tuple[int, int]],
     counted_entries: list[CountedEntry],
 ) -> tuple[int, int, str | None]:
-    """Validate and measure one candidate directory without following links."""
+    """Validate and measure an owned tree without following symbolic links.
+
+    Eligibility comes from the candidate root. Once a tree reaches this
+    function, every regular file, directory, and symbolic link is disposable;
+    names and extensions do not participate in that decision.
+    """
+
+    if _is_bare_git_repository(directory):
+        return (
+            0,
+            0,
+            f"A bare Git repository is present at {relative_path}; "
+            "the candidate content is retained.",
+        )
 
     total_bytes = 0
     total_entries = 0
@@ -409,9 +431,6 @@ def _inspect_directory(
                 f"Nested Git metadata (.git) is present beneath {relative_path}; "
                 "the candidate content is retained.",
             )
-        protected = _protected_nested_entry(child.name)
-        if protected:
-            return 0, 0, f"Retained content at {entry_path}: {protected}."
         try:
             metadata = child.lstat()
         except OSError as error:
@@ -424,25 +443,10 @@ def _inspect_directory(
             )
         total_entries += 1
         identity = (int(metadata.st_dev), int(metadata.st_ino))
-        if category == "python":
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or child.suffix.casefold() not in {".pyc", ".pyo"}
-            ):
-                return 0, 0, f"Unexpected non-bytecode content at {entry_path}."
-        elif stat.S_ISDIR(metadata.st_mode):
-            if not _producer_directory_allowed(category, entry_path):
-                return (
-                    0,
-                    0,
-                    f"Unexpected directory not attributable to a reviewed "
-                    f"producer at {entry_path}.",
-                )
+        if stat.S_ISDIR(metadata.st_mode):
             child_bytes, child_entries, violation = _inspect_directory(
                 child,
-                worktree=worktree,
                 relative_path=entry_path,
-                category=category,
                 expected_device=expected_device,
                 counted_identities=counted_identities,
                 counted_entries=counted_entries,
@@ -452,17 +456,9 @@ def _inspect_directory(
             total_bytes += child_bytes
             total_entries += child_entries
             continue
-        elif stat.S_ISREG(metadata.st_mode):
-            if not _producer_content_allowed(category, entry_path, metadata):
-                return (
-                    0,
-                    0,
-                    f"Unexpected content not attributable to a reviewed "
-                    f"producer at {entry_path}.",
-                )
-        elif stat.S_ISLNK(metadata.st_mode):
-            pass
-        else:
+        if not (
+            stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode)
+        ):
             return 0, 0, f"Unexpected filesystem object at {entry_path}."
 
         if identity not in counted_identities:
@@ -484,7 +480,7 @@ def _observe_candidate(
     *,
     seen_file_identities: set[tuple[int, int]] | None = None,
 ) -> CandidateObservation:
-    """Classify and measure one reviewed candidate without modifying it."""
+    """Admit and measure one approved directory without modifying it."""
 
     observation = CandidateObservation(spec=spec)
     parts = _safe_relative_path(spec.relative_path)
@@ -495,6 +491,16 @@ def _observe_candidate(
             observation.reason = (
                 f"Candidate parent {symlink_parent} is a symbolic link and is "
                 "refused without following links."
+            )
+            observation.error = observation.reason
+            return observation
+
+        bare_git_parent = _first_intermediate_bare_git_boundary(worktree, parts)
+        if bare_git_parent:
+            observation.action = "failed"
+            observation.reason = (
+                f"Candidate parent {bare_git_parent} is a bare Git repository; "
+                "cleanup is confined to the active worktree root."
             )
             observation.error = observation.reason
             return observation
@@ -556,9 +562,7 @@ def _observe_candidate(
         counted_entries: list[CountedEntry] = []
         estimated_bytes, entries, violation = _inspect_directory(
             candidate,
-            worktree=worktree,
             relative_path=spec.relative_path,
-            category=spec.category,
             expected_device=int(candidate_metadata.st_dev),
             counted_identities=counted_identities,
             counted_entries=counted_entries,
@@ -759,7 +763,11 @@ def remove_candidate(
 
     errors: list[str] = []
 
-    def record_error(function: object, path: str, exc_info: tuple[object, object, object]) -> None:
+    def record_error(
+        function: object,
+        path: str,
+        exc_info: tuple[object, object, object],
+    ) -> None:
         operation = getattr(function, "__name__", "delete")
         exception = exc_info[1]
         errors.append(f"Cannot {operation} {path}: {exception}")
@@ -926,9 +934,25 @@ def _apply(deep: bool) -> int:
                 )
             continue
 
+        revalidated = _observe_candidate(worktree, observation.spec)
+        if revalidated.action != "selected":
+            item["outcome"] = revalidated.action
+            if revalidated.action == "failed":
+                message = (
+                    f"{observation.spec.relative_path}: "
+                    f"{revalidated.error or revalidated.reason}"
+                )
+                item["error"] = message
+                item["errors"] = [message]
+                all_errors.append(message)
+                report["snapshot_reliable"] = False
+            else:
+                item["reason"] = revalidated.reason
+            continue
+
         removal = remove_candidate(
             worktree,
-            observation,
+            revalidated,
             seen_file_identities=seen_removed_file_identities,
         )
         item["outcome"] = removal.status

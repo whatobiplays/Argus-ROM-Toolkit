@@ -1,8 +1,11 @@
-"""Contract tests for the repository Just cleanup entrypoints.
+#!/usr/bin/env python3
+"""Integration tests for generated-output cleanup commands.
 
-The tests build disposable Git repositories and invoke the real helper copied
-into each fixture.  No test targets the developer checkout for preview or
-deletion.
+Every destructive test invokes the production cleanup helper from a disposable
+Git repository. The suite never previews or deletes output in the developer
+checkout. The fixture copies both cleanup modules so Git worktree discovery,
+ignore policy, tracked-content checks, and subprocess entrypoints behave like
+the production command.
 """
 
 from __future__ import annotations
@@ -12,44 +15,128 @@ import importlib.util
 import io
 import json
 import os
-import shlex
 import shutil
-import socket
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CLEANUP_HELPER = REPOSITORY_ROOT / "scripts" / "just_cleanup.py"
 CLEANUP_POLICY = REPOSITORY_ROOT / "scripts" / "just_cleanup_policy.py"
+
+NORMAL_ROOTS = (
+    "rust/target",
+    "flutter/build/app/intermediates",
+    "flutter/build/app/generated",
+    "flutter/build/app/tmp",
+    "flutter/build/app/.cxx",
+    "flutter/build/macos/Build/Intermediates.noindex",
+)
+DEEP_ROOTS = (
+    "flutter/.dart_tool/flutter_build",
+    "flutter/android/.gradle",
+    "flutter/android/.kotlin",
+)
+ALL_APPROVED_ROOTS = NORMAL_ROOTS + DEEP_ROOTS
+
+
 def _hash_tree(root: Path) -> dict[str, str]:
-    """Snapshot cleanup-managed fixture content, excluding Git metadata."""
+    """Return a deterministic snapshot of a tree without following symlinks."""
 
     snapshot: dict[str, str] = {}
-    if not root.exists():
+    if not root.exists() and not root.is_symlink():
         return snapshot
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root).as_posix()
-        if relative == ".git" or relative.startswith(".git/"):
-            continue
-        if path.is_symlink():
-            snapshot[relative] = f"symlink:{os.readlink(path)}"
-        elif path.is_file():
-            snapshot[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
-        elif path.is_dir():
-            snapshot[relative] = "directory"
+    metadata = root.lstat()
+    if stat.S_ISLNK(metadata.st_mode):
+        return {".": f"symlink:{os.readlink(root)}"}
+    if not stat.S_ISDIR(metadata.st_mode):
+        return {".": f"type:{stat.S_IFMT(metadata.st_mode)}"}
+
+    for current_text, directory_names, file_names in os.walk(
+        root,
+        followlinks=False,
+    ):
+        current = Path(current_text)
+        directory_names.sort()
+        file_names.sort()
+        retained_directories: list[str] = []
+        for name in directory_names:
+            path = current / name
+            relative = path.relative_to(root).as_posix()
+            child_metadata = path.lstat()
+            if stat.S_ISLNK(child_metadata.st_mode):
+                snapshot[relative] = f"symlink:{os.readlink(path)}"
+            elif stat.S_ISDIR(child_metadata.st_mode):
+                snapshot[relative] = "directory"
+                retained_directories.append(name)
+            else:
+                snapshot[relative] = f"type:{stat.S_IFMT(child_metadata.st_mode)}"
+        directory_names[:] = retained_directories
+        for name in file_names:
+            path = current / name
+            relative = path.relative_to(root).as_posix()
+            child_metadata = path.lstat()
+            if stat.S_ISLNK(child_metadata.st_mode):
+                snapshot[relative] = f"symlink:{os.readlink(path)}"
+            elif stat.S_ISREG(child_metadata.st_mode):
+                snapshot[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+            else:
+                snapshot[relative] = f"type:{stat.S_IFMT(child_metadata.st_mode)}"
     return snapshot
+
+
+def _outside_snapshot(
+    repository_root: Path,
+    approved_roots: tuple[str, ...] = ALL_APPROVED_ROOTS,
+) -> dict[str, str]:
+    """Hash working-tree content outside approved roots and Git metadata."""
+
+    snapshot = _hash_tree(repository_root)
+    def is_python_cache(path: str) -> bool:
+        components = path.split("/")
+        return components[0] == "scripts" and "__pycache__" in components[1:]
+
+    return {
+        path: digest
+        for path, digest in snapshot.items()
+        if path != ".git"
+        and not path.startswith(".git/")
+        and not is_python_cache(path)
+        and not any(
+            path == root or path.startswith(root + "/") for root in approved_roots
+        )
+    }
 
 
 def _category(report: dict[str, object], name: str) -> list[dict[str, object]]:
     for category in report["categories"]:
         if category["name"] == name:
             return category["paths"]
-    raise AssertionError(f"Missing report category {name!r}")
+    raise AssertionError(f"Missing report category {name!r}: {report}")
+
+
+def _item(report: dict[str, object], candidate_path: str) -> dict[str, object]:
+    for category in report["categories"]:
+        for item in category["paths"]:
+            if item["path"] == candidate_path:
+                return item
+    raise AssertionError(f"Missing cleanup item {candidate_path!r}: {report}")
+
+
+def _selected_paths(report: dict[str, object]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            item["path"]
+            for category in report["categories"]
+            for item in category["paths"]
+            if item["action"] == "selected"
+        )
+    )
 
 
 def _load_cleanup_module():
@@ -66,7 +153,7 @@ def _load_cleanup_module():
 
 
 class DisposableGitRepository:
-    """Create an isolated checkout that owns the production cleanup helper."""
+    """A temporary Git repository containing a copy of the cleanup helper."""
 
     def __init__(self, *, prefix: str = "argus cleanup fixture ") -> None:
         self._temporary_directory = tempfile.TemporaryDirectory(
@@ -77,23 +164,13 @@ class DisposableGitRepository:
         self._run_git("init", "-q")
         self._run_git("config", "user.email", "cleanup-tests@example.invalid")
         self._run_git("config", "user.name", "Cleanup Tests")
-
         scripts = self.root / "scripts"
         scripts.mkdir()
         shutil.copyfile(CLEANUP_HELPER, scripts / CLEANUP_HELPER.name)
         shutil.copyfile(CLEANUP_POLICY, scripts / CLEANUP_POLICY.name)
         (self.root / ".gitignore").write_text(
-            "rust/target/\n"
-            "flutter/build/app/intermediates/\n"
-            "flutter/build/macos/Build/Intermediates.noindex/\n"
-            "flutter/build/app/outputs/\n"
-            "flutter/build/native-jni/\n"
-            "flutter/build/qualification/\n"
-            "flutter/.dart_tool/\n"
-            "flutter/android/.gradle/\n"
-            "flutter/android/.kotlin/\n"
-            "flutter/.fvm/\n"
-            "scripts/**/__pycache__/\n",
+            "\n".join(f"{root}/" for root in ALL_APPROVED_ROOTS)
+            + "\nscripts/**/__pycache__/\n",
             encoding="utf-8",
         )
         self.write_justfile(self.default_justfile())
@@ -115,26 +192,19 @@ class DisposableGitRepository:
     def default_justfile() -> str:
         return """\
 set shell := ["bash", "-uc"]
-
 clean-preview:
     @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" preview
-
 clean-deep-preview:
     @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" preview-deep
-
 clean-preview-deep: clean-deep-preview
-
 clean:
     @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" apply
-
 clean-deep:
     @python3 "{{justfile_directory()}}/scripts/just_cleanup.py" apply-deep
 """
 
     @staticmethod
     def isolated_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
-        """Build an isolated child environment for one disposable fixture."""
-
         environment = os.environ.copy()
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         if extra:
@@ -148,28 +218,24 @@ clean-deep:
         self,
         recipe: str,
         *,
-        cwd: Path | None = None,
         environment: dict[str, str] | None = None,
         timeout: float = 20.0,
     ) -> subprocess.CompletedProcess[str]:
-        command = [
-            "just",
-            "--justfile",
-            str(self.root / "justfile"),
-            "--working-directory",
-            str(self.root),
-            recipe,
-        ]
-        process_environment = self.isolated_environment(environment)
         return subprocess.run(
-            command,
-            cwd=cwd or self.root,
-            env=process_environment,
+            [
+                "just",
+                "--justfile",
+                str(self.root / "justfile"),
+                "--working-directory",
+                str(self.root),
+                recipe,
+            ],
+            cwd=self.root,
+            env=self.isolated_environment(environment),
             capture_output=True,
             text=True,
             timeout=timeout,
         )
-
 
     def run_helper(
         self,
@@ -177,7 +243,6 @@ clean-deep:
         environment: dict[str, str] | None = None,
         timeout: float = 20.0,
     ) -> subprocess.CompletedProcess[str]:
-        process_environment = self.isolated_environment(environment)
         return subprocess.run(
             [
                 sys.executable,
@@ -185,7 +250,7 @@ clean-deep:
                 *arguments,
             ],
             cwd=self.root,
-            env=process_environment,
+            env=self.isolated_environment(environment),
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -194,7 +259,7 @@ clean-deep:
 
 @unittest.skipIf(
     os.name == "nt",
-    "Safe inspection and deletion filesystem primitives are POSIX-only.",
+    "Safe inspection and deletion filesystem primitives require POSIX.",
 )
 class CleanupEntrypointTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -207,577 +272,764 @@ class CleanupEntrypointTests(unittest.TestCase):
         path.write_bytes(content)
         return path
 
-    def test_preview_creates_no_bytecode_through_just_or_direct_cli(self) -> None:
-        entrypoints = ("just", "direct")
-        for name in entrypoints:
-            with self.subTest(entrypoint=name):
-                repository = DisposableGitRepository()
-                try:
-                    (repository.root / "rust/target/debug/preview.rlib").parent.mkdir(
-                        parents=True
-                    )
-                    (repository.root / "rust/target/debug/preview.rlib").write_bytes(
-                        b"preview artifact"
-                    )
-                    environment = repository.isolated_environment()
-                    environment.pop("PYTHONDONTWRITEBYTECODE", None)
-                    environment.pop("PYTHONPYCACHEPREFIX", None)
-                    before = _hash_tree(repository.root)
-                    command = (
-                        [
-                            "just",
-                            "--justfile",
-                            str(repository.root / "justfile"),
-                            "--working-directory",
-                            str(repository.root),
-                            "clean-preview",
-                        ]
-                        if name == "just"
-                        else [
-                            sys.executable,
-                            str(
-                                repository.root
-                                / "scripts"
-                                / CLEANUP_HELPER.name
-                            ),
-                            "preview",
-                        ]
-                    )
-                    result = subprocess.run(
-                        command,
-                        cwd=repository.root,
-                        env=environment,
-                        capture_output=True,
-                        text=True,
-                        timeout=20,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    after = _hash_tree(repository.root)
-                    self.assertEqual(after, before)
-                    self.assertFalse(
-                        any("__pycache__" in path for path in after),
-                        after,
-                    )
-                finally:
-                    repository.close()
+    def _symlink(self, relative: str, target: str) -> Path:
+        path = self.repository.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(target, target_is_directory=True)
+        return path
 
-    def test_preview_uses_the_deletion_policy_without_changing_the_checkout(self) -> None:
-        self._write("rust/target/debug/libargus_bridge.rlib", b"rust output")
-        self._write("flutter/build/app/intermediates/dex/classes.dex", b"compiler output")
-        self._write("scripts/example/__pycache__/module.pyc", b"python bytecode")
-        self._write("flutter/build/app/outputs/flutter-apk/app-debug.apk", b"debug apk")
-        self._write("flutter/build/qualification/evidence.bin", b"qualification")
-        before = _hash_tree(self.repository.root)
+    def _report(self, result: subprocess.CompletedProcess[str]) -> dict[str, object]:
+        self.assertEqual(result.stderr, "", result.stderr)
+        return json.loads(result.stdout)
 
-        result = self.repository.run_just("clean-preview", cwd=Path(tempfile.gettempdir()))
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads(result.stdout)
-        self.assertEqual(report["mode"], "preview")
-        self.assertTrue(report["snapshot_reliable"])
-        selected = {
-            item["path"]
-            for category in report["categories"]
-            for item in category["paths"]
-            if item["action"] == "selected"
-        }
-        self.assertIn("rust/target", selected)
-        self.assertIn("flutter/build/app/intermediates", selected)
-        self.assertIn("scripts/example/__pycache__", selected)
-        self.assertNotIn("flutter/build/app/outputs", selected)
-        self.assertNotIn("flutter/build/qualification", selected)
-        self.assertNotIn("flutter/build/native-jni", selected)
-        self.assertGreater(report["estimated_bytes"], 0)
-        self.assertNotIn("verified_reclaimed_bytes", report)
-        self.assertEqual(_hash_tree(self.repository.root), before)
-
-    def test_nested_scripts_python_cache_is_ignored_and_cleanup_eligible(self) -> None:
-        shutil.copyfile(REPOSITORY_ROOT / ".gitignore", self.repository.root / ".gitignore")
-        self.repository._run_git("add", ".gitignore")
-        self.repository._run_git("commit", "-q", "-m", "production ignore policy")
-        nested_cache = Path("scripts/android_qualification/__pycache__")
-        nested_cache_path = nested_cache.as_posix()
+    def test_apply_removes_unknown_files_inside_an_approved_directory(self) -> None:
+        self._write("rust/target/release/extensionless-output", b"unknown output")
         self._write(
-            f"{nested_cache_path}/qualification.cpython-314.pyc",
-            b"python bytecode",
+            "rust/target/release/new-tool-state/binary.zzz",
+            b"unrecognized nested output",
         )
+        outside = self._write("rust/target-similar/durable.bin", b"keep outside")
 
-        ignore_result = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(self.repository.root),
-                "check-ignore",
-                "-q",
-                "--",
-                nested_cache_path,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(ignore_result.returncode, 0, ignore_result.stderr)
+        result = self.repository.run_helper("apply")
 
-        result = self.repository.run_just("clean")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.repository.root / "rust/target").exists())
+        self.assertEqual(outside.read_bytes(), b"keep outside")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads(result.stdout)
-        selected = {
-            item["path"]
-            for category in report["categories"]
-            for item in category["paths"]
-            if item["action"] == "selected"
+    def test_apply_removes_complete_combined_build_output_tree(self) -> None:
+        files = {
+            "rust/target/debug/deps/libfixture.rlib": b"cargo",
+            "rust/target/debug/.fingerprint/crate-hash/lib-crate.json": b"{}",
+            "rust/target/Cargo.lock": b"lock",
+            "rust/target/release/.DS_Store": b"finder",
+            "rust/target/release/unclassified.zzz": b"unknown",
+            "rust/target/aarch64-linux-android/debug/deps/tool-output": b"cross",
+            (
+                "flutter/build/app/intermediates/merged_manifests/debug/"
+                "manifest.xml"
+            ): b"xml",
+            "flutter/build/app/generated/unrecognized/R.java": b"java",
+            "flutter/build/app/tmp/new-task/state.bin": b"tmp",
+            "flutter/build/app/.cxx/Release/obj/local/arm64-v8a/libapp.so": b"native",
+            (
+                "flutter/build/macos/Build/Intermediates.noindex/"
+                "XCBuildData/output"
+            ): b"mac",
+            "scripts/nested/__pycache__/module.cpython-313.pyc": b"bytecode",
+            "scripts/nested/__pycache__/unexpected.apk": b"cache content",
         }
-        self.assertIn(nested_cache_path, selected)
-        self.assertNotIn(nested_cache_path, _hash_tree(self.repository.root))
-
-    def test_clean_removes_selected_outputs_and_retains_siblings_byte_identically(
-        self,
-    ) -> None:
-        self._write("rust/target/debug/rust-output.rlib", b"rust output")
-        self._write(
-            "flutter/build/app/intermediates/dex/classes.dex",
-            b"compiler output",
-        )
-        self._write("scripts/example/__pycache__/module.pyc", b"python bytecode")
-        protected = {
-            "flutter/build/app/outputs/flutter-apk/app-debug.apk": b"debug apk",
-            "flutter/build/app/outputs/flutter-apk/app-release.apk": b"release apk",
-            "flutter/build/qualification/argus-qualification.apk": b"qualification apk",
-            "flutter/build/qualification/native-build.json": b"qualification metadata",
-            "flutter/build/native-jni/release/native-build.json": b"jni metadata",
-            "flutter/.dart_tool/package_config.json": b"default retained tool state",
-            "flutter/build/unknown/sentinel.bin": b"unknown sentinel",
-        }
-        for relative, content in protected.items():
+        for relative, content in files.items():
             self._write(relative, content)
+        outside = {
+            "docs/qualification/evidence.apk": b"evidence",
+            "flutter/build/app/outputs/flutter-apk/app.apk": b"package",
+            "flutter/lib/main.dart": b"source",
+            "flutter/build/app/keep.txt": b"parent retained",
+            "scripts/keep.py": b"script",
+        }
+        for relative, content in outside.items():
+            self._write(relative, content)
+        outside_before = _outside_snapshot(self.repository.root)
 
-        result = self.repository.run_just("clean")
+        result = self.repository.run_helper("apply")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         report = json.loads(result.stdout)
+        self.assertEqual(report["schema_version"], 1)
         self.assertEqual(report["mode"], "apply")
+        self.assertFalse(report["deep"])
+        self.assertEqual(report["status"], "complete")
+        self.assertTrue(report["snapshot_reliable"])
         self.assertGreater(report["verified_reclaimed_bytes"], 0)
-        self.assertNotIn("rust/target", _hash_tree(self.repository.root))
-        self.assertNotIn(
-            "flutter/build/app/intermediates",
-            _hash_tree(self.repository.root),
+        for root in NORMAL_ROOTS:
+            with self.subTest(root=root):
+                self.assertFalse((self.repository.root / root).exists())
+        python_item = _item(
+            report,
+            "scripts/nested/__pycache__",
         )
-        self.assertNotIn("scripts/example/__pycache__", _hash_tree(self.repository.root))
-        for relative, content in protected.items():
-            with self.subTest(path=relative):
-                self.assertEqual((self.repository.root / relative).read_bytes(), content)
+        self.assertEqual(python_item["outcome"], "removed")
+        self.assertEqual(_outside_snapshot(self.repository.root), outside_before)
 
+    def test_normal_cleanup_leaves_deep_only_roots_untouched(self) -> None:
+        for root in NORMAL_ROOTS:
+            self._write(f"{root}/normal/output.bin", b"normal")
+        for root in DEEP_ROOTS:
+            self._write(f"{root}/deep/output.bin", b"deep")
 
-    def test_deep_cleanup_expands_only_declared_project_caches(self) -> None:
-        self._write("flutter/.dart_tool/package_config.json", b"dart state")
-        self._write("flutter/.dart_tool/flutter_build/" + "a" * 64 + "/generated.dill", b"build output")
-        self._write("flutter/android/.gradle/caches/cache.bin", b"gradle state")
-        self._write("flutter/android/.kotlin/sessions/session.bin", b"kotlin state")
-        protected = {
-            "flutter/.fvm/flutter_sdk/bin/flutter": b"pinned sdk",
-            "build/root-output.bin": b"root build retained",
-            "flutter/build/app/outputs/flutter-apk/app-debug.apk": b"debug apk",
-            "flutter/build/qualification/evidence.json": b"qualification",
-            "flutter/build/native-jni/release/native-build.json": b"jni metadata",
-        }
-        for relative, content in protected.items():
-            self._write(relative, content)
+        result = self.repository.run_helper("apply")
 
-        result = self.repository.run_just("clean-deep")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for root in NORMAL_ROOTS:
+            with self.subTest(root=root):
+                self.assertFalse((self.repository.root / root).exists())
+        for root in DEEP_ROOTS:
+            with self.subTest(root=root):
+                self.assertEqual(
+                    (self.repository.root / root / "deep/output.bin").read_bytes(),
+                    b"deep",
+                )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_deep_cleanup_removes_normal_and_deep_roots(self) -> None:
+        for root in ALL_APPROVED_ROOTS:
+            self._write(f"{root}/unknown/extensionless", root.encode())
+
+        result = self.repository.run_helper("apply-deep")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         report = json.loads(result.stdout)
+        self.assertTrue(report["deep"])
         self.assertEqual(report["mode"], "apply-deep")
-        self.assertTrue(any("regeneration" in warning.lower() for warning in report["warnings"]))
-        for removed in (
-            "flutter/.dart_tool/flutter_build",
-            "flutter/android/.gradle",
-            "flutter/android/.kotlin",
-        ):
-            with self.subTest(removed=removed):
-                self.assertFalse((self.repository.root / removed).exists())
+        for root in ALL_APPROVED_ROOTS:
+            with self.subTest(root=root):
+                self.assertFalse((self.repository.root / root).exists())
+
+    def test_preview_is_read_only_and_matches_apply_selection(self) -> None:
+        for root in NORMAL_ROOTS:
+            self._write(f"{root}/unreviewed/file.unknown", root.encode())
+        before = _outside_snapshot(self.repository.root, ())
+
+        preview_result = self.repository.run_just("clean-preview")
+
         self.assertEqual(
-            (self.repository.root / "flutter/.dart_tool/package_config.json").read_bytes(),
-            b"dart state",
+            preview_result.returncode,
+            0,
+            preview_result.stdout + preview_result.stderr,
         )
-        for relative, content in protected.items():
-            with self.subTest(retained=relative):
-                self.assertEqual((self.repository.root / relative).read_bytes(), content)
+        preview = json.loads(preview_result.stdout)
+        self.assertEqual(_outside_snapshot(self.repository.root, ()), before)
+        selected = _selected_paths(preview)
+        self.assertEqual(selected, tuple(sorted(NORMAL_ROOTS)))
 
-    def test_rust_candidate_preserves_nested_credentials_databases_and_roms(self) -> None:
-        protected = {
-            "rust/target/debug/.env.local": b"secret",
-            "rust/target/debug/.git-credentials": b"token",
-            "rust/target/debug/library.sqlite": b"database",
-            "rust/target/debug/private-signing.jks": b"signing key",
-            "rust/target/debug/notes.apk": b"unexpected package",
-            "rust/target/roms/game.rom": b"rom data",
-            "rust/target/qualification/native-build.json": b"qualification evidence",
-        }
-        for relative, content in protected.items():
-            self._write(relative, content)
+        apply_result = self.repository.run_just("clean")
 
-        result = self.repository.run_just("clean")
-
-        self.assertNotEqual(result.returncode, 0)
-        report = json.loads(result.stdout)
-        rust = _category(report, "rust")[0]
-        self.assertEqual(rust["outcome"], "failed")
-        self.assertTrue(rust["errors"])
-        for relative, content in protected.items():
-            with self.subTest(path=relative):
-                self.assertEqual((self.repository.root / relative).read_bytes(), content)
-
-    def test_rust_incremental_candidate_preserves_roms_archives_and_packages(
-        self,
-    ) -> None:
-        for filename in ("game.gba", "release.zip", "release.apk"):
-            with self.subTest(filename=filename):
-                repository = DisposableGitRepository()
-                try:
-                    relative = f"rust/target/debug/incremental/{filename}"
-                    content = f"protected {filename}".encode()
-                    path = repository.root / relative
-                    path.parent.mkdir(parents=True)
-                    path.write_bytes(content)
-
-                    result = repository.run_just("clean")
-
-                    self.assertNotEqual(result.returncode, 0)
-                    report = json.loads(result.stdout)
-                    rust = _category(report, "rust")[0]
-                    self.assertEqual(rust["outcome"], "failed")
-                    self.assertEqual(path.read_bytes(), content)
-                finally:
-                    repository.close()
-
-    def test_python_cache_candidate_removes_bytecode_only(self) -> None:
-        bytecode = self._write("scripts/example/__pycache__/module.pyc", b"bytecode")
-        secret = self._write("scripts/example/__pycache__/.env.local", b"secret")
-
-        result = self.repository.run_just("clean")
-
-        self.assertNotEqual(result.returncode, 0)
-        report = json.loads(result.stdout)
-        cache = _category(report, "python")[0]
-        self.assertEqual(cache["outcome"], "failed")
-        self.assertEqual(bytecode.read_bytes(), b"bytecode")
-        self.assertEqual(secret.read_bytes(), b"secret")
-
-        unexpected = self._write("scripts/example/__pycache__/source.py", b"source")
-        result = self.repository.run_just("clean")
-        self.assertNotEqual(result.returncode, 0)
-        report = json.loads(result.stdout)
-        cache = _category(report, "python")[0]
-        self.assertEqual(cache["outcome"], "failed")
-        self.assertEqual(unexpected.read_bytes(), b"source")
-
-    def test_apply_rejects_protected_state_credentials_and_unexpected_content(
-        self,
-    ) -> None:
-        cases = (
-            ("rust/target", "clean", "rust/target/debug/settings.local"),
-            ("rust/target", "clean", "rust/target/debug/.envrc"),
-            ("rust/target", "clean", "rust/target/.chatgpt/state.json"),
-            ("rust/target", "clean", "rust/target/.codex/state.json"),
-            ("rust/target", "clean", "rust/target/.superpowers/state.json"),
-            ("rust/target", "clean", "rust/target/debug/signing.pem"),
-            ("rust/target", "clean", "rust/target/debug/unexpected.bin"),
-            (
-                "flutter/build/app/intermediates",
-                "clean",
-                "flutter/build/app/intermediates/foreign/sentinel.bin",
-            ),
-            (
-                "flutter/build/app/intermediates",
-                "clean",
-                "flutter/build/app/intermediates/unexpected.dat",
-            ),
-            (
-                "flutter/build/macos/Build/Intermediates.noindex",
-                "clean",
-                "flutter/build/macos/Build/Intermediates.noindex/unknown/sentinel.bin",
-            ),
-            (
-                "flutter/.dart_tool/flutter_build",
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build/foreign/sentinel.bin",
-            ),
-            (
-                "flutter/android/.gradle",
-                "clean-deep",
-                "flutter/android/.gradle/unexpected.zzz",
-            ),
-            (
-                "flutter/android/.kotlin",
-                "clean-deep",
-                "flutter/android/.kotlin/unexpected.zzz",
-            ),
-        )
-        for candidate_path, command, relative in cases:
-            with self.subTest(path=relative):
-                repository = DisposableGitRepository()
-                try:
-                    retained = repository.root / relative
-                    retained.parent.mkdir(parents=True, exist_ok=True)
-                    retained.write_bytes(b"retained fixture")
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"] == candidate_path
-                    )
-                    self.assertEqual(candidate["action"], "failed", report)
-                    self.assertTrue(candidate.get("error"))
-                    self.assertEqual(retained.read_bytes(), b"retained fixture")
-                finally:
-                    repository.close()
-
-    def test_apply_rejects_protected_and_unclassified_nested_content(self) -> None:
-        cases = (
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-                "rust/target/debug/.env.production",
-            ),
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-                "rust/target/debug/settings.local",
-            ),
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-                "rust/target/.chatgpt/state.json",
-            ),
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-                "rust/target/.codex/state.json",
-            ),
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-                "rust/target/.superpowers/state.json",
-            ),
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-                "rust/target/debug/signing.pem",
-            ),
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-                "rust/target/foreign.json",
-            ),
-            (
-                "clean",
-                "flutter/build/app/intermediates",
-                "flutter/build/app/intermediates/dex/classes.dex",
-                "flutter/build/app/intermediates/vendor/state.json",
-            ),
-            (
-                "clean",
-                "flutter/build/macos/Build/Intermediates.noindex",
-                "flutter/build/macos/Build/Intermediates.noindex/"
-                "Sample.build/Objects-normal/arm64/sample.o",
-                "flutter/build/macos/Build/Intermediates.noindex/"
-                "Sample.build/identity.key",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build",
-                "flutter/.dart_tool/flutter_build/" + "a" * 64 + "/generated.dill",
-                "flutter/.dart_tool/flutter_build/vendor/state.json",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.gradle",
-                "flutter/android/.gradle/caches/cache.bin",
-                "flutter/android/.gradle/vendor/state.json",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.kotlin",
-                "flutter/android/.kotlin/sessions/session.bin",
-                "flutter/android/.kotlin/vendor/state.json",
-            ),
-            (
-                "clean",
-                "scripts/example/__pycache__",
-                "scripts/example/__pycache__/module.pyc",
-                "scripts/example/__pycache__/vendor/state.pyc",
-            ),
-        )
-        for command, candidate_path, producer_output, retained_path in cases:
-            with self.subTest(retained=retained_path):
-                repository = DisposableGitRepository()
-                try:
-                    for relative, content in (
-                        (producer_output, b"recognized producer output"),
-                        (retained_path, b"content that must be retained"),
-                    ):
-                        path = repository.root / relative
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        path.write_bytes(content)
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"] == candidate_path
-                    )
-                    self.assertEqual(candidate["action"], "failed", report)
-                    self.assertTrue(candidate.get("error"))
-                    self.assertEqual(
-                        (repository.root / retained_path).read_bytes(),
-                        b"content that must be retained",
-                    )
-                finally:
-                    repository.close()
-
-    def test_deep_cleanup_retains_generator_state_in_dart_tool(self) -> None:
-        protected = {
-            "flutter/.dart_tool/package_config.json": b"package config",
-            "flutter/.dart_tool/flutter_rust_bridge/generated.bin": b"frb state",
-            "flutter/.dart_tool/cargo-ndk/toolchain.json": b"cargo ndk state",
-        }
-        for relative, content in protected.items():
-            self._write(relative, content)
-
-        result = self.repository.run_just("clean-deep")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("flutter/.dart_tool", _hash_tree(self.repository.root))
-        retained_tree = _hash_tree(self.repository.root)
-        self.assertIn(
-            "flutter/.dart_tool/flutter_rust_bridge/generated.bin",
-            retained_tree,
-        )
-        self.assertIn("flutter/.dart_tool/cargo-ndk/toolchain.json", retained_tree)
-        for relative, content in protected.items():
-            with self.subTest(path=relative):
-                self.assertEqual((self.repository.root / relative).read_bytes(), content)
-
-    def test_symlink_candidate_is_skipped_without_touching_its_destination(self) -> None:
-        destination = self._write("release/keep.bin", b"protected destination")
-        candidate = self.repository.root / "rust/target"
-        candidate.parent.mkdir(parents=True)
-        candidate.symlink_to(Path("../release/keep.bin"), target_is_directory=False)
-
-        result = self.repository.run_just("clean")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads(result.stdout)
-        rust = _category(report, "rust")
-        self.assertEqual(rust[0]["action"], "skipped")
-        self.assertIn("symbolic link", rust[0]["reason"].lower())
-        self.assertEqual(destination.read_bytes(), b"protected destination")
-        self.assertTrue(candidate.is_symlink())
-
-    def test_nested_repository_beneath_candidate_is_refused(self) -> None:
-        nested = "rust/target/debug/build/fixture-0123456789abcdef/nested"
-        self._write(f"{nested}/.git/HEAD", b"ref: refs/heads/main\n")
-        self._write(f"{nested}/sentinel.rlib", b"nested repository")
-
-        result = self.repository.run_just("clean")
-
-        self.assertNotEqual(result.returncode, 0)
-        report = json.loads(result.stdout)
-        rust = _category(report, "rust")[0]
-        self.assertEqual(rust["action"], "failed")
-        self.assertIn(".git", rust["error"].lower())
-        self.assertIn("retained", rust["error"].lower())
         self.assertEqual(
-            (
-                self.repository.root / nested / "sentinel.rlib"
-            ).read_bytes(),
-            b"nested repository",
+            apply_result.returncode,
+            0,
+            apply_result.stdout + apply_result.stderr,
+        )
+        applied = json.loads(apply_result.stdout)
+        self.assertEqual(_selected_paths(applied), selected)
+        for root in NORMAL_ROOTS:
+            with self.subTest(root=root):
+                self.assertEqual(_item(applied, root)["outcome"], "removed")
+
+    def test_json_reporting_contains_schema_categories_and_byte_semantics(self) -> None:
+        payload = b"logical byte accounting"
+        self._write("rust/target/debug/payload.bin", payload)
+
+        result = self.repository.run_helper("apply-deep")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["schema_version"], 1)
+        self.assertEqual(report["worktree"], os.fspath(self.repository.root))
+        self.assertEqual(report["verified_reclaimed_bytes"], len(payload))
+        self.assertIn("estimated_bytes", report["bytes_semantics"])
+        self.assertIn("verified_reclaimed_bytes", report["bytes_semantics"])
+        self.assertIn("idle checkout", " ".join(report["warnings"]))
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "selected")
+        self.assertEqual(rust["outcome"], "removed")
+        self.assertEqual(rust["estimated_bytes"], len(payload))
+        self.assertEqual(rust["verified_reclaimed_bytes"], len(payload))
+
+    def test_repeated_clean_is_a_zero_byte_idempotent_noop(self) -> None:
+        self._write("flutter/android/.gradle/caches/state.bin", b"cache")
+        first = self.repository.run_helper("apply-deep")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+
+        second = self.repository.run_helper("apply-deep")
+
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        report = json.loads(second.stdout)
+        self.assertEqual(report["status"], "complete")
+        self.assertEqual(report["verified_reclaimed_bytes"], 0)
+        self.assertTrue(
+            all(
+                item["action"] in {"skipped", "failed"}
+                or item.get("outcome") == "removed"
+                for category in report["categories"]
+                for item in category["paths"]
+            )
+        )
+        self.assertEqual(
+            _item(report, "flutter/android/.gradle")["reason"],
+            "missing",
         )
 
-    def test_tracked_content_beneath_candidate_is_never_deleted(self) -> None:
-        tracked = self._write("rust/target/keep.txt", b"tracked sentinel")
-        self.repository._run_git("add", "-f", "rust/target/keep.txt")
-        self.repository._run_git("commit", "-q", "-m", "tracked output sentinel")
+    def test_partial_success_across_candidates_is_reported_truthfully(self) -> None:
+        cargo = self._write("rust/target/debug/libapp.rlib", b"cargo output")
+        self._write("flutter/build/app/tmp/sentinel.bin", b"retained with fifo")
+        fifo = self.repository.root / "flutter/build/app/tmp/unsupported.pipe"
+        os.mkfifo(fifo)
+        outside = self._write("rust/target-neighbor/keep.bin", b"outside")
 
-        result = self.repository.run_just("clean")
+        result = self.repository.run_helper("apply")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         report = json.loads(result.stdout)
-        rust = _category(report, "rust")[0]
+        self.assertEqual(report["status"], "partial")
+        self.assertFalse(cargo.exists())
+        self.assertFalse((self.repository.root / "rust/target").exists())
+        self.assertTrue(fifo.exists())
+        self.assertEqual(
+            (self.repository.root / "flutter/build/app/tmp/sentinel.bin").read_bytes(),
+            b"retained with fifo",
+        )
+        self.assertEqual(_item(report, "rust/target")["outcome"], "removed")
+        self.assertEqual(
+            _item(report, "flutter/build/app/tmp")["outcome"],
+            "failed",
+        )
+        self.assertEqual(report["verified_reclaimed_bytes"], len(b"cargo output"))
+        self.assertEqual(outside.read_bytes(), b"outside")
+
+    def test_tracked_content_blocks_the_entire_candidate(self) -> None:
+        tracked = self._write("rust/target/keep.bin", b"tracked")
+        self._write("rust/target/unknown.bin", b"untracked")
+        self.repository._run_git("add", "-f", "rust/target/keep.bin")
+        self.repository._run_git("commit", "-q", "-m", "tracked output")
+        before = _hash_tree(self.repository.root / "rust/target")
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
         self.assertEqual(rust["action"], "skipped")
         self.assertIn("tracks content", rust["reason"].lower())
-        self.assertEqual(tracked.read_bytes(), b"tracked sentinel")
+        self.assertEqual(tracked.read_bytes(), b"tracked")
+        self.assertEqual(_hash_tree(self.repository.root / "rust/target"), before)
 
-    def test_custom_cargo_target_directory_is_reported_and_never_modified(self) -> None:
-        self._write("rust/target/debug/local.rlib", b"local target")
-        external = self.repository.root.parent / "external cargo target"
-        external.mkdir()
-        self.addCleanup(shutil.rmtree, external, True)
-        external_file = external / "keep.bin"
-        external_file.write_bytes(b"external target")
+    def test_nested_git_metadata_blocks_the_entire_candidate(self) -> None:
+        self._write("rust/target/debug/nested/.git/HEAD", b"ref: refs/heads/main\n")
+        self._write("rust/target/debug/nested/output.bin", b"nested repository")
+        before = _hash_tree(self.repository.root / "rust/target")
 
-        result = self.repository.run_just(
-            "clean",
-            environment={"CARGO_TARGET_DIR": str(external)},
-        )
+        result = self.repository.run_helper("apply")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         report = json.loads(result.stdout)
-        rust = _category(report, "rust")[0]
-        self.assertEqual(rust["action"], "skipped")
-        self.assertIn("redirects cargo", rust["reason"].lower())
-        self.assertEqual(
-            (self.repository.root / "rust/target/debug/local.rlib").read_bytes(),
-            b"local target",
-        )
-        self.assertEqual(external_file.read_bytes(), b"external target")
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "failed")
+        self.assertIn(".git", rust["error"])
+        self.assertFalse(report["snapshot_reliable"])
+        self.assertEqual(_hash_tree(self.repository.root / "rust/target"), before)
 
-    def test_linked_worktree_cleanup_leaves_other_worktree_and_admin_metadata_untouched(
-        self,
-    ) -> None:
-        main_root = self.repository.root
-        linked_parent = Path(tempfile.mkdtemp(prefix="linked cleanup fixture "))
-        self.addCleanup(shutil.rmtree, linked_parent, True)
-        linked_root = linked_parent / "linked worktree"
+    def test_nested_linked_worktree_blocks_the_entire_candidate(self) -> None:
+        self._write("rust/target/debug/output.rlib", b"candidate output")
+        linked_root = self.repository.root / "rust/target/nested-linked-worktree"
+        linked_root.parent.mkdir(parents=True, exist_ok=True)
+        self.repository._run_git(
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "nested-cleanup-test",
+            os.fspath(linked_root),
+        )
+        linked_git_file = linked_root / ".git"
+        self.assertTrue(linked_git_file.is_file())
+        candidate_before = _hash_tree(self.repository.root / "rust/target")
+        worktree_metadata = self.repository.root / ".git" / "worktrees"
+        metadata_before = _hash_tree(worktree_metadata)
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "failed")
+        self.assertIn(".git", rust["error"])
+        self.assertFalse(report["snapshot_reliable"])
+        self.assertEqual(
+            _hash_tree(self.repository.root / "rust/target"),
+            candidate_before,
+        )
+        self.assertEqual(_hash_tree(worktree_metadata), metadata_before)
+
+    def test_nested_bare_repository_blocks_the_entire_candidate(self) -> None:
+        bare_repository = self.repository.root / "rust/target/debug/nested.git"
+        bare_repository.parent.mkdir(parents=True)
         subprocess.run(
-            [
-                "git",
-                "-C",
-                str(main_root),
-                "worktree",
-                "add",
-                "-q",
-                "-b",
-                "linked-cleanup-test",
-                str(linked_root),
-            ],
+            ["git", "init", "--bare", "-q", os.fspath(bare_repository)],
             check=True,
             capture_output=True,
             text=True,
         )
-        main_output = self._write("rust/target/debug/main-only.rlib", b"main output")
-        linked_output = linked_root / "rust/target/debug/linked-only.rlib"
+        self._write("rust/target/debug/output.rlib", b"candidate output")
+        before = _hash_tree(self.repository.root / "rust/target")
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "failed")
+        self.assertIn("bare Git repository", rust["error"])
+        self.assertFalse(report["snapshot_reliable"])
+        self.assertEqual(_hash_tree(self.repository.root / "rust/target"), before)
+
+    def test_directory_inspection_probes_only_bare_repository_candidates(self) -> None:
+        scan_root = self.repository.root / "probe-tree"
+        for index in range(24):
+            output = scan_root / f"directory-{index:03d}" / "nested"
+            output.mkdir(parents=True)
+            (output / "payload").write_bytes(b"generated output")
+
+        bare_repository = scan_root / "zz-bare.git"
+        subprocess.run(
+            ["git", "init", "--bare", "-q", os.fspath(bare_repository)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        cleanup = _load_cleanup_module()
+        with mock.patch.object(
+            cleanup,
+            "_run_git",
+            wraps=cleanup._run_git,
+        ) as run_git:
+            _, _, violation = cleanup._inspect_directory(
+                scan_root,
+                relative_path="probe-tree",
+                expected_device=scan_root.stat().st_dev,
+                counted_identities=set(),
+                counted_entries=[],
+            )
+
+        bare_probes = [
+            call
+            for call in run_git.call_args_list
+            if call.args[1] == ("rev-parse", "--is-bare-repository")
+        ]
+        self.assertEqual(
+            len(bare_probes),
+            1,
+            f"expected one Git repository probe, got {len(bare_probes)}",
+        )
+        self.assertIsNotNone(violation)
+        self.assertIn("bare Git repository", violation)
+
+    def test_incidental_bare_repository_names_remain_eligible(self) -> None:
+        incidental = self.repository.root / "rust/target/debug/output-layout"
+        (incidental / "objects").mkdir(parents=True)
+        (incidental / "refs").mkdir()
+        (incidental / "HEAD").write_text("not Git metadata\n", encoding="utf-8")
+        (incidental / "config").write_text(
+            "[core]\n\tbare = false\n",
+            encoding="utf-8",
+        )
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.repository.root / "rust/target").exists())
+
+    def test_bare_repository_ancestor_blocks_the_approved_candidate(self) -> None:
+        bare_repository = self.repository.root / "rust"
+        subprocess.run(
+            ["git", "init", "--bare", "-q", os.fspath(bare_repository)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self._write("rust/target/debug/output.rlib", b"candidate output")
+        before = _hash_tree(bare_repository)
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "failed")
+        self.assertIn("bare Git repository", rust["error"])
+        self.assertFalse(report["snapshot_reliable"])
+        self.assertEqual(_hash_tree(bare_repository), before)
+
+    def test_bare_metadata_variants_still_block_the_entire_candidate(self) -> None:
+        metadata_name = "config"
+        cases = (
+            ("missing-config", "missing"),
+            ("symlink-config", metadata_name),
+            ("symlink-objects", "objects"),
+            ("symlink-refs", "refs"),
+        )
+        for case_name, metadata_variant in cases:
+            with self.subTest(case=case_name):
+                repository = DisposableGitRepository()
+                try:
+                    bare_repository = (
+                        repository.root / f"rust/target/debug/{case_name}.git"
+                    )
+                    bare_repository.parent.mkdir(parents=True)
+                    subprocess.run(
+                        [
+                            "git",
+                            "init",
+                            "--bare",
+                            "-q",
+                            os.fspath(bare_repository),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if metadata_variant == "missing":
+                        (bare_repository / "config").unlink()
+                    else:
+                        metadata = bare_repository / metadata_variant
+                        external = (
+                            repository.root
+                            / "external-bare-metadata"
+                            / f"{case_name}-{metadata_variant}"
+                        )
+                        external.parent.mkdir(parents=True)
+                        metadata.rename(external)
+                        metadata.symlink_to(
+                            external,
+                            target_is_directory=external.is_dir(),
+                        )
+                    output = repository.root / "rust/target/debug/output.rlib"
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_bytes(b"candidate output")
+                    candidate = repository.root / "rust/target"
+                    before = _hash_tree(candidate)
+
+                    result = repository.run_helper("apply")
+
+                    self.assertEqual(
+                        result.returncode,
+                        1,
+                        result.stdout + result.stderr,
+                    )
+                    report = json.loads(result.stdout)
+                    rust = _item(report, "rust/target")
+                    self.assertEqual(rust["action"], "failed")
+                    self.assertIn("bare Git repository", rust["error"])
+                    self.assertFalse(report["snapshot_reliable"])
+                    self.assertEqual(_hash_tree(candidate), before)
+                finally:
+                    repository.close()
+
+    def test_symlinked_candidate_is_skipped_without_following_target(self) -> None:
+        destination = self._write("external/target/keep.bin", b"destination")
+        candidate = self.repository.root / "rust/target"
+        candidate.parent.mkdir(parents=True)
+        candidate.symlink_to(Path("../../external/target"), target_is_directory=True)
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "skipped")
+        self.assertIn("symbolic link", rust["reason"].lower())
+        self.assertTrue(candidate.is_symlink())
+        self.assertEqual(destination.read_bytes(), b"destination")
+
+    def test_symlinked_candidate_ancestor_is_refused(self) -> None:
+        external = Path(tempfile.mkdtemp(prefix="cleanup external flutter "))
+        self.addCleanup(shutil.rmtree, external, True)
+        retained = external / "build/app/intermediates/data/output.bin"
+        retained.parent.mkdir(parents=True)
+        retained.write_bytes(b"external flutter")
+        before = _hash_tree(external)
+        (self.repository.root / "flutter").symlink_to(
+            external,
+            target_is_directory=True,
+        )
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertFalse(report["snapshot_reliable"])
+        self.assertEqual(_hash_tree(external), before)
+        self.assertTrue(any(
+            item["action"] == "failed" and "symbolic link" in item["reason"].lower()
+            for category in report["categories"]
+            for item in category["paths"]
+        ))
+
+    def test_internal_symlink_is_unlinked_without_following_target(self) -> None:
+        destination = Path(tempfile.mkdtemp(prefix="cleanup symlink destination "))
+        self.addCleanup(shutil.rmtree, destination, True)
+        retained = destination / "keep.bin"
+        retained.write_bytes(b"outside symlink target")
+        link = self.repository.root / "rust/target/debug/output-link"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(destination, target_is_directory=True)
+        before = _hash_tree(destination)
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.repository.root / "rust/target").exists())
+        self.assertEqual(_hash_tree(destination), before)
+        self.assertEqual(retained.read_bytes(), b"outside symlink target")
+
+    def test_ignored_root_check_prevents_deletion(self) -> None:
+        payload = self._write("rust/target/debug/output.bin", b"not ignored")
+        (self.repository.root / ".gitignore").write_text("", encoding="utf-8")
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "failed")
+        self.assertIn("ignore policy", rust["error"])
+        self.assertEqual(payload.read_bytes(), b"not ignored")
+
+    def test_cargo_target_redirect_protects_local_and_external_outputs(self) -> None:
+        local = self._write("rust/target/debug/local.rlib", b"local target")
+        external = Path(tempfile.mkdtemp(prefix="external cargo target "))
+        self.addCleanup(shutil.rmtree, external, True)
+        external_file = external / "keep.bin"
+        external_file.write_bytes(b"external target")
+
+        result = self.repository.run_helper(
+            "apply",
+            environment={"CARGO_TARGET_DIR": os.fspath(external)},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
+        self.assertEqual(rust["action"], "skipped")
+        self.assertIn("redirects cargo", rust["reason"].lower())
+        self.assertEqual(local.read_bytes(), b"local target")
+        self.assertEqual(external_file.read_bytes(), b"external target")
+
+    def test_nested_filesystem_device_boundary_is_rejected(self) -> None:
+        cleanup = _load_cleanup_module()
+        worktree = cleanup.discover_worktree(self.repository.root)
+        output = self._write("rust/target/debug/output.bin", b"candidate")
+        spec = cleanup.CandidateSpec(
+            category="rust",
+            relative_path="rust/target",
+            default_clean=True,
+            regeneration_note="test",
+        )
+        real_lstat = Path.lstat
+
+        def fabricated_lstat(path: Path) -> os.stat_result:
+            metadata = real_lstat(path)
+            if path == output:
+                values = list(metadata)
+                values[2] = int(metadata.st_dev) + 1
+                return os.stat_result(values)
+            return metadata
+
+        with mock.patch.object(Path, "lstat", new=fabricated_lstat):
+            observation = cleanup._observe_candidate(worktree, spec)
+
+        self.assertEqual(observation.action, "failed")
+        self.assertIn("Filesystem boundary", observation.error)
+        self.assertEqual(output.read_bytes(), b"candidate")
+
+    def test_root_on_another_device_is_skipped(self) -> None:
+        cleanup = _load_cleanup_module()
+        worktree = cleanup.discover_worktree(self.repository.root)
+        candidate = self.repository.root / "rust/target"
+        candidate.mkdir(parents=True)
+        spec = cleanup.CandidateSpec(
+            category="rust",
+            relative_path="rust/target",
+            default_clean=True,
+            regeneration_note="test",
+        )
+        real_lstat = Path.lstat
+
+        def fabricated_lstat(path: Path) -> os.stat_result:
+            metadata = real_lstat(path)
+            if path == candidate:
+                values = list(metadata)
+                values[2] = int(metadata.st_dev) + 1
+                return os.stat_result(values)
+            return metadata
+
+        with mock.patch.object(Path, "lstat", new=fabricated_lstat):
+            observation = cleanup._observe_candidate(worktree, spec)
+
+        self.assertEqual(observation.action, "skipped")
+        self.assertIn("different filesystem", observation.reason)
+        self.assertTrue(candidate.is_dir())
+
+    def test_unsupported_entry_type_is_rejected_before_deletion(self) -> None:
+        self._write("rust/target/debug/output.rlib", b"candidate")
+        fifo = self.repository.root / "rust/target/debug/unsupported.pipe"
+        os.mkfifo(fifo)
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertIn("Unexpected filesystem object", report["errors"][0])
+        self.assertTrue(fifo.exists())
+        self.assertEqual(
+            (self.repository.root / "rust/target/debug/output.rlib").read_bytes(),
+            b"candidate",
+        )
+
+    def test_admitted_root_does_not_veto_sensitive_or_package_like_names(self) -> None:
+        names = (
+            "credentials.json",
+            "private-key.pem",
+            "release.apk",
+            "disc.gba",
+            "roms/library.db",
+            "unknown/evidence.zip",
+            ".chatgpt/review.json",
+            ".codex/config",
+            ".superpowers/memory",
+            "qualification/evidence.apk",
+            "flutter/lib/main.dart",
+            "build/output.bin",
+            ".DS_Store",
+            "Cargo.lock",
+            "extensionless",
+        )
+        for name in names:
+            self._write(f"rust/target/debug/{name}", name.encode())
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.repository.root / "rust/target").exists())
+
+    def test_similar_paths_and_durable_content_remain_byte_identical(self) -> None:
+        for root in ALL_APPROVED_ROOTS:
+            self._write(f"{root}/generated/unknown.zzz", b"generated")
+        outside_paths = {
+            "rust/targeted/keep.bin": b"rust similar",
+            "flutter/build/app/intermediates-similar/keep.bin": b"android similar",
+            "flutter/.dart_tool/flutter_build-similar/keep.bin": b"flutter similar",
+            "docs/qualification/evidence.apk": b"qualification",
+            "flutter/build/app/outputs/release.apk": b"package",
+            "flutter/build/native-jni/libapp.so": b"native",
+            "flutter/lib/main.dart": b"source",
+            "build/keep.bin": b"root build",
+        }
+        for relative, content in outside_paths.items():
+            self._write(relative, content)
+        before = _outside_snapshot(self.repository.root)
+
+        result = self.repository.run_helper("apply-deep")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(_outside_snapshot(self.repository.root), before)
+        for relative, content in outside_paths.items():
+            with self.subTest(path=relative):
+                self.assertEqual(
+                    (self.repository.root / relative).read_bytes(),
+                    content,
+                )
+
+    def test_protected_diagnostics_are_reported_without_deletion(self) -> None:
+        protected = {
+            "docs/archive/record.md": b"archive",
+            "docs/qualification/evidence.apk": b"evidence",
+            "flutter/android/local.properties": b"machine-local",
+            "flutter/.fvm/flutter_sdk/bin/flutter": b"sdk",
+            "flutter/lib/main.dart": b"source",
+        }
+        for relative, content in protected.items():
+            self._write(relative, content)
+
+        result = self.repository.run_helper("apply-deep")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        protected_paths = {
+            item["path"] for item in _category(report, "protected")
+        }
+        self.assertIn("docs/archive", protected_paths)
+        self.assertIn("docs/qualification", protected_paths)
+        self.assertIn("flutter/lib", protected_paths)
+        for relative, content in protected.items():
+            with self.subTest(path=relative):
+                self.assertEqual(
+                    (self.repository.root / relative).read_bytes(),
+                    content,
+                )
+
+    def test_python_cache_discovery_does_not_follow_symlinks(self) -> None:
+        self._write("scripts/fixture/__pycache__/generated.apk", b"owned cache")
+        external = Path(tempfile.mkdtemp(prefix="python cache symlink target "))
+        self.addCleanup(shutil.rmtree, external, True)
+        retained = external / "__pycache__/external.pyc"
+        retained.parent.mkdir()
+        retained.write_bytes(b"external cache")
+        (self.repository.root / "scripts/vendor").symlink_to(
+            external,
+            target_is_directory=True,
+        )
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(
+            (self.repository.root / "scripts/fixture/__pycache__").exists()
+        )
+        self.assertEqual(retained.read_bytes(), b"external cache")
+
+    def test_python_cache_walk_error_marks_snapshot_unreliable(self) -> None:
+        cleanup = _load_cleanup_module()
+        worktree = cleanup.discover_worktree(self.repository.root)
+        blocked = self.repository.root / "scripts/blocked"
+        blocked.mkdir(parents=True)
+        retained = self._write(
+            "scripts/blocked/__pycache__/retained.pyc",
+            b"not discovered",
+        )
+
+        def fail_walk(
+            top: object,
+            *,
+            followlinks: bool,
+            onerror: object,
+        ) -> object:
+            error = PermissionError("simulated walk failure")
+            error.filename = os.fspath(blocked)
+            onerror(error)
+            return iter(())
+
+        with mock.patch.object(cleanup.os, "walk", side_effect=fail_walk):
+            observations = cleanup._collect_observations(worktree, deep=False)
+            report = cleanup.build_report(
+                worktree,
+                deep=False,
+                mode="preview",
+                observations=observations,
+            )
+
+        self.assertFalse(report["snapshot_reliable"])
+        failed = _item(report, "scripts/blocked")
+        self.assertEqual(failed["action"], "failed")
+        self.assertIn("Cannot inspect Python bytecode cache tree", failed["error"])
+        self.assertEqual(retained.read_bytes(), b"not discovered")
+
+    def test_linked_worktree_cleanup_is_confined_to_that_worktree(self) -> None:
+        linked_parent = Path(tempfile.mkdtemp(prefix="linked cleanup fixture "))
+        self.addCleanup(shutil.rmtree, linked_parent, True)
+        linked_root = linked_parent / "linked worktree"
+        self.repository._run_git(
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "linked-cleanup-test",
+            os.fspath(linked_root),
+        )
+        main_output = self._write("rust/target/debug/main.rlib", b"main")
+        linked_output = linked_root / "rust/target/debug/linked.rlib"
         linked_output.parent.mkdir(parents=True)
-        linked_output.write_bytes(b"linked output")
-        metadata_before = _hash_tree(main_root / ".git" / "worktrees")
+        linked_output.write_bytes(b"linked")
+        metadata_before = _hash_tree(self.repository.root / ".git" / "worktrees")
 
         result = subprocess.run(
             [
@@ -795,78 +1047,184 @@ class CleanupEntrypointTests(unittest.TestCase):
             timeout=20,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(linked_output.exists())
-        self.assertEqual(main_output.read_bytes(), b"main output")
-        self.assertEqual(_hash_tree(main_root / ".git" / "worktrees"), metadata_before)
+        self.assertEqual(main_output.read_bytes(), b"main")
+        self.assertEqual(
+            _hash_tree(self.repository.root / ".git" / "worktrees"),
+            metadata_before,
+        )
 
-    def test_candidate_ancestor_git_boundary_retains_foreign_repository(self) -> None:
-        for kind, recipe, expected_status in (
-            ("linked worktree", "clean-preview", 2),
-            ("linked worktree", "clean", 1),
-            ("nested repository", "clean-preview", 2),
-            ("nested repository", "clean", 1),
-        ):
-            with self.subTest(kind=kind, recipe=recipe):
-                repository = DisposableGitRepository()
-                try:
-                    rust_root = repository.root / "rust"
-                    if kind == "linked worktree":
-                        subprocess.run(
-                            [
-                                "git",
-                                "-C",
-                                str(repository.root),
-                                "worktree",
-                                "add",
-                                "-q",
-                                "--detach",
-                                str(rust_root),
-                                "HEAD",
-                            ],
-                            check=True,
-                            capture_output=True,
-                            text=True,
-                        )
-                    else:
-                        rust_root.mkdir()
-                        subprocess.run(
-                            ["git", "-C", str(rust_root), "init", "-q"],
-                            check=True,
-                            capture_output=True,
-                            text=True,
-                        )
-                    foreign_output = rust_root / "target/debug/output.rlib"
-                    foreign_output.parent.mkdir(parents=True)
-                    foreign_output.write_bytes(b"foreign worktree output")
-                    before = _hash_tree(rust_root)
+    def test_ambient_git_context_is_rejected_before_deletion(self) -> None:
+        output = self._write("rust/target/debug/output.rlib", b"candidate")
 
-                    result = repository.run_just(recipe)
+        result = self.repository.run_helper(
+            "apply",
+            environment={"GIT_DIR": os.fspath(self.repository.root / ".git")},
+        )
 
-                    self.assertEqual(result.returncode, expected_status, result.stderr)
-                    report = json.loads(result.stdout)
-                    self.assertFalse(report["snapshot_reliable"])
-                    rust = _category(report, "rust")[0]
-                    self.assertEqual(rust["action"], "failed", report)
-                    self.assertIn(".git", rust["error"])
-                    self.assertEqual(_hash_tree(rust_root), before)
-                finally:
-                    repository.close()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("Unexpected Git context environment", result.stderr)
+        self.assertEqual(output.read_bytes(), b"candidate")
 
-    def test_symlinked_worktree_root_resolves_to_physical_directory(self) -> None:
-        cleanup = _load_cleanup_module()
-        alias = self.repository.root.with_name(self.repository.root.name + "-alias")
-        alias.symlink_to(self.repository.root, target_is_directory=True)
-        self.addCleanup(alias.unlink, missing_ok=True)
-
-        worktree = cleanup.discover_worktree(alias)
-
-        self.assertEqual(worktree.root, self.repository.root)
-
-    def test_git_query_failure_is_reported_and_preserves_candidate(self) -> None:
+    def test_path_escape_candidate_is_rejected_without_deletion(self) -> None:
         cleanup = _load_cleanup_module()
         worktree = cleanup.discover_worktree(self.repository.root)
-        candidate = self._write("rust/target/debug/output.rlib", b"candidate")
+        outside = Path(tempfile.mkdtemp(prefix="cleanup escape target "))
+        self.addCleanup(shutil.rmtree, outside, True)
+        retained = outside / "keep.bin"
+        retained.write_bytes(b"outside")
+        spec = cleanup.CandidateSpec(
+            category="rust",
+            relative_path="../" + outside.name,
+            default_clean=True,
+            regeneration_note="test",
+        )
+
+        with self.assertRaisesRegex(cleanup.UnsafeCandidateError, "traversal"):
+            cleanup._observe_candidate(worktree, spec)
+        self.assertEqual(retained.read_bytes(), b"outside")
+
+    def test_deep_preview_alias_is_read_only(self) -> None:
+        output = self._write(
+            "flutter/.dart_tool/flutter_build/generated/output.bin",
+            b"deep preview",
+        )
+
+        result = self.repository.run_just("clean-preview-deep")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["mode"], "preview-deep")
+        self.assertTrue(report["deep"])
+        self.assertEqual(
+            _item(report, "flutter/.dart_tool/flutter_build")["action"],
+            "selected",
+        )
+        self.assertEqual(output.read_bytes(), b"deep preview")
+
+    def test_hard_links_are_counted_once_for_preview_and_reclaimed_bytes(self) -> None:
+        payload = b"hard-linked logical bytes"
+        first = self._write("rust/target/debug/first.bin", payload)
+        second = self.repository.root / "rust/target/debug/second.bin"
+        os.link(first, second)
+
+        preview_result = self.repository.run_helper("preview")
+
+        self.assertEqual(
+            preview_result.returncode,
+            0,
+            preview_result.stdout + preview_result.stderr,
+        )
+        preview = json.loads(preview_result.stdout)
+        self.assertEqual(_item(preview, "rust/target")["estimated_bytes"], len(payload))
+
+        apply_result = self.repository.run_helper("apply")
+
+        self.assertEqual(
+            apply_result.returncode,
+            0,
+            apply_result.stdout + apply_result.stderr,
+        )
+        applied = json.loads(apply_result.stdout)
+        self.assertEqual(applied["verified_reclaimed_bytes"], len(payload))
+
+    def test_removal_error_after_one_success_reports_partial_completion(self) -> None:
+        cleanup = _load_cleanup_module()
+        worktree = cleanup.discover_worktree(self.repository.root)
+        cargo = self._write("rust/target/debug/output.rlib", b"cargo bytes")
+        android = self._write(
+            "flutter/build/app/tmp/debug/output.bin",
+            b"android bytes",
+        )
+        real_rmtree = cleanup.shutil.rmtree
+
+        def fail_android(path: object, *, onerror: object = None) -> None:
+            if Path(path) == self.repository.root / "flutter/build/app/tmp":
+                raise OSError("simulated removal failure")
+            return real_rmtree(path, onerror=onerror)
+
+        stdout = io.StringIO()
+        with (
+            mock.patch.dict(
+                os.environ,
+                self.repository.isolated_environment(),
+                clear=True,
+            ),
+            mock.patch.object(cleanup, "discover_worktree", return_value=worktree),
+            mock.patch.object(cleanup.shutil, "rmtree", side_effect=fail_android),
+            mock.patch("sys.stdout", stdout),
+        ):
+            status = cleanup._apply(False)
+
+        self.assertEqual(status, 1)
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(report["status"], "partial")
+        self.assertFalse(cargo.exists())
+        self.assertEqual(android.read_bytes(), b"android bytes")
+        self.assertEqual(report["verified_reclaimed_bytes"], len(b"cargo bytes"))
+
+    def test_apply_revalidates_safety_before_deleting(self) -> None:
+        cleanup = _load_cleanup_module()
+        worktree = cleanup.discover_worktree(self.repository.root)
+        output = self._write("rust/target/debug/output.rlib", b"candidate")
+        real_observe = cleanup._observe_candidate
+        rust_observations = 0
+
+        def fail_second_observation(
+            observed_worktree: object,
+            spec: object,
+            *,
+            seen_file_identities: set[tuple[int, int]] | None = None,
+        ) -> object:
+            nonlocal rust_observations
+            observation = real_observe(
+                observed_worktree,
+                spec,
+                seen_file_identities=seen_file_identities,
+            )
+            if spec.relative_path == "rust/target":
+                rust_observations += 1
+                if rust_observations == 2:
+                    observation.action = "failed"
+                    observation.reason = "candidate changed before apply"
+                    observation.error = observation.reason
+            return observation
+
+        stdout = io.StringIO()
+        with (
+            mock.patch.dict(
+                os.environ,
+                self.repository.isolated_environment(),
+                clear=True,
+            ),
+            mock.patch.object(cleanup, "discover_worktree", return_value=worktree),
+            mock.patch.object(
+                cleanup,
+                "_observe_candidate",
+                side_effect=fail_second_observation,
+            ),
+            mock.patch("sys.stdout", stdout),
+        ):
+            status = cleanup._apply(False)
+
+        self.assertEqual(status, 1)
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(report["status"], "failed")
+        self.assertFalse(report["snapshot_reliable"])
+        self.assertEqual(_item(report, "rust/target")["outcome"], "failed")
+        self.assertEqual(output.read_bytes(), b"candidate")
+
+    def test_git_query_failure_is_reported_without_deletion(self) -> None:
+        cleanup = _load_cleanup_module()
+        worktree = cleanup.discover_worktree(self.repository.root)
+        output = self._write("rust/target/debug/output.rlib", b"candidate")
+        spec = cleanup.CandidateSpec(
+            category="rust",
+            relative_path="rust/target",
+            default_clean=True,
+            regeneration_note="test",
+        )
         real_run_git = cleanup._run_git
 
         def fail_ls_files(
@@ -879,981 +1237,58 @@ class CleanupEntrypointTests(unittest.TestCase):
                 raise subprocess.CalledProcessError(128, ["git", "ls-files"])
             return real_run_git(root, arguments, check=check)
 
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with (
-            mock.patch.dict(
-                os.environ,
-                self.repository.isolated_environment(),
-                clear=True,
-            ),
-            mock.patch.object(cleanup, "discover_worktree", return_value=worktree),
-            mock.patch.object(cleanup, "_run_git", side_effect=fail_ls_files),
-            mock.patch("sys.stdout", stdout),
-            mock.patch("sys.stderr", stderr),
-        ):
-            status = cleanup._apply(deep=False)
+        with mock.patch.object(cleanup, "_run_git", side_effect=fail_ls_files):
+            observation = cleanup._observe_candidate(worktree, spec)
 
-        self.assertEqual(status, 1)
-        self.assertEqual(stderr.getvalue(), "")
-        report = json.loads(stdout.getvalue())
-        self.assertEqual(report["status"], "failed")
-        self.assertFalse(report["snapshot_reliable"])
-        self.assertTrue(report["errors"])
-        rust = _category(report, "rust")[0]
+        self.assertEqual(observation.action, "failed")
+        self.assertIn("ls-files", observation.error)
+        self.assertEqual(output.read_bytes(), b"candidate")
+
+    def test_candidate_that_is_not_a_directory_fails_closed(self) -> None:
+        candidate = self._write("rust/target", b"not a directory")
+
+        result = self.repository.run_helper("apply")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        rust = _item(report, "rust/target")
         self.assertEqual(rust["action"], "failed")
-        self.assertEqual(candidate.read_bytes(), b"candidate")
+        self.assertIn("not a directory", rust["error"])
+        self.assertEqual(candidate.read_bytes(), b"not a directory")
 
-    def test_each_producer_category_accepts_outputs_and_retains_sensitive_names(
-        self,
-    ) -> None:
-        cases = (
-            (
-                "clean",
-                "rust/target",
-                "rust/target/debug/output.rlib",
-            ),
-            (
-                "clean",
-                "flutter/build/app/intermediates",
-                "flutter/build/app/intermediates/dex/classes.dex",
-            ),
-            (
-                "clean",
-                "flutter/build/macos/Build/Intermediates.noindex",
-                "flutter/build/macos/Build/Intermediates.noindex/"
-                "Sample.build/Objects-normal/arm64/sample.o",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build",
-                "flutter/.dart_tool/flutter_build/" + "a" * 64 + "/generated.dill",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.gradle",
-                "flutter/android/.gradle/caches/cache.bin",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.kotlin",
-                "flutter/android/.kotlin/sessions/session.bin",
-            ),
-        )
-        for command, candidate_path, producer_path in cases:
-            with self.subTest(candidate=candidate_path, kind="positive"):
-                repository = DisposableGitRepository()
-                try:
-                    output = repository.root / producer_path
-                    output.parent.mkdir(parents=True, exist_ok=True)
-                    output.write_bytes(b"recognized producer output")
 
-                    result = repository.run_just(command)
-
-                    self.assertEqual(
-                        result.returncode,
-                        0,
-                        f"{result.stderr}\n{result.stdout}",
-                    )
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"] == candidate_path
-                    )
-                    self.assertEqual(candidate["outcome"], "removed", report)
-                    self.assertFalse(output.exists())
-                finally:
-                    repository.close()
-
-            with self.subTest(candidate=candidate_path, kind="protected names"):
-                repository = DisposableGitRepository()
-                try:
-                    output = repository.root / producer_path
-                    output.parent.mkdir(parents=True, exist_ok=True)
-                    output.write_bytes(b"recognized producer output")
-                    protected_files = {
-                        ".env": b"environment credentials",
-                        ".env.development": b"environment credentials",
-                        "developer.local": b"machine-local settings",
-                        "credentials.json": b"private credentials",
-                        "release-signing.properties": b"signing configuration",
-                        "signing.pem": b"private signing key",
-                    }
-                    for filename, content in protected_files.items():
-                        (output.parent / filename).write_bytes(content)
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"] == candidate_path
-                    )
-                    self.assertEqual(candidate["action"], "failed", report)
-                    for filename, content in protected_files.items():
-                        protected_file = output.parent / filename
-                        self.assertEqual(protected_file.read_bytes(), content)
-                    self.assertEqual(output.read_bytes(), b"recognized producer output")
-                finally:
-                    repository.close()
-
-    def test_unreviewed_rust_subdirectories_are_retained(self) -> None:
-        for relative_path in (
-            "rust/target/debug/vendor/important.rlib",
-            "rust/target/debug/deps/vendor/important.rlib",
-        ):
-            with self.subTest(relative_path=relative_path):
-                repository = DisposableGitRepository()
-                try:
-                    output = repository.root / relative_path
-                    output.parent.mkdir(parents=True)
-                    output.write_bytes(b"unknown producer output")
-
-                    result = repository.run_just("clean")
-
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertEqual(output.read_bytes(), b"unknown producer output")
-                    self.assertTrue((repository.root / "rust/target").is_dir())
-                finally:
-                    repository.close()
-
-    def test_non_generic_suffixes_require_a_reviewed_producer_path(self) -> None:
-        for command, candidate_path, output_path in (
-            (
-                "clean",
-                "flutter/build/app/intermediates",
-                "flutter/build/app/intermediates/dex/vendor/important.class",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.gradle",
-                "flutter/android/.gradle/caches/vendor/important.jar",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.kotlin",
-                "flutter/android/.kotlin/sessions/vendor/important.class",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build",
-                "flutter/.dart_tool/flutter_build/"
-                + "a" * 64
-                + "/vendor/important.dill",
-            ),
-            (
-                "clean",
-                "flutter/build/macos/Build/Intermediates.noindex",
-                "flutter/build/macos/Build/Intermediates.noindex/"
-                "user-abcd/important.o",
-            ),
-            (
-                "clean",
-                "flutter/build/app/intermediates",
-                "flutter/build/app/intermediates/important.class",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build",
-                "flutter/.dart_tool/flutter_build/important.dill",
-            ),
-            (
-                "clean",
-                "flutter/build/app/intermediates",
-                "flutter/build/app/intermediates/classes.dex",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build",
-                "flutter/.dart_tool/flutter_build/generated.dill",
-            ),
-        ):
-            with self.subTest(candidate=candidate_path, output=output_path):
-                repository = DisposableGitRepository()
-                try:
-                    output = repository.root / output_path
-                    output.parent.mkdir(parents=True)
-                    output.write_bytes(b"unclassified producer suffix")
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertEqual(output.read_bytes(), b"unclassified producer suffix")
-                    self.assertTrue((repository.root / candidate_path).is_dir())
-                finally:
-                    repository.close()
-
-    def test_generic_data_files_require_producer_path_and_filename_signatures(
-        self,
-    ) -> None:
-        cases = (
-            (
-                "clean",
-                "rust/target",
-                "rust/target/.fingerprint/fixture-0123456789abcdef/lib-fixture.json",
-            ),
-            (
-                "clean",
-                "flutter/build/app/intermediates",
-                "flutter/build/app/intermediates/merged_manifests/debug/"
-                "AndroidManifest.xml",
-            ),
-            (
-                "clean",
-                "flutter/build/macos/Build/Intermediates.noindex",
-                "flutter/build/macos/Build/Intermediates.noindex/"
-                "Sample.build/Objects-normal/arm64/Sample-OutputFileMap.json",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build",
-                "flutter/.dart_tool/flutter_build/outputs.json",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.gradle",
-                "flutter/android/.gradle/caches/modules-2/files-2.1/"
-                "org.example/widget/1.0/pom.xml",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.kotlin",
-                "flutter/android/.kotlin/compiler/build-history.json",
-            ),
-        )
-        for command, candidate_path, producer_path in cases:
-            with self.subTest(candidate=candidate_path, producer_file=producer_path):
-                repository = DisposableGitRepository()
-                try:
-                    producer_file = repository.root / producer_path
-                    producer_file.parent.mkdir(parents=True)
-                    producer_file.write_bytes(b"known producer metadata")
-
-                    result = repository.run_just(command)
-
-                    self.assertEqual(
-                        result.returncode,
-                        0,
-                        f"{result.stderr}\n{result.stdout}",
-                    )
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"] == candidate_path
-                    )
-                    self.assertEqual(candidate["outcome"], "removed", report)
-                    self.assertFalse(producer_file.exists())
-                finally:
-                    repository.close()
-
-    def test_unreviewed_generic_data_names_are_retained(self) -> None:
-        cases = (
-            (
-                "clean",
-                "rust/target",
-                "rust/target/.fingerprint/fixture-0123456789abcdef/notes.json",
-            ),
-            (
-                "clean",
-                "flutter/build/app/intermediates",
-                "flutter/build/app/intermediates/merged_manifests/debug/notes.xml",
-            ),
-            (
-                "clean",
-                "flutter/build/macos/Build/Intermediates.noindex",
-                "flutter/build/macos/Build/Intermediates.noindex/"
-                "Sample.build/Objects-normal/arm64/notes.json",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build",
-                "flutter/.dart_tool/flutter_build/notes.json",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.gradle",
-                "flutter/android/.gradle/caches/modules-2/files-2.1/"
-                "org.example/widget/1.0/notes.xml",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.kotlin",
-                "flutter/android/.kotlin/compiler/notes.json",
-            ),
-        )
-        for command, candidate_path, foreign_path in cases:
-            with self.subTest(candidate=candidate_path, foreign_file=foreign_path):
-                repository = DisposableGitRepository()
-                try:
-                    foreign_file = repository.root / foreign_path
-                    foreign_file.parent.mkdir(parents=True)
-                    foreign_file.write_bytes(b"unclassified generic data")
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"] == candidate_path
-                    )
-                    self.assertEqual(candidate["action"], "failed", report)
-                    self.assertEqual(
-                        foreign_file.read_bytes(), b"unclassified generic data"
-                    )
-                finally:
-                    repository.close()
-
-    def test_task_family_prefixes_require_component_boundaries(self) -> None:
-        foreign = {
-            "flutter/build/app/intermediates/processbackup/classes.dex": b"lowercase"
-            b" sibling",
-            "flutter/build/app/intermediates/process-backup/classes.dex": b"process"
-            b" sibling",
-            "flutter/build/app/intermediates/process_backup/classes.dex": b"underscore"
-            b" sibling",
-            "flutter/build/app/intermediates/merge-notes/classes.dex": b"merge sibling",
-            "flutter/build/app/intermediates/validate-userdata/classes.dex": b"validate"
-            b" sibling",
-        }
-        for command in ("clean-preview", "clean"):
-            with self.subTest(command=command):
-                repository = DisposableGitRepository()
-                try:
-                    for relative, content in foreign.items():
-                        path = repository.root / relative
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        path.write_bytes(content)
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"] == "flutter/build/app/intermediates"
-                    )
-                    self.assertEqual(candidate["action"], "failed", report)
-                    for relative, content in foreign.items():
-                        self.assertEqual((repository.root / relative).read_bytes(), content)
-                finally:
-                    repository.close()
-
-    def test_reviewed_task_family_directory_remains_eligible(self) -> None:
-        output = self._write(
-            "flutter/build/app/intermediates/processDebugResources/classes.dex",
-            b"task output",
-        )
-
-        result = self.repository.run_just("clean")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(output.exists())
-        self.assertFalse((self.repository.root / "flutter/build/app/intermediates").exists())
-
-    def test_unreviewed_native_build_layouts_are_retained(self) -> None:
-        foreign = {
-            "flutter/build/macos/Build/Intermediates.noindex/"
-            "archive.build/notes/user.log": b"archive note",
-            "flutter/build/macos/Build/Intermediates.noindex/"
-            "user-data.build/notes/user.log": b"user data",
-            "flutter/build/macos/Build/Intermediates.noindex/"
-            "Sample.build/Objects-normal/arm64/Sample.swiftmodule/user.log": (
-                b"swift module child"
-            ),
-            "flutter/build/macos/Build/Intermediates.noindex/"
-            "Sample.build/Objects-normal/arm64/Sample.swiftmodule/private/user.log": (
-                b"nested swift module child"
-            ),
-        }
-        for command in ("clean-preview", "clean"):
-            with self.subTest(command=command):
-                repository = DisposableGitRepository()
-                try:
-                    for relative, content in foreign.items():
-                        path = repository.root / relative
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        path.write_bytes(content)
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    report = json.loads(result.stdout)
-                    candidate = next(
-                        item
-                        for category in report["categories"]
-                        for item in category["paths"]
-                        if item["path"]
-                        == "flutter/build/macos/Build/Intermediates.noindex"
-                    )
-                    self.assertEqual(candidate["action"], "failed", report)
-                    for relative, content in foreign.items():
-                        self.assertEqual((repository.root / relative).read_bytes(), content)
-                finally:
-                    repository.close()
-
-    def test_executable_rust_fallback_requires_reviewed_parent_directory(self) -> None:
-        foreign = self._write(
-            "rust/target/debug/unreviewed/keep.rs",
-            b"executable source data",
-        )
-        foreign.chmod(0o755)
-
-        for command in ("clean-preview", "clean"):
-            with self.subTest(command=command):
-                result = self.repository.run_just(command)
-
-                self.assertNotEqual(result.returncode, 0)
-                report = json.loads(result.stdout)
-                candidate = next(
-                    item
-                    for category in report["categories"]
-                    for item in category["paths"]
-                    if item["path"] == "rust/target"
-                )
-                self.assertEqual(candidate["action"], "failed", report)
-                self.assertEqual(foreign.read_bytes(), b"executable source data")
-
-    def test_direct_executable_rust_file_under_debug_remains_eligible(self) -> None:
-        executable = self._write("rust/target/debug/tool", b"cargo executable")
-        executable.chmod(0o755)
-
-        result = self.repository.run_just("clean")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse((self.repository.root / "rust/target").exists())
-
-    def test_generic_data_suffixes_do_not_override_sensitive_names(self) -> None:
-        cases = (
-            ("clean", "rust/target/debug/output.rlib", "secrets.toml"),
-            (
-                "clean",
-                "flutter/build/app/intermediates/dex/classes.dex",
-                "api-token.properties",
-            ),
-            (
-                "clean",
-                "flutter/build/macos/Build/Intermediates.noindex/"
-                "Sample.build/Objects-normal/arm64/sample.o",
-                "private-info.plist",
-            ),
-            (
-                "clean-deep",
-                "flutter/.dart_tool/flutter_build/" + "a" * 64 + "/generated.dill",
-                "private-state.yaml",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.gradle/caches/cache.bin",
-                "credentials.properties",
-            ),
-            (
-                "clean-deep",
-                "flutter/android/.kotlin/sessions/session.bin",
-                "auth.json",
-            ),
-        )
-        for command, producer_path, private_name in cases:
-            with self.subTest(private_name=private_name):
-                repository = DisposableGitRepository()
-                try:
-                    output = repository.root / producer_path
-                    output.parent.mkdir(parents=True, exist_ok=True)
-                    output.write_bytes(b"recognized producer output")
-                    private_file = output.parent / private_name
-                    private_file.write_bytes(b"private state")
-
-                    result = repository.run_just(command)
-
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertTrue(private_file.is_file())
-                    self.assertEqual(private_file.read_bytes(), b"private state")
-                    self.assertEqual(output.read_bytes(), b"recognized producer output")
-                finally:
-                    repository.close()
-
-    def test_recursive_child_failure_prevents_false_parent_success(self) -> None:
-        cleanup = _load_cleanup_module()
-        worktree = cleanup.discover_worktree(self.repository.root)
-        specification = cleanup.CandidateSpec(
-            category="rust",
-            relative_path="rust/target",
-            default_clean=True,
-            regeneration_note="fixture",
-        )
-        sibling = self._write(
-            "rust/target/debug/a.rlib",
-            b"sibling output",
-        )
-        nested = self._write(
-            "rust/target/debug/deps/child.rlib",
-            b"nested output",
-        )
-        observation = cleanup._observe_candidate(worktree, specification)
-        self.assertEqual(observation.action, "selected")
-        real_unlink = cleanup.os.unlink
-
-        def fail_nested_unlink(name: str, *, dir_fd: int | None = None) -> None:
-            if name == "child.rlib":
-                raise PermissionError("simulated child deletion failure")
-            real_unlink(name, dir_fd=dir_fd)
-
-        with mock.patch.object(
-            cleanup.os,
-            "unlink",
-            side_effect=fail_nested_unlink,
-        ):
-            outcome = cleanup.remove_candidate(worktree, observation)
-
-        self.assertEqual(outcome.status, "partial", outcome.errors)
-        self.assertEqual(outcome.verified_reclaimed_bytes, len(b"sibling output"))
-        self.assertTrue(outcome.errors)
-        self.assertIn(
-            "child deletion failure",
-            " ".join(outcome.errors).lower(),
-        )
-        self.assertFalse(sibling.exists())
-        self.assertEqual(nested.read_bytes(), b"nested output")
-        self.assertTrue((self.repository.root / "rust/target").is_dir())
-
-        retried = cleanup.remove_candidate(worktree, observation)
-        self.assertEqual(retried.status, "removed", retried.errors)
-        self.assertFalse(retried.errors)
-        self.assertFalse((self.repository.root / "rust/target").exists())
-
-    def test_apply_reports_recursive_child_failure_and_retains_parent(self) -> None:
-        cleanup = _load_cleanup_module()
-        worktree = cleanup.discover_worktree(self.repository.root)
-        sibling_payload = b"sibling output"
-        nested_payload = b"nested output"
-        sibling = self._write("rust/target/debug/a.rlib", sibling_payload)
-        nested = self._write("rust/target/debug/deps/child.rlib", nested_payload)
-        real_unlink = cleanup.os.unlink
-
-        def fail_nested_unlink(name: str, *, dir_fd: int | None = None) -> None:
-            if name == "child.rlib":
-                raise PermissionError("simulated child deletion failure")
-            real_unlink(name, dir_fd=dir_fd)
-
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with (
-            mock.patch.dict(
-                os.environ,
-                self.repository.isolated_environment(),
-                clear=True,
-            ),
-            mock.patch.object(cleanup, "discover_worktree", return_value=worktree),
-            mock.patch.object(
-                cleanup.os,
-                "unlink",
-                new=fail_nested_unlink,
-            ),
-            mock.patch("sys.stdout", stdout),
-            mock.patch("sys.stderr", stderr),
-        ):
-            status = cleanup._apply(deep=False)
-
-        self.assertEqual(status, 1)
-        self.assertEqual(stderr.getvalue(), "")
-        report = json.loads(stdout.getvalue())
-        self.assertEqual(report["status"], "partial")
-        self.assertEqual(report["verified_reclaimed_bytes"], len(sibling_payload))
-        self.assertIn(
-            "child deletion failure",
-            " ".join(report["errors"]).lower(),
-        )
-        rust = _category(report, "rust")[0]
-        self.assertEqual(rust["outcome"], "partial")
-        self.assertEqual(rust["verified_reclaimed_bytes"], len(sibling_payload))
-        self.assertIn(
-            "child deletion failure",
-            " ".join(rust["errors"]).lower(),
-        )
-        self.assertFalse(sibling.exists())
-        self.assertEqual(nested.read_bytes(), nested_payload)
-        self.assertTrue((self.repository.root / "rust/target").is_dir())
-
-    def test_missing_scripts_directory_yields_no_python_candidates(self) -> None:
-        cleanup = _load_cleanup_module()
-        worktree = cleanup.discover_worktree(self.repository.root)
-        shutil.rmtree(self.repository.root / "scripts")
-
-        self.assertEqual(cleanup._find_python_cache_candidates(worktree), ([], []))
-
-    def test_python_cache_walk_failure_is_reported_without_hiding_removal(self) -> None:
-        if os.name == "nt" or os.geteuid() == 0:
-            self.skipTest("POSIX non-root permission semantics are required.")
-
-        for recipe, expected_status in (("clean-preview", 2), ("clean", 1)):
-            with self.subTest(recipe=recipe):
-                repository = DisposableGitRepository()
-                try:
-                    rust_output = repository.root / "rust/target/debug/output.rlib"
-                    rust_output.parent.mkdir(parents=True)
-                    rust_output.write_bytes(b"removable output")
-                    locked = repository.root / "scripts/locked"
-                    cache = locked / "__pycache__/module.pyc"
-                    cache.parent.mkdir(parents=True)
-                    cache.write_bytes(b"discovered bytecode")
-                    locked.chmod(0)
-                    try:
-                        result = repository.run_just(recipe)
-                    finally:
-                        locked.chmod(0o700)
-
-                    self.assertEqual(result.returncode, expected_status, result.stderr)
-                    report = json.loads(result.stdout)
-                    self.assertFalse(report["snapshot_reliable"])
-                    python = _category(report, "python")
-                    self.assertTrue(python)
-                    self.assertEqual(python[0]["action"], "failed")
-                    self.assertIn(
-                        "python bytecode cache tree",
-                        " ".join(
-                            [python[0]["error"], *report.get("errors", [])]
-                        ).lower(),
-                    )
-                    self.assertEqual(cache.read_bytes(), b"discovered bytecode")
-                    if recipe == "clean-preview":
-                        self.assertEqual(rust_output.read_bytes(), b"removable output")
-                    else:
-                        self.assertEqual(report["status"], "partial")
-                        self.assertEqual(
-                            report["verified_reclaimed_bytes"],
-                            len(b"removable output"),
-                        )
-                        self.assertFalse(rust_output.exists())
-                finally:
-                    repository.close()
-
-    def test_permission_denial_is_reported_as_a_retryable_failure(self) -> None:
-        if os.name == "nt" or os.geteuid() == 0:
-            self.skipTest("POSIX non-root permission semantics are required.")
-        denied = self.repository.root / "rust/target/denied"
-        denied.mkdir(parents=True)
-        (denied / "file.bin").write_bytes(b"denied content")
-        removable = self._write(
-            "flutter/build/app/intermediates/dex/classes.dex",
-            b"removable output",
-        )
-        denied.chmod(0)
-        self.addCleanup(denied.chmod, 0o700)
-
-        result = self.repository.run_just("clean")
-
-        self.assertNotEqual(result.returncode, 0)
-        report = json.loads(result.stdout)
-        self.assertEqual(report["status"], "partial")
-        self.assertTrue(report["errors"])
-        denied.chmod(0o700)
-        self.assertTrue((denied / "file.bin").is_file())
-        self.assertFalse(removable.exists())
-
-    def test_repeated_clean_is_a_zero_byte_idempotent_noop(self) -> None:
-        self._write("rust/target/debug/output.rlib", b"output")
-
-        first = self.repository.run_just("clean")
-        second = self.repository.run_just("clean")
-
-        self.assertEqual(first.returncode, 0, first.stderr)
-        self.assertEqual(second.returncode, 0, second.stderr)
-        second_report = json.loads(second.stdout)
-        self.assertEqual(second_report["verified_reclaimed_bytes"], 0)
-        rust = _category(second_report, "rust")[0]
-        self.assertEqual(rust["action"], "skipped")
-        self.assertEqual(rust["reason"], "missing")
-
-    def test_full_protected_content_matrix_survives_routine_cleanup(self) -> None:
-        self._write("rust/target/debug/output.rlib", b"candidate")
-        protected = {
-            ".chatgpt/run/PROMPT.md": b"run provenance",
-            ".codex/state.json": b"local agent state",
-            ".env.local": b"private credentials",
-            "docs/archive/qualification/evidence.bin": b"archive evidence",
-            "docs/qualification/current/report.json": b"qualification record",
-            "state.sqlite": b"database",
-            "roms/game.rom": b"user rom",
-            "flutter/lib/core/bridge/generated/frb_generated.dart": b"generated source",
-            "flutter/test/fixture.bin": b"test fixture",
-            "flutter/.fvm/flutter_sdk/bin/flutter": b"sdk",
-            "flutter/build/app/outputs/flutter-apk/app-debug.apk": b"debug apk",
-            "flutter/build/app/outputs/flutter-apk/app-release.apk": b"release apk",
-            "flutter/build/qualification/argus-qualification.apk": b"qualification apk",
-            "flutter/build/native-jni/release/native-build.json": b"native metadata",
-            "build/root-output.bin": b"root build",
-        }
-        for relative, content in protected.items():
-            self._write(relative, content)
-
-        result = self.repository.run_just("clean")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for relative, content in protected.items():
-            with self.subTest(path=relative):
-                self.assertEqual((self.repository.root / relative).read_bytes(), content)
-
-    def test_symlink_inside_candidate_is_unlinked_without_following_destination(self) -> None:
-        destination = self._write("release/keep.bin", b"linked destination")
-        link = self.repository.root / "rust/target/debug/deps/link.bin"
-        link.parent.mkdir(parents=True)
-        link.symlink_to(destination)
-
-        result = self.repository.run_just("clean")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse((self.repository.root / "rust/target").exists())
-        self.assertEqual(destination.read_bytes(), b"linked destination")
-
-    def test_symlink_in_candidate_parent_causes_fail_closed_refusal(self) -> None:
-        external = Path(tempfile.mkdtemp(prefix="external flutter build "))
-        self.addCleanup(shutil.rmtree, external, True)
-        protected = external / "app" / "intermediates" / "keep.bin"
-        protected.parent.mkdir(parents=True)
-        protected.write_bytes(b"external output")
-        flutter_build = self.repository.root / "flutter/build"
-        flutter_build.parent.mkdir(parents=True)
-        flutter_build.symlink_to(external, target_is_directory=True)
-
-        result = self.repository.run_just("clean")
-
-        self.assertNotEqual(result.returncode, 0)
-        report = json.loads(result.stdout)
-        android = _category(report, "android")
-        failed = [item for item in android if item["action"] == "failed"]
-        self.assertTrue(failed)
-        self.assertTrue(all("without following links" in item["error"] for item in failed))
-        self.assertEqual(protected.read_bytes(), b"external output")
-
-    def test_special_files_inside_candidate_fail_closed(self) -> None:
-        for kind in ("fifo", "socket"):
-            with self.subTest(kind=kind):
-                repository = DisposableGitRepository()
-                try:
-                    special = repository.root / f"rust/target/debug/unexpected-{kind}"
-                    special.parent.mkdir(parents=True)
-                    sibling = special.parent / "0.rlib"
-                    sibling.write_bytes(b"must survive partial-validation failure")
-                    if kind == "fifo":
-                        os.mkfifo(special)
-                    else:
-                        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                        try:
-                            previous_directory = Path.cwd()
-                            try:
-                                os.chdir(repository.root)
-                                listener.bind(special.relative_to(repository.root).as_posix())
-                            finally:
-                                os.chdir(previous_directory)
-                        finally:
-                            listener.close()
-
-                    result = repository.run_just("clean")
-
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertTrue(special.exists())
-                    self.assertEqual(
-                        sibling.read_bytes(),
-                        b"must survive partial-validation failure",
-                    )
-                    self.assertTrue((repository.root / "rust/target").is_dir())
-                finally:
-                    repository.close()
-
-    def test_ambient_git_context_is_rejected_before_any_deletion(self) -> None:
-        candidate = self._write("rust/target/debug/output.rlib", b"must survive")
-        result = self.repository.run_just(
-            "clean",
-            environment={"GIT_DIR": "/forged/repository"},
-        )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("unexpected git context", result.stderr.lower())
-        self.assertEqual(candidate.read_bytes(), b"must survive")
-
-    def test_deep_preview_names_are_separate_and_read_only(self) -> None:
-        for recipe in ("clean-deep-preview", "clean-preview-deep"):
-            with self.subTest(recipe=recipe):
-                repository = DisposableGitRepository()
-                self.addCleanup(repository.close)
-                self.repository = repository
-                self._write("flutter/.dart_tool/package_config.json", b"dart state")
-                self._write(
-                    "flutter/.dart_tool/flutter_build/" + "a" * 64 + "/generated.dill",
-                    b"compiler state",
-                )
-                self._write(
-                    "flutter/android/.gradle/caches/cache.bin",
-                    b"gradle state",
-                )
-                self._write(
-                    "flutter/build/qualification/argus-qualification.apk",
-                    b"retained artifact",
-                )
-                environment = self.repository.isolated_environment()
-                environment.pop("PYTHONDONTWRITEBYTECODE", None)
-                environment.pop("PYTHONPYCACHEPREFIX", None)
-                before = _hash_tree(self.repository.root)
-                result = subprocess.run(
-                    [
-                        "just",
-                        "--justfile",
-                        str(self.repository.root / "justfile"),
-                        "--working-directory",
-                        str(self.repository.root),
-                        recipe,
-                    ],
-                    cwd=self.repository.root,
-                    env=environment,
-                    capture_output=True,
-                    text=True,
-                    timeout=20,
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
-                report = json.loads(result.stdout)
-                self.assertEqual(report["mode"], "preview-deep")
-                self.assertTrue(report["deep"])
-                selected = {
-                    item["path"]
-                    for category in report["categories"]
-                    for item in category["paths"]
-                    if item["action"] == "selected"
-                }
-                self.assertIn("flutter/.dart_tool/flutter_build", selected)
-                self.assertNotIn("flutter/.dart_tool", selected)
-                self.assertIn("flutter/android/.gradle", selected)
-                after = _hash_tree(self.repository.root)
-                self.assertEqual(after, before)
-                self.assertFalse(
-                    any("__pycache__" in path for path in after),
-                    after,
-                )
-
-    def test_cleanup_never_invokes_build_toolchains(self) -> None:
-        self._write("rust/target/debug/output.rlib", b"candidate")
-        marker = self.repository.root / "toolchain-invoked"
-        bin_directory = self.repository.root / "fixture bin"
-        bin_directory.mkdir()
-        for name in ("cargo", "flutter", "fvm", "gradle", "java"):
-            tool = bin_directory / name
-            tool.write_text(
-                f"#!/bin/sh\nprintf '%s' {name} >> {shlex.quote(str(marker))}\nexit 97\n",
-                encoding="utf-8",
-            )
-            tool.chmod(0o755)
-
-        result = self.repository.run_just(
-            "clean-preview",
-            environment={"PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}"},
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(marker.exists())
-
-    def test_preview_does_not_double_count_hard_links(self) -> None:
-        first = self._write("rust/target/debug/first.rlib", b"same inode")
-        second = self.repository.root / "rust/target/debug/second.rlib"
-        os.link(first, second)
-
-        result = self.repository.run_just("clean-preview")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads(result.stdout)
-        self.assertEqual(report["estimated_bytes"], len(b"same inode"))
-
-    def test_preview_does_not_double_count_hard_linked_symlinks(self) -> None:
-        target = self._write("rust/target/debug/target.rlib", b"target")
-        first = self.repository.root / "rust/target/debug/first-link.rlib"
-        first.symlink_to(target.name)
-        second = self.repository.root / "rust/target/debug/second-link.rlib"
-        os.link(first, second, follow_symlinks=False)
-
-        result = self.repository.run_just("clean-preview")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        report = json.loads(result.stdout)
-        expected = len(b"target") + len(os.readlink(first))
-        self.assertEqual(report["estimated_bytes"], expected)
-
+@unittest.skipIf(
+    os.name == "nt",
+    "Repository command contract tests use POSIX shell recipes.",
+)
 class ProductionRepositoryContractTests(unittest.TestCase):
-    def test_production_justfile_exposes_and_composes_cleanup_recipes(self) -> None:
-        text = (REPOSITORY_ROOT / "justfile").read_text(encoding="utf-8")
+    def test_justfile_exposes_cleanup_commands_and_deep_preview_alias(self) -> None:
+        justfile = (REPOSITORY_ROOT / "justfile").read_text(encoding="utf-8")
 
         for recipe in (
-            "clean-preview:",
-            "clean-deep-preview:",
-            "clean-preview-deep:",
-            "clean:",
-            "clean-deep:",
-            "test-cleanup:",
+            "clean-preview",
+            "clean",
+            "clean-deep-preview",
+            "clean-deep",
+            "test-cleanup",
+            "clean-preview-deep",
         ):
             with self.subTest(recipe=recipe):
-                self.assertIn(recipe, text)
-        self.assertIn("just test-cleanup", text)
-        self.assertNotIn("_run-shared", text)
-        self.assertNotIn("run-shared", text)
-        self.assertNotIn("run-exclusive", text)
+                self.assertRegex(justfile, rf"(?m)^{recipe}:")
 
-    def test_existing_ci_jobs_run_the_focused_cleanup_recipe_on_all_platforms(
-        self,
-    ) -> None:
-        text = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    def test_readme_documents_directory_ownership_and_boundaries(self) -> None:
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8").casefold()
 
-        self.assertGreaterEqual(text.count("run: just test-cleanup"), 2)
-        native_desktop = text.split("native-desktop:", 1)[1].split("provider-windows:", 1)[0]
-        self.assertIn("extractions/setup-just@v4", native_desktop)
-        self.assertIn("run: just test-cleanup", native_desktop)
-
-    def test_readme_and_test_convention_document_cleanup_contract(self) -> None:
-        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
-        convention = (
-            REPOSITORY_ROOT
-            / "docs/conventions/conv-test-001-test-pyramid-fixtures-and-verification-commands.md"
-        ).read_text(encoding="utf-8")
-        helper = (REPOSITORY_ROOT / "scripts" / "just_cleanup.py").read_text(
-            encoding="utf-8"
-        )
-
-        for text in (readme, convention):
-            normalized = text.lower()
-            self.assertIn("clean-preview", normalized)
-            self.assertIn("clean-deep", normalized)
-            self.assertIn("idle checkout", normalized)
-            self.assertIn("windows", normalized)
-
-        normalized_convention = convention.lower()
-        for retired_contract in (
-            "worktree leases",
-            "in-process supervisor",
-            "inherited socket",
-            "lockfileex",
-            "exclusive lease",
+        for phrase in (
+            "entire approved directory",
+            "idle checkout",
+            "scripts/**/__pycache__",
+            "different-device",
+            "same-device bind mounts",
         ):
-            with self.subTest(retired_contract=retired_contract):
-                self.assertNotIn(retired_contract, normalized_convention)
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, readme)
 
-        normalized_helper = helper.lower()
-        for retired_mechanism in (
-            "cleanup lease",
-            "worktree lease",
-            "supervisor",
-            "socket authentication",
-            "inherited descriptor",
-            "process polling",
-            "process monitoring",
-        ):
-            with self.subTest(retired_mechanism=retired_mechanism):
-                self.assertNotIn(retired_mechanism, normalized_helper)
+
 if __name__ == "__main__":
     unittest.main()

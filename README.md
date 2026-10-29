@@ -58,20 +58,23 @@ just test
 
 ## Generated output cleanup
 
-The cleanup commands inspect only the physical Git worktree containing the
-invoked Justfile. They are offline and do not build, install tools, fetch
-dependencies, or call platform toolchains. Preview first:
+Cleanup targets a fixed inventory of repository-owned generated directories.
+Preview is read-only and uses the same admission policy as apply:
 
 ```bash
 just clean-preview
+just clean
 just clean-deep-preview
+just clean-deep
 ```
 
-Apply the same selection policy with `just clean` or `just clean-deep`.
 `just clean-preview-deep` remains a compatibility alias for
-`just clean-deep-preview`.
+`just clean-deep-preview`. The commands are offline and do not invoke
+Cargo, Gradle, Xcode, Flutter, Python build tools, or package managers.
 
-Routine cleanup selects these untracked, producer-owned output roots:
+### Approved directory ownership
+
+Routine cleanup removes these complete roots:
 
 1. `rust/target`
 2. `flutter/build/app/intermediates`
@@ -79,48 +82,74 @@ Routine cleanup selects these untracked, producer-owned output roots:
 4. `flutter/build/app/tmp`
 5. `flutter/build/app/.cxx`
 6. `flutter/build/macos/Build/Intermediates.noindex`
-7. Eligible `scripts/**/__pycache__` bytecode directories
+7. Every `scripts/**/__pycache__` directory found by walking the `scripts`
+   tree without following symbolic links
 
-Deep cleanup also selects `flutter/.dart_tool/flutter_build`,
-`flutter/android/.gradle`, and `flutter/android/.kotlin`. These are
-project-local generated caches. Removing them can force Dart or Kotlin
-regeneration and longer platform builds. Package configuration, generator
-projects, cargo-ndk state elsewhere beneath `.dart_tool`, the FVM SDK, and
-global package caches are retained.
+Deep cleanup additionally removes these complete roots:
 
-Cleanup uses explicit positive allowlists and retains tracked content plus
-unknown or unclassified entries. It also retains nested `.chatgpt/`, `.codex/`,
-and `.superpowers/` state; archives and qualification records; environment and
-machine-local files; credentials, databases, ROMs, and signing material;
-distributable packages and APKs; generated Dart source; test fixtures; root
-`build/`; `flutter/.fvm/`; Android IDE/build outputs;
-`flutter/build/native-jni/`; and `flutter/build/qualification/`. Candidate
-directories, generic data files, and individual files must match reviewed
-producer layouts and signatures. A `CARGO_TARGET_DIR` redirect makes
+1. `flutter/.dart_tool/flutter_build`
+2. `flutter/android/.gradle`
+3. `flutter/android/.kotlin`
+
+No other directory is approved for cleanup. An admitted root is an ownership
+boundary: cleanup removes the entire approved directory, including unknown
+names, extensionless files, dot files, lock files, fingerprint state, native
+and cross-compilation output, and files whose names resemble credentials,
+APKs, ROMs, or other durable artifacts. Internal filenames and producer
+signatures do not change eligibility.
+
+Do not place durable files anywhere inside an approved cleanup root. Move
+evidence, packages, source, configuration, and other retained data outside
+those directories before running cleanup. Cleanup never removes an approved
+root's parent directory. Similar paths and every path outside the approved
+roots remain protected.
+
+The preview and apply reports identify durable locations outside cleanup
+roots that are intentionally retained, including review evidence,
+qualification records, `flutter/lib`, the FVM SDK, Android application
+outputs, and distribution artifacts.
+
+### Safety checks and limits
+
+Before admitting a candidate, cleanup verifies that it is in the physical Git
+worktree containing the invoked helper and that Git context was not redirected
+through ambient repository environment variables. The candidate path must
+match an approved root exactly. The helper rejects a symbolic-link root or
+symbolic-link ancestor, tracked content beneath the root, nested Git
+repositories and worktrees, and a root that the repository ignore policy does
+not classify as generated.
+
+A symbolic link inside an admitted tree is unlinked as a symbolic link; its
+target is never followed. Unsupported filesystem objects fail the candidate
+instead of being traversed or removed. A `CARGO_TARGET_DIR` redirect makes
 `rust/target` ineligible.
 
-The physical worktree root is resolved before Git confirmation. Candidate
-roots and their static parent components cannot be symbolic links, and
-candidates cannot cross a filesystem boundary or contain nested Git state.
-An intermediate candidate parent containing `.git` is refused even when it is
-a nested repository or another linked worktree. Tracked files and protected
-names are never removed.
+Cleanup compares the `st_dev` filesystem device identity of the candidate and
+each descendant. Different-device boundaries are detected and reject the
+entire candidate.
+Same-device bind mounts cannot be distinguished by these checks and are not
+claimed to be detected.
 
-Preview reports each selected or skipped path, its category, the policy
-reason, and an estimated logical byte count. The estimate excludes directory
-metadata and filesystem allocation, and hard-linked entries count once. Apply
-reports `verified_reclaimed_bytes` from entries that are gone after successful
-file or symbolic-link deletion. Python bytecode writes are disabled before the
-cleanup policy is imported, including for direct helper invocation.
+A safety failure rejects the complete candidate before deletion, so none of
+its content is removed. Other candidates may still succeed, and apply reports
+that result as partial rather than implying a transaction.
 
-Run cleanup only on an idle checkout. Do not run a build, test,
-generator, IDE operation, package manager, or another cleanup command at the
-same time. Cleanup does not detect or coordinate with other processes.
-Ordinary permission or recursive deletion failures return a nonzero status,
-retain the content that remains, and produce a failed or partial report so a
-later cleanup can retry it. Inaccessible Python cache trees are reported rather
-than silently skipped; preview fails and apply returns a failed or partial
-status.
+### Reporting and idle operation
+
+Preview reports selected roots, rejected roots with policy reasons, categories,
+logical estimated bytes, snapshot reliability, and operational warnings. Apply
+revalidates the safety policy and reports each outcome plus
+`verified_reclaimed_bytes` for entries no longer present.
+
+Byte counts are logical file and symbolic-link sizes, not allocated filesystem
+space. Hard-linked entries are counted once by device and inode. Directory
+metadata is excluded. A recursive deletion or permission failure produces a
+nonzero apply result and a failed or partial report so a later run can retry.
+
+Run cleanup only in an idle checkout. Do not run a build, test, generator, IDE
+operation, package manager, or another cleanup command at the same time.
+Cleanup does not detect or coordinate with active processes, so it assumes
+that no process is writing beneath the approved roots.
 
 ## Android qualification entrypoints
 

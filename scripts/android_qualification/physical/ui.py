@@ -19,7 +19,9 @@ import time
 import xml.etree.ElementTree as ET
 
 PACKAGE = "com.argusromtoolkit.argus"
+QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
 DEVICE_ROOT = "/sdcard/ArgusQualification"
+FIXTURE_ROOT = DEVICE_ROOT + "/fixtures"
 UI_XML = DEVICE_ROOT + "/ui.xml"
 COMPONENT = PACKAGE + "/.MainActivity"
 
@@ -31,15 +33,28 @@ _LABELS = {
     "Decline and exit": "decline_exit",
     "Use current preferences": "preferences",
     "Skip SteamGridDB": "skip_provider",
+    "Add Library Folder": "add_root",
     "Add a Library folder": "add_root",
+    "Add Library Folder?": "confirm_root",
     "Add Library root?": "confirm_root",
     "Add folder": "commit_root",
+    "Add & Scan": "add_and_scan",
+    "Scanning in progress": "scan_admission_active",
+    "Folder added, but the scan could not start. You can scan it from the folder details.": "scan_admission_failed",
+    "Scan not confirmed": "scan_admission_uncertain",
+    "View Job": "view_job",
+    "Library Scan": "library_scan",
+    "Loading job details": "job_details_loading",
     "Choose a storage volume": "volumes",
     "Select this folder": "select_folder",
     "ArgusQualification": "owned_folder",
+    "fixtures": "owned_fixture_folder",
     DEVICE_ROOT: "owned_path",
+    FIXTURE_ROOT: "owned_path",
     "/storage/emulated/0/ArgusQualification": "owned_path",
+    "/storage/emulated/0/ArgusQualification/fixtures": "owned_path",
     "/storage/self/primary/ArgusQualification": "owned_path",
+    "/storage/self/primary/ArgusQualification/fixtures": "owned_path",
     "/storage/emulated/0": "storage_root",
     "/storage/self/primary": "storage_root",
     "/sdcard": "storage_root",
@@ -71,11 +86,24 @@ _LABELS = {
 
 _ACTION_KEYS = {
     "accept_terms", "decline_exit", "preferences", "skip_provider", "add_root",
-    "commit_root", "select_folder", "owned_folder", "storage_root",
+    "commit_root", "add_and_scan", "view_job", "select_folder", "owned_folder",
+    "owned_fixture_folder", "storage_root",
     "library_navigation", "settings_navigation", "jobs_navigation", "search",
     "refresh", "grid", "list", "ascending", "descending", "game_action",
     "credential_field",
 }
+
+_JOB_LIFECYCLE = (
+    "Queued", "Preparing", "Running", "Completed", "Completed with issues",
+    "Failed", "Cancelled", "Interrupted", "Abandoned",
+)
+_SCAN_LIFECYCLE = ("Scanning", "Complete", "Partial", "Failed", "Cancelled", "Abandoned")
+_ROOT_SCAN_LIFECYCLE = ("complete", "partial", "unavailable", "cancelled", "failed", "abandoned")
+_TERMINAL_JOB_STATUSES = frozenset({
+    "completed", "completed_with_issues", "failed", "cancelled", "interrupted", "abandoned",
+})
+_ACTIVE_JOB_STATUSES = frozenset({"queued", "preparing", "running"})
+_TERMINAL_SCAN_STATUSES = frozenset({"complete", "partial", "failed", "cancelled", "abandoned"})
 
 
 class UIBlocked(Exception):
@@ -106,13 +134,78 @@ class Node:
     selected: bool
 
 
-def parse_ui(xml: str) -> list[Node]:
+@dataclass(frozen=True)
+class LibraryExpectation:
+    """One independently supplied display identity expected in the Library.
+
+    The parser uses the title and platform only in memory and emits a numbered
+    token. This value does not establish that the expectation is owner-validated.
+    """
+
+    fixture_id: str
+    display_title: str
+    platform_label: str
+
+
+@dataclass(frozen=True)
+class ScanAdmissionObservation:
+    """Independent root-detail evidence that a scan was admitted or failed."""
+
+    status: str
+    view_job_actionable: bool
+
+
+@dataclass(frozen=True)
+class ScanJobObservation:
+    """One parent lifecycle and child status from one unique Library Scan route.
+
+    The production detail surface does not render run identifiers. The caller
+    binds this pair to the one-use scan by requiring a successful admission
+    observation, one unique View Job action, and one unique Library Scan detail
+    header before accepting the pair.
+    """
+
+    job_status: str
+    scan_status: str
+
+
+def _fixture_tokens(expectations: tuple[LibraryExpectation, ...]) -> dict[str, str]:
+    """Map exact expected Library labels to safe, ordered result tokens."""
+    labels: dict[str, str] = {}
+    ids: set[str] = set()
+    for index, expectation in enumerate(expectations):
+        if (not isinstance(expectation, LibraryExpectation)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", expectation.fixture_id)
+                or expectation.fixture_id in ids
+                or not isinstance(expectation.display_title, str)
+                or not 1 <= len(expectation.display_title) <= 256
+                or not isinstance(expectation.platform_label, str)
+                or not 1 <= len(expectation.platform_label) <= 96
+                or any(ord(char) < 0x20 or ord(char) == 0x7f
+                       for char in expectation.display_title + expectation.platform_label)):
+            raise UIBlocked("Fixture Library expectations are invalid or ambiguous.")
+        ids.add(expectation.fixture_id)
+        label = f"{expectation.display_title}, {expectation.platform_label}"
+        if label in labels:
+            raise UIBlocked("Fixture Library expectations are invalid or ambiguous.")
+        labels[label] = f"fixture_result_{index:03d}"
+    return labels
+
+
+def parse_ui(
+    xml: str,
+    *,
+    expected_package: str = PACKAGE,
+    library_expectations: tuple[LibraryExpectation, ...] = (),
+) -> list[Node]:
     """Parse bounded XML in memory and discard all non-allowlisted labels.
 
     Reject malformed bounds on recognized nodes, foreign app surfaces, and XML
     entity declarations. System status/navigation nodes are ignored. Exact
     newline-separated labels accommodate Flutter's merged accessibility nodes.
     """
+    if expected_package not in (PACKAGE, QUALIFICATION_PACKAGE):
+        raise UIBlocked("The requested application package is not an approved qualification target.")
     if (not isinstance(xml, str) or len(xml) > 2 * 1024 * 1024
             or "<!DOCTYPE" in xml.upper() or "<!ENTITY" in xml.upper()):
         raise UIBlocked("Accessibility capture is invalid or exceeds its bound.")
@@ -122,6 +215,21 @@ def parse_ui(xml: str) -> list[Node]:
         raise UIBlocked("Accessibility XML could not be parsed.") from None
     if root.tag != "hierarchy":
         raise UIBlocked("Accessibility hierarchy is missing.")
+    fixture_tokens = _fixture_tokens(tuple(library_expectations))
+    labels = dict(_LABELS)
+    labels.update(fixture_tokens)
+    labels.update({
+        f"Job status: {status}": "job_status_" + status.lower().replace(" ", "_")
+        for status in _JOB_LIFECYCLE
+    })
+    labels.update({
+        f"Last scan: {status}": f"root_scan_status_{status}"
+        for status in _ROOT_SCAN_LIFECYCLE
+    })
+    # Child scan status labels are rendered inside the Library Scan detail.
+    # The additional exact title is required by observe_scan_job_detail().
+    labels.update({status: "scan_status_" + status.lower()
+                   for status in _SCAN_LIFECYCLE})
     elements = []
     for index, element in enumerate(root.iter("node")):
         if index >= 10000:
@@ -129,13 +237,13 @@ def parse_ui(xml: str) -> list[Node]:
         package = element.get("package", "")
         if package == "com.android.systemui":
             continue
-        if package != PACKAGE:
+        if package != expected_package:
             raise UIBlocked("A foreign or unidentified UI surface prevents selection.")
         if element.get("visible-to-user", "true") == "false":
             continue
-        keys = {_LABELS[line] for attribute in ("text", "content-desc")
+        keys = {labels[line] for attribute in ("text", "content-desc")
                 for line in element.get(attribute, "").splitlines()
-                if line in _LABELS}
+                if line in labels}
         if element.get("scrollable") == "true":
             keys.add("scroll_surface")
         elements.append((element, keys))
@@ -174,6 +282,147 @@ def select_unique(nodes: list[Node], key: str, *, actionable=False) -> Node:
     if actionable and (not node.enabled or not node.clickable):
         raise UIBlocked("Required accessibility target is not actionable.")
     return node
+
+
+def observe_scan_admission(nodes: list[Node]) -> ScanAdmissionObservation:
+    """Require independent root-detail evidence that Add & Scan admitted a job.
+
+    A configured Library root or a populated Library screen does not prove scan
+    admission. The root detail must expose both active scanning and its unique
+    View Job control.
+    """
+    if any(node.key == "product_failure" for node in nodes):
+        raise UIFailed("The Release UI reports a product operation failure.")
+    if any(node.key == "scan_admission_failed" for node in nodes):
+        return ScanAdmissionObservation("not_admitted", False)
+    if any(node.key == "scan_admission_uncertain" for node in nodes):
+        raise UIBlocked("The Release UI could not confirm whether Add & Scan admitted a job.")
+    active = any(node.key == "scan_admission_active" for node in nodes)
+    root_status = [node.key.removeprefix("root_scan_status_") for node in nodes
+                   if node.key.startswith("root_scan_status_")]
+    if len(root_status) > 1:
+        raise UIBlocked("The root detail exposes ambiguous scan admission status.")
+    if root_status == ["unavailable"]:
+        return ScanAdmissionObservation("not_admitted", False)
+    if not active and not root_status:
+        raise UIBlocked("The root detail does not expose an admitted or completed scan status.")
+    view_job = select_unique(nodes, "view_job", actionable=True)
+    return ScanAdmissionObservation("admitted", view_job.clickable and view_job.enabled)
+
+
+def observe_scan_job_detail(nodes: list[Node]) -> ScanJobObservation:
+    """Read one coherent parent/child pair, or the exact loading state.
+
+    Only the production JobDetailPage loading label is retryable. Missing,
+    duplicate, or contradictory observations stop immediately so an unrelated
+    screen or stale parent/child pair cannot be mistaken for progress.
+    """
+    if any(node.key == "product_failure" for node in nodes):
+        raise UIFailed("The Release UI reports a product operation failure.")
+    loading = [node for node in nodes if node.key == "job_details_loading"]
+    if loading:
+        if len(loading) != 1 or len(nodes) != 1:
+            raise UIBlocked("The job detail loading state conflicts with other status evidence.")
+        return ScanJobObservation("loading", "loading")
+    select_unique(nodes, "library_scan")
+    job_keys = [node.key.removeprefix("job_status_") for node in nodes
+                if node.key.startswith("job_status_")]
+    scan_keys = [node.key.removeprefix("scan_status_") for node in nodes
+                 if node.key.startswith("scan_status_")]
+    if len(job_keys) != 1 or len(scan_keys) != 1:
+        raise UIBlocked("The Library Scan page does not expose one unambiguous job and scan status.")
+    observation = ScanJobObservation(job_keys[0], scan_keys[0])
+    active_pair = (
+        observation.job_status in _ACTIVE_JOB_STATUSES
+        and observation.scan_status == "scanning"
+    )
+    terminal_pair = (
+        observation.job_status in _TERMINAL_JOB_STATUSES
+        and observation.scan_status in _TERMINAL_SCAN_STATUSES
+    )
+    if not (active_pair or terminal_pair):
+        raise UIBlocked("The parent job and child scan expose conflicting lifecycle states.")
+    return observation
+
+
+def observe_job_lifecycle(nodes: list[Node]) -> str:
+    """Read only the parent job lifecycle from a Library Scan detail page."""
+    if any(node.key == "product_failure" for node in nodes):
+        raise UIFailed("The Release UI reports a product operation failure.")
+    select_unique(nodes, "library_scan")
+    statuses = [node.key.removeprefix("job_status_") for node in nodes
+                if node.key.startswith("job_status_")]
+    if len(statuses) != 1:
+        raise UIBlocked("The Library Scan page does not expose one unambiguous job status.")
+    return statuses[0]
+
+
+def observe_terminal_scan_status(nodes: list[Node]) -> str:
+    """Read the child scan's terminal outcome independently of job lifecycle."""
+    if any(node.key == "product_failure" for node in nodes):
+        raise UIFailed("The Release UI reports a product operation failure.")
+    select_unique(nodes, "library_scan")
+    statuses = [node.key.removeprefix("scan_status_") for node in nodes
+                if node.key.startswith("scan_status_")]
+    if len(statuses) != 1:
+        raise UIBlocked("The Library Scan page does not expose one unambiguous scan outcome.")
+    if statuses[0] not in _TERMINAL_SCAN_STATUSES:
+        raise UIBlocked("The Library scan has no observed terminal outcome.")
+    return statuses[0]
+
+
+def require_terminal_scan_outcome(observation: ScanJobObservation) -> None:
+    """Reject active or mismatched parent/child states as non-terminal."""
+    if observation.job_status not in _TERMINAL_JOB_STATUSES:
+        raise UIBlocked("The Library Scan job has no observed terminal lifecycle outcome.")
+    if observation.scan_status not in _TERMINAL_SCAN_STATUSES:
+        raise UIBlocked("The Library Scan child has no observed terminal outcome.")
+    if observation.job_status == "completed" and observation.scan_status != "complete":
+        raise UIFailed("The parent job and Library scan terminal outcomes disagree.")
+
+
+def observe_fixture_library_results(
+    nodes: list[Node],
+    expectations: tuple[LibraryExpectation, ...],
+) -> tuple[int, ...]:
+    """Return indexes whose exact expected title/platform semantics are visible."""
+    if not expectations:
+        raise UIBlocked("Independent fixture expectations are unavailable.")
+    if any(node.key == "product_failure" for node in nodes):
+        raise UIFailed("The Release UI reports a product operation failure.")
+    tokens = tuple(f"fixture_result_{index:03d}" for index in range(len(expectations)))
+    observed = []
+    for index, token in enumerate(tokens):
+        matches = [node for node in nodes if node.key == token]
+        if len(matches) > 1:
+            raise UIBlocked("Fixture-specific Library results are ambiguous.")
+        if matches:
+            observed.append(index)
+    return tuple(observed)
+
+
+def navigation_control(nodes: list[Node], action: str) -> Node:
+    """Resolve one owner-authorized first-session UI action to a unique control."""
+    control_keys = {
+        "accept_terms": "accept_terms",
+        "preferences": "preferences",
+        "skip_provider": "skip_provider",
+        "add_root": "add_root",
+        "storage_root": "storage_root",
+        "open_qualification_root": "owned_folder",
+        "open_fixture_root": "owned_fixture_folder",
+        "select_folder": "select_folder",
+        "add_and_scan": "add_and_scan",
+        "view_job": "view_job",
+        "library_navigation": "library_navigation",
+    }
+    key = control_keys.get(action)
+    if key is None:
+        raise UIBlocked("The navigation action is outside the first Add & Scan allowlist.")
+    if action == "add_and_scan":
+        select_unique(nodes, "confirm_root")
+        select_unique(nodes, "owned_path")
+    return select_unique(nodes, key, actionable=True)
 
 
 class UIDriver:

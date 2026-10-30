@@ -24,6 +24,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Iterator, NoReturn, Protocol
 
+from . import evidence
 from .manifest import (
     ApprovalError,
     ApprovalErrorCode,
@@ -689,6 +690,7 @@ class AdmissionCode(str, Enum):
     DEVICE_SAFETY_STATE_UNAVAILABLE = "DEVICE_SAFETY_STATE_UNAVAILABLE"
     APPROVAL_INVALID = "OWNER_APPROVAL_INVALID"
     SESSION_EXPIRED = "SESSION_EXPIRED"
+    ADD_SCAN_PLAN_INVALID = "ADD_SCAN_OPERATION_PLAN_INVALID"
     NO_RESET_OBSERVATION_UNAVAILABLE = "NO_RESET_BASELINE_OBSERVER_UNAVAILABLE"
     ARTIFACT_MISMATCH = "HOST_ARTIFACT_MISMATCH"
     OBSERVATION_UNAVAILABLE = "DEVICE_OBSERVATION_UNAVAILABLE"
@@ -750,6 +752,7 @@ class HostArtifactFacts:
     certificate_sha256: str | None
     source_revision: str | None
     declared_permissions: frozenset[str]
+    source_dirty: bool | None = None
 
 
 def host_artifact_facts(apk_facts: object) -> HostArtifactFacts:
@@ -767,6 +770,7 @@ def host_artifact_facts(apk_facts: object) -> HostArtifactFacts:
             certificate_sha256=signatures.certificate_sha256,
             source_revision=source_revision,
             declared_permissions=frozenset(apk_facts.manifest.permissions),
+            source_dirty=(record_source.get("dirty") if isinstance(record_source, dict) else None),
         )
     except (AttributeError, TypeError, ValueError):
         return HostArtifactFacts(None, None, None, False, 0, None, None, frozenset())
@@ -786,6 +790,7 @@ class InstallationObservation:
     package_name: str | None = None
     version_code: int | None = None
     certificate_sha256: str | None = None
+    artifact_sha256: str | None = None
 
     @classmethod
     def absent(cls) -> InstallationObservation:
@@ -1251,6 +1256,21 @@ _ADMITTED_SESSION_BINDINGS: weakref.WeakKeyDictionary[
 _ADMITTED_SESSION_BINDINGS_LOCK = threading.Lock()
 
 
+@dataclass(frozen=True)
+class _FirstAddScanAdmissionBinding:
+    """Prove that a session came through the one fresh Add & Scan admission."""
+
+    artifact: HostArtifactFacts
+    plan_sha256: str
+
+
+_FIRST_ADD_SCAN_BINDINGS: weakref.WeakKeyDictionary[
+    AdmittedSession, _FirstAddScanAdmissionBinding
+] = weakref.WeakKeyDictionary()
+_FIRST_ADD_SCAN_CLAIMS: weakref.WeakSet[AdmittedSession] = weakref.WeakSet()
+_FIRST_ADD_SCAN_BINDINGS_LOCK = threading.Lock()
+
+
 def _session_binding_matches(
     session: AdmittedSession,
     binding: _AdmittedSessionBinding,
@@ -1328,6 +1348,59 @@ def _register_admitted_session(session: AdmittedSession) -> bool:
         if session in _ADMITTED_SESSION_BINDINGS:
             return False
         _ADMITTED_SESSION_BINDINGS[session] = binding
+    return True
+
+
+def _register_first_add_scan_session(
+    session: AdmittedSession,
+    artifact: HostArtifactFacts,
+) -> bool:
+    """Bind host-inspected artifact facts to one first-scan admission."""
+    if (
+        _admitted_session_binding(session) is None
+        or not _validate_host_artifact(session.authorization, artifact)
+        or _first_add_scan_plan(session.authorization) is None
+            or artifact.source_dirty is not False
+    ):
+        return False
+    binding = _FirstAddScanAdmissionBinding(
+        artifact=artifact,
+        plan_sha256=session.authorization.plan_sha256,
+    )
+    with _FIRST_ADD_SCAN_BINDINGS_LOCK:
+        if session in _FIRST_ADD_SCAN_BINDINGS or session in _FIRST_ADD_SCAN_CLAIMS:
+            return False
+        _FIRST_ADD_SCAN_BINDINGS[session] = binding
+    return True
+
+
+def _first_add_scan_admission_binding(
+    session: object,
+) -> _FirstAddScanAdmissionBinding | None:
+    """Return the one-use Add & Scan binding for an intact admitted session."""
+    if type(session) is not AdmittedSession or _admitted_session_binding(session) is None:
+        return None
+    with _FIRST_ADD_SCAN_BINDINGS_LOCK:
+        binding = _FIRST_ADD_SCAN_BINDINGS.get(session)
+    if (
+        binding is None
+        or binding.plan_sha256 != session.authorization.plan_sha256
+        or not _validate_host_artifact(session.authorization, binding.artifact)
+        or binding.artifact.source_dirty is not False
+        or _first_add_scan_plan(session.authorization) is None
+    ):
+        return None
+    return binding
+
+
+def _claim_first_add_scan_execution(session: AdmittedSession) -> bool:
+    """Consume the in-memory executor capability before its first operation."""
+    if _first_add_scan_admission_binding(session) is None:
+        return False
+    with _FIRST_ADD_SCAN_BINDINGS_LOCK:
+        if session not in _FIRST_ADD_SCAN_BINDINGS or session in _FIRST_ADD_SCAN_CLAIMS:
+            return False
+        _FIRST_ADD_SCAN_CLAIMS.add(session)
     return True
 
 
@@ -1649,6 +1722,235 @@ def admit_session(
         return _result(code)
     session = AdmittedSession(authorization, approval)
     if not _register_admitted_session(session):
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    return _result(AdmissionCode.ADMITTED, session)
+
+
+def _first_add_scan_plan(
+    authorization: SessionAuthorization,
+) -> tuple[OperationAuthorization, ...] | None:
+    """Validate the exact closed operation sequence for the first fresh scan."""
+    if (
+        authorization.state_mode is not SessionStateMode.FRESH
+        or authorization.application_package != QUALIFICATION_PACKAGE
+        or not authorization.operations
+    ):
+        return None
+    operations = authorization.operations
+    if any(
+        operation.category in {
+            OperationCategory.PERMISSION_APP_OP,
+            OperationCategory.PERMISSION_APP_OP_RESTORE,
+            OperationCategory.REINSTALL,
+            OperationCategory.FORCE_STOP,
+            OperationCategory.REFRESH,
+            OperationCategory.SHELL,
+            OperationCategory.PATH_MUTATION,
+        }
+        for operation in operations
+    ):
+        return None
+    if len(operations) != 19:
+        return None
+    install_or_reset = operations[0]
+    if install_or_reset.category not in {
+        OperationCategory.INSTALL_ABSENT,
+        OperationCategory.RESET_DATA,
+    }:
+        return None
+    expected = [
+        (OperationCategory.FIXTURE_STAGING, "stage_approved_fixture_set", "qualification", "action"),
+        (OperationCategory.LAUNCH, "launch_qualification_main", "qualification", "action"),
+    ]
+    expected.extend(
+        (OperationCategory.NAVIGATION, action, "qualification", "action")
+        for action in (
+            "accept_terms", "preferences", "skip_provider", "add_root", "storage_root",
+            "open_qualification_root", "open_fixture_root", "select_folder", "add_and_scan",
+        )
+    )
+    expected.extend((
+        (OperationCategory.READ_ONLY, "scan_admission", "qualification", "observation"),
+        (OperationCategory.NAVIGATION, "view_job", "qualification", "action"),
+        (OperationCategory.READ_ONLY, "job_status", "qualification", "observation"),
+        (OperationCategory.READ_ONLY, "terminal_scan", "qualification", "observation"),
+        (OperationCategory.NAVIGATION, "library_navigation", "qualification", "action"),
+        (OperationCategory.READ_ONLY, "fixture_library", "qualification", "observation"),
+        (OperationCategory.FIXTURE_STAGING, "remove_session_owned_fixture_set", "cleanup", "action"),
+    ))
+    for operation, (category, value, phase, argument_name) in zip(
+        operations[1:], expected, strict=True
+    ):
+        arguments = dict(operation.arguments)
+        if (
+            operation.category is not category
+            or operation.phase != phase
+            or arguments.get(argument_name) != value
+        ):
+            return None
+    first_arguments = dict(install_or_reset.arguments)
+    if install_or_reset.category is OperationCategory.INSTALL_ABSENT:
+        if (
+            install_or_reset.phase != "admission"
+            or first_arguments.get("action") != "install_qualification_apk"
+            or first_arguments.get("artifact_sha256") != authorization.apk_sha256
+        ):
+            return None
+        foreground_after_setup = first_arguments.get("expected_foreground_package")
+    elif (
+        install_or_reset.phase != "admission"
+        or first_arguments.get("action") != "clear_qualification_data"
+        or first_arguments.get("expected_foreground_package") != QUALIFICATION_PACKAGE
+    ):
+        return None
+    else:
+        foreground_after_setup = first_arguments.get("expected_foreground_after")
+    if (
+        not foreground_after_setup
+        or dict(operations[1].arguments).get("expected_foreground_package")
+        != foreground_after_setup
+        or dict(operations[2].arguments).get("expected_foreground_package")
+        != foreground_after_setup
+        or dict(operations[-1].arguments).get("expected_foreground_package")
+        != QUALIFICATION_PACKAGE
+    ):
+        return None
+    return operations
+
+
+def _check_first_add_scan_observation(
+    authorization: SessionAuthorization,
+    observation: FreshAdmissionObservation,
+    operations: tuple[OperationAuthorization, ...],
+) -> AdmissionCode:
+    """Accept only absent-plus-install or compatible-plus-reset observations."""
+    code = _check_observation(authorization, observation)
+    installation = observation.installation
+    first = operations[0]
+    if code is AdmissionCode.QUALIFICATION_APP_ABSENT:
+        if (
+            type(installation) is not InstallationObservation
+            or installation.package_name is not None
+            or installation.version_code is not None
+            or installation.certificate_sha256 is not None
+            or installation.artifact_sha256 is not None
+        ):
+            return AdmissionCode.INSTALLATION_OBSERVATION_UNAVAILABLE
+        if first.category is not OperationCategory.INSTALL_ABSENT:
+            return AdmissionCode.ADD_SCAN_PLAN_INVALID
+        expected_foreground = dict(first.arguments).get("expected_foreground_package")
+        if observation.foreground_package is None:
+            return AdmissionCode.FOREGROUND_UNAVAILABLE
+        if observation.foreground_package != expected_foreground:
+            return AdmissionCode.FOREGROUND_MISMATCH
+        if observation.interference_free is None:
+            return AdmissionCode.INTERFERENCE_UNKNOWN
+        if observation.interference_free is not True:
+            return AdmissionCode.INTERFERENCE_DETECTED
+        if type(observation.available_storage_bytes) is not int:
+            return AdmissionCode.STORAGE_OBSERVATION_UNAVAILABLE
+        if observation.available_storage_bytes < authorization.storage_reserve_bytes:
+            return AdmissionCode.STORAGE_RESERVE_UNAVAILABLE
+        return AdmissionCode.ADMITTED
+    if code is AdmissionCode.ADMITTED:
+        if (
+            first.category is not OperationCategory.RESET_DATA
+            or type(installation) is not InstallationObservation
+            or installation.status is not InstallationStatus.PRESENT
+            or installation.artifact_sha256 != authorization.apk_sha256
+        ):
+            return (
+                AdmissionCode.QUALIFICATION_APP_INCOMPATIBLE
+                if first.category is OperationCategory.RESET_DATA
+                else AdmissionCode.ADD_SCAN_PLAN_INVALID
+            )
+        return AdmissionCode.ADMITTED
+    return code
+
+
+def admit_first_add_scan_session(
+    authorization: SessionAuthorization,
+    approval: OwnerApproval,
+    artifact: HostArtifactFacts,
+    transport: FreshAdmissionTransport,
+    *,
+    now: datetime | None = None,
+) -> AdmissionResult:
+    """Admit the first fresh Add & Scan plan for an absent or compatible app.
+
+    This private path adds only the one-use installation/reset choice needed by
+    the first scan. It shares the existing authorization loader, owner approval,
+    safety-state registry, target profile checks, and admitted-session binding.
+    Incompatible installations and no-reset requests remain blocked.
+    """
+    instant = now or datetime.now(timezone.utc)
+    if not _is_loaded_session_authorization(authorization):
+        return _result(AdmissionCode.APPROVAL_INVALID)
+    if (
+        not _now_is_utc(instant)
+        or instant >= authorization.session_deadline
+        or not _validate_approval(authorization, approval, instant)
+    ):
+        return _result(AdmissionCode.APPROVAL_INVALID)
+    operations = _first_add_scan_plan(authorization)
+    if operations is None:
+        return _result(AdmissionCode.ADD_SCAN_PLAN_INVALID)
+    if authorization.state_mode is SessionStateMode.NO_RESET:
+        return _result(AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE)
+    if not _validate_host_artifact(authorization, artifact) or artifact.source_dirty is not False:
+        return _result(AdmissionCode.ARTIFACT_MISMATCH)
+    session_seconds = sum(
+        operation.timeout_seconds for operation in operations
+        if operation.phase != "cleanup"
+    )
+    cleanup_seconds = sum(
+        operation.timeout_seconds for operation in operations
+        if operation.phase == "cleanup"
+    )
+    if (
+        instant + timedelta(seconds=session_seconds) > authorization.session_deadline
+        or instant + timedelta(seconds=session_seconds + cleanup_seconds)
+        > authorization.cleanup_deadline
+        or instant + timedelta(seconds=session_seconds + cleanup_seconds)
+        > approval.valid_until
+        or cleanup_seconds > authorization.cleanup_reserve_seconds
+    ):
+        return _result(AdmissionCode.ADD_SCAN_PLAN_INVALID)
+    try:
+        pending = pending_for_device(
+            authorization.target_serial,
+            path=_DEVICE_SAFETY_PATH,
+        )
+    except SafetyStateError:
+        return _result(AdmissionCode.DEVICE_SAFETY_STATE_UNAVAILABLE)
+    if pending is not None:
+        return _result(AdmissionCode.DEVICE_RESTORATION_PENDING)
+    claim = _claim_approval_once(
+        approval,
+        authorization.authorization_id,
+        authorization.canonical_sha256,
+    )
+    if claim is None:
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    if not claim:
+        return _result(AdmissionCode.SESSION_ALREADY_USED)
+    try:
+        observation = transport.observe_fresh_admission()
+    except (KeyboardInterrupt, Exception):
+        return _result(AdmissionCode.OBSERVATION_UNAVAILABLE)
+    if type(observation) is not FreshAdmissionObservation:
+        return _result(AdmissionCode.OBSERVATION_UNAVAILABLE)
+    code = _check_first_add_scan_observation(authorization, observation, operations)
+    if code is not AdmissionCode.ADMITTED:
+        return _result(code)
+    session = AdmittedSession(authorization, approval)
+    if not _register_admitted_session(session):
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    if not _register_first_add_scan_session(session, artifact):
+        _revoke_admitted_session(session)
+        with _FIRST_ADD_SCAN_BINDINGS_LOCK:
+            _FIRST_ADD_SCAN_BINDINGS.pop(session, None)
+            _FIRST_ADD_SCAN_CLAIMS.discard(session)
         return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
     return _result(AdmissionCode.ADMITTED, session)
 
@@ -2623,3 +2925,1271 @@ def recover_pending_restoration(
         OperationCode.PERMISSION_RESTORED,
         _OPERATION_MESSAGES[OperationCode.PERMISSION_RESTORED],
     )
+
+
+# The first-session Add & Scan adapter is intentionally private. It accepts an
+# injected typed transport for host simulation, but no public CLI or production
+# device transport constructs it.
+@dataclass(frozen=True)
+class FixtureTransferPlan:
+    """Opaque aggregate facts for the one approved fixture set."""
+
+    fixture_manifest_sha256: str
+    file_count: int
+    byte_count: int
+    content_sha256: str
+
+
+@dataclass(frozen=True)
+class FixtureStageReceipt:
+    """Receipt proving which session-owned fixture set was staged."""
+
+    session_id: str
+    fixture_manifest_sha256: str
+    file_count: int
+    byte_count: int
+    content_sha256: str
+
+
+QUALIFICATION_CAPTURE_SLOT = "qualification_ui_capture"
+
+
+@dataclass(frozen=True)
+class FixtureCleanupReceipt:
+    """Exact cleanup observation for the session-owned fixture set."""
+
+    session_id: str
+    fixture_manifest_sha256: str
+    removed_file_count: int
+    remaining_file_count: int
+
+
+class AddScanExecutionStatus(str, Enum):
+    BLOCKED = "BLOCKED"
+
+
+_ADD_SCAN_JOB_STATUS_POLL_INTERVAL_SECONDS = 0.25
+
+
+@dataclass(frozen=True)
+class AddScanScopeExtension:
+    """A bounded outcome that requires owner validation outside host tests."""
+
+    area: str
+    reason: str
+    required_outcome: str
+
+
+@dataclass(frozen=True)
+class AddScanExecutionResult:
+    """Safe outcome of one simulated first Add & Scan session."""
+
+    status: AddScanExecutionStatus
+    workflow_completed: bool
+    scan_admission: str | None
+    job_status: str | None
+    terminal_scan_status: str | None
+    fixture_result_indices: tuple[int, ...]
+    cleanup_status: str
+    blocker: str
+    scope_extensions: tuple[AddScanScopeExtension, ...]
+    execution_manifest_sha256: str | None = None
+
+
+class _AddScanStop(Exception):
+    """Stop before another product operation and retain a bounded reason."""
+
+    def __init__(self, reason: str, *, interrupted: bool = False) -> None:
+        self.reason = reason
+        self.interrupted = interrupted
+        super().__init__(reason)
+
+
+class _AddScanTransport(Protocol):
+    """Typed, injected boundary for the private host-simulation adapter.
+
+    Accessibility captures are temporary UI evidence and must be stored outside
+    ``/sdcard/ArgusQualification/fixtures``. Implementations must never stage
+    capture files, logs, or working artifacts into the approved fixture root.
+    """
+
+    def verify_target(self, serial: str, target_ref: str, timeout_seconds: int) -> bool: ...
+    def verify_foreground(self, package_name: str, timeout_seconds: int) -> bool: ...
+    def observe_installed_package(
+        self, serial: str, package_name: str, version_code: int,
+        certificate_sha256: str, timeout_seconds: int,
+    ) -> InstallationObservation: ...
+    def install_qualification_artifact(
+        self, serial: str, package_name: str, apk_sha256: str,
+        certificate_sha256: str, version_code: int, timeout_seconds: int,
+    ) -> None: ...
+    def reset_qualification_data(
+        self, serial: str, package_name: str, timeout_seconds: int,
+    ) -> bool: ...
+    def stage_approved_fixture_set(
+        self, serial: str, package_name: str, session_id: str,
+        fixture_plan: FixtureTransferPlan, destination: str, timeout_seconds: int,
+    ) -> FixtureStageReceipt: ...
+    def launch_qualification_main(
+        self, serial: str, package_name: str, timeout_seconds: int,
+    ) -> None: ...
+    def capture_accessibility(
+        self, serial: str, package_name: str, session_id: str,
+        capture_slot: str, timeout_seconds: int,
+    ) -> str: ...
+    def tap_accessibility_control(
+        self, serial: str, package_name: str, action: str,
+        bounds: tuple[int, int, int, int], timeout_seconds: int,
+    ) -> None: ...
+    def cleanup_session_fixture_set(
+        self, serial: str, package_name: str, session_id: str,
+        fixture_manifest_sha256: str, destination: str, timeout_seconds: int,
+    ) -> FixtureCleanupReceipt: ...
+
+
+def _add_scan_alias(kind: str, value: str) -> str:
+    return f"{kind}-{hashlib.sha256(f'{kind}:{value}'.encode()).hexdigest()[:32]}"
+
+
+def _add_scan_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class _AddScanOperationExecutor:
+    """Run one exact, admitted Add & Scan plan through an injected transport.
+
+    Every call is bound to the loader-approved session and operation list. The
+    executor writes a durable intent before each product mutation, verifies the
+    result once, and never retries a product mutation. Host simulation always
+    returns ``BLOCKED`` because synthetic observations cannot establish game
+    identity or physical qualification.
+    """
+
+    def __init__(
+        self,
+        *,
+        session: AdmittedSession,
+        transport: _AddScanTransport,
+        writer: evidence.ExecutionWriter,
+        evidence_spec: evidence.SessionSpec,
+        fixture_plan: FixtureTransferPlan,
+        library_expectations: tuple[object, ...],
+        monotonic=time.monotonic,
+        sleeper=time.sleep,
+    ) -> None:
+        self._session = session
+        self._transport = transport
+        self._writer = writer
+        self._spec = evidence_spec
+        self._fixture_plan = fixture_plan
+        self._expectations = library_expectations
+        self._monotonic = monotonic
+        self._sleeper = sleeper
+        self._started = 0.0
+        self._base_time: datetime | None = None
+        self._operation_timeout = 0
+        self._operation_deadline: datetime | None = None
+        self._operation_monotonic_deadline: float | None = None
+        self._active_budget: _CallBudget | None = None
+        self._evidence_open = False
+        self._terminal_written = False
+        self._staged = False
+        self._stage_receipt: FixtureStageReceipt | None = None
+        self._scan_action_attempted = False
+        self._view_job_navigation_attempted = False
+        self._view_job_navigation_verified = False
+        self._terminal_job_observation = None
+        self._uncertain_add_scan_tap = False
+        self._scan_admission_confirmed_no_job = False
+        self._terminal_scan_observed = False
+        self._cleanup_attempted = False
+        self._cleanup_plan_entered = False
+        self._admission: str | None = None
+        self._job_status: str | None = None
+        self._terminal_scan: str | None = None
+        self._fixture_results: tuple[int, ...] = ()
+        self._cleanup_status = "not_attempted"
+        self._workflow_completed = False
+        self._assertion_failed = False
+        self._blocker = ""
+        self._interrupted = False
+        self._execution_manifest_sha256: str | None = None
+        self._evidence_refs: tuple[str, ...] = ()
+        self._scope_extensions: list[AddScanScopeExtension] = []
+
+    def _request_scope_extension(
+        self,
+        area: str,
+        reason: str,
+        required_outcome: str,
+    ) -> None:
+        request = AddScanScopeExtension(area, reason, required_outcome)
+        if request not in self._scope_extensions:
+            self._scope_extensions.append(request)
+
+    def _request_scan_recovery_if_unresolved(self) -> None:
+        """Defer an uncertain Add & Scan recovery request until state observation.
+
+        Admission observation can prove that no job started, while a terminal
+        parent and child observation can prove that the admitted job finished.
+        In either case the single tap's uncertain transport response no longer
+        requires a separate recovery capability.
+        """
+        if (
+            not self._uncertain_add_scan_tap
+            or self._scan_admission_confirmed_no_job
+            or self._terminal_scan_observed
+        ):
+            return
+        reason = "Read-only observations did not resolve the single Add & Scan tap outcome."
+        self._blocker = self._blocker or reason
+        self._request_scope_extension(
+            "uncertain Add & Scan tap recovery",
+            reason,
+            "An owner-authorized observer establishes whether this session started a scan and, if so, observes its terminal parent and child states before cleanup.",
+        )
+
+    def _logical_now(self) -> datetime:
+        assert self._base_time is not None
+        return self._base_time + timedelta(seconds=max(0.0, self._monotonic() - self._started))
+
+    def _current_operation(self, operation: OperationAuthorization, *, cleanup: bool = False) -> None:
+        authorization = self._session.authorization
+        instant = self._logical_now()
+        deadline = authorization.cleanup_deadline if cleanup else authorization.session_deadline
+        if (
+            not _now_is_utc(instant)
+            or instant >= deadline
+            or instant >= self._session.approval.valid_until
+            or not _validate_approval(authorization, self._session.approval, instant)
+        ):
+            raise _AddScanStop("The approved session or cleanup deadline expired.")
+        remaining = (deadline - instant).total_seconds()
+        if remaining < 1:
+            raise _AddScanStop("The approved operation deadline expired.")
+        self._operation_timeout = min(operation.timeout_seconds, int(remaining))
+        self._operation_deadline = deadline
+        self._operation_monotonic_deadline = self._monotonic() + self._operation_timeout
+        try:
+            self._active_budget = _CallBudget(self._operation_timeout)
+        except _OperationDeadlineExpired:
+            raise _AddScanStop("The approved operation deadline expired.") from None
+
+    def _budget(self) -> _CallBudget:
+        if (
+            self._operation_deadline is None
+            or self._base_time is None
+            or self._active_budget is None
+        ):
+            raise _AddScanStop("The operation is not bound to an approved deadline.")
+        instant = self._logical_now()
+        if (
+            instant >= self._operation_deadline
+            or instant >= self._session.approval.valid_until
+            or not _validate_approval(
+                self._session.authorization,
+                self._session.approval,
+                instant,
+            )
+        ):
+            raise _AddScanStop("The approved operation deadline expired.") from None
+        return self._active_budget
+
+    def _call(self, operation):
+        try:
+            return _authorized_transport_call(self._session, self._budget(), operation)
+        except _SessionIntegrityError:
+            raise _AddScanStop("The admitted session binding changed during transport.") from None
+        except _OperationDeadlineExpired:
+            raise _AddScanStop("The approved operation deadline expired.") from None
+        except InterruptedError:
+            # Device transports can report an interrupted call as OSError;
+            # route it through the same fail-closed handling as Ctrl-C.
+            raise KeyboardInterrupt from None
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            raise _AddScanStop("A typed transport call failed or returned an uncertain outcome.") from None
+
+    def _request(self, key: str) -> evidence.WriteRequest:
+        return evidence.WriteRequest(
+            operation_id=_add_scan_alias("operation", f"{self._spec.session_id}:{key}"),
+            occurred_at=_add_scan_timestamp(self._logical_now()),
+        )
+
+    def _append_lifecycle(self, lifecycle: evidence.Lifecycle, key: str) -> None:
+        self._writer.append_lifecycle(
+            self._spec.session_id,
+            evidence.LifecycleObservation(lifecycle, self._evidence_refs),
+            self._request(key),
+        )
+
+    def _append_assertion(
+        self,
+        key: str,
+        outcome: evidence.AssertionOutcome,
+        *,
+        measurements: tuple[evidence.Measurement, ...] = (),
+    ) -> None:
+        self._writer.append_assertion(
+            self._spec.session_id,
+            evidence.AssertionObservation(
+                assertion_ref=_add_scan_alias("assertion", f"{self._spec.session_id}:{key}"),
+                rules_ref=self._spec.rules.rules_ref,
+                rules_version=self._spec.rules.rules_version,
+                rules_sha256=self._spec.rules.rules_sha256,
+                observed_at=_add_scan_timestamp(self._logical_now()),
+                expected_outcome=evidence.AssertionOutcome.PASSED,
+                actual_outcome=outcome,
+                evidence_refs=self._evidence_refs,
+                measurements=measurements,
+            ),
+            self._request(key),
+        )
+
+    def _record_intent(self, key: str) -> None:
+        self._append_assertion(key + ":intent", evidence.AssertionOutcome.NOT_RUN)
+
+    def _record_result(
+        self,
+        key: str,
+        passed: bool,
+        *,
+        measurements: tuple[evidence.Measurement, ...] = (),
+    ) -> None:
+        self._append_assertion(
+            key + ":result",
+            evidence.AssertionOutcome.PASSED if passed else evidence.AssertionOutcome.FAILED,
+            measurements=measurements,
+        )
+
+    def _record_blocked(self, key: str) -> None:
+        self._append_assertion(key + ":blocked", evidence.AssertionOutcome.BLOCKED)
+
+    def _record_uncertain_mutation(
+        self,
+        operation_id: str,
+        *,
+        area: str,
+        reason: str,
+        required_outcome: str,
+    ) -> None:
+        """Persist an unknown post-intent mutation and request owner recovery.
+
+        Transport errors, identity mismatches after install/reset, and invalid
+        staging receipts do not establish whether the requested state change
+        completed. The executor records one blocked result, never retries the
+        mutation, and leaves recovery to an owner-authorized path.
+        """
+        self._blocker = self._blocker or reason
+        self._request_scope_extension(area, reason, required_outcome)
+        try:
+            self._record_blocked(operation_id + ":uncertain")
+        except Exception:
+            self._blocker = (
+                "A product mutation has an uncertain outcome and its blocked result "
+                "could not be durably appended; owner recovery is required."
+            )
+
+    def _verify_target_foreground(
+        self,
+        operation: OperationAuthorization,
+        expected_foreground: str,
+        *,
+        cleanup: bool = False,
+    ) -> None:
+        self._current_operation(operation, cleanup=cleanup)
+        authorization = self._session.authorization
+        target_ok = self._call(lambda timeout: self._transport.verify_target(
+            authorization.target_serial, authorization.target_ref, timeout,
+        ))
+        if target_ok is not True:
+            raise _AddScanStop("The exact approved target could not be reverified.")
+        foreground_ok = self._call(lambda timeout: self._transport.verify_foreground(
+            expected_foreground, timeout,
+        ))
+        if foreground_ok is not True:
+            raise _AddScanStop("The expected foreground package changed.")
+
+    def _observe_package(
+        self,
+        operation: OperationAuthorization,
+        *,
+        absent: bool = False,
+        cleanup: bool = False,
+    ) -> InstallationObservation:
+        authorization = self._session.authorization
+        observed = self._call(lambda timeout: self._transport.observe_installed_package(
+            authorization.target_serial,
+            QUALIFICATION_PACKAGE,
+            authorization.version_code,
+            authorization.certificate_sha256,
+            timeout,
+        ))
+        if type(observed) is not InstallationObservation:
+            raise _AddScanStop("Qualification package identity is unavailable or ambiguous.")
+        if absent:
+            if observed.status is not InstallationStatus.ABSENT:
+                raise _AddScanStop("The qualification package is no longer absent.")
+        elif (
+            observed.status is not InstallationStatus.PRESENT
+            or observed.package_name != QUALIFICATION_PACKAGE
+            or observed.version_code != authorization.version_code
+            or observed.certificate_sha256 != authorization.certificate_sha256
+            or observed.artifact_sha256 != authorization.apk_sha256
+        ):
+            raise _AddScanStop("Qualification package bytes, version, or signer do not match the approved artifact.")
+        return observed
+
+    def _validate_stage_receipt(self, receipt: object) -> bool:
+        plan = self._fixture_plan
+        return (
+            type(receipt) is FixtureStageReceipt
+            and receipt.session_id == self._spec.session_id
+            and receipt.fixture_manifest_sha256 == plan.fixture_manifest_sha256
+            and type(receipt.file_count) is int
+            and receipt.file_count == plan.file_count
+            and type(receipt.byte_count) is int
+            and receipt.byte_count == plan.byte_count
+            and receipt.content_sha256 == plan.content_sha256
+        )
+
+    def _run_setup(self, operation: OperationAuthorization) -> None:
+        authorization = self._session.authorization
+        arguments = dict(operation.arguments)
+        expected_foreground = arguments.get("expected_foreground_package")
+        if operation.category is OperationCategory.INSTALL_ABSENT:
+            if (
+                arguments.get("action") != "install_qualification_apk"
+                or arguments.get("artifact_sha256") != authorization.apk_sha256
+                or self._first_binding.artifact.apk_sha256 != authorization.apk_sha256
+            ):
+                raise _AddScanStop("The install operation is not bound to the approved APK.")
+            assert expected_foreground is not None
+            self._verify_target_foreground(operation, expected_foreground)
+            self._observe_package(operation, absent=True)
+            self._record_intent(operation.operation_id)
+            try:
+                self._call(lambda timeout: self._transport.install_qualification_artifact(
+                    authorization.target_serial,
+                    QUALIFICATION_PACKAGE,
+                    authorization.apk_sha256,
+                    authorization.certificate_sha256,
+                    authorization.version_code,
+                    timeout,
+                ))
+                self._observe_package(operation)
+                if self._call(lambda timeout: self._transport.verify_foreground(
+                    expected_foreground, timeout,
+                )) is not True:
+                    raise _AddScanStop("The expected launcher foreground changed after installation.")
+            except KeyboardInterrupt:
+                self._record_uncertain_mutation(
+                    operation.operation_id,
+                    area="qualification APK installation outcome",
+                    reason="The one approved install call was interrupted or its identity could not be verified.",
+                    required_outcome="An owner-authorized recovery verifies the isolated package identity and approved artifact state.",
+                )
+                raise
+            except Exception:
+                self._record_uncertain_mutation(
+                    operation.operation_id,
+                    area="qualification APK installation outcome",
+                    reason="The one approved install call or its identity verification has an uncertain outcome.",
+                    required_outcome="An owner-authorized recovery verifies the isolated package identity and approved artifact state.",
+                )
+                raise _AddScanStop("Qualification installation outcome is uncertain; it will not be retried.") from None
+            try:
+                self._record_result(operation.operation_id, True)
+            except Exception:
+                self._record_uncertain_mutation(
+                    operation.operation_id,
+                    area="qualification APK installation evidence",
+                    reason="Installation was attempted, but its exact result could not be durably recorded.",
+                    required_outcome="An owner-authorized recovery verifies the isolated package identity and reviews the incomplete evidence chain.",
+                )
+                raise _AddScanStop("Installation result evidence could not be durably recorded.") from None
+            return
+
+        if operation.category is not OperationCategory.RESET_DATA:
+            raise _AddScanStop("The first operation is outside the approved install/reset set.")
+        if (
+            arguments.get("action") != "clear_qualification_data"
+            or expected_foreground != QUALIFICATION_PACKAGE
+        ):
+            raise _AddScanStop("The reset operation is not bound to the qualification package.")
+        self._verify_target_foreground(operation, expected_foreground)
+        self._observe_package(operation)
+        self._record_intent(operation.operation_id)
+        try:
+            reset_ok = self._call(lambda timeout: self._transport.reset_qualification_data(
+                authorization.target_serial, QUALIFICATION_PACKAGE, timeout,
+            ))
+            if reset_ok is not True:
+                raise _AddScanStop("The authorized qualification data reset is uncertain.")
+            self._observe_package(operation)
+            foreground_after = arguments.get("expected_foreground_after")
+            if not foreground_after or self._call(lambda timeout: self._transport.verify_foreground(
+                foreground_after, timeout,
+            )) is not True:
+                raise _AddScanStop("The reset foreground result did not match the approved state.")
+        except KeyboardInterrupt:
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="qualification package reset outcome",
+                reason="The one authorized reset call was interrupted or its resulting state could not be verified.",
+                required_outcome="An owner-authorized recovery observes the isolated qualification package state and resolves the reset outcome.",
+            )
+            raise
+        except Exception:
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="qualification package reset outcome",
+                reason="The one authorized reset call or its resulting state verification has an uncertain outcome.",
+                required_outcome="An owner-authorized recovery observes the isolated qualification package state and resolves the reset outcome.",
+            )
+            raise _AddScanStop("Qualification reset outcome is uncertain; it will not be retried.") from None
+        try:
+            self._record_result(operation.operation_id, True)
+        except Exception:
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="qualification reset evidence durability",
+                reason="The authorized reset was attempted, but its exact result could not be durably recorded.",
+                required_outcome="An owner-authorized recovery verifies the isolated package state and reviews the incomplete evidence chain.",
+            )
+            raise _AddScanStop("Reset result evidence could not be durably recorded.") from None
+
+    def _run_stage(self, operation: OperationAuthorization) -> None:
+        authorization = self._session.authorization
+        arguments = dict(operation.arguments)
+        expected = arguments.get("expected_foreground_package")
+        if (
+            arguments.get("action") != "stage_approved_fixture_set"
+            or arguments.get("destination") != "qualification_fixture_root"
+            or arguments.get("fixture_manifest_sha256") != authorization.fixture_manifest_sha256
+            or self._fixture_plan.fixture_manifest_sha256 != authorization.fixture_manifest_sha256
+            or expected is None
+        ):
+            raise _AddScanStop("Fixture staging is not bound to the approved set and isolated destination.")
+        self._verify_target_foreground(operation, expected)
+        self._observe_package(operation)
+        self._record_intent(operation.operation_id)
+        try:
+            receipt = self._call(lambda timeout: self._transport.stage_approved_fixture_set(
+                authorization.target_serial,
+                QUALIFICATION_PACKAGE,
+                self._spec.session_id,
+                self._fixture_plan,
+                "qualification_fixture_root",
+                timeout,
+            ))
+        except KeyboardInterrupt:
+            self._cleanup_status = "blocked"
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="fixture staging ownership and cleanup",
+                reason="The one fixture staging call was interrupted before ownership could be verified.",
+                required_outcome="An owner-authorized recovery determines the exact session-owned files and removes only that set.",
+            )
+            raise
+        except Exception:
+            self._cleanup_status = "blocked"
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="fixture staging ownership and cleanup",
+                reason="Fixture staging ownership is uncertain because its one call failed before receipt verification.",
+                required_outcome="An owner-authorized recovery determines the exact session-owned files and removes only that set.",
+            )
+            raise _AddScanStop(
+                "Fixture staging ownership is uncertain; it will not be retried or cleaned blindly."
+            ) from None
+        if not self._validate_stage_receipt(receipt):
+            self._cleanup_status = "blocked"
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="fixture staging ownership and cleanup",
+                reason="The staging receipt did not match the session, fixture manifest, count, and content digest.",
+                required_outcome="An owner-authorized recovery determines the exact session-owned files and removes only that set.",
+            )
+            raise _AddScanStop("Fixture staging ownership or byte identity is uncertain.")
+        self._stage_receipt = receipt
+        self._staged = True
+        try:
+            self._record_result(operation.operation_id, True)
+        except Exception:
+            self._staged = False
+            self._cleanup_status = "blocked"
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="fixture staging evidence durability",
+                reason="The staging receipt matched, but its exact result could not be durably recorded.",
+                required_outcome="An owner-authorized recovery verifies and removes only the session-owned fixture files.",
+            )
+            raise _AddScanStop("Fixture staging result evidence could not be durably recorded.") from None
+
+    def _run_launch(self, operation: OperationAuthorization) -> None:
+        authorization = self._session.authorization
+        expected = dict(operation.arguments).get("expected_foreground_package")
+        if (
+            operation.category is not OperationCategory.LAUNCH
+            or dict(operation.arguments).get("action") != "launch_qualification_main"
+            or expected is None
+        ):
+            raise _AddScanStop("The launch operation is outside the approved qualification action.")
+        self._verify_target_foreground(operation, expected)
+        self._observe_package(operation)
+        self._record_intent(operation.operation_id)
+        try:
+            self._call(lambda timeout: self._transport.launch_qualification_main(
+                authorization.target_serial, QUALIFICATION_PACKAGE, timeout,
+            ))
+            if self._call(lambda timeout: self._transport.verify_foreground(
+                QUALIFICATION_PACKAGE, timeout,
+            )) is not True:
+                raise _AddScanStop("The qualification package did not become the foreground app.")
+        except KeyboardInterrupt:
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="qualification application launch outcome",
+                reason="The one qualification launch call was interrupted before foreground state could be verified.",
+                required_outcome="An owner-authorized recovery observes the isolated qualification package and resolves the launch outcome.",
+            )
+            raise
+        except Exception:
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="qualification application launch outcome",
+                reason="The one qualification launch call or foreground verification has an uncertain outcome.",
+                required_outcome="An owner-authorized recovery observes the isolated qualification package and resolves the launch outcome.",
+            )
+            raise _AddScanStop("Qualification launch outcome is uncertain; it will not be retried.") from None
+        try:
+            self._record_result(operation.operation_id, True)
+        except Exception:
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="qualification launch evidence durability",
+                reason="The launch was attempted, but its exact result could not be durably recorded.",
+                required_outcome="An owner-authorized recovery observes the isolated qualification package and reviews the incomplete evidence chain.",
+            )
+            raise _AddScanStop("Launch result evidence could not be durably recorded.") from None
+
+    def _capture_nodes(self, operation: OperationAuthorization):
+        from .physical import ui
+
+        authorization = self._session.authorization
+        xml = self._call(lambda timeout: self._transport.capture_accessibility(
+            authorization.target_serial,
+            QUALIFICATION_PACKAGE,
+            self._spec.session_id,
+            QUALIFICATION_CAPTURE_SLOT,
+            timeout,
+        ))
+        if type(xml) is not str:
+            raise _AddScanStop("The temporary qualification UI capture is unavailable.")
+        try:
+            return ui.parse_ui(
+                xml,
+                expected_package=QUALIFICATION_PACKAGE,
+                library_expectations=self._expectations,
+            )
+        except Exception:
+            self._record_blocked(operation.operation_id + ":ui-surface")
+            raise _AddScanStop("The qualification UI surface is ambiguous or lacks approved semantics.") from None
+
+    def _job_poll_remaining(self) -> float:
+        """Return the remaining bound across operation, session, and approval."""
+        authorization = self._session.authorization
+        if self._operation_monotonic_deadline is None:
+            raise _AddScanStop("The job observation is not bound to an operation deadline.")
+        now = self._logical_now()
+        approval_deadline = self._session.approval.valid_until
+        session_deadline = authorization.session_deadline
+        if (
+            not _now_is_utc(now)
+            or now >= approval_deadline
+            or now >= session_deadline
+            or not _validate_approval(authorization, self._session.approval, now)
+        ):
+            raise _AddScanStop("The approved job observation deadline expired.")
+        monotonic_remaining = self._operation_monotonic_deadline - self._monotonic()
+        logical_remaining = min(
+            (approval_deadline - now).total_seconds(),
+            (session_deadline - now).total_seconds(),
+        )
+        remaining = min(monotonic_remaining, logical_remaining)
+        if remaining <= 0:
+            raise _AddScanStop("The approved job observation deadline expired.")
+        return remaining
+
+    def _poll_job_status(self, operation: OperationAuthorization, ui):
+        """Poll only the exact job-detail loading or active states.
+
+        Each attempt captures one accessibility snapshot and derives both the
+        parent and child states from that same snapshot. The operation's
+        monotonic budget and the logical session and approval deadlines all
+        bound the wait. A terminal pair is retained for the next typed
+        observation; no second capture can replace it with a stale pair.
+        """
+        if (
+            self._admission != "admitted"
+            or not self._scan_action_attempted
+            or not self._view_job_navigation_verified
+        ):
+            raise _AddScanStop("The job route is not bound to this session's unique admitted scan.")
+
+        while True:
+            self._job_poll_remaining()
+            nodes = self._capture_nodes(operation)
+            observation = ui.observe_scan_job_detail(nodes)
+            if observation.job_status != "loading":
+                self._job_status = observation.job_status
+            if observation.job_status in {"queued", "preparing", "running", "loading"}:
+                try:
+                    remaining = self._job_poll_remaining()
+                    delay = min(_ADD_SCAN_JOB_STATUS_POLL_INTERVAL_SECONDS, remaining)
+                    if delay <= 0:
+                        raise _AddScanStop("The approved job observation deadline expired.")
+                    self._sleeper(delay)
+                except InterruptedError:
+                    raise KeyboardInterrupt from None
+                continue
+            self._terminal_job_observation = observation
+            return observation
+
+    def _record_uncertain_navigation(self, operation_id: str, action: str) -> None:
+        if action != "add_and_scan":
+            self._record_uncertain_mutation(
+                operation_id,
+                area="qualification UI navigation outcome",
+                reason="The one UI navigation tap has an uncertain outcome; it will not be repeated.",
+                required_outcome="An owner-authorized recovery observes the qualification UI state before any further action.",
+            )
+            return
+        self._uncertain_add_scan_tap = True
+        try:
+            self._record_blocked(operation_id + ":uncertain")
+        except Exception:
+            self._record_uncertain_mutation(
+                operation_id,
+                area="uncertain Add & Scan evidence durability",
+                reason="The Add & Scan tap outcome is uncertain and its blocked operation result could not be durably appended.",
+                required_outcome="An owner-authorized recovery establishes scan admission and terminal job state before cleanup.",
+            )
+
+    def _run_navigation(self, operation: OperationAuthorization) -> None:
+        from .physical import ui
+
+        authorization = self._session.authorization
+        action = dict(operation.arguments).get("action")
+        if action is None:
+            raise _AddScanStop("A navigation operation has no closed action.")
+        if action == "view_job":
+            if (
+                not self._scan_action_attempted
+                or self._admission != "admitted"
+                or self._view_job_navigation_attempted
+            ):
+                raise _AddScanStop("The View Job route is not the unique route for this admitted scan.")
+            self._view_job_navigation_attempted = True
+        self._verify_target_foreground(operation, QUALIFICATION_PACKAGE)
+        self._observe_package(operation)
+        nodes = self._capture_nodes(operation)
+        if any(node.key == "product_failure" for node in nodes):
+            self._assertion_failed = True
+            self._append_assertion(
+                operation.operation_id + ":product-failure",
+                evidence.AssertionOutcome.FAILED,
+            )
+            raise _AddScanStop("The qualification UI explicitly reported a product failure.")
+        try:
+            control = ui.navigation_control(nodes, action)
+        except Exception:
+            self._record_blocked(operation.operation_id + ":control")
+            raise _AddScanStop("The exact Add & Scan workflow control is missing or ambiguous.") from None
+        if action == "add_and_scan":
+            self._scan_action_attempted = True
+        self._record_intent(operation.operation_id)
+        try:
+            self._call(lambda timeout: self._transport.tap_accessibility_control(
+                authorization.target_serial,
+                QUALIFICATION_PACKAGE,
+                action,
+                control.bounds,
+                timeout,
+            ))
+        except KeyboardInterrupt:
+            self._record_uncertain_navigation(operation.operation_id, action)
+            raise
+        except Exception:
+            if action == "add_and_scan":
+                # The single tap may have reached the product. Read-only
+                # observations continue, but no tap is repeated.
+                self._record_uncertain_navigation(operation.operation_id, action)
+                return
+            self._record_uncertain_navigation(operation.operation_id, action)
+            raise _AddScanStop("The navigation tap outcome is uncertain; it will not be repeated.") from None
+        try:
+            self._record_result(operation.operation_id, True)
+        except Exception:
+            if action == "add_and_scan":
+                self._record_uncertain_navigation(operation.operation_id, action)
+                return
+            self._record_uncertain_mutation(
+                operation.operation_id,
+                area="qualification UI navigation evidence durability",
+                reason="The UI navigation tap was attempted, but its exact result could not be durably recorded.",
+                required_outcome="An owner-authorized recovery observes the qualification UI state and reviews the incomplete evidence chain.",
+            )
+            raise _AddScanStop("Navigation result evidence could not be durably recorded.") from None
+        if action == "view_job":
+            self._view_job_navigation_verified = True
+
+    def _run_read_only(self, operation: OperationAuthorization) -> None:
+        from .physical import ui
+
+        authorization = self._session.authorization
+        observation = dict(operation.arguments).get("observation")
+        if observation == "job_status" and (
+            self._admission != "admitted"
+            or not self._scan_action_attempted
+            or not self._view_job_navigation_verified
+        ):
+            raise _AddScanStop("The job detail observation is outside the unique admitted scan route.")
+        self._verify_target_foreground(operation, QUALIFICATION_PACKAGE)
+        self._observe_package(operation)
+        self._record_intent(operation.operation_id)
+        nodes = (
+            None
+            if observation in {"job_status", "terminal_scan"}
+            else self._capture_nodes(operation)
+        )
+        try:
+            if observation == "scan_admission":
+                result = ui.observe_scan_admission(nodes)
+                self._admission = result.status
+                passed = result.status == "admitted" and result.view_job_actionable
+                self._scan_admission_confirmed_no_job = result.status == "not_admitted"
+                measurements = (evidence.Measurement(
+                    _add_scan_alias("measurement", "scan-admission"),
+                    1 if passed else 0,
+                    evidence.MeasurementUnit.COUNT,
+                ),)
+            elif observation == "job_status":
+                try:
+                    job_observation = self._poll_job_status(operation, ui)
+                except _AddScanStop:
+                    self._record_blocked(operation.operation_id + ":observation")
+                    raise
+                self._job_status = job_observation.job_status
+                passed = self._job_status in _JOB_STATUS_VALUES
+                measurements = (evidence.Measurement(
+                    _add_scan_alias("measurement", "job-status-code"),
+                    _job_status_code(self._job_status),
+                    evidence.MeasurementUnit.COUNT,
+                ),)
+            elif observation == "terminal_scan":
+                job_observation = self._terminal_job_observation
+                if job_observation is None or self._job_status is None:
+                    raise _AddScanStop("Terminal outcome must use the terminal pair from the job-status snapshot.")
+                ui.require_terminal_scan_outcome(job_observation)
+                self._terminal_scan = job_observation.scan_status
+                self._terminal_scan_observed = True
+                passed = (
+                    self._job_status == "completed"
+                    and self._terminal_scan == "complete"
+                )
+                self._terminal_job_observation = None
+                measurements = (evidence.Measurement(
+                    _add_scan_alias("measurement", "terminal-scan-code"),
+                    _terminal_scan_code(self._terminal_scan),
+                    evidence.MeasurementUnit.COUNT,
+                ),)
+            elif observation == "fixture_library":
+                self._fixture_results = ui.observe_fixture_library_results(
+                    nodes, self._expectations,
+                )
+                expected_indices = tuple(range(len(self._expectations)))
+                passed = self._fixture_results == expected_indices
+                measurements = (evidence.Measurement(
+                    _add_scan_alias("measurement", "fixture-library-result-count"),
+                    len(self._fixture_results),
+                    evidence.MeasurementUnit.COUNT,
+                ),)
+            else:
+                raise _AddScanStop("The read-only observation is outside the four Add & Scan gates.")
+        except _AddScanStop:
+            raise
+        except ui.UIFailed:
+            self._assertion_failed = True
+            self._append_assertion(
+                operation.operation_id + ":product-failure",
+                evidence.AssertionOutcome.FAILED,
+            )
+            self._blocker = self._blocker or "The qualification UI explicitly reported a product failure."
+            raise _AddScanStop(self._blocker) from None
+        except ui.UIBlocked:
+            self._record_blocked(operation.operation_id + ":observation")
+            self._blocker = self._blocker or "A required Add & Scan observation was ambiguous or unavailable."
+            raise _AddScanStop(self._blocker) from None
+        except Exception:
+            self._record_blocked(operation.operation_id + ":observation")
+            raise _AddScanStop("A required Add & Scan observation failed or remained ambiguous.") from None
+        self._record_result(operation.operation_id, passed, measurements=measurements)
+        if not passed:
+            self._assertion_failed = True
+            self._blocker = self._blocker or (
+                "A required Add & Scan observation did not meet its approved expectation."
+            )
+        if observation == "fixture_library":
+            for index in range(len(self._expectations)):
+                actual = (
+                    evidence.AssertionOutcome.PASSED
+                    if index in self._fixture_results
+                    else evidence.AssertionOutcome.FAILED
+                )
+                self._append_assertion(
+                    f"fixture-result-{index:03d}",
+                    actual,
+                )
+        if observation == "scan_admission" and not passed:
+            raise _AddScanStop("Add & Scan explicitly did not admit a scan job.")
+        if observation == "terminal_scan" and not passed:
+            raise _AddScanStop("The observed terminal scan result failed the approved expectation.")
+
+    def _run_cleanup(self, operation: OperationAuthorization) -> None:
+        authorization = self._session.authorization
+        if self._cleanup_plan_entered:
+            raise _AddScanStop("The approved cleanup operation was already entered and will not be repeated.")
+        self._cleanup_plan_entered = True
+        arguments = dict(operation.arguments)
+        if (
+            not self._staged
+            or self._stage_receipt is None
+            or arguments.get("action") != "remove_session_owned_fixture_set"
+            or arguments.get("destination") != "qualification_fixture_root"
+            or arguments.get("fixture_manifest_sha256") != authorization.fixture_manifest_sha256
+            or arguments.get("expected_foreground_package") != QUALIFICATION_PACKAGE
+            or (
+                self._scan_action_attempted
+                and not self._terminal_scan_observed
+                and not self._scan_admission_confirmed_no_job
+            )
+        ):
+            raise _AddScanStop("Fixture cleanup is not proven safe for the session-owned set.")
+        self._verify_target_foreground(operation, QUALIFICATION_PACKAGE, cleanup=True)
+        self._observe_package(operation, cleanup=True)
+        self._append_lifecycle(evidence.Lifecycle.CLEANUP_STARTED, "cleanup-started")
+        self._record_intent(operation.operation_id)
+        self._cleanup_attempted = True
+        self._cleanup_status = "blocked"
+        try:
+            receipt = self._call(lambda timeout: self._transport.cleanup_session_fixture_set(
+                authorization.target_serial,
+                QUALIFICATION_PACKAGE,
+                self._spec.session_id,
+                authorization.fixture_manifest_sha256,
+                "qualification_fixture_root",
+                timeout,
+            ))
+        except _AddScanStop:
+            self._request_scope_extension(
+                "uncertain session-owned fixture cleanup",
+                "The one cleanup call may have changed device state, but its result is unknown.",
+                "An owner-authorized recovery independently observes and resolves only this session-owned fixture set.",
+            )
+            raise
+        valid = (
+            type(receipt) is FixtureCleanupReceipt
+            and receipt.session_id == self._spec.session_id
+            and receipt.fixture_manifest_sha256 == authorization.fixture_manifest_sha256
+            and type(receipt.removed_file_count) is int
+            and receipt.removed_file_count == self._fixture_plan.file_count
+            and type(receipt.remaining_file_count) is int
+            and receipt.remaining_file_count == 0
+        )
+        try:
+            self._record_result(operation.operation_id, valid)
+        except Exception:
+            self._request_scope_extension(
+                "cleanup evidence durability",
+                "The device returned a cleanup receipt but its append-only result could not be recorded.",
+                "An owner reviews the incomplete evidence chain and independently verifies the session-owned fixture state.",
+            )
+            raise
+        self._cleanup_status = "verified" if valid else "blocked"
+        if not valid:
+            self._request_scope_extension(
+                "session-owned fixture cleanup",
+                "The cleanup receipt did not verify removal of the exact approved set.",
+                "An owner-authorized recovery path verifies and removes only the session-owned fixture files.",
+            )
+            raise _AddScanStop("Session-owned fixture cleanup could not be verified exactly.")
+        self._staged = False
+        self._append_lifecycle(evidence.Lifecycle.CLEANUP_COMPLETED, "cleanup-completed")
+
+    def _validate_inputs(self) -> None:
+        authorization = self._session.authorization
+        binding = _first_add_scan_admission_binding(self._session)
+        if binding is None:
+            raise _AddScanStop("The session was not created by the first Add & Scan admission path.")
+        self._first_binding = binding
+        expected_session_id = hashlib.sha256(
+            f"argus-add-scan:{authorization.authorization_id}:{authorization.canonical_sha256}".encode()
+        ).hexdigest()[:32]
+        expected_evidence_refs = self._spec.review_requirements.required_evidence_refs
+        if (
+            self._session.lifecycle is not SessionLifecycle.ACTIVE
+            or self._session.execution_phase is not SessionExecutionPhase.ADMITTED
+            or authorization.application_package != QUALIFICATION_PACKAGE
+            or binding.plan_sha256 != authorization.plan_sha256
+            or type(self._spec) is not evidence.SessionSpec
+            or self._spec.session_id != expected_session_id
+            or self._spec.scenario_id
+            != _add_scan_alias("scenario", authorization.scenario_ids[0])
+            or self._spec.artifact.artifact_sha256 != authorization.apk_sha256
+            or self._spec.artifact.artifact_ref
+            != _add_scan_alias("artifact", authorization.apk_sha256)
+            or self._spec.authorization.manifest_sha256 != authorization.canonical_sha256
+            or self._spec.authorization.manifest_version != 1
+            or self._spec.fixtures.manifest_sha256 != authorization.fixture_manifest_sha256
+            or self._spec.fixtures.corpus_ref
+            != _add_scan_alias("corpus", authorization.fixture_manifest_sha256)
+            or self._spec.plan.plan_sha256 != authorization.plan_sha256
+            or self._spec.plan.plan_ref
+            != _add_scan_alias("plan", authorization.plan_sha256)
+            or self._spec.rules.rules_sha256 != authorization.rules_sha256
+            or self._spec.rules.rules_ref
+            != _add_scan_alias("rules", authorization.rules_sha256)
+            or self._spec.environment.target_ref
+            != _add_scan_alias("target", authorization.target_ref)
+            or self._spec.environment.platform is not evidence.Platform.ANDROID
+            or self._spec.artifact.artifact_class is not evidence.ArtifactClass.QUALIFICATION_VARIANT
+            or self._spec.plan.plan_version != 1
+            or self._fixture_plan.fixture_manifest_sha256 != authorization.fixture_manifest_sha256
+            or type(self._fixture_plan.file_count) is not int
+            or self._fixture_plan.file_count <= 0
+            or type(self._fixture_plan.byte_count) is not int
+            or self._fixture_plan.byte_count <= 0
+            or not re.fullmatch(r"[0-9a-f]{64}", self._fixture_plan.content_sha256)
+            or type(self._expectations) is not tuple
+            or not self._expectations
+            or not self._spec.review_requirements.required_evidence_refs
+            or any(type(ref) is not str or not re.fullmatch(r"evidence-[0-9a-f]{32}", ref)
+                   for ref in expected_evidence_refs)
+        ):
+            raise _AddScanStop("The artifact, fixture, plan, target, or evidence pins do not match.")
+        self._evidence_refs = self._spec.review_requirements.required_evidence_refs
+        if (
+            not _validate_approval(authorization, self._session.approval, self._logical_now())
+            or self._logical_now() >= authorization.session_deadline
+        ):
+            raise _AddScanStop("The owner approval or session deadline is no longer valid.")
+        try:
+            pending = pending_for_device(authorization.target_serial, path=_DEVICE_SAFETY_PATH)
+        except SafetyStateError:
+            raise _AddScanStop("Device restoration state is unavailable.") from None
+        if pending is not None:
+            raise _AddScanStop("An unresolved Issue #23 restoration blocks product operations.")
+
+    def _plan_operations(self) -> tuple[OperationAuthorization, ...]:
+        operations = _first_add_scan_plan(self._session.authorization)
+        if operations is None or operations != self._session.authorization.operations:
+            raise _AddScanStop("The approved operation plan changed or is not the closed first-scan plan.")
+        return operations
+
+    def _finalize(self, *, reason: evidence.TerminalReason) -> None:
+        if not self._evidence_open or self._terminal_written:
+            return
+        outcome = (
+            evidence.TerminalOutcome.FAILED
+            if self._assertion_failed
+            else evidence.TerminalOutcome.INTERRUPTED
+            if self._interrupted
+            else evidence.TerminalOutcome.BLOCKED
+        )
+        try:
+            receipt = self._writer.append_terminal(
+                self._spec.session_id,
+                evidence.TerminalObservation(
+                    outcome=outcome,
+                    reason=reason,
+                    ended_at=_add_scan_timestamp(self._logical_now()),
+                    evidence_refs=self._evidence_refs,
+                ),
+                self._request("terminal"),
+            )
+            self._terminal_written = True
+            self._execution_manifest_sha256 = self._writer.verify_execution(
+                self._spec.session_id
+            ).manifest_sha256
+            if receipt.session_id != self._spec.session_id:
+                self._blocker = "The terminal evidence receipt did not match the approved session."
+        except Exception:
+            self._blocker = self._blocker or "Append-only terminal evidence could not be finalized."
+
+    def _record_cleanup_recovery(self) -> None:
+        """Append a distinct blocked assertion for an unresolved cleanup attempt."""
+        try:
+            self._record_blocked("cleanup-recovery")
+        except BaseException:
+            # A failed follow-up append must not replace the earlier product
+            # failure or cleanup exception with a less informative outcome.
+            self._blocker = self._blocker or (
+                "Cleanup recovery evidence could not be appended; owner recovery is required."
+            )
+
+    def _attempt_owned_cleanup(self, operations: tuple[OperationAuthorization, ...]) -> None:
+        if not self._staged or self._cleanup_attempted:
+            return
+        if self._cleanup_plan_entered:
+            self._cleanup_status = "blocked"
+            self._request_scope_extension(
+                "session-owned fixture cleanup",
+                "The one approved cleanup operation stopped before an exact verified result.",
+                "An owner-authorized recovery independently verifies and resolves the session-owned fixture set.",
+            )
+            self._record_cleanup_recovery()
+            return
+        if (
+            self._scan_action_attempted
+            and not self._terminal_scan_observed
+            and not self._scan_admission_confirmed_no_job
+        ):
+            self._cleanup_status = "blocked"
+            self._blocker = self._blocker or "Fixture cleanup is unsafe while Add & Scan outcome is uncertain."
+            self._request_scope_extension(
+                "fixture cleanup after uncertain scan admission",
+                "The Add & Scan action may have started a scan and no terminal job outcome was observed.",
+                "An owner-authorized recovery independently establishes a terminal outcome before removing the session-owned fixture set.",
+            )
+            return
+        cleanup = operations[-1]
+        try:
+            self._run_cleanup(cleanup)
+        except KeyboardInterrupt:
+            self._interrupted = True
+            self._cleanup_status = "blocked"
+            self._blocker = self._blocker or "Cleanup was interrupted; owner recovery is required."
+            self._request_scope_extension(
+                "interrupted fixture cleanup",
+                "Cleanup was interrupted after the session staged its fixture set.",
+                "An owner-authorized recovery verifies the session identity and removes only its fixture set.",
+            )
+            self._record_cleanup_recovery()
+        except Exception:
+            self._cleanup_status = "blocked"
+            self._blocker = self._blocker or "Session-owned fixture cleanup failed or could not be recorded."
+            self._request_scope_extension(
+                "session-owned fixture cleanup",
+                "The session could not establish a durable, exact cleanup result.",
+                "An owner-authorized recovery verifies and removes only the session-owned fixture files.",
+            )
+            self._record_cleanup_recovery()
+
+    def execute(self, *, now: datetime | None = None) -> AddScanExecutionResult:
+        authorization = self._session.authorization
+        self._base_time = now or datetime.now(timezone.utc)
+        if not _now_is_utc(self._base_time):
+            return self._result("Execution time must be UTC.")
+        if not self._session.reserve_operation():
+            return self._result("Another operation is in progress for this session.")
+        operations: tuple[OperationAuthorization, ...] = ()
+        try:
+            if not _claim_first_add_scan_execution(self._session):
+                self._blocker = "The admitted first Add & Scan capability is unavailable or already used."
+                return self._result(self._blocker)
+            self._started = self._monotonic()
+            try:
+                self._validate_inputs()
+                operations = self._plan_operations()
+                self._writer.open_session(self._spec, self._request("session-open"))
+                self._evidence_open = True
+                self._append_lifecycle(evidence.Lifecycle.PREPARATION_STARTED, "preparation-started")
+                for operation in operations:
+                    if operation.category in {OperationCategory.INSTALL_ABSENT, OperationCategory.RESET_DATA}:
+                        self._run_setup(operation)
+                    elif dict(operation.arguments).get("action") == "stage_approved_fixture_set":
+                        self._run_stage(operation)
+                        self._append_lifecycle(evidence.Lifecycle.PREPARATION_COMPLETED, "preparation-completed")
+                        self._append_lifecycle(evidence.Lifecycle.EXECUTION_STARTED, "execution-started")
+                    elif operation.category is OperationCategory.LAUNCH:
+                        self._run_launch(operation)
+                    elif operation.category is OperationCategory.NAVIGATION:
+                        self._run_navigation(operation)
+                    elif operation.category is OperationCategory.READ_ONLY:
+                        self._run_read_only(operation)
+                    elif dict(operation.arguments).get("action") == "remove_session_owned_fixture_set":
+                        self._run_cleanup(operation)
+                    else:
+                        raise _AddScanStop("The plan contains an unsupported operation category.")
+                self._workflow_completed = (
+                    self._admission == "admitted"
+                    and self._job_status == "completed"
+                    and self._terminal_scan == "complete"
+                    and self._fixture_results == tuple(range(len(self._expectations)))
+                    and self._cleanup_status == "verified"
+                )
+                self._append_assertion("independent-game-identity", evidence.AssertionOutcome.BLOCKED)
+                self._blocker = self._blocker or (
+                "Host simulation cannot establish independently owner-validated game identity or physical Add & Scan qualification."
+                )
+            except KeyboardInterrupt:
+                self._interrupted = True
+                self._blocker = "Execution was interrupted; no product mutation was retried."
+            except _AddScanStop as stop:
+                self._blocker = self._blocker or stop.reason
+            except Exception:
+                self._blocker = self._blocker or "Evidence persistence or an internal assertion failed."
+            finally:
+                if self._evidence_open and operations:
+                    self._request_scan_recovery_if_unresolved()
+                    self._attempt_owned_cleanup(operations)
+                    self._finalize(
+                        reason=(
+                            evidence.TerminalReason.OPERATOR_TERMINATED
+                            if self._interrupted
+                            else evidence.TerminalReason.ASSERTION_FAILED
+                            if self._assertion_failed
+                            else evidence.TerminalReason.PREREQUISITE_BLOCKED
+                        )
+                    )
+        finally:
+            if _admitted_session_binding(self._session) is not None:
+                _finish_admitted_session(self._session, blocked=True)
+            self._session.release_operation()
+        if self._workflow_completed and self._cleanup_status == "verified":
+            self._blocker = self._blocker or (
+                "The workflow was simulated with host fixtures; physical and owner identity gates remain unverified."
+            )
+        return self._result(self._blocker or "The Add & Scan workflow did not complete.")
+
+    def _result(self, blocker: str) -> AddScanExecutionResult:
+        return AddScanExecutionResult(
+            status=AddScanExecutionStatus.BLOCKED,
+            workflow_completed=self._workflow_completed,
+            scan_admission=self._admission,
+            job_status=self._job_status,
+            terminal_scan_status=self._terminal_scan,
+            fixture_result_indices=self._fixture_results,
+            cleanup_status=self._cleanup_status,
+            blocker=blocker,
+            scope_extensions=tuple(self._scope_extensions),
+            execution_manifest_sha256=self._execution_manifest_sha256,
+        )
+
+
+def _job_status_code(value: str) -> int:
+    return _JOB_STATUS_VALUES.index(value) if value in _JOB_STATUS_VALUES else 0
+
+
+_JOB_STATUS_VALUES = (
+    "queued", "preparing", "running", "completed", "completed_with_issues",
+    "failed", "cancelled", "interrupted", "abandoned",
+)
+
+
+def _terminal_scan_code(value: str) -> int:
+    statuses = ("complete", "partial", "failed", "cancelled", "abandoned")
+    return statuses.index(value) if value in statuses else 0

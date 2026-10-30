@@ -170,8 +170,11 @@ transfer and publication mechanics are implemented only behind private
 synthetic test adapters; public production staging remains blocked pending an
 OS-enforced namespace boundary. Its evidence reports matches against
 owner-approved expectations and does not independently establish game identity.
-Device-side fixture admission, live execution orchestration, product scenarios,
-and physical qualification remain deferred to their separately scoped issues.
+The first fresh Add & Scan operation sequence is exercised through a private
+host-only typed adapter and synthetic fixtures. Device-side fixture transfer,
+live execution orchestration, product qualification, and physical qualification
+remain deferred to their separately scoped owner-approved gates; see
+[First Android Add & Scan qualification boundary](android-first-add-scan.md).
 The host-only durable execution and owner-review storage contract described in
 [Durable qualification evidence](evidence-records.md) is implemented without a
 CLI, device transport, live runner, release assessor, or product verdict.

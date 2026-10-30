@@ -421,7 +421,8 @@ class MigrationEquivalenceTests(unittest.TestCase):
         ]
         neutral_ids = [test_id for test_id in baseline_ids if ".physical." not in test_id]
         self.assertEqual(len(physical_ids), 234)
-        self.assertEqual(len(neutral_ids), 118)
+        # The neutral admission suite now includes first Add & Scan host tests.
+        self.assertEqual(len(neutral_ids), 176)
 
         loader = unittest.TestLoader()
         suite = loader.discover(

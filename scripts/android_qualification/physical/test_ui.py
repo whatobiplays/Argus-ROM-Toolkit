@@ -9,6 +9,8 @@ from pathlib import Path
 from scripts.android_qualification.physical import ui
 
 PACKAGE = "com.argusromtoolkit.argus"
+QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
+ORDINARY_PACKAGE = PACKAGE
 OWNED = "/sdcard/ArgusQualification/ui.xml"
 
 
@@ -785,6 +787,244 @@ class DriverTests(unittest.TestCase):
         self.assertTrue(all(0 < timeout <= 30 for _, _, timeout in device.calls))
         self.assertEqual(report["AND-04"]["automation_status"], "BLOCKED")
         self.assertNotIn("PASS", [entry["status"] for entry in report["AND-04"]["assertions"]])
+
+
+# First fresh Add & Scan UI contract tests.
+def add_scan_xml(label, package):
+    return (
+        '<hierarchy rotation="0">'
+        f'<node package="{package}" text="{label}" content-desc="" '
+        'enabled="true" clickable="true" visible-to-user="true" '
+        'bounds="[10,20][110,80]" />'
+        '</hierarchy>'
+    )
+
+
+def frame(*labels, package=QUALIFICATION_PACKAGE):
+    nodes = "".join(
+        f'<node package="{package}" text="{label}" content-desc="" '
+        'enabled="true" clickable="true" visible-to-user="true" '
+        f'bounds="[{index * 120},20][{index * 120 + 100},80]" />'
+        for index, label in enumerate(labels)
+    )
+    return f'<hierarchy rotation="0">{nodes}</hierarchy>'
+
+
+class AddScanUiContractTests(unittest.TestCase):
+    def test_exact_add_and_scan_action_is_available_only_on_qualification_app(self):
+        nodes = ui.parse_ui(
+            add_scan_xml("Add &amp; Scan", QUALIFICATION_PACKAGE),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        self.assertEqual([node.key for node in nodes], ["add_and_scan"])
+        self.assertEqual(
+            ui.select_unique(nodes, "add_and_scan", actionable=True).bounds,
+            (10, 20, 110, 80),
+        )
+
+    def test_legacy_add_folder_action_cannot_substitute_for_scan_admission(self):
+        nodes = ui.parse_ui(
+            add_scan_xml("Add folder", QUALIFICATION_PACKAGE),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.select_unique(nodes, "add_and_scan", actionable=True)
+
+    def test_ordinary_app_surface_is_rejected_even_with_add_and_scan_label(self):
+        with self.assertRaises(ui.UIBlocked):
+            ui.parse_ui(
+                add_scan_xml("Add &amp; Scan", ORDINARY_PACKAGE),
+                expected_package=QUALIFICATION_PACKAGE,
+            )
+
+    def test_scan_admission_requires_active_status_and_unique_view_job(self):
+        nodes = ui.parse_ui(
+            frame("Scanning in progress", "View Job"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        observation = ui.observe_scan_admission(nodes)
+
+        self.assertEqual(observation.status, "admitted")
+        self.assertTrue(observation.view_job_actionable)
+
+    def test_scan_admission_rejects_ambiguous_view_job_route(self):
+        nodes = ui.parse_ui(
+            frame("Scanning in progress", "View Job", "View Job"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.observe_scan_admission(nodes)
+
+    def test_production_add_library_folder_button_is_selected(self):
+        nodes = ui.parse_ui(
+            frame("Add Library Folder"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        selected = ui.navigation_control(nodes, "add_root")
+
+        self.assertEqual(selected.key, "add_root")
+        self.assertTrue(selected.clickable)
+
+    def test_root_or_library_surface_alone_does_not_prove_scan_admission(self):
+        nodes = ui.parse_ui(
+            frame("Add Library Folder?", "Search Library"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.observe_scan_admission(nodes)
+
+    def test_explicit_scan_admission_failure_is_not_misread_as_a_root_success(self):
+        nodes = ui.parse_ui(
+            frame("Folder added, but the scan could not start. You can scan it from the folder details."),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        observation = ui.observe_scan_admission(nodes)
+
+        self.assertEqual(observation.status, "not_admitted")
+        self.assertFalse(observation.view_job_actionable)
+
+    def test_job_and_child_scan_status_are_observed_separately(self):
+        nodes = ui.parse_ui(
+            frame("Library Scan", "Job status: Completed", "Complete"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        observation = ui.observe_scan_job_detail(nodes)
+        ui.require_terminal_scan_outcome(observation)
+
+        self.assertEqual(observation.job_status, "completed")
+        self.assertEqual(observation.scan_status, "complete")
+
+    def test_job_detail_loading_is_an_explicit_transient_observation(self):
+        nodes = ui.parse_ui(
+            frame("Loading job details"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        observation = ui.observe_scan_job_detail(nodes)
+
+        self.assertEqual(observation.job_status, "loading")
+        self.assertEqual(observation.scan_status, "loading")
+
+    def test_job_detail_loading_with_another_route_marker_is_ambiguous(self):
+        for route_label in ("Library", "Search Library", "Settings", "Jobs"):
+            with self.subTest(route_label=route_label):
+                nodes = ui.parse_ui(
+                    frame("Loading job details", route_label),
+                    expected_package=QUALIFICATION_PACKAGE,
+                )
+
+                with self.assertRaises(ui.UIBlocked):
+                    ui.observe_scan_job_detail(nodes)
+
+    def test_job_detail_without_loading_or_one_coherent_status_pair_is_ambiguous(self):
+        for job_status, scan_status in (
+            ("Completed", "Scanning"),
+            ("Running", "Complete"),
+        ):
+            with self.subTest(job_status=job_status, scan_status=scan_status):
+                nodes = ui.parse_ui(
+                    frame("Library Scan", f"Job status: {job_status}", scan_status),
+                    expected_package=QUALIFICATION_PACKAGE,
+                )
+
+                with self.assertRaises(ui.UIBlocked):
+                    ui.observe_scan_job_detail(nodes)
+
+    def test_job_lifecycle_and_terminal_scan_status_have_separate_observers(self):
+        nodes = ui.parse_ui(
+            frame("Library Scan", "Job status: Completed", "Complete"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        self.assertEqual(ui.observe_job_lifecycle(nodes), "completed")
+        self.assertEqual(ui.observe_terminal_scan_status(nodes), "complete")
+
+    def test_running_job_is_not_a_terminal_scan_outcome(self):
+        nodes = ui.parse_ui(
+            frame("Library Scan", "Job status: Running", "Scanning"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+        observation = ui.observe_scan_job_detail(nodes)
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.require_terminal_scan_outcome(observation)
+
+    def test_duplicate_job_status_is_ambiguous(self):
+        nodes = ui.parse_ui(
+            frame("Library Scan", "Job status: Completed", "Job status: Failed", "Complete"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.observe_scan_job_detail(nodes)
+
+    def test_fixture_results_require_exact_expected_title_and_platform(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = ui.parse_ui(
+            frame("Metroid, NES", "Other Game, NES"),
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        self.assertEqual(ui.observe_fixture_library_results(nodes, (expectation,)), (0,))
+
+    def test_missing_fixture_expectations_block_instead_of_using_library_population(self):
+        nodes = ui.parse_ui(
+            frame("Other Game, NES"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.observe_fixture_library_results(nodes, ())
+
+    def test_unknown_package_cannot_be_selected_as_an_expected_target(self):
+        with self.assertRaises(ui.UIBlocked):
+            ui.parse_ui(add_scan_xml("Add &amp; Scan", "foreign.app"), expected_package="foreign.app")
+
+    def test_add_and_scan_navigation_refuses_add_folder_even_with_owned_path(self):
+        nodes = ui.parse_ui(
+            frame("Add Library Folder?", "/storage/emulated/0/ArgusQualification/fixtures", "Add folder"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.navigation_control(nodes, "add_and_scan")
+
+    def test_add_and_scan_navigation_requires_exact_confirmation_path(self):
+        nodes = ui.parse_ui(
+            frame("Add Library Folder?", "Add &amp; Scan"),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            ui.navigation_control(nodes, "add_and_scan")
+
+    def test_production_add_library_folder_confirmation_selects_add_and_scan(self):
+        nodes = ui.parse_ui(
+            frame(
+                "Add Library Folder?",
+                "/storage/emulated/0/ArgusQualification/fixtures",
+                "Add &amp; Scan",
+            ),
+            expected_package=QUALIFICATION_PACKAGE,
+        )
+
+        selected = ui.navigation_control(nodes, "add_and_scan")
+
+        self.assertEqual(selected.key, "add_and_scan")
+        self.assertTrue(selected.clickable)
+
+    def test_unknown_navigation_action_is_blocked(self):
+        with self.assertRaises(ui.UIBlocked):
+            ui.navigation_control([], "tap_coordinates")
 
 
 if __name__ == "__main__":

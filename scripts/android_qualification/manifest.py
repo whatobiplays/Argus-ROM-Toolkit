@@ -254,6 +254,7 @@ ORDINARY_PACKAGE = "com.argusromtoolkit.argus"
 MANAGE_EXTERNAL_STORAGE = "android.permission.MANAGE_EXTERNAL_STORAGE"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REVISION_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_PACKAGE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$")
 
 
 class SessionStateMode(str, Enum):
@@ -262,11 +263,12 @@ class SessionStateMode(str, Enum):
 
 
 class OperationCategory(str, Enum):
-    """Typed operation vocabulary; only permission app-op changes are enabled."""
+    """Typed operation vocabulary; executor support remains category-specific."""
 
     READ_ONLY = "read_only"
     PERMISSION_APP_OP = "permission_app_op"
     PERMISSION_APP_OP_RESTORE = "permission_app_op_restore"
+    INSTALL_ABSENT = "install_absent"
     RESET_DATA = "reset_data"
     REINSTALL = "reinstall"
     LAUNCH = "launch"
@@ -371,6 +373,7 @@ class OperationAuthorization:
     expected_prior_state: str | None
     desired_state: str | None
     restoration: RestorationAuthorization | None
+    arguments: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -907,28 +910,23 @@ def _parse_operation(
     target_serial: str,
     package_name: str,
     permissions: frozenset[str],
+    apk_sha256: str,
+    fixture_manifest_sha256: str,
     session_deadline: datetime,
     cleanup_deadline: datetime,
     cleanup_reserve_seconds: int,
 ) -> OperationAuthorization:
     error_type = AuthorizationError
     operation = _object(value, error_type)
-    _fields(
-        operation,
-        {
-            "operation_id",
-            "category",
-            "phase",
-            "target_serial",
-            "package_name",
-            "timeout_seconds",
-            "permission_name",
-            "expected_prior_state",
-            "desired_state",
-            "restoration",
-        },
-        error_type,
-    )
+    required_fields = {
+        "operation_id", "category", "phase", "target_serial", "package_name",
+        "timeout_seconds", "permission_name", "expected_prior_state",
+        "desired_state", "restoration",
+    }
+    if required_fields - operation.keys():
+        _invalid(error_type, "MISSING_FIELD")
+    if operation.keys() - (required_fields | {"arguments"}):
+        _invalid(error_type, "UNKNOWN_FIELD")
     operation_id = _string(operation["operation_id"], error_type)
     try:
         category = OperationCategory(_string(operation["category"], error_type))
@@ -945,7 +943,10 @@ def _parse_operation(
     expected_prior = operation["expected_prior_state"]
     desired = operation["desired_state"]
     raw_restore = operation["restoration"]
+    raw_arguments = operation.get("arguments")
     if category is OperationCategory.PERMISSION_APP_OP:
+        if raw_arguments is not None:
+            _invalid(error_type, "INVALID_VALUE")
         if phase != "qualification":
             _invalid(error_type, "INVALID_VALUE")
         if (
@@ -978,12 +979,131 @@ def _parse_operation(
             expected_prior,
             desired,
             restoration,
+            (),
         )
     if permission is not None or expected_prior is not None or desired is not None or raw_restore is not None:
         _invalid(error_type, "INVALID_VALUE")
-    if phase not in {"admission", "qualification"}:
+    arguments = _parse_add_scan_operation_arguments(
+        raw_arguments,
+        category=category,
+        phase=phase,
+        package_name=package,
+        apk_sha256=apk_sha256,
+        fixture_manifest_sha256=fixture_manifest_sha256,
+    )
+    if phase not in {"admission", "qualification", "cleanup"}:
         _invalid(error_type, "INVALID_VALUE")
-    return OperationAuthorization(operation_id, category, phase, serial, package, timeout, None, None, None, None)
+    return OperationAuthorization(
+        operation_id, category, phase, serial, package, timeout,
+        None, None, None, None, arguments,
+    )
+
+
+def _parse_add_scan_operation_arguments(
+    value: object,
+    *,
+    category: OperationCategory,
+    phase: str,
+    package_name: str,
+    apk_sha256: str,
+    fixture_manifest_sha256: str,
+) -> tuple[tuple[str, str], ...]:
+    """Validate the closed arguments used by one first fresh Add & Scan plan."""
+    if value is None:
+        if category is OperationCategory.INSTALL_ABSENT:
+            _invalid(AuthorizationError, "INVALID_VALUE")
+        return ()
+    arguments = _object(value, AuthorizationError)
+    if category is OperationCategory.INSTALL_ABSENT:
+        _fields(
+            arguments,
+            {"action", "artifact_sha256", "expected_foreground_package"},
+            AuthorizationError,
+        )
+        foreground = _string(arguments["expected_foreground_package"], AuthorizationError, 255)
+        if (
+            phase != "admission"
+            or package_name != QUALIFICATION_PACKAGE
+            or _string(arguments["action"], AuthorizationError, 64) != "install_qualification_apk"
+            or _digest(arguments["artifact_sha256"], AuthorizationError) != apk_sha256
+            or not _PACKAGE_RE.fullmatch(foreground)
+            or foreground in {QUALIFICATION_PACKAGE, ORDINARY_PACKAGE}
+        ):
+            _invalid(AuthorizationError, "INVALID_VALUE")
+    elif category is OperationCategory.RESET_DATA:
+        _fields(arguments, {"action", "expected_foreground_package", "expected_foreground_after"}, AuthorizationError)
+        foreground = _string(arguments["expected_foreground_package"], AuthorizationError, 255)
+        foreground_after = _string(arguments["expected_foreground_after"], AuthorizationError, 255)
+        if (
+            phase != "admission"
+            or package_name != QUALIFICATION_PACKAGE
+            or _string(arguments["action"], AuthorizationError, 64) != "clear_qualification_data"
+            or not _PACKAGE_RE.fullmatch(foreground)
+            or foreground != QUALIFICATION_PACKAGE
+            or not _PACKAGE_RE.fullmatch(foreground_after)
+            or foreground_after in {QUALIFICATION_PACKAGE, ORDINARY_PACKAGE}
+        ):
+            _invalid(AuthorizationError, "INVALID_VALUE")
+    elif category is OperationCategory.FIXTURE_STAGING:
+        _fields(arguments, {
+            "action", "destination", "fixture_manifest_sha256", "expected_foreground_package",
+        }, AuthorizationError)
+        action = _string(arguments["action"], AuthorizationError, 64)
+        foreground = _string(arguments["expected_foreground_package"], AuthorizationError, 255)
+        expected_phase = {
+            "stage_approved_fixture_set": "qualification",
+            "remove_session_owned_fixture_set": "cleanup",
+        }.get(action)
+        if (
+            package_name != QUALIFICATION_PACKAGE
+            or expected_phase is None
+            or phase != expected_phase
+            or _string(arguments["destination"], AuthorizationError, 64) != "qualification_fixture_root"
+            or _digest(arguments["fixture_manifest_sha256"], AuthorizationError)
+            != fixture_manifest_sha256
+            or not _PACKAGE_RE.fullmatch(foreground)
+            or foreground in {ORDINARY_PACKAGE}
+            or (action == "stage_approved_fixture_set" and foreground == QUALIFICATION_PACKAGE)
+            or (action == "remove_session_owned_fixture_set" and foreground != QUALIFICATION_PACKAGE)
+        ):
+            _invalid(AuthorizationError, "INVALID_VALUE")
+    elif category is OperationCategory.LAUNCH:
+        _fields(arguments, {"action", "expected_foreground_package"}, AuthorizationError)
+        foreground = _string(arguments["expected_foreground_package"], AuthorizationError, 255)
+        if (
+            phase != "qualification"
+            or package_name != QUALIFICATION_PACKAGE
+            or _string(arguments["action"], AuthorizationError, 64) != "launch_qualification_main"
+            or not _PACKAGE_RE.fullmatch(foreground)
+            or foreground in {QUALIFICATION_PACKAGE, ORDINARY_PACKAGE}
+        ):
+            _invalid(AuthorizationError, "INVALID_VALUE")
+    elif category is OperationCategory.NAVIGATION:
+        _fields(arguments, {"action"}, AuthorizationError)
+        action = _string(arguments["action"], AuthorizationError, 64)
+        if (
+            phase != "qualification"
+            or package_name != QUALIFICATION_PACKAGE
+            or action not in {
+                "accept_terms", "preferences", "skip_provider", "add_root",
+                "storage_root", "open_qualification_root", "open_fixture_root",
+                "select_folder", "add_and_scan", "view_job", "library_navigation",
+            }
+        ):
+            _invalid(AuthorizationError, "INVALID_VALUE")
+    elif category is OperationCategory.READ_ONLY:
+        _fields(arguments, {"observation"}, AuthorizationError)
+        if (
+            phase != "qualification"
+            or package_name != QUALIFICATION_PACKAGE
+            or _string(arguments["observation"], AuthorizationError, 64)
+            not in {"scan_admission", "job_status", "terminal_scan", "fixture_library"}
+        ):
+            _invalid(AuthorizationError, "INVALID_VALUE")
+    else:
+        _invalid(AuthorizationError, "INVALID_VALUE")
+    return tuple(sorted((key, _string(item, AuthorizationError, 256))
+                        for key, item in arguments.items()))
 
 
 def _parse_restoration(
@@ -1157,6 +1277,8 @@ def _validate_authorization(document: object) -> SessionAuthorization:
             serial,
             package,
             permissions,
+            apk_sha,
+            fixture_sha,
             deadline,
             cleanup_deadline,
             cleanup_reserve,

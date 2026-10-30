@@ -19,9 +19,13 @@ observer for comparing the Library fixture membership, relevant job states,
 and pending cleanup with the owner-approved baseline. The authorization may
 carry that baseline, but it is not compared with fabricated observations or
 read from application storage. Fresh admission reports an absent qualification
-installation separately from a present but incompatible installation. Both
-conditions block this slice because installation and reset operations are not
-enabled.
+installation separately from a present but incompatible installation. The
+existing generic `admit_session` path remains read-only and blocks both states.
+The private first Add & Scan host-simulation path accepts an absent package
+only with an explicit pinned-artifact install operation, or an exact compatible
+package only with an explicit qualification-package data-reset operation.
+Unknown, mismatched, or incompatible installations remain blocked. This
+narrow path does not add a public live command or production device transport.
 
 Host APK inspection supplies the exact APK digest, package and version facts,
 declared permissions, signature-inspector results, and the source revision
@@ -30,6 +34,10 @@ claim carried by the APK; this interface does not independently prove source
 provenance. Host inspection does not prove which binary is installed on a
 device, the installed signer, foreground identity, device identity, or
 no-reset contents.
+The first Add & Scan admission additionally rejects a dirty source record and
+requires the installation observer to report the exact APK digest along with
+package, version, and signer. Those checks are exercised only with injected
+host observations; no physical package observer is available in this slice.
 
 ## Private authorization and approval
 
@@ -76,9 +84,14 @@ and input values. Do not copy private identifiers into shared logs or results.
 
 ## Operation authorization
 
-The typed operation vocabulary can represent read-only work, permission
-app-ops, reset, reinstall, launch, force-stop, navigation, refresh, fixture
-staging, shell, and path mutation. The reversible
+The authorization schema can represent read-only work, permission app-ops,
+reset, reinstall, launch, force-stop, navigation, refresh, fixture staging,
+shell, and path mutation. The first Add & Scan executor accepts only its fixed
+plan vocabulary: absent-only qualification APK install, authorized
+qualification-package reset, manifest-bound fixture staging and cleanup,
+qualification launch, closed onboarding/navigation actions, and four named
+read-only observations. It rejects permission app-ops, reinstall, force-stop,
+refresh, shell, and generic path mutation. The reversible
 `MANAGE_EXTERNAL_STORAGE` permission/app-op transition is the only device
 operation enabled. It must
 name the qualification package, the exact target, the expected prior state,
@@ -96,6 +109,8 @@ category remains a known unsupported category in the generic device
 authorization vocabulary; it does not authorize or execute the local staging
 workflow. This preserves the device authorization contract without coupling
 local fixture copying to device grants.
+The first Add & Scan simulation consumes this category only inside its exact
+nineteen-operation plan and only through an injected fake transport.
 
 Before changing the permission, the injected transport rechecks the target,
 foreground package, and installed qualification package identity. It captures
@@ -144,10 +159,12 @@ cannot run a product operation or resume the prior session. The local record
 does not authenticate its owner or provide a cryptographic tamper-proof
 guarantee.
 
-Reset or clear-data, reinstall, launch, force-stop, navigation or refresh,
-device-side fixture staging, arbitrary shell or path changes, ordinary-app
-operations, and scenario behavior are not enabled by this slice. The broader
-typed authorization vocabulary does not grant those actions.
+Outside the private first Add & Scan simulation, generic reset, reinstall,
+force-stop, refresh, device-side fixture transfer, arbitrary shell or path
+changes, ordinary-app operations, and other scenarios remain unsupported. The
+broader typed authorization vocabulary does not grant those actions. The
+Add & Scan adapter has no production transport and cannot execute on a device;
+host simulation is not physical qualification.
 
 ## Safe validation
 

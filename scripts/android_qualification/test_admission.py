@@ -7,6 +7,7 @@ these tests never access an Android device.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -21,7 +22,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts.android_qualification import admission, manifest
+from scripts.android_qualification import admission, evidence, manifest
+from scripts.android_qualification.physical import ui
 from scripts.android_qualification.test_manifest import (
     MANAGE_EXTERNAL_STORAGE,
     NOW,
@@ -2142,6 +2144,72 @@ class PermissionOperationTests(unittest.TestCase):
         self.assertEqual(self.session.lifecycle, admission.SessionLifecycle.BLOCKED)
         assert_mutation_calls(self, self.transport.mutation_calls, [("denied", 30), ("allowed", 20)])
 
+    def test_interruption_and_failed_restoration_preserve_issue23_obligation_and_block_add_scan(self) -> None:
+        self.transport.interrupt_read_call = 2
+        self.transport.fail_without_state_change.add("allowed")
+
+        result = self.executor.execute("permission-loss-synthetic", now=NOW)
+
+        self.assertEqual(result.code, admission.OperationCode.RESTORATION_FAILED)
+        self.assertTrue(self.session.failure_pending)
+        self.assertEqual(self.session.lifecycle, admission.SessionLifecycle.BLOCKED)
+        assert_mutation_calls(self, self.transport.mutation_calls, [("denied", 30), ("allowed", 20)])
+        pending = admission.pending_for_device(
+            self.authorization.target_serial,
+            path=admission._DEVICE_SAFETY_PATH,
+        )
+        self.assertIsNotNone(pending)
+        calls_after_failure = list(self.transport.calls)
+        second_restore = self.executor.restore("permission-restore-synthetic", now=NOW)
+        self.assertIn(
+            second_restore.code,
+            {admission.OperationCode.RESTORATION_FAILED, admission.OperationCode.SESSION_TERMINAL},
+        )
+        self.assertEqual(self.transport.calls, calls_after_failure)
+        self.assertEqual(len(self.transport.configuration_mutation_calls), 2)
+
+        document = _first_add_scan_plan(installation="absent")
+        document["authorization_id"] = "authorization-after-interrupted-unresolved-restore-synthetic"
+        authorization = self._load_authorization(document)
+        approval = manifest.load_owner_approval(
+            write_private_json(
+                self.directory,
+                "approval-after-restoration.json",
+                _first_add_scan_approval_document(authorization),
+            ),
+            authorization,
+            now=NOW,
+        )
+        artifact = admission.HostArtifactFacts(
+            apk_sha256="a" * 64,
+            package_name=QUALIFICATION_PACKAGE,
+            version_code=123,
+            signature_verified=True,
+            signer_count=1,
+            certificate_sha256="b" * 64,
+            source_revision="c" * 40,
+            declared_permissions=frozenset({MANAGE_EXTERNAL_STORAGE}),
+            source_dirty=False,
+        )
+        admission_transport = FakeAddScanAdmissionTransport(
+            FirstAddScanAdmissionTests.observation(
+                admission.InstallationObservation.absent(),
+                foreground=LAUNCHER,
+            )
+        )
+
+        first_scan = admission.admit_first_add_scan_session(
+            authorization,
+            approval,
+            artifact,
+            admission_transport,
+            now=NOW,
+        )
+
+        self.assertEqual(first_scan.code, admission.AdmissionCode.DEVICE_RESTORATION_PENDING)
+        self.assertIsNone(first_scan.session)
+        self.assertEqual(admission_transport.observation_calls, 0)
+
     def test_noop_permission_state_finishes_without_mutation(self) -> None:
         document = authorization_document()
         document["authorization_id"] = "authorization-noop-synthetic"
@@ -2216,6 +2284,2036 @@ class PermissionOperationTests(unittest.TestCase):
 
     def test_shell_category_is_rejected_before_transport(self) -> None:
         self._assert_unsupported_category_is_rejected_before_transport("shell")
+
+# First fresh Add & Scan authorization and execution tests.
+def operation(category: str, arguments: dict[str, str], *, phase: str = "admission"):
+    return {
+        "operation_id": f"{category}-synthetic",
+        "category": category,
+        "phase": phase,
+        "target_serial": "private-serial-synthetic",
+        "package_name": QUALIFICATION_PACKAGE,
+        "timeout_seconds": 10,
+        "permission_name": None,
+        "expected_prior_state": None,
+        "desired_state": None,
+        "restoration": None,
+        "arguments": arguments,
+    }
+
+
+class AddScanAuthorizationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.directory = Path(self.temporary_directory.name)
+
+    def load(self, value):
+        path = write_private_json(self.directory, "authorization.json", value)
+        return manifest.load_authorization(path)
+
+    def authorize(self, operation_value):
+        document = authorization_document()
+        document["operations"] = [operation_value]
+        document["approved_remediation"] = []
+        return document
+
+    def test_absent_install_is_typed_to_exact_pinned_artifact_and_foreground(self):
+        value = self.authorize(operation(
+            "install_absent",
+            {
+                "action": "install_qualification_apk",
+                "artifact_sha256": "a" * 64,
+                "expected_foreground_package": "com.android.launcher3",
+            },
+        ))
+
+        parsed = self.load(value)
+
+        self.assertEqual(
+            parsed.operations[0].category,
+            manifest.OperationCategory.INSTALL_ABSENT,
+        )
+        self.assertEqual(
+            dict(parsed.operations[0].arguments),
+            {
+                "action": "install_qualification_apk",
+                "artifact_sha256": "a" * 64,
+                "expected_foreground_package": "com.android.launcher3",
+            },
+        )
+
+    def test_absent_install_rejects_wrong_artifact_or_ordinary_foreground(self):
+        for arguments in (
+            {
+                "action": "install_qualification_apk",
+                "artifact_sha256": "0" * 64,
+                "expected_foreground_package": "com.android.launcher3",
+            },
+            {
+                "action": "install_qualification_apk",
+                "artifact_sha256": "a" * 64,
+                "expected_foreground_package": "com.argusromtoolkit.argus",
+            },
+        ):
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(manifest.AuthorizationError):
+                    self.load(self.authorize(operation("install_absent", arguments)))
+
+    def test_fresh_reset_is_a_fixed_qualification_package_operation(self):
+        parsed = self.load(self.authorize(operation(
+            "reset_data", {
+                "action": "clear_qualification_data",
+                "expected_foreground_package": QUALIFICATION_PACKAGE,
+                "expected_foreground_after": "com.android.launcher3",
+            }
+        )))
+
+        self.assertEqual(dict(parsed.operations[0].arguments), {
+            "action": "clear_qualification_data",
+            "expected_foreground_package": QUALIFICATION_PACKAGE,
+            "expected_foreground_after": "com.android.launcher3",
+        })
+
+    def test_reset_cannot_name_a_different_package_or_generic_path(self):
+        for arguments in (
+            {
+                "action": "clear_qualification_data",
+                "expected_foreground_package": QUALIFICATION_PACKAGE,
+                "expected_foreground_after": "com.android.launcher3",
+                "package_name": "com.argusromtoolkit.argus",
+            },
+            {
+                "action": "clear_qualification_data",
+                "expected_foreground_package": QUALIFICATION_PACKAGE,
+                "expected_foreground_after": "com.android.launcher3",
+                "path": "/data/user/0/other.package",
+            },
+        ):
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(manifest.AuthorizationError):
+                    self.load(self.authorize(operation("reset_data", arguments)))
+
+    def test_fixture_staging_uses_only_manifest_bound_symbolic_destination(self):
+        parsed = self.load(self.authorize(operation(
+            "fixture_staging",
+            {
+                "action": "stage_approved_fixture_set",
+                "destination": "qualification_fixture_root",
+                "fixture_manifest_sha256": "f" * 64,
+                "expected_foreground_package": "com.android.launcher3",
+            },
+            phase="qualification",
+        )))
+
+        self.assertEqual(parsed.operations[0].arguments[1], (
+            "destination", "qualification_fixture_root"
+        ))
+
+    def test_fixture_staging_rejects_generic_path_and_wrong_manifest(self):
+        for arguments in (
+            {
+                "action": "stage_approved_fixture_set",
+                "destination": "/sdcard/anywhere",
+                "fixture_manifest_sha256": "f" * 64,
+                "expected_foreground_package": "com.android.launcher3",
+            },
+            {
+                "action": "stage_approved_fixture_set",
+                "destination": "qualification_fixture_root",
+                "fixture_manifest_sha256": "0" * 64,
+                "expected_foreground_package": "com.android.launcher3",
+            },
+        ):
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(manifest.AuthorizationError):
+                    self.load(self.authorize(operation(
+                        "fixture_staging", arguments, phase="qualification"
+                    )))
+
+    def test_first_add_scan_navigation_is_a_single_closed_action(self):
+        parsed = self.load(self.authorize(operation(
+            "navigation", {"action": "add_and_scan"}, phase="qualification"
+        )))
+
+        self.assertEqual(dict(parsed.operations[0].arguments), {
+            "action": "add_and_scan",
+        })
+
+    def test_shell_category_cannot_receive_arguments(self):
+        with self.assertRaises(manifest.AuthorizationError):
+            self.load(self.authorize(operation("shell", {"command": "pm clear"})))
+
+
+def _first_add_scan_plan(*, installation: str):
+    target = "private-serial-synthetic"
+    operations = []
+
+    def add(op_id: str, category: str, phase: str, arguments: dict[str, str]):
+        operations.append({
+            "operation_id": op_id,
+            "category": category,
+            "phase": phase,
+            "target_serial": target,
+            "package_name": QUALIFICATION_PACKAGE,
+            "timeout_seconds": 10,
+            "permission_name": None,
+            "expected_prior_state": None,
+            "desired_state": None,
+            "restoration": None,
+            "arguments": arguments,
+        })
+
+    if installation == "absent":
+        add("install-synthetic", "install_absent", "admission", {
+            "action": "install_qualification_apk",
+            "artifact_sha256": "a" * 64,
+            "expected_foreground_package": "com.android.launcher3",
+        })
+    else:
+        add("reset-synthetic", "reset_data", "admission", {
+            "action": "clear_qualification_data",
+            "expected_foreground_package": QUALIFICATION_PACKAGE,
+            "expected_foreground_after": "com.android.launcher3",
+        })
+    add("stage-synthetic", "fixture_staging", "qualification", {
+        "action": "stage_approved_fixture_set",
+        "destination": "qualification_fixture_root",
+        "fixture_manifest_sha256": "f" * 64,
+        "expected_foreground_package": "com.android.launcher3",
+    })
+    add("launch-synthetic", "launch", "qualification", {
+        "action": "launch_qualification_main",
+        "expected_foreground_package": "com.android.launcher3",
+    })
+    for action in (
+        "accept_terms", "preferences", "skip_provider", "add_root", "storage_root",
+        "open_qualification_root", "open_fixture_root", "select_folder", "add_and_scan",
+    ):
+        add(f"navigate-{action}-synthetic", "navigation", "qualification", {"action": action})
+    add("read-scan-admission-synthetic", "read_only", "qualification", {
+        "observation": "scan_admission",
+    })
+    add("navigate-view-job-synthetic", "navigation", "qualification", {"action": "view_job"})
+    add("read-job-status-synthetic", "read_only", "qualification", {
+        "observation": "job_status",
+    })
+    add("read-terminal-scan-synthetic", "read_only", "qualification", {
+        "observation": "terminal_scan",
+    })
+    add("navigate-library-synthetic", "navigation", "qualification", {
+        "action": "library_navigation",
+    })
+    add("read-fixture-library-synthetic", "read_only", "qualification", {
+        "observation": "fixture_library",
+    })
+    add("cleanup-synthetic", "fixture_staging", "cleanup", {
+        "action": "remove_session_owned_fixture_set",
+        "destination": "qualification_fixture_root",
+        "fixture_manifest_sha256": "f" * 64,
+        "expected_foreground_package": QUALIFICATION_PACKAGE,
+    })
+    document = authorization_document()
+    document["operations"] = operations
+    document["approved_remediation"] = []
+    return document
+
+
+def _first_add_scan_approval_document(authorization):
+    """Approve the fixed plan budget and cleanup reserve within one window."""
+    document = approval_document(authorization.canonical_sha256)
+    document["valid_until_utc"] = authorization.session_deadline.strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    return document
+
+
+class FakeAddScanAdmissionTransport:
+    """Synthetic read-only observations; this transport has no device bridge."""
+
+    def __init__(self, observation):
+        self.observation = observation
+        self.observation_calls = 0
+
+    def observe_fresh_admission(self):
+        self.observation_calls += 1
+        return self.observation
+
+
+class FirstAddScanAdmissionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.directory = Path(self.temporary_directory.name)
+        self.registry_path_patch = mock.patch.object(
+            admission, "_SESSION_REGISTRY_PATH", self.directory / "sessions.json"
+        )
+        self.safety_path_patch = mock.patch.object(
+            admission, "_DEVICE_SAFETY_PATH", self.directory / "restoration.json"
+        )
+        self.registry_path_patch.start()
+        self.safety_path_patch.start()
+        self.addCleanup(self.registry_path_patch.stop)
+        self.addCleanup(self.safety_path_patch.stop)
+
+    def inputs(self, installation: str):
+        document = _first_add_scan_plan(installation=installation)
+        auth_path = write_private_json(self.directory, "authorization.json", document)
+        authorization = manifest.load_authorization(auth_path)
+        approval_path = write_private_json(
+            self.directory,
+            "approval.json",
+            _first_add_scan_approval_document(authorization),
+        )
+        approval = manifest.load_owner_approval(approval_path, authorization, now=NOW)
+        artifact = admission.HostArtifactFacts(
+            apk_sha256="a" * 64,
+            package_name=QUALIFICATION_PACKAGE,
+            version_code=123,
+            signature_verified=True,
+            signer_count=1,
+            certificate_sha256="b" * 64,
+            source_revision="c" * 40,
+            declared_permissions=frozenset({MANAGE_EXTERNAL_STORAGE}),
+            source_dirty=False,
+        )
+        return authorization, approval, artifact
+
+    @staticmethod
+    def observation(installation, *, foreground=QUALIFICATION_PACKAGE, serials=("private-serial-synthetic",)):
+        return admission.FreshAdmissionObservation(
+            connected_serials=serials,
+            android_api_level=35,
+            abi="arm64-v8a",
+            capabilities=frozenset({
+                "foreground_package_observation",
+                "installed_signer_observation",
+                "permission_app_op_observation",
+                "permission_app_op_mutation",
+                "storage_reserve_observation",
+            }),
+            installation=installation,
+            foreground_package=foreground,
+            interference_free=True,
+            available_storage_bytes=2_000_000_000,
+        )
+
+    def test_absent_installation_is_admitted_only_with_explicit_pinned_install(self):
+        authorization, approval, artifact = self.inputs("absent")
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation.absent(),
+            foreground="com.android.launcher3",
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.status, admission.AdmissionStatus.ADMITTED)
+        self.assertIsNotNone(result.session)
+        self.assertEqual(transport.observation_calls, 1)
+
+    def test_short_approval_cannot_admit_plan_without_cleanup_reserve(self):
+        authorization, _approval, artifact = self.inputs("absent")
+        session_seconds = sum(
+            operation.timeout_seconds
+            for operation in authorization.operations
+            if operation.phase != "cleanup"
+        )
+        cleanup_seconds = sum(
+            operation.timeout_seconds
+            for operation in authorization.operations
+            if operation.phase == "cleanup"
+        )
+        short_valid_until = NOW + timedelta(
+            seconds=session_seconds + cleanup_seconds - 1
+        )
+        short_document = approval_document(authorization.canonical_sha256)
+        short_document["valid_until_utc"] = short_valid_until.strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        short_approval = manifest.load_owner_approval(
+            write_private_json(self.directory, "approval-short.json", short_document),
+            authorization,
+            now=NOW,
+        )
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation.absent(),
+            foreground="com.android.launcher3",
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, short_approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.code, admission.AdmissionCode.ADD_SCAN_PLAN_INVALID)
+        self.assertIsNone(result.session)
+        self.assertEqual(transport.observation_calls, 0)
+        self.assertFalse((self.directory / "sessions.json").exists())
+
+        long_document = approval_document(authorization.canonical_sha256)
+        long_document["valid_until_utc"] = authorization.session_deadline.strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        long_approval = manifest.load_owner_approval(
+            write_private_json(self.directory, "approval-long.json", long_document),
+            authorization,
+            now=NOW,
+        )
+        retry_transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation.absent(),
+            foreground="com.android.launcher3",
+        ))
+        retry = admission.admit_first_add_scan_session(
+            authorization, long_approval, artifact, retry_transport, now=NOW,
+        )
+
+        self.assertEqual(retry.status, admission.AdmissionStatus.ADMITTED)
+        self.assertEqual(retry_transport.observation_calls, 1)
+
+    def test_compatible_installation_requires_explicit_data_reset(self):
+        authorization, approval, artifact = self.inputs("compatible")
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation(
+                admission.InstallationStatus.PRESENT,
+                QUALIFICATION_PACKAGE,
+                123,
+                "b" * 64,
+                "a" * 64,
+            )
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.status, admission.AdmissionStatus.ADMITTED)
+        self.assertIsNotNone(result.session)
+
+    def test_compatible_version_and_signer_with_wrong_artifact_digest_blocks(self):
+        authorization, approval, artifact = self.inputs("compatible")
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation(
+                admission.InstallationStatus.PRESENT,
+                QUALIFICATION_PACKAGE,
+                123,
+                "b" * 64,
+                "0" * 64,
+            )
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.code, admission.AdmissionCode.QUALIFICATION_APP_INCOMPATIBLE)
+        self.assertIsNone(result.session)
+
+    def test_incompatible_installation_blocks_before_any_operation(self):
+        authorization, approval, artifact = self.inputs("compatible")
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation(
+                admission.InstallationStatus.PRESENT,
+                QUALIFICATION_PACKAGE,
+                122,
+                "b" * 64,
+            )
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.code, admission.AdmissionCode.QUALIFICATION_APP_INCOMPATIBLE)
+        self.assertIsNone(result.session)
+        self.assertEqual(transport.observation_calls, 1)
+
+    def test_absent_installation_rejects_compatible_reset_plan(self):
+        authorization, approval, artifact = self.inputs("compatible")
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation.absent(),
+            foreground="com.android.launcher3",
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.code, admission.AdmissionCode.ADD_SCAN_PLAN_INVALID)
+        self.assertIsNone(result.session)
+
+    def test_wrong_foreground_blocks_absent_install_before_mutation(self):
+        authorization, approval, artifact = self.inputs("absent")
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation.absent(),
+            foreground="com.argusromtoolkit.argus.qualification",
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.code, admission.AdmissionCode.FOREGROUND_MISMATCH)
+        self.assertIsNone(result.session)
+
+    def test_multiple_targets_block_add_scan_admission(self):
+        authorization, approval, artifact = self.inputs("absent")
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation.absent(),
+            foreground="com.android.launcher3",
+            serials=("private-serial-synthetic", "another-device"),
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.code, admission.AdmissionCode.AMBIGUOUS_TARGET)
+        self.assertIsNone(result.session)
+
+    def test_dirty_provenance_artifact_blocks_before_device_observation(self):
+        authorization, approval, artifact = self.inputs("absent")
+        artifact = admission.HostArtifactFacts(
+            apk_sha256=artifact.apk_sha256,
+            package_name=artifact.package_name,
+            version_code=artifact.version_code,
+            signature_verified=artifact.signature_verified,
+            signer_count=artifact.signer_count,
+            certificate_sha256=artifact.certificate_sha256,
+            source_revision=artifact.source_revision,
+            declared_permissions=artifact.declared_permissions,
+            source_dirty=True,
+        )
+        transport = FakeAddScanAdmissionTransport(self.observation(
+            admission.InstallationObservation.absent(),
+            foreground="com.android.launcher3",
+        ))
+
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW,
+        )
+
+        self.assertEqual(result.code, admission.AdmissionCode.ARTIFACT_MISMATCH)
+        self.assertEqual(transport.observation_calls, 0)
+
+LAUNCHER = "com.android.launcher3"
+
+
+def alias(kind: str, value: str) -> str:
+    digest = hashlib.sha256(f"{kind}:{value}".encode()).hexdigest()[:32]
+    return f"{kind}-{digest}"
+
+
+def evidence_session_id(authorization) -> str:
+    return hashlib.sha256(
+        f"argus-add-scan:{authorization.authorization_id}:{authorization.canonical_sha256}".encode()
+    ).hexdigest()[:32]
+
+
+def session_spec(authorization) -> evidence.SessionSpec:
+    return evidence.SessionSpec(
+        session_id=evidence_session_id(authorization),
+        scenario_id=alias("scenario", authorization.scenario_ids[0]),
+        artifact=evidence.ArtifactPin(
+            alias("artifact", authorization.apk_sha256),
+            authorization.apk_sha256,
+            evidence.ArtifactClass.QUALIFICATION_VARIANT,
+        ),
+        authorization=evidence.AuthorizationPin(1, authorization.canonical_sha256),
+        fixtures=evidence.FixturePin(
+            2,
+            authorization.fixture_manifest_sha256,
+            alias("corpus", authorization.fixture_manifest_sha256),
+        ),
+        plan=evidence.PlanPin(
+            alias("plan", authorization.plan_sha256), 1, authorization.plan_sha256
+        ),
+        rules=evidence.AcceptanceRulesPin(
+            alias("rules", authorization.rules_sha256), "1.0.0", authorization.rules_sha256
+        ),
+        environment=evidence.EnvironmentPin(
+            evidence.Platform.ANDROID,
+            alias("platform-version", "api-35"),
+            alias("environment", "synthetic-api-35"),
+            alias("target", authorization.target_ref),
+        ),
+        review_requirements=evidence.ReviewRequirements(
+            required_evidence_refs=(alias("evidence", "synthetic-add-scan"),),
+            objective_review_allowed=True,
+            direct_owner_observation_allowed=True,
+            retrospective_allowed=False,
+        ),
+    )
+
+
+def xml_frame(*labels: str) -> str:
+    nodes = "".join(
+        f'<node package="{QUALIFICATION_PACKAGE}" text="{label}" content-desc="" '
+        'enabled="true" clickable="true" visible-to-user="true" '
+        f'bounds="[{index * 120},20][{index * 120 + 100},80]" />'
+        for index, label in enumerate(labels)
+    )
+    return f'<hierarchy rotation="0">{nodes}</hierarchy>'
+
+
+class FakeAddScanTransport:
+    """A poisoned-ADB fake: every call is a typed in-memory operation."""
+
+    def __init__(self, installation: str):
+        self.installation = installation
+        self.foreground = LAUNCHER if installation == "absent" else QUALIFICATION_PACKAGE
+        self.calls: list[tuple] = []
+        self.mutations: list[str] = []
+        self.nav_actions: list[str] = []
+        self.capture_count = 0
+        self.captures_by_navigation_count: dict[int, int] = {}
+        self.staged = False
+        self.install_calls = 0
+        self.reset_calls = 0
+        self.stage_calls = 0
+        self.cleanup_calls = 0
+        self.install_uncertain = False
+        self.install_deadline_expired = False
+        self.launch_uncertain = False
+        self.stage_uncertain = False
+        self.stage_interrupted = False
+        self.stage_receipt_override = None
+        self.cleanup_uncertain = False
+        self.cleanup_interrupted = False
+        self.cleanup_interrupted_error = False
+        self.navigation_uncertain_action: str | None = None
+        self.ambiguous_navigation_action: str | None = None
+        self.interrupt_action: str | None = None
+        self.interrupted_action: str | None = None
+        self.cleanup_succeeds = True
+        self.scan_admission_succeeds = True
+        self.scan_admission_uncertain = False
+        self.job_status_label = "Completed"
+        self.scan_status_label = "Complete"
+        self.job_status_frames: list[tuple[str, ...]] | None = None
+        self.job_status_repeat_last_frame = True
+        self.job_status_interrupt_at: int | None = None
+        self.job_status_capture_count = 0
+        self.job_status_capture_clock = None
+        self.job_status_capture_times: list[float] = []
+        self.fixture_library_label = "Metroid, NES"
+        self.target_matches = True
+        self.foreground_drift = False
+        self.installed_package_override = None
+        self.transacted_packages: list[str] = []
+        self.capture_slots: list[str] = []
+
+    def observe_fresh_admission(self):
+        installed = admission.InstallationObservation.absent()
+        if self.installation == "compatible":
+            installed = admission.InstallationObservation(
+                admission.InstallationStatus.PRESENT,
+                QUALIFICATION_PACKAGE,
+                123,
+                "b" * 64,
+                "a" * 64,
+            )
+        return admission.FreshAdmissionObservation(
+            connected_serials=("private-serial-synthetic",),
+            android_api_level=35,
+            abi="arm64-v8a",
+            capabilities=frozenset({
+                "foreground_package_observation",
+                "installed_signer_observation",
+                "permission_app_op_observation",
+                "permission_app_op_mutation",
+                "storage_reserve_observation",
+            }),
+            installation=installed,
+            foreground_package=self.foreground,
+            interference_free=True,
+            available_storage_bytes=2_000_000_000,
+        )
+
+    def verify_target(self, serial, target_ref, timeout_seconds):
+        self.calls.append(("verify_target", serial, target_ref))
+        return self.target_matches
+
+    def verify_foreground(self, package_name, timeout_seconds):
+        self.calls.append(("verify_foreground", package_name))
+        if self.foreground_drift:
+            return False
+        return self.foreground == package_name
+
+    def observe_installed_package(
+        self, serial, package_name, version_code, certificate_sha256, timeout_seconds
+    ):
+        self.calls.append(("observe_installed_package", package_name))
+        if self.installation == "absent":
+            return admission.InstallationObservation.absent()
+        if self.installed_package_override is not None:
+            return self.installed_package_override
+        return admission.InstallationObservation(
+            admission.InstallationStatus.PRESENT,
+            QUALIFICATION_PACKAGE,
+            123,
+            "b" * 64,
+            "a" * 64,
+        )
+
+    def install_qualification_artifact(
+        self, serial, package_name, apk_sha256, certificate_sha256, version_code, timeout_seconds
+    ):
+        self.mutations.append("install_absent")
+        self.transacted_packages.append(package_name)
+        self.install_calls += 1
+        if self.install_uncertain:
+            self.installation = "compatible"
+            raise TimeoutError("synthetic install response lost")
+        self.installation = "compatible"
+        if self.install_deadline_expired:
+            raise admission._OperationDeadlineExpired
+
+    def reset_qualification_data(self, serial, package_name, timeout_seconds):
+        self.mutations.append("reset_data")
+        self.transacted_packages.append(package_name)
+        self.reset_calls += 1
+        if self.install_uncertain:
+            raise TimeoutError("synthetic reset response lost")
+        self.foreground = LAUNCHER
+        return True
+
+    def stage_approved_fixture_set(
+        self, serial, package_name, session_id, fixture_plan, destination, timeout_seconds
+    ):
+        self.mutations.append("stage_fixtures")
+        self.transacted_packages.append(package_name)
+        self.stage_calls += 1
+        self.staged = True
+        if self.stage_interrupted:
+            raise InterruptedError("synthetic interrupted staging response contains private details")
+        if self.stage_uncertain:
+            raise TimeoutError("synthetic fixture staging response lost")
+        if self.stage_receipt_override is not None:
+            return self.stage_receipt_override
+        return admission.FixtureStageReceipt(
+            session_id=session_id,
+            fixture_manifest_sha256=fixture_plan.fixture_manifest_sha256,
+            file_count=fixture_plan.file_count,
+            byte_count=fixture_plan.byte_count,
+            content_sha256=fixture_plan.content_sha256,
+        )
+
+    def launch_qualification_main(self, serial, package_name, timeout_seconds):
+        self.mutations.append("launch")
+        self.transacted_packages.append(package_name)
+        self.foreground = QUALIFICATION_PACKAGE
+        if self.launch_uncertain:
+            raise TimeoutError("synthetic launch response lost")
+
+    def capture_accessibility(self, serial, package_name, session_id, capture_slot, timeout_seconds):
+        self.calls.append(("capture_accessibility", session_id))
+        self.capture_slots.append(capture_slot)
+        self.capture_count += 1
+        nav_actions = (
+            "accept_terms", "preferences", "skip_provider", "add_root", "storage_root",
+            "open_qualification_root", "open_fixture_root", "select_folder", "add_and_scan",
+            "view_job", "library_navigation",
+        )
+        index = len(self.nav_actions)
+        captures_at_index = self.captures_by_navigation_count.get(index, 0)
+        self.captures_by_navigation_count[index] = captures_at_index + 1
+        if index < 9:
+            label = nav_actions[index]
+            if label == self.ambiguous_navigation_action:
+                return xml_frame(
+                    "Unexpected synthetic surface Metroid private-serial-synthetic "
+                    "synthetic-credential-canary"
+                )
+            frames = {
+                "accept_terms": ("Set up your Library", "Accept current terms"),
+                "preferences": ("Use current preferences",),
+                "skip_provider": ("Skip SteamGridDB",),
+                "add_root": ("Add Library Folder",),
+                "storage_root": ("Choose a storage volume", "Internal shared storage"),
+                "open_qualification_root": ("ArgusQualification",),
+                "open_fixture_root": ("fixtures",),
+                "select_folder": ("Select this folder",),
+                "add_and_scan": (
+                    "Add Library Folder?",
+                    "/storage/emulated/0/ArgusQualification/fixtures",
+                    "Add &amp; Scan",
+                ),
+            }
+            return xml_frame(*frames[label])
+        if index == 9:
+            if self.scan_admission_uncertain:
+                return xml_frame("Scan not confirmed")
+            if self.scan_admission_succeeds:
+                return xml_frame("Scanning in progress", "View Job")
+            return xml_frame(
+                "Folder added, but the scan could not start. You can scan it from the folder details."
+            )
+        if index == 10 and self.job_status_frames is not None:
+            frame_index = self.job_status_capture_count
+            if frame_index >= len(self.job_status_frames) and not self.job_status_repeat_last_frame:
+                return xml_frame("Library", "Search Library")
+            if self.job_status_capture_clock is not None:
+                self.job_status_capture_times.append(self.job_status_capture_clock())
+            self.job_status_capture_count += 1
+            if self.job_status_interrupt_at == frame_index + 1:
+                raise InterruptedError("synthetic job poll interruption contains private details")
+            if frame_index < len(self.job_status_frames):
+                return xml_frame(*self.job_status_frames[frame_index])
+            return xml_frame(*self.job_status_frames[-1])
+        if index == 10 and captures_at_index == 0:
+            return xml_frame(
+                "Library Scan",
+                f"Job status: {self.job_status_label}",
+                self.scan_status_label,
+            )
+        if index == 10:
+            return xml_frame("Library", "Search Library")
+        if index == 11:
+            return xml_frame("Search Library", self.fixture_library_label)
+        if index == 12:
+            return xml_frame("Library Scan", "Job status: Completed", "Complete")
+        raise AssertionError("unexpected synthetic UI capture")
+
+    def tap_accessibility_control(self, serial, package_name, action, bounds, timeout_seconds):
+        self.mutations.append(f"navigation:{action}")
+        self.transacted_packages.append(package_name)
+        self.nav_actions.append(action)
+        if action == self.interrupted_action:
+            raise InterruptedError("synthetic interrupted tap response contains private details")
+        if action == self.interrupt_action:
+            raise KeyboardInterrupt
+        if action == self.navigation_uncertain_action:
+            raise TimeoutError("synthetic tap result lost")
+
+    def cleanup_session_fixture_set(
+        self, serial, package_name, session_id, fixture_manifest_sha256, destination, timeout_seconds
+    ):
+        self.mutations.append("cleanup_fixtures")
+        self.transacted_packages.append(package_name)
+        self.cleanup_calls += 1
+        if self.cleanup_uncertain:
+            self.staged = False
+            raise TimeoutError("synthetic cleanup response lost")
+        if self.cleanup_interrupted:
+            self.staged = False
+            raise KeyboardInterrupt
+        if self.cleanup_interrupted_error:
+            self.staged = False
+            raise InterruptedError("synthetic interrupted cleanup response contains private details")
+        if self.cleanup_succeeds:
+            self.staged = False
+            return admission.FixtureCleanupReceipt(
+                session_id=session_id,
+                fixture_manifest_sha256=fixture_manifest_sha256,
+                removed_file_count=1,
+                remaining_file_count=0,
+            )
+        return None
+
+
+class FailingWriter:
+    def __init__(self, writer, *, fail_method):
+        self.writer = writer
+        self.fail_method = fail_method
+
+    def __getattr__(self, name):
+        value = getattr(self.writer, name)
+        if name != self.fail_method:
+            return value
+
+        def fail(*_args, **_kwargs):
+            raise evidence.EvidenceError(evidence.EvidenceErrorCode.UNAVAILABLE)
+
+        return fail
+
+
+class RecordingWriter:
+    """Capture successfully appended observations while preserving facade writes."""
+
+    def __init__(self, writer):
+        self.writer = writer
+        self.assertions = []
+        self.lifecycles = []
+        self.terminals = []
+        self.events = []
+
+    def __getattr__(self, name):
+        value = getattr(self.writer, name)
+        if name == "append_assertion":
+            def append_assertion(*args, **kwargs):
+                receipt = value(*args, **kwargs)
+                self.assertions.append(args[1])
+                self.events.append(("assertion", args[1], args[2]))
+                return receipt
+
+            return append_assertion
+        if name == "append_lifecycle":
+            def append_lifecycle(*args, **kwargs):
+                receipt = value(*args, **kwargs)
+                self.lifecycles.append(args[1])
+                self.events.append(("lifecycle", args[1], args[2]))
+                return receipt
+
+            return append_lifecycle
+        if name == "append_terminal":
+            def append_terminal(*args, **kwargs):
+                receipt = value(*args, **kwargs)
+                self.terminals.append(args[1])
+                self.events.append(("terminal", args[1], args[2]))
+                return receipt
+
+            return append_terminal
+        return value
+
+
+class FailingAssertionRefWriter:
+    """Fail one selected assertion append while forwarding all other writes."""
+
+    def __init__(self, writer, *, assertion_ref):
+        self.writer = writer
+        self.assertion_ref = assertion_ref
+        self.failed = False
+
+    def append_assertion(self, session_id, observation, request):
+        if observation.assertion_ref == self.assertion_ref and not self.failed:
+            self.failed = True
+            raise evidence.EvidenceError(evidence.EvidenceErrorCode.UNAVAILABLE)
+        return self.writer.append_assertion(session_id, observation, request)
+
+    def __getattr__(self, name):
+        return getattr(self.writer, name)
+
+
+class AppendThenRaiseTerminalWriter:
+    """Model an append that became durable before its acknowledgement failed."""
+
+    def __init__(self, writer):
+        self.writer = writer
+        self.calls = 0
+
+    def append_terminal(self, *args, **kwargs):
+        self.calls += 1
+        self.writer.append_terminal(*args, **kwargs)
+        raise evidence.EvidenceError(evidence.EvidenceErrorCode.UNAVAILABLE)
+
+    def __getattr__(self, name):
+        return getattr(self.writer, name)
+
+
+class AddScanExecutorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.directory = Path(self.temporary_directory.name)
+        mock.patch.object(
+            admission, "_SESSION_REGISTRY_PATH", self.directory / "sessions.json"
+        ).start()
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(
+            admission, "_DEVICE_SAFETY_PATH", self.directory / "restoration.json"
+        ).start()
+        self.evidence_store = evidence.EvidenceStore(self.directory / "evidence")
+
+    def admitted(self, installation: str, *, authorization_id: str | None = None):
+        document = _first_add_scan_plan(installation=installation)
+        if authorization_id is not None:
+            document["authorization_id"] = authorization_id
+        authorization = manifest.load_authorization(
+            write_private_json(
+                self.directory,
+                f"authorization-{document['authorization_id']}.json",
+                document,
+            )
+        )
+        approval = manifest.load_owner_approval(
+            write_private_json(
+                self.directory,
+                f"approval-{authorization.authorization_id}.json",
+                _first_add_scan_approval_document(authorization),
+            ),
+            authorization,
+            now=NOW,
+        )
+        artifact = admission.HostArtifactFacts(
+            apk_sha256="a" * 64,
+            package_name=QUALIFICATION_PACKAGE,
+            version_code=123,
+            signature_verified=True,
+            signer_count=1,
+            certificate_sha256="b" * 64,
+            source_revision="c" * 40,
+            declared_permissions=frozenset({MANAGE_EXTERNAL_STORAGE}),
+            source_dirty=False,
+        )
+        transport = FakeAddScanTransport(installation)
+        result = admission.admit_first_add_scan_session(
+            authorization, approval, artifact, transport, now=NOW
+        )
+        self.assertEqual(result.status, admission.AdmissionStatus.ADMITTED)
+        return authorization, result.session, transport
+
+    def fixture_plan(self, authorization):
+        return admission.FixtureTransferPlan(
+            fixture_manifest_sha256=authorization.fixture_manifest_sha256,
+            file_count=1,
+            byte_count=4,
+            content_sha256="1" * 64,
+        )
+
+    def expectations(self):
+        return (ui.LibraryExpectation("fixture-synthetic", "Metroid", "NES"),)
+
+    def executor(
+        self,
+        session,
+        transport,
+        *,
+        writer=None,
+        installation="absent",
+        library_expectations=None,
+        monotonic=None,
+        sleeper=None,
+    ):
+        clock_options = {}
+        if monotonic is not None:
+            clock_options["monotonic"] = monotonic
+        if sleeper is not None:
+            clock_options["sleeper"] = sleeper
+        return admission._AddScanOperationExecutor(
+            session=session,
+            transport=transport,
+            writer=writer or self.evidence_store.execution_writer(),
+            evidence_spec=session_spec(session.authorization),
+            fixture_plan=self.fixture_plan(session.authorization),
+            library_expectations=library_expectations or self.expectations(),
+            **clock_options,
+        )
+
+    def assert_uncertain_evidence_is_durable(self, result, writer):
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assertEqual(
+            writer.terminals[-1].outcome,
+            evidence.TerminalOutcome.BLOCKED,
+        )
+        self.assertIsNotNone(result.execution_manifest_sha256)
+
+    def assert_no_owner_verdict_and_sanitized_output(
+        self,
+        authorization,
+        result,
+        *,
+        execution_manifest_sha256=None,
+    ):
+        reviewer = self.evidence_store.owner_reviewer(
+            admission._add_scan_alias("owner", "synthetic-reviewer")
+        )
+        scenario_ref = session_spec(authorization).scenario_id
+        self.assertIsNone(reviewer.latest_verdict(scenario_ref))
+        manifest_sha256 = execution_manifest_sha256 or result.execution_manifest_sha256
+        self.assertIsNotNone(manifest_sha256)
+        packet = reviewer.review_packet(manifest_sha256).decode("utf-8")
+        safe_output = repr(result) + packet
+        for private_value in (
+            "private-serial-synthetic",
+            str(self.directory),
+            "/storage/emulated/0/ArgusQualification/fixtures",
+            "Metroid",
+            "Unexpected synthetic surface",
+            "synthetic-credential-canary",
+        ):
+            self.assertNotIn(private_value, safe_output)
+
+    def test_fake_session_observes_all_stages_and_finishes_blocked_on_synthetic_identity(self):
+        authorization, session, transport = self.admitted("absent")
+        writer = self.evidence_store.execution_writer()
+
+        with mock.patch("subprocess.run", side_effect=AssertionError("ADB")), \
+             mock.patch("subprocess.Popen", side_effect=AssertionError("ADB")), \
+             mock.patch("os.system", side_effect=AssertionError("ADB")):
+            result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertTrue(result.workflow_completed)
+        self.assertEqual(result.scan_admission, "admitted")
+        self.assertEqual(result.job_status, "completed")
+        self.assertEqual(result.terminal_scan_status, "complete")
+        self.assertEqual(result.fixture_result_indices, (0,))
+        self.assertEqual(result.cleanup_status, "verified")
+        self.assertEqual(transport.install_calls, 1)
+        self.assertEqual(transport.stage_calls, 1)
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertFalse(transport.staged)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertGreater(execution.record_count, 10)
+        snapshot = writer.snapshot(execution.session_id)
+        self.assertEqual(snapshot.state, "finalized")
+        self.assertEqual(snapshot.records[-1].event_type, "terminal")
+        self.assertEqual(snapshot.records[-3].event_type, "lifecycle")
+        self.assertEqual(snapshot.records[-2].event_type, "assertion")
+        self.assertTrue(all(package == QUALIFICATION_PACKAGE for package in transport.transacted_packages))
+        self.assertTrue(all(
+            slot == admission.QUALIFICATION_CAPTURE_SLOT
+            for slot in transport.capture_slots
+        ))
+        self.assertEqual(result.scope_extensions, ())
+        self.assertIn("identity", result.blocker.lower())
+        self.assertIn("physical", result.blocker.lower())
+
+    def test_compatible_install_requires_one_explicit_reset_and_never_reinstalls(self):
+        _authorization, session, transport = self.admitted("compatible")
+
+        result = self.executor(session, transport, installation="compatible").execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.reset_calls, 1)
+        self.assertEqual(transport.install_calls, 0)
+
+    def test_uncertain_install_blocks_without_retry_or_later_product_mutation(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.install_uncertain = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.install_calls, 1)
+        self.assertEqual(transport.stage_calls, 0)
+        self.assertEqual(transport.mutations, ["install_absent"])
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assert_uncertain_evidence_is_durable(result, writer)
+        self.assertTrue(any("install" in item.area for item in result.scope_extensions))
+
+    def test_install_deadline_timeout_is_uncertain_and_never_retried(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.install_deadline_expired = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.install_calls, 1)
+        self.assertEqual(transport.stage_calls, 0)
+        self.assertEqual(transport.mutations, ["install_absent"])
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.BLOCKED)
+        self.assert_uncertain_evidence_is_durable(result, writer)
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_interrupted_fixture_stage_is_not_replayed_or_cleaned_without_receipt(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.stage_interrupted = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.stage_calls, 1)
+        self.assertEqual(transport.cleanup_calls, 0)
+        self.assertEqual(transport.mutations, ["install_absent", "stage_fixtures"])
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.INTERRUPTED)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assertTrue(any(
+            item.area == "fixture staging ownership and cleanup"
+            for item in result.scope_extensions
+        ))
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assertNotIn("synthetic interrupted staging response", repr(result))
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_interrupted_add_and_scan_tap_stops_observation_and_withholds_cleanup(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.interrupted_action = "add_and_scan"
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 1)
+        self.assertEqual(transport.nav_actions.count("view_job"), 0)
+        self.assertEqual(transport.nav_actions.count("library_navigation"), 0)
+        self.assertEqual(transport.cleanup_calls, 0)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.INTERRUPTED)
+        self.assertTrue(any(
+            item.area == "uncertain Add & Scan tap recovery"
+            for item in result.scope_extensions
+        ))
+        self.assertEqual(transport.mutations.count("navigation:add_and_scan"), 1)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assertNotIn("synthetic interrupted tap response", repr(result))
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_uncertain_reset_blocks_without_retry_or_reinstall(self):
+        _authorization, session, transport = self.admitted("compatible")
+        transport.install_uncertain = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer, installation="compatible").execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.reset_calls, 1)
+        self.assertEqual(transport.install_calls, 0)
+        self.assertEqual(transport.stage_calls, 0)
+        self.assertEqual(transport.mutations, ["reset_data"])
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assert_uncertain_evidence_is_durable(result, writer)
+        self.assertTrue(any("reset" in item.area for item in result.scope_extensions))
+
+    def test_uncertain_fixture_staging_is_not_retried_or_cleaned_without_readback_ownership(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.stage_uncertain = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.stage_calls, 1)
+        self.assertEqual(transport.cleanup_calls, 0)
+        self.assertIn("fixture staging ownership is uncertain", result.blocker.lower())
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assert_uncertain_evidence_is_durable(result, writer)
+
+    def test_mismatched_stage_receipt_is_durably_blocked_without_retry_or_cleanup(self):
+        receipt_changes = (
+            ("session_id", "f" * 32),
+            ("fixture_manifest_sha256", "0" * 64),
+            ("file_count", 2),
+            ("byte_count", 5),
+            ("content_sha256", "0" * 64),
+        )
+        for index, (field, wrong_value) in enumerate(receipt_changes):
+            with self.subTest(field=field):
+                authorization, session, transport = self.admitted(
+                    "absent",
+                    authorization_id=f"issue26-receipt-mismatch-{index}",
+                )
+                plan = self.fixture_plan(authorization)
+                valid_receipt = admission.FixtureStageReceipt(
+                    session_id=evidence_session_id(authorization),
+                    fixture_manifest_sha256=plan.fixture_manifest_sha256,
+                    file_count=plan.file_count,
+                    byte_count=plan.byte_count,
+                    content_sha256=plan.content_sha256,
+                )
+                transport.stage_receipt_override = replace(
+                    valid_receipt,
+                    **{field: wrong_value},
+                )
+                writer = RecordingWriter(self.evidence_store.execution_writer())
+
+                result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+                self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+                self.assertEqual(transport.stage_calls, 1)
+                self.assertEqual(transport.cleanup_calls, 0)
+                self.assertEqual(transport.nav_actions, [])
+                self.assertTrue(any(
+                    item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+                    for item in writer.assertions
+                ))
+                self.assert_uncertain_evidence_is_durable(result, writer)
+                self.assertTrue(any("staging" in item.area for item in result.scope_extensions))
+                self.assertEqual(
+                    writer.snapshot(evidence_session_id(authorization)).state,
+                    "finalized",
+                )
+
+    def test_uncertain_launch_is_recorded_and_not_retried(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.launch_uncertain = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.mutations.count("launch"), 1)
+        self.assertEqual(transport.nav_actions, [])
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assert_uncertain_evidence_is_durable(result, writer)
+        self.assertTrue(any("launch" in item.area for item in result.scope_extensions))
+
+    def test_uncertain_navigation_tap_is_recorded_and_not_retried(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.navigation_uncertain_action = "preferences"
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.nav_actions, ["accept_terms", "preferences"])
+        self.assertEqual(transport.nav_actions.count("preferences"), 1)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assert_uncertain_evidence_is_durable(result, writer)
+        self.assertTrue(any("navigation" in item.area for item in result.scope_extensions))
+
+    def test_wrong_installed_package_or_signer_blocks_before_fixture_mutation(self):
+        wrong_installations = (
+            admission.InstallationObservation(
+                admission.InstallationStatus.PRESENT,
+                "com.argusromtoolkit.argus",
+                123,
+                "b" * 64,
+                "a" * 64,
+            ),
+            admission.InstallationObservation(
+                admission.InstallationStatus.PRESENT,
+                QUALIFICATION_PACKAGE,
+                123,
+                "0" * 64,
+                "a" * 64,
+            ),
+            admission.InstallationObservation(
+                admission.InstallationStatus.PRESENT,
+                QUALIFICATION_PACKAGE,
+                123,
+                "b" * 64,
+                "0" * 64,
+            ),
+        )
+        for index, wrong_installation in enumerate(wrong_installations):
+            with self.subTest(wrong_installation=wrong_installation):
+                with mock.patch.object(
+                    admission,
+                    "_SESSION_REGISTRY_PATH",
+                    self.directory / f"sessions-{index}.json",
+                ):
+                    _authorization, session, transport = self.admitted("absent")
+                    transport.installed_package_override = wrong_installation
+                    writer = RecordingWriter(self.evidence_store.execution_writer())
+
+                    result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+                    self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+                    self.assertEqual(transport.install_calls, 1)
+                    self.assertEqual(transport.stage_calls, 0)
+                    self.assertTrue(any(
+                        item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+                        for item in writer.assertions
+                    ))
+                    self.assert_uncertain_evidence_is_durable(result, writer)
+                    self.assertTrue(any("installation" in item.area for item in result.scope_extensions))
+
+    def test_cleanup_uncertainty_is_not_retried_and_requests_owner_recovery(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.cleanup_uncertain = True
+
+        result = self.executor(session, transport).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertTrue(any("cleanup" in item.area for item in result.scope_extensions))
+
+    def test_interrupt_after_add_and_scan_does_not_clean_possible_scan_input(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.interrupt_action = "add_and_scan"
+        writer = self.evidence_store.execution_writer()
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 1)
+        self.assertEqual(transport.cleanup_calls, 0)
+        self.assertTrue(any("uncertain scan admission" in item.area for item in result.scope_extensions))
+        self.assertEqual(writer.snapshot(evidence_session_id(session.authorization)).state, "finalized")
+
+    def test_terminal_session_cannot_be_reexecuted(self):
+        _authorization, session, transport = self.admitted("absent")
+        executor = self.executor(session, transport)
+        first = executor.execute(now=NOW)
+        mutation_count = len(transport.mutations)
+
+        second = executor.execute(now=NOW)
+
+        self.assertEqual(first.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(second.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(len(transport.mutations), mutation_count)
+
+    def test_cleanup_failure_is_recorded_after_one_attempt_and_blocks_session(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.cleanup_succeeds = False
+        writer = self.evidence_store.execution_writer()
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        writer.verify_execution(evidence_session_id(session.authorization))
+
+    def test_evidence_failure_before_mutation_stops_transport(self):
+        _authorization, session, transport = self.admitted("absent")
+        writer = FailingWriter(
+            self.evidence_store.execution_writer(), fail_method="append_assertion"
+        )
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.mutations, [])
+
+
+    def test_uncertain_add_and_scan_tap_is_not_retried_and_cleanup_waits_for_terminal_read(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.navigation_uncertain_action = "add_and_scan"
+
+        result = self.executor(session, transport).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 1)
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertFalse(transport.staged)
+
+    def test_resolved_uncertain_add_and_scan_tap_has_no_stale_recovery_blocker(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.navigation_uncertain_action = "add_and_scan"
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertTrue(result.workflow_completed)
+        self.assertEqual(result.cleanup_status, "verified")
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 1)
+        self.assertEqual(result.scope_extensions, ())
+        self.assertNotIn("uncertain", result.blocker.lower())
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+
+    def test_explicit_scan_admission_failure_is_recorded_and_owned_fixtures_are_cleaned(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.scan_admission_succeeds = False
+        writer = self.evidence_store.execution_writer()
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.scan_admission, "not_admitted")
+        self.assertIsNone(result.job_status)
+        self.assertEqual(transport.nav_actions.count("view_job"), 0)
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertFalse(transport.staged)
+        self.assertEqual(writer.snapshot(evidence_session_id(authorization)).state, "finalized")
+
+    def test_ambiguous_scan_admission_blocks_and_withholds_fixture_cleanup(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.scan_admission_uncertain = True
+
+        result = self.executor(session, transport).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertIsNone(result.scan_admission)
+        self.assertEqual(transport.cleanup_calls, 0)
+        self.assertTrue(any("uncertain scan admission" in item.area for item in result.scope_extensions))
+
+    def test_failed_terminal_result_stops_library_navigation_and_cleans_after_terminal(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_label = "Failed"
+        transport.scan_status_label = "Failed"
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.job_status, "failed")
+        self.assertEqual(result.terminal_scan_status, "failed")
+        self.assertEqual(transport.nav_actions.count("library_navigation"), 0)
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertFalse(transport.staged)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.FAILED
+            for item in writer.assertions
+        ))
+        cleanup_lifecycles = [item.lifecycle for item in writer.lifecycles]
+        self.assertIn(evidence.Lifecycle.CLEANUP_STARTED, cleanup_lifecycles)
+        self.assertIn(evidence.Lifecycle.CLEANUP_COMPLETED, cleanup_lifecycles)
+        primary_failure_event = next(
+            index
+            for index, (event_type, observation, _request) in enumerate(writer.events)
+            if event_type == "assertion"
+            and observation.actual_outcome is evidence.AssertionOutcome.FAILED
+        )
+        cleanup_start_event = next(
+            index
+            for index, (event_type, observation, _request) in enumerate(writer.events)
+            if event_type == "lifecycle"
+            and observation.lifecycle is evidence.Lifecycle.CLEANUP_STARTED
+        )
+        cleanup_result_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-synthetic:result"
+        )
+        cleanup_result = next(
+            observation
+            for observation in writer.assertions
+            if observation.assertion_ref == cleanup_result_ref
+        )
+        self.assertLess(primary_failure_event, cleanup_start_event)
+        self.assertEqual(cleanup_result.actual_outcome, evidence.AssertionOutcome.PASSED)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_primary_product_failure_and_cleanup_receipt_failure_keep_failed_terminal(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_label = "Failed"
+        transport.scan_status_label = "Failed"
+        transport.cleanup_succeeds = False
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.job_status, "failed")
+        self.assertEqual(result.terminal_scan_status, "failed")
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(transport.mutations.count("cleanup_fixtures"), 1)
+        self.assertFalse(any(
+            item.lifecycle is evidence.Lifecycle.CLEANUP_COMPLETED
+            for item in writer.lifecycles
+        ))
+        cleanup_result_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-synthetic:result"
+        )
+        cleanup_result = next(
+            observation
+            for observation in writer.assertions
+            if observation.assertion_ref == cleanup_result_ref
+        )
+        self.assertEqual(cleanup_result.actual_outcome, evidence.AssertionOutcome.FAILED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_prerequisite_block_and_uncertain_cleanup_are_recorded_separately(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.ambiguous_navigation_action = "open_fixture_root"
+        transport.cleanup_uncertain = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 0)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        cleanup_recovery_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-recovery:blocked"
+        )
+        cleanup_recovery = next(
+            item
+            for item in writer.assertions
+            if item.assertion_ref == cleanup_recovery_ref
+        )
+        self.assertEqual(cleanup_recovery.actual_outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.BLOCKED)
+        self.assertFalse(any(
+            item.lifecycle is evidence.Lifecycle.CLEANUP_COMPLETED
+            for item in writer.lifecycles
+        ))
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_cleanup_result_append_failure_records_blocked_recovery_without_retry(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_label = "Failed"
+        transport.scan_status_label = "Failed"
+        recording_writer = RecordingWriter(self.evidence_store.execution_writer())
+        failed_result_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-synthetic:result"
+        )
+        writer = FailingAssertionRefWriter(
+            recording_writer,
+            assertion_ref=failed_result_ref,
+        )
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertTrue(writer.failed)
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(transport.mutations.count("cleanup_fixtures"), 1)
+        self.assertFalse(transport.staged)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.FAILED
+            for item in recording_writer.assertions
+        ))
+        cleanup_recovery_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-recovery:blocked"
+        )
+        cleanup_recovery = next(
+            item
+            for item in recording_writer.assertions
+            if item.assertion_ref == cleanup_recovery_ref
+        )
+        self.assertEqual(cleanup_recovery.actual_outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(recording_writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        execution = recording_writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(recording_writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_terminal_ack_failure_keeps_primary_failure_and_durable_append_verifies(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_label = "Failed"
+        transport.scan_status_label = "Failed"
+        recording_writer = RecordingWriter(self.evidence_store.execution_writer())
+        writer = AppendThenRaiseTerminalWriter(recording_writer)
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertIn("Add & Scan observation", result.blocker)
+        self.assertIsNone(result.execution_manifest_sha256)
+        self.assertEqual(writer.calls, 1)
+        self.assertEqual(len(recording_writer.terminals), 1)
+        self.assertEqual(recording_writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        execution = recording_writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(recording_writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(
+            authorization,
+            result,
+            execution_manifest_sha256=execution.manifest_sha256,
+        )
+
+    def test_cleanup_uncertainty_after_durable_product_failure_preserves_failure_order(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_label = "Failed"
+        transport.scan_status_label = "Failed"
+        transport.cleanup_uncertain = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(transport.mutations.count("cleanup_fixtures"), 1)
+        product_failure_event = next(
+            index
+            for index, (event_type, observation, _request) in enumerate(writer.events)
+            if event_type == "assertion"
+            and observation.actual_outcome is evidence.AssertionOutcome.FAILED
+        )
+        cleanup_intent_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-synthetic:intent"
+        )
+        cleanup_intent_event = next(
+            index
+            for index, (event_type, observation, _request) in enumerate(writer.events)
+            if event_type == "assertion"
+            and observation.assertion_ref == cleanup_intent_ref
+        )
+        self.assertLess(product_failure_event, cleanup_intent_event)
+        cleanup_recovery_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-recovery:blocked"
+        )
+        cleanup_recovery = next(
+            item
+            for item in writer.assertions
+            if item.assertion_ref == cleanup_recovery_ref
+        )
+        self.assertEqual(cleanup_recovery.actual_outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_cleanup_interrupt_after_product_failure_keeps_failed_terminal_and_recovery(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_label = "Failed"
+        transport.scan_status_label = "Failed"
+        transport.cleanup_interrupted = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(transport.mutations.count("cleanup_fixtures"), 1)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.FAILED
+            for item in writer.assertions
+        ))
+        cleanup_recovery_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-recovery:blocked"
+        )
+        cleanup_recovery = next(
+            item
+            for item in writer.assertions
+            if item.assertion_ref == cleanup_recovery_ref
+        )
+        self.assertEqual(cleanup_recovery.actual_outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_cleanup_interrupted_error_after_product_failure_preserves_both_classifications(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_label = "Failed"
+        transport.scan_status_label = "Failed"
+        transport.cleanup_interrupted_error = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertEqual(transport.mutations.count("cleanup_fixtures"), 1)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.FAILED
+            for item in writer.assertions
+        ))
+        self.assertTrue(any(
+            extension.area == "interrupted fixture cleanup"
+            for extension in result.scope_extensions
+        ))
+        cleanup_recovery_ref = admission._add_scan_alias(
+            "assertion", f"{evidence_session_id(authorization)}:cleanup-recovery:blocked"
+        )
+        cleanup_recovery = next(
+            item
+            for item in writer.assertions
+            if item.assertion_ref == cleanup_recovery_ref
+        )
+        self.assertEqual(cleanup_recovery.actual_outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assertNotIn("synthetic interrupted cleanup response", repr(result))
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_active_parent_and_child_job_state_is_blocked_without_cleanup(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [
+            ("Library Scan", "Job status: Running", "Scanning"),
+        ]
+        transport.job_status_repeat_last_frame = True
+        clock = [0.0]
+        waits: list[float] = []
+
+        def sleep(seconds):
+            waits.append(seconds)
+            clock[0] += seconds
+
+        job_timeout = next(
+            operation.timeout_seconds
+            for operation in authorization.operations
+            if operation.category is admission.OperationCategory.READ_ONLY
+            and dict(operation.arguments).get("observation") == "job_status"
+        )
+        transport.job_status_capture_clock = lambda: clock[0]
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(
+            session,
+            transport,
+            writer=writer,
+            monotonic=lambda: clock[0],
+            sleeper=sleep,
+        ).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.job_status, "running")
+        self.assertIsNone(result.terminal_scan_status)
+        self.assertEqual(transport.cleanup_calls, 0)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.job_status_capture_count, len(waits))
+        self.assertEqual(clock[0], job_timeout)
+        self.assertTrue(all(value < job_timeout for value in transport.job_status_capture_times))
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.BLOCKED
+            for item in writer.assertions
+        ))
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.BLOCKED)
+        self.assertFalse(any(
+            item.actual_outcome is evidence.AssertionOutcome.FAILED
+            for item in writer.assertions
+        ))
+
+    def test_job_status_polls_async_loading_then_active_and_terminal_snapshots(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [
+            ("Loading job details",),
+            ("Library Scan", "Job status: Running", "Scanning"),
+            ("Library Scan", "Job status: Completed", "Complete"),
+        ]
+        transport.job_status_repeat_last_frame = False
+        clock = [0.0]
+        waits: list[float] = []
+
+        def sleep(seconds):
+            self.assertGreater(seconds, 0)
+            waits.append(seconds)
+            clock[0] += seconds
+
+        transport.job_status_capture_clock = lambda: clock[0]
+        with mock.patch.object(
+            ui,
+            "observe_scan_job_detail",
+            wraps=ui.observe_scan_job_detail,
+        ) as observe_job:
+            result = self.executor(
+                session,
+                transport,
+                monotonic=lambda: clock[0],
+                sleeper=sleep,
+            ).execute(now=NOW)
+
+        self.assertTrue(result.workflow_completed)
+        self.assertEqual(result.job_status, "completed")
+        self.assertEqual(result.terminal_scan_status, "complete")
+        self.assertEqual(transport.job_status_capture_count, 3)
+        self.assertEqual(waits, [0.25, 0.25])
+        self.assertEqual(observe_job.call_count, 3)
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 1)
+        self.assertEqual(transport.nav_actions.count("view_job"), 1)
+        self.assertLess(
+            transport.nav_actions.index("add_and_scan"),
+            transport.nav_actions.index("view_job"),
+        )
+        self.assertLess(
+            transport.nav_actions.index("view_job"),
+            transport.nav_actions.index("library_navigation"),
+        )
+        self.assertEqual(result.cleanup_status, "verified")
+
+    def test_conflicting_parent_child_snapshot_blocks_without_poll_or_cleanup(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [
+            ("Library Scan", "Job status: Completed", "Scanning"),
+        ]
+        transport.job_status_repeat_last_frame = False
+
+        result = self.executor(
+            session,
+            transport,
+        ).execute(now=NOW)
+
+        self.assertEqual(transport.job_status_capture_count, 1)
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.terminal_scan_status, None)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 0)
+
+    def test_unknown_job_detail_is_ambiguous_and_not_polled(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [("Library Scan",)]
+        transport.job_status_repeat_last_frame = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(
+            session,
+            transport,
+            writer=writer,
+        ).execute(now=NOW)
+
+        self.assertEqual(transport.job_status_capture_count, 1)
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.BLOCKED)
+        self.assertEqual(transport.cleanup_calls, 0)
+
+    def test_job_poll_rejects_a_different_route_without_retry_or_cleanup(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [("Library", "Search Library")]
+        transport.job_status_repeat_last_frame = True
+
+        result = self.executor(
+            session,
+            transport,
+        ).execute(now=NOW)
+
+        self.assertEqual(transport.job_status_capture_count, 1)
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 1)
+        self.assertEqual(transport.nav_actions.count("view_job"), 1)
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.terminal_scan_status, None)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assertEqual(transport.cleanup_calls, 0)
+
+    def test_product_failure_in_job_snapshot_stops_immediately_as_failed(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [("Retry Library setup",)]
+        transport.job_status_repeat_last_frame = True
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(
+            session,
+            transport,
+            writer=writer,
+        ).execute(now=NOW)
+
+        self.assertEqual(transport.job_status_capture_count, 1)
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        self.assertTrue(any(
+            item.actual_outcome is evidence.AssertionOutcome.FAILED
+            for item in writer.assertions
+        ))
+        self.assertEqual(transport.cleanup_calls, 0)
+
+    def test_unresolved_job_loading_stops_at_operation_deadline_without_late_capture(self):
+        authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [("Loading job details",)]
+        transport.job_status_repeat_last_frame = True
+        clock = [0.0]
+        waits: list[float] = []
+
+        def sleep(seconds):
+            self.assertGreater(seconds, 0)
+            waits.append(seconds)
+            clock[0] += seconds
+
+        transport.job_status_capture_clock = lambda: clock[0]
+        job_timeout = next(
+            operation.timeout_seconds
+            for operation in authorization.operations
+            if operation.category is admission.OperationCategory.READ_ONLY
+            and dict(operation.arguments).get("observation") == "job_status"
+        )
+        result = self.executor(
+            session,
+            transport,
+            monotonic=lambda: clock[0],
+            sleeper=sleep,
+        ).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.terminal_scan_status, None)
+        self.assertLessEqual(clock[0], job_timeout)
+        self.assertEqual(clock[0], sum(waits))
+        self.assertTrue(all(value < job_timeout for value in transport.job_status_capture_times))
+        self.assertEqual(transport.job_status_capture_count, len(waits))
+        self.assertEqual(transport.cleanup_calls, 0)
+
+    def test_interrupted_job_poll_is_not_replayed_and_does_not_clean_unresolved_fixtures(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.job_status_frames = [("Library Scan", "Job status: Running", "Scanning")]
+        transport.job_status_repeat_last_frame = True
+        transport.job_status_interrupt_at = 2
+        clock = [0.0]
+        waits: list[float] = []
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+
+        result = self.executor(
+            session,
+            transport,
+            writer=writer,
+            monotonic=lambda: clock[0],
+            sleeper=lambda seconds: (waits.append(seconds), clock.__setitem__(0, clock[0] + seconds)),
+        ).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.INTERRUPTED)
+        self.assertEqual(transport.job_status_capture_count, 2)
+        self.assertEqual(transport.nav_actions.count("add_and_scan"), 1)
+        self.assertEqual(transport.nav_actions.count("view_job"), 1)
+        self.assertEqual(transport.cleanup_calls, 0)
+        self.assertEqual(result.cleanup_status, "blocked")
+        self.assert_no_owner_verdict_and_sanitized_output(
+            session.authorization,
+            result,
+        )
+
+    def test_missing_fixture_specific_result_is_failed_but_owned_cleanup_completes(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.fixture_library_label = "Different Game, NES"
+
+        result = self.executor(session, transport).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.terminal_scan_status, "complete")
+        self.assertEqual(result.fixture_result_indices, ())
+        self.assertEqual(result.cleanup_status, "verified")
+
+    def test_individual_fixture_library_receipt_mismatch_is_failed_and_cleanup_remains_exact(self):
+        authorization, session, transport = self.admitted("absent")
+        writer = RecordingWriter(self.evidence_store.execution_writer())
+        expected = (
+            ui.LibraryExpectation("fixture-metroid", "Metroid", "NES"),
+            ui.LibraryExpectation("fixture-zelda", "Zelda", "SNES"),
+        )
+
+        result = self.executor(
+            session,
+            transport,
+            writer=writer,
+            library_expectations=expected,
+        ).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(result.fixture_result_indices, (0,))
+        self.assertEqual(result.cleanup_status, "verified")
+        self.assertEqual(transport.cleanup_calls, 1)
+        self.assertFalse(transport.staged)
+        expected_fixture_result_refs = {
+            admission._add_scan_alias(
+                "assertion", f"{evidence_session_id(authorization)}:fixture-result-{index:03d}"
+            )
+            for index in range(2)
+        }
+        fixture_results = [
+            item for item in writer.assertions
+            if item.assertion_ref in expected_fixture_result_refs
+        ]
+        self.assertEqual(len(fixture_results), 2)
+        self.assertEqual(
+            [item.actual_outcome for item in fixture_results],
+            [evidence.AssertionOutcome.PASSED, evidence.AssertionOutcome.FAILED],
+        )
+        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+        execution = writer.verify_execution(evidence_session_id(authorization))
+        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+
+    def test_wrong_foreground_drift_blocks_before_reset_or_install(self):
+        _authorization, session, transport = self.admitted("absent")
+        transport.foreground_drift = True
+
+        result = self.executor(session, transport).execute(now=NOW)
+
+        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+        self.assertEqual(transport.mutations, [])
+
 
 if __name__ == "__main__":
     unittest.main()

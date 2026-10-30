@@ -2878,6 +2878,7 @@ class FakeAddScanTransport:
         self.stage_uncertain = False
         self.stage_interrupted = False
         self.stage_receipt_override = None
+        self.cleanup_receipt_override = None
         self.cleanup_uncertain = False
         self.cleanup_interrupted = False
         self.cleanup_interrupted_error = False
@@ -3103,6 +3104,8 @@ class FakeAddScanTransport:
             raise InterruptedError("synthetic interrupted cleanup response contains private details")
         if self.cleanup_succeeds:
             self.staged = False
+            if self.cleanup_receipt_override is not None:
+                return self.cleanup_receipt_override
             return admission.FixtureCleanupReceipt(
                 session_id=session_id,
                 fixture_manifest_sha256=fixture_manifest_sha256,
@@ -3199,6 +3202,16 @@ class AppendThenRaiseTerminalWriter:
 
     def __getattr__(self, name):
         return getattr(self.writer, name)
+
+
+class NonIntegerCountImpostor:
+    """Compare equal to one receipt count while retaining a non-integer type."""
+
+    def __init__(self, expected: int) -> None:
+        self.expected = expected
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is int and other == self.expected
 
 
 class AddScanExecutorTests(unittest.TestCase):
@@ -3495,15 +3508,26 @@ class AddScanExecutorTests(unittest.TestCase):
         self.assert_uncertain_evidence_is_durable(result, writer)
 
     def test_mismatched_stage_receipt_is_durably_blocked_without_retry_or_cleanup(self):
-        receipt_changes = (
-            ("session_id", "f" * 32),
-            ("fixture_manifest_sha256", "0" * 64),
-            ("file_count", 2),
-            ("byte_count", 5),
-            ("content_sha256", "0" * 64),
-        )
-        for index, (field, wrong_value) in enumerate(receipt_changes):
-            with self.subTest(field=field):
+        receipt_changes = [
+            ("session_id", "f" * 32, "mismatch"),
+            ("fixture_manifest_sha256", "0" * 64, "mismatch"),
+            ("file_count", 2, "mismatch"),
+            ("byte_count", 5, "mismatch"),
+            ("content_sha256", "0" * 64, "mismatch"),
+        ]
+        for field, expected in (("file_count", 1), ("byte_count", 4)):
+            receipt_changes.extend(
+                (field, value, case)
+                for case, value in (
+                    ("bool_true", True),
+                    ("bool_false", False),
+                    ("float", float(expected)),
+                    ("string", str(expected)),
+                    ("non_integer_equal", NonIntegerCountImpostor(expected)),
+                )
+            )
+        for index, (field, wrong_value, case) in enumerate(receipt_changes):
+            with self.subTest(field=field, case=case):
                 authorization, session, transport = self.admitted(
                     "absent",
                     authorization_id=f"issue26-receipt-mismatch-{index}",
@@ -3525,6 +3549,7 @@ class AddScanExecutorTests(unittest.TestCase):
                 result = self.executor(session, transport, writer=writer).execute(now=NOW)
 
                 self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+                self.assertEqual(result.cleanup_status, "blocked")
                 self.assertEqual(transport.stage_calls, 1)
                 self.assertEqual(transport.cleanup_calls, 0)
                 self.assertEqual(transport.nav_actions, [])
@@ -3784,37 +3809,65 @@ class AddScanExecutorTests(unittest.TestCase):
         self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
 
     def test_primary_product_failure_and_cleanup_receipt_failure_keep_failed_terminal(self):
-        authorization, session, transport = self.admitted("absent")
-        transport.job_status_label = "Failed"
-        transport.scan_status_label = "Failed"
-        transport.cleanup_succeeds = False
-        writer = RecordingWriter(self.evidence_store.execution_writer())
+        receipt_changes = []
+        for field, expected in (("removed_file_count", 1), ("remaining_file_count", 0)):
+            receipt_changes.extend(
+                (field, value, case)
+                for case, value in (
+                    ("bool_true", True),
+                    ("bool_false", False),
+                    ("float", float(expected)),
+                    ("string", str(expected)),
+                    ("non_integer_equal", NonIntegerCountImpostor(expected)),
+                )
+            )
 
-        result = self.executor(session, transport, writer=writer).execute(now=NOW)
+        for index, (field, wrong_value, case) in enumerate(receipt_changes):
+            with self.subTest(field=field, case=case):
+                authorization, session, transport = self.admitted(
+                    "absent",
+                    authorization_id=f"issue26-cleanup-receipt-type-{index}",
+                )
+                transport.job_status_label = "Failed"
+                transport.scan_status_label = "Failed"
+                plan = self.fixture_plan(authorization)
+                valid_receipt = admission.FixtureCleanupReceipt(
+                    session_id=evidence_session_id(authorization),
+                    fixture_manifest_sha256=plan.fixture_manifest_sha256,
+                    removed_file_count=plan.file_count,
+                    remaining_file_count=0,
+                )
+                transport.cleanup_receipt_override = replace(
+                    valid_receipt,
+                    **{field: wrong_value},
+                )
+                writer = RecordingWriter(self.evidence_store.execution_writer())
 
-        self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
-        self.assertEqual(result.job_status, "failed")
-        self.assertEqual(result.terminal_scan_status, "failed")
-        self.assertEqual(result.cleanup_status, "blocked")
-        self.assertEqual(transport.cleanup_calls, 1)
-        self.assertEqual(transport.mutations.count("cleanup_fixtures"), 1)
-        self.assertFalse(any(
-            item.lifecycle is evidence.Lifecycle.CLEANUP_COMPLETED
-            for item in writer.lifecycles
-        ))
-        cleanup_result_ref = admission._add_scan_alias(
-            "assertion", f"{evidence_session_id(authorization)}:cleanup-synthetic:result"
-        )
-        cleanup_result = next(
-            observation
-            for observation in writer.assertions
-            if observation.assertion_ref == cleanup_result_ref
-        )
-        self.assertEqual(cleanup_result.actual_outcome, evidence.AssertionOutcome.FAILED)
-        self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
-        execution = writer.verify_execution(evidence_session_id(authorization))
-        self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
-        self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
+                result = self.executor(session, transport, writer=writer).execute(now=NOW)
+
+                self.assertEqual(result.status, admission.AddScanExecutionStatus.BLOCKED)
+                self.assertEqual(result.job_status, "failed")
+                self.assertEqual(result.terminal_scan_status, "failed")
+                self.assertEqual(result.cleanup_status, "blocked")
+                self.assertEqual(transport.cleanup_calls, 1)
+                self.assertEqual(transport.mutations.count("cleanup_fixtures"), 1)
+                self.assertFalse(any(
+                    item.lifecycle is evidence.Lifecycle.CLEANUP_COMPLETED
+                    for item in writer.lifecycles
+                ))
+                cleanup_result_ref = admission._add_scan_alias(
+                    "assertion", f"{evidence_session_id(authorization)}:cleanup-synthetic:result"
+                )
+                cleanup_result = next(
+                    observation
+                    for observation in writer.assertions
+                    if observation.assertion_ref == cleanup_result_ref
+                )
+                self.assertEqual(cleanup_result.actual_outcome, evidence.AssertionOutcome.FAILED)
+                self.assertEqual(writer.terminals[-1].outcome, evidence.TerminalOutcome.FAILED)
+                execution = writer.verify_execution(evidence_session_id(authorization))
+                self.assertEqual(writer.snapshot(execution.session_id).state, "finalized")
+                self.assert_no_owner_verdict_and_sanitized_output(authorization, result)
 
     def test_prerequisite_block_and_uncertain_cleanup_are_recorded_separately(self):
         authorization, session, transport = self.admitted("absent")

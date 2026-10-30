@@ -3347,7 +3347,9 @@ class _AddScanOperationExecutor:
             type(receipt) is FixtureStageReceipt
             and receipt.session_id == self._spec.session_id
             and receipt.fixture_manifest_sha256 == plan.fixture_manifest_sha256
+            and type(receipt.file_count) is int
             and receipt.file_count == plan.file_count
+            and type(receipt.byte_count) is int
             and receipt.byte_count == plan.byte_count
             and receipt.content_sha256 == plan.content_sha256
         )
@@ -3902,7 +3904,9 @@ class _AddScanOperationExecutor:
             type(receipt) is FixtureCleanupReceipt
             and receipt.session_id == self._spec.session_id
             and receipt.fixture_manifest_sha256 == authorization.fixture_manifest_sha256
+            and type(receipt.removed_file_count) is int
             and receipt.removed_file_count == self._fixture_plan.file_count
+            and type(receipt.remaining_file_count) is int
             and receipt.remaining_file_count == 0
         )
         try:

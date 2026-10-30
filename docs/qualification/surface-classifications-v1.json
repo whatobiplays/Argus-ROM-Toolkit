@@ -123,6 +123,11 @@
     {"path": "scripts/android_qualification/_evidence_review.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_evidence_storage.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_evidence_review.py", "classification": "active", "region": {"kind": "file"}},
-    {"path": "scripts/android_qualification/test_evidence_issue24_boundary.py", "classification": "active", "region": {"kind": "file"}}
+    {"path": "scripts/android_qualification/test_evidence_issue24_boundary.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_library_interaction_contract.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_library_interaction_executor.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_library_interaction_oracle.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/physical/_library_interaction_ui.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_library_interactions.py", "classification": "active", "region": {"kind": "file"}}
   ]
 }

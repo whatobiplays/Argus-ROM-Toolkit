@@ -1,12 +1,14 @@
 """Release UI driver tests use synthetic XML and never contact a device."""
 
 import copy
+import importlib.util
 import json
 import unittest
 from unittest.mock import patch
 from pathlib import Path
 
 from scripts.android_qualification.physical import ui
+from scripts.android_qualification.physical import _library_interaction_ui as issue27_ui
 
 PACKAGE = "com.argusromtoolkit.argus"
 QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
@@ -966,15 +968,359 @@ class AddScanUiContractTests(unittest.TestCase):
         with self.assertRaises(ui.UIBlocked):
             ui.observe_scan_job_detail(nodes)
 
+    def test_issue27_observation_policy_has_a_private_module_boundary(self):
+        module_spec = importlib.util.find_spec(
+            "scripts.android_qualification.physical._library_interaction_ui"
+        )
+
+        self.assertIsNotNone(module_spec)
+        self.assertFalse(hasattr(ui, "parse_issue27_library_ui"))
+        self.assertFalse(hasattr(ui, "observe_issue27_fixture_library_results"))
+        self.assertFalse(hasattr(ui, "Issue27LibraryObservation"))
+        self.assertFalse(hasattr(ui, "require_verified_fixture_library_exhaustion"))
+
+    def test_issue27_candidate_from_a_foreign_package_never_fails_membership(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        xml = (
+            '<hierarchy rotation="0">'
+            '<node package="com.example.overlay" text="Other Game, NES" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>'
+        )
+
+        try:
+            with patch.object(issue27_ui.ui, "parse_ui", return_value=[]):
+                nodes = issue27_ui.parse_issue27_library_ui(
+                    xml,
+                    expected_package=QUALIFICATION_PACKAGE,
+                    library_expectations=(expectation,),
+                )
+            issue27_ui.observe_issue27_fixture_library_results(nodes, (expectation,))
+        except ui.UIBlocked:
+            pass
+        except ui.UIFailed:
+            self.fail("A foreign package cannot establish an unexpected Game result.")
+        else:
+            self.fail("A foreign accessibility package must block the candidate scan.")
+
+    def test_issue27_parser_rejects_ordinary_package_expectation_as_blocked(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        xml = (
+            '<hierarchy rotation="0">'
+            f'<node package="{ui.PACKAGE}" text="Retry Library setup" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>'
+        )
+
+        try:
+            nodes = issue27_ui.parse_issue27_library_ui(
+                xml,
+                expected_package=ui.PACKAGE,
+                library_expectations=(expectation,),
+            )
+            issue27_ui.observe_issue27_fixture_library_results(nodes, (expectation,))
+        except ui.UIBlocked:
+            return
+        except ui.UIFailed:
+            self.fail("An ordinary-package request must block before product-failure classification.")
+        self.fail("Issue #27 must reject the ordinary application package.")
+
     def test_fixture_results_require_exact_expected_title_and_platform(self):
         expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
         nodes = ui.parse_ui(
-            frame("Metroid, NES", "Other Game, NES"),
+            frame("Metroid, NES"),
             expected_package=QUALIFICATION_PACKAGE,
             library_expectations=(expectation,),
         )
 
         self.assertEqual(ui.observe_fixture_library_results(nodes, (expectation,)), (0,))
+
+    def test_unexpected_accessible_game_row_blocks_fixture_membership(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = issue27_ui.parse_issue27_library_ui(
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Metroid, NES" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="true" '
+            'visible-to-user="true" bounds="[0,20][100,80]" />'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="true" '
+            'visible-to-user="true" bounds="[120,20][220,80]" />'
+            '</hierarchy>',
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        with self.assertRaises(ui.UIFailed):
+            issue27_ui.observe_issue27_fixture_library_results(nodes, (expectation,))
+        legacy_nodes = ui.parse_ui(
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Metroid, NES" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="true" visible-to-user="true" bounds="[0,20][100,80]" />'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="true" visible-to-user="true" bounds="[120,20][220,80]" />'
+            '</hierarchy>',
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+        self.assertFalse(any(node.key == "unmatched_game" for node in legacy_nodes))
+        self.assertEqual(
+            ui.observe_fixture_library_results(legacy_nodes, (expectation,)),
+            (0,),
+        )
+
+    def test_identical_text_and_content_description_form_one_game_label(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = issue27_ui.parse_issue27_library_ui(
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'content-desc="Other Game, NES" selected="false" enabled="true" '
+            'clickable="true" long-clickable="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>',
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        with self.assertRaises(ui.UIFailed):
+            issue27_ui.observe_issue27_fixture_library_results(nodes, (expectation,))
+
+    def test_conflicting_text_and_content_description_remain_ambiguous(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = issue27_ui.parse_issue27_library_ui(
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'content-desc="Sort, Title" selected="false" enabled="true" '
+            'clickable="true" long-clickable="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>',
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            issue27_ui.observe_issue27_fixture_library_results(nodes, (expectation,))
+
+    def test_conflicting_known_and_unknown_game_labels_block_membership(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = issue27_ui.parse_issue27_library_ui(
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Metroid, NES" '
+            'content-desc="Other Game, NES" selected="false" enabled="true" '
+            'clickable="true" long-clickable="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>',
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            issue27_ui.observe_issue27_fixture_library_results(nodes, (expectation,))
+
+    def test_identical_game_label_with_invalid_geometry_remains_blocked(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        xml = (
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'content-desc="Other Game, NES" selected="false" enabled="true" '
+            'clickable="true" long-clickable="true" visible-to-user="true" '
+            'bounds="not-a-rectangle" />'
+            '</hierarchy>'
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            issue27_ui.parse_issue27_library_ui(
+                xml,
+                expected_package=QUALIFICATION_PACKAGE,
+                library_expectations=(expectation,),
+            )
+
+    def test_comma_labeled_control_without_game_card_state_is_not_an_extra_game(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = ui.parse_ui(
+            frame("Sort, Title"),
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        self.assertFalse(any(node.key == "unmatched_game" for node in nodes))
+        self.assertEqual(ui.observe_fixture_library_results(nodes, (expectation,)), ())
+
+    def test_ambiguous_comma_labeled_selected_control_blocks_issue27_membership(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = issue27_ui.parse_issue27_library_ui(
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Sort, Title" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="false" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>',
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        try:
+            issue27_ui.observe_issue27_fixture_library_results(nodes, (expectation,))
+        except ui.UIBlocked:
+            pass
+        except ui.UIFailed:
+            self.fail("An ambiguous comma-labeled control must block, not fail membership.")
+        else:
+            self.fail("An ambiguous comma-labeled control must block membership.")
+
+    def test_long_click_only_comma_labeled_candidate_blocks_issue27_membership(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        xml = (
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'enabled="true" long-clickable="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>'
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            nodes = issue27_ui.parse_issue27_library_ui(
+                xml,
+                expected_package=QUALIFICATION_PACKAGE,
+                library_expectations=(expectation,),
+            )
+            issue27_ui.observe_issue27_fixture_library_results(
+                nodes, (expectation,)
+            )
+
+    def test_long_click_only_comma_labeled_candidate_with_bad_geometry_blocks(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        xml = (
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'enabled="true" long-clickable="true" visible-to-user="true" '
+            'bounds="not-a-rectangle" />'
+            '</hierarchy>'
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            issue27_ui.parse_issue27_library_ui(
+                xml,
+                expected_package=QUALIFICATION_PACKAGE,
+                library_expectations=(expectation,),
+            )
+
+    def test_unknown_comma_labeled_node_without_card_state_blocks_issue27(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        xml = (
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'enabled="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>'
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            nodes = issue27_ui.parse_issue27_library_ui(
+                xml,
+                expected_package=QUALIFICATION_PACKAGE,
+                library_expectations=(expectation,),
+            )
+            issue27_ui.observe_issue27_fixture_library_results(
+                nodes, (expectation,)
+            )
+
+    def test_issue27_extra_row_without_independent_expectations_blocks(self):
+        nodes = issue27_ui.parse_issue27_library_ui(
+            '<hierarchy rotation="0">'
+            f'<node package="{QUALIFICATION_PACKAGE}" text="Other Game, NES" '
+            'selected="false" enabled="true" clickable="true" '
+            'long-clickable="true" visible-to-user="true" '
+            'bounds="[0,20][100,80]" />'
+            '</hierarchy>',
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(),
+        )
+
+        try:
+            issue27_ui.observe_issue27_fixture_library_results(nodes, ())
+        except ui.UIBlocked:
+            pass
+        except ui.UIFailed:
+            self.fail("An extra row cannot be evaluated without pinned fixture expectations.")
+        else:
+            self.fail("Missing independent fixture expectations must block membership.")
+
+    def test_ambiguous_comma_labeled_selected_control_with_bad_geometry_blocks(self):
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        for bounds in ('bounds="not-a-rectangle"', ""):
+            with self.subTest(bounds=bounds):
+                geometry = f" {bounds}" if bounds else ""
+                xml = (
+                    '<hierarchy rotation="0">'
+                    f'<node package="{QUALIFICATION_PACKAGE}" text="Sort, Title" '
+                    'selected="false" enabled="true" clickable="true" '
+                    'long-clickable="false" visible-to-user="true"'
+                    f'{geometry} />'
+                    '</hierarchy>'
+                )
+                with self.assertRaises(ui.UIBlocked):
+                    issue27_ui.parse_issue27_library_ui(
+                        xml,
+                        expected_package=QUALIFICATION_PACKAGE,
+                        library_expectations=(expectation,),
+                    )
+
+    def test_issue27_observation_preserves_actual_fixture_row_order(self):
+        expectations = (
+            ui.LibraryExpectation("fixture-1", "Metroid", "NES"),
+            ui.LibraryExpectation("fixture-2", "Zelda", "SNES"),
+        )
+        nodes = ui.parse_ui(
+            frame("Zelda, SNES", "Metroid, NES"),
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=expectations,
+        )
+
+        observation = issue27_ui.observe_issue27_fixture_library_results(nodes, expectations)
+
+        self.assertTrue(
+            isinstance(observation, issue27_ui.Issue27LibraryObservation),
+            "Issue27 observations must expose their actual row order.",
+        )
+        self.assertEqual(observation.fixture_ordinals, (1, 0))
+
+    def test_repeated_last_row_does_not_prove_library_exhaustion(self):
+        observer = getattr(issue27_ui, "require_verified_fixture_library_exhaustion", None)
+        self.assertTrue(callable(observer), "The fail-closed Library exhaustion guard is not implemented.")
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = ui.parse_ui(
+            frame("Metroid, NES"),
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            observer(
+                nodes,
+                (expectation,),
+                snapshots=((0,), (0,)),
+            )
+
+    def test_possible_unrequested_page_without_completion_signal_stays_blocked(self):
+        observer = getattr(issue27_ui, "require_verified_fixture_library_exhaustion", None)
+        self.assertTrue(callable(observer), "The fail-closed Library exhaustion guard is not implemented.")
+        expectation = ui.LibraryExpectation("fixture-1", "Metroid", "NES")
+        nodes = ui.parse_ui(
+            frame("Metroid, NES"),
+            expected_package=QUALIFICATION_PACKAGE,
+            library_expectations=(expectation,),
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            observer(nodes, (expectation,), snapshots=((0,),))
 
     def test_missing_fixture_expectations_block_instead_of_using_library_population(self):
         nodes = ui.parse_ui(

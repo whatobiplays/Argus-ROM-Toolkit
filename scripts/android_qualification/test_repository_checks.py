@@ -36,6 +36,13 @@ ISSUE25_CLASSIFICATIONS = (
     "scripts/android_qualification/test_evidence_review.py",
     "scripts/android_qualification/test_evidence_issue24_boundary.py",
 )
+ISSUE27_CLASSIFICATIONS = (
+    "scripts/android_qualification/_library_interaction_contract.py",
+    "scripts/android_qualification/_library_interaction_executor.py",
+    "scripts/android_qualification/_library_interaction_oracle.py",
+    "scripts/android_qualification/physical/_library_interaction_ui.py",
+    "scripts/android_qualification/test_library_interactions.py",
+)
 RETIRED_ISSUE24_STAGING_SURFACES = frozenset(
     {
         "scripts/android_qualification/_fixture_staging_content.py",
@@ -463,16 +470,38 @@ class CurrentNamingInventoryTests(unittest.TestCase):
         issue24_start = len(retained_archived)
         issue24_end = issue24_start + len(expected_issue24)
         self.assertEqual(current["surfaces"][issue24_start:issue24_end], expected_issue24)
-        self.assertEqual(current["surfaces"][issue24_end:], expected_issue25)
+        issue25_end = issue24_end + len(expected_issue25)
+        self.assertEqual(current["surfaces"][issue24_end:issue25_end], expected_issue25)
+        expected_issue27 = [
+            {
+                "path": relative,
+                "classification": "active",
+                "region": {"kind": "file"},
+            }
+            for relative in ISSUE27_CLASSIFICATIONS
+        ]
+        self.assertEqual(current["surfaces"][issue25_end:], expected_issue27)
         self.assertEqual(
             len(current["surfaces"]),
-            len(retained_archived) + len(expected_issue24) + len(expected_issue25),
+            len(retained_archived)
+            + len(expected_issue24)
+            + len(expected_issue25)
+            + len(expected_issue27),
         )
 
     def test_issue25_files_are_active_whole_file_classifications(self) -> None:
         data = repository_checks._read_classification(ROOT)
         rows = {surface["path"]: surface for surface in data["surfaces"]}
         for relative in ISSUE25_CLASSIFICATIONS:
+            with self.subTest(relative=relative):
+                self.assertIn(relative, rows)
+                self.assertEqual(rows[relative]["classification"], "active")
+                self.assertEqual(rows[relative]["region"], {"kind": "file"})
+
+    def test_issue27_files_are_active_whole_file_classifications(self) -> None:
+        data = repository_checks._read_classification(ROOT)
+        rows = {surface["path"]: surface for surface in data["surfaces"]}
+        for relative in ISSUE27_CLASSIFICATIONS:
             with self.subTest(relative=relative):
                 self.assertIn(relative, rows)
                 self.assertEqual(rows[relative]["classification"], "active")

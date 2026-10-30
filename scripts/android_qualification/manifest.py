@@ -19,10 +19,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, NoReturn
 
+from ._library_interaction_contract import LIBRARY_INTERACTION_CONTRACT_VERSION
+
 
 SCHEMA_VERSION = 1
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_REFERENCE_CHARS = 256
+_MAX_LEGACY_SESSION_OPERATIONS = 32
+_LIBRARY_INTERACTION_SESSION_OPERATIONS = 42
 
 REFERENCE_FIELDS = (
     "authorization_ref",
@@ -260,6 +264,13 @@ _PACKAGE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$")
 class SessionStateMode(str, Enum):
     FRESH = "fresh"
     NO_RESET = "no-reset"
+
+
+class _AuthorizationProfile(str, Enum):
+    """Select a private, closed authorization operation profile."""
+
+    LEGACY = "legacy"
+    LIBRARY_INTERACTIONS = "library_interactions"
 
 
 class OperationCategory(str, Enum):
@@ -915,6 +926,7 @@ def _parse_operation(
     session_deadline: datetime,
     cleanup_deadline: datetime,
     cleanup_reserve_seconds: int,
+    profile: _AuthorizationProfile = _AuthorizationProfile.LEGACY,
 ) -> OperationAuthorization:
     error_type = AuthorizationError
     operation = _object(value, error_type)
@@ -990,6 +1002,7 @@ def _parse_operation(
         package_name=package,
         apk_sha256=apk_sha256,
         fixture_manifest_sha256=fixture_manifest_sha256,
+        profile=profile,
     )
     if phase not in {"admission", "qualification", "cleanup"}:
         _invalid(error_type, "INVALID_VALUE")
@@ -1007,8 +1020,9 @@ def _parse_add_scan_operation_arguments(
     package_name: str,
     apk_sha256: str,
     fixture_manifest_sha256: str,
+    profile: _AuthorizationProfile = _AuthorizationProfile.LEGACY,
 ) -> tuple[tuple[str, str], ...]:
-    """Validate the closed arguments used by one first fresh Add & Scan plan."""
+    """Validate the closed arguments allowed by the selected private profile."""
     if value is None:
         if category is OperationCategory.INSTALL_ABSENT:
             _invalid(AuthorizationError, "INVALID_VALUE")
@@ -1079,27 +1093,67 @@ def _parse_add_scan_operation_arguments(
         ):
             _invalid(AuthorizationError, "INVALID_VALUE")
     elif category is OperationCategory.NAVIGATION:
-        _fields(arguments, {"action"}, AuthorizationError)
+        if "action" not in arguments:
+            _invalid(AuthorizationError, "MISSING_FIELD")
         action = _string(arguments["action"], AuthorizationError, 64)
-        if (
-            phase != "qualification"
-            or package_name != QUALIFICATION_PACKAGE
-            or action not in {
-                "accept_terms", "preferences", "skip_provider", "add_root",
-                "storage_root", "open_qualification_root", "open_fixture_root",
-                "select_folder", "add_and_scan", "view_job", "library_navigation",
-            }
-        ):
-            _invalid(AuthorizationError, "INVALID_VALUE")
+        library_actions = {
+            "library_search_exact", "library_search_partial", "library_search_empty",
+            "library_search_clear", "library_filter_platform", "library_filter_region",
+            "library_filter_hydration", "library_filter_availability", "library_filter_reset",
+            "library_select_game", "library_sort_title", "library_sort_ascending",
+            "library_sort_descending", "library_sort_platform", "library_view_list",
+            "library_view_grid", "library_search_after_selection",
+            "library_open_game_detail", "library_return_to_library",
+        }
+        if action in library_actions and profile is _AuthorizationProfile.LIBRARY_INTERACTIONS:
+            _fields(arguments, {"action", "oracle_sha256", "oracle_version"}, AuthorizationError)
+            _digest(arguments["oracle_sha256"], AuthorizationError)
+            if (
+                phase != "qualification"
+                or package_name != QUALIFICATION_PACKAGE
+                or type(arguments["oracle_version"]) is not str
+                or arguments["oracle_version"] != str(LIBRARY_INTERACTION_CONTRACT_VERSION)
+            ):
+                _invalid(AuthorizationError, "INVALID_VALUE")
+        else:
+            _fields(arguments, {"action"}, AuthorizationError)
+            if (
+                phase != "qualification"
+                or package_name != QUALIFICATION_PACKAGE
+                or action not in {
+                    "accept_terms", "preferences", "skip_provider", "add_root",
+                    "storage_root", "open_qualification_root", "open_fixture_root",
+                    "select_folder", "add_and_scan", "view_job", "library_navigation",
+                }
+            ):
+                _invalid(AuthorizationError, "INVALID_VALUE")
     elif category is OperationCategory.READ_ONLY:
-        _fields(arguments, {"observation"}, AuthorizationError)
+        if "observation" not in arguments:
+            _invalid(AuthorizationError, "MISSING_FIELD")
+        observation = _string(arguments["observation"], AuthorizationError, 64)
+        library_observations = {
+            "library_complete_membership", "game_detail", "library_return",
+        }
         if (
-            phase != "qualification"
-            or package_name != QUALIFICATION_PACKAGE
-            or _string(arguments["observation"], AuthorizationError, 64)
-            not in {"scan_admission", "job_status", "terminal_scan", "fixture_library"}
+            observation in library_observations
+            and profile is _AuthorizationProfile.LIBRARY_INTERACTIONS
         ):
-            _invalid(AuthorizationError, "INVALID_VALUE")
+            _fields(arguments, {"observation", "oracle_sha256", "oracle_version"}, AuthorizationError)
+            _digest(arguments["oracle_sha256"], AuthorizationError)
+            if (
+                phase != "qualification"
+                or package_name != QUALIFICATION_PACKAGE
+                or arguments["oracle_version"] != str(LIBRARY_INTERACTION_CONTRACT_VERSION)
+            ):
+                _invalid(AuthorizationError, "INVALID_VALUE")
+        else:
+            _fields(arguments, {"observation"}, AuthorizationError)
+            if (
+                phase != "qualification"
+                or package_name != QUALIFICATION_PACKAGE
+                or observation not in {"scan_admission", "job_status", "terminal_scan", "fixture_library"}
+            ):
+                _invalid(AuthorizationError, "INVALID_VALUE")
     else:
         _invalid(AuthorizationError, "INVALID_VALUE")
     return tuple(sorted((key, _string(item, AuthorizationError, 256))
@@ -1161,8 +1215,14 @@ def _parse_restoration(
     )
 
 
-def _validate_authorization(document: object) -> SessionAuthorization:
+def _validate_authorization(
+    document: object,
+    *,
+    profile: _AuthorizationProfile = _AuthorizationProfile.LEGACY,
+) -> SessionAuthorization:
     error_type = AuthorizationError
+    if type(profile) is not _AuthorizationProfile:
+        _invalid(error_type, "INVALID_VALUE")
     root = _object(document, error_type)
     _fields(
         root,
@@ -1269,7 +1329,20 @@ def _validate_authorization(document: object) -> SessionAuthorization:
         _invalid(error_type, "INVALID_VALUE")
 
     raw_operations = root["operations"]
-    if type(raw_operations) is not list or not raw_operations or len(raw_operations) > 32:
+    maximum_operations = (
+        _LIBRARY_INTERACTION_SESSION_OPERATIONS
+        if profile is _AuthorizationProfile.LIBRARY_INTERACTIONS
+        else _MAX_LEGACY_SESSION_OPERATIONS
+    )
+    if (
+        type(raw_operations) is not list
+        or not raw_operations
+        or len(raw_operations) > maximum_operations
+        or (
+            profile is _AuthorizationProfile.LIBRARY_INTERACTIONS
+            and len(raw_operations) != _LIBRARY_INTERACTION_SESSION_OPERATIONS
+        )
+    ):
         _invalid(error_type, "INVALID_VALUE")
     operations = tuple(
         _parse_operation(
@@ -1282,6 +1355,7 @@ def _validate_authorization(document: object) -> SessionAuthorization:
             deadline,
             cleanup_deadline,
             cleanup_reserve,
+            profile,
         )
         for operation in raw_operations
     )
@@ -1333,15 +1407,31 @@ def _validate_authorization(document: object) -> SessionAuthorization:
     )
 
 
-def load_authorization(path: Path) -> SessionAuthorization:
-    """Load one strict, owner-private, session-specific authorization file."""
+def _load_authorization_for_profile(
+    path: Path,
+    profile: _AuthorizationProfile,
+) -> SessionAuthorization:
+    """Load a private authorization profile through the shared strict parser."""
     document = _parse_json(_read_private_file(path, AuthorizationError), AuthorizationError)
-    authorization = _validate_authorization(document)
+    authorization = _validate_authorization(document, profile=profile)
     integrity = _authorization_integrity_value(authorization)
     if type(integrity) is not tuple:
         raise AuthorizationError(AuthorizationErrorCode.INVALID_VALUE)
     _register_loaded_session_authorization(authorization, integrity)
     return authorization
+
+
+def load_authorization(path: Path) -> SessionAuthorization:
+    """Load one strict, owner-private, session-specific authorization file."""
+    return _load_authorization_for_profile(path, _AuthorizationProfile.LEGACY)
+
+
+def _load_library_interaction_authorization(path: Path) -> SessionAuthorization:
+    """Load the closed Issue #27 profile without widening legacy callers."""
+    return _load_authorization_for_profile(
+        path,
+        _AuthorizationProfile.LIBRARY_INTERACTIONS,
+    )
 
 
 def _restoration_context_matches(

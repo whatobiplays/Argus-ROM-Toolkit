@@ -22,9 +22,13 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, NoReturn, Protocol
+from typing import TYPE_CHECKING, Iterator, NoReturn, Protocol
 
 from . import evidence
+from ._library_interaction_contract import (
+    LIBRARY_INTERACTION_CASE_IDS,
+    LIBRARY_INTERACTION_CONTRACT_VERSION,
+)
 from .manifest import (
     ApprovalError,
     ApprovalErrorCode,
@@ -47,6 +51,9 @@ from .manifest import (
     load_manifest,
     load_owner_approval_for_restoration,
 )
+
+if TYPE_CHECKING:
+    from ._library_interaction_oracle import LibraryInteractionOracle
 
 
 class EffectiveAccess(str, Enum):
@@ -1271,6 +1278,24 @@ _FIRST_ADD_SCAN_CLAIMS: weakref.WeakSet[AdmittedSession] = weakref.WeakSet()
 _FIRST_ADD_SCAN_BINDINGS_LOCK = threading.Lock()
 
 
+@dataclass(frozen=True)
+class _LibraryInteractionAdmissionBinding:
+    """Bind a fresh Issue #27 session to its oracle and inspected artifact."""
+
+    artifact: HostArtifactFacts
+    plan_sha256: str
+    fixture_manifest_sha256: str
+    rules_sha256: str
+    oracle_sha256: str
+
+
+_LIBRARY_INTERACTION_BINDINGS: weakref.WeakKeyDictionary[
+    AdmittedSession, _LibraryInteractionAdmissionBinding
+] = weakref.WeakKeyDictionary()
+_LIBRARY_INTERACTION_CLAIMS: weakref.WeakSet[AdmittedSession] = weakref.WeakSet()
+_LIBRARY_INTERACTION_BINDINGS_LOCK = threading.Lock()
+
+
 def _session_binding_matches(
     session: AdmittedSession,
     binding: _AdmittedSessionBinding,
@@ -1401,6 +1426,89 @@ def _claim_first_add_scan_execution(session: AdmittedSession) -> bool:
         if session not in _FIRST_ADD_SCAN_BINDINGS or session in _FIRST_ADD_SCAN_CLAIMS:
             return False
         _FIRST_ADD_SCAN_CLAIMS.add(session)
+    return True
+
+
+def _library_interaction_oracle_digest(
+    authorization: SessionAuthorization,
+) -> str | None:
+    """Return the single oracle digest pinned to every Library operation."""
+    operations = _library_interaction_plan(authorization)
+    if operations is None:
+        return None
+    layout = _library_interaction_layout(operations)
+    if layout is None:
+        return None
+    digests = {
+        dict(operation.arguments).get("oracle_sha256")
+        for operation in (layout.membership, *layout.dependent_interactions)
+    }
+    if len(digests) != 1:
+        return None
+    digest = next(iter(digests))
+    return digest if type(digest) is str else None
+
+
+def _register_library_interaction_session(
+    session: AdmittedSession,
+    artifact: HostArtifactFacts,
+) -> bool:
+    """Bind only a validated Issue #27 admission to its private executor."""
+    authorization = session.authorization
+    oracle_sha256 = _library_interaction_oracle_digest(authorization)
+    if (
+        _admitted_session_binding(session) is None
+        or not _validate_host_artifact(authorization, artifact)
+        or artifact.source_dirty is not False
+        or oracle_sha256 is None
+        or authorization.scenario_ids != ("issue-27-library-interactions",)
+    ):
+        return False
+    binding = _LibraryInteractionAdmissionBinding(
+        artifact=artifact,
+        plan_sha256=authorization.plan_sha256,
+        fixture_manifest_sha256=authorization.fixture_manifest_sha256,
+        rules_sha256=authorization.rules_sha256,
+        oracle_sha256=oracle_sha256,
+    )
+    with _LIBRARY_INTERACTION_BINDINGS_LOCK:
+        if session in _LIBRARY_INTERACTION_BINDINGS or session in _LIBRARY_INTERACTION_CLAIMS:
+            return False
+        _LIBRARY_INTERACTION_BINDINGS[session] = binding
+    return True
+
+
+def _library_interaction_admission_binding(
+    session: object,
+) -> _LibraryInteractionAdmissionBinding | None:
+    """Return an intact Issue #27 binding, separate from the Issue #26 grant."""
+    if type(session) is not AdmittedSession or _admitted_session_binding(session) is None:
+        return None
+    with _LIBRARY_INTERACTION_BINDINGS_LOCK:
+        binding = _LIBRARY_INTERACTION_BINDINGS.get(session)
+    authorization = session.authorization
+    if (
+        binding is None
+        or authorization.scenario_ids != ("issue-27-library-interactions",)
+        or binding.plan_sha256 != authorization.plan_sha256
+        or binding.fixture_manifest_sha256 != authorization.fixture_manifest_sha256
+        or binding.rules_sha256 != authorization.rules_sha256
+        or not _validate_host_artifact(authorization, binding.artifact)
+        or binding.artifact.source_dirty is not False
+        or binding.oracle_sha256 != _library_interaction_oracle_digest(authorization)
+    ):
+        return None
+    return binding
+
+
+def _claim_library_interaction_execution(session: AdmittedSession) -> bool:
+    """Consume the Issue #27 executor grant exactly once."""
+    if _library_interaction_admission_binding(session) is None:
+        return False
+    with _LIBRARY_INTERACTION_BINDINGS_LOCK:
+        if session not in _LIBRARY_INTERACTION_BINDINGS or session in _LIBRARY_INTERACTION_CLAIMS:
+            return False
+        _LIBRARY_INTERACTION_CLAIMS.add(session)
     return True
 
 
@@ -1726,60 +1834,124 @@ def admit_session(
     return _result(AdmissionCode.ADMITTED, session)
 
 
-def _first_add_scan_plan(
+_FORBIDDEN_ADD_SCAN_CATEGORIES = frozenset({
+    OperationCategory.PERMISSION_APP_OP,
+    OperationCategory.PERMISSION_APP_OP_RESTORE,
+    OperationCategory.REINSTALL,
+    OperationCategory.FORCE_STOP,
+    OperationCategory.REFRESH,
+    OperationCategory.SHELL,
+    OperationCategory.PATH_MUTATION,
+})
+
+_FIRST_ADD_SCAN_PREFIX_OPERATIONS = (
+    (OperationCategory.FIXTURE_STAGING, "stage_approved_fixture_set", "qualification", "action"),
+    (OperationCategory.LAUNCH, "launch_qualification_main", "qualification", "action"),
+    *((OperationCategory.NAVIGATION, action, "qualification", "action") for action in (
+        "accept_terms", "preferences", "skip_provider", "add_root", "storage_root",
+        "open_qualification_root", "open_fixture_root", "select_folder", "add_and_scan",
+    )),
+    (OperationCategory.READ_ONLY, "scan_admission", "qualification", "observation"),
+    (OperationCategory.NAVIGATION, "view_job", "qualification", "action"),
+    (OperationCategory.READ_ONLY, "job_status", "qualification", "observation"),
+    (OperationCategory.READ_ONLY, "terminal_scan", "qualification", "observation"),
+    (OperationCategory.NAVIGATION, "library_navigation", "qualification", "action"),
+)
+
+_FIRST_ADD_SCAN_INSTALL_INDEX = 0
+_FIRST_ADD_SCAN_STAGE_INDEX = _FIRST_ADD_SCAN_INSTALL_INDEX + 1
+_FIRST_ADD_SCAN_LAUNCH_INDEX = _FIRST_ADD_SCAN_STAGE_INDEX + 1
+_FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT = 1 + len(_FIRST_ADD_SCAN_PREFIX_OPERATIONS)
+_FIRST_ADD_SCAN_PLAN_OPERATION_COUNT = _FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT + 2
+
+_LIBRARY_MEMBERSHIP_OPERATION = (
+    OperationCategory.READ_ONLY,
+    "library_complete_membership",
+    "observation",
+)
+
+_LIBRARY_INTERACTION_OPERATIONS = (
+    *((OperationCategory.NAVIGATION, action, "action") for action in (
+        "library_search_exact", "library_search_partial", "library_search_empty",
+        "library_search_clear", "library_filter_platform", "library_filter_region",
+        "library_filter_hydration", "library_filter_availability", "library_filter_reset",
+        "library_select_game", "library_sort_title", "library_sort_ascending",
+        "library_sort_descending", "library_sort_platform", "library_sort_ascending",
+        "library_sort_descending", "library_view_list", "library_view_grid",
+        "library_search_after_selection", "library_open_game_detail",
+    )),
+    (OperationCategory.READ_ONLY, "game_detail", "observation"),
+    (OperationCategory.NAVIGATION, "library_return_to_library", "action"),
+    (OperationCategory.READ_ONLY, "library_return", "observation"),
+)
+
+_LIBRARY_MEMBERSHIP_INDEX = _FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT
+_LIBRARY_DEPENDENT_INTERACTION_START = _LIBRARY_MEMBERSHIP_INDEX + 1
+_LIBRARY_INTERACTION_OPERATION_COUNT = len(LIBRARY_INTERACTION_CASE_IDS)
+_LIBRARY_DEPENDENT_INTERACTION_COUNT = _LIBRARY_INTERACTION_OPERATION_COUNT - 1
+_LIBRARY_INTERACTION_PLAN_OPERATION_COUNT = (
+    _LIBRARY_DEPENDENT_INTERACTION_START
+    + _LIBRARY_DEPENDENT_INTERACTION_COUNT
+    + 1
+)
+
+
+@dataclass(frozen=True)
+class _LibraryInteractionOperationLayout:
+    """Named operation boundaries for the closed Issue #27 plan."""
+
+    shared_add_scan_prefix: tuple[OperationAuthorization, ...]
+    membership: OperationAuthorization
+    dependent_interactions: tuple[OperationAuthorization, ...]
+    cleanup: OperationAuthorization
+
+
+def _library_interaction_layout(
+    operations: object,
+) -> _LibraryInteractionOperationLayout | None:
+    """Split one exact plan into named prefix, assertion, and cleanup fields."""
+    if (
+        type(operations) is not tuple
+        or len(operations) != _LIBRARY_INTERACTION_PLAN_OPERATION_COUNT
+    ):
+        return None
+    cleanup_index = len(operations) - 1
+    return _LibraryInteractionOperationLayout(
+        shared_add_scan_prefix=operations[:_FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT],
+        membership=operations[_LIBRARY_MEMBERSHIP_INDEX],
+        dependent_interactions=operations[
+            _LIBRARY_DEPENDENT_INTERACTION_START:cleanup_index
+        ],
+        cleanup=operations[cleanup_index],
+    )
+
+
+def _first_add_scan_prefix(
     authorization: SessionAuthorization,
 ) -> tuple[OperationAuthorization, ...] | None:
-    """Validate the exact closed operation sequence for the first fresh scan."""
+    """Validate the exact shared setup, staging, and scan-terminal prefix."""
     if (
         authorization.state_mode is not SessionStateMode.FRESH
         or authorization.application_package != QUALIFICATION_PACKAGE
-        or not authorization.operations
+        or not isinstance(authorization.operations, tuple)
+        or len(authorization.operations) < _FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT
+        or any(operation.category in _FORBIDDEN_ADD_SCAN_CATEGORIES
+               for operation in authorization.operations)
     ):
         return None
     operations = authorization.operations
-    if any(
-        operation.category in {
-            OperationCategory.PERMISSION_APP_OP,
-            OperationCategory.PERMISSION_APP_OP_RESTORE,
-            OperationCategory.REINSTALL,
-            OperationCategory.FORCE_STOP,
-            OperationCategory.REFRESH,
-            OperationCategory.SHELL,
-            OperationCategory.PATH_MUTATION,
-        }
-        for operation in operations
-    ):
-        return None
-    if len(operations) != 19:
-        return None
-    install_or_reset = operations[0]
+    install_or_reset = operations[_FIRST_ADD_SCAN_INSTALL_INDEX]
     if install_or_reset.category not in {
         OperationCategory.INSTALL_ABSENT,
         OperationCategory.RESET_DATA,
     }:
         return None
-    expected = [
-        (OperationCategory.FIXTURE_STAGING, "stage_approved_fixture_set", "qualification", "action"),
-        (OperationCategory.LAUNCH, "launch_qualification_main", "qualification", "action"),
-    ]
-    expected.extend(
-        (OperationCategory.NAVIGATION, action, "qualification", "action")
-        for action in (
-            "accept_terms", "preferences", "skip_provider", "add_root", "storage_root",
-            "open_qualification_root", "open_fixture_root", "select_folder", "add_and_scan",
-        )
-    )
-    expected.extend((
-        (OperationCategory.READ_ONLY, "scan_admission", "qualification", "observation"),
-        (OperationCategory.NAVIGATION, "view_job", "qualification", "action"),
-        (OperationCategory.READ_ONLY, "job_status", "qualification", "observation"),
-        (OperationCategory.READ_ONLY, "terminal_scan", "qualification", "observation"),
-        (OperationCategory.NAVIGATION, "library_navigation", "qualification", "action"),
-        (OperationCategory.READ_ONLY, "fixture_library", "qualification", "observation"),
-        (OperationCategory.FIXTURE_STAGING, "remove_session_owned_fixture_set", "cleanup", "action"),
-    ))
     for operation, (category, value, phase, argument_name) in zip(
-        operations[1:], expected, strict=True
+        operations[
+            _FIRST_ADD_SCAN_STAGE_INDEX:_FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT
+        ],
+        _FIRST_ADD_SCAN_PREFIX_OPERATIONS,
+        strict=True,
     ):
         arguments = dict(operation.arguments)
         if (
@@ -1807,12 +1979,140 @@ def _first_add_scan_plan(
         foreground_after_setup = first_arguments.get("expected_foreground_after")
     if (
         not foreground_after_setup
-        or dict(operations[1].arguments).get("expected_foreground_package")
+        or dict(operations[_FIRST_ADD_SCAN_STAGE_INDEX].arguments).get("expected_foreground_package")
         != foreground_after_setup
-        or dict(operations[2].arguments).get("expected_foreground_package")
+        or dict(operations[_FIRST_ADD_SCAN_LAUNCH_INDEX].arguments).get("expected_foreground_package")
         != foreground_after_setup
-        or dict(operations[-1].arguments).get("expected_foreground_package")
-        != QUALIFICATION_PACKAGE
+    ):
+        return None
+    return operations[:_FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT]
+
+
+def _first_add_scan_plan(
+    authorization: SessionAuthorization,
+) -> tuple[OperationAuthorization, ...] | None:
+    """Validate the exact closed 19-operation Issue #26 fresh scan plan."""
+    if len(authorization.operations) != _FIRST_ADD_SCAN_PLAN_OPERATION_COUNT:
+        return None
+    if any(operation.category in _FORBIDDEN_ADD_SCAN_CATEGORIES
+           for operation in authorization.operations):
+        return None
+    prefix = _first_add_scan_prefix(authorization)
+    if prefix is None:
+        return None
+    tail = authorization.operations[_FIRST_ADD_SCAN_PREFIX_OPERATION_COUNT:]
+    expected_tail = (
+        (OperationCategory.READ_ONLY, "fixture_library", "qualification", "observation"),
+        (OperationCategory.FIXTURE_STAGING, "remove_session_owned_fixture_set", "cleanup", "action"),
+    )
+    for operation, (category, value, phase, argument_name) in zip(
+        tail, expected_tail, strict=True
+    ):
+        arguments = dict(operation.arguments)
+        if (
+            operation.category is not category
+            or operation.phase != phase
+            or arguments.get(argument_name) != value
+        ):
+            return None
+    if dict(authorization.operations[-1].arguments).get("expected_foreground_package") != QUALIFICATION_PACKAGE:
+        return None
+    return authorization.operations
+
+
+def _library_interaction_operation_digest(
+    operation: OperationAuthorization,
+    expected: tuple[OperationCategory, str, str],
+    authorization: SessionAuthorization,
+) -> str | None:
+    """Validate one closed Issue #27 operation and return its oracle pin."""
+    category, value, argument_name = expected
+    arguments = dict(operation.arguments)
+    digest = arguments.get("oracle_sha256")
+    if (
+        operation.category is not category
+        or operation.phase != "qualification"
+        or operation.package_name != QUALIFICATION_PACKAGE
+        or operation.target_serial != authorization.target_serial
+        or type(operation.timeout_seconds) is not int
+        or not 1 <= operation.timeout_seconds <= 3600
+        or arguments.get(argument_name) != value
+        or arguments.get("oracle_version") != str(LIBRARY_INTERACTION_CONTRACT_VERSION)
+        or type(digest) is not str
+        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        or set(arguments) != {argument_name, "oracle_sha256", "oracle_version"}
+    ):
+        return None
+    return digest
+
+
+def _library_interaction_plan(
+    authorization: SessionAuthorization,
+) -> tuple[OperationAuthorization, ...] | None:
+    """Validate the exact Issue #27 session with one final fixture cleanup."""
+    operations = authorization.operations
+    layout = _library_interaction_layout(operations)
+    if (
+        authorization.state_mode is not SessionStateMode.FRESH
+        or authorization.application_package != QUALIFICATION_PACKAGE
+        or authorization.scenario_ids != ("issue-27-library-interactions",)
+        or not isinstance(operations, tuple)
+        or layout is None
+        or len(_LIBRARY_INTERACTION_OPERATIONS) != _LIBRARY_DEPENDENT_INTERACTION_COUNT
+        or len(layout.dependent_interactions) != _LIBRARY_DEPENDENT_INTERACTION_COUNT
+        or any(operation.category in _FORBIDDEN_ADD_SCAN_CATEGORIES
+               for operation in operations)
+    ):
+        return None
+    prefix = _first_add_scan_prefix(authorization)
+    if prefix is None or prefix != layout.shared_add_scan_prefix:
+        return None
+    operation_ids = tuple(operation.operation_id for operation in operations)
+    if (
+        any(type(operation_id) is not str or not operation_id for operation_id in operation_ids)
+        or len(set(operation_ids)) != len(operation_ids)
+    ):
+        return None
+    membership_digest = _library_interaction_operation_digest(
+        layout.membership,
+        _LIBRARY_MEMBERSHIP_OPERATION,
+        authorization,
+    )
+    if membership_digest is None:
+        return None
+    oracle_digests = {membership_digest}
+    for operation, expected in zip(
+        layout.dependent_interactions,
+        _LIBRARY_INTERACTION_OPERATIONS,
+        strict=True,
+    ):
+        digest = _library_interaction_operation_digest(
+            operation,
+            expected,
+            authorization,
+        )
+        if digest is None:
+            return None
+        oracle_digests.add(digest)
+    if len(oracle_digests) != 1:
+        return None
+    cleanup = layout.cleanup
+    cleanup_arguments = dict(cleanup.arguments)
+    if (
+        cleanup.category is not OperationCategory.FIXTURE_STAGING
+        or cleanup.phase != "cleanup"
+        or cleanup.package_name != QUALIFICATION_PACKAGE
+        or cleanup.target_serial != authorization.target_serial
+        or cleanup_arguments != {
+            "action": "remove_session_owned_fixture_set",
+            "destination": "qualification_fixture_root",
+            "expected_foreground_package": QUALIFICATION_PACKAGE,
+            "fixture_manifest_sha256": authorization.fixture_manifest_sha256,
+        }
+        or sum(
+            dict(operation.arguments).get("action") == "remove_session_owned_fixture_set"
+            for operation in operations
+        ) != 1
     ):
         return None
     return operations
@@ -1951,6 +2251,97 @@ def admit_first_add_scan_session(
         with _FIRST_ADD_SCAN_BINDINGS_LOCK:
             _FIRST_ADD_SCAN_BINDINGS.pop(session, None)
             _FIRST_ADD_SCAN_CLAIMS.discard(session)
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    return _result(AdmissionCode.ADMITTED, session)
+
+
+def admit_library_interaction_session(
+    authorization: SessionAuthorization,
+    approval: OwnerApproval,
+    artifact: HostArtifactFacts,
+    transport: FreshAdmissionTransport,
+    *,
+    now: datetime | None = None,
+) -> AdmissionResult:
+    """Admit one closed Issue #27 session after validating its entire budget.
+
+    The separate capability reuses Issue #26's owner approval, fresh-target
+    observation, artifact checks, safety registry, and session binding. Its
+    complete 42-operation sequence and cleanup reserve are checked before the
+    one-use approval claim or any transport observation.
+    """
+    instant = now or datetime.now(timezone.utc)
+    if not _is_loaded_session_authorization(authorization):
+        return _result(AdmissionCode.APPROVAL_INVALID)
+    if (
+        not _now_is_utc(instant)
+        or instant >= authorization.session_deadline
+        or not _validate_approval(authorization, approval, instant)
+    ):
+        return _result(AdmissionCode.APPROVAL_INVALID)
+    operations = _library_interaction_plan(authorization)
+    if operations is None:
+        return _result(AdmissionCode.ADD_SCAN_PLAN_INVALID)
+    if authorization.state_mode is SessionStateMode.NO_RESET:
+        return _result(AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE)
+    if not _validate_host_artifact(authorization, artifact) or artifact.source_dirty is not False:
+        return _result(AdmissionCode.ARTIFACT_MISMATCH)
+
+    session_seconds = sum(
+        operation.timeout_seconds for operation in operations
+        if operation.phase != "cleanup"
+    )
+    cleanup_seconds = sum(
+        operation.timeout_seconds for operation in operations
+        if operation.phase == "cleanup"
+    )
+    if (
+        instant + timedelta(seconds=session_seconds) > authorization.session_deadline
+        or instant + timedelta(seconds=session_seconds + cleanup_seconds)
+        > authorization.cleanup_deadline
+        or instant + timedelta(seconds=session_seconds + cleanup_seconds)
+        > approval.valid_until
+        or cleanup_seconds > authorization.cleanup_reserve_seconds
+    ):
+        return _result(AdmissionCode.ADD_SCAN_PLAN_INVALID)
+
+    try:
+        pending = pending_for_device(
+            authorization.target_serial,
+            path=_DEVICE_SAFETY_PATH,
+        )
+    except SafetyStateError:
+        return _result(AdmissionCode.DEVICE_SAFETY_STATE_UNAVAILABLE)
+    if pending is not None:
+        return _result(AdmissionCode.DEVICE_RESTORATION_PENDING)
+
+    claim = _claim_approval_once(
+        approval,
+        authorization.authorization_id,
+        authorization.canonical_sha256,
+    )
+    if claim is None:
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    if not claim:
+        return _result(AdmissionCode.SESSION_ALREADY_USED)
+    try:
+        observation = transport.observe_fresh_admission()
+    except (KeyboardInterrupt, Exception):
+        return _result(AdmissionCode.OBSERVATION_UNAVAILABLE)
+    if type(observation) is not FreshAdmissionObservation:
+        return _result(AdmissionCode.OBSERVATION_UNAVAILABLE)
+    code = _check_first_add_scan_observation(authorization, observation, operations)
+    if code is not AdmissionCode.ADMITTED:
+        return _result(code)
+
+    session = AdmittedSession(authorization, approval)
+    if not _register_admitted_session(session):
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    if not _register_library_interaction_session(session, artifact):
+        _revoke_admitted_session(session)
+        with _LIBRARY_INTERACTION_BINDINGS_LOCK:
+            _LIBRARY_INTERACTION_BINDINGS.pop(session, None)
+            _LIBRARY_INTERACTION_CLAIMS.discard(session)
         return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
     return _result(AdmissionCode.ADMITTED, session)
 
@@ -3055,14 +3446,97 @@ def _add_scan_timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-class _AddScanOperationExecutor:
-    """Run one exact, admitted Add & Scan plan through an injected transport.
+def _validate_executor_session_inputs(
+    *,
+    session: AdmittedSession,
+    evidence_spec: evidence.SessionSpec,
+    fixture_plan: FixtureTransferPlan,
+    expectations: tuple[object, ...],
+    binding: _FirstAddScanAdmissionBinding | _LibraryInteractionAdmissionBinding | None,
+    session_namespace: str,
+    instant: datetime,
+) -> tuple[str, ...]:
+    """Validate the shared artifact, fixture, plan, and evidence pins.
+
+    The executor profile supplies its own private admission binding and fixed
+    session namespace. This helper checks the common session contract without
+    allowing one profile to claim another profile's capability.
+    """
+    authorization = session.authorization
+    if binding is None:
+        raise _AddScanStop("The session was not created by this private admission path.")
+    if type(evidence_spec) is not evidence.SessionSpec:
+        raise _AddScanStop("The artifact, fixture, plan, target, or evidence pins do not match.")
+    expected_session_id = hashlib.sha256(
+        f"{session_namespace}:{authorization.authorization_id}:"
+        f"{authorization.canonical_sha256}".encode()
+    ).hexdigest()[:32]
+    expected_evidence_refs = evidence_spec.review_requirements.required_evidence_refs
+    if (
+        session.lifecycle is not SessionLifecycle.ACTIVE
+        or session.execution_phase is not SessionExecutionPhase.ADMITTED
+        or authorization.application_package != QUALIFICATION_PACKAGE
+        or binding.plan_sha256 != authorization.plan_sha256
+        or evidence_spec.session_id != expected_session_id
+        or evidence_spec.scenario_id
+        != _add_scan_alias("scenario", authorization.scenario_ids[0])
+        or evidence_spec.artifact.artifact_sha256 != authorization.apk_sha256
+        or evidence_spec.artifact.artifact_ref
+        != _add_scan_alias("artifact", authorization.apk_sha256)
+        or evidence_spec.authorization.manifest_sha256 != authorization.canonical_sha256
+        or evidence_spec.authorization.manifest_version != 1
+        or evidence_spec.fixtures.manifest_sha256 != authorization.fixture_manifest_sha256
+        or evidence_spec.fixtures.corpus_ref
+        != _add_scan_alias("corpus", authorization.fixture_manifest_sha256)
+        or evidence_spec.plan.plan_sha256 != authorization.plan_sha256
+        or evidence_spec.plan.plan_ref
+        != _add_scan_alias("plan", authorization.plan_sha256)
+        or evidence_spec.rules.rules_sha256 != authorization.rules_sha256
+        or evidence_spec.rules.rules_ref
+        != _add_scan_alias("rules", authorization.rules_sha256)
+        or evidence_spec.environment.target_ref
+        != _add_scan_alias("target", authorization.target_ref)
+        or evidence_spec.environment.platform is not evidence.Platform.ANDROID
+        or evidence_spec.artifact.artifact_class is not evidence.ArtifactClass.QUALIFICATION_VARIANT
+        or evidence_spec.plan.plan_version != 1
+        or fixture_plan.fixture_manifest_sha256 != authorization.fixture_manifest_sha256
+        or type(fixture_plan.file_count) is not int
+        or fixture_plan.file_count <= 0
+        or type(fixture_plan.byte_count) is not int
+        or fixture_plan.byte_count <= 0
+        or not re.fullmatch(r"[0-9a-f]{64}", fixture_plan.content_sha256)
+        or type(expectations) is not tuple
+        or not expectations
+        or not expected_evidence_refs
+        or any(
+            type(ref) is not str or not re.fullmatch(r"evidence-[0-9a-f]{32}", ref)
+            for ref in expected_evidence_refs
+        )
+    ):
+        raise _AddScanStop("The artifact, fixture, plan, target, or evidence pins do not match.")
+    if (
+        not _validate_approval(authorization, session.approval, instant)
+        or instant >= authorization.session_deadline
+    ):
+        raise _AddScanStop("The owner approval or session deadline is no longer valid.")
+    try:
+        pending = pending_for_device(authorization.target_serial, path=_DEVICE_SAFETY_PATH)
+    except SafetyStateError:
+        raise _AddScanStop("Device restoration state is unavailable.") from None
+    if pending is not None:
+        raise _AddScanStop("An unresolved Issue #23 restoration blocks product operations.")
+    return expected_evidence_refs
+
+
+class _AddScanOperationPrimitives:
+    """Own shared bounded operations for an admitted Android session.
 
     Every call is bound to the loader-approved session and operation list. The
     executor writes a durable intent before each product mutation, verifies the
     result once, and never retries a product mutation. Host simulation always
     returns ``BLOCKED`` because synthetic observations cannot establish game
-    identity or physical qualification.
+    identity or physical qualification. Concrete private executors own their
+    own closed plan validation and operation ordering.
     """
 
     def __init__(
@@ -3575,9 +4049,7 @@ class _AddScanOperationExecutor:
             )
             raise _AddScanStop("Launch result evidence could not be durably recorded.") from None
 
-    def _capture_nodes(self, operation: OperationAuthorization):
-        from .physical import ui
-
+    def _capture_accessibility_xml(self, operation: OperationAuthorization) -> str:
         authorization = self._session.authorization
         xml = self._call(lambda timeout: self._transport.capture_accessibility(
             authorization.target_serial,
@@ -3588,6 +4060,12 @@ class _AddScanOperationExecutor:
         ))
         if type(xml) is not str:
             raise _AddScanStop("The temporary qualification UI capture is unavailable.")
+        return xml
+
+    def _capture_nodes(self, operation: OperationAuthorization):
+        from .physical import ui
+
+        xml = self._capture_accessibility_xml(operation)
         try:
             return ui.parse_ui(
                 xml,
@@ -3929,76 +4407,6 @@ class _AddScanOperationExecutor:
         self._staged = False
         self._append_lifecycle(evidence.Lifecycle.CLEANUP_COMPLETED, "cleanup-completed")
 
-    def _validate_inputs(self) -> None:
-        authorization = self._session.authorization
-        binding = _first_add_scan_admission_binding(self._session)
-        if binding is None:
-            raise _AddScanStop("The session was not created by the first Add & Scan admission path.")
-        self._first_binding = binding
-        expected_session_id = hashlib.sha256(
-            f"argus-add-scan:{authorization.authorization_id}:{authorization.canonical_sha256}".encode()
-        ).hexdigest()[:32]
-        expected_evidence_refs = self._spec.review_requirements.required_evidence_refs
-        if (
-            self._session.lifecycle is not SessionLifecycle.ACTIVE
-            or self._session.execution_phase is not SessionExecutionPhase.ADMITTED
-            or authorization.application_package != QUALIFICATION_PACKAGE
-            or binding.plan_sha256 != authorization.plan_sha256
-            or type(self._spec) is not evidence.SessionSpec
-            or self._spec.session_id != expected_session_id
-            or self._spec.scenario_id
-            != _add_scan_alias("scenario", authorization.scenario_ids[0])
-            or self._spec.artifact.artifact_sha256 != authorization.apk_sha256
-            or self._spec.artifact.artifact_ref
-            != _add_scan_alias("artifact", authorization.apk_sha256)
-            or self._spec.authorization.manifest_sha256 != authorization.canonical_sha256
-            or self._spec.authorization.manifest_version != 1
-            or self._spec.fixtures.manifest_sha256 != authorization.fixture_manifest_sha256
-            or self._spec.fixtures.corpus_ref
-            != _add_scan_alias("corpus", authorization.fixture_manifest_sha256)
-            or self._spec.plan.plan_sha256 != authorization.plan_sha256
-            or self._spec.plan.plan_ref
-            != _add_scan_alias("plan", authorization.plan_sha256)
-            or self._spec.rules.rules_sha256 != authorization.rules_sha256
-            or self._spec.rules.rules_ref
-            != _add_scan_alias("rules", authorization.rules_sha256)
-            or self._spec.environment.target_ref
-            != _add_scan_alias("target", authorization.target_ref)
-            or self._spec.environment.platform is not evidence.Platform.ANDROID
-            or self._spec.artifact.artifact_class is not evidence.ArtifactClass.QUALIFICATION_VARIANT
-            or self._spec.plan.plan_version != 1
-            or self._fixture_plan.fixture_manifest_sha256 != authorization.fixture_manifest_sha256
-            or type(self._fixture_plan.file_count) is not int
-            or self._fixture_plan.file_count <= 0
-            or type(self._fixture_plan.byte_count) is not int
-            or self._fixture_plan.byte_count <= 0
-            or not re.fullmatch(r"[0-9a-f]{64}", self._fixture_plan.content_sha256)
-            or type(self._expectations) is not tuple
-            or not self._expectations
-            or not self._spec.review_requirements.required_evidence_refs
-            or any(type(ref) is not str or not re.fullmatch(r"evidence-[0-9a-f]{32}", ref)
-                   for ref in expected_evidence_refs)
-        ):
-            raise _AddScanStop("The artifact, fixture, plan, target, or evidence pins do not match.")
-        self._evidence_refs = self._spec.review_requirements.required_evidence_refs
-        if (
-            not _validate_approval(authorization, self._session.approval, self._logical_now())
-            or self._logical_now() >= authorization.session_deadline
-        ):
-            raise _AddScanStop("The owner approval or session deadline is no longer valid.")
-        try:
-            pending = pending_for_device(authorization.target_serial, path=_DEVICE_SAFETY_PATH)
-        except SafetyStateError:
-            raise _AddScanStop("Device restoration state is unavailable.") from None
-        if pending is not None:
-            raise _AddScanStop("An unresolved Issue #23 restoration blocks product operations.")
-
-    def _plan_operations(self) -> tuple[OperationAuthorization, ...]:
-        operations = _first_add_scan_plan(self._session.authorization)
-        if operations is None or operations != self._session.authorization.operations:
-            raise _AddScanStop("The approved operation plan changed or is not the closed first-scan plan.")
-        return operations
-
     def _finalize(self, *, reason: evidence.TerminalReason) -> None:
         if not self._evidence_open or self._terminal_written:
             return
@@ -4088,83 +4496,6 @@ class _AddScanOperationExecutor:
             )
             self._record_cleanup_recovery()
 
-    def execute(self, *, now: datetime | None = None) -> AddScanExecutionResult:
-        authorization = self._session.authorization
-        self._base_time = now or datetime.now(timezone.utc)
-        if not _now_is_utc(self._base_time):
-            return self._result("Execution time must be UTC.")
-        if not self._session.reserve_operation():
-            return self._result("Another operation is in progress for this session.")
-        operations: tuple[OperationAuthorization, ...] = ()
-        try:
-            if not _claim_first_add_scan_execution(self._session):
-                self._blocker = "The admitted first Add & Scan capability is unavailable or already used."
-                return self._result(self._blocker)
-            self._started = self._monotonic()
-            try:
-                self._validate_inputs()
-                operations = self._plan_operations()
-                self._writer.open_session(self._spec, self._request("session-open"))
-                self._evidence_open = True
-                self._append_lifecycle(evidence.Lifecycle.PREPARATION_STARTED, "preparation-started")
-                for operation in operations:
-                    if operation.category in {OperationCategory.INSTALL_ABSENT, OperationCategory.RESET_DATA}:
-                        self._run_setup(operation)
-                    elif dict(operation.arguments).get("action") == "stage_approved_fixture_set":
-                        self._run_stage(operation)
-                        self._append_lifecycle(evidence.Lifecycle.PREPARATION_COMPLETED, "preparation-completed")
-                        self._append_lifecycle(evidence.Lifecycle.EXECUTION_STARTED, "execution-started")
-                    elif operation.category is OperationCategory.LAUNCH:
-                        self._run_launch(operation)
-                    elif operation.category is OperationCategory.NAVIGATION:
-                        self._run_navigation(operation)
-                    elif operation.category is OperationCategory.READ_ONLY:
-                        self._run_read_only(operation)
-                    elif dict(operation.arguments).get("action") == "remove_session_owned_fixture_set":
-                        self._run_cleanup(operation)
-                    else:
-                        raise _AddScanStop("The plan contains an unsupported operation category.")
-                self._workflow_completed = (
-                    self._admission == "admitted"
-                    and self._job_status == "completed"
-                    and self._terminal_scan == "complete"
-                    and self._fixture_results == tuple(range(len(self._expectations)))
-                    and self._cleanup_status == "verified"
-                )
-                self._append_assertion("independent-game-identity", evidence.AssertionOutcome.BLOCKED)
-                self._blocker = self._blocker or (
-                "Host simulation cannot establish independently owner-validated game identity or physical Add & Scan qualification."
-                )
-            except KeyboardInterrupt:
-                self._interrupted = True
-                self._blocker = "Execution was interrupted; no product mutation was retried."
-            except _AddScanStop as stop:
-                self._blocker = self._blocker or stop.reason
-            except Exception:
-                self._blocker = self._blocker or "Evidence persistence or an internal assertion failed."
-            finally:
-                if self._evidence_open and operations:
-                    self._request_scan_recovery_if_unresolved()
-                    self._attempt_owned_cleanup(operations)
-                    self._finalize(
-                        reason=(
-                            evidence.TerminalReason.OPERATOR_TERMINATED
-                            if self._interrupted
-                            else evidence.TerminalReason.ASSERTION_FAILED
-                            if self._assertion_failed
-                            else evidence.TerminalReason.PREREQUISITE_BLOCKED
-                        )
-                    )
-        finally:
-            if _admitted_session_binding(self._session) is not None:
-                _finish_admitted_session(self._session, blocked=True)
-            self._session.release_operation()
-        if self._workflow_completed and self._cleanup_status == "verified":
-            self._blocker = self._blocker or (
-                "The workflow was simulated with host fixtures; physical and owner identity gates remain unverified."
-            )
-        return self._result(self._blocker or "The Add & Scan workflow did not complete.")
-
     def _result(self, blocker: str) -> AddScanExecutionResult:
         return AddScanExecutionResult(
             status=AddScanExecutionStatus.BLOCKED,
@@ -4178,6 +4509,214 @@ class _AddScanOperationExecutor:
             scope_extensions=tuple(self._scope_extensions),
             execution_manifest_sha256=self._execution_manifest_sha256,
         )
+
+
+class _AddScanOperationExecutor(_AddScanOperationPrimitives):
+    """Run the exact closed Issue #26 Add & Scan plan."""
+
+    def _validate_inputs(self) -> None:
+        binding = _first_add_scan_admission_binding(self._session)
+        self._first_binding = binding
+        self._evidence_refs = _validate_executor_session_inputs(
+            session=self._session,
+            evidence_spec=self._spec,
+            fixture_plan=self._fixture_plan,
+            expectations=self._expectations,
+            binding=binding,
+            session_namespace="argus-add-scan",
+            instant=self._logical_now(),
+        )
+
+    def _plan_operations(self) -> tuple[OperationAuthorization, ...]:
+        operations = _first_add_scan_plan(self._session.authorization)
+        if operations is None or operations != self._session.authorization.operations:
+            raise _AddScanStop(
+                "The approved operation plan changed or is not the closed first-scan plan."
+            )
+        return operations
+
+    def execute(self, *, now: datetime | None = None) -> AddScanExecutionResult:
+        return _execute_closed_admitted_session(self, now=now)
+
+
+
+def _dispatch_add_scan_operation(
+    executor: _AddScanOperationExecutor,
+    operation: OperationAuthorization,
+) -> None:
+    """Dispatch only operations already accepted by the Issue #26 validator."""
+    if operation.category in {
+        OperationCategory.INSTALL_ABSENT,
+        OperationCategory.RESET_DATA,
+    }:
+        executor._run_setup(operation)
+    elif dict(operation.arguments).get("action") == "stage_approved_fixture_set":
+        executor._run_stage(operation)
+        executor._append_lifecycle(
+            evidence.Lifecycle.PREPARATION_COMPLETED,
+            "preparation-completed",
+        )
+        executor._append_lifecycle(
+            evidence.Lifecycle.EXECUTION_STARTED,
+            "execution-started",
+        )
+    elif operation.category is OperationCategory.LAUNCH:
+        executor._run_launch(operation)
+    elif operation.category is OperationCategory.NAVIGATION:
+        executor._run_navigation(operation)
+    elif operation.category is OperationCategory.READ_ONLY:
+        executor._run_read_only(operation)
+    elif dict(operation.arguments).get("action") == "remove_session_owned_fixture_set":
+        executor._run_cleanup(operation)
+    else:
+        raise _AddScanStop("The plan contains an unsupported operation category.")
+
+
+def _finalize_add_scan_execution(
+    executor: _AddScanOperationExecutor,
+    operations: tuple[OperationAuthorization, ...],
+) -> None:
+    """Run the Issue #26 recovery and cleanup policy after evidence is open."""
+    executor._request_scan_recovery_if_unresolved()
+    executor._attempt_owned_cleanup(operations)
+
+
+def _execute_closed_admitted_session(
+    executor: _AddScanOperationPrimitives,
+    *,
+    now: datetime | None = None,
+) -> AddScanExecutionResult:
+    """Run the shared evidence/session lifecycle for the two closed plans.
+
+    The helper accepts no operation list. Exact executor types provide their
+    own admission claim, input validation, closed plan validator, dispatch,
+    and cleanup policy. A subclass or unrelated caller cannot supply a new
+    capability or operation sequence.
+    """
+    executor_type = type(executor)
+    issue27_executor_module = None
+    if executor_type is _AddScanOperationExecutor:
+        issue26_executor = True
+    else:
+        if (
+            getattr(executor_type, "__module__", None)
+            != f"{__package__}._library_interaction_executor"
+            or getattr(executor_type, "__qualname__", None)
+            != "_LibraryInteractionOperationExecutor"
+        ):
+            raise _AddScanStop("The private executor lifecycle is not available.")
+        from . import _library_interaction_executor as issue27_executor_module
+
+        if (
+            executor_type
+            is not issue27_executor_module._LibraryInteractionOperationExecutor
+        ):
+            raise _AddScanStop("The private executor lifecycle is not available.")
+        issue26_executor = False
+    instant = now or datetime.now(timezone.utc)
+    executor._base_time = instant
+    if not _now_is_utc(instant):
+        return executor._result("Execution time must be UTC.")
+    if not executor._session.reserve_operation():
+        return executor._result("Another operation is in progress for this session.")
+    operations: tuple[OperationAuthorization, ...] = ()
+    try:
+        claimed = (
+            _claim_first_add_scan_execution(executor._session)
+            if issue26_executor
+            else _claim_library_interaction_execution(executor._session)
+        )
+        if not claimed:
+            executor._blocker = (
+                "The admitted private executor capability is unavailable or already used."
+            )
+            return executor._result(executor._blocker)
+        executor._started = executor._monotonic()
+        try:
+            executor._validate_inputs()
+            operations = executor._plan_operations()
+            executor._writer.open_session(
+                executor._spec,
+                executor._request("session-open"),
+            )
+            executor._evidence_open = True
+            executor._append_lifecycle(
+                evidence.Lifecycle.PREPARATION_STARTED,
+                "preparation-started",
+            )
+            dispatch = _dispatch_add_scan_operation
+            if not issue26_executor:
+                assert issue27_executor_module is not None
+                dispatch = issue27_executor_module._dispatch_library_interaction_operation
+            for operation in operations:
+                dispatch(executor, operation)
+            if issue26_executor:
+                executor._workflow_completed = (
+                    executor._admission == "admitted"
+                    and executor._job_status == "completed"
+                    and executor._terminal_scan == "complete"
+                    and executor._fixture_results
+                    == tuple(range(len(executor._expectations)))
+                    and executor._cleanup_status == "verified"
+                )
+                executor._append_assertion(
+                    "independent-game-identity",
+                    evidence.AssertionOutcome.BLOCKED,
+                )
+                executor._blocker = executor._blocker or (
+                    "Host simulation cannot establish independently owner-validated game identity or physical Add & Scan qualification."
+                )
+            else:
+                executor._blocker = executor._blocker or (
+                    "Issue #27 interaction cases require complete Library membership proof."
+                )
+        except KeyboardInterrupt:
+            executor._interrupted = True
+            executor._blocker = (
+                "Execution was interrupted; no product mutation was retried."
+            )
+        except _AddScanStop as stop:
+            executor._blocker = executor._blocker or stop.reason
+        except Exception:
+            executor._blocker = executor._blocker or (
+                "Evidence persistence or an internal assertion failed."
+            )
+        finally:
+            if executor._evidence_open and operations:
+                if issue26_executor:
+                    _finalize_add_scan_execution(executor, operations)
+                else:
+                    assert issue27_executor_module is not None
+                    issue27_executor_module._finalize_library_interaction_execution(
+                        executor, operations
+                    )
+                executor._finalize(
+                    reason=(
+                        evidence.TerminalReason.OPERATOR_TERMINATED
+                        if executor._interrupted
+                        else evidence.TerminalReason.ASSERTION_FAILED
+                        if executor._assertion_failed
+                        else evidence.TerminalReason.PREREQUISITE_BLOCKED
+                    )
+                )
+    finally:
+        if _admitted_session_binding(executor._session) is not None:
+            _finish_admitted_session(executor._session, blocked=True)
+        executor._session.release_operation()
+    if (
+        issue26_executor
+        and executor._workflow_completed
+        and executor._cleanup_status == "verified"
+    ):
+        executor._blocker = executor._blocker or (
+            "The workflow was simulated with host fixtures; physical and owner identity gates remain unverified."
+        )
+    fallback = (
+        "The Add & Scan workflow did not complete."
+        if issue26_executor
+        else "The Issue #27 workflow did not complete."
+    )
+    return executor._result(executor._blocker or fallback)
 
 
 def _job_status_code(value: str) -> int:

@@ -1,0 +1,24 @@
+scripts/android_qualification/test_admission.py
+  s_dc05655d799281::t_0ea25081a7309c 2881,3107-3108
+  s_dc05655d799281::t_3165ae4e82ba59 3812-3823,3825-3844,3846-3870
+  s_dc05655d799281::t_5895765afd7337 3207-3216
+  s_dc05655d799281::t_7234ee54713474 3511-3530,3552
+scripts/android_qualification/admission.py
+  s_dc05655d799281::t_5c9bd57a0ab7db 3350,3352,3907,3909
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a18543a8021367ff4d378a583327762dee16efc",
+  "prompts": {},
+  "sessions": {
+    "s_dc05655d799281": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a188ec-e752-7d52-9889-2e49a90d88b2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

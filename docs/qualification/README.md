@@ -175,6 +175,9 @@ host-only typed adapter and synthetic fixtures. Device-side fixture transfer,
 live execution orchestration, product qualification, and physical qualification
 remain deferred to their separately scoped owner-approved gates; see
 [First Android Add & Scan qualification boundary](android-first-add-scan.md).
+Issue #27's separate Library interaction plan, private oracle, and current
+pagination blocker are documented in
+[Android Library interaction qualification boundary](android-library-interactions.md).
 The host-only durable execution and owner-review storage contract described in
 [Durable qualification evidence](evidence-records.md) is implemented without a
 CLI, device transport, live runner, release assessor, or product verdict.

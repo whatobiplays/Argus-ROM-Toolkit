@@ -1,11 +1,11 @@
 # Android Job Lifecycle and Recovery — Issue #28
 
-**Document ID:** TASK-P003-028  
-**Status:** Ready for Implementation  
-**Owner:** Daniel  
-**Last Updated:** 2026-10-30  
-**Depends On:** Phase 003; Issue #28 (blocked by closed #26); ARCH-003; SPEC-X-003; SPEC-BE-004; SPEC-BE-013; SPEC-BE-015; SPEC-FE-009; REF-QUAL-001; CONV-DOC-001; CONV-TEST-001; ADR-001; ADR-002; ADR-004; Issue #26's first Add & Scan host contract; Issue #27's independent Library host contract  
-**Supersedes:** None  
+**Document ID:** TASK-P003-028
+**Status:** In Progress
+**Owner:** Daniel
+**Last Updated:** 2026-11-01
+**Depends On:** Phase 003; Issue #28 (blocked by closed #26); ARCH-003; SPEC-X-003; SPEC-BE-004; SPEC-BE-013; SPEC-BE-015; SPEC-FE-009; REF-QUAL-001; CONV-DOC-001; CONV-TEST-001; ADR-001; ADR-002; ADR-004; Issue #26's first Add & Scan host contract; Issue #27's independent Library host contract
+**Supersedes:** None
 **Superseded By:** None
 
 ## 1. Objective and authority
@@ -25,9 +25,18 @@ The executable scope is the intersection of the active Phase 003 qualification w
 
 ### 1.2 Current baseline and non-negotiable distinctions
 
-The observed primary checkout was clean on main at 39e03c74681635c1ab5be5060eed6fca1c928ca8 (merged Issue #27 host-only PR #56). Revalidate both local and remote baseline before planning; do not assume that SHA remains current.
+The original planning baseline was the primary checkout on `main` at
+`39e03c74681635c1ab5be5060eed6fca1c928ca8`, after Issue #27 host-only PR #56.
+That baseline is historical provenance; the PR #58 implementation was based
+on it and was published at commit `c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7`.
+The corrective work is scoped to the same linked feature branch and leaves the
+primary checkout and its pre-existing untracked task document untouched.
 
-**Planning-file transport:** This newly authored task is currently an untracked document in the primary checkout and is not present in a new linked worktree created from Git HEAD. Codex must read this file from the primary checkout as a read-only planning input. After plan approval, copy its exact contents into the isolated implementation worktree if the implementation is to commit this task/Completion Result. Do not edit, stage, or delete the primary copy as an implicit worktree setup step.
+**Planning-file transport (historical):** This task began as an untracked
+primary-checkout document and was copied unchanged into the dedicated linked
+worktree after the original plan was approved. The primary copy remains
+unmodified. Its earlier instruction to transport the file applies to that
+initial implementation and is complete.
 
 - Issue #26 closed its host-only first Add & Scan implementation; it did not prove a physical scan.
 - Issue #27 closed as host-only with physical Library acceptance transferred to #57. **Issue #28 has not received a corresponding scope-transfer/closure decision. Keep its physical acceptance obligations intact.**
@@ -54,16 +63,25 @@ Perform a **redundancy check**: identify what existing tests already establish a
 
 ## 3. Authorized implementation scope (after plan approval)
 
-### 3.1 Candidate allowed paths — narrow to actual need in the plan
+### 3.1 Approved PR #58 corrective scope
 
-- New, narrowly named private host-only contract/oracle/executor/UI-observation modules under scripts/android_qualification/ (for example _job_lifecycle_contract.py, _job_lifecycle_oracle.py, _job_lifecycle_executor.py, physical/_job_lifecycle_ui.py).
-- Focused associated Python tests under scripts/android_qualification/ and scripts/android_qualification/physical/, including tests for guarded admission/evidence integration.
-- scripts/android_qualification/admission.py **only** for an explicit closed-plan private binding with one-use authorization and no new public execution route; obtain separate review if change to common parser/admission behavior would impact #26/#27.
-- docs/qualification/android-job-lifecycle.md (new), docs/qualification/README.md, and docs/qualification/surface-classifications-v1.json only as needed to document/register new active qualification surfaces.
-- This task file, solely for final Completion Result after implementation and verification.
+The candidate-path list in the original prompt is historical. The owner-approved
+corrective change is limited to these ten paths:
 
-Any other production or shared file is outside this task until independently justified and approved. In particular, changes to acceptance-rule or evidence schema are **not** assumed necessary; prefer the existing typed evidence facade and immutable storage contract.
+- `scripts/android_qualification/_job_lifecycle_contract.py`
+- `scripts/android_qualification/_job_lifecycle_oracle.py`
+- `scripts/android_qualification/_job_lifecycle_executor.py`
+- `scripts/android_qualification/test_job_lifecycle.py`
+- `scripts/android_qualification/physical/_job_lifecycle_ui.py`
+- `scripts/android_qualification/physical/test_job_lifecycle_ui.py`
+- `scripts/android_qualification/physical/ui.py`
+- `docs/qualification/android-job-lifecycle.md`
+- `docs/qualification/device-authorization.md`
+- This task document, limited to metadata, §1.2, this scope clarification,
+  the historical latency note in §4.3, and the Completion Result.
 
+No other path is authorized. The change remains host-only and preserves the
+legacy, Issue #26, and Issue #27 contracts and physical qualification gates.
 ### 3.2 Forbidden paths and effects
 
 - No Flutter, Rust, Android native, product runtime, bridge, database schema, or generated-code edits under this host-only task.
@@ -104,7 +122,12 @@ Model a **Qualification Latency Criterion** separate from action/scenario/sessio
 - Require repeated representative baseline samples and a separately **owner-approved immutable ceiling/rule digest** before any pass/fail judgment. No invented numerical threshold, percentile, fallback, or inferred device timing.
 - Classify absent/unapproved threshold or unverified active-work overlap as BLOCKED; provide the sanitized measurement contract and precise missing inputs for later owner calibration.
 - Do not confuse operation timeout, absence of failure, or a fake-clock test with measured real-device latency.
-- Before implementation, Codex should propose the sample/aggregation method and identify which foreground observations are actually measurable through the pinned product UI; owner approval of numerical criteria remains a separate gate.
+- The approved host contract keeps the five-warmup, twenty-measurement,
+  nearest-rank p95 method provisional. It does not run the 25 physical UI
+  actions, approve a numerical ceiling, or create a device latency verdict.
+- The host-only evaluator retains a P2: malformed negative latency samples can
+  raise `ValueError`. Correct and requalify that evaluator before latency
+  execution is enabled under a separately approved physical authorization.
 
 ### 4.4 Admission, evidence and interruption
 
@@ -163,157 +186,132 @@ No stage, commit, push, PR publication or issue edits are authorized by this tas
 
 ## Completion Result
 
-The approved Issue #28 host-only slice, the AND-05 45-operation amendment, the
-successor-identity-bound operation-42 correction, and the lifecycle admission
-timeout guard were implemented in the linked worktree at
-`/Users/daniel/.codex/worktrees/issue-28-job-lifecycle-recovery/Argus-ROM-Toolkit`
-on branch `codex/issue-28-job-lifecycle-recovery`, based on
-`39e03c74681635c1ab5be5060eed6fca1c928ca8`. No Android device, ADB, staging,
-commit, push, pull request, Issue #28 transition, or owner qualification verdict
-was used. The primary checkout remains unchanged except for its pre-existing
+PR #58 first published the host-only lifecycle contract in commit
+`c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7`. The approved correction is a
+separate normal commit on the same feature branch. The original commit remains
+preserved. No Android device or ADB was accessed. The primary checkout remains on `main` at
+`39e03c74681635c1ab5be5060eed6fca1c928ca8`, with only its pre-existing
 untracked task document.
 
-Changed paths (14):
+The full PR inventory is 15 paths: the original 14 plus the explicitly
+approved shared UI path. The correction changes 10 paths:
 
-- Modified: `docs/qualification/README.md`,
+- Corrected: `docs/qualification/android-job-lifecycle.md`,
   `docs/qualification/device-authorization.md`,
+  `docs/tasks/task-p003-028-android-job-lifecycle-recovery.md`,
+  `scripts/android_qualification/_job_lifecycle_contract.py`,
+  `scripts/android_qualification/_job_lifecycle_executor.py`,
+  `scripts/android_qualification/_job_lifecycle_oracle.py`,
+  `scripts/android_qualification/physical/_job_lifecycle_ui.py`,
+  `scripts/android_qualification/physical/test_job_lifecycle_ui.py`, and
+  `scripts/android_qualification/test_job_lifecycle.py`.
+- Added to the PR diff by this approved correction:
+  `scripts/android_qualification/physical/ui.py`.
+- The five other original PR paths remain unchanged:
+  `docs/qualification/README.md`,
   `docs/qualification/surface-classifications-v1.json`,
   `scripts/android_qualification/admission.py`,
-  `scripts/android_qualification/manifest.py`,
+  `scripts/android_qualification/manifest.py`, and
   `scripts/android_qualification/test_repository_checks.py`.
-- Added: `docs/qualification/android-job-lifecycle.md`,
-  `scripts/android_qualification/_job_lifecycle_contract.py`,
-  `scripts/android_qualification/_job_lifecycle_oracle.py`,
-  `scripts/android_qualification/_job_lifecycle_executor.py`,
-  `scripts/android_qualification/physical/_job_lifecycle_ui.py`,
-  `scripts/android_qualification/physical/test_job_lifecycle_ui.py`,
-  `scripts/android_qualification/test_job_lifecycle.py`, and this task
-  document.
-- The task document received only this refreshed Completion Result; its plan
-  sections were not edited.
 
-The narrow `manifest.py` and `device-authorization.md` exceptions use the
-private `JOB_LIFECYCLE` authorization profile. `test_repository_checks.py`
-keeps the pinned surface inventory aligned with the approved six rows (134
-total, 86 active). Legacy, Issue #26, and Issue #27 parser, admission, executor,
-and pin behavior remain unchanged.
+The lifecycle contract and capability versions are 3; the oracle version is 4.
+Both scenario plans use the revised digests, and previous v2/v2/v3 bindings are
+rejected for AND-04 and AND-05. Legacy, Issue #26, and Issue #27 parser,
+admission, executor, and pin behavior remain unchanged. The pinned surface
+registry contains 134 total entries and 86 active entries.
+Positive v3 admission tests consume the production capability digest. The
+stale v2/v2/v3 oracle digest is a fixed value captured from the original
+contract revision; the test no longer carries a duplicate capability payload.
 
-The lifecycle contract and capability versions remain 2. The oracle version is
-3, and its derived digest is shared by both scenarios. Version 2 lifecycle
-authorization pins are therefore invalid for AND-04 as well as AND-05. Both
-scenario documents bind the v3 shared digest; the authorization SHA and the
-independently computed plan SHA remain separate bindings.
+AND-04 retains 31 operations and AND-05 retains 45. Operation 35 requires a
+fresh parent-bound Retry relationship lookup and blocks before intent or Retry
+when its proof is missing or contradictory. Operation 42 remains bound to the
+exact Retry successor; operation 45 remains the only terminal-success decision.
+The timing contract is unchanged:
 
-The parser occurrence check and the added stale-revision coverage required no
-contract, capability, or oracle version change.
-
-Lifecycle admission now measures monotonic elapsed time around the baseline
-observer and returns `OBSERVATION_UNAVAILABLE` when the observation reaches
-its approved timeout, before baseline validation or capability claim. The
-guard rejects an overdue return; it cannot interrupt an observer that never
-returns.
-
-The operation-42 correction accepts only the exact authorized root with one
-`View Job` reference equal to the verified Retry successor. It accepts either
-an identified active presentation with no historical last-scan state or an
-identified historical presentation with one terminal last-scan state. Active
-acceptance records current successor ownership, not terminal completion. The
-executor sets `_root_last_scan_ref` only for a historical pass, appends
-`:root-post-retry-active-scan` only for an active pass, never awards
-refresh-child attribution, and never dispatches a second Retry. Operation 45
-remains the only terminal-success decision. The physical parser still raises
-an ambiguous-surface block for `Scanning in progress` with `View Job`, so
-physical operations 15, 27, and 42 remain blocked pending G5 transport work.
-
-The 45-operation layout and timing are unchanged:
-
-- AND-04: 31 operations, 575 seconds raw timeouts, 31-second operation floor,
-  90-second evidence reserve, 45-second state-check reserve, 30-second
-  restoration reserve, 771-second required span, 900-second session, and
-  69-second margin at latest admission.
-- AND-05: 45 operations, 880 seconds raw timeouts, 45-second operation floor,
-  120-second evidence reserve, 60-second state-check reserve, 30-second
-  restoration reserve, 1,135-second required span, 1,280-second session, and
-  85-second margin at latest admission.
-- Cleanup remains a separate 120-second closure window. No deadline is
+- AND-04: 575 seconds of raw operation timeouts, 31-second operation floor,
+  90-second evidence reserve, 45-second state-check reserve, and 30-second
+  restoration reserve. Required span is 771 seconds with a 69-second margin at
+  latest admission under the 900-second session deadline.
+- AND-05: 880 seconds of raw operation timeouts, 45-second operation floor,
+  120-second evidence reserve, 60-second state-check reserve, and 30-second
+  restoration reserve. Required span is 1,135 seconds with an 85-second margin
+  at latest admission under the 1,280-second session deadline.
+- Cleanup remains a separate 120-second closure window. Deadlines are not
   extended during execution.
 
-Verified on the final candidate:
+The executor records a BLOCKED or FAILED fallback when the latest persisted
+operation outcome is PASSED or no categorical outcome exists. A final durable
+BLOCKED or FAILED assertion prevents a duplicate fallback. If an evidence
+append fails, the executor reports evidence-integrity uncertainty and does not
+retry the append or continue product effects. Tests cover mixed outcomes,
+pre-handler deadline failure, and append failure. An exception from the AND-05
+operation-35 identity observer records an explicit BLOCKED outcome and owner
+recovery reason before intent or Retry.
 
-- Focused lifecycle and parser tests: 205 passed.
-- `just test-android-qualification`: 1,026 passed, 2 skipped.
-- `just check`: passed, including formatting, lint, architecture, the
-  1,026-test Android qualification suite, the 40-test cleanup suite, Rust
-  tests, Flutter tests (633 passed), macOS FRB export checks, and macOS Rust
-  build checks.
-- `just check-qualification-archive`, `just check-qualification-naming`, and
-  `bash scripts/check_qualification_record.sh`: passed.
-- `git diff --check`: clean across code and documentation. The task document
-  keeps the repository's Markdown hard-break trailing spaces, which
-  `git diff --check` reports only while that file is staged as new.
+Jobs classification requires a uniquely selected Jobs destination and a
+separate page title. A standalone Active or Recent section marker must be
+paired with a separate row node containing exactly one Library Refresh or
+Library Scan title and exactly one lifecycle status occurrence. Missing,
+duplicate, or conflicting row statuses block classification, and every visible
+lifecycle status must belong to one validated row node. The exact No jobs yet
+marker is valid only without any lifecycle row. Missing section markers block
+a selected Jobs page instead of allowing it to fall through to refresh-detail
+classification.
 
-Cubic review triage:
+Validation after the latest parser, executor, and test corrections:
 
-- Fixed the final P2 parser finding: the Jobs row parser now counts lifecycle
-  status occurrences instead of distinct values. A merged node containing two
-  identical `Running` labels withholds `lifecycle_status` and
-  `active_refresh_row_count`; a regression covers the downstream observation.
-- Extended the stale oracle-revision test to AND-04 and AND-05. Both scenarios
-  accept v3 authorization and reject v2 authorization arguments and digests.
-- Fixed a P1 where operation 19 accepted an unidentified foreground package as
-  a successful background transition. It now records `BLOCKED`, with a
-  regression test.
-- Fixed a P2 where `LibrarySurfaceObservation.digest()` omitted
-  `membership_ids`. The digest now binds the sorted identities, with a
-  regression test.
-- Fixed a P2 where the recovered Sources root accepted an `ACTIVE_SCAN`
-  presentation carrying a terminal last-scan state. The check now requires an
-  identified historical presentation, with a contradiction regression test.
-- Fixed a P1 where a successor detail with no state was reported as still
-  active at the deadline. Unavailable terminal evidence now records
-  `successor_terminal_unavailable`, with a regression test.
-- Retained one P1 from an earlier Cubic run: the scan-detail handler records
-  refresh-child attribution as `BLOCKED` but continues to foreground
-  restoration. The scan-detail result proves only scan identity, no parent-child
-  claim is awarded, and the approved host-only workflow treats restoration as
-  safe. Physical qualification remains `BLOCKED`.
-- Fixed the final P1: lifecycle admission now measures monotonic elapsed time
-  around the baseline observer and rejects a return at or beyond its timeout
-  with `OBSERVATION_UNAVAILABLE`. The check runs before baseline validation or
-  capability claim. Controlled-clock tests cover within-time, late, exact
-  boundary, raising and unavailable observers, non-consumption, and both
-  scenario admissions. The guard cannot interrupt a permanently
-  non-cooperative synchronous observer.
-- Retained one final Cubic P2 outside this correction's authorized paths:
-  `evaluate_latency` in `_job_lifecycle_oracle.py` passes an unvalidated
-  `LatencyCycle.elapsed_milliseconds` into `nearest_rank_percentile_95`, so a
-  negative sample raises `ValueError` instead of returning a typed
-  `BLOCKED`/`FAILED` result. Reproduced with controlled inputs against the
-  current tree. Latency execution stays disabled host-only, and this
-  correction may change only the admission flow, its tests, and
-  documentation, so the oracle guard is deferred as a scoped follow-up.
-- Retained three architecture findings: the 2,064-line lifecycle executor
-  combines both scenario workflows; the 4,287-line lifecycle test module
-  combines contract, admission, oracle, and executor tests; and lifecycle
-  admission adds a focused branch to the shared admission module. Splitting
-  the executor or moving admission would change the approved architecture and
-  path inventory; splitting the test module is follow-up cleanup. One
-  residual correctness finding remains, recorded above as an out-of-scope
-  latency-oracle follow-up.
-- Two earlier boundary findings were evaluated and left unchanged: the
-  host-only workflow records `scenario-outcome` as `BLOCKED` by design, and
-  an empty Library cannot satisfy the required committed-asset persistence
-  workload.
-- An independent two-axis Standards/Spec review is `UNVERIFIED`: no
-  independent reviewer was available under the instruction to implement
-  without subagents. Cubic is not represented as independent review.
+- Focused lifecycle and physical UI tests: 228 passed.
+- `just test-android-qualification`: 1,049 passed, 2 skipped.
+- `just _format-check` and `just _architecture` passed.
+- Archive, naming, record, and `git diff --check` checks passed after the final
+  Completion Result update.
+- The latest `just check` passed before the final executor and Jobs-parser
+  hardening. It included 1,045 Android tests, 40 cleanup tests, 633 Flutter
+  tests, Rust tests, macOS FRB export checks, and macOS Rust build checks. It
+  was not rerun because the filesystem remained at 99% capacity with 14 GiB
+  available. No build outputs were deleted.
 
-Physical admission remains `BLOCKED`. Host evidence cannot independently prove
-the exact no-reset package, artifact, signer, Library asset identities, Sources
-root presentation and run identity, refresh-child attribution, row-scoped Jobs
-status, parent and child run identities, retry source and successor identity,
-process presence, task continuity, or cleanup and restoration facts. The
-latency execution path remains disabled pending separate owner-approved
-physical authorization with a pinned workload, environment, per-cycle bounds,
-sample count, and numerical ceilings. G3, G4, and G5 remain deferred,
-separately authorized physical qualification gates.
+Confirmed Cubic findings about Jobs-row ambiguity, duplicated capability test
+data, and manual unittest lifecycle calls were corrected. A prior Cubic run
+reported a P1 against operation-outcome fallback handling. Its description
+conflicts with the implementation: `can_append_fallback` allows a fallback
+after a persisted `PASSED` assertion and suppresses only duplicate `BLOCKED`
+or `FAILED` outcomes. The regression
+`test_persisted_pass_does_not_mask_later_handler_exception` verifies that a
+later exception appends one `BLOCKED` fallback. The finding remains disputed;
+no source change was made for it.
+
+The latest Cubic run suggests a dedicated Retry-relation observation type
+instead of nullable Retry-only fields on `JobIdentityObservation`. The
+operation-35 oracle requires a completed lookup, the exact parent, scope,
+state, and child set, and proof that successor fields are absent before Retry
+can dispatch. The executor blocks on any mismatch. A separate type would
+change the internal observer contract, so this architecture suggestion is
+deferred as a nonblocking follow-up. Direct parser tests also cover selected
+tab and heading actionability, repeated section markers, unclassified
+lifecycle rows, and unbound status labels.
+
+A separate semantic-risk review returned five medium-confidence,
+nonblocking authorization heuristics; it is not a Standards/Spec review.
+Independent two-axis Standards/Spec review remains `UNVERIFIED`.
+
+The 13 existing PR review threads remain unanswered and unresolved. Twelve
+findings are addressed by this correction. The negative-latency-sample P2 is
+retained as a deferred item: a malformed negative sample can raise `ValueError`
+in the host-only evaluator, which must be corrected and requalified before
+latency execution is enabled. The five-warmup, twenty-sample, nearest-rank p95
+method and numerical ceilings remain provisional and require separate owner
+approval. The three previously recorded architecture observations remain
+nonblocking follow-up opportunities: splitting the lifecycle executor by
+scenario, splitting the combined lifecycle tests, and moving lifecycle
+admission behind a more focused seam. The Retry-relation observation type is a
+fourth local-review follow-up. No review thread was replied to or resolved.
+
+Physical qualification remains `BLOCKED`. Host evidence does not establish the
+exact no-reset package and artifact, signer, committed Library asset
+identities, Sources root and job identities, refresh-child attribution,
+row-scoped Jobs state, Retry source and successor, process and task continuity,
+or cleanup and restoration facts through independent physical observations.
+G3, G4, and G5 remain separately authorized physical gates. No owner
+qualification verdict was issued.

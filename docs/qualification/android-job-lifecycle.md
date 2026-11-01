@@ -59,10 +59,11 @@ evidence schema is unchanged. A blocked or undecided obligation is recorded as
 `BLOCKED`; a dependent operation that was not run is recorded as `NOT_RUN`.
 There is no persisted `NOT_APPLICABLE` outcome and no new event variant.
 
-The lifecycle contract and capability versions remain 2. The oracle version is
-3. Because the oracle digest is shared by both scenarios, a version 2 oracle
-pin is invalid for AND-04 as well as AND-05. Legacy, Issue #26, and Issue #27
-pins are unaffected.
+The lifecycle contract and capability versions are 3. The oracle version is
+4. The AND-05 capability declaration names the fresh Retry-relation
+precondition. Previous v2 contract, v2 capability, and v3 oracle bindings are
+rejected for both scenarios. Legacy, Issue #26, and Issue #27 pins are
+unaffected.
 
 ## 3. AND-04 operation table
 
@@ -184,8 +185,18 @@ operation 29 passed. A blocked or failed persistence check therefore prevents
 Retry from recreating a lost asset before the persistence assertion runs.
 
 Operations 35 through 37 separate three claims. Operation 35 dispatches the
-single authorized Retry only after the pre-Retry persistence gate passes.
-Operation 36 observes the retry outcome and requires one exact successor run
+single authorized Retry only after the pre-Retry persistence gate passes and a
+fresh relation lookup independently establishes that the verified source has
+no Retry successor. The lookup must bind the exact parent JobRunId, frozen
+scope, recovered terminal state, and complete previously verified child set;
+the child identities must be unique and unchanged. The observation must state
+that the current source relation lookup completed, bind that query to the same
+parent, and establish that both successor identity and successor scope are
+absent. A missing successor identifier alone is not proof of absence, and
+contradictory or stale relation fields block before effect intent or dispatch.
+This pre-Retry query fact is separate from the existing post-Retry
+`source_run_ref` relationship semantics. Operation 36 observes the retry
+outcome and requires one exact successor run
 identity. Operation 37 checks that the successor's source, frozen scope,
 successor identity, and successor scope match the observed refresh. Neither
 operation infers identity from row order, labels, or timing.
@@ -241,7 +252,8 @@ units, total units, status key, and issue count when present. These are parent
 refresh facts. LibraryScan child counters and generic "entries observed" text
 do not establish committed refresh progress. Missing progress, a missing
 status key, or conflicting progress records `BLOCKED` and stops dependent
-operations.
+operations. An issue count by itself also remains `BLOCKED`; it cannot
+authorize a dependent effect.
 
 The Jobs surface exposes refresh row and lifecycle status but not a durable
 JobRunId. A row status is reported only when one accessibility node binds
@@ -322,6 +334,7 @@ replace independent device observations. A missing observation remains
 | Committed Library asset identity missing after relaunch | `FAILED` | No Retry; owner recovery |
 | Recovered Library identity evidence unavailable or incomplete | `BLOCKED` | No Retry; owner recovery |
 | Pre-Retry root or Library persistence unverified | `BLOCKED` | Retry not dispatched |
+| Fresh Retry-relation lookup is unavailable, incomplete, stale, contradictory, or does not prove absence of both successor identity and scope | `BLOCKED` | No Retry intent or dispatch; owner recovery |
 | Refresh reaches a terminal state before the controlled stop | `BLOCKED` for process loss | Retry obligations `NOT_RUN`; completed state is not proof of interruption |
 | `Completed` or `CompletedWithIssues` after the stop | `BLOCKED` as recovery proof | Retry remains undecided |
 | `Interrupted` after a non-resumable refresh stop | `FAILED` | No retry or relaunch |
@@ -407,8 +420,18 @@ tests pass.
 The Jobs accessibility parser binds a row status to the tested refresh row
 only inside one merged accessibility node. The pinned production surface has
 not yet demonstrated that binding, so physical Jobs state remains `BLOCKED`
-until one capture shows the title and status in the same node and an
-authorized independent observer confirms the row identity.
+until one capture shows the title and exactly one lifecycle status occurrence
+in the same node and an authorized independent observer confirms the row
+identity. Jobs classification also requires one selected Jobs destination and
+a separate Jobs page title. A populated page must pair one standalone `Active`
+or `Recent` section marker with a separate row node containing exactly one
+`Library Refresh` or `Library Scan` title and exactly one lifecycle status
+occurrence. Missing, duplicate, or conflicting row statuses block
+classification. An empty page requires one `No jobs yet` marker and no
+lifecycle row. The raw `Active` or `Recent` label alone is insufficient.
+Flutter defines selected navigation state, but Android accessibility has not
+been physically verified to expose it. Missing or ambiguous selected-state or
+page structure remains `BLOCKED`.
 
 G3, G4, and G5 remain separate owner-authorized physical gates. No host test,
 CI run, or synthetic observation may claim Android physical qualification or

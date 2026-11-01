@@ -92,7 +92,12 @@ plan vocabulary: absent-only qualification APK install, authorized
 qualification-package reset, manifest-bound fixture staging and cleanup,
 qualification launch, closed onboarding/navigation actions, and four named
 read-only observations. It rejects permission app-ops, reinstall, force-stop,
-refresh, shell, and generic path mutation. The reversible
+refresh, shell, and generic path mutation. The Issue #28 lifecycle profile
+separately authorizes one AND-05 `retry_library_refresh` effect only after
+independent committed
+state checks and a fresh exact relation lookup proves the source has no
+successor identity or successor scope. That grant cannot be repeated or used
+by the legacy, Issue #26, or Issue #27 executors. The reversible
 `MANAGE_EXTERNAL_STORAGE` permission/app-op transition is the only device
 operation enabled. It must
 name the qualification package, the exact target, the expected prior state,

@@ -156,6 +156,57 @@ def validate_identity(
     return OracleResult(evidence.AssertionOutcome.PASSED, "job_identity_observed")
 
 
+def validate_retry_precondition(
+    observation: object,
+    *,
+    expected_parent_ref: str | None,
+    expected_scope_ref: str | None,
+    expected_state: RecoveryState | None,
+    expected_child_refs: tuple[str, ...] | None,
+) -> OracleResult:
+    """Require a fresh exact lookup proving the source has no Retry successor."""
+    if type(observation) is not JobIdentityObservation:
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_identity_unavailable",
+        )
+    expected_children = expected_child_refs
+    observed_children = observation.child_run_refs
+    if (
+        type(expected_parent_ref) is not str
+        or not 1 <= len(expected_parent_ref) <= 256
+        or type(expected_scope_ref) is not str
+        or not 1 <= len(expected_scope_ref) <= 256
+        or type(expected_state) is not RecoveryState
+        or expected_state not in RETRY_ELIGIBLE_STATES
+        or type(expected_children) is not tuple
+        or not expected_children
+        or any(type(value) is not str or not 1 <= len(value) <= 256 for value in expected_children)
+        or len(set(expected_children)) != len(expected_children)
+        or observation.parent_run_ref != expected_parent_ref
+        or observation.frozen_scope_ref != expected_scope_ref
+        or observation.parent_state is not expected_state
+        or type(observed_children) is not tuple
+        or not observed_children
+        or any(type(value) is not str or not 1 <= len(value) <= 256 for value in observed_children)
+        or len(set(observed_children)) != len(observed_children)
+        or set(observed_children) != set(expected_children)
+        or observation.retry_relation_lookup_completed is not True
+        or observation.retry_lookup_source_run_ref != expected_parent_ref
+        or observation.successor_run_ref is not None
+        or observation.successor_scope_ref is not None
+        or observation.source_run_ref is not None
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_identity_ambiguous",
+        )
+    return OracleResult(
+        evidence.AssertionOutcome.PASSED,
+        "retry_pre_dispatch_identity_current_and_empty",
+    )
+
+
 def validate_process_observation(
     observation: object,
     *,

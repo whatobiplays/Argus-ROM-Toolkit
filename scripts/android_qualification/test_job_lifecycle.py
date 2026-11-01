@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
-import json
 import tempfile
 import time
 import unittest
@@ -153,30 +152,6 @@ def _authorization_document(
         for spec in contract.JOB_LIFECYCLE_OPERATIONS[scenario_id]
     ]
     return document
-
-
-def _oracle_sha256_for_revision(revision: int) -> str:
-    """Return the derived oracle digest for one declared revision."""
-    return hashlib.sha256(
-        json.dumps(
-            {
-                "contract_version": contract.JOB_LIFECYCLE_CONTRACT_VERSION,
-                "oracle_version": revision,
-                "capability_sha256": contract.JOB_LIFECYCLE_CAPABILITY_SHA256,
-                "progress_fields": (
-                    "phase",
-                    "completed_units",
-                    "total_units",
-                    "status_key",
-                    "issue_count",
-                ),
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-    ).hexdigest()
 
 
 def _load_lifecycle_authorization(directory: Path, document: dict):
@@ -343,7 +318,8 @@ def _detail(parent, state, *, progress=None, retry=0, source=None, successor=Non
 
 
 def _identity(parent, children=("child-run",), state=contract.RecoveryState.ACTIVE,
-              source=None, successor=None, scope="scope-ref"):
+              source=None, successor=None, scope="scope-ref", retry_lookup=None,
+              successor_scope=None, lookup_source=None):
     return contract.JobIdentityObservation(
         parent_run_ref=parent,
         child_run_refs=children,
@@ -351,7 +327,11 @@ def _identity(parent, children=("child-run",), state=contract.RecoveryState.ACTI
         parent_state=state,
         source_run_ref=source,
         successor_run_ref=successor,
-        successor_scope_ref=scope if successor is not None else None,
+        successor_scope_ref=(
+            scope if successor is not None else successor_scope
+        ),
+        retry_relation_lookup_completed=retry_lookup,
+        retry_lookup_source_run_ref=lookup_source,
     )
 
 
@@ -673,6 +653,8 @@ class ScriptedObserver:
                 state=contract.RecoveryState.FAILED,
                 source=transport.parent,
                 successor=transport.successor,
+                retry_lookup=True,
+                lookup_source=transport.parent,
             )
         if transport.retry_calls and parent_ref == transport.parent:
             return _identity(
@@ -680,6 +662,17 @@ class ScriptedObserver:
                 state=contract.RecoveryState.FAILED,
                 source=transport.parent,
                 successor=transport.successor,
+                retry_lookup=True,
+                lookup_source=transport.parent,
+            )
+        if transport.force_stop_calls and parent_ref == transport.parent:
+            return _identity(
+                transport.parent,
+                children=("child-run",),
+                state=transport.detail_state,
+                scope="scope-ref",
+                retry_lookup=True,
+                lookup_source=transport.parent,
             )
         return _identity(parent_ref, state=transport.detail_state)
 
@@ -714,6 +707,7 @@ class RecordingWriter:
         self.assertion_count = 0
         self.fail_terminal = False
         self.terminal_session_id = None
+        self.fail_next_assertion = False
 
     def open_session(self, spec, request):
         self.events.append(("open", request.operation_id))
@@ -725,6 +719,9 @@ class RecordingWriter:
 
     def append_assertion(self, session_id, observation, request):
         self.assertion_count += 1
+        if self.fail_next_assertion:
+            self.fail_next_assertion = False
+            raise RuntimeError("evidence append failed")
         if self.fail_assertion or (
             self.fail_assertion_after is not None
             and self.assertion_count > self.fail_assertion_after
@@ -916,6 +913,10 @@ class ContractTests(unittest.TestCase):
             replace(library, membership_ids=("asset-a",)).digest(),
             replace(library, membership_ids=("asset-b",)).digest(),
         )
+        self.assertNotEqual(
+            _identity("parent", retry_lookup=True).digest(),
+            _identity("parent", retry_lookup=False).digest(),
+        )
         self.assertFalse(
             replace(library, surface=None).established()
         )
@@ -948,15 +949,9 @@ class ManifestLifecycleTests(unittest.TestCase):
         )
 
     def test_lifecycle_authorization_requires_current_oracle_revision(self):
-        self.assertEqual(
-            contract.JOB_LIFECYCLE_ORACLE_SHA256,
-            _oracle_sha256_for_revision(3),
-        )
-        self.assertNotEqual(
-            _oracle_sha256_for_revision(2),
-            contract.JOB_LIFECYCLE_ORACLE_SHA256,
-        )
-        stale_digest = _oracle_sha256_for_revision(2)
+        # Captured from the original v2 contract, v2 capability, and v3 oracle.
+        stale_digest = "1e15ecbb39072f34043e1721a4099b1826320af06b277a0bd20973035c11366d"
+        self.assertNotEqual(stale_digest, contract.JOB_LIFECYCLE_ORACLE_SHA256)
         for scenario in ("AND-04", "AND-05"):
             with self.subTest(scenario=scenario):
                 accepted = self._load(_authorization_document(scenario))
@@ -966,7 +961,7 @@ class ManifestLifecycleTests(unittest.TestCase):
                 )
                 stale = _authorization_document(scenario)
                 for operation in stale["operations"]:
-                    operation["arguments"]["oracle_version"] = "2"
+                    operation["arguments"]["oracle_version"] = "3"
                     operation["arguments"]["oracle_sha256"] = stale_digest
                 with tempfile.TemporaryDirectory() as directory:
                     with self.assertRaises(manifest.AuthorizationError):
@@ -1672,6 +1667,21 @@ class OracleTests(unittest.TestCase):
             ).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
+
+    def test_issue_count_without_committed_parent_progress_is_blocked(self):
+        issues_only = contract.RefreshProgressFacts(
+            "scan",
+            None,
+            None,
+            "library_refresh.failed",
+            2,
+            "parent-run",
+        )
+        self.assertFalse(issues_only.has_committed_progress())
+        self.assertEqual(
+            oracle.validate_refresh_progress(issues_only).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
         self.assertEqual(
             oracle.validate_active_progress_pair(_progress(2), _progress(1)).outcome,
             evidence.AssertionOutcome.FAILED,
@@ -1969,6 +1979,66 @@ class OracleTests(unittest.TestCase):
             ).outcome,
             evidence.AssertionOutcome.PASSED,
         )
+
+    def test_pre_retry_identity_requires_fresh_exact_empty_relation(self):
+        valid = _identity(
+            "parent",
+            children=("child-a", "child-b"),
+            state=contract.RecoveryState.FAILED,
+            scope="scope-ref",
+            retry_lookup=True,
+            lookup_source="parent",
+        )
+        self.assertEqual(
+            oracle.validate_retry_precondition(
+                valid,
+                expected_parent_ref="parent",
+                expected_scope_ref="scope-ref",
+                expected_state=contract.RecoveryState.FAILED,
+                expected_child_refs=("child-a", "child-b"),
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        invalid = (
+            None,
+            object(),
+            _identity("parent", children=("child-a",), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True),
+            _identity("other", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True),
+            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+                      scope="other-scope", retry_lookup=True),
+            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.ACTIVE,
+                      scope="scope-ref", retry_lookup=True),
+            _identity("parent", children=("child-a", "child-a"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True),
+            _identity("parent", children=("child-a", "foreign-child"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True),
+            _identity("parent", children=(), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True),
+            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=None),
+            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=False),
+            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True, successor="successor"),
+            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True, successor_scope="scope-ref"),
+            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+                      scope="scope-ref", retry_lookup=True, lookup_source="other-parent"),
+        )
+        for observation in invalid:
+            with self.subTest(observation=observation):
+                self.assertEqual(
+                    oracle.validate_retry_precondition(
+                        observation,
+                        expected_parent_ref="parent",
+                        expected_scope_ref="scope-ref",
+                        expected_state=contract.RecoveryState.FAILED,
+                        expected_child_refs=("child-a", "child-b"),
+                    ).outcome,
+                    evidence.AssertionOutcome.BLOCKED,
+                )
         for mismatched in (
             _identity("other-parent", source="other-parent", successor="successor"),
             _identity("parent", source="other-parent", successor="successor"),
@@ -2151,7 +2221,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.FAILED,
         )
         self.assertRegex(oracle.oracle_sha256(), r"^[0-9a-f]{64}$")
-        self.assertEqual(oracle.oracle_version(), "3")
+        self.assertEqual(oracle.oracle_version(), "4")
         self.assertEqual(
             oracle.validate_refresh_progress(None).outcome,
             evidence.AssertionOutcome.BLOCKED,
@@ -2439,6 +2509,7 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self,
         scenario="AND-04",
         *,
+        directory: Path | None = None,
         authorization_id=None,
         baseline=None,
         baseline_job_states=None,
@@ -2448,11 +2519,12 @@ class ExecutorLifecycleTests(unittest.TestCase):
         monotonic=None,
         sleeper=None,
     ):
+        active_directory = self.directory if directory is None else directory
         document = _authorization_document(scenario, job_states=baseline_job_states)
         if authorization_id is not None:
             document["authorization_id"] = authorization_id
-        authorization = _load_lifecycle_authorization(self.directory, document)
-        approval = _load_approval(self.directory, authorization)
+        authorization = _load_lifecycle_authorization(active_directory, document)
+        approval = _load_approval(active_directory, authorization)
         transport = transport or ScriptedTransport(scenario)
         result = admission._admit_job_lifecycle_session(
             authorization,
@@ -2734,6 +2806,24 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 self.assertEqual(transport.force_stop_calls, 0)
                 self.assertEqual(transport.retry_calls, 0)
 
+    def test_issue_only_progress_cannot_authorize_process_loss_or_retry(self):
+        executor, transport, _ = self._executor("AND-05")
+        transport.observe_refresh_progress = lambda parent_ref, timeout: (
+            contract.RefreshProgressFacts(
+                "scan",
+                None,
+                None,
+                "library_refresh.failed",
+                2,
+                parent_ref,
+            )
+        )
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(transport.force_stop_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+
     def test_missing_identity_blocks_parent_child_claim(self):
         executor, transport, writer = self._executor()
         original = ScriptedObserver.observe_identity
@@ -2981,7 +3071,7 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 1)
         self.assertEqual(transport.navigations, [])
-        self.assertIn("intent", result.blocker)
+        self.assertIn("could not be durably appended", result.blocker)
 
     def test_navigation_persists_intent_before_dispatch_and_result_after(self):
         executor, transport, writer = self._executor()
@@ -3033,6 +3123,171 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 1)
         self.assertEqual(transport.navigations, ["navigate_library"])
         self.assertIn("result", result.blocker)
+
+    def test_unexpected_handler_exception_records_one_blocked_attempt(self):
+        executor, transport, writer = self._executor()
+        def raise_before_assertion(operation, spec):
+            raise ValueError("malformed observation")
+
+        executor._step_navigate_library = raise_before_assertion
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(
+            writer.assertion_keys[1][1], evidence.AssertionOutcome.BLOCKED.value
+        )
+        self.assertTrue(any(
+            outcome == evidence.AssertionOutcome.NOT_RUN.value
+            for _, outcome in writer.assertion_keys
+        ))
+        self.assertEqual(transport.navigations, [])
+
+    def test_dispatch_guard_records_failure_before_handler_starts(self):
+        executor, transport, writer = self._executor()
+
+        def fail_current_operation(operation):
+            raise ValueError("malformed operation context")
+
+        executor._current_operation = fail_current_operation
+        result = executor.execute(now=NOW)
+
+        fallback_id = executor._request(
+            "and-04-01:operation-outcome-unrecorded"
+        ).operation_id
+        intent_id = executor._request("and-04-01:intent").operation_id
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 0)
+        self.assertEqual(transport.navigations, [])
+        self.assertNotEqual(fallback_id, intent_id)
+        self.assertFalse(
+            any(key == intent_id for key, _ in writer.assertion_keys)
+        )
+        self.assertEqual(
+            sum(key == fallback_id for key, _ in writer.assertion_keys), 1
+        )
+        self.assertEqual(
+            sum(
+                outcome == evidence.AssertionOutcome.BLOCKED.value
+                for key, outcome in writer.assertion_keys
+                if key == fallback_id
+            ),
+            1,
+        )
+
+    def test_unexpected_handler_with_existing_categorical_assertion_is_not_duplicated(self):
+        executor, transport, writer = self._executor()
+        def block_then_raise(operation, spec):
+            executor._append_assertion(
+                "surface_unavailable", evidence.AssertionOutcome.BLOCKED
+            )
+            raise ValueError("observer decode failed")
+
+        executor._step_navigate_library = block_then_raise
+        executor.execute(now=NOW)
+        blocked_id = executor._request("surface_unavailable").operation_id
+        fallback_id = executor._request(
+            "and-04-02:operation-outcome-unrecorded"
+        ).operation_id
+        self.assertEqual(
+            sum(key == blocked_id for key, _ in writer.assertion_keys), 1
+        )
+        self.assertFalse(any(key == fallback_id for key, _ in writer.assertion_keys))
+        self.assertEqual(transport.navigations, [])
+
+    def test_pass_after_block_does_not_hide_handler_abort(self):
+        executor, transport, writer = self._executor()
+
+        def block_pass_then_raise(operation, spec):
+            executor._append_assertion(
+                "initial_check_blocked", evidence.AssertionOutcome.BLOCKED
+            )
+            executor._append_assertion(
+                "later_check_passed", evidence.AssertionOutcome.PASSED
+            )
+            raise ValueError("later operation work failed")
+
+        executor._step_navigate_library = block_pass_then_raise
+        result = executor.execute(now=NOW)
+
+        fallback_id = executor._request(
+            "and-04-02:operation-outcome-unrecorded"
+        ).operation_id
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 1)
+        self.assertIn(
+            (fallback_id, evidence.AssertionOutcome.BLOCKED.value),
+            writer.assertion_keys,
+        )
+        self.assertEqual(transport.navigations, [])
+
+    def test_persisted_pass_does_not_mask_later_handler_exception(self):
+        executor, transport, writer = self._executor()
+
+        def pass_then_raise(operation, spec):
+            executor._record_result(operation, True)
+            raise ValueError("later observation failed")
+
+        executor._step_navigate_library = pass_then_raise
+        result = executor.execute(now=NOW)
+
+        passed_id = executor._request("and-04-02:result").operation_id
+        fallback_id = executor._request(
+            "and-04-02:operation-outcome-unrecorded"
+        ).operation_id
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 1)
+        self.assertEqual(
+            sum(key == passed_id for key, _ in writer.assertion_keys), 1
+        )
+        self.assertEqual(
+            sum(key == fallback_id for key, _ in writer.assertion_keys), 1
+        )
+        self.assertIn(
+            (fallback_id, evidence.AssertionOutcome.BLOCKED.value),
+            writer.assertion_keys,
+        )
+        self.assertEqual(transport.navigations, [])
+
+    def test_operation_fallback_append_failure_is_explicit_integrity_block(self):
+        executor, _, writer = self._executor()
+        def raise_before_assertion(operation, spec):
+            writer.fail_next_assertion = True
+            raise ValueError("malformed observation")
+
+        executor._step_navigate_library = raise_before_assertion
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("could not be durably appended", result.blocker)
+        self.assertFalse(any(
+            key == executor._request(
+                "and-04-02:operation-outcome-unrecorded"
+            ).operation_id
+            for key, _ in writer.assertion_keys
+        ))
+
+    def test_outcome_append_failure_reports_integrity_without_retrying_append(self):
+        executor, transport, writer = self._executor()
+
+        def pass_then_fail_append(operation, spec):
+            executor._record_result(operation, True)
+            writer.fail_next_assertion = True
+            executor._record_blocked(operation, "later_observation_failed")
+
+        executor._step_navigate_library = pass_then_fail_append
+        result = executor.execute(now=NOW)
+
+        passed_id = executor._request("and-04-02:result").operation_id
+        fallback_id = executor._request(
+            "and-04-02:operation-outcome-unrecorded"
+        ).operation_id
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("could not be durably appended", result.blocker)
+        self.assertEqual(
+            sum(key == passed_id for key, _ in writer.assertion_keys), 1
+        )
+        self.assertFalse(any(key == fallback_id for key, _ in writer.assertion_keys))
+        self.assertEqual(transport.navigations, [])
 
     def test_skipped_operations_receive_deterministic_not_run_assertions(self):
         executor, transport, writer = self._executor()
@@ -4030,6 +4285,154 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 34)
         self.assertEqual(transport.retry_calls, 1)
         self.assertIn("explicit retry", result.blocker)
+
+    def test_unavailable_pre_retry_identity_blocks_before_retry_intent(self) -> None:
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        original = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            if (
+                transport.force_stop_calls
+                and not transport.retry_calls
+                and parent_ref == transport.parent
+            ):
+                return None
+            return original(parent_ref, timeout)
+
+        observer.observe_identity = identity
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        self._force_stop_into(transport, contract.RecoveryState.FAILED)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+
+    def test_pre_retry_identity_observer_exception_blocks_before_retry_intent(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        original = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            if (
+                transport.force_stop_calls
+                and not transport.retry_calls
+                and parent_ref == transport.parent
+            ):
+                raise ValueError("observer decode failed")
+            return original(parent_ref, timeout)
+
+        observer.observe_identity = identity
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        self._force_stop_into(transport, contract.RecoveryState.FAILED)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertIn("owner recovery", result.blocker)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "retry_pre_dispatch_identity_unavailable",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+
+    def test_invalid_pre_retry_relations_never_dispatch_retry(self) -> None:
+        valid = _identity(
+            "parent-run",
+            children=("child-run",),
+            state=contract.RecoveryState.ABANDONED,
+            scope="scope-ref",
+            retry_lookup=True,
+            lookup_source="parent-run",
+        )
+        invalid = (
+            None,
+            replace(valid, parent_run_ref="other-parent"),
+            replace(valid, frozen_scope_ref="other-scope"),
+            replace(valid, parent_state=contract.RecoveryState.FAILED),
+            replace(valid, child_run_refs=()),
+            replace(valid, child_run_refs=("child-run", "foreign-child")),
+            replace(valid, child_run_refs=("child-run", "child-run")),
+            replace(valid, retry_relation_lookup_completed=None),
+            replace(valid, retry_relation_lookup_completed=False),
+            replace(valid, retry_lookup_source_run_ref="other-parent"),
+            replace(valid, successor_run_ref="existing-successor"),
+            replace(valid, successor_scope_ref="scope-ref"),
+            replace(valid, source_run_ref="parent-run"),
+        )
+        for observation in invalid:
+            with self.subTest(observation=observation):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    directory = Path(temporary_directory)
+                    with mock.patch.object(
+                        admission,
+                        "_SESSION_REGISTRY_PATH",
+                        directory / "host-state" / "session-registry.json",
+                        create=True,
+                    ):
+                        transport = ScriptedTransport("AND-05")
+                        observer = ScriptedObserver(transport)
+                        original = observer.observe_identity
+
+                        def observe(parent_ref, timeout):
+                            if (
+                                transport.force_stop_calls
+                                and not transport.retry_calls
+                                and parent_ref == transport.parent
+                            ):
+                                return observation
+                            return original(parent_ref, timeout)
+
+                        observer.observe_identity = observe
+                        executor, _, writer = self._executor(
+                            "AND-05",
+                            directory=directory,
+                            transport=transport,
+                            observer=observer,
+                        )
+                        self._run_and_05_with_force_stop(transport)
+                        result = executor.execute(now=NOW)
+
+                        self.assertEqual(result.status, "blocked")
+                        self.assertEqual(result.completed_operations, 34)
+                        self.assertEqual(transport.retry_calls, 0)
+                        self.assertFalse(
+                            self._assertion_recorded(
+                                executor,
+                                writer,
+                                "and-05-35",
+                                "intent",
+                                evidence.AssertionOutcome.NOT_RUN,
+                            )
+                        )
 
     def test_retry_successor_identity_unavailable_blocks(self) -> None:
         transport = ScriptedTransport("AND-05")

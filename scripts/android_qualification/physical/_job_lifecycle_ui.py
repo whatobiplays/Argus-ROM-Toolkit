@@ -79,14 +79,19 @@ def _node_label_groups(
             raise ui.UIBlocked("A foreign or unidentified UI surface prevents selection.")
         if element.get("visible-to-user", "true") == "false":
             continue
-        groups.append(
-            tuple(
-                line
-                for attribute in ("text", "content-desc")
-                for line in element.get(attribute, "").splitlines()
-                if line
-            )
+        text_labels = tuple(
+            line for line in element.get("text", "").splitlines() if line
         )
+        description_labels = tuple(
+            line for line in element.get("content-desc", "").splitlines() if line
+        )
+        # Android often mirrors one semantic label into both attributes. Only
+        # collapse that exact representation; repeated labels in one attribute
+        # or differing text and descriptions remain separate occurrences.
+        if text_labels and text_labels == description_labels:
+            groups.append(text_labels)
+        else:
+            groups.append(text_labels + description_labels)
     return tuple(groups)
 
 
@@ -105,6 +110,95 @@ def _single(values: list[object], code: str) -> object | None:
     if len(values) != 1:
         raise ui.UIBlocked(code)
     return values[0]
+
+
+def _control_count(
+    nodes: list[ui.Node],
+    groups: tuple[tuple[str, ...], ...],
+    *,
+    key: str,
+    label: str,
+) -> int:
+    """Count one uniquely represented, actionable control or fail closed."""
+    occurrences = sum(group.count(label) for group in groups)
+    matches = [node for node in nodes if node.key == key]
+    if occurrences > 1 or len(matches) > 1:
+        return max(2, occurrences, len(matches))
+    if occurrences != 1 or len(matches) != 1:
+        return 0
+    node = matches[0]
+    return int(node.enabled and node.clickable)
+
+
+def _jobs_page_structure_is_verified(
+    nodes: list[ui.Node], groups: tuple[tuple[str, ...], ...]
+) -> bool:
+    """Require a selected Jobs destination and a separate page title."""
+    jobs_groups = [group for group in groups if "Jobs" in group]
+    jobs_nodes = [node for node in nodes if node.key == "jobs_navigation"]
+    if (
+        len(jobs_groups) != 2
+        or any(group.count("Jobs") != 1 for group in jobs_groups)
+        or len(jobs_nodes) != 2
+    ):
+        return False
+    selected = [node for node in jobs_nodes if node.selected]
+    heading = [node for node in jobs_nodes if not node.selected]
+    if (
+        len(selected) != 1
+        or not selected[0].enabled
+        or not selected[0].clickable
+        or len(heading) != 1
+        or not heading[0].enabled
+        or heading[0].clickable
+    ):
+        return False
+    return True
+
+
+def _jobs_content_is_verified(groups: tuple[tuple[str, ...], ...]) -> bool:
+    """Require coherent Jobs content after page structure is verified."""
+    content_markers = ("Active", "Recent", "No jobs yet")
+    marker_groups = [
+        group
+        for group in groups
+        if any(marker in group for marker in content_markers)
+    ]
+    if not marker_groups or any(
+        sum(group.count(marker) for group in groups) > 1
+        for marker in content_markers
+    ):
+        return False
+    if any(
+        group not in {("Active",), ("Recent",), ("No jobs yet",)}
+        for group in marker_groups
+    ):
+        return False
+
+    lifecycle_titles = ("Library Refresh", "Library Scan")
+    lifecycle_row_groups = [
+        group for group in groups if any(title in group for title in lifecycle_titles)
+    ]
+    if any(
+        sum(group.count(title) for title in lifecycle_titles) != 1
+        or sum(label in _STATUS_LABELS for label in group) != 1
+        for group in lifecycle_row_groups
+    ):
+        return False
+    if sum(
+        label in _STATUS_LABELS for group in groups for label in group
+    ) != sum(
+        label in _STATUS_LABELS
+        for group in lifecycle_row_groups
+        for label in group
+    ):
+        return False
+
+    if any(group == ("No jobs yet",) for group in marker_groups):
+        return len(marker_groups) == 1 and not lifecycle_row_groups
+    return bool(lifecycle_row_groups) and all(
+        group in {("Active",), ("Recent",)} for group in marker_groups
+    )
 
 
 def _parse_progress(labels: tuple[str, ...]) -> RefreshProgressFacts | None:
@@ -180,6 +274,13 @@ def parse_job_lifecycle_surface(
     has_retry_relation = (
         "Retried from" in label_set or "Retried as" in label_set
     )
+    jobs_page_structure = _jobs_page_structure_is_verified(nodes, label_groups)
+    if jobs_page_structure and not jobs_markers:
+        raise ui.UIBlocked("The Jobs page content marker is unavailable.")
+    if jobs_markers and (
+        not jobs_page_structure or not _jobs_content_is_verified(label_groups)
+    ):
+        raise ui.UIBlocked("The Jobs destination and page structure are ambiguous.")
     if jobs_markers:
         surface = JobLifecycleSurface.JOBS
     elif has_last_scan and "View Job" in label_set:
@@ -232,7 +333,24 @@ def parse_job_lifecycle_surface(
         match.group(1) for label in labels if (match := _LAST_SCAN_RE.fullmatch(label))
     ]
     root_state = last_scan_states[0] if len(set(last_scan_states)) == 1 else None
-    view_job_count = keys.count("view_job")
+    library_navigation_count = _control_count(
+        nodes, label_groups, key="library_navigation", label="Library"
+    )
+    jobs_navigation_count = _control_count(
+        nodes, label_groups, key="jobs_navigation", label="Jobs"
+    )
+    sources_navigation_count = _control_count(
+        nodes, label_groups, key="sources_navigation", label="Sources"
+    )
+    refresh_control_count = _control_count(
+        nodes, label_groups, key="refresh", label="Refresh Library"
+    )
+    retry_control_count = _control_count(
+        nodes, label_groups, key="retry", label="Retry"
+    )
+    view_job_count = _control_count(
+        nodes, label_groups, key="view_job", label="View Job"
+    )
     return JobLifecycleScreenObservation(
         surface=surface,
         lifecycle_status=lifecycle_status,
@@ -240,13 +358,14 @@ def parse_job_lifecycle_surface(
         jobs_arrival_marker=jobs_markers[0] if len(jobs_markers) == 1 else None,
         visible_refresh_row_count=refresh_rows,
         active_refresh_row_count=active_refresh_rows,
-        library_navigation_present="library_navigation" in keys,
-        jobs_navigation_present="jobs_navigation" in keys,
-        sources_navigation_present=(
-            "sources_navigation" in keys or "Sources" in label_set
+        library_navigation_present=library_navigation_count == 1,
+        jobs_navigation_present=(
+            surface is JobLifecycleSurface.JOBS
+            or jobs_navigation_count == 1
         ),
-        refresh_control_present="refresh" in keys,
-        retry_control_count=labels.count("Retry"),
+        sources_navigation_present=sources_navigation_count == 1,
+        refresh_control_present=refresh_control_count == 1,
+        retry_control_count=retry_control_count,
         view_job_control_count=view_job_count,
         root_last_scan=root_state,
         scan_job_status=(

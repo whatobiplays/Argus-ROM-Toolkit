@@ -63,6 +63,7 @@ from ._job_lifecycle_oracle import (
     validate_active_progress_pair,
     validate_identity,
     validate_process_observation,
+    validate_retry_precondition,
     validate_refresh_progress,
     validate_scan_root_post_retry,
     validate_scan_root_preloss,
@@ -204,6 +205,37 @@ class _JobLifecycleStop(Exception):
         super().__init__(reason)
 
 
+class _OperationOutcomeJournal:
+    """Track durable categorical outcomes and uncertain appends for one step."""
+
+    def __init__(self) -> None:
+        self._latest_persisted: evidence.AssertionOutcome | None = None
+        self._append_uncertain = False
+
+    def reset(self) -> None:
+        self._latest_persisted = None
+        self._append_uncertain = False
+
+    def begin_append(self) -> None:
+        self._append_uncertain = True
+
+    def append_succeeded(self, outcome: evidence.AssertionOutcome) -> None:
+        self._latest_persisted = outcome
+        self._append_uncertain = False
+
+    @property
+    def has_persisted_outcome(self) -> bool:
+        return self._latest_persisted is not None
+
+    @property
+    def can_append_fallback(self) -> bool:
+        nonpassing = {
+            evidence.AssertionOutcome.BLOCKED,
+            evidence.AssertionOutcome.FAILED,
+        }
+        return not self._append_uncertain and self._latest_persisted not in nonpassing
+
+
 def _valid_ref(value: object) -> bool:
     return type(value) is str and 1 <= len(value) <= 256
 
@@ -272,6 +304,8 @@ class _JobLifecycleOperationExecutor:
         self._scope_extensions: list[object] = []
         self._planned_operations: tuple[OperationAuthorization, ...] = ()
         self._attempted_index: int | None = None
+        self._attempted_operation: OperationAuthorization | None = None
+        self._attempted_outcome = _OperationOutcomeJournal()
 
     # -- shared primitives -------------------------------------------------
 
@@ -423,23 +457,44 @@ class _JobLifecycleOperationExecutor:
         *,
         measurements: tuple[evidence.Measurement, ...] = (),
     ) -> None:
-        self._writer.append_assertion(
-            self._spec.session_id,
-            evidence.AssertionObservation(
-                assertion_ref=_add_scan_alias(
-                    "assertion", f"{self._spec.session_id}:{key}"
-                ),
-                rules_ref=self._spec.rules.rules_ref,
-                rules_version=self._spec.rules.rules_version,
-                rules_sha256=self._spec.rules.rules_sha256,
-                observed_at=_add_scan_timestamp(self._logical_now()),
-                expected_outcome=evidence.AssertionOutcome.PASSED,
-                actual_outcome=outcome,
-                evidence_refs=self._evidence_refs,
-                measurements=measurements,
-            ),
-            self._request(key),
+        attempted_categorical = (
+            self._attempted_operation is not None
+            and outcome
+            in {
+                evidence.AssertionOutcome.PASSED,
+                evidence.AssertionOutcome.BLOCKED,
+                evidence.AssertionOutcome.FAILED,
+            }
         )
+        if attempted_categorical:
+            self._attempted_outcome.begin_append()
+        try:
+            self._writer.append_assertion(
+                self._spec.session_id,
+                evidence.AssertionObservation(
+                    assertion_ref=_add_scan_alias(
+                        "assertion", f"{self._spec.session_id}:{key}"
+                    ),
+                    rules_ref=self._spec.rules.rules_ref,
+                    rules_version=self._spec.rules.rules_version,
+                    rules_sha256=self._spec.rules.rules_sha256,
+                    observed_at=_add_scan_timestamp(self._logical_now()),
+                    expected_outcome=evidence.AssertionOutcome.PASSED,
+                    actual_outcome=outcome,
+                    evidence_refs=self._evidence_refs,
+                    measurements=measurements,
+                ),
+                self._request(key),
+            )
+        except Exception:
+            if attempted_categorical:
+                self._blocker = (
+                    "The attempted operation outcome could not be durably appended; "
+                    "evidence integrity is uncertain and owner recovery is required."
+                )
+            raise
+        if attempted_categorical:
+            self._attempted_outcome.append_succeeded(outcome)
 
     def _step_key(self, operation: OperationAuthorization) -> str:
         return operation.operation_id
@@ -463,16 +518,31 @@ class _JobLifecycleOperationExecutor:
         )
 
     def _record_blocked(self, operation: OperationAuthorization, code: str) -> None:
+        self._append_assertion(
+            self._step_key(operation) + ":" + code,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+    def _record_operation_fallback(
+        self,
+        operation: OperationAuthorization,
+        outcome: evidence.AssertionOutcome,
+    ) -> None:
+        """Persist a fallback unless the abort already has a durable non-pass."""
+        if not self._attempted_outcome.can_append_fallback:
+            # The failed append has uncertain durability; do not retry it.
+            return
         try:
             self._append_assertion(
-                self._step_key(operation) + ":" + code,
-                evidence.AssertionOutcome.BLOCKED,
+                self._step_key(operation) + ":operation-outcome-unrecorded",
+                outcome,
             )
         except Exception:
             self._blocker = (
-                "A blocked lifecycle observation could not be durably appended; "
-                "owner recovery is required."
+                "The attempted operation outcome could not be durably appended; "
+                "evidence integrity is uncertain and owner recovery is required."
             )
+            raise _JobLifecycleStop(self._blocker) from None
 
     def _request_scope_extension(
         self,
@@ -623,15 +693,48 @@ class _JobLifecycleOperationExecutor:
         handler = getattr(self, "_step_" + spec.handler, None)
         if handler is None:
             raise _JobLifecycleStop("The plan contains an unsupported lifecycle step.")
-        self._attempted_index = spec.index - 1
         self._current_operation(operation)
         handler(operation, spec)
 
     def _dispatch_all(self, operations: tuple[OperationAuthorization, ...]) -> None:
         specs = JOB_LIFECYCLE_OPERATIONS[self._scenario_id]
         for operation, spec in zip(operations, specs, strict=True):
-            self._dispatch(operation, spec)
-            self._completed_operations += 1
+            self._attempted_index = spec.index - 1
+            self._attempted_operation = operation
+            self._attempted_outcome.reset()
+            try:
+                self._dispatch(operation, spec)
+            except _JobLifecycleStop as stop:
+                self._record_operation_fallback(
+                    operation,
+                    evidence.AssertionOutcome.FAILED
+                    if stop.failed
+                    else evidence.AssertionOutcome.BLOCKED,
+                )
+                raise
+            except KeyboardInterrupt:
+                self._record_operation_fallback(
+                    operation, evidence.AssertionOutcome.BLOCKED
+                )
+                raise
+            except Exception:
+                self._record_operation_fallback(
+                    operation, evidence.AssertionOutcome.BLOCKED
+                )
+                raise _JobLifecycleStop(
+                    "The operation failed before recording a categorical outcome."
+                ) from None
+            else:
+                if not self._attempted_outcome.has_persisted_outcome:
+                    self._record_operation_fallback(
+                        operation, evidence.AssertionOutcome.BLOCKED
+                    )
+                    raise _JobLifecycleStop(
+                        "The attempted lifecycle operation returned without a durable categorical outcome."
+                    )
+                self._completed_operations += 1
+            finally:
+                self._attempted_operation = None
         self._workflow_completed = True
 
     # -- observation helpers ----------------------------------------------
@@ -1496,24 +1599,30 @@ class _JobLifecycleOperationExecutor:
             raise _JobLifecycleStop(self._blocker)
         self._require(_valid_ref(self._parent_ref), "The source run identity is unavailable.")
         self._require(self._parent_state is not None, "The source state is unavailable.")
-        identity = self._call(
-            lambda timeout: self._observer.observe_identity(self._parent_ref, timeout)
-        )
-        if (
-            type(identity) is JobIdentityObservation
-            and _valid_ref(identity.successor_run_ref)
-        ):
-            result = retry_outcome(
-                source_state=self._parent_state,
-                dispatched=False,
-                already_retried=True,
-            parent_ref=self._parent_ref,
-            frozen_scope_ref=self._scope_ref,
-                successor_identity=identity,
+        try:
+            identity = self._call(
+                lambda timeout: self._observer.observe_identity(
+                    self._parent_ref, timeout
+                )
             )
-            self._record_blocked(operation, result.code)
+        except Exception:
+            self._record_blocked(operation, "retry_pre_dispatch_identity_unavailable")
+            self._blocker = (
+                "The fresh Retry relationship lookup failed; owner recovery is required."
+            )
+            raise _JobLifecycleStop(self._blocker) from None
+        precondition = validate_retry_precondition(
+            identity,
+            expected_parent_ref=self._parent_ref,
+            expected_scope_ref=self._scope_ref,
+            expected_state=self._parent_state,
+            expected_child_refs=self._child_refs,
+        )
+        if precondition.outcome is not evidence.AssertionOutcome.PASSED:
+            self._record_blocked(operation, precondition.code)
             raise _JobLifecycleStop(
-                "The source run already has a retry successor; no second retry is permitted."
+                "The pre-Retry relationship proof is unavailable, ambiguous, or already "
+                "contains a retry successor."
             )
         self._verify_effect_target(
             operation,

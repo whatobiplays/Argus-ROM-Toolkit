@@ -15,9 +15,9 @@ import json
 from typing import Iterable
 
 
-JOB_LIFECYCLE_CONTRACT_VERSION = 2
-JOB_LIFECYCLE_CAPABILITY_VERSION = 2
-JOB_LIFECYCLE_ORACLE_VERSION = 3
+JOB_LIFECYCLE_CONTRACT_VERSION = 3
+JOB_LIFECYCLE_CAPABILITY_VERSION = 3
+JOB_LIFECYCLE_ORACLE_VERSION = 4
 JOB_LIFECYCLE_QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
 JOB_LIFECYCLE_SCENARIO_AND_04 = "AND-04"
 JOB_LIFECYCLE_SCENARIO_AND_05 = "AND-05"
@@ -78,6 +78,9 @@ _CAPABILITY_DECLARATION = {
                 "total_units",
                 "status_key",
                 "issue_count",
+            ),
+            "retry_precondition": (
+                "fresh_parent_scope_state_children_and_absent_successor"
             ),
         },
     },
@@ -641,6 +644,8 @@ class JobIdentityObservation:
     source_run_ref: str | None = None
     successor_run_ref: str | None = None
     successor_scope_ref: str | None = None
+    retry_relation_lookup_completed: bool | None = None
+    retry_lookup_source_run_ref: str | None = None
 
     def parent_child_complete(self) -> bool:
         """Return whether parent scope and child attribution are complete."""
@@ -677,6 +682,8 @@ class JobIdentityObservation:
             "source": self.source_run_ref,
             "successor": self.successor_run_ref,
             "successor_scope": self.successor_scope_ref,
+            "retry_lookup_completed": self.retry_relation_lookup_completed,
+            "retry_lookup_source": self.retry_lookup_source_run_ref,
         })
 
 

@@ -15,8 +15,9 @@ only that the supplied synthetic values satisfy the admission checks; it is
 not evidence about an Android device.
 
 No-reset admission returns `BLOCKED` because the repository has no independent
-observer for comparing the Library fixture membership, relevant job states,
-and pending cleanup with the owner-approved baseline. The authorization may
+observer for comparing exact Library asset identities, the complete
+terminal-refresh history, relevant job states, and pending cleanup with the
+owner-approved baseline. The authorization may
 carry that baseline, but it is not compared with fabricated observations or
 read from application storage. Fresh admission reports an absent qualification
 installation separately from a present but incompatible installation. The
@@ -226,3 +227,34 @@ this schema does not provision a replacement recovery authorization. No
 deadline is extended and no product mutation is repeated. These guarantees
 are exercised with synthetic transports only; the repository has no device
 interface that proves exact physical stored-state restoration.
+
+## Issue #28 job lifecycle authorization
+
+The `JOB_LIFECYCLE` profile is a third private authorization profile for
+AND-04 and AND-05. It is accepted only by the private lifecycle loader and
+lifecycle admission function. The legacy and Library-interaction loaders keep
+their existing operation limits and reject the lifecycle scenarios.
+
+The profile pins the exact operation identifiers, categories, phases, timeouts,
+and arguments for its closed 31-operation AND-04 plan and 45-operation AND-05
+plan. A missing, extra, reordered, or invented operation is rejected before a
+session capability is claimed. The owner approval still binds the canonical
+authorization digest. The independently computed lifecycle plan digest must
+match `authorization.plan_sha256` and the admitted session binding.
+
+This profile does not add permission app-op mutation, install, reset, shell,
+generic path mutation, or ADB access. Its only product effects are the pinned
+Library refresh start, the AND-05 qualification-package force-stop and
+relaunch, the AND-04 background and existing-task foreground return, and the
+final foreground restoration. Each effect is bound to one exact operation and
+the same owner-approved session. No public command or production transport
+uses this profile.
+
+Physical admission remains blocked until independent surfaces establish the
+exact package, artifact, and signer; the no-reset Library and job baseline;
+parent, child, source, and successor run identities; process and task
+continuity; committed Library asset identities; and pending cleanup and restoration
+facts. Owner attestation can state expected values, but it does not replace
+those observations. Host tests establish only the parser, admission, evidence,
+and fail-closed behavior described in
+[Android job lifecycle recovery qualification boundary](android-job-lifecycle.md).

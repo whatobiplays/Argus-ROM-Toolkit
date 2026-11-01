@@ -22,12 +22,21 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator, NoReturn, Protocol
+from typing import TYPE_CHECKING, Callable, Iterator, NoReturn, Protocol
 
 from . import evidence
 from ._library_interaction_contract import (
     LIBRARY_INTERACTION_CASE_IDS,
     LIBRARY_INTERACTION_CONTRACT_VERSION,
+)
+from ._job_lifecycle_contract import (
+    JOB_LIFECYCLE_LATEST_ADMISSION_SECONDS,
+    JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+    JOB_LIFECYCLE_SCENARIOS,
+    JobLifecycleBaselineObservation,
+    plan_digest_for_authorization,
+    required_session_span,
+    validate_job_lifecycle_authorization,
 )
 from .manifest import (
     ApprovalError,
@@ -1510,6 +1519,375 @@ def _claim_library_interaction_execution(session: AdmittedSession) -> bool:
             return False
         _LIBRARY_INTERACTION_CLAIMS.add(session)
     return True
+
+
+@dataclass(frozen=True)
+class _JobLifecycleAdmissionBinding:
+    """Bind an intact Issue #28 session to its artifact, plan, and baseline."""
+
+    artifact: HostArtifactFacts
+    plan_sha256: str
+    fixture_manifest_sha256: str
+    rules_sha256: str
+    baseline: JobLifecycleBaselineObservation
+    baseline_sha256: str
+    task_continuity_ref: str
+
+
+_JOB_LIFECYCLE_BINDINGS: weakref.WeakKeyDictionary[
+    AdmittedSession, _JobLifecycleAdmissionBinding
+] = weakref.WeakKeyDictionary()
+_JOB_LIFECYCLE_CLAIMS: weakref.WeakSet[AdmittedSession] = weakref.WeakSet()
+_JOB_LIFECYCLE_BINDINGS_LOCK = threading.Lock()
+
+_JOB_LIFECYCLE_SCAN_STATES = frozenset({
+    "complete", "partial", "unavailable", "cancelled", "failed", "abandoned",
+})
+
+
+def _job_lifecycle_ref(value: object) -> bool:
+    """Return whether an opaque reference is bounded and non-empty."""
+    return type(value) is str and 1 <= len(value) <= 256
+
+
+def _check_job_lifecycle_baseline(
+    authorization: SessionAuthorization,
+    observation: object,
+) -> AdmissionCode:
+    """Validate independent no-reset facts without substituting owner text."""
+    if type(observation) is not JobLifecycleBaselineObservation:
+        return AdmissionCode.OBSERVATION_UNAVAILABLE
+    serials = observation.connected_serials
+    if type(serials) is not tuple or any(
+        type(serial) is not str or not serial for serial in serials
+    ):
+        return AdmissionCode.OBSERVATION_UNAVAILABLE
+    if not serials:
+        return AdmissionCode.NO_TARGET
+    if len(serials) != 1:
+        return AdmissionCode.AMBIGUOUS_TARGET
+    if serials[0] != authorization.target_serial:
+        return AdmissionCode.TARGET_MISMATCH
+    api = observation.android_api_level
+    if type(api) is not int or type(observation.abi) is not str or not observation.abi:
+        return AdmissionCode.DEVICE_PROFILE_UNAVAILABLE
+    if api < authorization.minimum_android_api:
+        return AdmissionCode.OS_UNSUPPORTED
+    if observation.abi != authorization.required_abi:
+        return AdmissionCode.ABI_MISMATCH
+    capabilities = observation.capabilities
+    if (
+        type(capabilities) is not frozenset
+        or any(type(capability) is not str for capability in capabilities)
+        or not authorization.required_capabilities.issubset(capabilities)
+    ):
+        return AdmissionCode.CAPABILITY_UNAVAILABLE
+    if (
+        observation.package_name != authorization.application_package
+        or type(observation.package_name) is not str
+        or type(observation.version_code) is not int
+        or observation.version_code != authorization.version_code
+        or observation.certificate_sha256 != authorization.certificate_sha256
+        or observation.artifact_sha256 != authorization.apk_sha256
+    ):
+        return AdmissionCode.QUALIFICATION_APP_INCOMPATIBLE
+    if observation.foreground_package is None:
+        return AdmissionCode.FOREGROUND_UNAVAILABLE
+    if observation.foreground_package != authorization.application_package:
+        return AdmissionCode.FOREGROUND_MISMATCH
+    if observation.interference_free is None:
+        return AdmissionCode.INTERFERENCE_UNKNOWN
+    if observation.interference_free is not True:
+        return AdmissionCode.INTERFERENCE_DETECTED
+    available = observation.available_storage_bytes
+    if type(available) is not int:
+        return AdmissionCode.STORAGE_OBSERVATION_UNAVAILABLE
+    if available < authorization.storage_reserve_bytes:
+        return AdmissionCode.STORAGE_RESERVE_UNAVAILABLE
+    baseline = authorization.no_reset_baseline
+    if baseline is None or not _job_lifecycle_ref(baseline.root_id):
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    membership_ids = observation.library_membership_ids
+    if (
+        type(membership_ids) is not tuple
+        or any(not _job_lifecycle_ref(item) for item in membership_ids)
+        or len(set(membership_ids)) != len(membership_ids)
+        or len(set(baseline.library_fixture_ids))
+        != len(baseline.library_fixture_ids)
+        or tuple(sorted(membership_ids))
+        != tuple(sorted(baseline.library_fixture_ids))
+        or (
+            observation.library_membership_count is not None
+            and (
+                type(observation.library_membership_count) is not int
+                or observation.library_membership_count != len(membership_ids)
+            )
+        )
+    ):
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    job_states = observation.job_states
+    if (
+        type(job_states) is not tuple
+        or any(
+            type(item) is not tuple
+            or len(item) != 2
+            or not _job_lifecycle_ref(item[0])
+            or type(item[1]) is not str
+            or not item[1]
+            for item in job_states
+        )
+        or len({job_id for job_id, _ in job_states}) != len(job_states)
+        or tuple(sorted(job_states)) != tuple(sorted(baseline.job_states))
+    ):
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    if observation.selected_root_id != baseline.root_id:
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    if not _job_lifecycle_ref(observation.selected_root_ref):
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    if (
+        type(observation.last_scan_state) is not str
+        or observation.last_scan_state not in _JOB_LIFECYCLE_SCAN_STATES
+    ):
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    if (
+        type(observation.visible_refresh_row_count) is not int
+        or observation.visible_refresh_row_count < 0
+        or type(observation.active_refresh_row_count) is not int
+        or observation.active_refresh_row_count != 0
+        or observation.jobs_history_complete is not True
+        or type(observation.terminal_refresh_run_refs) is not tuple
+        or any(
+            not _job_lifecycle_ref(item)
+            for item in observation.terminal_refresh_run_refs
+        )
+        or len(set(observation.terminal_refresh_run_refs))
+        != len(observation.terminal_refresh_run_refs)
+        or observation.visible_refresh_row_count
+        != len(observation.terminal_refresh_run_refs)
+    ):
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    if (
+        observation.pending_cleanup_refs != baseline.pending_cleanup_ids
+        or observation.pending_restoration_refs != baseline.pending_restoration_ids
+    ):
+        return AdmissionCode.NO_RESET_OBSERVATION_UNAVAILABLE
+    if (
+        baseline.pending_cleanup_ids
+        or baseline.pending_restoration_ids
+        or observation.pending_cleanup_refs
+        or observation.pending_restoration_refs
+    ):
+        return AdmissionCode.DEVICE_RESTORATION_PENDING
+    if observation.refresh_control_present is not True:
+        return AdmissionCode.OBSERVATION_UNAVAILABLE
+    if observation.jobs_navigation_present is not True:
+        return AdmissionCode.OBSERVATION_UNAVAILABLE
+    if not _job_lifecycle_ref(observation.task_continuity_ref):
+        return AdmissionCode.OBSERVATION_UNAVAILABLE
+    if not _job_lifecycle_ref(observation.observer_ref):
+        return AdmissionCode.OBSERVATION_UNAVAILABLE
+    if (
+        type(observation.observer_receipt_sha256) is not str
+        or _SHA256_RE.fullmatch(observation.observer_receipt_sha256) is None
+    ):
+        return AdmissionCode.OBSERVATION_UNAVAILABLE
+    return AdmissionCode.ADMITTED
+
+
+def _register_job_lifecycle_session(
+    session: AdmittedSession,
+    artifact: HostArtifactFacts,
+    baseline: JobLifecycleBaselineObservation,
+) -> bool:
+    """Bind one fully validated Issue #28 admission to its private executor."""
+    authorization = session.authorization
+    if (
+        _admitted_session_binding(session) is None
+        or not _validate_host_artifact(authorization, artifact)
+        or artifact.source_dirty is not False
+        or not validate_job_lifecycle_authorization(authorization)
+        or plan_digest_for_authorization(authorization) != authorization.plan_sha256
+    ):
+        return False
+    binding = _JobLifecycleAdmissionBinding(
+        artifact=artifact,
+        plan_sha256=authorization.plan_sha256,
+        fixture_manifest_sha256=authorization.fixture_manifest_sha256,
+        rules_sha256=authorization.rules_sha256,
+        baseline=baseline,
+        baseline_sha256=baseline.digest(),
+        task_continuity_ref=baseline.task_continuity_ref or "",
+    )
+    with _JOB_LIFECYCLE_BINDINGS_LOCK:
+        if session in _JOB_LIFECYCLE_BINDINGS or session in _JOB_LIFECYCLE_CLAIMS:
+            return False
+        _JOB_LIFECYCLE_BINDINGS[session] = binding
+    return True
+
+
+def _job_lifecycle_admission_binding(
+    session: object,
+) -> _JobLifecycleAdmissionBinding | None:
+    """Return an intact Issue #28 binding, separate from every other profile."""
+    if type(session) is not AdmittedSession or _admitted_session_binding(session) is None:
+        return None
+    with _JOB_LIFECYCLE_BINDINGS_LOCK:
+        binding = _JOB_LIFECYCLE_BINDINGS.get(session)
+    authorization = session.authorization
+    if (
+        binding is None
+        or len(authorization.scenario_ids) != 1
+        or authorization.scenario_ids[0] not in JOB_LIFECYCLE_SCENARIOS
+        or binding.plan_sha256 != authorization.plan_sha256
+        or binding.fixture_manifest_sha256 != authorization.fixture_manifest_sha256
+        or binding.rules_sha256 != authorization.rules_sha256
+        or not _validate_host_artifact(authorization, binding.artifact)
+        or binding.artifact.source_dirty is not False
+        or not validate_job_lifecycle_authorization(authorization)
+        or plan_digest_for_authorization(authorization) != authorization.plan_sha256
+        or binding.baseline_sha256 != binding.baseline.digest()
+        or binding.task_continuity_ref != (binding.baseline.task_continuity_ref or "")
+    ):
+        return None
+    return binding
+
+
+def _claim_job_lifecycle_execution(session: AdmittedSession) -> bool:
+    """Consume the Issue #28 executor grant exactly once."""
+    if _job_lifecycle_admission_binding(session) is None:
+        return False
+    with _JOB_LIFECYCLE_BINDINGS_LOCK:
+        if session not in _JOB_LIFECYCLE_BINDINGS or session in _JOB_LIFECYCLE_CLAIMS:
+            return False
+        _JOB_LIFECYCLE_CLAIMS.add(session)
+    return True
+
+
+def _admit_job_lifecycle_session(
+    authorization: SessionAuthorization,
+    approval: OwnerApproval,
+    artifact: HostArtifactFacts,
+    transport,
+    *,
+    now: datetime | None = None,
+    clock: Callable[[], datetime] | None = None,
+    monotonic: Callable[[], float] | None = None,
+) -> AdmissionResult:
+    """Admit one closed Issue #28 no-reset session after full budget checks.
+
+    The private entrypoint refuses to admit a lifecycle plan unless its
+    independently computed digest matches the owner-approved authorization,
+    its positive reserve fits the session deadline, and an independent
+    observer supplies every baseline, artifact, foreground, and cleanup fact.
+
+    A returned baseline observation is rejected when its monotonic elapsed
+    time reaches the observation timeout. This rejects an overdue return; it
+    cannot interrupt a synchronous observer that never returns.
+    """
+    clock = clock or (
+        (lambda: now) if now is not None else (lambda: datetime.now(timezone.utc))
+    )
+    monotonic = monotonic or time.monotonic
+    instant = now or clock()
+    if (
+        not _is_loaded_session_authorization(authorization)
+        or not _now_is_utc(instant)
+        or instant >= authorization.session_deadline
+        or not _validate_approval(authorization, approval, instant)
+    ):
+        return _result(AdmissionCode.APPROVAL_INVALID)
+    if (
+        not validate_job_lifecycle_authorization(authorization)
+        or plan_digest_for_authorization(authorization) != authorization.plan_sha256
+        or authorization.application_package != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
+    ):
+        return _result(AdmissionCode.ADD_SCAN_PLAN_INVALID)
+    scenario_id = authorization.scenario_ids[0]
+    span = required_session_span(scenario_id)
+    closure = authorization.cleanup_reserve_seconds
+    if instant > authorization.issued_at + timedelta(
+        seconds=JOB_LIFECYCLE_LATEST_ADMISSION_SECONDS
+    ):
+        return _result(AdmissionCode.SESSION_EXPIRED)
+    if (
+        authorization.state_mode is not SessionStateMode.NO_RESET
+        or instant + timedelta(seconds=span) > authorization.session_deadline
+        or authorization.session_deadline + timedelta(seconds=closure)
+        > authorization.cleanup_deadline
+        or instant + timedelta(seconds=span) > approval.valid_until
+    ):
+        return _result(AdmissionCode.ADD_SCAN_PLAN_INVALID)
+    if not _validate_host_artifact(authorization, artifact) or artifact.source_dirty is not False:
+        return _result(AdmissionCode.ARTIFACT_MISMATCH)
+    try:
+        pending = pending_for_device(
+            authorization.target_serial,
+            path=_DEVICE_SAFETY_PATH,
+        )
+    except SafetyStateError:
+        return _result(AdmissionCode.DEVICE_SAFETY_STATE_UNAVAILABLE)
+    if pending is not None:
+        return _result(AdmissionCode.DEVICE_RESTORATION_PENDING)
+    timeout = min(30, int((authorization.session_deadline - instant).total_seconds()))
+    if timeout < 1:
+        return _result(AdmissionCode.SESSION_EXPIRED)
+    observation_started = monotonic()
+    try:
+        baseline = transport.observe_baseline(timeout)
+    except (KeyboardInterrupt, Exception):
+        return _result(AdmissionCode.OBSERVATION_UNAVAILABLE)
+    if monotonic() - observation_started >= timeout:
+        return _result(AdmissionCode.OBSERVATION_UNAVAILABLE)
+    code = _check_job_lifecycle_baseline(authorization, baseline)
+    if code is not AdmissionCode.ADMITTED:
+        return _result(code)
+    instant = clock()
+    if (
+        not _now_is_utc(instant)
+        or instant >= authorization.session_deadline
+        or not _validate_approval(authorization, approval, instant)
+    ):
+        return _result(AdmissionCode.APPROVAL_INVALID)
+    if instant > authorization.issued_at + timedelta(
+        seconds=JOB_LIFECYCLE_LATEST_ADMISSION_SECONDS
+    ):
+        return _result(AdmissionCode.SESSION_EXPIRED)
+    if (
+        instant + timedelta(seconds=span) > authorization.session_deadline
+        or authorization.session_deadline + timedelta(seconds=closure)
+        > authorization.cleanup_deadline
+        or instant + timedelta(seconds=span) > approval.valid_until
+    ):
+        return _result(AdmissionCode.ADD_SCAN_PLAN_INVALID)
+    try:
+        pending = pending_for_device(
+            authorization.target_serial,
+            path=_DEVICE_SAFETY_PATH,
+        )
+    except SafetyStateError:
+        return _result(AdmissionCode.DEVICE_SAFETY_STATE_UNAVAILABLE)
+    if pending is not None:
+        return _result(AdmissionCode.DEVICE_RESTORATION_PENDING)
+    claim = _claim_approval_once(
+        approval,
+        authorization.authorization_id,
+        authorization.canonical_sha256,
+    )
+    if claim is None:
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    if not claim:
+        return _result(AdmissionCode.SESSION_ALREADY_USED)
+    session = AdmittedSession(authorization, approval)
+    if not _register_admitted_session(session):
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    if not _register_job_lifecycle_session(session, artifact, baseline):
+        _revoke_admitted_session(session)
+        with _JOB_LIFECYCLE_BINDINGS_LOCK:
+            _JOB_LIFECYCLE_BINDINGS.pop(session, None)
+            _JOB_LIFECYCLE_CLAIMS.discard(session)
+        return _result(AdmissionCode.SESSION_STATE_UNAVAILABLE)
+    return _result(AdmissionCode.ADMITTED, session)
+
 
 
 def _enter_qualification_phase(session: AdmittedSession, operation_id: str) -> bool:
@@ -4594,6 +4972,17 @@ def _execute_closed_admitted_session(
     capability or operation sequence.
     """
     executor_type = type(executor)
+    if (
+        getattr(executor_type, "__module__", None)
+        == f"{__package__}._job_lifecycle_executor"
+        and getattr(executor_type, "__qualname__", None)
+        == "_JobLifecycleOperationExecutor"
+    ):
+        from . import _job_lifecycle_executor as lifecycle_module
+
+        if executor_type is not lifecycle_module._JobLifecycleOperationExecutor:
+            raise _AddScanStop("The private executor lifecycle is not available.")
+        return lifecycle_module._execute_job_lifecycle_session(executor, now=now)
     issue27_executor_module = None
     if executor_type is _AddScanOperationExecutor:
         issue26_executor = True

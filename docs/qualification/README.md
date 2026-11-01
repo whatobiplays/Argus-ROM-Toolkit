@@ -178,6 +178,9 @@ remain deferred to their separately scoped owner-approved gates; see
 Issue #27's separate Library interaction plan, private oracle, and current
 pagination blocker are documented in
 [Android Library interaction qualification boundary](android-library-interactions.md).
+Issue #28's host-only job lifecycle and recovery plan, exact AND-04 and AND-05
+operation tables, deadline accounting, and physical blockers are documented in
+[Android job lifecycle recovery qualification boundary](android-job-lifecycle.md).
 The host-only durable execution and owner-review storage contract described in
 [Durable qualification evidence](evidence-records.md) is implemented without a
 CLI, device transport, live runner, release assessor, or product verdict.

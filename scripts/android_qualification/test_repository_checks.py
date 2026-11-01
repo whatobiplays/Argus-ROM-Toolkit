@@ -43,6 +43,14 @@ ISSUE27_CLASSIFICATIONS = (
     "scripts/android_qualification/physical/_library_interaction_ui.py",
     "scripts/android_qualification/test_library_interactions.py",
 )
+ISSUE28_CLASSIFICATIONS = (
+    "scripts/android_qualification/_job_lifecycle_contract.py",
+    "scripts/android_qualification/_job_lifecycle_oracle.py",
+    "scripts/android_qualification/_job_lifecycle_executor.py",
+    "scripts/android_qualification/physical/_job_lifecycle_ui.py",
+    "scripts/android_qualification/physical/test_job_lifecycle_ui.py",
+    "scripts/android_qualification/test_job_lifecycle.py",
+)
 RETIRED_ISSUE24_STAGING_SURFACES = frozenset(
     {
         "scripts/android_qualification/_fixture_staging_content.py",
@@ -480,13 +488,24 @@ class CurrentNamingInventoryTests(unittest.TestCase):
             }
             for relative in ISSUE27_CLASSIFICATIONS
         ]
-        self.assertEqual(current["surfaces"][issue25_end:], expected_issue27)
+        issue27_end = issue25_end + len(expected_issue27)
+        self.assertEqual(current["surfaces"][issue25_end:issue27_end], expected_issue27)
+        expected_issue28 = [
+            {
+                "path": relative,
+                "classification": "active",
+                "region": {"kind": "file"},
+            }
+            for relative in ISSUE28_CLASSIFICATIONS
+        ]
+        self.assertEqual(current["surfaces"][issue27_end:], expected_issue28)
         self.assertEqual(
             len(current["surfaces"]),
             len(retained_archived)
             + len(expected_issue24)
             + len(expected_issue25)
-            + len(expected_issue27),
+            + len(expected_issue27)
+            + len(expected_issue28),
         )
 
     def test_issue25_files_are_active_whole_file_classifications(self) -> None:

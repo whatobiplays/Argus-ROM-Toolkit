@@ -1,0 +1,45 @@
+docs/qualification/device-authorization.md
+  s_d969eb75192cea::t_dc1a583962de82 253-257
+docs/tasks/task-p003-028-android-job-lifecycle-recovery.md
+  s_d969eb75192cea::t_038ce72cd1ada1 282-287
+  s_d969eb75192cea::t_e491e78781fd63 191-193,198,219-224,272-277,279-281
+  s_d969eb75192cea::t_26a2bc92cd429a 305-309
+  s_d969eb75192cea::t_c2dbf2d311f128 261-268
+  s_d969eb75192cea::t_9f51d7eb1e9468 218,315-318
+  s_d969eb75192cea::t_d85533d7e0fa7b 319
+  s_d969eb75192cea::t_41a81b08ec9b38 320-328,336-337
+  s_d969eb75192cea::t_7b4c43ec803080 329-333
+scripts/android_qualification/test_job_lifecycle.py
+  s_d969eb75192cea::t_c8ee042a1e12db 4346-4349,4370-4479
+  s_5f4dc01249fdc8::t_9314d14ea715ea 4480
+docs/qualification/android-job-lifecycle.md
+  s_d969eb75192cea::t_7b4c43ec803080 429-430
+  s_d969eb75192cea::t_9f51d7eb1e9468 452
+  s_d969eb75192cea::t_cfa5813f410c34 426-428
+scripts/android_qualification/_job_lifecycle_executor.py
+  s_d969eb75192cea::t_e3ca7ae8f34281 1602-1604,1609-1610,1612-1618
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de01ee9e9c627fc7eb8aae386acb2fc5d02683b1",
+  "prompts": {},
+  "sessions": {
+    "s_5f4dc01249fdc8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19384-04b6-70f2-977d-02d03f0005da",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_d969eb75192cea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18fec-1ff3-7f42-8866-fef568da3072",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

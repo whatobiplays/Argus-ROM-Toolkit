@@ -250,10 +250,11 @@ match `authorization.plan_sha256` and the admitted session binding.
 This profile does not add permission app-op mutation, install, reset, shell,
 generic path mutation, or ADB access. Its only product effects are the pinned
 Library refresh start, the AND-05 qualification-package force-stop and
-relaunch, the AND-04 background and existing-task foreground return, and the
-final foreground restoration. Each effect is bound to one exact operation and
-the same owner-approved session. No public command or production transport
-uses this profile.
+relaunch, the single AND-05 `retry_library_refresh` dispatch at operation 35
+(no second Retry is authorized), the AND-04 background and existing-task
+foreground return, and the final foreground restoration. Each effect is bound
+to one exact operation and the same owner-approved session. No public command
+or production transport uses this profile.
 
 Physical admission remains blocked until independent surfaces establish the
 exact package, artifact, and signer; the no-reset Library and job baseline;

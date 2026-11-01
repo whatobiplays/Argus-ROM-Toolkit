@@ -188,13 +188,14 @@ No stage, commit, push, PR publication or issue edits are authorized by this tas
 
 PR #58 first published the host-only lifecycle contract in commit
 `c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7`. The approved correction is a
-separate normal commit on the same feature branch. The original commit remains
-preserved. No Android device or ADB was accessed. The primary checkout remains on `main` at
+separate normal commit, `500d1c954831ca6dfb1f5f1e6424136bec81fc64`, on the
+same feature branch. The original commit remains preserved. No Android device
+or ADB was accessed. The primary checkout remains on `main` at
 `39e03c74681635c1ab5be5060eed6fca1c928ca8`, with only its pre-existing
 untracked task document.
 
 The full PR inventory is 15 paths: the original 14 plus the explicitly
-approved shared UI path. The correction changes 10 paths:
+approved shared UI path. The published correction changes 10 paths:
 
 - Corrected: `docs/qualification/android-job-lifecycle.md`,
   `docs/qualification/device-authorization.md`,
@@ -213,6 +214,13 @@ approved shared UI path. The correction changes 10 paths:
   `scripts/android_qualification/admission.py`,
   `scripts/android_qualification/manifest.py`, and
   `scripts/android_qualification/test_repository_checks.py`.
+
+This follow-up correction covers five existing inventory paths:
+`scripts/android_qualification/_job_lifecycle_executor.py`,
+`scripts/android_qualification/test_job_lifecycle.py`,
+`docs/qualification/device-authorization.md`,
+`docs/qualification/android-job-lifecycle.md`, and this Completion Result.
+The 15-path PR inventory is unchanged.
 
 The lifecycle contract and capability versions are 3; the oracle version is 4.
 Both scenario plans use the revised digests, and previous v2/v2/v3 bindings are
@@ -250,27 +258,33 @@ operation-35 identity observer records an explicit BLOCKED outcome and owner
 recovery reason before intent or Retry.
 
 Jobs classification requires a uniquely selected Jobs destination and a
-separate page title. A standalone Active or Recent section marker must be
-paired with a separate row node containing exactly one Library Refresh or
-Library Scan title and exactly one lifecycle status occurrence. Missing,
-duplicate, or conflicting row statuses block classification, and every visible
-lifecycle status must belong to one validated row node. The exact No jobs yet
-marker is valid only without any lifecycle row. Missing section markers block
-a selected Jobs page instead of allowing it to fall through to refresh-detail
-classification.
+separate page title. A populated page may contain one or both standalone
+`Active` and `Recent` section markers. It must have a separate row node
+containing exactly one `Library Refresh` or `Library Scan` title and exactly
+one lifecycle status occurrence. Missing, duplicate, or conflicting row
+statuses block classification, and every visible lifecycle status must belong
+to one validated row node. The exact `No jobs yet` marker is valid only without
+any lifecycle row. Missing section markers block a selected Jobs page instead
+of allowing it to fall through to refresh-detail classification.
 
 Validation after the latest parser, executor, and test corrections:
 
-- Focused lifecycle and physical UI tests: 228 passed.
-- `just test-android-qualification`: 1,049 passed, 2 skipped.
+- Focused lifecycle and physical UI tests: 230 passed, including Retry
+  observer failure, session-binding change, exact operation-deadline expiry,
+  and operation-outcome fallback coverage. All three negative Retry cases
+  recorded `BLOCKED`, retained the correct blocker, dispatched zero Retry
+  calls, and wrote no Retry effect intent.
+- `just test-android-qualification`: 1,051 passed, 2 skipped.
 - `just _format-check` and `just _architecture` passed.
-- Archive, naming, record, and `git diff --check` checks passed after the final
-  Completion Result update.
-- The latest `just check` passed before the final executor and Jobs-parser
-  hardening. It included 1,045 Android tests, 40 cleanup tests, 633 Flutter
-  tests, Rust tests, macOS FRB export checks, and macOS Rust build checks. It
-  was not rerun because the filesystem remained at 99% capacity with 14 GiB
-  available. No build outputs were deleted.
+- Archive, naming, qualification-record, worktree `git diff --check`, and
+  base-to-HEAD `git diff --check` checks passed after the Completion Result
+  update.
+- The last recorded `just check` predates the final executor and Jobs-parser
+  hardening and this follow-up. It included 1,045 Android tests, 40 cleanup
+  tests, 633 Flutter tests, Rust tests, macOS FRB export checks, and macOS Rust
+  build checks. It was not rerun for this follow-up. At the time of this
+  validation, the filesystem had 28 GiB available at 97% capacity, so this
+  pass avoided the disk-intensive full gate. No build outputs were deleted.
 
 Confirmed Cubic findings about Jobs-row ambiguity, duplicated capability test
 data, and manual unittest lifecycle calls were corrected. A prior Cubic run
@@ -288,25 +302,39 @@ operation-35 oracle requires a completed lookup, the exact parent, scope,
 state, and child set, and proof that successor fields are absent before Retry
 can dispatch. The executor blocks on any mismatch. A separate type would
 change the internal observer contract, so this architecture suggestion is
-deferred as a nonblocking follow-up. Direct parser tests also cover selected
-tab and heading actionability, repeated section markers, unclassified
-lifecycle rows, and unbound status labels.
+deferred as a nonblocking follow-up. No dedicated Retry-relation type was
+introduced, and contract v3, capability v3, and oracle v4 remain unchanged.
+Direct parser tests also cover selected tab and heading actionability,
+repeated section markers, unclassified lifecycle rows, and unbound status
+labels.
 
 A separate semantic-risk review returned five medium-confidence,
 nonblocking authorization heuristics; it is not a Standards/Spec review.
 Independent two-axis Standards/Spec review remains `UNVERIFIED`.
 
-The 13 existing PR review threads remain unanswered and unresolved. Twelve
-findings are addressed by this correction. The negative-latency-sample P2 is
-retained as a deferred item: a malformed negative sample can raise `ValueError`
-in the host-only evaluator, which must be corrected and requalified before
-latency execution is enabled. The five-warmup, twenty-sample, nearest-rank p95
-method and numerical ceilings remain provisional and require separate owner
-approval. The three previously recorded architecture observations remain
+The GitHub review-thread snapshot recorded on 2026-11-01 showed 15 inline PR
+threads: 8 resolved by Cubic bot and 7 unresolved. This follow-up corrects the
+Retry error classification and the permitted-effect and Jobs-page documentation
+findings. It does not reply to or resolve review threads. Other unresolved
+items retain their existing dispositions.
+
+The parser keeps its exact mirrored-attribute normalization. Broad
+`dict.fromkeys` deduplication could hide genuinely repeated labels, so no such
+normalization was added. Issues-only progress still cannot establish committed
+progress or authorize dependent effects. Parsing remains unchanged until a
+demonstrated need is supported by independent physical evidence. The historical
+task-scope section and `In Progress` status remain in place.
+
+The negative-latency-sample P2 remains deferred: a malformed negative sample
+can raise `ValueError` in the host-only evaluator. A separately reviewed
+oracle correction and requalification are required before latency execution
+is enabled. The five-warmup, twenty-sample, nearest-rank p95 method and
+numerical ceilings remain provisional pending separate owner approval. The
+three architecture observations remain
 nonblocking follow-up opportunities: splitting the lifecycle executor by
 scenario, splitting the combined lifecycle tests, and moving lifecycle
-admission behind a more focused seam. The Retry-relation observation type is a
-fourth local-review follow-up. No review thread was replied to or resolved.
+admission behind a more focused seam. The Retry-relation observation type is
+also deferred. No latency execution was enabled.
 
 Physical qualification remains `BLOCKED`. Host evidence does not establish the
 exact no-reset package and artifact, signer, committed Library asset

@@ -423,11 +423,11 @@ not yet demonstrated that binding, so physical Jobs state remains `BLOCKED`
 until one capture shows the title and exactly one lifecycle status occurrence
 in the same node and an authorized independent observer confirms the row
 identity. Jobs classification also requires one selected Jobs destination and
-a separate Jobs page title. A populated page must pair one standalone `Active`
-or `Recent` section marker with a separate row node containing exactly one
-`Library Refresh` or `Library Scan` title and exactly one lifecycle status
-occurrence. Missing, duplicate, or conflicting row statuses block
-classification. An empty page requires one `No jobs yet` marker and no
+a separate Jobs page title. A populated page may contain one or both standalone
+`Active` and `Recent` section markers. It must have a separate row node
+containing exactly one `Library Refresh` or `Library Scan` title and exactly
+one lifecycle status occurrence. Missing, duplicate, or conflicting row
+statuses block classification. An empty page requires one `No jobs yet` marker and no
 lifecycle row. The raw `Active` or `Recent` label alone is insufficient.
 Flutter defines selected navigation state, but Android accessibility has not
 been physically verified to expose it. Missing or ambiguous selected-state or
@@ -449,6 +449,7 @@ The host-only implementation changes only these paths:
 | `scripts/android_qualification/_job_lifecycle_oracle.py` | Added | Recovery, progress, retry, process, and latency classification |
 | `scripts/android_qualification/_job_lifecycle_executor.py` | Added | Standalone lifecycle executor and evidence integration |
 | `scripts/android_qualification/physical/_job_lifecycle_ui.py` | Added | Bounded accessibility parser for the five lifecycle surfaces |
+| `scripts/android_qualification/physical/ui.py` | Modified | Shared bounded UI parser and action primitives used by lifecycle surfaces |
 | `scripts/android_qualification/test_job_lifecycle.py` | Added | Contract, manifest, admission, oracle, and executor tests |
 | `scripts/android_qualification/physical/test_job_lifecycle_ui.py` | Added | Surface parser tests |
 | `docs/qualification/android-job-lifecycle.md` | Added | This qualification boundary |

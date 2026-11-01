@@ -4343,7 +4343,10 @@ class ExecutorLifecycleTests(unittest.TestCase):
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 34)
-        self.assertIn("owner recovery", result.blocker)
+        self.assertEqual(
+            result.blocker,
+            "The fresh Retry relationship lookup failed; owner recovery is required.",
+        )
         self.assertEqual(transport.retry_calls, 0)
         self.assertTrue(
             self._assertion_recorded(
@@ -4361,6 +4364,117 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 "and-05-35",
                 "intent",
                 evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+
+    def test_pre_retry_identity_session_binding_change_keeps_integrity_blocker(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        original = observer.observe_identity
+        state = {"executor": None, "binding_lost": False}
+
+        def identity(parent_ref, timeout):
+            executor = state["executor"]
+            if (
+                executor is not None
+                and executor._attempted_operation.operation_id == "and-05-35"
+            ):
+                state["binding_lost"] = True
+            return original(parent_ref, timeout)
+
+        observer.observe_identity = identity
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        state["executor"] = executor
+        self._force_stop_into(transport, contract.RecoveryState.FAILED)
+        original_binding = admission._admitted_session_binding
+
+        def binding(session):
+            if state["binding_lost"]:
+                return None
+            return original_binding(session)
+
+        with mock.patch.object(admission, "_admitted_session_binding", binding):
+            result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertIn("admitted session binding changed during transport", result.blocker)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "operation-outcome-unrecorded",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+
+    def test_pre_retry_identity_operation_deadline_expiry_keeps_deadline_blocker(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        operation_clock = _Clock()
+        transport_clock = _Clock()
+        state = {"executor": None, "advanced": False}
+        original = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            executor = state["executor"]
+            if (
+                not state["advanced"]
+                and executor is not None
+                and executor._attempted_operation.operation_id == "and-05-35"
+            ):
+                state["advanced"] = True
+                transport_clock.value = executor._active_budget._deadline
+            return original(parent_ref, timeout)
+
+        observer.observe_identity = identity
+        executor, _, writer = self._executor(
+            "AND-05",
+            transport=transport,
+            observer=observer,
+            monotonic=operation_clock.monotonic,
+            sleeper=operation_clock.sleep,
+        )
+        state["executor"] = executor
+        self._force_stop_into(transport, contract.RecoveryState.FAILED)
+
+        with mock.patch.object(admission.time, "monotonic", transport_clock.monotonic):
+            result = executor.execute(now=NOW)
+
+        self.assertTrue(state["advanced"])
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertIn("approved operation deadline expired", result.blocker)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "operation-outcome-unrecorded",
+                evidence.AssertionOutcome.BLOCKED,
             )
         )
 

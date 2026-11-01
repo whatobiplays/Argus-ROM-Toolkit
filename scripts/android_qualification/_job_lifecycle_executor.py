@@ -1599,18 +1599,23 @@ class _JobLifecycleOperationExecutor:
             raise _JobLifecycleStop(self._blocker)
         self._require(_valid_ref(self._parent_ref), "The source run identity is unavailable.")
         self._require(self._parent_state is not None, "The source state is unavailable.")
+        observer_failure = (
+            "The fresh Retry relationship lookup failed; owner recovery is required."
+        )
         try:
             identity = self._call(
                 lambda timeout: self._observer.observe_identity(
                     self._parent_ref, timeout
+                ),
+                failure=observer_failure,
+            )
+        except _JobLifecycleStop as stop:
+            if stop.reason == observer_failure:
+                self._record_blocked(
+                    operation,
+                    "retry_pre_dispatch_identity_unavailable",
                 )
-            )
-        except Exception:
-            self._record_blocked(operation, "retry_pre_dispatch_identity_unavailable")
-            self._blocker = (
-                "The fresh Retry relationship lookup failed; owner recovery is required."
-            )
-            raise _JobLifecycleStop(self._blocker) from None
+            raise
         precondition = validate_retry_precondition(
             identity,
             expected_parent_ref=self._parent_ref,

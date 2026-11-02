@@ -194,16 +194,38 @@ c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7. The earlier corrective commit is
 de01ee9e9c627fc7eb8aae386acb2fc5d02683b1, based on the fixed PR baseline
 39e03c74681635c1ab5be5060eed6fca1c928ca8. The approved seven-file correction
 was later published as d74ea138861163bbc2dcfe775fd545a60b2db2df, whose parent
-is the candidate-preparation revision. The SHA-256 of that seven-file binary
-diff is `ffd1630d1a4b52e30964683a8c7b77a14ed613a82e29cd81544f61ac4df32ae1`.
+is the candidate-preparation revision. The previously recorded SHA-256,
+`ffd1630d1a4b52e30964683a8c7b77a14ed613a82e29cd81544f61ac4df32ae1`, hashes
+Git's default abbreviated-index binary diff, reproduced by:
+
+```sh
+git diff --binary --no-ext-diff d74ea138861163bbc2dcfe775fd545a60b2db2df^ d74ea138861163bbc2dcfe775fd545a60b2db2df | shasum -a 256
+```
+
+The full-index binary-patch SHA-256 is
+`344dd6fbdc71b4a9e8a9c26dc2b2a9bb9d8089918aceab37023a3cf91ff4d5ca`,
+reproduced by:
+
+```sh
+git diff --binary --full-index --no-ext-diff d74ea138861163bbc2dcfe775fd545a60b2db2df^ d74ea138861163bbc2dcfe775fd545a60b2db2df | shasum -a 256
+```
+
+These hashes differ because `--full-index` writes full blob IDs in each
+`index` line; the default diff uses abbreviated IDs. Removing those `index`
+lines from either patch yields byte-identical output. Both values describe the
+same seven-file commit patch with different index-header serialization.
+
+The two-file stale-oracle correction was later published as
+d1d24f685a5c478132fa5deccb57aa037f0ab20d, whose parent is d74ea1. The last
+read-only GitHub check on 2026-11-02 found PR #58 at d1d24f6. The live GitHub
+PR head remains authoritative for later revisions; this document does not
+predict a future commit's own SHA.
 
 The prepublication checkpoint at de01ee9 had seven unstaged, index-clean
 changes in inventory entries 2, 3, 5, 6, 7, 8, and 14. This is a historical
-snapshot; those paths were subsequently published together in d74ea1. At the
-last GitHub check recorded here, PR #58's head was d74ea1. The GitHub PR head
-is authoritative for later revisions; this document does not predict a future
-commit's own SHA. The primary checkout snapshot was main at the fixed baseline
-with its pre-existing untracked task document. No device or ADB access or
+snapshot; those paths were subsequently published together in d74ea1. The
+primary checkout snapshot was main at the fixed baseline with its pre-existing
+untracked task document. No device or ADB access or
 Issue #28 state change occurred.
 
 The full PR inventory is:

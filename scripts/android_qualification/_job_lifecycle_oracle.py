@@ -216,14 +216,18 @@ def validate_process_observation(
     """Validate one independent process observation."""
     if type(observation) is not ProcessAndForegroundObservation:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "process_observation_unavailable")
+    if type(observation.process_state) is not ProcessState:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "process_state_unknown")
     if observation.process_state is ProcessState.UNKNOWN:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "process_state_unknown")
+    if type(observation.observer_ref) is not str or not observation.observer_ref:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "process_observer_identity_unavailable")
+    if type(observation.package_name) is not str or not observation.package_name:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "process_observation_unavailable")
     if observation.package_name != expected_package:
         return OracleResult(evidence.AssertionOutcome.FAILED, "process_package_mismatch")
     if observation.process_state is not expected_state:
         return OracleResult(evidence.AssertionOutcome.FAILED, "process_state_contradiction")
-    if type(observation.observer_ref) is not str or not observation.observer_ref:
-        return OracleResult(evidence.AssertionOutcome.BLOCKED, "process_observer_identity_unavailable")
     return OracleResult(evidence.AssertionOutcome.PASSED, "process_state_observed")
 
 
@@ -469,6 +473,8 @@ def classify_recovery_child_states(
 
 def retry_eligibility(state: RecoveryState) -> OracleResult:
     """Return whether the backend advertises retry for the durable state."""
+    if type(state) is not RecoveryState:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "retry_eligibility_unavailable")
     if state in RETRY_ELIGIBLE_STATES:
         return OracleResult(evidence.AssertionOutcome.PASSED, "retry_eligible")
     if state in {RecoveryState.ACTIVE, RecoveryState.INTERRUPTED, RecoveryState.COMPLETED}:
@@ -483,6 +489,8 @@ def recovery_consistency(
     durable_cancellation_intent: bool,
 ) -> OracleResult:
     """Classify a post-loss state without equating consistency to process loss."""
+    if type(durable_state) is not RecoveryState:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "recovery_state_unavailable")
     if durable_state is RecoveryState.INTERRUPTED:
         return OracleResult(evidence.AssertionOutcome.FAILED, "unsupported_interrupted_state")
     if durable_state is RecoveryState.CANCELLED and not durable_cancellation_intent:
@@ -511,6 +519,8 @@ def retry_outcome(
     successor_identity: JobIdentityObservation | None,
 ) -> OracleResult:
     """Validate one retry and its source/scope binding without another effect."""
+    if type(source_state) is not RecoveryState:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "recovery_state_unavailable")
     if source_state not in RETRY_ELIGIBLE_STATES:
         if dispatched or already_retried:
             return OracleResult(evidence.AssertionOutcome.FAILED, "retry_on_ineligible_source")
@@ -661,6 +671,7 @@ def retry_success_acceptance(
         RecoveryState.FAILED,
         RecoveryState.CANCELLED,
         RecoveryState.ABANDONED,
+        RecoveryState.INTERRUPTED,
     }:
         return OracleResult(evidence.AssertionOutcome.FAILED, "retry_outcome_unsuccessful")
     accepted = (

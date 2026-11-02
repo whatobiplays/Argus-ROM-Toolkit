@@ -15,9 +15,9 @@ import json
 from typing import Iterable
 
 
-JOB_LIFECYCLE_CONTRACT_VERSION = 3
+JOB_LIFECYCLE_CONTRACT_VERSION = 4
 JOB_LIFECYCLE_CAPABILITY_VERSION = 3
-JOB_LIFECYCLE_ORACLE_VERSION = 4
+JOB_LIFECYCLE_ORACLE_VERSION = 5
 JOB_LIFECYCLE_QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
 JOB_LIFECYCLE_SCENARIO_AND_04 = "AND-04"
 JOB_LIFECYCLE_SCENARIO_AND_05 = "AND-05"
@@ -625,7 +625,7 @@ class ProcessAndForegroundObservation:
     def digest(self) -> str:
         """Return a sanitized evidence digest."""
         return _sha256({
-            "process": self.process_state.value,
+            "process": _process_state_value(self.process_state),
             "package": self.package_name,
             "foreground": self.foreground_package,
             "task": self.task_continuity_ref,
@@ -654,9 +654,12 @@ class JobIdentityObservation:
             and bool(self.parent_run_ref)
             and type(self.child_run_refs) is tuple
             and bool(self.child_run_refs)
-            and all(type(value) is str and value for value in self.child_run_refs)
+            and all(type(value) is str and 1 <= len(value) <= 256 for value in self.child_run_refs)
+            and len(set(self.child_run_refs)) == len(self.child_run_refs)
+            and self.parent_run_ref not in self.child_run_refs
             and type(self.frozen_scope_ref) is str
             and bool(self.frozen_scope_ref)
+            and (self.parent_state is None or type(self.parent_state) is RecoveryState)
         )
 
     def retry_complete(self) -> bool:
@@ -668,6 +671,7 @@ class JobIdentityObservation:
             and type(self.successor_run_ref) is str
             and bool(self.successor_run_ref)
             and self.successor_run_ref != self.source_run_ref
+            and self.successor_run_ref not in self.child_run_refs
             and type(self.successor_scope_ref) is str
             and self.successor_scope_ref == self.frozen_scope_ref
         )
@@ -678,7 +682,7 @@ class JobIdentityObservation:
             "parent": self.parent_run_ref,
             "children": self.child_run_refs,
             "scope": self.frozen_scope_ref,
-            "parent_state": None if self.parent_state is None else self.parent_state.value,
+            "parent_state": _recovery_state_value(self.parent_state),
             "source": self.source_run_ref,
             "successor": self.successor_run_ref,
             "successor_scope": self.successor_scope_ref,
@@ -712,18 +716,27 @@ class LatencyCriterion:
     measured_cycles: int = 20
 
 
-ACTIVE_STATES = frozenset({RecoveryState.ACTIVE, RecoveryState.INTERRUPTED})
+ACTIVE_STATES = frozenset({RecoveryState.ACTIVE})
 TERMINAL_STATES = frozenset({
     RecoveryState.COMPLETED,
     RecoveryState.COMPLETED_WITH_ISSUES,
     RecoveryState.FAILED,
     RecoveryState.CANCELLED,
     RecoveryState.ABANDONED,
+    RecoveryState.INTERRUPTED,
 })
 
 
 def _optional_count(value: object) -> bool:
     return value is None or (type(value) is int and value >= 0)
+
+
+def _recovery_state_value(value: object) -> str | None:
+    return value.value if type(value) is RecoveryState else None
+
+
+def _process_state_value(value: object) -> str | None:
+    return value.value if type(value) is ProcessState else None
 
 
 def _optional_ref(value: object) -> bool:
@@ -801,6 +814,7 @@ class JobsSurfaceObservation:
         """Return whether the Jobs surface is proven for a read-only observation."""
         return (
             self.surface is JobLifecycleSurface.JOBS
+            and (self.state is None or type(self.state) is RecoveryState)
             and self.jobs_navigation_present is True
             and _optional_count(self.refresh_row_count)
             and _optional_count(self.active_refresh_row_count)
@@ -823,7 +837,7 @@ class JobsSurfaceObservation:
         return _sha256({
             "surface": None if self.surface is None else self.surface.value,
             "parent": self.parent_run_ref,
-            "state": None if self.state is None else self.state.value,
+            "state": _recovery_state_value(self.state),
             "rows": self.refresh_row_count,
             "active_rows": self.active_refresh_row_count,
             "history_complete": self.history_complete,
@@ -851,6 +865,7 @@ class RefreshDetailObservation:
         return (
             type(self.parent_run_ref) is str
             and bool(self.parent_run_ref)
+            and type(self.state) is RecoveryState
             and self.state in ACTIVE_STATES | TERMINAL_STATES
             and type(self.progress) is RefreshProgressFacts
             and _optional_count(self.retry_control_count)
@@ -865,7 +880,7 @@ class RefreshDetailObservation:
         """Return a sanitized evidence digest."""
         return _sha256({
             "parent": self.parent_run_ref,
-            "state": None if self.state is None else self.state.value,
+            "state": _recovery_state_value(self.state),
             "progress": None if self.progress is None else self.progress.digest(),
             "retry_controls": self.retry_control_count,
             "source": self.retry_source_run_ref,
@@ -960,6 +975,7 @@ class ScanJobObservation:
             self.surface is JobLifecycleSurface.SCAN_JOB_DETAIL
             and type(self.run_ref) is str
             and bool(self.run_ref)
+            and type(self.parent_state) is RecoveryState
             and self.parent_state in ACTIVE_STATES | TERMINAL_STATES
             and type(self.child_state) is str
             and bool(self.child_state)
@@ -972,7 +988,7 @@ class ScanJobObservation:
         return _sha256({
             "surface": None if self.surface is None else self.surface.value,
             "run": self.run_ref,
-            "parent_state": None if self.parent_state is None else self.parent_state.value,
+            "parent_state": _recovery_state_value(self.parent_state),
             "child_state": self.child_state,
             "observer": self.observer_ref,
         })

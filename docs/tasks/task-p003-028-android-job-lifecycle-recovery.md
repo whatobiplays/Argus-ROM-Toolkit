@@ -186,160 +186,181 @@ No stage, commit, push, PR publication or issue edits are authorized by this tas
 
 ## Completion Result
 
-PR #58 first published the host-only lifecycle contract in commit
-`c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7`. The approved correction is a
-separate normal commit, `500d1c954831ca6dfb1f5f1e6424136bec81fc64`, on the
-same feature branch. The original commit remains preserved. No Android device
-or ADB was accessed. The primary checkout remains on `main` at
-`39e03c74681635c1ab5be5060eed6fca1c928ca8`, with only its pre-existing
-untracked task document.
+### Candidate and provenance
 
-The full PR inventory is 15 paths: the original 14 plus the explicitly
-approved shared UI path. The published correction changes 10 paths:
+PR #58 first published the host-only lifecycle implementation in commit
+c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7. The separate corrective commit
+500d1c954831ca6dfb1f5f1e6424136bec81fc64 remains in the branch history. The
+current candidate is on codex/issue-28-job-lifecycle-recovery at
+de01ee9e9c627fc7eb8aae386acb2fc5d02683b1, based on
+39e03c74681635c1ab5be5060eed6fca1c928ca8.
 
-- Corrected: `docs/qualification/android-job-lifecycle.md`,
-  `docs/qualification/device-authorization.md`,
-  `docs/tasks/task-p003-028-android-job-lifecycle-recovery.md`,
-  `scripts/android_qualification/_job_lifecycle_contract.py`,
-  `scripts/android_qualification/_job_lifecycle_executor.py`,
-  `scripts/android_qualification/_job_lifecycle_oracle.py`,
-  `scripts/android_qualification/physical/_job_lifecycle_ui.py`,
-  `scripts/android_qualification/physical/test_job_lifecycle_ui.py`, and
-  `scripts/android_qualification/test_job_lifecycle.py`.
-- Added to the PR diff by this approved correction:
-  `scripts/android_qualification/physical/ui.py`.
-- The five other original PR paths remain unchanged:
-  `docs/qualification/README.md`,
-  `docs/qualification/surface-classifications-v1.json`,
-  `scripts/android_qualification/admission.py`,
-  `scripts/android_qualification/manifest.py`, and
-  `scripts/android_qualification/test_repository_checks.py`.
+The cumulative PR diff remains 15 paths. The current worktree has seven
+unstaged, index-clean changes. The primary checkout remains on main at the
+baseline with its pre-existing untracked task document. No device, ADB, Git
+publication, PR, or Issue #28 state was changed.
 
-This follow-up correction covers five existing inventory paths:
-`scripts/android_qualification/_job_lifecycle_executor.py`,
-`scripts/android_qualification/test_job_lifecycle.py`,
-`docs/qualification/device-authorization.md`,
-`docs/qualification/android-job-lifecycle.md`, and this Completion Result.
-The 15-path PR inventory is unchanged.
+The full PR inventory is:
 
-The lifecycle contract and capability versions are 3; the oracle version is 4.
-Both scenario plans use the revised digests, and previous v2/v2/v3 bindings are
-rejected for AND-04 and AND-05. Legacy, Issue #26, and Issue #27 parser,
-admission, executor, and pin behavior remain unchanged. The pinned surface
-registry contains 134 total entries and 86 active entries.
-Positive v3 admission tests consume the production capability digest. The
-stale v2/v2/v3 oracle digest is a fixed value captured from the original
-contract revision; the test no longer carries a duplicate capability payload.
+1. docs/qualification/README.md
+2. docs/qualification/android-job-lifecycle.md
+3. docs/qualification/device-authorization.md
+4. docs/qualification/surface-classifications-v1.json
+5. docs/tasks/task-p003-028-android-job-lifecycle-recovery.md
+6. scripts/android_qualification/_job_lifecycle_contract.py
+7. scripts/android_qualification/_job_lifecycle_executor.py
+8. scripts/android_qualification/_job_lifecycle_oracle.py
+9. scripts/android_qualification/admission.py
+10. scripts/android_qualification/manifest.py
+11. scripts/android_qualification/physical/_job_lifecycle_ui.py
+12. scripts/android_qualification/physical/test_job_lifecycle_ui.py
+13. scripts/android_qualification/physical/ui.py
+14. scripts/android_qualification/test_job_lifecycle.py
+15. scripts/android_qualification/test_repository_checks.py
 
-AND-04 retains 31 operations and AND-05 retains 45. Operation 35 requires a
-fresh parent-bound Retry relationship lookup and blocks before intent or Retry
-when its proof is missing or contradictory. Operation 42 remains bound to the
-exact Retry successor; operation 45 remains the only terminal-success decision.
-The timing contract is unchanged:
+The seven current worktree changes are paths 2, 3, 5, 6, 7, 8, and 14.
 
-- AND-04: 575 seconds of raw operation timeouts, 31-second operation floor,
-  90-second evidence reserve, 45-second state-check reserve, and 30-second
-  restoration reserve. Required span is 771 seconds with a 69-second margin at
-  latest admission under the 900-second session deadline.
-- AND-05: 880 seconds of raw operation timeouts, 45-second operation floor,
-  120-second evidence reserve, 60-second state-check reserve, and 30-second
-  restoration reserve. Required span is 1,135 seconds with an 85-second margin
-  at latest admission under the 1,280-second session deadline.
-- Cleanup remains a separate 120-second closure window. Deadlines are not
-  extended during execution.
+### Version and behavior history
 
-The executor records a BLOCKED or FAILED fallback when the latest persisted
-operation outcome is PASSED or no categorical outcome exists. A final durable
-BLOCKED or FAILED assertion prevents a duplicate fallback. If an evidence
-append fails, the executor reports evidence-integrity uncertainty and does not
-retry the append or continue product effects. Tests cover mixed outcomes,
-pre-handler deadline failure, and append failure. An exception from the AND-05
-operation-35 identity observer records an explicit BLOCKED outcome and owner
-recovery reason before intent or Retry.
+The lifecycle binding progressed from contract/capability/oracle v2/v2/v3, to
+v3/v3/v4 in the earlier follow-up, and now to contract v4, capability v3, and
+oracle v5. The earlier bindings remain historical; v4/v3/v5 are active. The
+current correction requires exact lifecycle and process enum values, unique
+parent-child references, rejects reuse of an admitted terminal JobRunId, and
+treats Interrupted as terminal but ineligible for Retry. Initial child
+attribution also must retain the scope captured at refresh arrival. Capability
+v3 and its declaration digest are unchanged. Legacy, Issue #26, and Issue #27
+contracts and pins remain unchanged.
 
-Jobs classification requires a uniquely selected Jobs destination and a
-separate page title. A populated page may contain one or both standalone
-`Active` and `Recent` section markers. It must have a separate row node
-containing exactly one `Library Refresh` or `Library Scan` title and exactly
-one lifecycle status occurrence. Missing, duplicate, or conflicting row
-statuses block classification, and every visible lifecycle status must belong
-to one validated row node. The exact `No jobs yet` marker is valid only without
-any lifecycle row. Missing section markers block a selected Jobs page instead
-of allowing it to fall through to refresh-detail classification.
+AND-04 remains a 31-operation plan; AND-05 remains 45 operations. Operation
+grants, ordering, timeout values, authorization, and session deadlines did not
+change. AND-04 operation 25 uses its existing bounded terminal observation.
+AND-05 operation 35 proves the fresh parent-bound Retry relation before intent
+or dispatch; operation 42 stays bound to the exact successor; operation 45
+remains the sole terminal-success decision. Operation 37 blocks when parent or
+source identity is missing or malformed in Retry detail, and fails a
+different valid detail relation. An incomplete or mismatched independent
+`JobIdentityObservation` blocks because it cannot bind the exact successor to
+the source and scope. Operation 45 blocks a missing successor identity and
+fails a different valid successor ID. Parent-child attribution, the pre-stop
+guard, and Retry eligibility require the exact parent identity; missing or
+malformed IDs block, and a different valid ID fails before dependent effects.
+Active Jobs parent IDs must be valid. Retry control count must be an integer
+equal to one; Boolean and floating-point values do not qualify. A missing
+or malformed recovered Jobs parent ID blocks, and a different valid parent ID
+fails before Retry. A missing foreground identity blocks relaunch before
+intent; a verified contradictory foreground state is Failed. No automatic
+resume or second Retry is allowed.
 
-Validation after the latest parser, executor, and test corrections:
+Current derived pins are:
 
-- Focused lifecycle and physical UI tests: 230 passed, including Retry
-  observer failure, session-binding change, exact operation-deadline expiry,
-  and operation-outcome fallback coverage. All three negative Retry cases
-  recorded `BLOCKED`, retained the correct blocker, dispatched zero Retry
-  calls, and wrote no Retry effect intent.
-- `just test-android-qualification`: 1,051 passed, 2 skipped.
-- `just _format-check` and `just _architecture` passed.
-- Archive, naming, qualification-record, worktree `git diff --check`, and
-  base-to-HEAD `git diff --check` checks passed after the Completion Result
-  update.
-- The last recorded `just check` predates the final executor and Jobs-parser
-  hardening and this follow-up. It included 1,045 Android tests, 40 cleanup
-  tests, 633 Flutter tests, Rust tests, macOS FRB export checks, and macOS Rust
-  build checks. It was not rerun for this follow-up. At the time of this
-  validation, the filesystem had 28 GiB available at 97% capacity, so this
-  pass avoided the disk-intensive full gate. No build outputs were deleted.
+| Binding | SHA-256 |
+| --- | --- |
+| Capability v3 | ec1754f5fdaa8327b8725e2e30b11113938721c566941dcefb0974edab1008f2 |
+| Oracle v5 | 22daf4e6f1de6a17f61523c9680e2491745ee0ece0074eb58966e602d9d99181 |
+| AND-04 plan, test fixture | 20882c2555dc7050bde3f8f5495e026c2bddeb39ca0096ce5bbc2df096b767fe |
+| AND-04 synthetic authorization | bd89bb67cac8ef8d61b0dfbfe1c1ca56d258417dad9096ed60365bf268cc6e40 |
+| AND-05 plan, test fixture | f19fde67ecd9c82e9b492609138210ea04057550646f11a2ff6536357e927700 |
+| AND-05 synthetic authorization | e0e7d1b256e6e19204ed6728a761d646896d0a522ff1e52e5d750de0c4624c83 |
 
-Confirmed Cubic findings about Jobs-row ambiguity, duplicated capability test
-data, and manual unittest lifecycle calls were corrected. A prior Cubic run
-reported a P1 against operation-outcome fallback handling. Its description
-conflicts with the implementation: `can_append_fallback` allows a fallback
-after a persisted `PASSED` assertion and suppresses only duplicate `BLOCKED`
-or `FAILED` outcomes. The regression
-`test_persisted_pass_does_not_mask_later_handler_exception` verifies that a
-later exception appends one `BLOCKED` fallback. The finding remains disputed;
-no source change was made for it.
+Scenario plan and authorization digests are synthetic test fixtures, not owner
+approvals. No physical authorization was created.
 
-The latest Cubic run suggests a dedicated Retry-relation observation type
-instead of nullable Retry-only fields on `JobIdentityObservation`. The
-operation-35 oracle requires a completed lookup, the exact parent, scope,
-state, and child set, and proof that successor fields are absent before Retry
-can dispatch. The executor blocks on any mismatch. A separate type would
-change the internal observer contract, so this architecture suggestion is
-deferred as a nonblocking follow-up. No dedicated Retry-relation type was
-introduced, and contract v3, capability v3, and oracle v4 remain unchanged.
-Direct parser tests also cover selected tab and heading actionability,
-repeated section markers, unclassified lifecycle rows, and unbound status
-labels.
+### Timing and verification
 
-A separate semantic-risk review returned five medium-confidence,
-nonblocking authorization heuristics; it is not a Standards/Spec review.
-Independent two-axis Standards/Spec review remains `UNVERIFIED`.
+- AND-04: 575 seconds raw operation timeouts, plus a 31-second operation
+  floor, 90-second evidence reserve, 45-second state-check reserve, and
+  30-second restoration reserve. Required span: 771 seconds; margin:
+  69 seconds within the 900-second session deadline.
+- AND-05: 880 seconds raw operation timeouts, plus a 45-second operation
+  floor, 120-second evidence reserve, 60-second state-check reserve, and
+  30-second restoration reserve. Required span: 1,135 seconds; margin:
+  85 seconds within the 1,280-second session deadline. Cleanup remains a
+  separate 120-second window. Deadlines are not extended.
 
-The GitHub review-thread snapshot recorded on 2026-11-01 showed 15 inline PR
-threads: 8 resolved by Cubic bot and 7 unresolved. This follow-up corrects the
-Retry error classification and the permitted-effect and Jobs-page documentation
-findings. It does not reply to or resolve review threads. Other unresolved
-items retain their existing dispositions.
+Pre-correction source validation snapshot:
 
-The parser keeps its exact mirrored-attribute normalization. Broad
-`dict.fromkeys` deduplication could hide genuinely repeated labels, so no such
-normalization was added. Issues-only progress still cannot establish committed
-progress or authorize dependent effects. Parsing remains unchanged until a
-demonstrated need is supported by independent physical evidence. The historical
-task-scope section and `In Progress` status remain in place.
+- Focused lifecycle and parser tests: 270 passed. This includes missing and
+  malformed identity cases at parent-child attribution, the pre-stop guard,
+  active and recovered Jobs, Retry eligibility, and operation 37;
+  Boolean/floating Retry counts; and terminal evidence returned after its
+  deadline.
+- just test-android-qualification: 1,091 passed, 2 skipped.
+- just _format-check and just _architecture: passed.
+- Qualification archive, naming, record, and base-to-worktree diff checks:
+  passed after the Completion Result edit.
+- git diff --check against the worktree and fixed baseline: passed.
+- just check: NOT_RUN. The root filesystem had 16 GiB available. That did not
+  provide a safe margin for the disk-intensive cross-platform builds. No
+  caches or evidence were removed.
 
-The negative-latency-sample P2 remains deferred: a malformed negative sample
-can raise `ValueError` in the host-only evaluator. A separately reviewed
-oracle correction and requalification are required before latency execution
-is enabled. The five-warmup, twenty-sample, nearest-rank p95 method and
-numerical ceilings remain provisional pending separate owner approval. The
-three architecture observations remain
-nonblocking follow-up opportunities: splitting the lifecycle executor by
-scenario, splitting the combined lifecycle tests, and moving lifecycle
-admission behind a more focused seam. The Retry-relation observation type is
-also deferred. No latency execution was enabled.
+### Prior review and remaining gates snapshot
 
-Physical qualification remains `BLOCKED`. Host evidence does not establish the
-exact no-reset package and artifact, signer, committed Library asset
-identities, Sources root and job identities, refresh-child attribution,
-row-scoped Jobs state, Retry source and successor, process and task continuity,
-or cleanup and restoration facts through independent physical observations.
-G3, G4, and G5 remain separately authorized physical gates. No owner
-qualification verdict was issued.
+The GitHub review-thread snapshot recorded on 2026-11-01 showed 15 inline
+threads: eight resolved by Cubic bot and seven unresolved. This is a historical
+snapshot; the current thread count was not rechecked. No thread was answered or
+resolved in this work.
+
+The final Standards review found no hard violations or merge blockers.
+Optional follow-ups remain for duplicate oracle logic and manifest naming. The
+final Specification review found no merge blocker. It confirmed that
+unavailable or mismatched operation-37 `JobIdentityObservation` evidence is
+`BLOCKED`, while a different valid parent/source in the separate Retry detail
+is `FAILED`; it also confirmed the parent identity guards, active/recovered
+Jobs validation, exact Retry count typing, and operation-25 deadline check.
+The local Cubic review had no GitHub remote context and left one nonblocking P2
+about duplicated bounded polling. The operation-25 late-return regression and
+monotonic post-observation deadline check remain in place.
+
+Three architectural follow-ups remain nonblocking: split the lifecycle
+executor by scenario, split the combined lifecycle tests, and give lifecycle
+admission a more focused seam. A dedicated Retry-relation type remains
+unnecessary for the current contract. The negative-latency-sample P2 remains
+open: malformed negative samples can raise ValueError in the host-only
+evaluator. Latency execution stays disabled until a separately reviewed oracle
+correction and requalification; its sample method and numerical ceilings remain
+provisional pending owner approval.
+
+Physical G3, G4, and G5 remain BLOCKED. Host evidence does not establish the
+physical package and artifact, committed Library identities, Sources root and
+job identities, refresh-child attribution, process continuity, cleanup, or
+restoration facts. No owner qualification verdict was issued. Task status
+remains In Progress.
+
+### Refresh-detail provenance correction (2026-11-01)
+
+Lifecycle detail handlers now require a nonempty observer reference before
+accepting detail evidence. Valid foreign parent or source IDs retain their
+`FAILED` classification. AND-05 operation 34 also requires the current detail
+state to match the state established during recovery and exactly one Retry
+control; missing or stale evidence blocks before operation 35 is authorized.
+The AND-05 pre-stop guard applies the same provenance requirement before the
+force-stop intent. Operation 37 still requires its independent identity
+observation and provenance on the separate successor detail. Optional fields
+that an operation does not use remain optional.
+
+Validation: 279 focused lifecycle and parser tests passed; the full Android
+qualification suite passed 1,100 tests with two skipped. Formatting,
+architecture, qualification archive, naming, record, and baseline diff checks
+passed. The candidate retains seven modified paths and the 15-path cumulative
+PR inventory. This correction did not change the current candidate's contract
+v4, capability v3, oracle v5, authorization digests, or 31/45 operation plans.
+Those pins and digests are earlier approved changes relative to the fixed HEAD.
+`just check` was not run; available disk space was 12 GiB, so no cross-platform
+build was started.
+
+Refreshed independent Standards and Specification reviews both returned PASS
+with no implementation blocker. Standards found no hard rule violation; it
+retained repeated handler-specific provenance checks as an optional Fowler
+duplication observation. Specification confirmed the pre-stop guard, recovery
+and Retry detail checks, unchanged operation 35 proof, optional unrelated
+fields, and the unchanged operation plans. Cubic's pre-stop P1 was corrected.
+Its separate concern about missing parent identity in child attribution does
+not award a pass: `validate_identity()` requires `parent_child_complete()`,
+which requires a nonempty parent reference. The duplicated bounded-polling P2
+remains a nonblocking follow-up.
+
+No device or ADB access, staging, commit, push, PR or Issue #28 change, review
+thread action, or owner qualification verdict occurred. Physical G3/G4/G5
+remain BLOCKED, and latency execution remains disabled. Task status remains
+In Progress.

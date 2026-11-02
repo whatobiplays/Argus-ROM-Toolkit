@@ -390,6 +390,7 @@ class _JobLifecycleOperationExecutor:
         *,
         expected_process: ProcessState | None = None,
         require_foreground: bool = False,
+        require_non_target_foreground: bool = False,
     ) -> None:
         """Reject a changed target before dispatching one authorized effect."""
         authorization = self._session.authorization
@@ -416,23 +417,97 @@ class _JobLifecycleOperationExecutor:
         if expected_process is None:
             return
         observed = self._observe_process(operation)
-        if (
-            observed.process_state is not expected_process
-            or observed.package_name != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
-            or (
-                require_foreground
-                and observed.foreground_package
-                != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
-            )
-        ):
-            self._record_blocked(operation, "target_process_changed")
+        self._require_process_state(
+            operation,
+            observed,
+            expected_state=expected_process,
+            expected_foreground=(
+                JOB_LIFECYCLE_QUALIFICATION_PACKAGE if require_foreground else None
+            ),
+            reason="The qualification package state changed before the authorized effect",
+            foreground_blocker="target_process_changed",
+        )
+        if require_non_target_foreground:
+            self._require_non_target_foreground(operation, observed)
+
+    def _require_process_state(
+        self,
+        operation: OperationAuthorization,
+        observed: ProcessAndForegroundObservation,
+        *,
+        expected_state: ProcessState,
+        expected_foreground: str | None = None,
+        expected_task_ref: str | None = None,
+        reason: str,
+        foreground_blocker: str = "foreground_package_unproven",
+        task_blocker: str = "task_continuity_unproven",
+    ) -> None:
+        """Validate the process state before accepting the transition."""
+        result = validate_process_observation(
+            observed,
+            expected_state=expected_state,
+            expected_package=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+        )
+        if result.outcome is evidence.AssertionOutcome.FAILED:
+            self._record_result(operation, False)
             self._request_scope_extension(
                 "target process state",
-                "The qualification package state changed before the authorized effect.",
+                f"{reason}; the independent process observer reported {result.code}.",
                 "An owner-authorized observer establishes the exact package state.",
             )
+            raise _JobLifecycleStop(f"{reason} ({result.code}).", failed=True)
+        if result.outcome is not evidence.AssertionOutcome.PASSED:
+            self._record_blocked(operation, result.code)
+            self._request_scope_extension(
+                "target process state",
+                f"{reason}; process evidence is unavailable ({result.code}).",
+                "An owner-authorized observer establishes the exact package state.",
+            )
+            raise _JobLifecycleStop(f"{reason}; process evidence is unavailable.")
+        if (
+            expected_foreground is not None
+            and observed.foreground_package != expected_foreground
+        ):
+            self._record_blocked(operation, foreground_blocker)
+            self._request_scope_extension(
+                "target foreground state",
+                f"{reason}; the expected foreground package was not observed.",
+                "An owner-authorized observer establishes the exact foreground state.",
+            )
+            raise _JobLifecycleStop(f"{reason}; the expected foreground was not observed.")
+        if (
+            expected_task_ref is not None
+            and observed.task_continuity_ref != expected_task_ref
+        ):
+            self._record_blocked(operation, task_blocker)
+            self._request_scope_extension(
+                "qualification task continuity",
+                f"{reason}; the original task continuity reference was not observed.",
+                "An owner-authorized observer establishes the original task continuity.",
+            )
+            raise _JobLifecycleStop(f"{reason}; task continuity is unproven.")
+
+    def _require_non_target_foreground(
+        self,
+        operation: OperationAuthorization,
+        observed: ProcessAndForegroundObservation,
+    ) -> None:
+        """Require identified foreground evidence before relaunching the package."""
+        if not _valid_ref(observed.foreground_package):
+            self._record_blocked(operation, "process_foreground_identity_unavailable")
+            self._request_scope_extension(
+                "qualification process stop verification",
+                "The foreground package identity is unavailable after the process stop.",
+                "An owner-authorized observer establishes absence before relaunch or cleanup.",
+            )
             raise _JobLifecycleStop(
-                "The qualification package state changed before the effect."
+                "The foreground package is unavailable; no relaunch is permitted."
+            )
+        if observed.foreground_package == JOB_LIFECYCLE_QUALIFICATION_PACKAGE:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(
+                "The qualification package remains in the foreground after process stop.",
+                failed=True,
             )
 
     def _request(self, key: str) -> evidence.WriteRequest:
@@ -1034,12 +1109,35 @@ class _JobLifecycleOperationExecutor:
         identity = self._call(
             lambda timeout: self._observer.observe_identity(None, timeout)
         )
-        self._require(
+        if not (
             type(identity) is JobIdentityObservation
             and identity.parent_child_complete()
-            and identity.parent_state in ACTIVE_STATES,
-            "A new active parent refresh identity was not observed.",
+            and identity.parent_state in ACTIVE_STATES
+        ):
+            self._record_blocked(operation, "new_refresh_identity_unavailable")
+            raise _JobLifecycleStop("A new active parent refresh identity was not observed.")
+        baseline = self._baseline
+        historical_refs = (
+            None
+            if type(baseline) is not JobLifecycleBaselineObservation
+            or baseline.jobs_history_complete is not True
+            else baseline.terminal_refresh_run_refs
         )
+        if (
+            type(historical_refs) is not tuple
+            or any(type(value) is not str or not _valid_ref(value) for value in historical_refs)
+            or len(set(historical_refs)) != len(historical_refs)
+        ):
+            self._record_blocked(operation, "jobs_baseline_history_unavailable")
+            raise _JobLifecycleStop(
+                "The admitted terminal refresh history is unavailable for identity matching."
+            )
+        if identity.parent_run_ref in historical_refs:
+            self._record_blocked(operation, "parent_job_id_reuse_ambiguous")
+            raise _JobLifecycleStop(
+                "The newly observed parent JobRunId appears in the admitted terminal history; "
+                "the new refresh identity is ambiguous."
+            )
         self._parent_ref = identity.parent_run_ref
         self._scope_ref = identity.frozen_scope_ref
         self._parent_state = identity.parent_state
@@ -1067,6 +1165,9 @@ class _JobLifecycleOperationExecutor:
         if not observed.established():
             self._record_blocked(operation, "jobs_surface_unavailable")
             raise _JobLifecycleStop("The Jobs surface is not proven.")
+        if not _valid_ref(observed.parent_run_ref) or observed.state is None:
+            self._record_blocked(operation, "parent_state_unavailable")
+            raise _JobLifecycleStop("The active parent identity or state is unavailable.")
         if (
             observed.parent_run_ref != self._parent_ref
             or observed.state not in ACTIVE_STATES
@@ -1082,16 +1183,23 @@ class _JobLifecycleOperationExecutor:
     def _step_refresh_detail(self, operation, spec) -> None:
         self._require(_valid_ref(self._parent_ref), "The parent refresh identity is unavailable.")
         observed = self._observe_detail(operation, self._parent_ref)
-        if (
-            observed.parent_run_ref != self._parent_ref
-            or observed.state is None
-            or observed.state not in ACTIVE_STATES | TERMINAL_STATES
-        ):
+        if not _valid_ref(observed.parent_run_ref):
+            self._record_blocked(operation, "parent_run_unavailable")
+            raise _JobLifecycleStop("The refresh detail identity is unavailable.")
+        if observed.parent_run_ref != self._parent_ref:
             self._record_result(operation, False)
             raise _JobLifecycleStop(
                 "The refresh detail identity or lifecycle contradicts the observed parent.",
                 failed=True,
             )
+        if not _valid_ref(observed.observer_ref):
+            self._record_blocked(operation, "refresh_detail_observer_unavailable")
+            raise _JobLifecycleStop(
+                "The refresh detail observer provenance is unavailable."
+            )
+        if type(observed.state) is not RecoveryState:
+            self._record_blocked(operation, "parent_state_unavailable")
+            raise _JobLifecycleStop("The refresh detail lifecycle state is unavailable.")
         if (
             observed.progress is not None
             and observed.progress.parent_run_ref != self._parent_ref
@@ -1115,11 +1223,24 @@ class _JobLifecycleOperationExecutor:
             type(identity) is JobIdentityObservation,
             "The child attribution observation is unavailable.",
         )
-        if identity.parent_run_ref != self._parent_ref:
+        if (
+            _valid_ref(identity.parent_run_ref)
+            and identity.parent_run_ref != self._parent_ref
+        ):
             self._record_result(operation, False)
             raise _JobLifecycleStop(
                 "The child attribution names a different parent refresh.",
                 failed=True,
+            )
+        if identity.frozen_scope_ref != self._scope_ref:
+            self._record_blocked(operation, "parent_child_scope_mismatch")
+            self._request_scope_extension(
+                "parent refresh child attribution scope",
+                "The child attribution scope differs from the scope captured for the parent.",
+                "An owner-authorized observer binds the exact parent and its frozen scope to its children.",
+            )
+            raise _JobLifecycleStop(
+                "The parent-child attribution scope is ambiguous."
             )
         result = validate_identity(identity)
         if result.outcome is evidence.AssertionOutcome.PASSED:
@@ -1175,11 +1296,14 @@ class _JobLifecycleOperationExecutor:
             expected_state=ProcessState.PRESENT,
             expected_package=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
         )
+        if result.outcome is evidence.AssertionOutcome.FAILED:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(result.code, failed=True)
         if result.outcome is not evidence.AssertionOutcome.PASSED:
             self._record_blocked(operation, result.code)
             raise _JobLifecycleStop("The background process state is not proven.")
-        if type(observed.foreground_package) is not str or not observed.foreground_package:
-            self._record_blocked(operation, "foreground_package_unidentified")
+        if not _valid_ref(observed.foreground_package):
+            self._record_blocked(operation, "foreground_identity_unavailable")
             raise _JobLifecycleStop("The background foreground identity is unavailable.")
         if observed.foreground_package == JOB_LIFECYCLE_QUALIFICATION_PACKAGE:
             self._record_result(operation, False)
@@ -1216,9 +1340,18 @@ class _JobLifecycleOperationExecutor:
             expected_state=ProcessState.PRESENT,
             expected_package=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
         )
+        if result.outcome is evidence.AssertionOutcome.FAILED:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(result.code, failed=True)
         if result.outcome is not evidence.AssertionOutcome.PASSED:
             self._record_blocked(operation, result.code)
             raise _JobLifecycleStop("The foreground process state is not proven.")
+        if not _valid_ref(observed.foreground_package):
+            self._record_blocked(operation, "foreground_identity_unavailable")
+            raise _JobLifecycleStop("The foreground package identity is unavailable.")
+        if not _valid_ref(observed.task_continuity_ref):
+            self._record_blocked(operation, "task_continuity_unavailable")
+            raise _JobLifecycleStop("The original task continuity is unavailable.")
         if (
             observed.foreground_package != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
             or observed.task_continuity_ref != self._task_ref
@@ -1244,15 +1377,77 @@ class _JobLifecycleOperationExecutor:
         self._parent_state = observed.state
         self._record_result(operation, True)
 
+    def _wait_for_and_04_terminal_detail(
+        self, operation: OperationAuthorization
+    ) -> RefreshDetailObservation:
+        """Wait within operation 25's existing deadline for the exact parent to terminate."""
+        deadline = self._operation_monotonic_deadline
+        saw_active = False
+        saw_unavailable = False
+        while True:
+            if deadline is not None and self._monotonic() >= deadline:
+                break
+            observed = self._observe_detail(operation, self._parent_ref)
+            if not _valid_ref(observed.parent_run_ref):
+                saw_unavailable = True
+            elif observed.parent_run_ref != self._parent_ref:
+                self._record_result(operation, False)
+                raise _JobLifecycleStop(
+                    "The recovered refresh detail contradicts parent identity.",
+                    failed=True,
+                )
+            elif not _valid_ref(observed.observer_ref):
+                saw_unavailable = True
+            elif type(observed.state) is not RecoveryState:
+                saw_unavailable = True
+            elif observed.state in TERMINAL_STATES:
+                if deadline is not None and self._monotonic() >= deadline:
+                    saw_unavailable = True
+                    break
+                return observed
+            elif observed.state in ACTIVE_STATES:
+                saw_active = True
+            else:
+                saw_unavailable = True
+            if deadline is None:
+                break
+            remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                break
+            self._sleeper(min(1.0, remaining))
+
+        if saw_active and not saw_unavailable:
+            code = "recovered_state_still_active"
+            reason = "The recovered refresh remained active at its bounded deadline."
+        else:
+            code = "recovered_state_unavailable"
+            reason = "The recovered terminal state was unavailable within its bounded deadline."
+        self._record_blocked(operation, code)
+        raise _JobLifecycleStop(reason)
+
     def _step_recovered_lifecycle(self, operation, spec) -> None:
         self._require(_valid_ref(self._parent_ref), "The parent refresh identity is unavailable.")
-        observed = self._observe_detail(operation, self._parent_ref)
-        if observed.parent_run_ref != self._parent_ref or observed.state is None:
+        if self._scenario_id == JOB_LIFECYCLE_SCENARIO_AND_04:
+            observed = self._wait_for_and_04_terminal_detail(operation)
+        else:
+            observed = self._observe_detail(operation, self._parent_ref)
+        if not _valid_ref(observed.parent_run_ref):
+            self._record_blocked(operation, "recovered_parent_unavailable")
+            raise _JobLifecycleStop("The recovered refresh identity is unavailable.")
+        if observed.parent_run_ref != self._parent_ref:
             self._record_result(operation, False)
             raise _JobLifecycleStop(
                 "The recovered refresh detail contradicts the parent identity.",
                 failed=True,
             )
+        if not _valid_ref(observed.observer_ref):
+            self._record_blocked(operation, "recovered_observer_unavailable")
+            raise _JobLifecycleStop(
+                "The recovered refresh observer provenance is unavailable."
+            )
+        if type(observed.state) is not RecoveryState:
+            self._record_blocked(operation, "recovered_state_unavailable")
+            raise _JobLifecycleStop("The recovered refresh lifecycle state is unavailable.")
         self._parent_state = observed.state
         if self._scenario_id == JOB_LIFECYCLE_SCENARIO_AND_05:
             classification = recovery_consistency(
@@ -1459,7 +1654,30 @@ class _JobLifecycleOperationExecutor:
     def _step_pre_stop_guard(self, operation, spec) -> None:
         self._require(_valid_ref(self._parent_ref), "The parent refresh identity is unavailable.")
         observed = self._observe_detail(operation, self._parent_ref)
-        if observed.state is None:
+        if not _valid_ref(observed.parent_run_ref):
+            self._record_blocked(
+                operation, "pre_stop_parent_identity_unavailable"
+            )
+            self._request_scope_extension(
+                "pre-stop parent detail identity",
+                "The pre-stop detail does not expose the parent JobRunId.",
+                "An owner-authorized observer binds the exact parent before force-stop.",
+            )
+            raise _JobLifecycleStop(
+                "The pre-stop parent detail identity is unavailable."
+            )
+        if observed.parent_run_ref != self._parent_ref:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(
+                "The pre-stop detail names a different parent refresh.",
+                failed=True,
+            )
+        if not _valid_ref(observed.observer_ref):
+            self._record_blocked(operation, "pre_stop_observer_unavailable")
+            raise _JobLifecycleStop(
+                "The pre-stop refresh detail observer provenance is unavailable."
+            )
+        if type(observed.state) is not RecoveryState:
             self._record_blocked(operation, "parent_state_unavailable")
             raise _JobLifecycleStop("The pre-stop parent state is not proven.")
         if observed.state in TERMINAL_STATES:
@@ -1474,12 +1692,14 @@ class _JobLifecycleOperationExecutor:
             self._record_blocked(operation, "refresh_not_active_before_stop")
             raise _JobLifecycleStop("The refresh is not actively running before the stop.")
         process = self._observe_process(operation)
-        if (
-            process.process_state is not ProcessState.PRESENT
-            or process.foreground_package != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
-        ):
-            self._record_blocked(operation, "process_presence_unproven")
-            raise _JobLifecycleStop("The qualification process is not proven in front.")
+        self._require_process_state(
+            operation,
+            process,
+            expected_state=ProcessState.PRESENT,
+            expected_foreground=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+            reason="The qualification process is not proven in front",
+            foreground_blocker="process_presence_unproven",
+        )
         self._record_result(operation, True)
 
     def _step_force_stop(self, operation, spec) -> None:
@@ -1507,28 +1727,30 @@ class _JobLifecycleOperationExecutor:
             expected_state=ProcessState.ABSENT,
             expected_package=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
         )
-        if (
-            result.outcome is evidence.AssertionOutcome.PASSED
-            and observed.foreground_package != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
-        ):
-            self._force_stop_observed = True
-            self._record_result(operation, True)
-            return
-        self._record_blocked(operation, "process_loss_unproven")
-        self._request_scope_extension(
-            "qualification process stop verification",
-            "The process stop was requested but absence or foreground loss is unproven.",
-            "An owner-authorized observer establishes absence before relaunch or cleanup.",
-        )
-        raise _JobLifecycleStop(
-            "The qualification process absence is unproven; no relaunch is permitted."
-        )
+        if result.outcome is evidence.AssertionOutcome.FAILED:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(result.code, failed=True)
+        if result.outcome is not evidence.AssertionOutcome.PASSED:
+            self._record_blocked(operation, result.code)
+            self._request_scope_extension(
+                "qualification process stop verification",
+                "The process stop was requested but process absence is unproven.",
+                "An owner-authorized observer establishes absence before relaunch or cleanup.",
+            )
+            raise _JobLifecycleStop(
+                "The qualification process absence is unproven; no relaunch is permitted."
+            )
+        self._require_non_target_foreground(operation, observed)
+        self._force_stop_observed = True
+        self._record_result(operation, True)
+        return
 
     def _step_launch(self, operation, spec) -> None:
         self._verify_effect_target(
             operation,
             "launch_qualification_package",
             expected_process=ProcessState.ABSENT,
+            require_non_target_foreground=True,
         )
         self._record_intent(operation)
         try:
@@ -1543,20 +1765,19 @@ class _JobLifecycleOperationExecutor:
 
     def _step_foreground_launched(self, operation, spec) -> None:
         observed = self._observe_process(operation)
-        if (
-            observed.process_state is ProcessState.PRESENT
-            and observed.foreground_package == JOB_LIFECYCLE_QUALIFICATION_PACKAGE
-        ):
-            self._record_result(operation, True)
-            return
-        self._record_blocked(operation, "foreground_launch_unproven")
-        raise _JobLifecycleStop(
-            "The relaunched qualification shell is not proven in the foreground."
+        self._require_process_state(
+            operation,
+            observed,
+            expected_state=ProcessState.PRESENT,
+            expected_foreground=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+            reason="The relaunched qualification shell is not proven in the foreground",
+            foreground_blocker="foreground_launch_unproven",
         )
+        self._record_result(operation, True)
 
     def _step_jobs_recovered(self, operation, spec) -> None:
         observed = self._observe_jobs(operation)
-        if not observed.established() or observed.parent_run_ref is None:
+        if not observed.established() or not _valid_ref(observed.parent_run_ref):
             self._record_blocked(operation, "recovered_parent_unavailable")
             raise _JobLifecycleStop("The recovered Jobs state is not proven.")
         if observed.parent_run_ref != self._parent_ref:
@@ -1581,7 +1802,40 @@ class _JobLifecycleOperationExecutor:
             raise _JobLifecycleStop(result.code)
         self._require(_valid_ref(self._parent_ref), "The source run identity is unavailable.")
         observed = self._observe_detail(operation, self._parent_ref)
-        if observed.retry_control_count != 1:
+        if not _valid_ref(observed.parent_run_ref):
+            self._record_blocked(
+                operation, "retry_eligibility_parent_identity_unavailable"
+            )
+            raise _JobLifecycleStop(
+                "The Retry eligibility parent identity is unavailable."
+            )
+        if observed.parent_run_ref != self._parent_ref:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(
+                "The Retry eligibility detail names a different parent refresh.",
+                failed=True,
+            )
+        if not _valid_ref(observed.observer_ref):
+            self._record_blocked(
+                operation, "retry_eligibility_observer_unavailable"
+            )
+            raise _JobLifecycleStop(
+                "The Retry eligibility observer provenance is unavailable."
+            )
+        if type(observed.state) is not RecoveryState:
+            self._record_blocked(operation, "retry_eligibility_state_unavailable")
+            raise _JobLifecycleStop(
+                "The Retry eligibility lifecycle state is unavailable."
+            )
+        if observed.state is not self._parent_state:
+            self._record_blocked(operation, "retry_eligibility_state_stale")
+            raise _JobLifecycleStop(
+                "The Retry eligibility lifecycle state differs from the recovered parent state."
+            )
+        if (
+            type(observed.retry_control_count) is not int
+            or observed.retry_control_count != 1
+        ):
             self._record_blocked(operation, "retry_control_unavailable")
             raise _JobLifecycleStop("A unique retry control is unavailable.")
         self._record_result(operation, True)
@@ -1685,6 +1939,7 @@ class _JobLifecycleOperationExecutor:
         )
         if (
             type(identity) is not JobIdentityObservation
+            or not identity.retry_complete()
             or identity.parent_run_ref != self._parent_ref
             or identity.source_run_ref != self._parent_ref
             or identity.frozen_scope_ref != self._scope_ref
@@ -1696,6 +1951,15 @@ class _JobLifecycleOperationExecutor:
                 "The retry successor identity is not bound to the observed source and scope."
             )
         observed = self._observe_detail(operation, self._successor_ref)
+        if not _valid_ref(observed.parent_run_ref) or not _valid_ref(
+            observed.retry_source_run_ref
+        ):
+            self._record_blocked(
+                operation, "retry_successor_detail_identity_unavailable"
+            )
+            raise _JobLifecycleStop(
+                "The retry detail parent or source identity is unavailable."
+            )
         if (
             observed.parent_run_ref != self._successor_ref
             or observed.retry_source_run_ref != self._parent_ref
@@ -1704,6 +1968,13 @@ class _JobLifecycleOperationExecutor:
             raise _JobLifecycleStop(
                 "The retry detail does not link the same source and successor identity.",
                 failed=True,
+            )
+        if not _valid_ref(observed.observer_ref):
+            self._record_blocked(
+                operation, "retry_successor_detail_observer_unavailable"
+            )
+            raise _JobLifecycleStop(
+                "The retry successor detail observer provenance is unavailable."
             )
         self._retry_observed = True
         self._record_result(operation, True)
@@ -1879,17 +2150,17 @@ class _JobLifecycleOperationExecutor:
         except _JobLifecycleStop:
             self._uncertain_effect(operation, "restoration foreground return")
         observed = self._observe_process(operation)
-        if (
-            observed.process_state is ProcessState.PRESENT
-            and observed.foreground_package == JOB_LIFECYCLE_QUALIFICATION_PACKAGE
-            and observed.task_continuity_ref == self._task_ref
-        ):
-            self._record_result(operation, True)
-            return
-        self._record_blocked(operation, "restoration_foreground_unproven")
-        raise _JobLifecycleStop(
-            "Foreground restoration is unproven; owner recovery remains required."
+        self._require_process_state(
+            operation,
+            observed,
+            expected_state=ProcessState.PRESENT,
+            expected_foreground=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+            expected_task_ref=self._task_ref,
+            reason="Foreground restoration is unproven; owner recovery remains required",
+            foreground_blocker="restoration_foreground_unproven",
+            task_blocker="restoration_foreground_unproven",
         )
+        self._record_result(operation, True)
 
     def _step_successor_terminal(self, operation, spec) -> None:
         self._require(_valid_ref(self._successor_ref), "The retry successor identity is unavailable.")
@@ -1904,28 +2175,41 @@ class _JobLifecycleOperationExecutor:
             if deadline is not None and self._monotonic() >= deadline:
                 break
             observed = self._observe_detail(operation, self._successor_ref)
-            if observed.state in ACTIVE_STATES:
+            if not _valid_ref(observed.parent_run_ref):
+                saw_unavailable = True
+            elif observed.parent_run_ref != self._successor_ref:
+                self._record_result(operation, False)
+                raise _JobLifecycleStop(
+                    "The successor detail identity changed during terminal observation.",
+                    failed=True,
+                )
+            elif type(observed.state) is not RecoveryState:
+                saw_unavailable = True
+            elif observed.state in ACTIVE_STATES:
                 saw_active = True
             elif observed.state not in TERMINAL_STATES:
                 saw_unavailable = True
             terminal = (
                 observed.parent_run_ref == self._successor_ref
+                and _valid_ref(observed.parent_run_ref)
+                and type(observed.state) is RecoveryState
                 and observed.state in TERMINAL_STATES
             )
             if terminal:
                 if deadline is not None and self._monotonic() >= deadline:
                     break
                 process = self._observe_process(operation)
-                if (
-                    process.process_state is not ProcessState.PRESENT
-                    or process.foreground_package
-                    != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
-                ):
-                    self._record_blocked(operation, "successor_foreground_unproven")
-                    raise _JobLifecycleStop(
+                self._require_process_state(
+                    operation,
+                    process,
+                    expected_state=ProcessState.PRESENT,
+                    expected_foreground=JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+                    reason=(
                         "The successor terminal state was observed without the "
-                        "expected qualification foreground."
-                    )
+                        "expected qualification foreground"
+                    ),
+                    foreground_blocker="successor_foreground_unproven",
+                )
                 self._budget()
                 terminal_result = terminal_successor(observed)
                 if terminal_result.outcome is not evidence.AssertionOutcome.PASSED:
@@ -1954,12 +2238,6 @@ class _JobLifecycleOperationExecutor:
                     "The retry successor reached a terminal state, but Retry "
                     "success remains undecided without a pinned acceptance "
                     "criterion; recovery remains with the owner."
-                )
-            if observed.parent_run_ref != self._successor_ref:
-                self._record_result(operation, False)
-                raise _JobLifecycleStop(
-                    "The successor detail identity changed during terminal observation.",
-                    failed=True,
                 )
             if deadline is None or self._monotonic() >= deadline:
                 break

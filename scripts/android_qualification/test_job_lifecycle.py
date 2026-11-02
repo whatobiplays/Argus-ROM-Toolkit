@@ -614,6 +614,11 @@ class ScriptedTransport:
     def return_existing_task(self, package, task_ref, timeout):
         self.return_calls += 1
         self.foreground = package
+        if (
+            self.scenario_id == "AND-04"
+            and self.detail_state is contract.RecoveryState.ACTIVE
+        ):
+            self.detail_state = contract.RecoveryState.COMPLETED
 
     def launch_package(self, package, timeout):
         self.launch_calls += 1
@@ -759,6 +764,13 @@ class SimpleNamespace:
 
 class ContractTests(unittest.TestCase):
     def test_exact_operation_counts_and_timeout_sums(self):
+        self.assertEqual(contract.JOB_LIFECYCLE_CONTRACT_VERSION, 4)
+        self.assertEqual(contract.JOB_LIFECYCLE_CAPABILITY_VERSION, 3)
+        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 5)
+        self.assertEqual(
+            contract.JOB_LIFECYCLE_CAPABILITY_SHA256,
+            "ec1754f5fdaa8327b8725e2e30b11113938721c566941dcefb0974edab1008f2",
+        )
         self.assertEqual(contract.operation_count("AND-04"), 31)
         self.assertEqual(contract.operation_count("AND-05"), 45)
         self.assertEqual(contract.raw_timeout_sum("AND-04"), 575)
@@ -928,6 +940,82 @@ class ContractTests(unittest.TestCase):
             .has_committed_progress()
         )
 
+    def test_recovery_state_fields_reject_string_enum_impostors_safely(self):
+        jobs = replace(_jobs(), state="active")
+        detail = replace(_detail("parent", contract.RecoveryState.ACTIVE), state="active")
+        identity = replace(_identity("parent"), parent_state="active")
+        scan = contract.ScanJobObservation(
+            contract.JobLifecycleSurface.SCAN_JOB_DETAIL,
+            "scan-run",
+            "completed",
+            "complete",
+            "scan-observer",
+        )
+
+        self.assertFalse(jobs.established())
+        self.assertFalse(detail.established())
+        self.assertFalse(identity.parent_child_complete())
+        self.assertFalse(scan.established())
+        self.assertFalse(replace(detail, state=None).established())
+        self.assertFalse(replace(scan, parent_state=None).established())
+        for observation in (jobs, detail, identity, scan):
+            with self.subTest(observation=type(observation).__name__):
+                self.assertRegex(observation.digest(), r"^[0-9a-f]{64}$")
+
+        self.assertTrue(_jobs(parent=None, state=None).established())
+        self.assertTrue(replace(_identity("parent"), parent_state=None).parent_child_complete())
+
+    def test_parent_child_identity_requires_unique_exact_children(self):
+        duplicate = _identity("parent", children=("child-run", "child-run"))
+        self.assertFalse(duplicate.parent_child_complete())
+        self.assertEqual(
+            oracle.validate_identity(duplicate).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+        retry_duplicate = _identity(
+            "parent",
+            children=("child-run", "child-run"),
+            state=contract.RecoveryState.FAILED,
+            source="parent",
+            successor="successor",
+            retry_lookup=True,
+            lookup_source="parent",
+        )
+        self.assertFalse(retry_duplicate.retry_complete())
+        self.assertEqual(
+            oracle.validate_identity(retry_duplicate, retry=True).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+    def test_parent_identity_cannot_appear_as_child(self):
+        parent_as_child = _identity("parent", children=("parent",))
+        self.assertFalse(parent_as_child.parent_child_complete())
+        self.assertEqual(
+            oracle.validate_identity(parent_as_child).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+    def test_retry_successor_cannot_appear_as_child(self):
+        successor_as_child = _identity(
+            "parent",
+            children=("successor",),
+            state=contract.RecoveryState.FAILED,
+            source="parent",
+            successor="successor",
+            retry_lookup=True,
+            lookup_source="parent",
+        )
+        self.assertFalse(successor_as_child.retry_complete())
+        self.assertEqual(
+            oracle.validate_identity(successor_as_child, retry=True).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+    def test_interrupted_is_terminal_but_not_active(self):
+        self.assertNotIn(contract.RecoveryState.INTERRUPTED, contract.ACTIVE_STATES)
+        self.assertIn(contract.RecoveryState.INTERRUPTED, contract.TERMINAL_STATES)
+
 
 class ManifestLifecycleTests(unittest.TestCase):
     def setUp(self):
@@ -949,9 +1037,32 @@ class ManifestLifecycleTests(unittest.TestCase):
         )
 
     def test_lifecycle_authorization_requires_current_oracle_revision(self):
-        # Captured from the original v2 contract, v2 capability, and v3 oracle.
-        stale_digest = "1e15ecbb39072f34043e1721a4099b1826320af06b277a0bd20973035c11366d"
-        self.assertNotEqual(stale_digest, contract.JOB_LIFECYCLE_ORACLE_SHA256)
+        # Both previously published oracle pins must be rejected.
+        # Plan digests are from the exact historical contract revisions, so
+        # these documents exercise old full bindings rather than stale fields
+        # pasted onto a current plan.
+        stale_revisions = (
+            (
+                "v3/v3/v4",
+                "4",
+                "f9ec811db76f245463a93c8260bdd6d347b96071fc3337dccf772f429f416405",
+                {
+                    "AND-04": "ea7515a7d9cacb862a1057d4712e50f859ecfcab9ebb66c1a0c19d486b1e74f7",
+                    "AND-05": "4fdb2e9a8ed1b46afa67ee6ac895f8bd3214e83b8fcc9d7ac9ab9c9c9cfeb9ee",
+                },
+            ),
+            (
+                "v2/v2/v3",
+                "3",
+                "1e15ecbb39072f34043e1721a4099b1826320af06b277a0bd20973035c11366d",
+                {
+                    "AND-04": "8864bd6afecb75ab8a074fd88f09238124cc527174a215671a42c5e2affad189",
+                    "AND-05": "104cea54d798e577e97a1bb5e9c8631c28d775dd6c8a0243c7ab7623f9b89c40",
+                },
+            ),
+        )
+        for _, _, digest, _ in stale_revisions:
+            self.assertNotEqual(digest, contract.JOB_LIFECYCLE_ORACLE_SHA256)
         for scenario in ("AND-04", "AND-05"):
             with self.subTest(scenario=scenario):
                 accepted = self._load(_authorization_document(scenario))
@@ -959,13 +1070,63 @@ class ManifestLifecycleTests(unittest.TestCase):
                     accepted.plan_sha256,
                     contract.plan_digest_for_authorization(accepted),
                 )
-                stale = _authorization_document(scenario)
-                for operation in stale["operations"]:
-                    operation["arguments"]["oracle_version"] = "3"
-                    operation["arguments"]["oracle_sha256"] = stale_digest
-                with tempfile.TemporaryDirectory() as directory:
-                    with self.assertRaises(manifest.AuthorizationError):
-                        _load_lifecycle_authorization(Path(directory), stale)
+                for label, stale_version, stale_digest, stale_plan_digests in stale_revisions:
+                    with self.subTest(revision=label):
+                        stale = _authorization_document(scenario)
+                        stale["plan"]["plan_sha256"] = stale_plan_digests[scenario]
+                        for operation in stale["operations"]:
+                            operation["arguments"]["oracle_version"] = stale_version
+                            operation["arguments"]["oracle_sha256"] = stale_digest
+                        with tempfile.TemporaryDirectory() as directory:
+                            with self.assertRaises(manifest.AuthorizationError):
+                                manifest._load_job_lifecycle_authorization(
+                                    write_private_json(
+                                        Path(directory),
+                                        f"historical-{label.replace('/', '-')}-{scenario}.json",
+                                        stale,
+                                    )
+                                )
+
+    def test_lifecycle_authorization_rejects_mismatched_plan_digest(self):
+        for scenario in ("AND-04", "AND-05"):
+            with self.subTest(scenario=scenario):
+                document = _authorization_document(scenario)
+                authorization = _load_lifecycle_authorization(self.directory, document)
+                self.assertRegex(authorization.plan_sha256, r"^[0-9a-f]{64}$")
+                document["plan"]["plan_sha256"] = "0" * 64
+                with self.assertRaises(manifest.AuthorizationError):
+                    manifest._load_job_lifecycle_authorization(
+                        write_private_json(
+                            self.directory,
+                            f"mismatched-plan-{scenario}.json",
+                            document,
+                        )
+                    )
+
+    def test_owner_approval_rejects_mismatched_authorization_digest(self):
+        for scenario in ("AND-04", "AND-05"):
+            with self.subTest(scenario=scenario):
+                authorization = _load_lifecycle_authorization(
+                    self.directory, _authorization_document(scenario)
+                )
+                approval = approval_document(authorization.canonical_sha256)
+                approval["authorization_sha256"] = "0" * 64
+                approval["valid_from_utc"] = authorization.issued_at.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+                approval["valid_until_utc"] = authorization.session_deadline.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+                with self.assertRaises(manifest.ApprovalError):
+                    manifest.load_owner_approval(
+                        write_private_json(
+                            self.directory,
+                            f"mismatched-approval-{scenario}.json",
+                            approval,
+                        ),
+                        authorization,
+                        now=NOW,
+                    )
 
     def test_baseline_schema_is_exact_for_each_profile(self):
         legacy = {
@@ -1576,6 +1737,104 @@ class OracleTests(unittest.TestCase):
             durable_cancellation_intent=False,
         )
         self.assertEqual(result.outcome, evidence.AssertionOutcome.PASSED)
+
+    def test_state_oracles_require_exact_recovery_enum_values(self):
+        self.assertEqual(
+            oracle.retry_eligibility("failed").outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        self.assertEqual(
+            oracle.recovery_consistency(
+                "active",
+                force_stop_observed=True,
+                durable_cancellation_intent=False,
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        self.assertEqual(
+            oracle.retry_outcome(
+                source_state="failed",
+                dispatched=True,
+                already_retried=False,
+                parent_ref="parent",
+                frozen_scope_ref="scope-ref",
+                successor_identity=_identity(
+                    "parent",
+                    state=contract.RecoveryState.FAILED,
+                    source="parent",
+                    successor="successor",
+                    retry_lookup=True,
+                    lookup_source="parent",
+                ),
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        self.assertEqual(
+            oracle.terminal_successor(_detail("successor", "completed")).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+    def test_process_observation_validation_preserves_categories(self):
+        valid = _process(contract.ProcessState.PRESENT, QUALIFICATION_PACKAGE)
+        self.assertEqual(
+            oracle.validate_process_observation(
+                valid,
+                expected_state=contract.ProcessState.PRESENT,
+                expected_package=QUALIFICATION_PACKAGE,
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        malformed_state = replace(valid, process_state="present")
+        missing_observer = replace(valid, observer_ref=None)
+        missing_package = replace(valid, package_name=None)
+        foreign_package = replace(valid, package_name="com.example.foreign")
+        contradictory_state = replace(valid, process_state=contract.ProcessState.ABSENT)
+        for observation in (malformed_state, missing_observer, missing_package):
+            with self.subTest(observation=observation):
+                self.assertEqual(
+                    oracle.validate_process_observation(
+                        observation,
+                        expected_state=contract.ProcessState.PRESENT,
+                        expected_package=QUALIFICATION_PACKAGE,
+                    ).outcome,
+                    evidence.AssertionOutcome.BLOCKED,
+                )
+        for observation in (foreign_package, contradictory_state):
+            with self.subTest(observation=observation):
+                self.assertEqual(
+                    oracle.validate_process_observation(
+                        observation,
+                        expected_state=contract.ProcessState.PRESENT,
+                        expected_package=QUALIFICATION_PACKAGE,
+                    ).outcome,
+                    evidence.AssertionOutcome.FAILED,
+                )
+
+    def test_interrupted_successor_is_terminal_but_cannot_pass_retry(self):
+        state = contract.RecoveryState.INTERRUPTED
+        self.assertEqual(
+            oracle.retry_eligibility(state).outcome,
+            evidence.AssertionOutcome.NOT_RUN,
+        )
+        self.assertEqual(
+            oracle.recovery_consistency(
+                state,
+                force_stop_observed=True,
+                durable_cancellation_intent=False,
+            ).outcome,
+            evidence.AssertionOutcome.FAILED,
+        )
+        self.assertEqual(
+            oracle.terminal_successor(_detail("successor", state)).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        self.assertEqual(
+            oracle.retry_success_acceptance(
+                state,
+                accepted_states=frozenset({state}),
+            ).outcome,
+            evidence.AssertionOutcome.FAILED,
+        )
 
     def test_retry_eligibility_and_already_retried(self):
         self.assertEqual(
@@ -2221,7 +2480,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.FAILED,
         )
         self.assertRegex(oracle.oracle_sha256(), r"^[0-9a-f]{64}$")
-        self.assertEqual(oracle.oracle_version(), "4")
+        self.assertEqual(oracle.oracle_version(), "5")
         self.assertEqual(
             oracle.validate_refresh_progress(None).outcome,
             evidence.AssertionOutcome.BLOCKED,
@@ -2559,6 +2818,45 @@ class ExecutorLifecycleTests(unittest.TestCase):
 
         transport.force_stop_package = force_stop
 
+    def _operation_id_for_handler(self, scenario, handler):
+        spec = next(
+            item
+            for item in contract.JOB_LIFECYCLE_OPERATIONS[scenario]
+            if item.handler == handler
+        )
+        return f"{scenario.lower()}-{spec.index:02d}"
+
+    def _override_process_for_operation(
+        self, executor, observer, operation_id, replacement, *, occurrence=1
+    ):
+        original = observer.observe_process
+        seen = 0
+
+        def observe(package, timeout):
+            nonlocal seen
+            observed = original(package, timeout)
+            attempted = executor._attempted_operation
+            if attempted is not None and attempted.operation_id == operation_id:
+                seen += 1
+                if seen == occurrence:
+                    return replacement(observed)
+            return observed
+
+        observer.observe_process = observe
+
+    def _override_detail_for_operation(
+        self, executor, operation_id, replacement
+    ):
+        original = executor._observe_detail
+
+        def observe(operation, parent_ref):
+            detail = original(operation, parent_ref)
+            if operation.operation_id == operation_id:
+                return replacement(detail)
+            return detail
+
+        executor._observe_detail = observe
+
     def test_and_04_completes_host_workflow_but_stays_blocked(self):
         executor, transport, writer = self._executor()
         result = executor.execute(now=NOW)
@@ -2572,6 +2870,114 @@ class ExecutorLifecycleTests(unittest.TestCase):
             transport.navigations[-3:],
             ["navigate_sources", "open_scan_root", "open_scan_job_detail"],
         )
+
+    def test_and_04_recovered_lifecycle_waits_for_terminal_parent(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        clock = _Clock(step=1.0)
+        state = {"executor": None, "calls": 0}
+        original = transport.observe_refresh_detail
+
+        def detail(parent_ref, timeout):
+            executor = state["executor"]
+            attempted = None if executor is None else executor._attempted_operation
+            if attempted is not None and attempted.operation_id == "and-04-25":
+                state["calls"] += 1
+                lifecycle = (
+                    contract.RecoveryState.ACTIVE
+                    if state["calls"] == 1
+                    else contract.RecoveryState.COMPLETED
+                )
+                return replace(original(parent_ref, timeout), state=lifecycle)
+            return original(parent_ref, timeout)
+
+        transport.observe_refresh_detail = detail
+        executor, _, _ = self._executor(
+            transport=transport,
+            observer=observer,
+            monotonic=clock.monotonic,
+            sleeper=clock.sleep,
+        )
+        state["executor"] = executor
+
+        result = executor.execute(now=NOW)
+
+        self.assertTrue(result.workflow_completed)
+        self.assertEqual(result.completed_operations, 31)
+        self.assertEqual(state["calls"], 2)
+        self.assertEqual(executor._parent_state, contract.RecoveryState.COMPLETED)
+
+    def test_and_04_active_recovery_at_observation_deadline_blocks(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        clock = _Clock(step=5.0)
+        state = {"executor": None, "calls": 0}
+        original = transport.observe_refresh_detail
+
+        def detail(parent_ref, timeout):
+            executor = state["executor"]
+            attempted = None if executor is None else executor._attempted_operation
+            if attempted is not None and attempted.operation_id == "and-04-25":
+                state["calls"] += 1
+                return replace(
+                    original(parent_ref, timeout),
+                    state=contract.RecoveryState.ACTIVE,
+                )
+            return original(parent_ref, timeout)
+
+        transport.observe_refresh_detail = detail
+        executor, _, _ = self._executor(
+            transport=transport,
+            observer=observer,
+            monotonic=clock.monotonic,
+            sleeper=clock.sleep,
+        )
+        state["executor"] = executor
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 24)
+        self.assertIn("remained active", result.blocker)
+        self.assertGreater(state["calls"], 1)
+        self.assertNotIn("navigate_sources", transport.navigations)
+
+    def test_and_04_terminal_detail_returned_after_operation_deadline_blocks(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        clock = _Clock()
+        state = {"executor": None, "calls": 0}
+        original = transport.observe_refresh_detail
+
+        def detail(parent_ref, timeout):
+            executor = state["executor"]
+            attempted = None if executor is None else executor._attempted_operation
+            if attempted is not None and attempted.operation_id == "and-04-25":
+                state["calls"] += 1
+                deadline = executor._operation_monotonic_deadline
+                self.assertIsNotNone(deadline)
+                clock.value = deadline + 0.001
+                return replace(
+                    original(parent_ref, timeout),
+                    state=contract.RecoveryState.COMPLETED,
+                )
+            return original(parent_ref, timeout)
+
+        transport.observe_refresh_detail = detail
+        executor, _, _ = self._executor(
+            transport=transport,
+            observer=observer,
+            monotonic=clock.monotonic,
+            sleeper=clock.sleep,
+        )
+        state["executor"] = executor
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 24)
+        self.assertEqual(state["calls"], 1)
+        self.assertNotIn("navigate_sources", transport.navigations)
 
     def test_and_05_completes_host_workflow_but_stays_blocked(self):
         executor, transport, writer = self._executor("AND-05")
@@ -2767,6 +3173,34 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.completed_operations, 44)
 
+    def test_interrupted_retry_successor_is_terminal_and_failed_without_second_retry(self):
+        executor, transport, writer = self._executor("AND-05")
+        transport.successor_state = contract.RecoveryState.INTERRUPTED
+        self._run_and_05_with_force_stop(transport)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.completed_operations, 44)
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-45",
+                "terminal",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-45",
+                "result",
+                evidence.AssertionOutcome.FAILED,
+            )
+        )
+
     def test_missing_progress_blocks_and_skips_dependents(self):
         executor, transport, writer = self._executor()
         transport.progress_available = False
@@ -2839,6 +3273,253 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 14)
         self.assertIn("attribution", result.blocker)
 
+    def test_duplicate_children_block_initial_parent_attribution(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        original = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            observed = original(parent_ref, timeout)
+            if parent_ref == transport.parent:
+                return replace(observed, child_run_refs=("child-run", "child-run"))
+            return observed
+
+        observer.observe_identity = identity
+        executor, _, _ = self._executor(
+            "AND-04", transport=transport, observer=observer
+        )
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 14)
+        self.assertEqual(transport.background_calls, 0)
+        self.assertEqual(transport.force_stop_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIn("attribution", result.blocker)
+
+    def test_reused_terminal_baseline_job_id_blocks_new_refresh_dependents(self):
+        baseline = _baseline(
+            visible_refresh_row_count=1,
+            terminal_refresh_run_refs=("parent-run",),
+            job_states=(("parent-run", "completed"),),
+        )
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport, baseline)
+
+        def jobs(timeout):
+            if not transport.start_refresh_calls:
+                return replace(
+                    _jobs(rows=1),
+                    terminal_refresh_run_refs=("parent-run",),
+                )
+            return _jobs(
+                parent=transport.parent,
+                state=contract.RecoveryState.ACTIVE,
+                rows=1,
+                active=1,
+            )
+
+        transport.observe_jobs = jobs
+        executor, _, _ = self._executor(
+            "AND-04",
+            baseline=baseline,
+            baseline_job_states=(("parent-run", "completed"),),
+            transport=transport,
+            observer=observer,
+        )
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(transport.start_refresh_calls, 1)
+        self.assertEqual(transport.background_calls, 0)
+        self.assertEqual(transport.force_stop_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIsNone(executor._parent_ref)
+        self.assertIn("ambiguous", result.blocker)
+
+    def test_malformed_process_state_blocks_before_refresh_effect(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-04", transport=transport, observer=observer
+        )
+        operation_id = self._operation_id_for_handler("AND-04", "start_refresh")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(observed, process_state="present"),
+        )
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(transport.start_refresh_calls, 0)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+
+    def test_foreign_process_before_force_stop_is_failed_without_effect(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        operation_id = self._operation_id_for_handler("AND-05", "pre_stop_guard")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(observed, package_name="com.example.foreign"),
+        )
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(transport.force_stop_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+
+    def test_pre_stop_guard_requires_exact_parent_detail_identity(self):
+        cases = (
+            ("missing", None, "blocked"),
+            ("malformed", 123, "blocked"),
+            ("different_valid", "different-parent", "failed"),
+        )
+        for case_name, parent_identity, expected_status in cases:
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"pre-stop-parent-{case_name}"
+                )
+                guard_id = self._operation_id_for_handler(
+                    "AND-05", "pre_stop_guard"
+                )
+                force_stop_id = self._operation_id_for_handler(
+                    "AND-05", "force_stop"
+                )
+                self._override_detail_for_operation(
+                    executor,
+                    guard_id,
+                    lambda detail: replace(
+                        detail, parent_run_ref=parent_identity
+                    ),
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, expected_status)
+                self.assertEqual(result.completed_operations, 19)
+                self.assertEqual(transport.force_stop_calls, 0)
+                self.assertEqual(transport.retry_calls, 0)
+                self.assertFalse(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        force_stop_id,
+                        "intent",
+                        evidence.AssertionOutcome.NOT_RUN,
+                    )
+                )
+                if expected_status == "blocked":
+                    self.assertTrue(
+                        self._assertion_recorded(
+                            executor,
+                            writer,
+                            guard_id,
+                            "pre_stop_parent_identity_unavailable",
+                            evidence.AssertionOutcome.BLOCKED,
+                        )
+                    )
+                else:
+                    self.assertTrue(
+                        self._assertion_recorded(
+                            executor,
+                            writer,
+                            guard_id,
+                            "result",
+                            evidence.AssertionOutcome.FAILED,
+                        )
+                    )
+
+    def test_foreground_launch_requires_typed_process_observation(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, _ = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        operation_id = self._operation_id_for_handler("AND-05", "foreground_launched")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(observed, process_state="present"),
+        )
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(transport.launch_calls, 1)
+        self.assertEqual(transport.retry_calls, 0)
+
+    def test_restore_foreground_classifies_post_effect_process_contradiction(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        executor, _, _ = self._executor(
+            "AND-04", transport=transport, observer=observer
+        )
+        operation_id = self._operation_id_for_handler("AND-04", "restore_foreground")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(observed, package_name="com.example.foreign"),
+            occurrence=2,
+        )
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(transport.restore_calls, 1)
+
+    def test_successor_terminal_requires_valid_process_observation(self):
+        transport = ScriptedTransport("AND-05")
+        transport.successor_state = contract.RecoveryState.COMPLETED
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        operation_id = self._operation_id_for_handler("AND-05", "successor_terminal")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(observed, package_name="com.example.foreign"),
+        )
+        self._run_and_05_with_force_stop(transport)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "terminal",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+
     def test_foreground_task_continuity_mismatch_fails(self):
         executor, transport, writer = self._executor()
         transport.fail_foreground_continuity = True
@@ -2877,9 +3558,249 @@ class ExecutorLifecycleTests(unittest.TestCase):
         observer.observe_process = process
         executor, _, _ = self._executor("AND-05", transport=transport, observer=observer)
         result = executor.execute(now=NOW)
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.completed_operations, 21)
+        self.assertIn("process_package_mismatch", result.blocker)
+        self.assertEqual(transport.launch_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+
+    def test_process_absent_missing_foreground_identity_blocks_relaunch(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, _ = self._executor(
+            "AND-05",
+            transport=transport,
+            observer=observer,
+        )
+        operation_id = self._operation_id_for_handler("AND-05", "process_absent")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(observed, foreground_package=None),
+        )
+
+        self._run_and_05_with_force_stop(transport)
+        result = executor.execute(now=NOW)
+
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 21)
-        self.assertIn("absence", result.blocker)
+        self.assertIn("unavailable", result.blocker)
+        self.assertEqual(transport.launch_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+
+    def test_launch_requires_foreground_identity_in_fresh_process_check(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05",
+            transport=transport,
+            observer=observer,
+        )
+        operation_id = self._operation_id_for_handler("AND-05", "launch")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(observed, foreground_package=None),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(transport.force_stop_calls, 1)
+        self.assertEqual(transport.launch_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 22)
+        self.assertIn("foreground", result.blocker)
+
+    def test_launch_fails_if_target_remains_foreground_in_fresh_process_check(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05",
+            transport=transport,
+            observer=observer,
+        )
+        operation_id = self._operation_id_for_handler("AND-05", "launch")
+        self._override_process_for_operation(
+            executor,
+            observer,
+            operation_id,
+            lambda observed: replace(
+                observed,
+                foreground_package=contract.JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+            ),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(transport.force_stop_calls, 1)
+        self.assertEqual(transport.launch_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "intent",
+                evidence.AssertionOutcome.NOT_RUN,
+            )
+        )
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.completed_operations, 22)
+        self.assertIn("remains in the foreground", result.blocker)
+
+    def test_background_process_package_contradiction_is_failed(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        executor, _, _ = self._executor(
+            transport=transport,
+            observer=observer,
+        )
+        self._override_process_for_operation(
+            executor,
+            observer,
+            "and-04-19",
+            lambda observed: replace(
+                observed,
+                package_name="com.example.foreign",
+            ),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.completed_operations, 18)
+        self.assertIn("process_package_mismatch", result.blocker)
+
+    def test_foreground_restore_missing_identity_is_blocked(self):
+        for field in ("foreground_package", "task_continuity_ref"):
+            with self.subTest(field=field):
+                transport = ScriptedTransport("AND-04")
+                observer = ScriptedObserver(transport)
+                executor, _, _ = self._executor(
+                    authorization_id=f"foreground-identity-{field}",
+                    transport=transport,
+                    observer=observer,
+                )
+                self._override_process_for_operation(
+                    executor,
+                    observer,
+                    "and-04-21",
+                    lambda observed, field=field: replace(observed, **{field: None}),
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 20)
+                self.assertIn("unavailable", result.blocker)
+
+    def test_parent_as_child_blocks_before_background_effect(self):
+        transport = ScriptedTransport("AND-04")
+        observer = ScriptedObserver(transport)
+        executor, _, _ = self._executor(
+            transport=transport,
+            observer=observer,
+        )
+        original = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            observed = original(parent_ref, timeout)
+            attempted = executor._attempted_operation
+            if attempted is not None and attempted.operation_id == "and-04-15":
+                return replace(observed, child_run_refs=(parent_ref,))
+            return observed
+
+        observer.observe_identity = identity
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 14)
+
+    def test_parent_child_scope_mismatch_blocks_before_dependent_effects(self):
+        for scenario in ("AND-04", "AND-05"):
+            with self.subTest(scenario=scenario):
+                transport = ScriptedTransport(scenario)
+                observer = ScriptedObserver(transport)
+                executor, _, _ = self._executor(
+                    scenario,
+                    authorization_id=f"scope-drift-{scenario}",
+                    transport=transport,
+                    observer=observer,
+                )
+                operation_id = self._operation_id_for_handler(
+                    scenario,
+                    "parent_child_identity",
+                )
+                original = observer.observe_identity
+
+                def identity(parent_ref, timeout):
+                    observed = original(parent_ref, timeout)
+                    attempted = executor._attempted_operation
+                    if (
+                        attempted is not None
+                        and attempted.operation_id == operation_id
+                    ):
+                        return replace(
+                            observed,
+                            frozen_scope_ref="scope-ref-changed",
+                        )
+                    return observed
+
+                observer.observe_identity = identity
+                result = executor.execute(now=NOW)
+
+                expected_completed = next(
+                    spec.index - 1
+                    for spec in contract.JOB_LIFECYCLE_OPERATIONS[scenario]
+                    if spec.handler == "parent_child_identity"
+                )
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, expected_completed)
+                self.assertIn("scope", result.blocker)
+                self.assertEqual(transport.force_stop_calls, 0)
+                self.assertEqual(transport.retry_calls, 0)
+
+    def test_retry_successor_cannot_be_reused_as_child_identity(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, _ = self._executor(
+            "AND-05",
+            transport=transport,
+            observer=observer,
+        )
+        original = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            observed = original(parent_ref, timeout)
+            attempted = executor._attempted_operation
+            if attempted is not None and attempted.operation_id == "and-05-37":
+                return replace(
+                    observed,
+                    child_run_refs=(observed.successor_run_ref,),
+                )
+            return observed
+
+        observer.observe_identity = identity
+        self._run_and_05_with_force_stop(transport)
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 36)
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertIn("successor identity", result.blocker)
 
     def test_evidence_append_failure_blocks_owner_recovery(self):
         executor, transport, writer = self._executor()
@@ -3428,6 +4349,185 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(transport.retry_calls, 1)
         self.assertIn("scope", result.blocker)
 
+    def test_retry_relation_observer_source_mismatch_blocks_without_terminal_claim(self):
+        transport = ScriptedTransport("AND-05")
+
+        class SourceChangingObserver(ScriptedObserver):
+            def observe_identity(self, parent_ref, timeout):
+                value = super().observe_identity(parent_ref, timeout)
+                attempted = getattr(self, "executor", None)
+                attempted = (
+                    None if attempted is None else attempted._attempted_operation
+                )
+                if (
+                    self.transport.retry_calls
+                    and parent_ref == self.transport.parent
+                    and attempted is not None
+                    and attempted.operation_id == self.target_operation_id
+                ):
+                    return replace(value, source_run_ref="different-source")
+                return value
+
+        observer = SourceChangingObserver(transport)
+        observer.target_operation_id = self._operation_id_for_handler(
+            "AND-05", "retry_relation"
+        )
+        executor, transport, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        observer.executor = executor
+        self._force_stop_into(transport, contract.RecoveryState.ABANDONED)
+        relation_id = observer.target_operation_id
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 36)
+        self.assertEqual(transport.force_stop_calls, 1)
+        self.assertEqual(transport.launch_calls, 1)
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                relation_id,
+                "retry_successor_scope_mismatch",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+
+    def test_retry_relation_detail_requires_observer_provenance(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        self._force_stop_into(transport, contract.RecoveryState.ABANDONED)
+        relation_id = self._operation_id_for_handler("AND-05", "retry_relation")
+        original_identity = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            observed = original_identity(parent_ref, timeout)
+            attempted = executor._attempted_operation
+            if attempted is not None and attempted.operation_id == relation_id:
+                self.assertTrue(observed.retry_complete())
+            return observed
+
+        observer.observe_identity = identity
+        self._override_detail_for_operation(
+            executor,
+            relation_id,
+            lambda detail: replace(detail, observer_ref=None),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 36)
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                relation_id,
+                "retry_successor_detail_observer_unavailable",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                relation_id,
+                "result",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+
+    def test_retry_relation_accepts_optional_unrelated_detail_fields(self):
+        transport = ScriptedTransport("AND-05")
+        executor, _, writer = self._executor("AND-05", transport=transport)
+        self._force_stop_into(transport, contract.RecoveryState.ABANDONED)
+        relation_id = self._operation_id_for_handler("AND-05", "retry_relation")
+        self._override_detail_for_operation(
+            executor,
+            relation_id,
+            lambda detail: replace(
+                detail,
+                state=None,
+                progress=None,
+                retry_control_count=None,
+                retry_successor_run_ref=None,
+                cancellation_requested=None,
+            ),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                relation_id,
+                "result",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+
+    def test_retry_relation_identity_contradiction_precedes_missing_provenance(self):
+        cases = (
+            ("foreign_parent", "different-parent", "different-source"),
+            ("foreign_source", "different-parent", "different-source"),
+        )
+        for case_name, parent_ref, source_ref in cases:
+            with self.subTest(case=case_name):
+                transport = ScriptedTransport("AND-05")
+                executor, _, writer = self._executor(
+                    "AND-05", transport=transport,
+                    authorization_id=f"retry-relation-identity-{case_name}",
+                )
+                self._force_stop_into(transport, contract.RecoveryState.ABANDONED)
+                relation_id = self._operation_id_for_handler(
+                    "AND-05", "retry_relation"
+                )
+                self._override_detail_for_operation(
+                    executor,
+                    relation_id,
+                    lambda detail: replace(
+                        detail,
+                        parent_run_ref=(
+                            parent_ref
+                            if case_name == "foreign_parent"
+                            else detail.parent_run_ref
+                        ),
+                        retry_source_run_ref=(
+                            source_ref
+                            if case_name == "foreign_source"
+                            else detail.retry_source_run_ref
+                        ),
+                        observer_ref=None,
+                    ),
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "failed")
+                self.assertEqual(result.completed_operations, 36)
+                self.assertEqual(transport.retry_calls, 1)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        relation_id,
+                        "result",
+                        evidence.AssertionOutcome.FAILED,
+                    )
+                )
+        self.assertFalse(
+            self._successor_terminal_keys(executor, writer, "terminal")
+        )
+
     def _run_and_05_with_force_stop(self, transport):
         def force_stop(package, timeout):
             transport.force_stop_calls += 1
@@ -3808,16 +4908,114 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.completed_operations, 11)
 
+    def test_active_jobs_malformed_parent_identity_blocks(self):
+        for case_name, invalid_parent in (("empty", ""), ("wrong_type", 123)):
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    authorization_id=f"active-jobs-parent-{case_name}"
+                )
+
+                def jobs(timeout):
+                    if transport.progress_calls == 0:
+                        return _jobs()
+                    return replace(
+                        _jobs(
+                            parent=transport.parent,
+                            state=contract.RecoveryState.ACTIVE,
+                            rows=1,
+                            active=1,
+                        ),
+                        parent_run_ref=invalid_parent,
+                    )
+
+                transport.observe_jobs = jobs
+                jobs_active_id = self._operation_id_for_handler(
+                    "AND-04", "jobs_active"
+                )
+                background_id = self._operation_id_for_handler(
+                    "AND-04", "background"
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 11)
+                self.assertEqual(transport.background_calls, 0)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        jobs_active_id,
+                        "parent_state_unavailable",
+                        evidence.AssertionOutcome.BLOCKED,
+                    )
+                )
+                self.assertFalse(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        background_id,
+                        "intent",
+                        evidence.AssertionOutcome.NOT_RUN,
+                    )
+                )
+
     def test_refresh_detail_must_match_the_observed_parent(self) -> None:
         executor, transport, _ = self._executor()
 
         def detail(parent_ref, timeout):
-            return _detail("different-parent", contract.RecoveryState.ACTIVE)
+            return replace(
+                _detail("different-parent", contract.RecoveryState.ACTIVE),
+                observer_ref=None,
+            )
 
         transport.observe_refresh_detail = detail
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.completed_operations, 13)
+
+    def test_initial_refresh_detail_requires_observer_provenance(self):
+        for scenario in ("AND-04", "AND-05"):
+            with self.subTest(scenario=scenario):
+                executor, _, writer = self._executor(
+                    scenario, authorization_id=f"initial-detail-proof-{scenario}"
+                )
+                detail_id = self._operation_id_for_handler(
+                    scenario, "refresh_detail"
+                )
+                self._override_detail_for_operation(
+                    executor,
+                    detail_id,
+                    lambda detail: replace(detail, observer_ref=None),
+                )
+
+                result = executor.execute(now=NOW)
+
+                detail_index = next(
+                    item.index
+                    for item in contract.JOB_LIFECYCLE_OPERATIONS[scenario]
+                    if item.handler == "refresh_detail"
+                )
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, detail_index - 1)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        detail_id,
+                        "refresh_detail_observer_unavailable",
+                        evidence.AssertionOutcome.BLOCKED,
+                    )
+                )
+                self.assertFalse(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        detail_id,
+                        "result",
+                        evidence.AssertionOutcome.PASSED,
+                    )
+                )
 
     def test_background_must_leave_the_qualification_foreground(self) -> None:
         executor, transport, _ = self._executor()
@@ -3883,6 +5081,46 @@ class ExecutorLifecycleTests(unittest.TestCase):
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.completed_operations, 24)
+
+    def test_pre_stop_detail_requires_observer_provenance_before_force_stop(self):
+        executor, transport, writer = self._executor(
+            "AND-05", authorization_id="pre-stop-detail-observer-proof"
+        )
+        guard_id = self._operation_id_for_handler("AND-05", "pre_stop_guard")
+        force_stop_id = self._operation_id_for_handler("AND-05", "force_stop")
+        self._override_detail_for_operation(
+            executor,
+            guard_id,
+            lambda detail: replace(detail, observer_ref=None),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 19)
+        self.assertEqual(transport.force_stop_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                guard_id,
+                "pre_stop_observer_unavailable",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                guard_id,
+                "result",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+        self.assertFalse(
+            any(f":{force_stop_id}:" in key for key, _ in writer.assertion_keys)
+        )
 
     def test_pre_stop_process_presence_is_required(self) -> None:
         transport = ScriptedTransport("AND-05")
@@ -4014,6 +5252,59 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertIn("Parent-child attribution is BLOCKED", result.blocker)
         self.assertTrue(result.scope_extensions)
 
+    def test_parent_child_parent_identity_classifies_unavailable_and_mismatch(self):
+        cases = (
+            ("missing", None, "blocked"),
+            ("malformed", 123, "blocked"),
+            ("different_valid", "different-parent", "failed"),
+        )
+        for case_name, parent_identity, expected_status in cases:
+            with self.subTest(case=case_name):
+                transport = ScriptedTransport("AND-04")
+                observer = ScriptedObserver(transport)
+                original = observer.observe_identity
+
+                def identity(parent_ref, timeout):
+                    observed = original(parent_ref, timeout)
+                    if parent_ref is not None:
+                        return replace(observed, parent_run_ref=parent_identity)
+                    return observed
+
+                observer.observe_identity = identity
+                executor, transport, writer = self._executor(
+                    "AND-04",
+                    authorization_id=f"child-parent-{case_name}",
+                    transport=transport,
+                    observer=observer,
+                )
+                operation_id = self._operation_id_for_handler(
+                    "AND-04", "parent_child_identity"
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, expected_status)
+                self.assertEqual(result.completed_operations, 14)
+                self.assertEqual(transport.start_refresh_calls, 1)
+                self.assertEqual(transport.background_calls, 0)
+                self.assertEqual(transport.force_stop_calls, 0)
+                self.assertEqual(transport.retry_calls, 0)
+                suffix = (
+                    "parent_child_attribution_unavailable"
+                    if expected_status == "blocked"
+                    else "result"
+                )
+                outcome = (
+                    evidence.AssertionOutcome.BLOCKED
+                    if expected_status == "blocked"
+                    else evidence.AssertionOutcome.FAILED
+                )
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor, writer, operation_id, suffix, outcome
+                    )
+                )
+
     def test_library_active_refresh_unproven_blocks(self) -> None:
         executor, transport, _ = self._executor()
         transport.observe_library = lambda timeout: _library(active=False)
@@ -4138,7 +5429,101 @@ class ExecutorLifecycleTests(unittest.TestCase):
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 19)
-        self.assertIn("not actively running", result.blocker)
+        self.assertIn("state is not proven", result.blocker)
+
+    def test_recovered_lifecycle_missing_state_blocks_without_retry(self):
+        executor, transport, _ = self._executor("AND-05")
+        self._force_stop_into(transport, contract.RecoveryState.FAILED)
+        original = transport.observe_refresh_detail
+
+        def detail(parent_ref, timeout):
+            if transport.force_stop_calls:
+                return _detail(parent_ref, None)
+            return original(parent_ref, timeout)
+
+        transport.observe_refresh_detail = detail
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIn("lifecycle state is unavailable", result.blocker)
+
+    def test_and_04_terminal_detail_requires_observer_provenance(self):
+        clock = _Clock(step=1.0)
+        executor, _, writer = self._executor(
+            "AND-04", monotonic=clock.monotonic, sleeper=clock.sleep
+        )
+        operation_id = self._operation_id_for_handler("AND-04", "recovered_lifecycle")
+        self._override_detail_for_operation(
+            executor,
+            operation_id,
+            lambda detail: replace(
+                detail,
+                state=contract.RecoveryState.COMPLETED,
+                observer_ref=None,
+            ),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 24)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "recovered_state_unavailable",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "result",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+
+    def test_and_05_recovered_detail_requires_observer_provenance(self):
+        executor, transport, writer = self._executor("AND-05")
+        self._force_stop_into(transport, contract.RecoveryState.ABANDONED)
+        operation_id = self._operation_id_for_handler("AND-05", "recovered_lifecycle")
+        retry_id = self._operation_id_for_handler("AND-05", "retry")
+        self._override_detail_for_operation(
+            executor,
+            operation_id,
+            lambda detail: replace(detail, observer_ref=None),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 32)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "recovered_observer_unavailable",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                operation_id,
+                "recovery-consistency",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+        self.assertFalse(
+            any(f":{retry_id}:" in key for key, _ in writer.assertion_keys)
+        )
 
     def test_uncertain_force_stop_blocks_before_relaunch(self) -> None:
         executor, transport, _ = self._executor("AND-05")
@@ -4224,6 +5609,61 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 30)
         self.assertIn("recovered parent state", result.blocker)
 
+    def test_recovered_jobs_malformed_parent_identity_blocks_before_retry(self):
+        for case_name, invalid_parent in (("empty", ""), ("wrong_type", 123)):
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"recovered-jobs-parent-{case_name}"
+                )
+                self._force_stop_into(transport, contract.RecoveryState.FAILED)
+                original = transport.observe_jobs
+                calls = 0
+
+                def jobs(timeout):
+                    nonlocal calls
+                    calls += 1
+                    if calls == 2:
+                        return replace(
+                            _jobs(
+                                parent=transport.parent,
+                                state=contract.RecoveryState.FAILED,
+                                rows=1,
+                            ),
+                            parent_run_ref=invalid_parent,
+                        )
+                    return original(timeout)
+
+                transport.observe_jobs = jobs
+                jobs_id = self._operation_id_for_handler(
+                    "AND-05", "jobs_recovered"
+                )
+                retry_id = self._operation_id_for_handler("AND-05", "retry")
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 30)
+                self.assertEqual(transport.force_stop_calls, 1)
+                self.assertEqual(transport.retry_calls, 0)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        jobs_id,
+                        "recovered_parent_unavailable",
+                        evidence.AssertionOutcome.BLOCKED,
+                    )
+                )
+                self.assertFalse(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        retry_id,
+                        "intent",
+                        evidence.AssertionOutcome.NOT_RUN,
+                    )
+                )
+
     def test_recovered_jobs_duplicate_parent_fails(self) -> None:
         executor, transport, _ = self._executor("AND-05")
         self._force_stop_into(transport, contract.RecoveryState.FAILED)
@@ -4270,6 +5710,208 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 33)
         self.assertIn("unique retry control", result.blocker)
+
+    def test_retry_control_boolean_or_float_count_blocks_before_effect(self):
+        for case_name, retry_count in (("boolean", True), ("float", 1.0)):
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"retry-control-count-{case_name}"
+                )
+                self._force_stop_into(transport, contract.RecoveryState.FAILED)
+                eligibility_id = self._operation_id_for_handler(
+                    "AND-05", "retry_eligibility"
+                )
+                retry_id = self._operation_id_for_handler("AND-05", "retry")
+                self._override_detail_for_operation(
+                    executor,
+                    eligibility_id,
+                    lambda detail: replace(
+                        detail, retry_control_count=retry_count
+                    ),
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 33)
+                self.assertEqual(transport.force_stop_calls, 1)
+                self.assertEqual(transport.retry_calls, 0)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        eligibility_id,
+                        "retry_control_unavailable",
+                        evidence.AssertionOutcome.BLOCKED,
+                    )
+                )
+                self.assertFalse(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        retry_id,
+                        "intent",
+                        evidence.AssertionOutcome.NOT_RUN,
+                    )
+                )
+
+    def test_retry_eligibility_requires_exact_parent_detail_identity(self):
+        cases = (
+            ("missing", None, "detail-observer", "blocked"),
+            ("malformed", 123, "detail-observer", "blocked"),
+            ("different_valid", "different-parent", "detail-observer", "failed"),
+            ("different_unproven", "different-parent", None, "failed"),
+        )
+        for case_name, parent_identity, observer_ref, expected_status in cases:
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"retry-eligibility-parent-{case_name}"
+                )
+                self._force_stop_into(transport, contract.RecoveryState.FAILED)
+                eligibility_id = self._operation_id_for_handler(
+                    "AND-05", "retry_eligibility"
+                )
+                retry_id = self._operation_id_for_handler("AND-05", "retry")
+                self._override_detail_for_operation(
+                    executor,
+                    eligibility_id,
+                    lambda detail: replace(
+                        detail,
+                        parent_run_ref=parent_identity,
+                        observer_ref=observer_ref,
+                    ),
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, expected_status)
+                self.assertEqual(result.completed_operations, 33)
+                self.assertEqual(transport.force_stop_calls, 1)
+                self.assertEqual(transport.retry_calls, 0)
+                self.assertFalse(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        retry_id,
+                        "intent",
+                        evidence.AssertionOutcome.NOT_RUN,
+                    )
+                )
+                if expected_status == "blocked":
+                    self.assertTrue(
+                        self._assertion_recorded(
+                            executor,
+                            writer,
+                            eligibility_id,
+                            "retry_eligibility_parent_identity_unavailable",
+                            evidence.AssertionOutcome.BLOCKED,
+                        )
+                    )
+                else:
+                    self.assertTrue(
+                        self._assertion_recorded(
+                            executor,
+                            writer,
+                            eligibility_id,
+                            "result",
+                            evidence.AssertionOutcome.FAILED,
+                        )
+                    )
+
+    def test_retry_eligibility_requires_current_proven_detail(self):
+        cases = (
+            (
+                "missing_observer",
+                lambda detail: replace(detail, observer_ref=None),
+                "retry_eligibility_observer_unavailable",
+            ),
+            (
+                "stale_state",
+                lambda detail: replace(
+                    detail, state=contract.RecoveryState.COMPLETED
+                ),
+                "retry_eligibility_state_stale",
+            ),
+            (
+                "malformed_state",
+                lambda detail: replace(detail, state="FAILED"),
+                "retry_eligibility_state_unavailable",
+            ),
+        )
+        for case_name, replacement, blocker in cases:
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"retry-eligibility-proof-{case_name}"
+                )
+                self._force_stop_into(transport, contract.RecoveryState.FAILED)
+                eligibility_id = self._operation_id_for_handler(
+                    "AND-05", "retry_eligibility"
+                )
+                retry_id = self._operation_id_for_handler("AND-05", "retry")
+                self._override_detail_for_operation(
+                    executor, eligibility_id, replacement
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 33)
+                self.assertEqual(transport.retry_calls, 0)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        eligibility_id,
+                        blocker,
+                        evidence.AssertionOutcome.BLOCKED,
+                    )
+                )
+                self.assertFalse(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        eligibility_id,
+                        "result",
+                        evidence.AssertionOutcome.PASSED,
+                    )
+                )
+                self.assertFalse(
+                    any(f":{retry_id}:" in key for key, _ in writer.assertion_keys)
+                )
+
+    def test_retry_eligibility_accepts_optional_unrelated_detail_fields(self):
+        executor, transport, writer = self._executor(
+            "AND-05", authorization_id="retry-eligibility-optional-fields"
+        )
+        self._force_stop_into(transport, contract.RecoveryState.FAILED)
+        eligibility_id = self._operation_id_for_handler(
+            "AND-05", "retry_eligibility"
+        )
+        self._override_detail_for_operation(
+            executor,
+            eligibility_id,
+            lambda detail: replace(
+                detail,
+                progress=None,
+                retry_source_run_ref=None,
+                retry_successor_run_ref=None,
+                cancellation_requested=None,
+            ),
+        )
+
+        result = executor.execute(now=NOW)
+
+        self.assertTrue(result.workflow_completed)
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                eligibility_id,
+                "result",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
 
     def test_uncertain_retry_blocks_without_second_effect(self) -> None:
         executor, transport, _ = self._executor("AND-05")
@@ -4797,6 +6439,162 @@ class ExecutorLifecycleTests(unittest.TestCase):
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.completed_operations, 44)
+
+    def test_retry_detail_missing_parent_or_source_blocks_relation(self):
+        invalid_identity_cases = (
+            ("missing_parent", "parent_run_ref", None),
+            ("missing_source", "retry_source_run_ref", None),
+            ("malformed_parent", "parent_run_ref", 123),
+            ("malformed_source", "retry_source_run_ref", ""),
+        )
+        for case_name, field, invalid_value in invalid_identity_cases:
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"retry-relation-{case_name}"
+                )
+                successor_calls = 0
+                original = transport.observe_refresh_detail
+
+                def detail(parent_ref, timeout):
+                    nonlocal successor_calls
+                    if parent_ref == transport.successor:
+                        successor_calls += 1
+                        if successor_calls == 1:
+                            return replace(
+                                original(parent_ref, timeout),
+                                **{field: invalid_value},
+                            )
+                    return original(parent_ref, timeout)
+
+                def force_stop(package, timeout):
+                    transport.force_stop_calls += 1
+                    transport.process_state = contract.ProcessState.ABSENT
+                    transport.foreground = "com.android.launcher3"
+                    transport.detail_state = contract.RecoveryState.ABANDONED
+
+                transport.force_stop_package = force_stop
+                transport.observe_refresh_detail = detail
+                operation_id = self._operation_id_for_handler(
+                    "AND-05", "retry_relation"
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 36)
+                self.assertIn("identity is unavailable", result.blocker)
+                self.assertEqual(transport.force_stop_calls, 1)
+                self.assertEqual(transport.launch_calls, 1)
+                self.assertEqual(transport.retry_calls, 1)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        operation_id,
+                        "retry_successor_detail_identity_unavailable",
+                        evidence.AssertionOutcome.BLOCKED,
+                    )
+                )
+                self.assertFalse(
+                    self._successor_terminal_keys(executor, writer, "terminal")
+                )
+
+    def test_retry_detail_different_valid_parent_or_source_fails_relation(self):
+        different_identity_cases = (
+            ("different_parent", "parent_run_ref"),
+            ("different_source", "retry_source_run_ref"),
+        )
+        for case_name, field in different_identity_cases:
+            with self.subTest(case=case_name):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"retry-relation-{case_name}"
+                )
+                successor_calls = 0
+                original = transport.observe_refresh_detail
+
+                def detail(parent_ref, timeout):
+                    nonlocal successor_calls
+                    if parent_ref == transport.successor:
+                        successor_calls += 1
+                        if successor_calls == 1:
+                            return replace(
+                                original(parent_ref, timeout),
+                                **{field: f"different-{case_name}"},
+                            )
+                    return original(parent_ref, timeout)
+
+                def force_stop(package, timeout):
+                    transport.force_stop_calls += 1
+                    transport.process_state = contract.ProcessState.ABSENT
+                    transport.foreground = "com.android.launcher3"
+                    transport.detail_state = contract.RecoveryState.ABANDONED
+
+                transport.force_stop_package = force_stop
+                transport.observe_refresh_detail = detail
+                operation_id = self._operation_id_for_handler(
+                    "AND-05", "retry_relation"
+                )
+
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "failed")
+                self.assertEqual(result.completed_operations, 36)
+                self.assertEqual(transport.force_stop_calls, 1)
+                self.assertEqual(transport.launch_calls, 1)
+                self.assertEqual(transport.retry_calls, 1)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        operation_id,
+                        "result",
+                        evidence.AssertionOutcome.FAILED,
+                    )
+                )
+                self.assertFalse(
+                    self._successor_terminal_keys(executor, writer, "terminal")
+                )
+
+    def test_missing_successor_identity_during_terminal_observation_blocks(self):
+        clock = _Clock(step=60.0)
+        executor, transport, writer = self._executor(
+            "AND-05",
+            monotonic=clock.monotonic,
+            sleeper=clock.sleep,
+        )
+        successor_calls = 0
+        original = transport.observe_refresh_detail
+
+        def detail(parent_ref, timeout):
+            nonlocal successor_calls
+            if parent_ref == transport.successor:
+                successor_calls += 1
+                if successor_calls > 1:
+                    return _detail(
+                        None,
+                        contract.RecoveryState.COMPLETED,
+                        progress=_progress(3),
+                    )
+            return original(parent_ref, timeout)
+
+        def force_stop(package, timeout):
+            transport.force_stop_calls += 1
+            transport.process_state = contract.ProcessState.ABSENT
+            transport.foreground = "com.android.launcher3"
+            transport.detail_state = contract.RecoveryState.ABANDONED
+
+        transport.force_stop_package = force_stop
+        transport.observe_refresh_detail = detail
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 44)
+        self.assertIn("unavailable", result.blocker)
+        self.assertEqual(transport.force_stop_calls, 1)
+        self.assertEqual(transport.launch_calls, 1)
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertFalse(self._successor_terminal_keys(executor, writer, "terminal"))
 
 
 if __name__ == "__main__":

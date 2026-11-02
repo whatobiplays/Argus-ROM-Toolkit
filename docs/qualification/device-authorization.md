@@ -97,9 +97,12 @@ separately authorizes one AND-05 `retry_library_refresh` effect only after
 independent committed
 state checks and a fresh exact relation lookup proves the source has no
 successor identity or successor scope. That grant cannot be repeated or used
-by the legacy, Issue #26, or Issue #27 executors. The reversible
-`MANAGE_EXTERNAL_STORAGE` permission/app-op transition is the only device
-operation enabled. It must
+by the legacy, Issue #26, or Issue #27 executors. The private `JOB_LIFECYCLE`
+profile is loaded by `_load_job_lifecycle_authorization` and run by
+`_JobLifecycleOperationExecutor` through an injected host transport; this
+implementation provides no production physical transport. The separate
+`admission.PermissionOperationExecutor` handles the reversible
+`MANAGE_EXTERNAL_STORAGE` permission/app-op transition. That operation must
 name the qualification package, the exact target, the expected prior state,
 and the desired `allowed` or `denied` state. The permission must appear in the
 pinned artifact's declared permission list. Unknown categories are rejected;

@@ -20,6 +20,18 @@ inherit the Issue #26 scan/fixture executor or the Issue #27 Library executor.
 The shared dispatch function admits the lifecycle executor only by exact type;
 subclasses and unrelated executors are rejected.
 
+Lifecycle observations accept only exact `RecoveryState` enum values when a
+state is present. Jobs preflight and identity observations may omit their
+optional state; an operation that requires a state blocks when it is missing
+or malformed. Valid terminal states remain recognized by the observation
+contracts, with each operation enforcing its own state requirement. Process
+observations use the shared oracle: unavailable evidence, a malformed process
+state, or a missing observer identity is `BLOCKED`. With a valid observer
+identity, a foreign package or a contradictory typed process state is
+`FAILED`. An unsuccessful pre-effect check stops before intent and dispatch.
+An uncertain result after an effect requires owner recovery and never triggers
+an automatic replay.
+
 Admission requires a no-reset session for
 `com.argusromtoolkit.argus.qualification`, the pinned APK and certificate
 digests, the expected source revision and version code, the exact plan digest,
@@ -59,11 +71,12 @@ evidence schema is unchanged. A blocked or undecided obligation is recorded as
 `BLOCKED`; a dependent operation that was not run is recorded as `NOT_RUN`.
 There is no persisted `NOT_APPLICABLE` outcome and no new event variant.
 
-The lifecycle contract and capability versions are 3. The oracle version is
-4. The AND-05 capability declaration names the fresh Retry-relation
-precondition. Previous v2 contract, v2 capability, and v3 oracle bindings are
-rejected for both scenarios. Legacy, Issue #26, and Issue #27 pins are
-unaffected.
+The lifecycle contract is version 4, the capability is version 3, and the
+oracle is version 5. The capability declaration and digest are unchanged. The
+AND-05 capability declaration names the fresh Retry-relation precondition.
+Both scenario plan digests were recomputed from the new contract and oracle
+pins. Previous v3/v3/v4 and v2/v2/v3 bindings are rejected for both scenarios.
+Legacy, Issue #26, and Issue #27 pins are unaffected.
 
 ## 3. AND-04 operation table
 
@@ -107,6 +120,15 @@ Operation 20 returns the existing qualification task to the foreground. It
 requires the exact package and the original task-continuity reference; it does
 not perform a fresh launch. A missing task reference or an unproven foreground
 return blocks the session.
+
+Operation 25 uses its existing 60-second monotonic timeout to observe the exact
+parent until a terminal state is available. An active state at the deadline or
+missing terminal evidence blocks the session and leaves later operations
+`NOT_RUN`; this does not extend the operation or session deadline.
+
+In both scenarios, the parent-child observation must repeat the frozen scope
+captured with the parent at refresh arrival. A scope mismatch blocks before the
+background transition in AND-04 or the process stop in AND-05.
 
 ## 4. AND-05 operation table
 
@@ -189,7 +211,9 @@ single authorized Retry only after the pre-Retry persistence gate passes and a
 fresh relation lookup independently establishes that the verified source has
 no Retry successor. The lookup must bind the exact parent JobRunId, frozen
 scope, recovered terminal state, and complete previously verified child set;
-the child identities must be unique and unchanged. The observation must state
+the child identities must be unique and unchanged. The parent JobRunId cannot
+also appear as a child, and the Retry successor cannot reuse one of the source
+parent's child IDs. The observation must state
 that the current source relation lookup completed, bind that query to the same
 parent, and establish that both successor identity and successor scope are
 absent. A missing successor identifier alone is not proof of absence, and
@@ -224,9 +248,25 @@ and the retry outcome satisfies the pinned acceptance contract. `Completed`
 satisfies Retry success. `CompletedWithIssues` remains `BLOCKED` unless an
 immutable owner-approved criterion admits it. `Failed`, `Cancelled`, and
 `Abandoned` record a `FAILED` Retry-success assertion even though the terminal
-observation itself succeeded. An absent identity, a different identity, or a
-successor that remains active at the deadline records `BLOCKED` and leaves
-recovery with the owner. The executor does not dispatch a second retry.
+observation itself succeeded. An unavailable identity or a successor that
+remains active at the deadline records `BLOCKED` and leaves recovery with the
+owner. At operation 37, an unavailable, incomplete, or mismatched independent
+`JobIdentityObservation` is `BLOCKED` because it does not bind the exact
+successor to the expected source and scope. The separate
+`RefreshDetailObservation` is `BLOCKED` when its parent or source ID is
+missing or malformed, and `FAILED` when a different valid ID proves a
+contradictory Retry relation. At operation 45, a missing or malformed
+successor ID remains `BLOCKED`, while a different valid successor ID is
+`FAILED`. The executor does not dispatch a second Retry.
+
+Every accepted refresh detail also requires a nonempty observer reference.
+Missing observer provenance blocks the detail assertion or Retry control.
+A valid foreign parent or source remains `FAILED` even when its observer
+reference is missing. The AND-05 pre-stop detail must pass this check before
+the force-stop intent is recorded. Operation 34 also requires a readable
+lifecycle state that matches the state established during recovery and exactly
+one Retry control. Fields that the current operation does not use may remain
+unavailable.
 
 ## 5. Session and reserve accounting
 
@@ -327,10 +367,14 @@ replace independent device observations. A missing observation remains
 | Observation or condition | Outcome | Dependent action |
 |---|---|---|
 | Parent refresh identity missing or ambiguous | `BLOCKED` | Dependent observations `NOT_RUN` |
+| Required lifecycle state is missing or not an exact `RecoveryState` value | `BLOCKED` | Dependent actions `NOT_RUN` |
 | Parent and child identity not independently linked | `BLOCKED` | Child attribution and later claims `NOT_RUN` |
+| New parent JobRunId is present in the admitted terminal-refresh history | `BLOCKED` | No dependent background transition, force-stop, or Retry; owner recovery |
 | Pre-loss Sources root presentation unidentified, run identity missing, or root identity contradictory | `BLOCKED` | No controlled stop; dependent operations `NOT_RUN` |
 | Recovered Sources root remains active, changes run identity, or changes root identity | `BLOCKED` | No Retry; owner recovery |
 | Recovered Sources root persistence passes but the `View Job` run is absent from the refresh child references | `BLOCKED` for child attribution | Root persistence may pass; no refresh-child claim |
+| Recovered Jobs observation lacks a valid parent JobRunId | `BLOCKED` | No Retry intent or dispatch; owner recovery |
+| Recovered Jobs observation names a different valid parent JobRunId | `FAILED` | No Retry; owner recovery |
 | Committed Library asset identity missing after relaunch | `FAILED` | No Retry; owner recovery |
 | Recovered Library identity evidence unavailable or incomplete | `BLOCKED` | No Retry; owner recovery |
 | Pre-Retry root or Library persistence unverified | `BLOCKED` | Retry not dispatched |
@@ -338,14 +382,34 @@ replace independent device observations. A missing observation remains
 | Refresh reaches a terminal state before the controlled stop | `BLOCKED` for process loss | Retry obligations `NOT_RUN`; completed state is not proof of interruption |
 | `Completed` or `CompletedWithIssues` after the stop | `BLOCKED` as recovery proof | Retry remains undecided |
 | `Interrupted` after a non-resumable refresh stop | `FAILED` | No retry or relaunch |
+| Exact Retry successor is `Interrupted` | Terminal observation `PASSED`; Retry-success assertion `FAILED` | No second Retry; owner recovery |
 | `Active` after relaunch | `FAILED` as silent resumption | No retry |
 | `Cancelled` without durable cancellation intent | `FAILED` | No retry |
 | `Failed`, `Cancelled`, or `Abandoned` after observed process loss | Recovery consistency supported | Retry may proceed only through the approved eligibility check |
 | Force-stop proof missing | `BLOCKED` | No relaunch, retry, cleanup, or product mutation |
+| Fresh relaunch preflight lacks a valid foreground-package identity | `BLOCKED` | No launch intent or dispatch; owner recovery |
 | Force-stop, retry, background, relaunch, return, or restoration result uncertain | `BLOCKED` | Stop immediately; owner recovery required; never repeat the effect |
+| Process observer evidence unavailable, malformed, or missing its observer identity | `BLOCKED` | No dependent effect; owner recovery |
+| Process observer reports a foreign package or contradictory typed process state | `FAILED` | Stop before any subsequent effect; owner recovery |
+| Required foreground-package or task-continuity identity is unavailable | `BLOCKED` | No foreground claim or relaunch; owner recovery |
+| Process is reported absent while the qualification package is still identified in the foreground | `FAILED` | No relaunch or Retry |
+| Active Jobs row lacks a valid parent JobRunId | `BLOCKED` | No lifecycle claim or background effect; owner recovery |
+| Active Jobs row names a different valid parent JobRunId | `FAILED` | No background effect; owner recovery |
+| AND-04 parent remains active or terminal evidence is unavailable at operation 25's 60-second bound | `BLOCKED` | No later operation or terminal-state claim; owner recovery |
+| Pre-stop detail lacks a valid parent JobRunId | `BLOCKED` | No force-stop intent or dispatch; owner recovery |
+| Pre-stop detail names a different valid parent JobRunId | `FAILED` | No force-stop intent or dispatch; owner recovery |
+| Parent-child attribution lacks a valid parent JobRunId | `BLOCKED` | No child-attribution claim or dependent effect; owner recovery |
+| Parent-child attribution names a different valid parent JobRunId | `FAILED` | No dependent effect; owner recovery |
+| Initial parent-child observation scope differs from the scope captured for the parent | `BLOCKED` | No background, process stop, or Retry; owner recovery |
+| Parent or Retry successor identity is reused as a child ID | `BLOCKED` | No child-attribution claim; owner recovery |
 | Evidence append fails | `BLOCKED` | Preserve evidence; owner recovery required; no cleanup or product mutation |
 | Retry is not advertised for the durable state | `NOT_RUN` | No retry dispatched |
-| Retry successor identity or scope differs from the observed source | `BLOCKED` | No second retry; owner recovery |
+| Retry-eligibility detail lacks a valid parent JobRunId | `BLOCKED` | No Retry intent or dispatch; owner recovery |
+| Retry-eligibility detail names a different valid parent JobRunId | `FAILED` | No Retry intent or dispatch; owner recovery |
+| Retry eligibility has a malformed control count, including a Boolean or floating-point value | `BLOCKED` | No Retry intent or dispatch; owner recovery |
+| Operation 37 `JobIdentityObservation` is unavailable, incomplete, or mismatched and cannot bind the exact successor to the exact source and scope | `BLOCKED` | No relation claim or terminal-success claim; owner recovery |
+| Operation 37 Retry detail lacks a valid parent or source identity | `BLOCKED` | No Retry relation claim or terminal-success claim; owner recovery |
+| Operation 37 Retry detail names a different valid parent or source than the requested successor relation | `FAILED` | No second Retry; owner recovery |
 | Retry was dispatched without eligibility | `FAILED` | No second retry |
 | Source run already has a retry successor | `BLOCKED` | No second retry |
 | Jobs preflight history differs from the admitted baseline | `BLOCKED` | No Refresh effect; owner recovery |
@@ -354,7 +418,8 @@ replace independent device observations. A missing observation remains
 | Successor terminal but qualification foreground unproven | `BLOCKED` | Owner recovery |
 | Successor terminal with `CompletedWithIssues` and no pinned criterion | `BLOCKED` for Retry success | Terminal observation may pass; owner recovery; no second retry |
 | Successor terminal with `Failed`, `Cancelled`, or `Abandoned` | `FAILED` for Retry success | Terminal observation may pass; no second retry |
-| Successor identity wrong or ambiguous | `BLOCKED` | No row-order or timing inference |
+| Terminal detail has no valid JobRunId or its lifecycle state is unavailable | `BLOCKED` | No terminal-state or successful Retry claim; owner recovery |
+| Terminal detail identifies a different valid JobRunId than the exact Retry successor | `FAILED` | No successful Retry claim; owner recovery |
 | Post-Retry root is a different Sources root than the authorized root | `BLOCKED` | No terminal-success claim; owner recovery |
 | Post-Retry `View Job` reference is not the verified Retry successor | `BLOCKED` | No refresh-child or terminal attribution; owner recovery |
 | Post-Retry root shows a stale historical last scan from the previous refresh or another job | `BLOCKED` | No terminal-success claim; owner recovery |

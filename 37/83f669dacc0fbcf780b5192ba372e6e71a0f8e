@@ -1,0 +1,20 @@
+docs/tasks/task-p003-028-android-job-lifecycle-recovery.md
+  s_d969eb75192cea::t_ea0ada4d671b39 220-222,226-228
+  s_d969eb75192cea::t_643f644036c6a3 197-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3783f669dacc0fbcf780b5192ba372e6e71a0f8e",
+  "prompts": {},
+  "sessions": {
+    "s_d969eb75192cea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18fec-1ff3-7f42-8866-fef568da3072",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

@@ -3,7 +3,7 @@
 **Document ID:** TASK-P003-028
 **Status:** In Progress
 **Owner:** Daniel
-**Last Updated:** 2026-11-01
+**Last Updated:** 2026-11-02
 **Depends On:** Phase 003; Issue #28 (blocked by closed #26); ARCH-003; SPEC-X-003; SPEC-BE-004; SPEC-BE-013; SPEC-BE-015; SPEC-FE-009; REF-QUAL-001; CONV-DOC-001; CONV-TEST-001; ADR-001; ADR-002; ADR-004; Issue #26's first Add & Scan host contract; Issue #27's independent Library host contract
 **Supersedes:** None
 **Superseded By:** None
@@ -189,16 +189,22 @@ No stage, commit, push, PR publication or issue edits are authorized by this tas
 ### Candidate and provenance
 
 PR #58 first published the host-only lifecycle implementation in commit
-c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7. The separate corrective commit
-500d1c954831ca6dfb1f5f1e6424136bec81fc64 remains in the branch history. The
-current candidate is on codex/issue-28-job-lifecycle-recovery at
-de01ee9e9c627fc7eb8aae386acb2fc5d02683b1, based on
-39e03c74681635c1ab5be5060eed6fca1c928ca8.
+c942c75ef9a1c85b4d5e1f2cf8bde5610f7339d7. The earlier corrective commit is
+500d1c954831ca6dfb1f5f1e6424136bec81fc64. Candidate preparation used
+de01ee9e9c627fc7eb8aae386acb2fc5d02683b1, based on the fixed PR baseline
+39e03c74681635c1ab5be5060eed6fca1c928ca8. The approved seven-file correction
+was later published as d74ea138861163bbc2dcfe775fd545a60b2db2df, whose parent
+is the candidate-preparation revision. The SHA-256 of that seven-file binary
+diff is `ffd1630d1a4b52e30964683a8c7b77a14ed613a82e29cd81544f61ac4df32ae1`.
 
-The cumulative PR diff remains 15 paths. The current worktree has seven
-unstaged, index-clean changes. The primary checkout remains on main at the
-baseline with its pre-existing untracked task document. No device, ADB, Git
-publication, PR, or Issue #28 state was changed.
+The prepublication checkpoint at de01ee9 had seven unstaged, index-clean
+changes in inventory entries 2, 3, 5, 6, 7, 8, and 14. This is a historical
+snapshot; those paths were subsequently published together in d74ea1. At the
+last GitHub check recorded here, PR #58's head was d74ea1. The GitHub PR head
+is authoritative for later revisions; this document does not predict a future
+commit's own SHA. The primary checkout snapshot was main at the fixed baseline
+with its pre-existing untracked task document. No device or ADB access or
+Issue #28 state change occurred.
 
 The full PR inventory is:
 
@@ -218,7 +224,8 @@ The full PR inventory is:
 14. scripts/android_qualification/test_job_lifecycle.py
 15. scripts/android_qualification/test_repository_checks.py
 
-The seven current worktree changes are paths 2, 3, 5, 6, 7, 8, and 14.
+The seven paths in the historical prepublication candidate were inventory
+entries 2, 3, 5, 6, 7, 8, and 14.
 
 ### Version and behavior history
 
@@ -270,13 +277,17 @@ approvals. No physical authorization was created.
 
 - AND-04: 575 seconds raw operation timeouts, plus a 31-second operation
   floor, 90-second evidence reserve, 45-second state-check reserve, and
-  30-second restoration reserve. Required span: 771 seconds; margin:
-  69 seconds within the 900-second session deadline.
+  30-second restoration reserve. Required span: 771 seconds. Full
+  issuance-time slack is 900 - 771 = 129 seconds. At latest permitted
+  admission, 60 seconds after issuance, the margin is
+  900 - 60 - 771 = 69 seconds.
 - AND-05: 880 seconds raw operation timeouts, plus a 45-second operation
   floor, 120-second evidence reserve, 60-second state-check reserve, and
-  30-second restoration reserve. Required span: 1,135 seconds; margin:
-  85 seconds within the 1,280-second session deadline. Cleanup remains a
-  separate 120-second window. Deadlines are not extended.
+  30-second restoration reserve. Required span: 1,135 seconds. Full
+  issuance-time slack is 1,280 - 1,135 = 145 seconds. At latest permitted
+  admission, 60 seconds after issuance, the margin is
+  1,280 - 60 - 1,135 = 85 seconds. Cleanup remains a separate 120-second
+  window. Deadlines are not extended.
 
 Pre-correction source validation snapshot:
 
@@ -301,16 +312,36 @@ threads: eight resolved by Cubic bot and seven unresolved. This is a historical
 snapshot; the current thread count was not rechecked. No thread was answered or
 resolved in this work.
 
-The final Standards review found no hard violations or merge blockers.
-Optional follow-ups remain for duplicate oracle logic and manifest naming. The
-final Specification review found no merge blocker. It confirmed that
-unavailable or mismatched operation-37 `JobIdentityObservation` evidence is
-`BLOCKED`, while a different valid parent/source in the separate Retry detail
-is `FAILED`; it also confirmed the parent identity guards, active/recovered
-Jobs validation, exact Retry count typing, and operation-25 deadline check.
-The local Cubic review had no GitHub remote context and left one nonblocking P2
-about duplicated bounded polling. The operation-25 late-return regression and
-monotonic post-observation deadline check remain in place.
+The prior independent reports are traceable to two separate fresh-context
+Codex session records. The Standards report is session
+`01a19aed-e4ab-7002-ba3a-6a257a10bbd1`; it reviewed the supplied root
+instructions, `docs/agents/domain.md`, `docs/adr/README.md`, ADR-001, and
+ADR-002. The Specification report is session
+`01a19aed-e50d-7a91-9e67-201e316d4ef2`; it reviewed this task, the AND-04 and
+AND-05 manual qualification contract, the lifecycle and authorization
+qualification documents, and
+`docs/superpowers/specs/2026-08-30-phase-003-manual-qualification-closeout-design.md`.
+The two review prompts fixed the candidate base at de01ee9, required review of
+the seven modified paths, and prohibited access to the other review report.
+That candidate diff was subsequently published as d74ea1; its seven-path
+SHA-256 is recorded above. The session transcripts are durable local Codex
+records, not files tracked by this repository.
+
+Both independent reports returned PASS. Standards found no hard violation and
+recorded repeated handler-specific validation as an optional Fowler
+duplication observation. Specification found no implementation blocker; it
+confirmed identity-classification precedence, operation-34 freshness and
+Retry-count checks, operation-37's independent identity plus detail
+provenance, and the unchanged operation-35 absent-successor proof. Its
+physical G3/G4/G5 findings remain BLOCKED, not passed. These reports establish
+the host-only review gate and do not establish owner or physical qualification.
+
+The 2026-11-01 GitHub snapshot above is historical. A later read-only snapshot
+on 2026-11-02 showed 19 inline threads, 11 resolved and 8 unresolved. No
+review-thread replies or resolutions were made in this correction. The local
+Cubic review had no GitHub remote context and left a nonblocking P2 about
+centralizing repeated refresh-detail validation. The operation-25 late-return
+regression and monotonic post-observation deadline check remain in place.
 
 Three architectural follow-ups remain nonblocking: split the lifecycle
 executor by scenario, split the combined lifecycle tests, and give lifecycle
@@ -339,15 +370,14 @@ force-stop intent. Operation 37 still requires its independent identity
 observation and provenance on the separate successor detail. Optional fields
 that an operation does not use remain optional.
 
-Validation: 279 focused lifecycle and parser tests passed; the full Android
-qualification suite passed 1,100 tests with two skipped. Formatting,
-architecture, qualification archive, naming, record, and baseline diff checks
-passed. The candidate retains seven modified paths and the 15-path cumulative
-PR inventory. This correction did not change the current candidate's contract
-v4, capability v3, oracle v5, authorization digests, or 31/45 operation plans.
-Those pins and digests are earlier approved changes relative to the fixed HEAD.
-`just check` was not run; available disk space was 12 GiB, so no cross-platform
-build was started.
+Prepublication validation for this correction recorded 279 focused lifecycle
+and parser tests and 1,100 Android qualification tests passed, with two
+skipped. Formatting, architecture, qualification archive, naming, record, and
+baseline diff checks passed. That candidate had seven modified paths and the
+15-path cumulative PR inventory. The correction did not change contract v4,
+capability v3, oracle v5, authorization digests, or the 31/45 operation plans.
+`just check` was NOT_RUN; 12 GiB was available and considered insufficient for
+the disk-intensive cross-platform builds.
 
 Refreshed independent Standards and Specification reviews both returned PASS
 with no implementation blocker. Standards found no hard rule violation; it
@@ -360,7 +390,45 @@ not award a pass: `validate_identity()` requires `parent_child_complete()`,
 which requires a nonempty parent reference. The duplicated bounded-polling P2
 remains a nonblocking follow-up.
 
-No device or ADB access, staging, commit, push, PR or Issue #28 change, review
-thread action, or owner qualification verdict occurred. Physical G3/G4/G5
-remain BLOCKED, and latency execution remains disabled. Task status remains
-In Progress.
+During that earlier provenance-correction pass, there was no device or ADB
+access, stage, commit, push, PR or Issue #28 state change, review-thread
+action, or owner qualification verdict. The approved candidate was published
+later as d74ea1. Physical G3/G4/G5 remain BLOCKED, and latency execution stays
+disabled. Task status remains In Progress.
+
+### Oracle-argument regression and Completion Result correction (2026-11-02)
+
+The authorization-loader integration test still covers historical plan/oracle
+bindings. A separate direct parser regression now exercises a valid operation
+argument object for both AND-04 and AND-05, then changes only the oracle version
+or only the oracle digest for each previously published oracle revision. The
+current object is accepted; each obsolete field is rejected at
+`_parse_job_lifecycle_operation_arguments()` with
+`AuthorizationErrorCode.INVALID_VALUE`. The test does not load a plan or
+authorization digest, so another validation boundary cannot satisfy its
+failure assertions. The historical integration and plan-digest tests remain.
+
+The Completion Result now labels the seven-path state at de01ee9 as a
+prepublication snapshot, records the later d74ea1 publication, and gives the
+review-session provenance and corrected deadline arithmetic above. This local
+correction changes only `scripts/android_qualification/test_job_lifecycle.py`
+and this task document. The cumulative PR inventory remains 15 paths. Contract
+v4, capability v3, oracle v5, authorization digests, and the 31/45 operation
+plans are unchanged. Latency execution remains disabled; G3/G4/G5 remain
+BLOCKED.
+
+Validation on this correction:
+
+- Focused parser and authorization tests: 3 passed, including the new direct
+  parser test, the historical oracle-binding test, and mismatched-plan-digest
+  test.
+- Focused lifecycle and physical parser tests: 280 passed.
+- `just test-android-qualification`: 1,101 passed, 2 skipped.
+- Formatting, architecture, qualification archive, naming, record, and
+  base-to-worktree `git diff --check`: passed.
+- `just check` was not rerun. No disk-intensive local build was started.
+
+At the November 2, 2026 prepublication review checkpoint, this two-file
+correction was unstaged and unpublished. No GitHub review-thread action, device
+access, or owner qualification verdict occurred during preparation. Subsequent
+publication status is authoritative in PR #58. TASK-P003-028 remains In Progress.

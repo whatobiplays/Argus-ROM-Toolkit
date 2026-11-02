@@ -1087,6 +1087,82 @@ class ManifestLifecycleTests(unittest.TestCase):
                                     )
                                 )
 
+    def test_lifecycle_parser_rejects_obsolete_oracle_pins(self):
+        obsolete_oracles = (
+            (
+                "oracle-v4",
+                "4",
+                "f9ec811db76f245463a93c8260bdd6d347b96071fc3337dccf772f429f416405",
+            ),
+            (
+                "oracle-v3",
+                "3",
+                "1e15ecbb39072f34043e1721a4099b1826320af06b277a0bd20973035c11366d",
+            ),
+        )
+        scenarios = (
+            contract.JOB_LIFECYCLE_SCENARIO_AND_04,
+            contract.JOB_LIFECYCLE_SCENARIO_AND_05,
+        )
+        for scenario in scenarios:
+            spec = next(
+                operation
+                for operation in contract.JOB_LIFECYCLE_OPERATIONS[scenario]
+                if operation.category == OperationCategory.READ_ONLY.value
+            )
+            current_arguments = contract.operation_arguments(spec)
+
+            def parse(arguments):
+                return manifest._parse_job_lifecycle_operation_arguments(
+                    arguments,
+                    category=OperationCategory(spec.category),
+                    phase="qualification",
+                    package_name=contract.JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+                )
+
+            with self.subTest(scenario=scenario, oracle="current"):
+                self.assertEqual(
+                    parse(current_arguments),
+                    tuple(sorted(current_arguments.items())),
+                )
+
+            for revision, obsolete_version, obsolete_digest in obsolete_oracles:
+                with self.subTest(
+                    scenario=scenario,
+                    revision=revision,
+                    field="oracle_version",
+                ):
+                    stale_version_arguments = dict(current_arguments)
+                    stale_version_arguments["oracle_version"] = obsolete_version
+                    self.assertEqual(
+                        stale_version_arguments["oracle_sha256"],
+                        current_arguments["oracle_sha256"],
+                    )
+                    with self.assertRaises(manifest.AuthorizationError) as raised:
+                        parse(stale_version_arguments)
+                    self.assertIs(
+                        raised.exception.code,
+                        manifest.AuthorizationErrorCode.INVALID_VALUE,
+                    )
+
+                with self.subTest(
+                    scenario=scenario,
+                    revision=revision,
+                    field="oracle_sha256",
+                ):
+                    stale_digest_arguments = dict(current_arguments)
+                    stale_digest_arguments["oracle_sha256"] = obsolete_digest
+                    self.assertEqual(
+                        stale_digest_arguments["oracle_version"],
+                        current_arguments["oracle_version"],
+                    )
+                    with self.assertRaises(manifest.AuthorizationError) as raised:
+                        parse(stale_digest_arguments)
+                    self.assertIs(
+                        raised.exception.code,
+                        manifest.AuthorizationErrorCode.INVALID_VALUE,
+                    )
+
     def test_lifecycle_authorization_rejects_mismatched_plan_digest(self):
         for scenario in ("AND-04", "AND-05"):
             with self.subTest(scenario=scenario):

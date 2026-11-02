@@ -1,0 +1,27 @@
+docs/tasks/task-p003-028-android-job-lifecycle-recovery.md
+  s_d969eb75192cea::t_49ecc0c1f13906 315-344
+  s_d969eb75192cea::t_7927677319268d 398-433
+  s_d969eb75192cea::t_81ddfb29f5be0f 6
+  s_d969eb75192cea::t_01ccbcbfbeab56 192-207,280-283,286-290
+  s_d969eb75192cea::t_36db9f4b217859 227-228,373-380,393-397
+  s_d969eb75192cea::t_c8b16c9bebf54a 434
+scripts/android_qualification/test_job_lifecycle.py
+  s_d969eb75192cea::t_2b3b647a6b4f09 1090
+  s_d969eb75192cea::t_20154932c8686d 1091-1165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1d24f685a5c478132fa5deccb57aa037f0ab20d",
+  "prompts": {},
+  "sessions": {
+    "s_d969eb75192cea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18fec-1ff3-7f42-8866-fef568da3072",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

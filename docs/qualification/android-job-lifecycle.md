@@ -75,16 +75,25 @@ evidence schema is unchanged. A blocked or undecided obligation is recorded as
 `BLOCKED`; a dependent operation that was not run is recorded as `NOT_RUN`.
 There is no persisted `NOT_APPLICABLE` outcome and no new event variant.
 
-The lifecycle contract is version 5, the capability is version 4, and the
-oracle is version 7. Capability v4 binds one admitted LibraryRefresh JobRun to
-per-root ScanRuns. Each relation uses the tuple `(parent JobRunId, ScanRunId,
-LibraryRootId)`. Source and Retry successor ScanRun ID sets are disjoint. The
-capability digest is
-`919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644`. Oracle
-v7 checks those source and successor relations and the complete GameId
-membership policy, including direct queried redirects to current Library
-members and rejection of transitive resolution. Its digest is
-`3f035f161cbb5d1cb3edd88b29069a12c2bc8dd2fc72c5783f39279c9243698a`.
+The active lifecycle contract is version 5, the capability is version 4, and
+the oracle is version 8. Capability v4 binds one admitted LibraryRefresh
+JobRun to per-root ScanRuns. Each relation uses the tuple `(parent JobRunId,
+ScanRunId, LibraryRootId)`. Source and Retry successor ScanRun ID sets are
+disjoint. The capability digest remains
+`919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644`.
+
+Oracle v8 requires operation 36's Retry outcome observation and operation 37's
+independent Retry-relation observation to carry an exact Boolean `True`
+completion marker and an exact string source reference equal to the admitted
+source JobRunId. It also requires JobIdentity and GameId continuity
+observer references to be exact strings of 1–256 characters that are nonblank
+after stripping. The oracle preserves the supplied reference bytes. Its
+canonical digest is
+`c15ee6d1d46043739d539367f16dd550e0c5b2e53708b5b30083551a42fe9e38`.
+
+`ScanRunRelation` host code now requires named arguments for the parent,
+ScanRun, and root fields. This prevents positional identity swaps without
+changing the serialized tuple, plan, evidence shape, or contract v5.
 
 The AND-04 and AND-05 plan digests below come from synthetic host-test
 authorization fixtures. They verify canonical plan computation; they are not
@@ -92,15 +101,22 @@ owner-approved authorization digests and cannot admit physical execution.
 
 | Scenario | Synthetic test-fixture plan digest |
 |---|---|
-| AND-04 | `71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13` |
-| AND-05 | `d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4` |
+| AND-04 | `5be168cf38cfd13288cdbd9536247f1d9d630245c4ab2ed38aa49b0229c04c41` |
+| AND-05 | `dddbaa166f5d5b06f109445b199692b7f22fa95ed98ed63871683b9e291263d6` |
+
+Published v7 records are historical and their authorization pins are rejected
+by v8: oracle digest
+`3f035f161cbb5d1cb3edd88b29069a12c2bc8dd2fc72c5783f39279c9243698a`, with
+synthetic AND-04 and AND-05 plan digests
+`71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13` and
+`d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4`.
 
 The AND-05 capability declares a fresh Retry-relation precondition and binds
 the successor observation to the captured source root partition and ScanRun
 set. Owner authorizations must bind the exact contract, capability, oracle,
-artifact, rules, and frozen operations. Earlier v4/v3/v6, v4/v3/v5, v3/v3/v4, and
-v2/v2/v3 bindings are rejected for both scenarios. Legacy, Issue #26, and
-Issue #27 pins are unaffected.
+artifact, rules, and frozen operations. Earlier v5/v4/v7, v4/v3/v6, v4/v3/v5,
+v3/v3/v4, and v2/v2/v3 bindings are rejected for both scenarios. Legacy, Issue
+#26, and Issue #27 pins are unaffected.
 
 ## 3. AND-04 operation table
 

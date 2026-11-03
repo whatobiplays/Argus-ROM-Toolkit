@@ -360,7 +360,11 @@ def _identity(parent, scan_run_ids=("scan-run-root",), state=contract.RecoverySt
     )
     source_scan_by_root = dict(zip(admitted_roots, scan_run_ids, strict=True))
     relations = tuple(
-        contract.ScanRunRelation(scan_run_id, parent, root_ref)
+        contract.ScanRunRelation(
+            parent_run_ref=parent,
+            scan_run_ref=scan_run_id,
+            root_ref=root_ref,
+        )
         for scan_run_id, root_ref in zip(scan_run_ids, admitted_roots, strict=True)
     )
     successor_scan_ids = (
@@ -381,7 +385,11 @@ def _identity(parent, scan_run_ids=("scan-run-root",), state=contract.RecoverySt
         None
         if successor_scan_ids is None
         else tuple(
-            contract.ScanRunRelation(scan_run_id, successor, root_ref)
+            contract.ScanRunRelation(
+                parent_run_ref=successor,
+                scan_run_ref=scan_run_id,
+                root_ref=root_ref,
+            )
             for scan_run_id, root_ref in zip(
                 successor_scan_ids, successor_admitted_roots or (), strict=True
             )
@@ -893,14 +901,14 @@ class ContractTests(unittest.TestCase):
     def test_exact_operation_counts_and_timeout_sums(self):
         self.assertEqual(contract.JOB_LIFECYCLE_CONTRACT_VERSION, 5)
         self.assertEqual(contract.JOB_LIFECYCLE_CAPABILITY_VERSION, 4)
-        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 7)
+        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 8)
         self.assertEqual(
             contract.JOB_LIFECYCLE_CAPABILITY_SHA256,
             "919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644",
         )
         self.assertEqual(
             contract.JOB_LIFECYCLE_ORACLE_SHA256,
-            "3f035f161cbb5d1cb3edd88b29069a12c2bc8dd2fc72c5783f39279c9243698a",
+            "c15ee6d1d46043739d539367f16dd550e0c5b2e53708b5b30083551a42fe9e38",
         )
         self.assertEqual(contract.operation_count("AND-04"), 31)
         self.assertEqual(contract.operation_count("AND-05"), 45)
@@ -1167,6 +1175,53 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(_jobs(parent=None, state=None).established())
         self.assertTrue(replace(_identity("parent"), parent_state=None).scan_relationships_complete())
 
+    def test_scanrun_relation_requires_keyword_only_fields_and_preserves_digest(self):
+        with self.assertRaises(TypeError):
+            contract.ScanRunRelation("scan-run", "parent-run", "root-ref")
+
+        relation = contract.ScanRunRelation(
+            parent_run_ref="parent",
+            scan_run_ref="scan",
+            root_ref="root",
+        )
+        self.assertTrue(relation.established())
+        self.assertEqual(
+            (relation.parent_run_ref, relation.scan_run_ref, relation.root_ref),
+            ("parent", "scan", "root"),
+        )
+        self.assertEqual(
+            relation.digest(),
+            "111e190e2d8c5409a742544212b8b1f529c83af12a07fd24578ce5e1a514640b",
+        )
+
+    def test_job_and_continuity_observers_require_bounded_nonblank_provenance(self):
+        invalid_refs = (None, "", " \t ", "o" * 257, 42)
+        identity = _identity(
+            "parent-run", scan_run_ids=("scan-run",), scope="scope-ref"
+        )
+        continuity = _complete_no_redirect("parent-run", ("game-id",))
+
+        self.assertTrue(identity.parent_identity_complete())
+        self.assertTrue(identity.scan_relationships_complete())
+        self.assertTrue(continuity.established())
+        self.assertTrue(replace(identity, observer_ref="o").parent_identity_complete())
+        self.assertTrue(
+            replace(identity, observer_ref="o" * 256).parent_identity_complete()
+        )
+        self.assertTrue(replace(continuity, observer_ref="o").established())
+        self.assertTrue(
+            replace(continuity, observer_ref="o" * 256).established()
+        )
+
+        for observer_ref in invalid_refs:
+            with self.subTest(observer_ref=observer_ref):
+                unproven_identity = replace(identity, observer_ref=observer_ref)
+                self.assertFalse(unproven_identity.parent_identity_complete())
+                self.assertFalse(unproven_identity.scan_relationships_complete())
+                self.assertFalse(
+                    replace(continuity, observer_ref=observer_ref).established()
+                )
+
     def test_scanrun_identity_requires_unique_exact_runs(self):
         multiple = _identity("parent", scan_run_ids=("scan-a", "scan-b"))
         self.assertTrue(multiple.scan_relationships_complete())
@@ -1273,7 +1328,11 @@ class ContractTests(unittest.TestCase):
         wrong_owner = replace(
             successor_identity,
             successor_scan_run_relations=(
-                contract.ScanRunRelation("successor", "parent", "root-ref-synthetic"),
+                contract.ScanRunRelation(
+                    parent_run_ref="parent",
+                    scan_run_ref="successor",
+                    root_ref="root-ref-synthetic",
+                ),
             ),
         )
         self.assertFalse(wrong_owner.retry_complete())
@@ -1286,7 +1345,9 @@ class ContractTests(unittest.TestCase):
             successor_identity,
             successor_scan_run_relations=(
                 contract.ScanRunRelation(
-                    "successor", "successor", "root-ref-synthetic"
+                    parent_run_ref="successor",
+                    scan_run_ref="successor",
+                    root_ref="root-ref-synthetic",
                 ),
             ),
         )
@@ -1420,7 +1481,9 @@ class ContractTests(unittest.TestCase):
             successor_scan_run_relations=(
                 *partial.successor_scan_run_relations,
                 contract.ScanRunRelation(
-                    "successor-scan-b", "successor", "root-ref-1"
+                    parent_run_ref="successor",
+                    scan_run_ref="successor-scan-b",
+                    root_ref="root-ref-1",
                 ),
             ),
         )
@@ -1446,12 +1509,14 @@ class ContractTests(unittest.TestCase):
                 successor_admitted_root_refs=("root-ref-0", "unrequested-root"),
                 successor_scan_run_relations=(
                     contract.ScanRunRelation(
-                        "successor-scan-a", "successor", "root-ref-0"
+                        parent_run_ref="successor",
+                        scan_run_ref="successor-scan-a",
+                        root_ref="root-ref-0",
                     ),
                     contract.ScanRunRelation(
-                        "successor-scan-unrequested",
-                        "successor",
-                        "unrequested-root",
+                        parent_run_ref="successor",
+                        scan_run_ref="successor-scan-unrequested",
+                        root_ref="unrequested-root",
                     ),
                 ),
                 successor_excluded_root_refs=("root-ref-1",),
@@ -1488,7 +1553,46 @@ class ManifestLifecycleTests(unittest.TestCase):
             authorization.plan_sha256,
         )
 
+    def test_published_v7_plan_digests_are_rejected_with_current_oracle(self):
+        published_v7_plan_digests = {
+            "AND-04": "71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13",
+            "AND-05": "d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4",
+        }
+        for scenario, old_plan_digest in published_v7_plan_digests.items():
+            with self.subTest(scenario=scenario):
+                document = _authorization_document(scenario)
+                document["plan"]["plan_sha256"] = old_plan_digest
+                with self.assertRaises(manifest.AuthorizationError):
+                    manifest._load_job_lifecycle_authorization(
+                        write_private_json(
+                            self.directory,
+                            f"published-v7-plan-{scenario}.json",
+                            document,
+                        )
+                    )
+
     def test_lifecycle_authorization_requires_current_oracle_revision(self):
+        published_v7_plan_digests = {
+            "AND-04": "71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13",
+            "AND-05": "d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4",
+        }
+        for scenario, old_plan_digest in published_v7_plan_digests.items():
+            with self.subTest(published_revision="oracle-v7", scenario=scenario):
+                document = _authorization_document(scenario)
+                document["plan"]["plan_sha256"] = old_plan_digest
+                for operation in document["operations"]:
+                    operation["arguments"]["oracle_version"] = "7"
+                    operation["arguments"]["oracle_sha256"] = (
+                        "3f035f161cbb5d1cb3edd88b29069a12c2bc8dd2fc72c5783f39279c9243698a"
+                    )
+                with self.assertRaises(manifest.AuthorizationError):
+                    manifest._load_job_lifecycle_authorization(
+                        write_private_json(
+                            self.directory,
+                            f"published-v7-{scenario}.json",
+                            document,
+                        )
+                    )
         # Historical bindings and the earlier v7 policy digest must be rejected.
         # Plan digests come from those exact revisions rather than stale fields
         # pasted onto a current plan.
@@ -1551,8 +1655,8 @@ class ManifestLifecycleTests(unittest.TestCase):
                 self.assertEqual(
                     accepted.plan_sha256,
                     {
-                        "AND-04": "71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13",
-                        "AND-05": "d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4",
+                        "AND-04": "5be168cf38cfd13288cdbd9536247f1d9d630245c4ab2ed38aa49b0229c04c41",
+                        "AND-05": "dddbaa166f5d5b06f109445b199692b7f22fa95ed98ed63871683b9e291263d6",
                     }[scenario],
                 )
                 for label, stale_version, stale_digest, stale_plan_digests in stale_revisions:
@@ -2799,11 +2903,67 @@ class OracleTests(unittest.TestCase):
                 parent_ref="parent",
                 frozen_scope_ref="scope-ref",
                 successor_identity=_identity(
-                    "parent", source="parent", successor="successor"
+                    "parent",
+                    source="parent",
+                    successor="successor",
+                    retry_lookup=True,
+                    lookup_source="parent",
                 ),
             ).outcome,
             evidence.AssertionOutcome.PASSED,
         )
+
+    def test_retry_outcome_requires_completed_lookup_bound_to_source(self):
+        source = _identity(
+            "parent-run", scan_run_ids=("source-scan",), scope="scope-ref"
+        )
+        valid = _identity(
+            "parent-run",
+            scan_run_ids=("source-scan",),
+            state=contract.RecoveryState.ABANDONED,
+            scope="scope-ref",
+            successor="retry-run",
+            successor_scan_run_ids=("retry-scan",),
+            retry_lookup=True,
+            lookup_source="parent-run",
+        )
+
+        def evaluate(identity):
+            return oracle.retry_outcome(
+                source_state=contract.RecoveryState.ABANDONED,
+                dispatched=True,
+                already_retried=False,
+                parent_ref="parent-run",
+                frozen_scope_ref="scope-ref",
+                expected_source_identity=source,
+                successor_identity=identity,
+            )
+
+        self.assertEqual(
+            evaluate(valid).outcome, evidence.AssertionOutcome.PASSED
+        )
+        invalid_observations = (
+            replace(valid, retry_relation_lookup_completed=None),
+            replace(valid, retry_relation_lookup_completed=False),
+            replace(valid, retry_relation_lookup_completed=1),
+            replace(valid, retry_lookup_source_run_ref="foreign-parent"),
+        )
+        for observation in invalid_observations:
+            with self.subTest(observation=observation):
+                result = evaluate(observation)
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                self.assertEqual(result.code, "retry_successor_lookup_unavailable")
+
+        proven_foreign_identity = replace(
+            valid,
+            parent_run_ref="foreign-parent",
+            source_run_ref="foreign-parent",
+            retry_relation_lookup_completed=None,
+            retry_lookup_source_run_ref=None,
+        )
+        contradiction = evaluate(proven_foreign_identity)
+        self.assertEqual(contradiction.outcome, evidence.AssertionOutcome.FAILED)
+        self.assertEqual(contradiction.code, "retry_identity_source_mismatch")
 
     def test_retry_outcome_binds_captured_source_scanrun_set(self):
         captured_source = _identity(
@@ -2886,7 +3046,9 @@ class OracleTests(unittest.TestCase):
                 valid,
                 successor_scan_run_relations=(
                     contract.ScanRunRelation(
-                        "orphan-successor-scan", "unidentified-successor", "root-ref-0"
+                        parent_run_ref="unidentified-successor",
+                        scan_run_ref="orphan-successor-scan",
+                        root_ref="root-ref-0",
                     ),
                 ),
             ),
@@ -3376,7 +3538,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.FAILED,
         )
         self.assertRegex(oracle.oracle_sha256(), r"^[0-9a-f]{64}$")
-        self.assertEqual(oracle.oracle_version(), "7")
+        self.assertEqual(oracle.oracle_version(), "8")
         self.assertEqual(
             oracle.validate_refresh_progress(None).outcome,
             evidence.AssertionOutcome.BLOCKED,
@@ -3571,7 +3733,9 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.BLOCKED,
         )
         source_relation = contract.ScanRunRelation(
-            "scan-run-a", "parent-job", "root"
+            parent_run_ref="parent-job",
+            scan_run_ref="scan-run-a",
+            root_ref="root",
         )
         self.assertEqual(
             oracle.validate_scan_root_relation(
@@ -3880,6 +4044,27 @@ class OracleTests(unittest.TestCase):
         self.assertEqual(
             provenance_result.outcome, evidence.AssertionOutcome.BLOCKED
         )
+
+    def test_whitespace_continuity_provenance_blocks_recovery_and_post_retry_integrity(self):
+        continuity = replace(
+            _complete_no_redirect("parent-run", ("missing-game",)),
+            observer_ref=" \t ",
+        )
+        library = _library(
+            membership=1,
+            membership_ids=("present-game",),
+            identity_continuity=continuity,
+        )
+
+        recovery = oracle.library_recovery_persistence(
+            ("missing-game",), library, expected_job_run_ref="parent-run"
+        )
+        post_retry = oracle.library_post_retry_integrity(
+            ("missing-game",), library, expected_job_run_ref="parent-run"
+        )
+
+        self.assertEqual(recovery.outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(post_retry.outcome, evidence.AssertionOutcome.BLOCKED)
 
     def test_post_retry_integrity_accepts_direct_and_blocks_intermediate_redirects(self):
         direct = contract.GameIdContinuityObservation(
@@ -5100,9 +5285,9 @@ class ExecutorLifecycleTests(unittest.TestCase):
                     observed,
                     successor_scan_run_relations=(
                         contract.ScanRunRelation(
-                            "wrong-scan-run",
-                            transport.parent,
-                            "root-ref-synthetic",
+                            parent_run_ref=transport.parent,
+                            scan_run_ref="wrong-scan-run",
+                            root_ref="root-ref-synthetic",
                         ),
                     ),
                 )
@@ -5729,6 +5914,81 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 36)
         self.assertEqual(transport.retry_calls, 1)
         self.assertIn("scope", result.blocker)
+
+    def test_retry_outcome_blocks_unproven_source_lookup_without_pass_evidence(self):
+        invalid_markers = (
+            ("missing", {"retry_relation_lookup_completed": None}),
+            ("false", {"retry_relation_lookup_completed": False}),
+            ("malformed", {"retry_relation_lookup_completed": 1}),
+            ("foreign-source", {"retry_lookup_source_run_ref": "foreign-parent"}),
+        )
+        for label, changes in invalid_markers:
+            with self.subTest(marker=label):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"retry-outcome-lookup-{label}"
+                )
+                observer = executor._observer
+                original = observer.observe_identity
+
+                def observe_identity(parent_ref, timeout):
+                    identity = original(parent_ref, timeout)
+                    if transport.retry_calls:
+                        return replace(identity, **changes)
+                    return identity
+
+                observer.observe_identity = observe_identity
+                self._force_stop_into(transport, contract.RecoveryState.FAILED)
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 35)
+                self.assertEqual(transport.retry_calls, 1)
+                self.assertEqual(writer.assertion_keys[-1][1], "blocked")
+
+    def test_retry_relation_rechecks_independent_source_lookup_before_detail(self):
+        invalid_markers = (
+            ("missing", {"retry_relation_lookup_completed": None}),
+            ("false", {"retry_relation_lookup_completed": False}),
+            ("malformed", {"retry_relation_lookup_completed": 1}),
+            ("foreign-source", {"retry_lookup_source_run_ref": "foreign-parent"}),
+        )
+        for label, changes in invalid_markers:
+            with self.subTest(marker=label):
+                executor, transport, writer = self._executor(
+                    "AND-05", authorization_id=f"retry-relation-lookup-{label}"
+                )
+                observer = executor._observer
+                original = observer.observe_identity
+                original_detail = transport.observe_refresh_detail
+                post_retry_observations = 0
+                successor_detail_observations = 0
+
+                def observe_identity(parent_ref, timeout):
+                    nonlocal post_retry_observations
+                    identity = original(parent_ref, timeout)
+                    if transport.retry_calls:
+                        post_retry_observations += 1
+                        if post_retry_observations == 2:
+                            return replace(identity, **changes)
+                    return identity
+
+                def observe_detail(parent_ref, timeout):
+                    nonlocal successor_detail_observations
+                    if parent_ref == transport.successor:
+                        successor_detail_observations += 1
+                    return original_detail(parent_ref, timeout)
+
+                observer.observe_identity = observe_identity
+                transport.observe_refresh_detail = observe_detail
+                self._force_stop_into(transport, contract.RecoveryState.FAILED)
+                result = executor.execute(now=NOW)
+
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, 36)
+                self.assertEqual(post_retry_observations, 2)
+                self.assertEqual(successor_detail_observations, 0)
+                self.assertEqual(transport.retry_calls, 1)
+                self.assertEqual(writer.assertion_keys[-1][1], "blocked")
 
     def test_retry_relation_observer_source_mismatch_blocks_without_terminal_claim(self):
         transport = ScriptedTransport("AND-05")
@@ -7543,7 +7803,9 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 valid,
                 scan_run_relations=(
                     contract.ScanRunRelation(
-                        "foreign-scan", "parent-run", "root-ref-synthetic"
+                        parent_run_ref="parent-run",
+                        scan_run_ref="foreign-scan",
+                        root_ref="root-ref-synthetic",
                     ),
                 ),
             ),
@@ -7672,9 +7934,9 @@ class ExecutorLifecycleTests(unittest.TestCase):
                     identity,
                     successor_scan_run_relations=(
                         contract.ScanRunRelation(
-                            "orphan-successor-scan",
-                            "unidentified-successor",
-                            identity.admitted_root_refs[0],
+                            parent_run_ref="unidentified-successor",
+                            scan_run_ref="orphan-successor-scan",
+                            root_ref=identity.admitted_root_refs[0],
                         ),
                     ),
                 )
@@ -7843,7 +8105,9 @@ class ExecutorLifecycleTests(unittest.TestCase):
 
     def test_scanning_scanrun_without_expected_state_stays_blocked(self) -> None:
         relation = contract.ScanRunRelation(
-            "scan-run", "parent", "root-ref-synthetic"
+            parent_run_ref="parent",
+            scan_run_ref="scan-run",
+            root_ref="root-ref-synthetic",
         )
         observation = contract.ScanRunObservation(
             surface=contract.JobLifecycleSurface.REFRESH_DETAIL,

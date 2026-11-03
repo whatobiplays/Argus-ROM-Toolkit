@@ -823,6 +823,15 @@ def retry_outcome(
             "retry_successor_identity_unavailable",
         )
     if (
+        successor_identity.retry_relation_lookup_completed is not True
+        or type(successor_identity.retry_lookup_source_run_ref) is not str
+        or successor_identity.retry_lookup_source_run_ref != parent_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_successor_lookup_unavailable",
+        )
+    if (
         type(expected_source_identity) is not JobIdentityObservation
         or not expected_source_identity.scan_relationships_complete()
         or expected_source_identity.parent_run_ref != parent_ref

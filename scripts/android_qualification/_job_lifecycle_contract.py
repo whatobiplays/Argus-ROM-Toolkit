@@ -17,7 +17,7 @@ from typing import Iterable
 
 JOB_LIFECYCLE_CONTRACT_VERSION = 5
 JOB_LIFECYCLE_CAPABILITY_VERSION = 4
-JOB_LIFECYCLE_ORACLE_VERSION = 7
+JOB_LIFECYCLE_ORACLE_VERSION = 8
 JOB_LIFECYCLE_QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
 JOB_LIFECYCLE_SCENARIO_AND_04 = "AND-04"
 JOB_LIFECYCLE_SCENARIO_AND_05 = "AND-05"
@@ -195,6 +195,34 @@ JOB_LIFECYCLE_ORACLE_SHA256 = _sha256({
         "successor_exclusions_are_typed_and_exact": True,
         "missing_identity": "BLOCKED",
         "valid_foreign_identity": "FAILED",
+    },
+    "retry_lookup_policy": {
+        "outcome": {
+            "completed_field": "retry_relation_lookup_completed",
+            "completed_exact_type": "bool",
+            "completed_value": True,
+            "source_field": "retry_lookup_source_run_ref",
+            "source_exact_type": "str",
+            "source_must_equal": "admitted_parent_jobrun_id",
+        },
+        "relation": {
+            "completed_field": "retry_relation_lookup_completed",
+            "completed_exact_type": "bool",
+            "completed_value": True,
+            "source_field": "retry_lookup_source_run_ref",
+            "source_exact_type": "str",
+            "source_must_equal": "admitted_parent_jobrun_id",
+            "independent_observation_required": True,
+        },
+    },
+    "observer_provenance_policy": {
+        "evidence_types": ("job_identity", "game_id_continuity"),
+        "observer_ref": {
+            "exact_type": "str",
+            "minimum_length": 1,
+            "maximum_length": 256,
+            "nonblank_after_strip": True,
+        },
     },
     "library_identity_policy": {
         "identity": "GameId",
@@ -731,7 +759,7 @@ class ProcessAndForegroundObservation:
         })
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ScanRunRelation:
     """One per-root ScanRun owned by its LibraryRefresh JobRun."""
 
@@ -882,7 +910,8 @@ class JobIdentityObservation:
             and bool(self.parent_run_ref.strip())
             and self.root_scope_complete()
             and type(self.observer_ref) is str
-            and bool(self.observer_ref)
+            and 1 <= len(self.observer_ref) <= 256
+            and bool(self.observer_ref.strip())
             and (self.parent_state is None or type(self.parent_state) is RecoveryState)
         )
 
@@ -1174,7 +1203,8 @@ class GameIdContinuityObservation:
             )
             and self.complete is True
             and type(self.observer_ref) is str
-            and bool(self.observer_ref)
+            and 1 <= len(self.observer_ref) <= 256
+            and bool(self.observer_ref.strip())
         )
 
     def digest(self) -> str:

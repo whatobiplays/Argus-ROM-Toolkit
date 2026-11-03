@@ -761,3 +761,66 @@ archive, naming, record, Android source-contract, and `git diff --check` passed.
 safe headroom for its combined Rust and Flutter workload was not established.
 No device or ADB was accessed. Latency execution remains disabled; G3, G4, and
 G5 remain `BLOCKED`; TASK-P003-028 remains In Progress.
+
+### Oracle v8 review correction (2026-11-03)
+
+The candidate is based on PR #58 head
+`f9e2dd448a06e058da75fbe5d9e5c9cb81d9a7b8`. Three Cubic findings exposed
+missing Retry lookup provenance at operations 36 and 37, ambiguous positional
+`ScanRunRelation` construction, and observer references that accepted whitespace
+or exceeded the intended bound.
+
+Operation 36 now blocks unless its successor identity reports
+`retry_relation_lookup_completed is True` and an exact string
+`retry_lookup_source_run_ref` equal to the admitted parent JobRunId. Operation
+37 performs a separate identity observation and applies the same checks before
+recording relation evidence or observing successor detail. Missing, false,
+malformed, or stale lookup data blocks. The earlier parent and successor
+identity contradiction checks remain ahead of the new guard, so a proven
+foreign identity retains its `FAILED` classification. An operation-36 result
+is not reused at operation 37. The one authorized Retry may already have run
+when either later operation blocks; no second Retry is issued.
+
+`ScanRunRelation` is now keyword-only. Callers must name the parent JobRunId,
+ScanRunId, and LibraryRootId fields. Its named fields, equality/hash behavior,
+and evidence digest are unchanged. Positional compatibility and a new relation
+type were rejected because either would leave room for the same identity swap.
+The construction change does not alter the serialized contract or capability,
+so contract v5 and capability v4 remain pinned. Their capability digest remains
+`919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644`.
+
+JobIdentity and GameId continuity provenance now requires an exact string from
+1 through 256 characters with at least one non-whitespace character. The
+original reference is retained in evidence. Whitespace-only provenance blocks
+Library recovery persistence and post-Retry integrity. No broad observer-model
+refactor was added.
+
+Oracle v8 records the two source-bound lookup requirements and the bounded
+provenance rule. Its digest is
+`c15ee6d1d46043739d539367f16dd550e0c5b2e53708b5b30083551a42fe9e38`. Contract
+v5, capability v4, the 31/45 operation counts, grants, ordering, timeouts, and
+deadlines are unchanged. Synthetic AND-04 and AND-05 plan digests are
+`5be168cf38cfd13288cdbd9536247f1d9d630245c4ab2ed38aa49b0229c04c41` and
+`dddbaa166f5d5b06f109445b199692b7f22fa95ed98ed63871683b9e291263d6`. They are
+test-fixture digests, not owner-approved authorizations. Published v7 oracle
+and plan digests remain historical and are rejected by v8.
+
+The test-first regressions reproduced the prior behavior: operation 36's
+oracle passed successor identities with missing, false, malformed, or
+foreign-source lookup markers; operation 37 completed with malformed and
+foreign-source markers; and whitespace references passed the identity
+completeness checks. The corrected focused tests now verify both blocked
+operation boundaries, their completed-operation counts, and the single Retry
+limit.
+
+Validation for this uncommitted candidate passed: 314 focused lifecycle and
+parser tests; 1,135 Android qualification tests with two skips; formatting;
+architecture; qualification archive, naming, record, and Android source
+contract checks; and `git diff --check`. The full `just check` gate is
+`NOT_RUN`: the volume had 14 GiB available at 99% capacity, which is not safe
+headroom for its Rust and Flutter build workload. Fresh independent Standards
+and Specification reviews are being run against this frozen candidate; their
+exact diff binding and dispositions are included in the final review report.
+No files will be changed after those reviews. Latency execution remains
+disabled; G3/G4/G5 remain `BLOCKED`. No device, ADB, GitHub, or PR state was
+changed.

@@ -2140,6 +2140,17 @@ class _JobLifecycleOperationExecutor:
                 failed=True,
             )
         if (
+            identity.retry_relation_lookup_completed is not True
+            or type(identity.retry_lookup_source_run_ref) is not str
+            or identity.retry_lookup_source_run_ref != self._parent_ref
+        ):
+            self._record_blocked(
+                operation, "retry_successor_lookup_unavailable"
+            )
+            raise _JobLifecycleStop(
+                "The retry relation lacks an independent completed lookup for the admitted source JobRunId."
+            )
+        if (
             not identity.retry_complete()
             or identity.parent_run_ref != self._parent_ref
             or identity.source_run_ref != self._parent_ref

@@ -1,0 +1,66 @@
+scripts/android_qualification/_job_lifecycle_contract.py
+  s_d969eb75192cea::t_86cb5bf162b9b1 20,199-201,203-204,206-209,211-212,214-226,762,913-914,1206-1207
+  s_d969eb75192cea::t_8ff11bd3811978 202,205,210,213
+scripts/android_qualification/test_job_lifecycle.py
+  s_d969eb75192cea::t_e64f44bfffb4f0 1178-1182,1186-1189,1191-1224
+  s_d969eb75192cea::t_48f1099e1353f0 5927-5929,5957-5959
+  s_d969eb75192cea::t_dd6101dcf248d9 911,1658-1659
+  s_d969eb75192cea::t_b459b203f8c504 904
+  s_d969eb75192cea::t_9b3a49bcd441f6 4048-4049,4051-4054,4056-4059,4061-4062,4064-4068
+  s_d969eb75192cea::t_8617957908125d 1190
+  s_d969eb75192cea::t_82a620e328fb99 1575-1595
+  s_d969eb75192cea::t_3ca2534d693849 392,2916-2956
+  s_d969eb75192cea::t_3c7f1be6820163 2957-2967
+  s_d969eb75192cea::t_672409d44f6b19 1556-1573
+  s_d969eb75192cea::t_c14c23e56d461d 367,5918-5926,5930-5956,5960-5961,5963,5965-5974,5981,5983-5988,5990-5992
+  s_d969eb75192cea::t_b552451dbe546e 3541
+  s_d969eb75192cea::t_12ad09d37a4977 5964,5975-5980,5989
+  s_d969eb75192cea::t_986d497e121fa9 1183-1185,3738,4050,4055,4060,4063,8108
+  s_d969eb75192cea::t_9ad64f474067c6 2906-2910,5962,5982
+  s_572fff539c3fed::t_d855b51c59a24f 363-366,388-391,1331-1335,1348-1350,1484-1486,1512-1514,1517-1519,3049-3051,3736-3737,5288-5290,7806-7808,7937-7939,8109-8110
+scripts/android_qualification/_job_lifecycle_oracle.py
+  s_d969eb75192cea::t_2b4fed7c1aa0d6 826-833
+  s_572fff539c3fed::t_ac8b94e50cfd99 825
+docs/qualification/android-job-lifecycle.md
+  s_d969eb75192cea::t_ae022ae1fd3b7c 117-119
+  s_d969eb75192cea::t_33c4df7e0b140a 78-85,89-96,104-112
+  s_d969eb75192cea::t_35917700a511ac 86-88
+scripts/android_qualification/_job_lifecycle_executor.py
+  s_d969eb75192cea::t_83a6dc8886f7cf 2143-2152
+  s_0623c112b9bdb1::t_788a6beb9613dd 2142
+docs/tasks/task-p003-028-android-job-lifecycle-recovery.md
+  s_d969eb75192cea::t_2a20a3198b5118 764-815
+  s_d969eb75192cea::t_b5e201fc2cd0e5 816-826
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b8a9023c6566b3e533566ee24ade982f51be9d8",
+  "prompts": {},
+  "sessions": {
+    "s_0623c112b9bdb1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a19ee8-5785-74c1-a9f9-fdfb16b0d314",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_572fff539c3fed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a188a8-3280-7891-9d5c-5b2049a8842a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_d969eb75192cea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18fec-1ff3-7f42-8866-fef568da3072",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

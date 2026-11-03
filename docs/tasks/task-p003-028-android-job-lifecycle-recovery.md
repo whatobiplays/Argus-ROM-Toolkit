@@ -3,7 +3,7 @@
 **Document ID:** TASK-P003-028
 **Status:** In Progress
 **Owner:** Daniel
-**Last Updated:** 2026-11-02
+**Last Updated:** 2026-11-03
 **Depends On:** Phase 003; Issue #28 (blocked by closed #26); ARCH-003; SPEC-X-003; SPEC-BE-004; SPEC-BE-013; SPEC-BE-015; SPEC-FE-009; REF-QUAL-001; CONV-DOC-001; CONV-TEST-001; ADR-001; ADR-002; ADR-004; Issue #26's first Add & Scan host contract; Issue #27's independent Library host contract
 **Supersedes:** None
 **Superseded By:** None
@@ -563,3 +563,201 @@ correction and is not evidence for the final candidate. It was not rerun: only
 41 GiB remained available on a 96%-used filesystem, with the existing Rust
 target occupying 6.6 GiB. TASK-P003-028 remains In Progress; no physical
 qualification or owner verdict was issued.
+
+### ScanRun identity contract migration (2026-11-03)
+One LibraryRefresh JobRun owns a ScanRun for each admitted LibraryRootId.
+Each relationship is the tuple `(parent JobRunId, ScanRunId, LibraryRootId)`.
+The Sources `View Job` value remains a JobRun navigation reference; it does
+not establish ScanRun ownership. The source and Retry successor ScanRun ID
+sets are disjoint.
+
+The executor captures requested, admitted, and excluded roots when it first
+observes the new parent JobRun. Later source observations must match all three
+sets, even when the frozen scope reference is unchanged. Before Retry, a fresh
+lookup binds the parent, terminal state, root partition, and exact source
+ScanRuns. It must show no prior Retry relation, including no successor JobRun,
+scope, root partition, typed exclusion, or ScanRun data. Missing or ambiguous
+evidence blocks before Retry intent or dispatch.
+Operation 36 also requires the reobserved source partition and ScanRun set to
+match the identity captured before process interruption. A changed but
+internally valid ScanRun set blocks the Retry oracle.
+
+Retry reuses the original requested roots and checks their current eligibility.
+The successor may admit a different subset, but it must include at least one
+root, provide exactly one owned ScanRun for every admitted root, and report a
+recognized SPEC-BE-013 exclusion reason for every excluded root. It cannot add
+roots beyond the original request. Per-root LibraryScan child JobRunIds are
+not fabricated.
+
+Library persistence compares exact GameId sets. A missing identity is a
+failure only when a complete, correct-job continuity lookup lists that GameId
+in its exact `queried_game_ids` and proves there is no redirect. Missing query
+coverage, incomplete, ambiguous, cyclic, or foreign-job continuity evidence
+blocks the assertion. Additional GameIds do not hide a missing original one.
+
+The lifecycle contract is v5, capability v4, and oracle v7. The capability
+digest is
+`919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644`. The
+oracle digest is
+`2f92ec64bc2520e5347eb081c642aa3438452625d4a8a5df7e916f638c2cf5cd`. The
+plan digests below are synthetic test-fixture values. They are not
+owner-approved authorization digests:
+
+| Scenario | Synthetic test-fixture plan digest |
+|---|---|
+| AND-04 | `1f20ff7af9514c792598b41b8c81d96f0ed3b917f79a398f6cdbdbf692e425ec` |
+| AND-05 | `8cdad38d64a3ffaa69265c9ea830f5dbb2957b6181e3bab14477a1c26e1177e5` |
+
+AND-04 remains 31 operations with 575 seconds of raw timeouts and a 771-second
+required span. AND-05 remains 45 operations with 880 seconds of raw timeouts
+and a 1,135-second required span. Effect grants, ordering, timeouts, session
+deadlines, and cleanup reserves are unchanged. Earlier contract and oracle
+bindings remain historical, and stale authorization rejection remains covered.
+
+This correction updates seven paths already present in the PR: the lifecycle
+contract, oracle, executor, and tests; the lifecycle and device-authorization
+documents; and this Completion Result. The cumulative PR inventory remains
+15 paths. No Flutter, Rust, product, live-transport, or physical-observer code
+changed.
+
+Validation on this candidate:
+
+- `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.android_qualification.test_job_lifecycle scripts.android_qualification.physical.test_job_lifecycle_ui`: 300 passed.
+- `just test-android-qualification`: 1,121 passed, 2 skipped.
+- `just _format-check _architecture check-qualification-archive check-qualification-naming check-qualification-record check-android-contract && git diff --check`: passed.
+- `just check`: `NOT_RUN`; 18 GiB was available, which was not safe headroom for the combined Rust and Flutter build workload.
+
+The new pre-Retry regression failed when the empty-relation guard was removed:
+Retry dispatched and all 45 operations completed instead of blocking before
+operation 35. Restoring the guard made the regression pass with 34 operations
+completed, zero Retry calls, and no Retry intent.
+The operation-36 regression failed before captured-source binding: the changed
+ScanRun set was accepted and all 45 operations completed. With the binding in
+place it blocks at operation 36 after the single authorized Retry call; no
+later operation or second Retry is performed. A separate regression confirms
+that `scanning` with no expected historical state remains `BLOCKED`, so no
+production change was needed for Cubic's active-state finding.
+
+Latency execution remains disabled. Task continuity and physical G3, G4, and
+G5 remain `BLOCKED`. No Android device or ADB was accessed. No GitHub state,
+stage, commit, push, or owner verdict changed. TASK-P003-028 remains In Progress.
+
+### Review follow-up: missing Retry proof and pre-dispatch deadline (2026-11-03)
+
+Two incomplete independent review passes identified concrete fail-closed gaps.
+The first found that a fresh pre-Retry observation with
+`successor_scan_run_relations=None` passed the no-successor check. A missing
+collection is not proof of an empty collection. The oracle now requires an
+explicit empty tuple, and the executor blocks before operation-35 intent or
+Retry dispatch when the relation collection is unavailable. The red oracle
+and executor regressions confirmed the prior acceptance and Retry dispatch;
+both pass after the correction.
+
+The second found that navigation could be journaled as an uncertain effect
+when the call budget expired before the transport callback ran. `_call` now
+tracks callback entry. A pre-dispatch stop records `BLOCKED` with
+`navigation_not_dispatched`; a failure after callback entry remains uncertain
+and cannot be replayed. Deterministic regressions cover both sides of that
+boundary. The pre-dispatch regression failed with an uncertainty blocker
+before the correction and passes afterward.
+
+The final focused lifecycle and parser run passed 303 tests. The full Android
+qualification suite passed 1,124 tests with 2 skips. Formatting, architecture,
+archive, naming, qualification-record, Android source-contract, and
+base-to-worktree diff checks passed. `just check` remains `NOT_RUN` because
+only 16 GiB was available, insufficient headroom for the combined Rust and
+Flutter builds. Contract v5, capability v4, oracle v7, their active digests,
+synthetic test-fixture plan digests, operation counts, grants, and deadlines
+remain unchanged.
+
+Cubic's later run reported a P1 continuity-evidence concern. A direct
+reproduction passes a missing `GameId` through a two-edge redirect chain when
+only the missing ID is in `queried_game_ids`; the intermediate redirect source
+is not covered by that query set. SPEC-BE-015 describes flattened redirects,
+while the oracle's v7 declaration currently requires query coverage for every
+missing captured ID but does not explicitly bind every redirect source to a
+query. The host contract must not guess whether a complete response to the
+initial ID proves the whole chain. No source or pin change was made; owner
+approval is needed to decide whether to require query coverage for every
+redirect source or restrict the oracle to flattened direct redirects. Either
+choice may change the declared evidence domain and require updated canonical
+pins and synthetic plan digests.
+
+Fresh independent Standards and Specification reviews were started against
+the preceding exact candidate hash but did not return complete reports; no
+PASS is claimed. Earlier incomplete review findings about missing pre-Retry
+ScanRun evidence and pre-dispatch navigation timeouts were corrected as
+recorded above. Cubic's two architecture suggestions remain nonblocking
+follow-ups, and its GitHub repository context is unavailable because this
+worktree has no `origin` remote. This host-only work does not clear physical
+task-continuity, G3, G4, or G5 blockers. Latency execution remains disabled,
+and TASK-P003-028 remains In Progress.
+
+### Final host-only validation and review (2026-11-03)
+
+After adding explicit GameId query coverage to continuity observations, focused
+lifecycle and physical-parser tests passed (300 tests). The full Android
+qualification suite passed (1,121 tests, 2 skipped). Formatting, architecture,
+qualification archive, naming, record, Android source-contract, and base-to-
+worktree diff checks passed. `just check` remains `NOT_RUN`; 16 GiB was
+available on the nearly full filesystem, which is insufficient headroom for
+the combined Rust and Flutter build workload.
+
+The final local Cubic review retained two P1-labeled architectural suggestions:
+separate captured source identity from Retry relation state, and extract the
+growing identity models and helpers from the contract module. The current
+candidate keeps the approved versioned observation interface; operation-
+specific validators enforce the required source and successor facts, and no
+contract failure was demonstrated. New types or module boundaries would widen
+the approved change and require separate contract review, so both remain
+nonblocking follow-ups. Cubic's earlier Retry source-binding and GameId query-
+coverage findings were corrected with regressions. Its missing-parent and
+active-ScanRun findings were not defects: the existing identification gates
+block missing parent provenance, and `scanning` is outside the accepted
+historical state set.
+
+These results cover host tests and static checks only. They do not establish
+physical task continuity or device qualification. Latency execution remains
+disabled; G3, G4, and G5 remain `BLOCKED`; TASK-P003-028 remains In Progress.
+
+### Owner-approved direct GameId continuity correction (2026-11-03)
+
+Recovery persistence and post-Retry integrity now accept a missing captured
+GameId only when a complete, run-bound query covers that exact source and a
+single direct redirect points to a GameId in the complete current Library
+membership. Every reported redirect source must be covered by the completed
+query. The oracle does not follow a second redirect. A complete query with no
+redirect for a missing ID records `FAILED`; incomplete query coverage, missing
+provenance, unqueried sources, intermediate targets, cycles, and foreign or
+conflicting evidence record `BLOCKED`.
+
+The prior multi-hop path could turn `missing → intermediate → present` into a
+false preservation result even though the intermediate identity was not
+independently queried. The approved rule rejects that inference. In AND-05,
+unresolved continuity blocks before operation-35 intent or Retry dispatch.
+
+Contract v5 and capability v4 remain unchanged. The capability digest remains
+`919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644`. Oracle
+v7 now declares the direct-redirect policy and has digest
+`3f035f161cbb5d1cb3edd88b29069a12c2bc8dd2fc72c5783f39279c9243698a`.
+Synthetic test-fixture plan digests are AND-04
+`71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13` and
+AND-05 `d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4`;
+they are not owner authorizations. The 31/45 operation plans, grants, ordering,
+timeouts, deadlines, and cleanup reserves are unchanged. The earlier v7 digest
+is rejected by the existing authorization revision gate.
+
+The new recovery oracle regression returned `PASSED` for an unqueried
+intermediate before the correction; the AND-05 executor regression dispatched
+Retry once. Both now block, with no operation-35 intent or Retry call. Direct
+redirect, multiple missing identities, query coverage, complete no-redirect,
+cycle, conflicting-edge, missing-provenance, recovery, and post-Retry cases are
+covered.
+
+Focused lifecycle and parser tests passed (307). The Android qualification
+suite passed (1,128 tests, 2 skipped). Formatting, architecture, qualification
+archive, naming, record, Android source-contract, and `git diff --check` passed.
+`just check` is `NOT_RUN`: 52 GiB was available on a 95%-used filesystem, and
+safe headroom for its combined Rust and Flutter workload was not established.
+No device or ADB was accessed. Latency execution remains disabled; G3, G4, and
+G5 remain `BLOCKED`; TASK-P003-028 remains In Progress.

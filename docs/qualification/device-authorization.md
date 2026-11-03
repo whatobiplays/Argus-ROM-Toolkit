@@ -261,9 +261,11 @@ or production transport uses this profile.
 
 Physical admission remains blocked until independent surfaces establish the
 exact package, artifact, and signer; the no-reset Library and job baseline;
-parent, child, source, and successor run identities; process and task
-continuity; committed Library asset identities; and pending cleanup and restoration
-facts. Owner attestation can state expected values, but it does not replace
-those observations. Host tests establish only the parser, admission, evidence,
-and fail-closed behavior described in
+the parent LibraryRefresh JobRunId, source and successor JobRunIds, and each
+per-root `(parent JobRunId, ScanRunId, LibraryRootId)` relation; process and task
+continuity; committed Library asset identities; and pending cleanup and
+restoration facts. Per-root ScanRuns are not separate child JobRuns. Owner
+attestation can state expected values, but it does not replace those
+observations. Host tests establish only the parser, admission, evidence, and
+fail-closed behavior described in
 [Android job lifecycle recovery qualification boundary](android-job-lifecycle.md).

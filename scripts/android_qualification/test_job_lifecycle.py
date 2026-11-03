@@ -253,6 +253,8 @@ def _library(
     active=False,
     surface=contract.JobLifecycleSurface.LIBRARY,
     membership_ids=_UNSET,
+    next_page_available=False,
+    identity_continuity=None,
 ):
     if membership_ids is _UNSET:
         membership_ids = (
@@ -273,6 +275,8 @@ def _library(
         refresh_active=active,
         observer_ref="library-observer",
         membership_ids=membership_ids,
+        next_page_available=next_page_available,
+        identity_continuity=identity_continuity,
     )
 
 
@@ -317,21 +321,122 @@ def _detail(parent, state, *, progress=None, retry=0, source=None, successor=Non
     )
 
 
-def _identity(parent, children=("child-run",), state=contract.RecoveryState.ACTIVE,
+def _identity(parent, scan_run_ids=("scan-run-root",), state=contract.RecoveryState.ACTIVE,
               source=None, successor=None, scope="scope-ref", retry_lookup=None,
-              successor_scope=None, lookup_source=None):
+              successor_scope=None, lookup_source=None,
+              successor_scan_run_ids=_UNSET,
+              successor_requested_root_refs=_UNSET,
+              successor_admitted_root_refs=_UNSET,
+              successor_excluded_root_refs=_UNSET,
+              successor_exclusions=_UNSET):
+    scan_run_ids = tuple(scan_run_ids)
+    admitted_roots = tuple(
+        "root-ref-synthetic" if len(scan_run_ids) == 1 else f"root-ref-{index}"
+        for index in range(len(scan_run_ids))
+    )
+    excluded_roots = () if scope == "scope-ref" else ("excluded-root-synthetic",)
+    requested_roots = admitted_roots + excluded_roots
+    frozen_scope = scope
+    successor_requested_roots = (
+        requested_roots
+        if successor is not None and successor_requested_root_refs is _UNSET
+        else None
+        if successor_requested_root_refs is _UNSET
+        else tuple(successor_requested_root_refs)
+    )
+    successor_admitted_roots = (
+        admitted_roots
+        if successor is not None and successor_admitted_root_refs is _UNSET
+        else None
+        if successor_admitted_root_refs is _UNSET
+        else tuple(successor_admitted_root_refs)
+    )
+    successor_excluded_roots = (
+        excluded_roots
+        if successor is not None and successor_excluded_root_refs is _UNSET
+        else None
+        if successor_excluded_root_refs is _UNSET
+        else tuple(successor_excluded_root_refs)
+    )
+    source_scan_by_root = dict(zip(admitted_roots, scan_run_ids, strict=True))
+    relations = tuple(
+        contract.ScanRunRelation(scan_run_id, parent, root_ref)
+        for scan_run_id, root_ref in zip(scan_run_ids, admitted_roots, strict=True)
+    )
+    successor_scan_ids = (
+        tuple(
+            f"{source_scan_by_root[root_ref]}-successor"
+            if root_ref in source_scan_by_root
+            else f"successor-scan-run-{index}"
+            for index, root_ref in enumerate(successor_admitted_roots or ())
+        )
+        if successor is not None and successor_scan_run_ids is _UNSET
+        else ()
+        if retry_lookup is True and successor_scan_run_ids is _UNSET
+        else None
+        if successor_scan_run_ids is _UNSET
+        else tuple(successor_scan_run_ids)
+    )
+    successor_relations = (
+        None
+        if successor_scan_ids is None
+        else tuple(
+            contract.ScanRunRelation(scan_run_id, successor, root_ref)
+            for scan_run_id, root_ref in zip(
+                successor_scan_ids, successor_admitted_roots or (), strict=True
+            )
+        )
+    )
+    successor_exclusion_observations = (
+        tuple(
+            contract.RootExclusionObservation(
+                root_ref,
+                contract.RootExclusionReason.NO_LONGER_CONFIGURED,
+            )
+            for root_ref in successor_excluded_roots or ()
+        )
+        if successor is not None and successor_exclusions is _UNSET
+        else None
+        if successor_exclusions is _UNSET
+        else tuple(successor_exclusions)
+    )
     return contract.JobIdentityObservation(
         parent_run_ref=parent,
-        child_run_refs=children,
-        frozen_scope_ref=scope,
+        scan_run_relations=relations,
+        requested_root_refs=requested_roots,
+        admitted_root_refs=admitted_roots,
+        excluded_root_refs=excluded_roots,
+        frozen_scope_ref=frozen_scope,
+        observer_ref="identity-observer",
         parent_state=state,
-        source_run_ref=source,
+        source_run_ref=(parent if successor is not None and source is None else source),
         successor_run_ref=successor,
+        successor_scan_run_relations=successor_relations,
         successor_scope_ref=(
-            scope if successor is not None else successor_scope
+            frozen_scope if successor is not None else successor_scope
         ),
+        successor_requested_root_refs=successor_requested_roots,
+        successor_admitted_root_refs=successor_admitted_roots,
+        successor_excluded_root_refs=successor_excluded_roots,
+        successor_exclusions=successor_exclusion_observations,
         retry_relation_lookup_completed=retry_lookup,
         retry_lookup_source_run_ref=lookup_source,
+    )
+
+
+def _evaluate_retry_outcome(**kwargs):
+    """Bind oracle tests to the source identity they use as their fixture."""
+    kwargs.setdefault("expected_source_identity", kwargs.get("successor_identity"))
+    return oracle.retry_outcome(**kwargs)
+
+
+def _complete_no_redirect(run_ref, queried_game_ids):
+    return contract.GameIdContinuityObservation(
+        job_run_ref=run_ref,
+        redirects=(),
+        complete=True,
+        observer_ref="continuity-observer",
+        queried_game_ids=queried_game_ids,
     )
 
 
@@ -380,11 +485,14 @@ class ScriptedTransport:
         self.already_retried = False
         self.retry_source_override = None
         self.fail_successor_foreground = False
-        self.scan_job_run_override = None
+        self.scan_run_id_override = None
         self.library_memberships = None
         self.library_membership_ids = ("fixture-synthetic",)
         self.library_membership_ids_after_stop = None
         self.library_membership_ids_after_retry = None
+        self.library_identity_continuity_before_stop = None
+        self.library_identity_continuity_after_stop = None
+        self.library_identity_continuity_after_retry = None
         self.library_observations_after_stop = 0
         self.membership_identity_available = True
         self.scan_root_preloss_presentation = (
@@ -402,7 +510,7 @@ class ScriptedTransport:
             contract.ScanRootPresentation.HISTORICAL_LAST_SCAN
         )
         self.scan_root_recovered_state = "complete"
-        self.scan_root_run_ref = "root-last-scan-run"
+        self.scan_root_run_ref = "scan-run-root"
         self.scan_root_recovered_run_ref = None
         self.scan_root_ref_override = None
         self.scan_root_presentation_override = _UNSET
@@ -482,6 +590,13 @@ class ScriptedTransport:
             membership=membership,
             active=self.detail_state is contract.RecoveryState.ACTIVE,
             membership_ids=identities,
+            identity_continuity=(
+                self.library_identity_continuity_after_retry
+                if self.retry_calls
+                else self.library_identity_continuity_after_stop
+                if self.force_stop_calls
+                else self.library_identity_continuity_before_stop
+            ),
         )
         self.library_calls += 1
         if self.force_stop_calls:
@@ -547,27 +662,33 @@ class ScriptedTransport:
         if before_stop:
             presentation = self.scan_root_preloss_presentation
             state = self.scan_root_preloss_state
-            run_ref = self.scan_root_run_ref
+            scan_run_ref = self.scan_root_run_ref
+            parent_run_ref = self.parent
+            view_job_run_ref = self.parent
             controls = 1
         else:
             self.post_stop_root_observations += 1
             if self.post_stop_root_observations >= 2:
                 presentation = self.scan_root_post_retry_presentation
                 state = self.scan_root_post_retry_state
-                run_ref = (
-                    self.successor
+                scan_run_ref = (
+                    "scan-run-root-successor"
                     if self.scan_root_post_retry_run_ref is _UNSET
                     else self.scan_root_post_retry_run_ref
                 )
+                parent_run_ref = self.successor
+                view_job_run_ref = self.successor
                 controls = self.scan_root_post_retry_view_job_control_count
                 if self.scan_root_post_retry_root_ref is not _UNSET:
                     root_override = self.scan_root_post_retry_root_ref
             else:
                 presentation = self.scan_root_recovered_presentation
                 state = self.scan_root_recovered_state
-                run_ref = self.scan_root_run_ref
+                scan_run_ref = self.scan_root_run_ref
+                parent_run_ref = self.parent
+                view_job_run_ref = self.parent
                 if self.scan_root_recovered_run_ref is not None:
-                    run_ref = self.scan_root_recovered_run_ref
+                    scan_run_ref = self.scan_root_recovered_run_ref
                 controls = 1
         if self.scan_root_presentation_override is not _UNSET:
             presentation = self.scan_root_presentation_override
@@ -578,19 +699,23 @@ class ScriptedTransport:
             root_ref=root_override or self.scan_root_ref_override or root_ref,
             last_scan_state=state,
             view_job_control_count=controls,
-            view_job_run_ref=run_ref,
+            view_job_run_ref=view_job_run_ref,
             observer_ref="root-observer",
             presentation=presentation,
+            scan_run_ref=scan_run_ref,
+            scan_parent_run_ref=parent_run_ref,
         )
 
-    def observe_scan_job(self, run_ref, timeout):
-        if self.scan_job_run_override is not None:
-            run_ref = self.scan_job_run_override
-        return contract.ScanJobObservation(
-            surface=contract.JobLifecycleSurface.SCAN_JOB_DETAIL,
-            run_ref=run_ref or "root-last-scan-run",
+    def observe_scan_run(self, parent_ref, scan_run_ref, root_ref, timeout):
+        if self.scan_run_id_override is not None:
+            scan_run_ref = self.scan_run_id_override
+        return contract.ScanRunObservation(
+            surface=contract.JobLifecycleSurface.REFRESH_DETAIL,
+            parent_run_ref=parent_ref,
+            scan_run_ref=scan_run_ref,
+            root_ref=root_ref,
             parent_state=contract.RecoveryState.COMPLETED,
-            child_state="complete",
+            scan_state="complete",
             observer_ref="scan-observer",
         )
 
@@ -649,7 +774,7 @@ class ScriptedObserver:
     def observe_identity(self, parent_ref, timeout):
         transport = self.transport
         if not transport.identity_available:
-            return contract.JobIdentityObservation(None, None, None)
+            return _identity(None, scan_run_ids=())
         if parent_ref is None:
             return _identity(transport.parent, state=contract.RecoveryState.ACTIVE)
         if transport.already_retried and parent_ref == transport.parent:
@@ -660,6 +785,7 @@ class ScriptedObserver:
                 successor=transport.successor,
                 retry_lookup=True,
                 lookup_source=transport.parent,
+                successor_scan_run_ids=("scan-run-root-successor",),
             )
         if transport.retry_calls and parent_ref == transport.parent:
             return _identity(
@@ -669,11 +795,12 @@ class ScriptedObserver:
                 successor=transport.successor,
                 retry_lookup=True,
                 lookup_source=transport.parent,
+                successor_scan_run_ids=("scan-run-root-successor",),
             )
         if transport.force_stop_calls and parent_ref == transport.parent:
             return _identity(
                 transport.parent,
-                children=("child-run",),
+                scan_run_ids=("scan-run-root",),
                 state=transport.detail_state,
                 scope="scope-ref",
                 retry_lookup=True,
@@ -764,16 +891,16 @@ class SimpleNamespace:
 
 class ContractTests(unittest.TestCase):
     def test_exact_operation_counts_and_timeout_sums(self):
-        self.assertEqual(contract.JOB_LIFECYCLE_CONTRACT_VERSION, 4)
-        self.assertEqual(contract.JOB_LIFECYCLE_CAPABILITY_VERSION, 3)
-        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 6)
+        self.assertEqual(contract.JOB_LIFECYCLE_CONTRACT_VERSION, 5)
+        self.assertEqual(contract.JOB_LIFECYCLE_CAPABILITY_VERSION, 4)
+        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 7)
         self.assertEqual(
             contract.JOB_LIFECYCLE_CAPABILITY_SHA256,
-            "ec1754f5fdaa8327b8725e2e30b11113938721c566941dcefb0974edab1008f2",
+            "919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644",
         )
         self.assertEqual(
             contract.JOB_LIFECYCLE_ORACLE_SHA256,
-            "2ef54c98c518e0625e50c38b1225af96128eee7ed2ffd2524a6c62262c8d5894",
+            "3f035f161cbb5d1cb3edd88b29069a12c2bc8dd2fc72c5783f39279c9243698a",
         )
         self.assertEqual(contract.operation_count("AND-04"), 31)
         self.assertEqual(contract.operation_count("AND-05"), 45)
@@ -960,10 +1087,15 @@ class ContractTests(unittest.TestCase):
             1,
             "run",
             "observer",
+            contract.ScanRootPresentation.HISTORICAL_LAST_SCAN,
+            "scan-run",
+            "parent",
         )
-        scan = contract.ScanJobObservation(
-            contract.JobLifecycleSurface.SCAN_JOB_DETAIL,
-            "run",
+        scan = contract.ScanRunObservation(
+            contract.JobLifecycleSurface.REFRESH_DETAIL,
+            "parent",
+            "scan-run",
+            "root",
             contract.RecoveryState.COMPLETED,
             "complete",
             "observer",
@@ -991,19 +1123,32 @@ class ContractTests(unittest.TestCase):
         )
         self.assertFalse(replace(detail, progress=None).established())
         self.assertFalse(replace(root, view_job_control_count=-1).established())
-        self.assertFalse(replace(scan, child_state="").established())
+        self.assertFalse(replace(scan, scan_state="").established())
         self.assertFalse(
             contract.RefreshProgressFacts(None, None, None, "library_refresh.x", 0)
             .has_committed_progress()
         )
 
+    def test_library_identity_requires_a_complete_unpaginated_result(self):
+        page = contract.LibrarySurfaceObservation(
+            surface=contract.JobLifecycleSurface.LIBRARY,
+            membership_count=1,
+            refresh_control_present=True,
+            refresh_active=False,
+            observer_ref="library-observer",
+            membership_ids=("game-a",),
+        )
+        self.assertFalse(page.membership_identity_complete())
+
     def test_recovery_state_fields_reject_string_enum_impostors_safely(self):
         jobs = replace(_jobs(), state="active")
         detail = replace(_detail("parent", contract.RecoveryState.ACTIVE), state="active")
         identity = replace(_identity("parent"), parent_state="active")
-        scan = contract.ScanJobObservation(
-            contract.JobLifecycleSurface.SCAN_JOB_DETAIL,
+        scan = contract.ScanRunObservation(
+            contract.JobLifecycleSurface.REFRESH_DETAIL,
+            "parent",
             "scan-run",
+            "root",
             "completed",
             "complete",
             "scan-observer",
@@ -1011,7 +1156,7 @@ class ContractTests(unittest.TestCase):
 
         self.assertFalse(jobs.established())
         self.assertFalse(detail.established())
-        self.assertFalse(identity.parent_child_complete())
+        self.assertFalse(identity.parent_identity_complete())
         self.assertFalse(scan.established())
         self.assertFalse(replace(detail, state=None).established())
         self.assertFalse(replace(scan, parent_state=None).established())
@@ -1020,24 +1165,87 @@ class ContractTests(unittest.TestCase):
                 self.assertRegex(observation.digest(), r"^[0-9a-f]{64}$")
 
         self.assertTrue(_jobs(parent=None, state=None).established())
-        self.assertTrue(replace(_identity("parent"), parent_state=None).parent_child_complete())
+        self.assertTrue(replace(_identity("parent"), parent_state=None).scan_relationships_complete())
 
-    def test_parent_child_identity_requires_unique_exact_children(self):
-        duplicate = _identity("parent", children=("child-run", "child-run"))
-        self.assertFalse(duplicate.parent_child_complete())
+    def test_scanrun_identity_requires_unique_exact_runs(self):
+        multiple = _identity("parent", scan_run_ids=("scan-a", "scan-b"))
+        self.assertTrue(multiple.scan_relationships_complete())
+        self.assertEqual(
+            oracle.validate_identity(multiple).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        self.assertEqual(
+            {
+                (relation.parent_run_ref, relation.scan_run_ref, relation.root_ref)
+                for relation in multiple.scan_run_relations
+            },
+            {
+                ("parent", "scan-a", "root-ref-0"),
+                ("parent", "scan-b", "root-ref-1"),
+            },
+        )
+
+        missing_relation = replace(
+            multiple,
+            scan_run_relations=multiple.scan_run_relations[:1],
+        )
+        self.assertEqual(
+            oracle.validate_identity(missing_relation).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+        duplicate = _identity("parent", scan_run_ids=("scan-run", "scan-run"))
+        self.assertFalse(duplicate.scan_relationships_complete())
         self.assertEqual(
             oracle.validate_identity(duplicate).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
 
+        foreign_parent = _identity(
+            "foreign-parent", scan_run_ids=("scan-a", "scan-b")
+        )
+        self.assertEqual(
+            oracle.validate_identity(
+                foreign_parent,
+                expected_parent_ref="parent",
+            ).outcome,
+            evidence.AssertionOutcome.FAILED,
+        )
+
+        foreign_root = replace(
+            multiple,
+            scan_run_relations=(
+                replace(multiple.scan_run_relations[0], root_ref="other-root"),
+                multiple.scan_run_relations[1],
+            ),
+        )
+        self.assertEqual(
+            oracle.validate_identity(foreign_root).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+    def test_identity_contract_names_scan_runs_instead_of_child_jobs(self):
+        fields = contract.JobIdentityObservation.__dataclass_fields__
+        self.assertNotIn("child_run_refs", fields)
+        self.assertIn("scan_run_relations", fields)
+        self.assertTrue(
+            {
+                "requested_root_refs",
+                "admitted_root_refs",
+                "excluded_root_refs",
+                "observer_ref",
+            }.issubset(fields)
+        )
+
         retry_duplicate = _identity(
             "parent",
-            children=("child-run", "child-run"),
+            scan_run_ids=("scan-run-a", "scan-run-b"),
             state=contract.RecoveryState.FAILED,
             source="parent",
             successor="successor",
             retry_lookup=True,
             lookup_source="parent",
+            successor_scan_run_ids=("successor-scan-a", "successor-scan-a"),
         )
         self.assertFalse(retry_duplicate.retry_complete())
         self.assertEqual(
@@ -1045,28 +1253,215 @@ class ContractTests(unittest.TestCase):
             evidence.AssertionOutcome.BLOCKED,
         )
 
-    def test_parent_identity_cannot_appear_as_child(self):
-        parent_as_child = _identity("parent", children=("parent",))
-        self.assertFalse(parent_as_child.parent_child_complete())
-        self.assertEqual(
-            oracle.validate_identity(parent_as_child).outcome,
-            evidence.AssertionOutcome.BLOCKED,
-        )
+    def test_parent_jobrun_is_not_fabricated_as_a_child_jobrun(self):
+        identity = _identity("parent", scan_run_ids=("scan-run",))
+        self.assertTrue(identity.scan_relationships_complete())
+        self.assertEqual(identity.scan_run_relations[0].parent_run_ref, "parent")
+        self.assertEqual(identity.scan_run_relations[0].scan_run_ref, "scan-run")
 
-    def test_retry_successor_cannot_appear_as_child(self):
-        successor_as_child = _identity(
+    def test_retry_scanrun_relation_must_belong_to_successor_jobrun(self):
+        successor_identity = _identity(
             "parent",
-            children=("successor",),
+            scan_run_ids=("successor",),
             state=contract.RecoveryState.FAILED,
             source="parent",
             successor="successor",
             retry_lookup=True,
             lookup_source="parent",
         )
-        self.assertFalse(successor_as_child.retry_complete())
+        self.assertTrue(successor_identity.retry_complete())
+        wrong_owner = replace(
+            successor_identity,
+            successor_scan_run_relations=(
+                contract.ScanRunRelation("successor", "parent", "root-ref-synthetic"),
+            ),
+        )
+        self.assertFalse(wrong_owner.retry_complete())
         self.assertEqual(
-            oracle.validate_identity(successor_as_child, retry=True).outcome,
+            oracle.validate_identity(wrong_owner, retry=True).outcome,
             evidence.AssertionOutcome.BLOCKED,
+        )
+
+        reused_scanrun = replace(
+            successor_identity,
+            successor_scan_run_relations=(
+                contract.ScanRunRelation(
+                    "successor", "successor", "root-ref-synthetic"
+                ),
+            ),
+        )
+        self.assertFalse(reused_scanrun.retry_complete())
+        self.assertEqual(
+            oracle.validate_identity(reused_scanrun, retry=True).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+
+    def test_retry_rechecks_originally_excluded_root_eligibility(self):
+        successor_identity = _identity(
+            "parent",
+            scan_run_ids=("source-scan-run",),
+            state=contract.RecoveryState.FAILED,
+            source="parent",
+            successor="successor",
+            scope="scope-with-excluded-root",
+            retry_lookup=True,
+            lookup_source="parent",
+            successor_scan_run_ids=(
+                "successor-scan-originally-admitted",
+                "successor-scan-newly-eligible",
+            ),
+            successor_requested_root_refs=(
+                "root-ref-synthetic",
+                "excluded-root-synthetic",
+            ),
+            successor_admitted_root_refs=(
+                "root-ref-synthetic",
+                "excluded-root-synthetic",
+            ),
+            successor_excluded_root_refs=(),
+        )
+
+        self.assertTrue(successor_identity.retry_complete())
+        self.assertEqual(
+            _evaluate_retry_outcome(
+                source_state=contract.RecoveryState.FAILED,
+                dispatched=True,
+                already_retried=False,
+                parent_ref="parent",
+                frozen_scope_ref="scope-with-excluded-root",
+                successor_identity=successor_identity,
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+
+    def test_partial_retry_binds_current_admissions_and_typed_exclusions(self):
+        partial = _identity(
+            "parent",
+            scan_run_ids=("source-scan-a", "source-scan-b"),
+            state=contract.RecoveryState.FAILED,
+            source="parent",
+            successor="successor",
+            retry_lookup=True,
+            lookup_source="parent",
+            successor_scan_run_ids=("successor-scan-a",),
+            successor_requested_root_refs=("root-ref-0", "root-ref-1"),
+            successor_admitted_root_refs=("root-ref-0",),
+            successor_excluded_root_refs=("root-ref-1",),
+            successor_exclusions=(
+                contract.RootExclusionObservation(
+                    "root-ref-1",
+                    contract.RootExclusionReason.ALREADY_SCANNING,
+                ),
+            ),
+        )
+        self.assertTrue(partial.retry_complete())
+        self.assertTrue(
+            partial.successor_root_scope_matches(
+                partial.successor_requested_root_refs,
+                partial.successor_admitted_root_refs,
+                partial.successor_excluded_root_refs,
+                partial.successor_exclusions,
+            )
+        )
+        self.assertEqual(
+            _evaluate_retry_outcome(
+                source_state=contract.RecoveryState.FAILED,
+                dispatched=True,
+                already_retried=False,
+                parent_ref="parent",
+                frozen_scope_ref="scope-ref",
+                successor_identity=partial,
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        missing_exclusion_reason = replace(partial, successor_exclusions=())
+        self.assertFalse(missing_exclusion_reason.retry_complete())
+        self.assertEqual(
+            _evaluate_retry_outcome(
+                source_state=contract.RecoveryState.FAILED,
+                dispatched=True,
+                already_retried=False,
+                parent_ref="parent",
+                frozen_scope_ref="scope-ref",
+                successor_identity=missing_exclusion_reason,
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        changed_reason = replace(
+            partial,
+            successor_exclusions=(
+                contract.RootExclusionObservation(
+                    "root-ref-1",
+                    contract.RootExclusionReason.NO_LONGER_CONFIGURED,
+                ),
+            ),
+        )
+        self.assertNotEqual(partial.digest(), changed_reason.digest())
+        self.assertNotEqual(
+            partial.digest(),
+            replace(
+                partial,
+                successor_requested_root_refs=(
+                    *partial.successor_requested_root_refs,
+                    "another-requested-root",
+                ),
+            ).digest(),
+        )
+        self.assertFalse(
+            changed_reason.successor_root_scope_matches(
+                partial.successor_requested_root_refs,
+                partial.successor_admitted_root_refs,
+                partial.successor_excluded_root_refs,
+                partial.successor_exclusions,
+            )
+        )
+        relation_to_excluded_root = replace(
+            partial,
+            successor_scan_run_relations=(
+                *partial.successor_scan_run_relations,
+                contract.ScanRunRelation(
+                    "successor-scan-b", "successor", "root-ref-1"
+                ),
+            ),
+        )
+        self.assertEqual(
+            _evaluate_retry_outcome(
+                source_state=contract.RecoveryState.FAILED,
+                dispatched=True,
+                already_retried=False,
+                parent_ref="parent",
+                frozen_scope_ref="scope-ref",
+                successor_identity=relation_to_excluded_root,
+            ).outcome,
+            evidence.AssertionOutcome.FAILED,
+        )
+        self.assertFalse(
+            replace(
+                partial,
+                successor_requested_root_refs=(
+                    "root-ref-0",
+                    "root-ref-1",
+                    "unrequested-root",
+                ),
+                successor_admitted_root_refs=("root-ref-0", "unrequested-root"),
+                successor_scan_run_relations=(
+                    contract.ScanRunRelation(
+                        "successor-scan-a", "successor", "root-ref-0"
+                    ),
+                    contract.ScanRunRelation(
+                        "successor-scan-unrequested",
+                        "successor",
+                        "unrequested-root",
+                    ),
+                ),
+                successor_excluded_root_refs=("root-ref-1",),
+                successor_exclusions=(
+                    contract.RootExclusionObservation(
+                        "root-ref-1",
+                        contract.RootExclusionReason.NO_LONGER_CONFIGURED,
+                    ),
+                ),
+            ).retry_complete()
         )
 
     def test_interrupted_is_terminal_but_not_active(self):
@@ -1094,11 +1489,19 @@ class ManifestLifecycleTests(unittest.TestCase):
         )
 
     def test_lifecycle_authorization_requires_current_oracle_revision(self):
-        # Both previously published oracle pins must be rejected.
-        # Plan digests are from the exact historical contract revisions, so
-        # these documents exercise old full bindings rather than stale fields
+        # Historical bindings and the earlier v7 policy digest must be rejected.
+        # Plan digests come from those exact revisions rather than stale fields
         # pasted onto a current plan.
         stale_revisions = (
+            (
+                "v5/v4/v7 pre-direct-redirect-policy",
+                "7",
+                "2f92ec64bc2520e5347eb081c642aa3438452625d4a8a5df7e916f638c2cf5cd",
+                {
+                    "AND-04": "1f20ff7af9514c792598b41b8c81d96f0ed3b917f79a398f6cdbdbf692e425ec",
+                    "AND-05": "8cdad38d64a3ffaa69265c9ea830f5dbb2957b6181e3bab14477a1c26e1177e5",
+                },
+            ),
             (
                 "v3/v3/v4",
                 "4",
@@ -1126,6 +1529,15 @@ class ManifestLifecycleTests(unittest.TestCase):
                     "AND-05": "f19fde67ecd9c82e9b492609138210ea04057550646f11a2ff6536357e927700",
                 },
             ),
+            (
+                "v4/v3/v6",
+                "6",
+                "2ef54c98c518e0625e50c38b1225af96128eee7ed2ffd2524a6c62262c8d5894",
+                {
+                    "AND-04": "d15692d43b3e840996ddfa24b8f04ea9405c6f6b347ebe11be343e1963381c79",
+                    "AND-05": "a289078418a684f22a571f4ebe2e5d5ba98d67b927f8740200dd4fd2a652ad09",
+                },
+            ),
         )
         for _, _, digest, _ in stale_revisions:
             self.assertNotEqual(digest, contract.JOB_LIFECYCLE_ORACLE_SHA256)
@@ -1139,8 +1551,8 @@ class ManifestLifecycleTests(unittest.TestCase):
                 self.assertEqual(
                     accepted.plan_sha256,
                     {
-                        "AND-04": "d15692d43b3e840996ddfa24b8f04ea9405c6f6b347ebe11be343e1963381c79",
-                        "AND-05": "a289078418a684f22a571f4ebe2e5d5ba98d67b927f8740200dd4fd2a652ad09",
+                        "AND-04": "71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13",
+                        "AND-05": "d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4",
                     }[scenario],
                 )
                 for label, stale_version, stale_digest, stale_plan_digests in stale_revisions:
@@ -1906,7 +2318,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.BLOCKED,
         )
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state="failed",
                 dispatched=True,
                 already_retried=False,
@@ -1999,7 +2411,7 @@ class OracleTests(unittest.TestCase):
             oracle.retry_eligibility(contract.RecoveryState.COMPLETED).outcome,
             evidence.AssertionOutcome.NOT_RUN,
         )
-        result = oracle.retry_outcome(
+        result = _evaluate_retry_outcome(
             source_state=contract.RecoveryState.FAILED,
             dispatched=True,
             already_retried=True,
@@ -2153,7 +2565,7 @@ class OracleTests(unittest.TestCase):
         )
         self.assertEqual(
             oracle.validate_identity(
-                contract.JobIdentityObservation("parent", (), "scope")
+                _identity("parent", scan_run_ids=())
             ).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
@@ -2226,7 +2638,7 @@ class OracleTests(unittest.TestCase):
             ((), 0, 0, contract.RecoveryState.COMPLETED),
         )
         for children, requested, admitted, expected in cases:
-            with self.subTest(children=children, requested=requested, admitted=admitted):
+            with self.subTest(scan_run_ids=children, requested=requested, admitted=admitted):
                 self.assertIs(
                     oracle.classify_recovery_child_states(
                         children,
@@ -2314,7 +2726,7 @@ class OracleTests(unittest.TestCase):
 
     def test_retry_outcome_matrix(self):
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state=contract.RecoveryState.COMPLETED,
                 dispatched=False,
                 already_retried=False,
@@ -2325,7 +2737,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.NOT_RUN,
         )
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state=contract.RecoveryState.COMPLETED,
                 dispatched=True,
                 already_retried=False,
@@ -2336,7 +2748,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.FAILED,
         )
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state=contract.RecoveryState.FAILED,
                 dispatched=True,
                 already_retried=True,
@@ -2347,7 +2759,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.BLOCKED,
         )
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state=contract.RecoveryState.FAILED,
                 dispatched=False,
                 already_retried=False,
@@ -2358,7 +2770,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.BLOCKED,
         )
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state=contract.RecoveryState.FAILED,
                 dispatched=True,
                 already_retried=False,
@@ -2369,18 +2781,18 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.BLOCKED,
         )
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state=contract.RecoveryState.FAILED,
                 dispatched=True,
                 already_retried=False,
                 parent_ref="parent",
                 frozen_scope_ref="scope-ref",
-                successor_identity=contract.JobIdentityObservation(None, None, None),
+                successor_identity=_identity(None, scan_run_ids=()),
             ).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
         self.assertEqual(
-            oracle.retry_outcome(
+            _evaluate_retry_outcome(
                 source_state=contract.RecoveryState.FAILED,
                 dispatched=True,
                 already_retried=False,
@@ -2393,10 +2805,39 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.PASSED,
         )
 
+    def test_retry_outcome_binds_captured_source_scanrun_set(self):
+        captured_source = _identity(
+            "parent",
+            scan_run_ids=("captured-source-scan",),
+            state=contract.RecoveryState.FAILED,
+        )
+        changed_source = _identity(
+            "parent",
+            scan_run_ids=("changed-source-scan",),
+            state=contract.RecoveryState.FAILED,
+            source="parent",
+            successor="successor",
+            retry_lookup=True,
+            lookup_source="parent",
+        )
+
+        result = oracle.retry_outcome(
+            source_state=contract.RecoveryState.FAILED,
+            dispatched=True,
+            already_retried=False,
+            parent_ref="parent",
+            frozen_scope_ref="scope-ref",
+            expected_source_identity=captured_source,
+            successor_identity=changed_source,
+        )
+
+        self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(result.code, "scan_run_relationship_ambiguous")
+
     def test_pre_retry_identity_requires_fresh_exact_empty_relation(self):
         valid = _identity(
             "parent",
-            children=("child-a", "child-b"),
+            scan_run_ids=("scan-run-a", "scan-run-b"),
             state=contract.RecoveryState.FAILED,
             scope="scope-ref",
             retry_lookup=True,
@@ -2407,63 +2848,93 @@ class OracleTests(unittest.TestCase):
                 valid,
                 expected_parent_ref="parent",
                 expected_scope_ref="scope-ref",
+                expected_requested_root_refs=valid.requested_root_refs,
+                expected_admitted_root_refs=valid.admitted_root_refs,
+                expected_excluded_root_refs=valid.excluded_root_refs,
                 expected_state=contract.RecoveryState.FAILED,
-                expected_child_refs=("child-a", "child-b"),
+                expected_scan_run_relations=valid.scan_run_relations,
             ).outcome,
             evidence.AssertionOutcome.PASSED,
         )
         invalid = (
             None,
             object(),
-            _identity("parent", children=("child-a",), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=("scan-run-a",), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True),
-            _identity("other", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+            _identity("other", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True),
-            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.FAILED,
                       scope="other-scope", retry_lookup=True),
-            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.ACTIVE,
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.ACTIVE,
                       scope="scope-ref", retry_lookup=True),
-            _identity("parent", children=("child-a", "child-a"), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-a"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True),
-            _identity("parent", children=("child-a", "foreign-child"), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=("scan-run-a", "foreign-scan-run"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True),
-            _identity("parent", children=(), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=(), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True),
-            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=None),
-            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=False),
-            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True, successor="successor"),
-            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+            replace(valid, successor_scan_run_relations=None),
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True, successor_scope="scope-ref"),
-            _identity("parent", children=("child-a", "child-b"), state=contract.RecoveryState.FAILED,
+            replace(
+                valid,
+                successor_scan_run_relations=(
+                    contract.ScanRunRelation(
+                        "orphan-successor-scan", "unidentified-successor", "root-ref-0"
+                    ),
+                ),
+            ),
+            _identity("parent", scan_run_ids=("scan-run-a", "scan-run-b"), state=contract.RecoveryState.FAILED,
                       scope="scope-ref", retry_lookup=True, lookup_source="other-parent"),
         )
         for observation in invalid:
             with self.subTest(observation=observation):
+                expected = (
+                    evidence.AssertionOutcome.FAILED
+                    if type(observation) is contract.JobIdentityObservation
+                    and observation.parent_run_ref == "other"
+                    else evidence.AssertionOutcome.BLOCKED
+                )
                 self.assertEqual(
                     oracle.validate_retry_precondition(
                         observation,
                         expected_parent_ref="parent",
                         expected_scope_ref="scope-ref",
+                        expected_requested_root_refs=valid.requested_root_refs,
+                        expected_admitted_root_refs=valid.admitted_root_refs,
+                        expected_excluded_root_refs=valid.excluded_root_refs,
                         expected_state=contract.RecoveryState.FAILED,
-                        expected_child_refs=("child-a", "child-b"),
+                        expected_scan_run_relations=valid.scan_run_relations,
                     ).outcome,
-                    evidence.AssertionOutcome.BLOCKED,
+                    expected,
                 )
-        for mismatched in (
-            _identity("other-parent", source="other-parent", successor="successor"),
-            _identity("parent", source="other-parent", successor="successor"),
-            _identity(
-                "parent",
-                source="parent",
-                successor="successor",
-                scope="other-scope",
+        for mismatched, expected in (
+            (
+                _identity("other-parent", source="other-parent", successor="successor"),
+                evidence.AssertionOutcome.FAILED,
+            ),
+            (
+                _identity("parent", source="other-parent", successor="successor"),
+                evidence.AssertionOutcome.FAILED,
+            ),
+            (
+                _identity(
+                    "parent",
+                    source="parent",
+                    successor="successor",
+                    scope="other-scope",
+                ),
+                evidence.AssertionOutcome.BLOCKED,
             ),
         ):
             with self.subTest(identity=mismatched):
-                result = oracle.retry_outcome(
+                result = _evaluate_retry_outcome(
                     source_state=contract.RecoveryState.FAILED,
                     dispatched=True,
                     already_retried=False,
@@ -2471,11 +2942,7 @@ class OracleTests(unittest.TestCase):
                     frozen_scope_ref="scope-ref",
                     successor_identity=mismatched,
                 )
-                self.assertEqual(
-                    result.outcome,
-                    evidence.AssertionOutcome.BLOCKED,
-                )
-                self.assertEqual(result.code, "retry_identity_relation_mismatch")
+                self.assertEqual(result.outcome, expected)
 
     def test_latency_rule_and_cycle_matrix(self):
         criterion = contract.LatencyCriterion(
@@ -2909,7 +3376,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.FAILED,
         )
         self.assertRegex(oracle.oracle_sha256(), r"^[0-9a-f]{64}$")
-        self.assertEqual(oracle.oracle_version(), "6")
+        self.assertEqual(oracle.oracle_version(), "7")
         self.assertEqual(
             oracle.validate_refresh_progress(None).outcome,
             evidence.AssertionOutcome.BLOCKED,
@@ -2935,7 +3402,7 @@ class OracleTests(unittest.TestCase):
                 "latency_owner_authorization_unavailable",
             )
 
-    def test_post_retry_scan_root_requires_exact_successor_ownership(self):
+    def test_post_retry_root_requires_scanrun_tuple_and_separates_view_job(self):
         successor = contract.ScanRootObservation(
             contract.JobLifecycleSurface.SCAN_ROOT_DETAIL,
             "root",
@@ -2944,83 +3411,124 @@ class OracleTests(unittest.TestCase):
             "retry-successor",
             "observer",
             contract.ScanRootPresentation.ACTIVE_SCAN,
+            "scan-successor",
+            "retry-successor",
         )
         historical = replace(
             successor,
             last_scan_state="complete",
             presentation=contract.ScanRootPresentation.HISTORICAL_LAST_SCAN,
         )
+        for observation in (successor, historical):
+            self.assertEqual(
+                oracle.validate_scan_root_post_retry(
+                    observation,
+                    expected_root_ref="root",
+                    expected_successor_run_ref="retry-successor",
+                    expected_scan_run_ref="scan-successor",
+                ).outcome,
+                evidence.AssertionOutcome.PASSED,
+            )
+        self.assertEqual(
+            oracle.validate_scan_root_post_retry(
+                replace(successor, view_job_run_ref="unrelated-job-run"),
+                expected_root_ref="root",
+                expected_successor_run_ref="retry-successor",
+                expected_scan_run_ref="scan-successor",
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        self.assertEqual(
+            oracle.validate_scan_root_post_retry(
+                replace(successor, view_job_control_count=None, view_job_run_ref=None),
+                expected_root_ref="root",
+                expected_successor_run_ref="retry-successor",
+                expected_scan_run_ref="scan-successor",
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        cases = (
+            (replace(successor, root_ref="other-root"), evidence.AssertionOutcome.BLOCKED),
+            (replace(successor, scan_parent_run_ref="other-parent"), evidence.AssertionOutcome.FAILED),
+            (replace(successor, scan_run_ref="other-scan"), evidence.AssertionOutcome.BLOCKED),
+            (replace(successor, scan_run_ref=None), evidence.AssertionOutcome.BLOCKED),
+            (replace(successor, scan_parent_run_ref=None), evidence.AssertionOutcome.BLOCKED),
+            (replace(successor, presentation=contract.ScanRootPresentation.UNIDENTIFIED), evidence.AssertionOutcome.BLOCKED),
+            (replace(successor, last_scan_state="complete"), evidence.AssertionOutcome.BLOCKED),
+        )
+        for observation, expected_outcome in cases:
+            with self.subTest(observation=observation):
+                result = oracle.validate_scan_root_post_retry(
+                    observation,
+                    expected_root_ref="root",
+                    expected_successor_run_ref="retry-successor",
+                    expected_scan_run_ref="scan-successor",
+                )
+                self.assertEqual(result.outcome, expected_outcome)
         self.assertEqual(
             oracle.validate_scan_root_post_retry(
                 successor,
                 expected_root_ref="root",
                 expected_successor_run_ref="retry-successor",
-            ).code,
-            "scan_root_post_retry_active_scan_observed",
-        )
-        self.assertEqual(
-            oracle.validate_scan_root_post_retry(
-                historical,
-                expected_root_ref="root",
-                expected_successor_run_ref="retry-successor",
-            ).code,
-            "scan_root_post_retry_historical_scan_observed",
-        )
-        cases = (
-            (
-                "foreign-root",
-                replace(successor, root_ref="other-root"),
-                "retry-successor",
-            ),
-            (
-                "previous-refresh",
-                replace(historical, view_job_run_ref="source-refresh"),
-                "retry-successor",
-            ),
-            (
-                "unrelated-active",
-                replace(successor, view_job_run_ref="unrelated-run"),
-                "retry-successor",
-            ),
-            (
-                "unidentified",
-                replace(
-                    successor,
-                    presentation=contract.ScanRootPresentation.UNIDENTIFIED,
-                ),
-                "retry-successor",
-            ),
-            ("missing-view-job", replace(historical, view_job_run_ref=None), "retry-successor"),
-            (
-                "duplicate-view-job",
-                replace(historical, view_job_control_count=2),
-                "retry-successor",
-            ),
-            (
-                "contradictory-state",
-                replace(successor, last_scan_state="complete"),
-                "retry-successor",
-            ),
-            ("missing-successor", historical, None),
-        )
-        for label, observation, expected in cases:
-            with self.subTest(label=label):
-                self.assertEqual(
-                    oracle.validate_scan_root_post_retry(
-                        observation,
-                        expected_root_ref="root",
-                        expected_successor_run_ref=expected,
-                    ).outcome,
-                    evidence.AssertionOutcome.BLOCKED,
-                )
-        self.assertEqual(
-            oracle.validate_scan_root_post_retry(
-                object(),
-                expected_root_ref="root",
-                expected_successor_run_ref="retry-successor",
+                expected_scan_run_ref=None,
             ).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
+
+    def test_view_job_jobrun_id_alone_cannot_prove_scanrun_ownership(self):
+        observation = contract.ScanRootObservation(
+            contract.JobLifecycleSurface.SCAN_ROOT_DETAIL,
+            "root",
+            None,
+            1,
+            "retry-successor",
+            "observer",
+            contract.ScanRootPresentation.ACTIVE_SCAN,
+        )
+        result = oracle.validate_scan_root_post_retry(
+            observation,
+            expected_root_ref="root",
+            expected_successor_run_ref="retry-successor",
+            expected_scan_run_ref="scan-successor",
+        )
+        self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+
+    def test_recovery_persistence_blocks_unqueried_intermediate_redirect(self):
+        observation = _library(
+            membership=1,
+            membership_ids=("present-game",),
+            identity_continuity=contract.GameIdContinuityObservation(
+                "parent-run",
+                (
+                    contract.GameIdRedirect(
+                        "missing-game", "unqueried-intermediate", "parent-run"
+                    ),
+                    contract.GameIdRedirect(
+                        "unqueried-intermediate", "present-game", "parent-run"
+                    ),
+                ),
+                True,
+                "continuity-observer",
+                ("missing-game",),
+            ),
+        )
+
+        result = oracle.library_recovery_persistence(
+            ("missing-game",), observation, expected_job_run_ref="parent-run"
+        )
+
+        self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+
+    def test_missing_game_id_with_unverified_grouping_continuity_is_blocked(self):
+        recovered = _library(
+            membership=1,
+            membership_ids=("new-canonical-game",),
+        )
+        result = oracle.library_recovery_persistence(
+            ("preloss-game",),
+            recovered,
+        )
+        self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
 
     def test_recovery_persistence_oracles(self):
         active = contract.ScanRootObservation(
@@ -3028,9 +3536,11 @@ class OracleTests(unittest.TestCase):
             "root",
             None,
             1,
-            "root-run",
+            "parent-job",
             "observer",
             contract.ScanRootPresentation.ACTIVE_SCAN,
+            "scan-run-a",
+            "parent-job",
         )
         historical = replace(
             active,
@@ -3043,36 +3553,52 @@ class OracleTests(unittest.TestCase):
         )
         self.assertEqual(
             oracle.validate_scan_root_preloss(
-                historical, expected_root_ref="root"
+                replace(active, view_job_control_count=None, view_job_run_ref=None),
+                expected_root_ref="root",
             ).outcome,
             evidence.AssertionOutcome.PASSED,
         )
-        for label, value in (
-            (
-                "unidentified",
-                replace(
-                    active,
-                    presentation=contract.ScanRootPresentation.UNIDENTIFIED,
-                ),
-            ),
-            ("wrong-root", replace(active, root_ref="other-root")),
-            ("missing-run", replace(active, view_job_run_ref=None)),
-        ):
-            with self.subTest(label=label):
-                self.assertEqual(
-                    oracle.validate_scan_root_preloss(
-                        value, expected_root_ref="root"
-                    ).outcome,
-                    evidence.AssertionOutcome.BLOCKED,
-                )
+        self.assertEqual(
+            oracle.validate_scan_root_preloss(
+                replace(active, root_ref="other-root"), expected_root_ref="root"
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        self.assertEqual(
+            oracle.validate_scan_root_preloss(
+                replace(active, scan_run_ref=None), expected_root_ref="root"
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        source_relation = contract.ScanRunRelation(
+            "scan-run-a", "parent-job", "root"
+        )
+        self.assertEqual(
+            oracle.validate_scan_root_relation(
+                replace(active, scan_parent_run_ref=None),
+                expected_relation=source_relation,
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
         self.assertEqual(
             oracle.scan_root_recovery_persistence(active, historical).outcome,
             evidence.AssertionOutcome.PASSED,
         )
         self.assertEqual(
             oracle.scan_root_recovery_persistence(
-                historical,
-                replace(historical, last_scan_state="complete"),
+                active, replace(active, view_job_run_ref="another-job")
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        self.assertEqual(
+            oracle.scan_root_recovery_persistence(
+                historical, replace(historical, scan_run_ref="different-scan")
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        self.assertEqual(
+            oracle.scan_root_recovery_persistence(
+                historical, replace(historical, last_scan_state="complete")
             ).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
@@ -3081,36 +3607,11 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.BLOCKED,
         )
         self.assertEqual(
-            oracle.scan_root_recovery_persistence(
-                active,
-                replace(historical, view_job_run_ref="different-run"),
-            ).outcome,
-            evidence.AssertionOutcome.BLOCKED,
-        )
-        self.assertEqual(
-            oracle.scan_root_recovery_persistence(
-                historical,
-                replace(
-                    historical,
-                    presentation=contract.ScanRootPresentation.ACTIVE_SCAN,
-                    last_scan_state=None,
-                ),
-            ).outcome,
-            evidence.AssertionOutcome.BLOCKED,
-        )
-        self.assertEqual(
             oracle.validate_scan_root_post_retry(
                 historical,
                 expected_root_ref="root",
-                expected_successor_run_ref="root-run",
-            ).outcome,
-            evidence.AssertionOutcome.PASSED,
-        )
-        self.assertEqual(
-            oracle.validate_scan_root_post_retry(
-                active,
-                expected_root_ref="root",
-                expected_successor_run_ref="root-run",
+                expected_successor_run_ref="parent-job",
+                expected_scan_run_ref="scan-run-a",
             ).outcome,
             evidence.AssertionOutcome.PASSED,
         )
@@ -3118,7 +3619,8 @@ class OracleTests(unittest.TestCase):
             oracle.validate_scan_root_post_retry(
                 historical,
                 expected_root_ref="other-root",
-                expected_successor_run_ref="root-run",
+                expected_successor_run_ref="parent-job",
+                expected_scan_run_ref="scan-run-a",
             ).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
@@ -3126,17 +3628,23 @@ class OracleTests(unittest.TestCase):
             oracle.validate_scan_root_post_retry(
                 historical,
                 expected_root_ref="root",
-                expected_successor_run_ref="stale-run",
+                expected_successor_run_ref="stale-parent",
+                expected_scan_run_ref="scan-run-a",
             ).outcome,
-            evidence.AssertionOutcome.BLOCKED,
+            evidence.AssertionOutcome.FAILED,
         )
 
         preloss = ("asset-a", "asset-b")
+        complete_no_redirect = contract.GameIdContinuityObservation(
+            "parent-run", (), True, "continuity-observer", ("asset-b",)
+        )
+        self.assertNotEqual(
+            complete_no_redirect.digest(),
+            replace(complete_no_redirect, queried_game_ids=()).digest(),
+        )
+        exact_recovered = _library(membership=2, membership_ids=preloss)
         self.assertEqual(
-            oracle.library_recovery_persistence(
-                preloss,
-                _library(membership=2, membership_ids=preloss),
-            ).outcome,
+            oracle.library_recovery_persistence(preloss, exact_recovered).outcome,
             evidence.AssertionOutcome.PASSED,
         )
         self.assertEqual(
@@ -3146,10 +3654,154 @@ class OracleTests(unittest.TestCase):
             ).outcome,
             evidence.AssertionOutcome.PASSED,
         )
+        missing_but_unproven = _library(membership=1, membership_ids=("asset-a",))
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss, missing_but_unproven, expected_job_run_ref="parent-run"
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        incomplete_lookup = contract.GameIdContinuityObservation(
+            "parent-run", (), True, "continuity-observer", ("asset-a",)
+        )
+        uncovered_missing_id = replace(
+            missing_but_unproven,
+            identity_continuity=incomplete_lookup,
+        )
         self.assertEqual(
             oracle.library_recovery_persistence(
                 preloss,
-                _library(membership=1, membership_ids=("asset-a",)),
+                uncovered_missing_id,
+                expected_job_run_ref="parent-run",
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        duplicate_query_scope = replace(
+            incomplete_lookup,
+            queried_game_ids=("asset-b", "asset-b"),
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss,
+                replace(
+                    missing_but_unproven,
+                    identity_continuity=duplicate_query_scope,
+                ),
+                expected_job_run_ref="parent-run",
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        missing_proven = replace(
+            missing_but_unproven,
+            identity_continuity=complete_no_redirect,
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss, missing_proven, expected_job_run_ref="parent-run"
+            ).outcome,
+            evidence.AssertionOutcome.FAILED,
+        )
+        loss_with_unrelated_addition = _library(
+            membership=2,
+            membership_ids=("asset-a", "unrelated-new-asset"),
+            identity_continuity=complete_no_redirect,
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss,
+                loss_with_unrelated_addition,
+                expected_job_run_ref="parent-run",
+            ).outcome,
+            evidence.AssertionOutcome.FAILED,
+        )
+        redirected = _library(
+            membership=2,
+            membership_ids=("canonical-game", "new-game"),
+            identity_continuity=contract.GameIdContinuityObservation(
+                "parent-run",
+                (contract.GameIdRedirect("asset-a", "canonical-game", "parent-run"),
+                 contract.GameIdRedirect("asset-b", "canonical-game", "parent-run")),
+                True,
+                "continuity-observer",
+            ("asset-a", "asset-b"),
+            ),
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss, redirected, expected_job_run_ref="parent-run"
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        redirect_chain = _library(
+            membership=2,
+            membership_ids=("canonical-final", "new-game"),
+            identity_continuity=contract.GameIdContinuityObservation(
+                "parent-run",
+                (
+                    contract.GameIdRedirect("asset-a", "canonical-middle", "parent-run"),
+                    contract.GameIdRedirect("canonical-middle", "canonical-final", "parent-run"),
+                    contract.GameIdRedirect("asset-b", "canonical-final", "parent-run"),
+                ),
+                True,
+                "continuity-observer",
+            ("asset-a", "asset-b"),
+            ),
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss, redirect_chain, expected_job_run_ref="parent-run"
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        ambiguous_split = _library(
+            membership=3,
+            membership_ids=("asset-a", "canonical-one", "canonical-two"),
+            identity_continuity=contract.GameIdContinuityObservation(
+                "parent-run",
+                (
+                    contract.GameIdRedirect("asset-b", "canonical-one", "parent-run"),
+                    contract.GameIdRedirect("asset-b", "canonical-two", "parent-run"),
+                ),
+                True,
+                "continuity-observer",
+            ("asset-b",),
+            ),
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss, ambiguous_split, expected_job_run_ref="parent-run"
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        foreign_continuity = _library(
+            membership=1,
+            membership_ids=("canonical-game",),
+            identity_continuity=contract.GameIdContinuityObservation(
+                "foreign-run",
+                (contract.GameIdRedirect("asset-b", "canonical-game", "foreign-run"),),
+                True,
+                "continuity-observer",
+                ("asset-a", "asset-b"),
+            ),
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                preloss, foreign_continuity, expected_job_run_ref="parent-run"
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
+        self.assertEqual(
+            oracle.library_recovery_persistence(
+                ("asset-a", "asset-c"),
+                _library(membership=1, membership_ids=("canonical-game",),
+                    identity_continuity=contract.GameIdContinuityObservation(
+                        "successor-run",
+                        (contract.GameIdRedirect("asset-a", "canonical-game", "successor-run"),),
+                        True,
+                        "continuity-observer",
+                ("asset-a", "asset-c"),
+                    )),
+                expected_job_run_ref="successor-run",
             ).outcome,
             evidence.AssertionOutcome.FAILED,
         )
@@ -3163,19 +3815,118 @@ class OracleTests(unittest.TestCase):
         self.assertEqual(
             oracle.library_post_retry_integrity(
                 ("asset-a", "asset-c"),
-                _library(
-                    membership=2,
-                    membership_ids=("asset-a", "asset-c"),
-                ),
+                _library(membership=2, membership_ids=("asset-a", "asset-c")),
+                expected_job_run_ref="successor-run",
             ).outcome,
             evidence.AssertionOutcome.PASSED,
         )
         self.assertEqual(
             oracle.library_post_retry_integrity(
                 ("asset-a", "asset-c"),
-                _library(membership=1, membership_ids=("asset-a",)),
+                _library(
+                    membership=1,
+                    membership_ids=("canonical-game",),
+                    identity_continuity=contract.GameIdContinuityObservation(
+                        "successor-run",
+                        (contract.GameIdRedirect("asset-a", "canonical-game", "successor-run"),),
+                        True,
+                        "continuity-observer",
+                        ("asset-a", "asset-c"),
+                    ),
+                ),
+                expected_job_run_ref="successor-run",
             ).outcome,
             evidence.AssertionOutcome.FAILED,
+        )
+
+    def test_recovery_persistence_blocks_cycles_and_missing_provenance(self):
+        cycle = contract.GameIdContinuityObservation(
+            "parent-run",
+            (
+                contract.GameIdRedirect("missing-a", "missing-b", "parent-run"),
+                contract.GameIdRedirect("missing-b", "missing-a", "parent-run"),
+            ),
+            True,
+            "continuity-observer",
+            ("missing-a", "missing-b"),
+        )
+        cycle_result = oracle.library_recovery_persistence(
+            ("missing-a",),
+            _library(
+                membership=1,
+                membership_ids=("present-game",),
+                identity_continuity=cycle,
+            ),
+            expected_job_run_ref="parent-run",
+        )
+        self.assertEqual(cycle_result.outcome, evidence.AssertionOutcome.BLOCKED)
+
+        missing_provenance = contract.GameIdContinuityObservation(
+            "parent-run",
+            (contract.GameIdRedirect("missing-game", "present-game", "parent-run"),),
+            True,
+            None,
+            ("missing-game",),
+        )
+        provenance_result = oracle.library_recovery_persistence(
+            ("missing-game",),
+            _library(
+                membership=1,
+                membership_ids=("present-game",),
+                identity_continuity=missing_provenance,
+            ),
+            expected_job_run_ref="parent-run",
+        )
+        self.assertEqual(
+            provenance_result.outcome, evidence.AssertionOutcome.BLOCKED
+        )
+
+    def test_post_retry_integrity_accepts_direct_and_blocks_intermediate_redirects(self):
+        direct = contract.GameIdContinuityObservation(
+            "retry-run",
+            (contract.GameIdRedirect("missing-game", "present-game", "retry-run"),),
+            True,
+            "continuity-observer",
+            ("missing-game",),
+        )
+        self.assertEqual(
+            oracle.library_post_retry_integrity(
+                ("missing-game",),
+                _library(
+                    membership=1,
+                    membership_ids=("present-game",),
+                    identity_continuity=direct,
+                ),
+                expected_job_run_ref="retry-run",
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+
+        queried_chain = contract.GameIdContinuityObservation(
+            "retry-run",
+            (
+                contract.GameIdRedirect(
+                    "missing-game", "intermediate-game", "retry-run"
+                ),
+                contract.GameIdRedirect(
+                    "intermediate-game", "present-game", "retry-run"
+                ),
+            ),
+            True,
+            "continuity-observer",
+            ("missing-game", "intermediate-game"),
+        )
+        self.assertEqual(
+            oracle.library_post_retry_integrity(
+                ("missing-game",),
+                _library(
+                    membership=1,
+                    membership_ids=("present-game",),
+                    identity_continuity=queried_chain,
+                ),
+                expected_job_run_ref="retry-run",
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
         )
 
 
@@ -3459,10 +4210,10 @@ class ExecutorLifecycleTests(unittest.TestCase):
             self._successor_terminal_keys(executor, writer, "result")
         )
 
-    def _post_retry_child_attribution_recorded(self, executor, writer):
+    def _post_retry_scanrun_attribution_recorded(self, executor, writer):
         key = admission._add_scan_alias(
             "operation",
-            f"{executor._spec.session_id}:and-05-42:refresh-child-attribution",
+            f"{executor._spec.session_id}:and-05-42:refresh-scanrun-attribution",
         )
         return any(recorded == key for recorded, _ in writer.assertion_keys)
 
@@ -3498,8 +4249,8 @@ class ExecutorLifecycleTests(unittest.TestCase):
             )
         )
         self.assertTrue(self._successor_terminal_keys(executor, writer, "terminal"))
-        self.assertIsNone(executor._root_last_scan_ref)
-        self.assertFalse(self._post_retry_child_attribution_recorded(executor, writer))
+        self.assertIsNone(executor._scan_run_ref)
+        self.assertFalse(self._post_retry_scanrun_attribution_recorded(executor, writer))
 
     def test_historical_post_retry_root_records_successor_last_scan(self):
         executor, transport, writer = self._executor("AND-05")
@@ -3526,8 +4277,8 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 evidence.AssertionOutcome.PASSED,
             )
         )
-        self.assertEqual(executor._root_last_scan_ref, transport.successor)
-        self.assertFalse(self._post_retry_child_attribution_recorded(executor, writer))
+        self.assertEqual(executor._scan_run_ref, "scan-run-root-successor")
+        self.assertFalse(self._post_retry_scanrun_attribution_recorded(executor, writer))
 
     def test_post_retry_root_active_owned_by_unrelated_job_blocks(self):
         executor, transport, _ = self._executor("AND-05")
@@ -3687,22 +4438,46 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(transport.force_stop_calls, 0)
         self.assertEqual(transport.retry_calls, 0)
 
-    def test_missing_identity_blocks_parent_child_claim(self):
+    def test_scan_attribution_uses_parent_and_scanrun_not_view_job_as_scanrun(self):
+        transport = ScriptedTransport("AND-04")
+        # The root's View Job control targets the owning LibraryRefresh JobRun.
+        executor, _, writer = self._executor(
+            "AND-04",
+            transport=transport,
+        )
+
+        executor.execute(now=NOW)
+
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-04-30",
+                "refresh-scanrun-attribution",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+        self.assertIn(
+            ("open_scan_job_detail", transport.parent, None),
+            transport.navigation_expectations,
+        )
+
+    def test_missing_identity_blocks_parent_scanrun_claim(self):
         executor, transport, writer = self._executor()
         original = ScriptedObserver.observe_identity
         def identity(observer, parent_ref, timeout):
             if parent_ref is None:
                 return _identity(transport.parent)
-            return contract.JobIdentityObservation(None, None, None)
+            return _identity(None, scan_run_ids=())
         transport._identity_hook = identity
         observer = ScriptedObserver(transport)
         observer.observe_identity = lambda parent_ref, timeout: identity(observer, parent_ref, timeout)
         executor._observer = observer
         result = executor.execute(now=NOW)
         self.assertEqual(result.completed_operations, 14)
-        self.assertIn("attribution", result.blocker)
+        self.assertIn("ScanRun scope is ambiguous", result.blocker)
 
-    def test_duplicate_children_block_initial_parent_attribution(self):
+    def test_duplicate_scanrun_blocks_initial_parent_attribution(self):
         transport = ScriptedTransport("AND-04")
         observer = ScriptedObserver(transport)
         original = observer.observe_identity
@@ -3710,7 +4485,11 @@ class ExecutorLifecycleTests(unittest.TestCase):
         def identity(parent_ref, timeout):
             observed = original(parent_ref, timeout)
             if parent_ref == transport.parent:
-                return replace(observed, child_run_refs=("child-run", "child-run"))
+                relation = observed.scan_run_relations[0]
+                return replace(
+                    observed,
+                    scan_run_relations=(relation, relation),
+                )
             return observed
 
         observer.observe_identity = identity
@@ -4135,7 +4914,7 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 self.assertEqual(result.completed_operations, 20)
                 self.assertIn("unavailable", result.blocker)
 
-    def test_parent_as_child_blocks_before_background_effect(self):
+    def test_foreign_parent_blocks_before_background_effect(self):
         transport = ScriptedTransport("AND-04")
         observer = ScriptedObserver(transport)
         executor, _, _ = self._executor(
@@ -4148,16 +4927,16 @@ class ExecutorLifecycleTests(unittest.TestCase):
             observed = original(parent_ref, timeout)
             attempted = executor._attempted_operation
             if attempted is not None and attempted.operation_id == "and-04-15":
-                return replace(observed, child_run_refs=(parent_ref,))
+                return _identity("other-parent")
             return observed
 
         observer.observe_identity = identity
         result = executor.execute(now=NOW)
 
-        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.status, "failed")
         self.assertEqual(result.completed_operations, 14)
 
-    def test_parent_child_scope_mismatch_blocks_before_dependent_effects(self):
+    def test_parent_scanrun_scope_mismatch_blocks_before_dependent_effects(self):
         for scenario in ("AND-04", "AND-05"):
             with self.subTest(scenario=scenario):
                 transport = ScriptedTransport(scenario)
@@ -4201,7 +4980,109 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 self.assertEqual(transport.force_stop_calls, 0)
                 self.assertEqual(transport.retry_calls, 0)
 
-    def test_retry_successor_cannot_be_reused_as_child_identity(self):
+    def test_parent_root_partition_change_with_stable_scope_ref_blocks(self):
+        for scenario in ("AND-04", "AND-05"):
+            with self.subTest(scenario=scenario):
+                transport = ScriptedTransport(scenario)
+                observer = ScriptedObserver(transport)
+                executor, _, writer = self._executor(
+                    scenario,
+                    authorization_id=f"root-partition-drift-{scenario}",
+                    transport=transport,
+                    observer=observer,
+                )
+                operation_id = self._operation_id_for_handler(
+                    scenario,
+                    "parent_child_identity",
+                )
+                original = observer.observe_identity
+
+                def identity(parent_ref, timeout):
+                    observed = original(parent_ref, timeout)
+                    attempted = executor._attempted_operation
+                    if (
+                        attempted is not None
+                        and attempted.operation_id == operation_id
+                    ):
+                        added_root = "root-ref-added-after-arrival"
+                        return replace(
+                            observed,
+                            requested_root_refs=(
+                                observed.requested_root_refs + (added_root,)
+                            ),
+                            excluded_root_refs=(
+                                observed.excluded_root_refs + (added_root,)
+                            ),
+                        )
+                    return observed
+
+                observer.observe_identity = identity
+                result = executor.execute(now=NOW)
+
+                expected_completed = next(
+                    spec.index - 1
+                    for spec in contract.JOB_LIFECYCLE_OPERATIONS[scenario]
+                    if spec.handler == "parent_child_identity"
+                )
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.completed_operations, expected_completed)
+                self.assertIn("scope", result.blocker)
+                self.assertEqual(transport.background_calls, 0)
+                self.assertEqual(transport.force_stop_calls, 0)
+                self.assertEqual(transport.retry_calls, 0)
+                self.assertTrue(
+                    self._assertion_recorded(
+                        executor,
+                        writer,
+                        operation_id,
+                        "parent_child_scope_mismatch",
+                        evidence.AssertionOutcome.BLOCKED,
+                    )
+                )
+
+    def test_retry_outcome_blocks_changed_captured_source_scanrun_set(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        original = observer.observe_identity
+
+        def identity(parent_ref, timeout):
+            observed = original(parent_ref, timeout)
+            attempted = executor._attempted_operation
+            if attempted is not None and attempted.operation_id == "and-05-36":
+                return replace(
+                    observed,
+                    scan_run_relations=tuple(
+                        replace(
+                            relation,
+                            scan_run_ref=relation.scan_run_ref + "-changed",
+                        )
+                        for relation in observed.scan_run_relations
+                    ),
+                )
+            return observed
+
+        observer.observe_identity = identity
+        self._run_and_05_with_force_stop(transport)
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 35)
+        self.assertEqual(transport.retry_calls, 1)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-36",
+                "scan_run_relationship_ambiguous",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+
+    def test_retry_successor_scanrun_owner_mismatch_blocks_relation(self):
         transport = ScriptedTransport("AND-05")
         observer = ScriptedObserver(transport)
         executor, _, _ = self._executor(
@@ -4217,7 +5098,13 @@ class ExecutorLifecycleTests(unittest.TestCase):
             if attempted is not None and attempted.operation_id == "and-05-37":
                 return replace(
                     observed,
-                    child_run_refs=(observed.successor_run_ref,),
+                    successor_scan_run_relations=(
+                        contract.ScanRunRelation(
+                            "wrong-scan-run",
+                            transport.parent,
+                            "root-ref-synthetic",
+                        ),
+                    ),
                 )
             return observed
 
@@ -4411,7 +5298,7 @@ class ExecutorLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(
             expectations["open_scan_job_detail"][0],
-            "root-last-scan-run",
+            transport.parent,
         )
 
     def test_navigation_intent_failure_prevents_dispatch(self):
@@ -4422,6 +5309,71 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 1)
         self.assertEqual(transport.navigations, [])
         self.assertIn("could not be durably appended", result.blocker)
+
+    def test_navigation_deadline_before_transport_is_not_uncertain(self):
+        executor, transport, writer = self._executor()
+        record_intent = executor._record_intent
+        dispatch_patch = mock.patch.object(
+            lifecycle_executor,
+            "_authorized_transport_call",
+            side_effect=admission._OperationDeadlineExpired,
+        )
+
+        def expire_after_intent(operation):
+            record_intent(operation)
+            if operation.operation_id == "and-04-02":
+                dispatch_patch.start()
+
+        executor._record_intent = expire_after_intent
+        try:
+            result = executor.execute(now=NOW)
+        finally:
+            dispatch_patch.stop()
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 1)
+        self.assertEqual(transport.navigations, [])
+        self.assertIn("deadline expired", result.blocker)
+        self.assertNotIn("uncertain", result.blocker)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-04-02",
+                "navigation_not_dispatched",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+
+    def test_navigation_deadline_after_transport_invocation_is_uncertain(self):
+        executor, transport, _ = self._executor()
+        record_intent = executor._record_intent
+
+        def expire_after_dispatch(session, budget, operation):
+            operation(1)
+            raise admission._OperationDeadlineExpired()
+
+        dispatch_patch = mock.patch.object(
+            lifecycle_executor,
+            "_authorized_transport_call",
+            side_effect=expire_after_dispatch,
+        )
+
+        def expire_after_dispatch_ready(operation):
+            record_intent(operation)
+            if operation.operation_id == "and-04-02":
+                dispatch_patch.start()
+
+        executor._record_intent = expire_after_dispatch_ready
+        try:
+            result = executor.execute(now=NOW)
+        finally:
+            dispatch_patch.stop()
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 1)
+        self.assertEqual(transport.navigations, ["navigate_library"])
+        self.assertIn("uncertain", result.blocker)
 
     def test_navigation_persists_intent_before_dispatch_and_result_after(self):
         executor, transport, writer = self._executor()
@@ -4971,6 +5923,9 @@ class ExecutorLifecycleTests(unittest.TestCase):
         executor, transport, _ = self._executor("AND-05")
         transport.library_membership_ids_after_stop = ("replacement-asset",)
         transport.library_membership_ids_after_retry = ("fixture-synthetic",)
+        transport.library_identity_continuity_after_stop = _complete_no_redirect(
+            transport.parent, ("fixture-synthetic",)
+        )
         self._run_and_05_with_force_stop(transport)
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "failed")
@@ -4982,6 +5937,37 @@ class ExecutorLifecycleTests(unittest.TestCase):
             ("replacement-asset",),
         )
         self.assertIn("disappeared during recovery", result.blocker)
+
+    def test_unresolved_game_id_continuity_blocks_before_retry_intent(self):
+        executor, transport, writer = self._executor("AND-05")
+        transport.library_membership_ids_after_stop = ("replacement-asset",)
+        transport.library_identity_continuity_after_stop = (
+            contract.GameIdContinuityObservation(
+                transport.parent,
+                (
+                    contract.GameIdRedirect(
+                        "fixture-synthetic", "intermediate-asset", transport.parent
+                    ),
+                    contract.GameIdRedirect(
+                        "intermediate-asset", "replacement-asset", transport.parent
+                    ),
+                ),
+                True,
+                "continuity-observer",
+                ("fixture-synthetic",),
+            )
+        )
+        self._run_and_05_with_force_stop(transport)
+
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 28)
+        self.assertEqual(transport.retry_calls, 0)
+        intent_key = admission._add_scan_alias(
+            "operation", f"{executor._spec.session_id}:and-05-35:intent"
+        )
+        self.assertFalse(any(key == intent_key for key, _ in writer.assertion_keys))
 
     def test_scan_root_preloss_presentation_unidentified_blocks_before_stop(self):
         executor, transport, _ = self._executor("AND-05")
@@ -5041,7 +6027,7 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 26)
         self.assertEqual(transport.retry_calls, 0)
-        self.assertIn("recovered Sources root", result.blocker)
+        self.assertIn("scan_root_relation_unavailable", result.blocker)
 
     def test_scan_root_historical_preloss_persistence_is_supported(self):
         executor, transport, _ = self._executor("AND-05")
@@ -5057,36 +6043,23 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertTrue(result.workflow_completed)
         self.assertIn("physical", result.blocker)
 
-    def test_root_identity_without_child_attribution_remains_blocked(self):
+    def test_preloss_root_scanrun_mismatch_blocks_before_stop(self):
         executor, transport, writer = self._executor("AND-05")
         transport.scan_root_run_ref = "unrelated-root-run"
         self._run_and_05_with_force_stop(transport)
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "blocked")
-        self.assertEqual(result.completed_operations, 45)
-        self.assertTrue(result.workflow_completed)
-        self.assertTrue(
-            self._assertion_recorded(
-                executor,
-                writer,
-                "and-05-27",
-                "root-recovery-persistence",
-                evidence.AssertionOutcome.PASSED,
-            )
-        )
-        self.assertTrue(
-            self._assertion_recorded(
-                executor,
-                writer,
-                "and-05-27",
-                "refresh-child-attribution",
-                evidence.AssertionOutcome.BLOCKED,
-            )
-        )
+        self.assertEqual(result.completed_operations, 19)
+        self.assertEqual(transport.force_stop_calls, 0)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIn("scan_run_relation_ambiguous", result.blocker)
 
     def test_library_equal_count_replacement_after_recovery_fails(self):
         executor, transport, _ = self._executor("AND-05")
         transport.library_membership_ids_after_stop = ("replacement-asset",)
+        transport.library_identity_continuity_after_stop = _complete_no_redirect(
+            transport.parent, ("fixture-synthetic",)
+        )
         self._run_and_05_with_force_stop(transport)
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "failed")
@@ -5099,6 +6072,9 @@ class ExecutorLifecycleTests(unittest.TestCase):
         transport.library_membership_ids_after_stop = (
             "replacement-asset-a",
             "replacement-asset-b",
+        )
+        transport.library_identity_continuity_after_stop = _complete_no_redirect(
+            transport.parent, ("fixture-synthetic",)
         )
         self._run_and_05_with_force_stop(transport)
         result = executor.execute(now=NOW)
@@ -5137,6 +6113,9 @@ class ExecutorLifecycleTests(unittest.TestCase):
     def test_library_missing_admitted_asset_before_stop_fails(self):
         executor, transport, _ = self._executor("AND-05")
         transport.library_membership_ids = ("replacement-asset",)
+        transport.library_identity_continuity_before_stop = _complete_no_redirect(
+            transport.parent, ("fixture-synthetic",)
+        )
         self._run_and_05_with_force_stop(transport)
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "failed")
@@ -5157,13 +6136,13 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 45)
         self.assertIn("physical", result.blocker)
 
-    def test_scan_job_identity_mismatch_fails(self):
+    def test_scan_run_identity_ambiguity_blocks(self):
         executor, transport, _ = self._executor()
-        transport.scan_job_run_override = "different-scan-run"
+        transport.scan_run_id_override = "different-scan-run"
         result = executor.execute(now=NOW)
-        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 29)
-        self.assertIn("Scan detail", result.blocker)
+        self.assertIn("ScanRun state", result.blocker)
 
     def test_successor_still_active_at_deadline_blocks_without_second_retry(self):
         executor, transport, _ = self._executor("AND-05")
@@ -5664,24 +6643,24 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(result.completed_operations, 13)
         self.assertIn("refresh_status_key_unavailable", result.blocker)
 
-    def test_parent_child_attribution_unavailable_blocks(self) -> None:
+    def test_parent_scanrun_attribution_unavailable_blocks(self) -> None:
         transport = ScriptedTransport("AND-04")
         observer = ScriptedObserver(transport)
 
         def identity(parent_ref, timeout):
             if parent_ref is None:
                 return _identity(transport.parent, state=contract.RecoveryState.ACTIVE)
-            return _identity(parent_ref, children=())
+            return _identity(parent_ref, scan_run_ids=())
 
         observer.observe_identity = identity
         executor, _, _ = self._executor(transport=transport, observer=observer)
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 14)
-        self.assertIn("Parent-child attribution is BLOCKED", result.blocker)
+        self.assertIn("ScanRun scope is ambiguous", result.blocker)
         self.assertTrue(result.scope_extensions)
 
-    def test_parent_child_parent_identity_classifies_unavailable_and_mismatch(self):
+    def test_parent_jobrun_identity_classifies_unavailable_and_mismatch(self):
         cases = (
             ("missing", None, "blocked"),
             ("malformed", 123, "blocked"),
@@ -6428,15 +7407,11 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 evidence.AssertionOutcome.BLOCKED,
             )
         )
-        self.assertFalse(
-            self._assertion_recorded(
-                executor,
-                writer,
-                "and-05-35",
-                "intent",
-                evidence.AssertionOutcome.NOT_RUN,
-            )
+        intent_key = admission._add_scan_alias(
+            "operation",
+            f"{executor._spec.session_id}:and-05-35:intent",
         )
+        self.assertFalse(any(key == intent_key for key, _ in writer.assertion_keys))
 
     def test_pre_retry_identity_session_binding_change_keeps_integrity_blocker(self):
         transport = ScriptedTransport("AND-05")
@@ -6552,7 +7527,7 @@ class ExecutorLifecycleTests(unittest.TestCase):
     def test_invalid_pre_retry_relations_never_dispatch_retry(self) -> None:
         valid = _identity(
             "parent-run",
-            children=("child-run",),
+            scan_run_ids=("scan-run",),
             state=contract.RecoveryState.ABANDONED,
             scope="scope-ref",
             retry_lookup=True,
@@ -6563,13 +7538,27 @@ class ExecutorLifecycleTests(unittest.TestCase):
             replace(valid, parent_run_ref="other-parent"),
             replace(valid, frozen_scope_ref="other-scope"),
             replace(valid, parent_state=contract.RecoveryState.FAILED),
-            replace(valid, child_run_refs=()),
-            replace(valid, child_run_refs=("child-run", "foreign-child")),
-            replace(valid, child_run_refs=("child-run", "child-run")),
+            replace(valid, scan_run_relations=()),
+            replace(
+                valid,
+                scan_run_relations=(
+                    contract.ScanRunRelation(
+                        "foreign-scan", "parent-run", "root-ref-synthetic"
+                    ),
+                ),
+            ),
+            replace(
+                valid,
+                scan_run_relations=(
+                    valid.scan_run_relations[0],
+                    valid.scan_run_relations[0],
+                ),
+            ),
             replace(valid, retry_relation_lookup_completed=None),
             replace(valid, retry_relation_lookup_completed=False),
             replace(valid, retry_lookup_source_run_ref="other-parent"),
             replace(valid, successor_run_ref="existing-successor"),
+            replace(valid, successor_scan_run_relations=None),
             replace(valid, successor_scope_ref="scope-ref"),
             replace(valid, source_run_ref="parent-run"),
         )
@@ -6606,7 +7595,14 @@ class ExecutorLifecycleTests(unittest.TestCase):
                         self._run_and_05_with_force_stop(transport)
                         result = executor.execute(now=NOW)
 
-                        self.assertEqual(result.status, "blocked")
+                        expected_status = (
+                            "failed"
+                            if observation is not None
+                            and type(getattr(observation, "parent_run_ref", None)) is str
+                            and observation.parent_run_ref != transport.parent
+                            else "blocked"
+                        )
+                        self.assertEqual(result.status, expected_status)
                         self.assertEqual(result.completed_operations, 34)
                         self.assertEqual(transport.retry_calls, 0)
                         self.assertFalse(
@@ -6618,6 +7614,194 @@ class ExecutorLifecycleTests(unittest.TestCase):
                                 evidence.AssertionOutcome.NOT_RUN,
                             )
                         )
+
+    def test_missing_pre_retry_scanrun_observation_blocks_retry_dispatch(self) -> None:
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        original = observer.observe_identity
+
+        def observe(parent_ref, timeout):
+            identity = original(parent_ref, timeout)
+            attempted = executor._attempted_operation
+            if (
+                attempted is not None
+                and attempted.operation_id == "and-05-35"
+            ):
+                return replace(identity, successor_scan_run_relations=None)
+            return identity
+
+        observer.observe_identity = observe
+        self._run_and_05_with_force_stop(transport)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIn("pre-Retry relationship proof", result.blocker)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "retry_pre_dispatch_identity_ambiguous",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        intent_key = admission._add_scan_alias(
+            "operation",
+            f"{executor._spec.session_id}:and-05-35:intent",
+        )
+        self.assertFalse(any(key == intent_key for key, _ in writer.assertion_keys))
+
+    def test_pre_retry_successor_scanrun_relation_blocks_retry_dispatch(self) -> None:
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        original = observer.observe_identity
+
+        def observe(parent_ref, timeout):
+            identity = original(parent_ref, timeout)
+            if (
+                transport.force_stop_calls
+                and not transport.retry_calls
+                and parent_ref == transport.parent
+            ):
+                return replace(
+                    identity,
+                    successor_scan_run_relations=(
+                        contract.ScanRunRelation(
+                            "orphan-successor-scan",
+                            "unidentified-successor",
+                            identity.admitted_root_refs[0],
+                        ),
+                    ),
+                )
+            return identity
+
+        observer.observe_identity = observe
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        self._run_and_05_with_force_stop(transport)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIn("pre-Retry relationship proof is unavailable", result.blocker)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "retry_pre_dispatch_identity_ambiguous",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        intent_key = admission._add_scan_alias(
+            "operation",
+            f"{executor._spec.session_id}:and-05-35:intent",
+        )
+        self.assertFalse(any(key == intent_key for key, _ in writer.assertion_keys))
+
+    def test_pre_retry_successor_partition_without_successor_run_blocks_retry(self) -> None:
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        original = observer.observe_identity
+
+        def observe(parent_ref, timeout):
+            identity = original(parent_ref, timeout)
+            attempted = executor._attempted_operation
+            if (
+                attempted is not None
+                and attempted.operation_id == "and-05-35"
+            ):
+                return replace(
+                    identity,
+                    successor_requested_root_refs=identity.requested_root_refs,
+                    successor_admitted_root_refs=identity.admitted_root_refs,
+                    successor_excluded_root_refs=identity.excluded_root_refs,
+                    successor_exclusions=(),
+                )
+            return identity
+
+        observer.observe_identity = observe
+        self._run_and_05_with_force_stop(transport)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIn("pre-Retry relationship proof is unavailable", result.blocker)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "retry_pre_dispatch_identity_ambiguous",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        intent_key = admission._add_scan_alias(
+            "operation",
+            f"{executor._spec.session_id}:and-05-35:intent",
+        )
+        self.assertFalse(any(key == intent_key for key, _ in writer.assertion_keys))
+
+    def test_pre_retry_rejects_root_partition_drift_with_stable_scope_ref(self) -> None:
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        original = observer.observe_identity
+
+        def observe(parent_ref, timeout):
+            identity = original(parent_ref, timeout)
+            attempted = executor._attempted_operation
+            if (
+                attempted is not None
+                and attempted.operation_id == "and-05-35"
+            ):
+                added_root = "root-ref-added-before-retry"
+                return replace(
+                    identity,
+                    requested_root_refs=(
+                        identity.requested_root_refs + (added_root,)
+                    ),
+                    excluded_root_refs=(
+                        identity.excluded_root_refs + (added_root,)
+                    ),
+                )
+            return identity
+
+        observer.observe_identity = observe
+        self._run_and_05_with_force_stop(transport)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertIn("pre-Retry relationship proof", result.blocker)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "retry_pre_dispatch_scope_stale",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        intent_key = admission._add_scan_alias(
+            "operation",
+            f"{executor._spec.session_id}:and-05-35:intent",
+        )
+        self.assertFalse(any(key == intent_key for key, _ in writer.assertion_keys))
 
     def test_retry_successor_identity_unavailable_blocks(self) -> None:
         transport = ScriptedTransport("AND-05")
@@ -6657,13 +7841,35 @@ class ExecutorLifecycleTests(unittest.TestCase):
         self.assertEqual(transport.retry_calls, 0)
         self.assertIn("identities are BLOCKED", result.blocker)
 
-    def test_scan_job_observation_unavailable_blocks(self) -> None:
+    def test_scanning_scanrun_without_expected_state_stays_blocked(self) -> None:
+        relation = contract.ScanRunRelation(
+            "scan-run", "parent", "root-ref-synthetic"
+        )
+        observation = contract.ScanRunObservation(
+            surface=contract.JobLifecycleSurface.REFRESH_DETAIL,
+            parent_run_ref="parent",
+            scan_run_ref="scan-run",
+            root_ref="root-ref-synthetic",
+            parent_state=contract.RecoveryState.ACTIVE,
+            scan_state="scanning",
+            observer_ref="refresh-detail-observer",
+        )
+
+        result = oracle.validate_scan_run_observation(
+            observation,
+            expected_relation=relation,
+        )
+
+        self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(result.code, "scan_run_terminal_state_unavailable")
+
+    def test_scan_run_observation_unavailable_blocks(self) -> None:
         executor, transport, _ = self._executor()
-        transport.observe_scan_job = lambda run_ref, timeout: None
+        transport.observe_scan_run = lambda parent_ref, scan_run_ref, root_ref, timeout: None
         result = executor.execute(now=NOW)
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.completed_operations, 29)
-        self.assertIn("Library Scan job state", result.blocker)
+        self.assertIn("owning refresh ScanRun state", result.blocker)
 
     def test_session_deadline_expires_during_dispatch(self) -> None:
         clock = _Clock()

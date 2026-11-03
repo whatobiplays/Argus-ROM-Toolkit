@@ -31,6 +31,10 @@ identity, a foreign package or a contradictory typed process state is
 `FAILED`. An unsuccessful pre-effect check stops before intent and dispatch.
 An uncertain result after an effect requires owner recovery and never triggers
 an automatic replay.
+An intent append does not prove transport dispatch: if the call budget expires
+before the transport callback is entered, navigation is recorded as blocked
+and not dispatched. An unverified result after callback entry remains
+uncertain and requires owner recovery.
 
 Admission requires a no-reset session for
 `com.argusromtoolkit.argus.qualification`, the pinned APK and certificate
@@ -71,15 +75,32 @@ evidence schema is unchanged. A blocked or undecided obligation is recorded as
 `BLOCKED`; a dependent operation that was not run is recorded as `NOT_RUN`.
 There is no persisted `NOT_APPLICABLE` outcome and no new event variant.
 
-The lifecycle contract is version 4, the capability is version 3, and the
-oracle is version 6. The capability declaration and digest are unchanged. The
-oracle digest is
-`2ef54c98c518e0625e50c38b1225af96128eee7ed2ffd2524a6c62262c8d5894`. The
-AND-05 capability declaration names the fresh Retry-relation precondition.
-The new oracle pin changes both scenario plan digests; an owner must recompute
-and approve each complete plan from its artifact, rules, and frozen operations.
-Previous v4/v3/v5, v3/v3/v4, and v2/v2/v3 bindings are rejected for both scenarios.
-Legacy, Issue #26, and Issue #27 pins are unaffected.
+The lifecycle contract is version 5, the capability is version 4, and the
+oracle is version 7. Capability v4 binds one admitted LibraryRefresh JobRun to
+per-root ScanRuns. Each relation uses the tuple `(parent JobRunId, ScanRunId,
+LibraryRootId)`. Source and Retry successor ScanRun ID sets are disjoint. The
+capability digest is
+`919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644`. Oracle
+v7 checks those source and successor relations and the complete GameId
+membership policy, including direct queried redirects to current Library
+members and rejection of transitive resolution. Its digest is
+`3f035f161cbb5d1cb3edd88b29069a12c2bc8dd2fc72c5783f39279c9243698a`.
+
+The AND-04 and AND-05 plan digests below come from synthetic host-test
+authorization fixtures. They verify canonical plan computation; they are not
+owner-approved authorization digests and cannot admit physical execution.
+
+| Scenario | Synthetic test-fixture plan digest |
+|---|---|
+| AND-04 | `71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13` |
+| AND-05 | `d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4` |
+
+The AND-05 capability declares a fresh Retry-relation precondition and binds
+the successor observation to the captured source root partition and ScanRun
+set. Owner authorizations must bind the exact contract, capability, oracle,
+artifact, rules, and frozen operations. Earlier v4/v3/v6, v4/v3/v5, v3/v3/v4, and
+v2/v2/v3 bindings are rejected for both scenarios. Legacy, Issue #26, and
+Issue #27 pins are unaffected.
 
 ## 3. AND-04 operation table
 
@@ -129,9 +150,12 @@ parent until a terminal state is available. An active state at the deadline or
 missing terminal evidence blocks the session and leaves later operations
 `NOT_RUN`; this does not extend the operation or session deadline.
 
-In both scenarios, the parent-child observation must repeat the frozen scope
-captured with the parent at refresh arrival. A scope mismatch blocks before the
-background transition in AND-04 or the process stop in AND-05.
+In both scenarios, the independent identity observer must repeat the frozen
+requested, admitted, and excluded root scope captured with the parent refresh.
+It binds each admitted root to exactly one ScanRun using the parent JobRunId,
+ScanRunId, and LibraryRootId. A missing, duplicated, or contradictory relation
+blocks before the background transition in AND-04 or process stop in AND-05.
+The model contains no separate LibraryScan child JobRunId.
 
 ## 4. AND-05 operation table
 
@@ -185,62 +209,84 @@ AND-05 has 45 operations. Its raw timeout sum is 880 seconds.
 | 44 | navigation | `open_retry_successor_detail` | 10 |
 | 45 | read_only | `retry_successor_terminal` | 60 |
 
-Operations 13 through 15 capture the pre-loss Sources root presentation.
-The root observation must identify the authorized root and exactly one
-`View Job` run. Its presentation is either an active scan with no historical
-last-scan state, or a historical last scan with one terminal scan state. A
-missing presentation, an unidentified root, or a missing run identity blocks
-the session before the controlled stop. This observation does not establish
-that the root's `View Job` run is a child of the tested Library Refresh.
+Operations 13 through 15 capture the pre-loss Sources root presentation. The
+observation keeps the root's `View Job` JobRunId separate from its ScanRunId.
+The presentation must identify the authorized root and one active scan with
+no historical last-scan state, or one historical last scan with a terminal
+state. Missing or ambiguous presentation or identity blocks before the
+controlled stop. `View Job` navigation alone does not establish the root's
+ScanRun ownership.
 
 Operations 25 through 29 run after relaunch and before Retry. Operation 27
-compares the recovered root with the pre-loss root. The root identity and the
-`View Job` run identity must match. A historical presentation must keep the
-same last-scan state. An active presentation that becomes historical is
-accepted only when the run identity is unchanged. A root that remains active,
-reactivates, changes identity, or loses its presentation records `BLOCKED`.
+checks the recovered root's `(parent JobRunId, ScanRunId, LibraryRootId)`
+against the independently captured source relation, then compares it with the
+pre-loss tuple. A historical presentation must keep the same terminal state.
+An active presentation that becomes historical is accepted only for the same
+ScanRun. A root that remains active or has missing or ambiguous root or
+ScanRun evidence records `BLOCKED`. A different valid owning parent is a
+contradiction and records `FAILED`. `View Job` remains parent JobRun navigation;
+it is not compared with the ScanRunId.
 
 Operation 29 compares the exact recovered Library membership identities with
 the identities captured at operation 12. Counts, row order, titles, and
-screenshots do not substitute for identities. Every captured identity must
-remain committed; a missing identity records `FAILED`, while unavailable or
-incomplete identity evidence records `BLOCKED`. Newly committed assets may
-appear. Operation 35 does not dispatch Retry unless both operation 27 and
-operation 29 passed. A blocked or failed persistence check therefore prevents
-Retry from recreating a lost asset before the persistence assertion runs.
+screenshots do not substitute for identities. Each captured GameId must remain
+present or have a complete, unique, refresh-bound direct redirect to a GameId
+in the complete current Library set. The redirect source must be in
+`queried_game_ids`; the oracle does not follow a second redirect. Missing query
+coverage, an intermediate target, a target outside current membership, or
+incomplete, ambiguous, cyclic, or foreign-run continuity evidence records
+`BLOCKED`. A complete lookup with no redirect proves loss only for an ID in
+that query. Newly committed assets may appear, but they do not conceal an
+unresolved loss. Operation 35 does not
+dispatch Retry unless both operation 27 and operation 29 passed. A blocked or
+failed persistence check therefore prevents Retry from recreating a lost asset
+before the persistence assertion runs.
 
 Operations 35 through 37 separate three claims. Operation 35 dispatches the
 single authorized Retry only after the pre-Retry persistence gate passes and a
-fresh relation lookup independently establishes that the verified source has
-no Retry successor. The lookup must bind the exact parent JobRunId, frozen
-scope, recovered terminal state, and complete previously verified child set;
-the child identities must be unique and unchanged. The parent JobRunId cannot
-also appear as a child, and the Retry successor cannot reuse one of the source
-parent's child IDs. The observation must state
-that the current source relation lookup completed, bind that query to the same
-parent, and establish that both successor identity and successor scope are
-absent. A missing successor identifier alone is not proof of absence, and
-contradictory or stale relation fields block before effect intent or dispatch.
-This pre-Retry query fact is separate from the existing post-Retry
-`source_run_ref` relationship semantics. Operation 36 observes the retry
-outcome and requires one exact successor run
-identity. Operation 37 checks that the successor's source, frozen scope,
-successor identity, and successor scope match the observed refresh. Neither
+fresh relation lookup proves that the source parent has no Retry successor.
+The lookup binds the exact parent JobRunId, the captured requested/admitted/
+excluded root sets, recovered terminal state, and complete source ScanRun
+relation set. Each source-admitted root has exactly one unique ScanRun. The
+lookup must establish an empty Retry relation: no successor JobRunId,
+source/successor link, successor scope, requested/admitted/excluded partition,
+typed exclusion, or successor ScanRun relation may already be present. Any
+successor metadata without a verified successor JobRunId blocks before Retry
+intent or dispatch. The lookup must report the successor ScanRun relation
+collection as an explicit empty tuple; missing (`None`) relation evidence does
+not prove absence and blocks before Retry intent or dispatch.
+
+Retry reuses the original requested root set and rechecks current eligibility.
+The successor may admit a different subset and must provide one typed
+SPEC-BE-013 exclusion reason for every excluded requested root. At least one
+root must be admitted; each admitted root must have exactly one ScanRun owned
+by the distinct successor JobRunId. Successor ScanRun IDs must be disjoint
+from the source set. Operation 36 also requires the source partition and
+ScanRun set to match the values captured before process interruption. Missing
+or ambiguous successor scope or exclusion evidence
+is `BLOCKED`; a proven foreign identity or a ScanRun assigned to an excluded
+root is `FAILED`. Operation 36 captures the successor partition and relations;
+operation 37 independently confirms the source and successor relations. Neither
 operation infers identity from row order, labels, or timing.
 
 Operation 39 re-observes the Library after Retry and compares it with the
 identities recovered at operation 29, not with the original pre-loss snapshot.
 The post-Retry integrity check therefore remains separate from the
-process-recovery persistence check. An identity that disappears after Retry
-records `FAILED`; incomplete identity evidence records `BLOCKED`. Operation 42
-re-observes the Sources root after Retry. It accepts an identified active or
-historical presentation only when the root matches the authorized root and
-the single `View Job` reference equals the verified Retry successor run. The
-active form must carry no historical last-scan state; the historical form must
-carry one terminal last-scan state. An accepted active presentation proves
-current successor ownership of the root, not terminal completion of the
-successor. Operation 42 never awards refresh-child attribution, and operation
-45 remains the only terminal-success decision for the successor.
+process-recovery persistence. An identity that disappears after Retry records
+`FAILED`; incomplete identity evidence records `BLOCKED`. Operation 42
+re-observes the Sources root after Retry. It requires the authorized root, the
+exact successor ScanRunId, and an owning parent JobRunId that matches the
+independently verified Retry successor. It does not use `View Job` navigation
+to establish this relation. The active form has no historical last-scan state;
+the historical form has one terminal state. An active observation proves
+current successor ownership of the root, not terminal completion. Operation 42
+does not award terminal success. Operation 45 remains the only
+terminal-success decision for the successor.
+
+AND-04 operations 29 and 30 retain their frozen identifiers and grants.
+Operation 29 follows `View Job` to the owning LibraryRefresh detail. Operation
+30 reads the selected root's ScanRun from that parent detail. The parent
+JobRunId and ScanRunId are checked as separate identities.
 
 Operations 43 through 45 verify the retry successor without another effect.
 Operation 43 navigates to Jobs. Operation 44 opens the successor detail only
@@ -312,32 +358,38 @@ count. Extra, missing, substituted, duplicated, or paginated history blocks
 before a Refresh effect. A refresh that became active after admission also
 blocks.
 
-The Sources root detail exposes the root identity and at most one `View Job`
-run. A root observation must carry an explicit `ScanRootPresentation`.
-`ACTIVE_SCAN` means the root shows an active scan and no historical last-scan
-state. `HISTORICAL_LAST_SCAN` means the root shows one terminal last-scan
-state. `UNIDENTIFIED`, a missing run identity, contradictory root identity, or
-conflicting labels records `BLOCKED`. Operation 15 accepts an identified
-active or historical pre-loss presentation. Operation 27 accepts a recovered
-historical presentation with the same root and run identity, or an
-active-to-historical transition with the same run identity. A root that
-remains active, reactivates, changes identity, or loses its presentation
-blocks before Retry. After Retry, operation 42 requires the same authorized
-root and exactly one `View Job` reference equal to the verified successor run.
-Either an identified active presentation with no historical last-scan state or
-an identified historical presentation with one terminal last-scan state
-passes. A foreign root, a stale last scan from the original refresh or another
-job, a missing or duplicate `View Job` control, and contradictory state record
-`BLOCKED`. The observed `view_job_run_ref` is a JobRunId, never a ScanRunId.
-The active form records current successor ownership of the root; it does not
-record terminal completion.
+The Sources root detail exposes its LibraryRootId and at most one `View Job`
+JobRunId. It does not expose ScanRun ownership by itself. A root observation
+must carry an explicit `ScanRootPresentation`. `ACTIVE_SCAN` means the root
+shows an active scan with no historical last-scan state. `HISTORICAL_LAST_SCAN`
+means it shows one terminal last-scan state. `UNIDENTIFIED`, missing or
+ambiguous ScanRun identity, an unidentified root, or conflicting labels
+records `BLOCKED`.
 
-The root's `View Job` run is not a child of the tested LibraryRefresh until
-the independent identity observer proves that run appears in the refresh's
-child references. Operation 27 records that attribution as a separate
-assertion: a matching run can pass root persistence while the child
-attribution remains `BLOCKED`. Neither the Sources route nor a scan-detail
-navigation awards parent-child identity by itself.
+Operation 15 captures the identified pre-loss presentation. Operation 19
+independently binds the parent JobRunId and frozen root scope to one ScanRun
+per admitted root. Operation 20 checks that the pre-loss Sources tuple matches
+that relation before force-stop. Operation 27 checks the recovered tuple
+against the source relation and pre-loss tuple. An active-to-historical
+transition passes only for the same ScanRun with a terminal state. A root that
+remains active or has missing or ambiguous root or ScanRun evidence blocks
+Retry. A different valid owning parent is a contradiction and records
+`FAILED`.
+
+After Retry, operation 42 requires the same authorized root and exact
+ScanRunId whose owning parent JobRunId is the verified Retry successor. It
+does not use `view_job_run_ref` to prove ScanRun ownership. That field is a
+JobRunId used for navigation, never a ScanRunId. An identified active
+presentation has no historical last-scan state; a historical presentation has
+one terminal last-scan state. A foreign root or ambiguous ScanRun identity is
+`BLOCKED`. An active presentation proves current successor ownership of the
+root, not terminal completion.
+
+The root route does not prove that its ScanRun belongs to the tested
+LibraryRefresh. The independent identity observer must establish the exact
+`(parent JobRunId, ScanRunId, LibraryRootId)` relation. Operation 27 records
+root persistence and ScanRun attribution as separate assertions, but neither
+the Sources route nor `View Job` navigation alone proves that relation.
 
 The Library surface exposes a membership count and fixed controls, but counts,
 row order, titles, screenshots, and private database reads cannot substitute
@@ -353,7 +405,7 @@ identifiers stay owner-private and outside shared evidence.
 
 The executor records persistence intent and result as separate append-only
 assertions. The recovery checks use the
-`:root-preloss`, `:root-recovery-persistence`, `:refresh-child-attribution`,
+`:root-preloss`, `:root-recovery-persistence`, `:refresh-scanrun-attribution`,
 `:process-recovery-persistence`, `:post-retry-integrity`, and
 `:root-post-retry-active-scan` keys. The last key is appended only when an
 accepted active presentation proves current successor ownership; a historical
@@ -371,14 +423,18 @@ replace independent device observations. A missing observation remains
 |---|---|---|
 | Parent refresh identity missing or ambiguous | `BLOCKED` | Dependent observations `NOT_RUN` |
 | Required lifecycle state is missing or not an exact `RecoveryState` value | `BLOCKED` | Dependent actions `NOT_RUN` |
-| Parent and child identity not independently linked | `BLOCKED` | Child attribution and later claims `NOT_RUN` |
+| Parent JobRun and per-root ScanRun relations are missing, duplicated, or ambiguous | `BLOCKED` | ScanRun attribution and dependent claims `NOT_RUN` |
 | New parent JobRunId is present in the admitted terminal-refresh history | `BLOCKED` | No dependent background transition, force-stop, or Retry; owner recovery |
 | Pre-loss Sources root presentation unidentified, run identity missing, or root identity contradictory | `BLOCKED` | No controlled stop; dependent operations `NOT_RUN` |
-| Recovered Sources root remains active, changes run identity, or changes root identity | `BLOCKED` | No Retry; owner recovery |
-| Recovered Sources root persistence passes but the `View Job` run is absent from the refresh child references | `BLOCKED` for child attribution | Root persistence may pass; no refresh-child claim |
+| Recovered Sources root remains active or its root or ScanRun identity is missing or ambiguous | `BLOCKED` | No Retry; owner recovery |
+| Recovered root names a different valid parent JobRunId | `FAILED` | No Retry; owner recovery |
+| `View Job` JobRunId is available without an independently verified ScanRun relation | `BLOCKED` | No ScanRun-attribution claim |
 | Recovered Jobs observation lacks a valid parent JobRunId | `BLOCKED` | No Retry intent or dispatch; owner recovery |
 | Recovered Jobs observation names a different valid parent JobRunId | `FAILED` | No Retry; owner recovery |
-| Committed Library asset identity missing after relaunch | `FAILED` | No Retry; owner recovery |
+| Missing pre-loss GameId has a complete refresh-bound continuity lookup with no redirect | `FAILED` | No Retry; owner recovery |
+| Missing pre-loss GameId has a complete, unique, refresh-bound direct redirect to a current GameId | `PASSED` for identity persistence | Retry eligibility remains separately gated |
+| Missing pre-loss GameId depends on an unqueried or multi-hop redirect, or its target is absent from current membership | `BLOCKED` | No Retry; owner recovery |
+| Missing pre-loss GameId has unavailable, incomplete, ambiguous, cyclic, or foreign-run continuity evidence | `BLOCKED` | No Retry; owner recovery |
 | Recovered Library identity evidence unavailable or incomplete | `BLOCKED` | No Retry; owner recovery |
 | Pre-Retry root or Library persistence unverified | `BLOCKED` | Retry not dispatched |
 | Fresh Retry-relation lookup is unavailable, incomplete, stale, contradictory, or does not prove absence of both successor identity and scope | `BLOCKED` | No Retry intent or dispatch; owner recovery |
@@ -401,10 +457,10 @@ replace independent device observations. A missing observation remains
 | AND-04 parent remains active or terminal evidence is unavailable at operation 25's 60-second bound | `BLOCKED` | No later operation or terminal-state claim; owner recovery |
 | Pre-stop detail lacks a valid parent JobRunId | `BLOCKED` | No force-stop intent or dispatch; owner recovery |
 | Pre-stop detail names a different valid parent JobRunId | `FAILED` | No force-stop intent or dispatch; owner recovery |
-| Parent-child attribution lacks a valid parent JobRunId | `BLOCKED` | No child-attribution claim or dependent effect; owner recovery |
-| Parent-child attribution names a different valid parent JobRunId | `FAILED` | No dependent effect; owner recovery |
-| Initial parent-child observation scope differs from the scope captured for the parent | `BLOCKED` | No background, process stop, or Retry; owner recovery |
-| Parent or Retry successor identity is reused as a child ID | `BLOCKED` | No child-attribution claim; owner recovery |
+| Parent-to-ScanRun attribution lacks a valid parent JobRunId or exact root partition | `BLOCKED` | No ScanRun-attribution claim or dependent effect; owner recovery |
+| ScanRun relation names a different valid parent JobRunId | `FAILED` | No dependent effect; owner recovery |
+| Initial root scope differs from the scope captured for the parent refresh | `BLOCKED` | No background transition, process stop, or Retry; owner recovery |
+| An admitted root has a missing, duplicated, or contradictory ScanRun relation | `BLOCKED` | No ScanRun-attribution claim; owner recovery |
 | Evidence append fails | `BLOCKED` | Preserve evidence; owner recovery required; no cleanup or product mutation |
 | Retry is not advertised for the durable state | `NOT_RUN` | No retry dispatched |
 | Retry-eligibility detail lacks a valid parent JobRunId | `BLOCKED` | No Retry intent or dispatch; owner recovery |
@@ -424,13 +480,16 @@ replace independent device observations. A missing observation remains
 | Terminal detail has no valid JobRunId or its lifecycle state is unavailable | `BLOCKED` | No terminal-state or successful Retry claim; owner recovery |
 | Terminal detail identifies a different valid JobRunId than the exact Retry successor | `FAILED` | No successful Retry claim; owner recovery |
 | Post-Retry root is a different Sources root than the authorized root | `BLOCKED` | No terminal-success claim; owner recovery |
-| Post-Retry `View Job` reference is not the verified Retry successor | `BLOCKED` | No refresh-child or terminal attribution; owner recovery |
-| Post-Retry root shows a stale historical last scan from the previous refresh or another job | `BLOCKED` | No terminal-success claim; owner recovery |
-| Post-Retry `View Job` control is missing, duplicated, or its run identity is absent | `BLOCKED` | No terminal-success claim; owner recovery |
+| Before AND-04 operations 29–30, `View Job` is missing, duplicated, or does not identify the observed parent JobRunId | `BLOCKED` | Do not navigate to detail or claim ScanRun attribution |
+| Post-Retry root names a different valid parent JobRunId than the Retry successor | `FAILED` | No terminal-success claim; owner recovery |
 | Post-Retry root shows both active and historical state, or neither identified presentation | `BLOCKED` | No terminal-success claim; owner recovery |
-| Scan detail names a different run than the root `View Job` control | `FAILED` | Sources route never awards refresh-child attribution |
-| Post-Retry Library asset identity missing | `FAILED` | No second Retry; owner recovery |
-| Post-Retry Library identity evidence missing or incomplete | `BLOCKED` | No second Retry; no count, order, title, or database substitution |
+| ScanRun detail names a different valid owning parent JobRunId | `FAILED` | No source or successor relation claim |
+| ScanRun detail has a missing or mismatched ScanRunId or LibraryRootId | `BLOCKED` | No source or successor relation claim |
+| Missing recovered GameId has a complete successor-bound continuity lookup with no redirect | `FAILED` | No second Retry; owner recovery |
+| Missing recovered GameId has a complete, unique, successor-bound direct redirect to a current GameId | `PASSED` for identity persistence | Retry-success assertion remains separate |
+| Missing recovered GameId depends on an unqueried or multi-hop redirect, or its target is absent from current membership | `BLOCKED` | No successful integrity claim; owner recovery |
+| Missing recovered GameId has unavailable, incomplete, ambiguous, cyclic, or foreign-run continuity evidence | `BLOCKED` | No second Retry; owner recovery |
+| Post-Retry Library identity evidence is missing or incomplete | `BLOCKED` | No second Retry; no count, order, title, or database substitution |
 | Foreground return or task continuity fails in AND-04 | `FAILED` for recovery consistency | No fresh-launch substitution |
 
 `BLOCKED` means the available evidence cannot decide the assertion. `FAILED`
@@ -482,22 +541,22 @@ physical latency verdict.
 
 Physical admission remains blocked until permitted independent surfaces can
 verify the exact package and artifact, no-reset Library and job baseline,
-parent and child run identities, retry source and successor identity, process
-presence and task continuity, committed Library state, scan-root and scan-job
-relationships, and pending cleanup and restoration facts.
+parent JobRunId, per-root ScanRunId and LibraryRootId relations, retry source
+and successor identity, process presence and task continuity, committed
+Library state, and pending cleanup and restoration facts.
 
-The pinned refresh detail does not expose a JobRunId. The Sources root-detail
-route does not link its `View Job` control to the tested refresh child. The
-current accessibility parser also raises an ambiguous-surface block when an
-active Sources root shows `Scanning in progress` next to `View Job`, so it
-cannot identify an active scan presentation. It reports a last-scan label, but
-that label alone does not establish whether the root is showing an active scan
-or a historical last scan, and it does not establish the run identity.
-Physical operations 15, 27, and 42 therefore remain `BLOCKED` until separate
-G5 transport work supplies an authorized independent observer for the explicit
-presentation and exact run identity. Operation 42 additionally requires that
-observer to bind the single `View Job` reference to the verified Retry
-successor.
+The pinned refresh detail does not expose the required parent JobRunId and
+per-root ScanRun relation. The Sources root-detail route exposes `View Job` as
+JobRun navigation; it does not prove that the displayed ScanRun belongs to the
+tested refresh. The current accessibility parser also raises an
+ambiguous-surface block when an active Sources root shows `Scanning in
+progress` next to `View Job`, so it cannot identify an active scan
+presentation. A last-scan label does not establish a ScanRunId. Physical
+operations 15, 19, 20, 27, 29, 30, 37, and 42 therefore remain `BLOCKED` until
+permitted surfaces and a separately authorized independent observer establish
+the exact parent JobRunId, frozen root scope, and per-root ScanRun tuple.
+Operation 42 must bind the root ScanRun and owning parent to the verified Retry
+successor. The `View Job` reference does not establish this relation.
 
 The accessibility parser exposes a Library membership count but not the exact
 committed asset identities required by operations 12 and 29. A count or row
@@ -534,13 +593,14 @@ not replace either observation.
 ordinary Library, Jobs, refresh-detail, Sources-root, and scan-detail surfaces
 through the existing accessibility adapter in
 `scripts/android_qualification/physical/_job_lifecycle_ui.py`. Future product
-work would need to expose stable parent and child `JobRunId` values, frozen
-scope, root-to-job identity, and exact committed Library member identities
-through those standard surfaces. Current Jobs rows show an operation label and
-lifecycle state while the ID remains an internal route key; the Library view
-does not expose the exact committed member set; and the root's last scan is
-not necessarily a child of the tested refresh. Missing or ambiguous facts
-remain `BLOCKED`; a different valid identity or proven committed-state loss
+work would need to expose the parent JobRunId, its frozen root scope, each
+per-root `(JobRunId, ScanRunId, LibraryRootId)` relation, and exact committed
+Library member identities through standard surfaces. Current Jobs rows show
+an operation label and lifecycle state while the ID remains an internal route
+key; the Library view does not expose the exact committed member set; and the
+root's `View Job` navigation does not establish ScanRun ownership. Missing or
+ambiguous facts remain `BLOCKED`; a different valid identity or proven
+committed-state loss
 uses the existing operation-specific `FAILED` classification. Any production
 accessibility change requires its own product review, artifact pin, and
 requalification. The product touchpoints to review are
@@ -577,7 +637,7 @@ are excluded. The observer must not enumerate other applications, retain broad
 storage. A missing package, signer, process, or permitted task observation is
 `BLOCKED`; a valid observation of a different artifact, signer, package, or
 required process state is `FAILED`. OS facts cannot establish app-owned
-JobRunIds, refresh-child relationships, frozen scope, committed Library
+JobRunIds, per-root ScanRun relations, frozen scope, committed Library
 membership, or Sources attribution. If Android cannot return a required
 foreground or task fact without exposing unrelated app state, that assertion
 stays `BLOCKED`.

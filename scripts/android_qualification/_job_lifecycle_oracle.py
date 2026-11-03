@@ -15,12 +15,15 @@ import re
 from . import evidence
 from ._job_lifecycle_contract import (
     ACTIVE_STATES,
+    ROOT_HISTORICAL_SCAN_STATES,
     JOB_LIFECYCLE_ORACLE_SHA256,
     JOB_LIFECYCLE_ORACLE_VERSION,
     LibrarySurfaceObservation,
     LibraryScanChildCompletion,
     TERMINAL_STATES,
     JobIdentityObservation,
+    GameIdContinuityObservation,
+    GameIdRedirect,
     LatencyCriterion,
     LatencyCycle,
     _LATENCY_POLICY_DECLARATION,
@@ -30,6 +33,8 @@ from ._job_lifecycle_contract import (
     RefreshDetailObservation,
     RefreshProgressFacts,
     ScanRootObservation,
+    ScanRunObservation,
+    ScanRunRelation,
     ScanRootPresentation,
 )
 
@@ -148,13 +153,62 @@ def validate_identity(
     observation: object,
     *,
     retry: bool = False,
+    expected_parent_ref: str | None = None,
+    expected_scope_ref: str | None = None,
+    expected_scan_run_relations: tuple[ScanRunRelation, ...] | None = None,
+    require_scan_relationships: bool = True,
 ) -> OracleResult:
-    """Require a complete independently observed identity relation."""
+    """Require a complete parent/root scope and exact per-root ScanRun relation."""
     if type(observation) is not JobIdentityObservation:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "job_identity_unavailable")
-    complete = observation.retry_complete() if retry else observation.parent_child_complete()
-    if not complete:
+    if (
+        expected_parent_ref is not None
+        and type(observation.parent_run_ref) is str
+        and observation.parent_run_ref
+        and observation.parent_run_ref != expected_parent_ref
+    ):
+        return OracleResult(evidence.AssertionOutcome.FAILED, "job_parent_identity_mismatch")
+    if expected_scan_run_relations is not None:
+        valid_expected = (
+            type(expected_scan_run_relations) is tuple
+            and all(
+                type(relation) is ScanRunRelation and relation.established()
+                for relation in expected_scan_run_relations
+            )
+        )
+        if not valid_expected:
+            return OracleResult(
+                evidence.AssertionOutcome.BLOCKED,
+                "expected_scan_run_scope_unavailable",
+            )
+        expected_relations = set(expected_scan_run_relations)
+        if type(observation.scan_run_relations) is tuple and any(
+            type(relation) is ScanRunRelation
+            and relation.established()
+            and relation not in expected_relations
+            for relation in observation.scan_run_relations
+        ):
+            return OracleResult(
+                evidence.AssertionOutcome.BLOCKED,
+                "scan_run_relationship_ambiguous",
+            )
+    if not observation.parent_identity_complete():
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "job_identity_incomplete")
+    if (
+        expected_scope_ref is not None
+        and observation.frozen_scope_ref != expected_scope_ref
+    ):
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "job_scope_identity_stale")
+    if retry:
+        if not observation.retry_complete():
+            return OracleResult(evidence.AssertionOutcome.BLOCKED, "retry_identity_incomplete")
+    elif require_scan_relationships and not observation.scan_relationships_complete():
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "scan_run_relationships_incomplete")
+    if expected_scan_run_relations is not None:
+        if not observation.scan_relationships_complete():
+            return OracleResult(evidence.AssertionOutcome.BLOCKED, "scan_run_relationships_incomplete")
+        if set(observation.scan_run_relations) != set(expected_scan_run_relations):
+            return OracleResult(evidence.AssertionOutcome.BLOCKED, "scan_run_relationship_ambiguous")
     return OracleResult(evidence.AssertionOutcome.PASSED, "job_identity_observed")
 
 
@@ -163,40 +217,92 @@ def validate_retry_precondition(
     *,
     expected_parent_ref: str | None,
     expected_scope_ref: str | None,
+    expected_requested_root_refs: tuple[str, ...] | None,
+    expected_admitted_root_refs: tuple[str, ...] | None,
+    expected_excluded_root_refs: tuple[str, ...] | None,
     expected_state: RecoveryState | None,
-    expected_child_refs: tuple[str, ...] | None,
+    expected_scan_run_relations: tuple[ScanRunRelation, ...] | None,
 ) -> OracleResult:
-    """Require a fresh exact lookup proving the source has no Retry successor."""
+    """Require a fresh exact source/scope/ScanRun lookup with no successor."""
     if type(observation) is not JobIdentityObservation:
         return OracleResult(
             evidence.AssertionOutcome.BLOCKED,
             "retry_pre_dispatch_identity_unavailable",
         )
-    expected_children = expected_child_refs
-    observed_children = observation.child_run_refs
     if (
         type(expected_parent_ref) is not str
         or not 1 <= len(expected_parent_ref) <= 256
+        or not expected_parent_ref.strip()
         or type(expected_scope_ref) is not str
         or not 1 <= len(expected_scope_ref) <= 256
         or type(expected_state) is not RecoveryState
         or expected_state not in RETRY_ELIGIBLE_STATES
-        or type(expected_children) is not tuple
-        or not expected_children
-        or any(type(value) is not str or not 1 <= len(value) <= 256 for value in expected_children)
-        or len(set(expected_children)) != len(expected_children)
-        or observation.parent_run_ref != expected_parent_ref
-        or observation.frozen_scope_ref != expected_scope_ref
-        or observation.parent_state is not expected_state
-        or type(observed_children) is not tuple
-        or not observed_children
-        or any(type(value) is not str or not 1 <= len(value) <= 256 for value in observed_children)
-        or len(set(observed_children)) != len(observed_children)
-        or set(observed_children) != set(expected_children)
-        or observation.retry_relation_lookup_completed is not True
+        or type(expected_scan_run_relations) is not tuple
+        or not expected_scan_run_relations
+        or any(
+            type(relation) is not ScanRunRelation or not relation.established()
+            for relation in expected_scan_run_relations
+        )
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_identity_unavailable",
+        )
+    if (
+        type(observation.parent_run_ref) is str
+        and observation.parent_run_ref
+        and observation.parent_run_ref != expected_parent_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "retry_pre_dispatch_parent_mismatch",
+        )
+    if not observation.parent_identity_complete():
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_identity_ambiguous",
+        )
+    if observation.frozen_scope_ref != expected_scope_ref:
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_scope_stale",
+        )
+    if not observation.root_scope_matches(
+        expected_requested_root_refs,
+        expected_admitted_root_refs,
+        expected_excluded_root_refs,
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_scope_stale",
+        )
+    if observation.parent_state is not expected_state:
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_state_stale",
+        )
+    if not observation.scan_relationships_complete():
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_scan_relations_incomplete",
+        )
+    if set(observation.scan_run_relations) != set(expected_scan_run_relations):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_scan_relations_ambiguous",
+        )
+    successor_scan_run_relations = observation.successor_scan_run_relations
+    if (
+        observation.retry_relation_lookup_completed is not True
         or observation.retry_lookup_source_run_ref != expected_parent_ref
         or observation.successor_run_ref is not None
+        or type(successor_scan_run_relations) is not tuple
+        or bool(successor_scan_run_relations)
         or observation.successor_scope_ref is not None
+        or observation.successor_requested_root_refs is not None
+        or observation.successor_admitted_root_refs is not None
+        or observation.successor_excluded_root_refs is not None
+        or observation.successor_exclusions is not None
         or observation.source_run_ref is not None
     ):
         return OracleResult(
@@ -246,11 +352,20 @@ def validate_scan_root_preloss(
         )
     if type(observation) is not ScanRootObservation:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "scan_root_observation_unavailable")
+    identified = (
+        observation.active_scan_identified()
+        or observation.historical_last_scan_identified()
+    )
+    if not identified:
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_root_presentation_unidentified",
+        )
     if observation.root_ref != expected_root_ref:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "scan_root_identity_mismatch")
-    if observation.active_scan_identified():
+    if observation.presentation is ScanRootPresentation.ACTIVE_SCAN:
         return OracleResult(evidence.AssertionOutcome.PASSED, "scan_root_active_scan_observed")
-    if observation.historical_last_scan_identified():
+    if observation.presentation is ScanRootPresentation.HISTORICAL_LAST_SCAN:
         return OracleResult(
             evidence.AssertionOutcome.PASSED,
             "scan_root_historical_scan_observed",
@@ -258,6 +373,49 @@ def validate_scan_root_preloss(
     return OracleResult(
         evidence.AssertionOutcome.BLOCKED,
         "scan_root_presentation_unidentified",
+    )
+
+
+def validate_scan_root_relation(
+    observation: object,
+    *,
+    expected_relation: ScanRunRelation,
+) -> OracleResult:
+    """Bind a verified Sources root presentation to its owning parent ScanRun tuple."""
+    if type(observation) is not ScanRootObservation:
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_root_observation_unavailable",
+        )
+    if not (
+        observation.active_scan_identified()
+        or observation.historical_last_scan_identified()
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_root_relation_unavailable",
+        )
+    if type(expected_relation) is not ScanRunRelation or not expected_relation.established():
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_root_expected_relation_unavailable",
+        )
+    if observation.scan_parent_run_ref != expected_relation.parent_run_ref:
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "scan_root_parent_jobrun_mismatch",
+        )
+    if (
+        observation.root_ref != expected_relation.root_ref
+        or observation.scan_run_ref != expected_relation.scan_run_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_root_scan_run_relation_ambiguous",
+        )
+    return OracleResult(
+        evidence.AssertionOutcome.PASSED,
+        "scan_root_scan_run_relation_observed",
     )
 
 
@@ -286,10 +444,15 @@ def scan_root_recovery_persistence(
         )
     if preloss.root_ref != recovered.root_ref:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "scan_root_identity_changed")
-    if preloss.view_job_run_ref != recovered.view_job_run_ref:
+    if preloss.scan_parent_run_ref != recovered.scan_parent_run_ref:
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "scan_root_parent_jobrun_changed",
+        )
+    if preloss.scan_run_ref != recovered.scan_run_ref:
         return OracleResult(
             evidence.AssertionOutcome.BLOCKED,
-            "scan_root_last_scan_identity_changed",
+            "scan_root_scan_run_identity_changed",
         )
     if preloss.presentation is ScanRootPresentation.ACTIVE_SCAN:
         if recovered.presentation is ScanRootPresentation.ACTIVE_SCAN:
@@ -316,8 +479,9 @@ def validate_scan_root_post_retry(
     *,
     expected_root_ref: str,
     expected_successor_run_ref: str,
+    expected_scan_run_ref: str | None = None,
 ) -> OracleResult:
-    """Validate post-Retry root ownership without awarding terminal completion."""
+    """Validate exact successor ScanRun ownership without awarding terminal completion."""
     if type(observation) is not ScanRootObservation:
         return OracleResult(
             evidence.AssertionOutcome.BLOCKED,
@@ -326,11 +490,14 @@ def validate_scan_root_post_retry(
     if (
         type(expected_root_ref) is not str
         or not expected_root_ref
-        or observation.root_ref != expected_root_ref
+        or type(expected_successor_run_ref) is not str
+        or not expected_successor_run_ref
+        or type(expected_scan_run_ref) is not str
+        or not expected_scan_run_ref
     ):
         return OracleResult(
             evidence.AssertionOutcome.BLOCKED,
-            "scan_root_post_retry_identity_mismatch",
+            "scan_root_post_retry_expected_identity_unavailable",
         )
     historical = observation.historical_last_scan_identified()
     active = observation.active_scan_identified()
@@ -339,15 +506,20 @@ def validate_scan_root_post_retry(
             evidence.AssertionOutcome.BLOCKED,
             "scan_root_post_retry_presentation_unidentified",
         )
-    if type(expected_successor_run_ref) is not str or not expected_successor_run_ref:
+    if observation.root_ref != expected_root_ref:
         return OracleResult(
             evidence.AssertionOutcome.BLOCKED,
-            "scan_root_post_retry_successor_unavailable",
+            "scan_root_post_retry_root_mismatch",
         )
-    if observation.view_job_run_ref != expected_successor_run_ref:
+    if observation.scan_parent_run_ref != expected_successor_run_ref:
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "scan_root_post_retry_parent_mismatch",
+        )
+    if observation.scan_run_ref != expected_scan_run_ref:
         return OracleResult(
             evidence.AssertionOutcome.BLOCKED,
-            "scan_root_post_retry_successor_mismatch",
+            "scan_root_post_retry_scan_run_ambiguous",
         )
     if historical:
         return OracleResult(
@@ -360,11 +532,62 @@ def validate_scan_root_post_retry(
     )
 
 
-def library_recovery_persistence(
-    preloss_ids: object,
+def validate_scan_run_observation(
     observation: object,
+    *,
+    expected_relation: ScanRunRelation,
+    expected_scan_state: str | None = None,
 ) -> OracleResult:
-    """Require every captured committed Library identity after process recovery."""
+    """Validate an independently observed per-root ScanRun detail tuple."""
+    if type(observation) is not ScanRunObservation or not observation.established():
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_run_detail_unavailable",
+        )
+    if type(expected_relation) is not ScanRunRelation or not expected_relation.established():
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_run_expected_relation_unavailable",
+        )
+    if observation.parent_run_ref != expected_relation.parent_run_ref:
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "scan_run_parent_jobrun_mismatch",
+        )
+    if (
+        observation.scan_run_ref != expected_relation.scan_run_ref
+        or observation.root_ref != expected_relation.root_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_run_relation_ambiguous",
+        )
+    if (
+        expected_scan_state is not None
+        and observation.scan_state != expected_scan_state
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "scan_run_state_mismatch",
+        )
+    if observation.scan_state not in ROOT_HISTORICAL_SCAN_STATES:
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "scan_run_terminal_state_unavailable",
+        )
+    return OracleResult(evidence.AssertionOutcome.PASSED, "scan_run_relation_observed")
+
+
+def _validate_library_identity_preservation(
+    expected_ids: object,
+    observation: object,
+    *,
+    expected_job_run_ref: str | None,
+    missing_code: str,
+    unavailable_code: str,
+    preserved_code: str,
+) -> OracleResult:
+    """Compare exact complete GameId sets with run-bound redirect evidence."""
     if type(observation) is not LibrarySurfaceObservation:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "library_surface_unavailable")
     if not observation.established() or not observation.membership_identity_complete():
@@ -373,64 +596,94 @@ def library_recovery_persistence(
             "library_membership_identity_unavailable",
         )
     if (
-        type(preloss_ids) is not tuple
-        or not preloss_ids
+        type(expected_ids) is not tuple
         or any(
-            type(value) is not str or not 1 <= len(value) <= 256
-            for value in preloss_ids
+            type(value) is not str
+            or not 1 <= len(value) <= 256
+            or not value.strip()
+            for value in expected_ids
         )
-        or len(set(preloss_ids)) != len(preloss_ids)
+        or len(set(expected_ids)) != len(expected_ids)
     ):
         return OracleResult(
             evidence.AssertionOutcome.BLOCKED,
-            "library_preloss_identity_unavailable",
+            unavailable_code,
         )
-    present = frozenset(observation.membership_ids)
-    if any(identity not in present for identity in preloss_ids):
+
+    current = frozenset(observation.membership_ids)
+    missing = frozenset(expected_ids).difference(current)
+    if not missing:
+        return OracleResult(evidence.AssertionOutcome.PASSED, preserved_code)
+
+    continuity = observation.identity_continuity
+    if (
+        type(expected_job_run_ref) is not str
+        or not expected_job_run_ref
+        or type(continuity) is not GameIdContinuityObservation
+        or not continuity.established()
+        or continuity.job_run_ref != expected_job_run_ref
+    ):
         return OracleResult(
-            evidence.AssertionOutcome.FAILED,
-            "committed_library_asset_missing",
+            evidence.AssertionOutcome.BLOCKED,
+            "library_identity_continuity_unavailable",
         )
-    return OracleResult(
-        evidence.AssertionOutcome.PASSED,
-        "library_recovery_preserved",
+    if not missing.issubset(continuity.queried_game_ids):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "library_identity_continuity_scope_incomplete",
+        )
+
+    redirects = {
+        redirect.source_game_id: redirect.canonical_game_id
+        for redirect in continuity.redirects
+    }
+    for original_id in missing:
+        canonical_id = redirects.get(original_id)
+        if canonical_id is None:
+            return OracleResult(
+                evidence.AssertionOutcome.FAILED,
+                missing_code,
+            )
+        if canonical_id in redirects or canonical_id not in current:
+            return OracleResult(
+                evidence.AssertionOutcome.BLOCKED,
+                "library_identity_continuity_ambiguous",
+            )
+
+    return OracleResult(evidence.AssertionOutcome.PASSED, preserved_code)
+
+
+def library_recovery_persistence(
+    preloss_ids: object,
+    observation: object,
+    *,
+    expected_job_run_ref: str | None = None,
+) -> OracleResult:
+    """Require every captured committed Library identity after process recovery."""
+    return _validate_library_identity_preservation(
+        preloss_ids,
+        observation,
+        expected_job_run_ref=expected_job_run_ref,
+        missing_code="committed_library_asset_missing",
+        unavailable_code="library_preloss_identity_unavailable",
+        preserved_code="library_recovery_preserved",
     )
 
 
 def library_post_retry_integrity(
     recovered_ids: object,
     observation: object,
+    *,
+    expected_job_run_ref: str | None = None,
 ) -> OracleResult:
     """Require every pre-Retry recovered identity to survive Retry unchanged."""
-    if type(observation) is not LibrarySurfaceObservation:
-        return OracleResult(evidence.AssertionOutcome.BLOCKED, "library_surface_unavailable")
-    if not observation.established() or not observation.membership_identity_complete():
-        return OracleResult(
-            evidence.AssertionOutcome.BLOCKED,
-            "library_membership_identity_unavailable",
-        )
-    if (
-        type(recovered_ids) is not tuple
-        or not recovered_ids
-        or any(
-            type(value) is not str or not 1 <= len(value) <= 256
-            for value in recovered_ids
-        )
-        or len(set(recovered_ids)) != len(recovered_ids)
-    ):
-        return OracleResult(
-            evidence.AssertionOutcome.BLOCKED,
-            "library_recovery_identity_unavailable",
-        )
-    present = frozenset(observation.membership_ids)
-    if any(identity not in present for identity in recovered_ids):
-        return OracleResult(
-            evidence.AssertionOutcome.FAILED,
-            "post_retry_library_asset_missing",
-        )
-    return OracleResult(
-        evidence.AssertionOutcome.PASSED,
-        "post_retry_library_integrity_preserved",
+    return _validate_library_identity_preservation(
+        recovered_ids,
+        observation,
+        expected_job_run_ref=expected_job_run_ref,
+        missing_code="post_retry_library_asset_missing",
+        unavailable_code="library_recovery_identity_unavailable",
+        preserved_code="post_retry_library_integrity_preserved",
     )
 
 
@@ -518,6 +771,7 @@ def retry_outcome(
     already_retried: bool,
     parent_ref: str | None,
     frozen_scope_ref: str | None,
+    expected_source_identity: JobIdentityObservation | None,
     successor_identity: JobIdentityObservation | None,
 ) -> OracleResult:
     """Validate one retry and its source/scope binding without another effect."""
@@ -533,7 +787,90 @@ def retry_outcome(
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "retry_not_admitted")
     if successor_identity is None:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "retry_successor_identity_unavailable")
-    identity_result = validate_identity(successor_identity, retry=True)
+    if (
+        type(successor_identity) is JobIdentityObservation
+        and type(successor_identity.parent_run_ref) is str
+        and successor_identity.parent_run_ref
+        and successor_identity.parent_run_ref != parent_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "retry_identity_source_mismatch",
+        )
+    if (
+        type(successor_identity) is JobIdentityObservation
+        and type(successor_identity.source_run_ref) is str
+        and successor_identity.source_run_ref
+        and successor_identity.source_run_ref != parent_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "retry_identity_source_mismatch",
+        )
+    if (
+        type(successor_identity) is JobIdentityObservation
+        and type(successor_identity.successor_run_ref) is str
+        and successor_identity.successor_run_ref
+        and successor_identity.successor_run_ref == parent_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.FAILED,
+            "retry_successor_reuses_source_identity",
+        )
+    if type(successor_identity) is not JobIdentityObservation:
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_successor_identity_unavailable",
+        )
+    if (
+        type(expected_source_identity) is not JobIdentityObservation
+        or not expected_source_identity.scan_relationships_complete()
+        or expected_source_identity.parent_run_ref != parent_ref
+        or expected_source_identity.frozen_scope_ref != frozen_scope_ref
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_source_identity_unavailable",
+        )
+    if not successor_identity.root_scope_matches(
+        expected_source_identity.requested_root_refs,
+        expected_source_identity.admitted_root_refs,
+        expected_source_identity.excluded_root_refs,
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_source_scope_changed",
+        )
+    if type(successor_identity) is JobIdentityObservation:
+        successor_ref = successor_identity.successor_run_ref
+        if (
+            successor_identity.successor_root_scope_complete()
+            and type(successor_ref) is str
+            and successor_ref
+            and type(successor_identity.successor_admitted_root_refs) is tuple
+            and type(successor_identity.successor_scan_run_relations) is tuple
+            and any(
+                type(relation) is ScanRunRelation
+                and relation.established()
+                and (
+                    relation.parent_run_ref != successor_ref
+                    or relation.root_ref
+                    not in successor_identity.successor_admitted_root_refs
+                )
+                for relation in successor_identity.successor_scan_run_relations
+            )
+        ):
+            return OracleResult(
+                evidence.AssertionOutcome.FAILED,
+                "retry_successor_scan_run_owner_mismatch",
+            )
+    identity_result = validate_identity(
+        successor_identity,
+        retry=True,
+        expected_parent_ref=parent_ref,
+        expected_scope_ref=frozen_scope_ref,
+        expected_scan_run_relations=expected_source_identity.scan_run_relations,
+    )
     if identity_result.outcome is not evidence.AssertionOutcome.PASSED:
         return identity_result
     if (

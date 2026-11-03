@@ -40,8 +40,10 @@ from ._job_lifecycle_contract import (
     RecoveryState,
     RefreshDetailObservation,
     RefreshProgressFacts,
-    ScanJobObservation,
+    RootExclusionObservation,
     ScanRootObservation,
+    ScanRunObservation,
+    ScanRunRelation,
     ScanRootPresentation,
     plan_digest_for_authorization,
     required_session_span,
@@ -67,6 +69,8 @@ from ._job_lifecycle_oracle import (
     validate_refresh_progress,
     validate_scan_root_post_retry,
     validate_scan_root_preloss,
+    validate_scan_root_relation,
+    validate_scan_run_observation,
 )
 from .manifest import (
     OperationAuthorization,
@@ -136,10 +140,10 @@ class JobLifecycleTransport(Protocol):
     def observe_scan_root(self, root_ref: str, timeout: int) -> ScanRootObservation:
         """Read the named Sources root detail."""
 
-    def observe_scan_job(
-        self, run_ref: str | None, timeout: int
-    ) -> ScanJobObservation:
-        """Read the current Library Scan job detail."""
+    def observe_scan_run(
+        self, parent_ref: str, scan_run_ref: str, root_ref: str, timeout: int
+    ) -> ScanRunObservation:
+        """Read one root ScanRun from its owning LibraryRefresh detail."""
 
     def start_refresh(self, timeout: int) -> None:
         """Perform the single approved Library Refresh start effect."""
@@ -199,9 +203,16 @@ class JobLifecycleExecutionResult:
 class _JobLifecycleStop(Exception):
     """Stop before another effect and retain one bounded reason."""
 
-    def __init__(self, reason: str, *, failed: bool = False) -> None:
+    def __init__(
+        self,
+        reason: str,
+        *,
+        failed: bool = False,
+        transport_invoked: bool | None = None,
+    ) -> None:
         self.reason = reason
         self.failed = failed
+        self.transport_invoked = transport_invoked
         super().__init__(reason)
 
 
@@ -238,6 +249,29 @@ class _OperationOutcomeJournal:
 
 def _valid_ref(value: object) -> bool:
     return type(value) is str and 1 <= len(value) <= 256
+
+
+def _relation_for_root(
+    relations: tuple[ScanRunRelation, ...], root_ref: str | None
+) -> ScanRunRelation | None:
+    """Return the unique typed ScanRun relation for one LibraryRootId."""
+    if type(relations) is not tuple or not _valid_ref(root_ref):
+        return None
+    matches = tuple(
+        relation
+        for relation in relations
+        if type(relation) is ScanRunRelation
+        and relation.established()
+        and relation.root_ref == root_ref
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
+def _relation_scan_run_ref(
+    relations: tuple[ScanRunRelation, ...], root_ref: str | None
+) -> str | None:
+    relation = _relation_for_root(relations, root_ref)
+    return None if relation is None else relation.scan_run_ref
 
 
 class _JobLifecycleOperationExecutor:
@@ -277,6 +311,9 @@ class _JobLifecycleOperationExecutor:
         self._task_ref: str | None = None
         self._parent_ref: str | None = None
         self._scope_ref: str | None = None
+        self._requested_root_refs: tuple[str, ...] | None = None
+        self._admitted_root_refs: tuple[str, ...] | None = None
+        self._excluded_root_refs: tuple[str, ...] | None = None
         self._parent_state: RecoveryState | None = None
         self._first_progress: RefreshProgressFacts | None = None
         self._library_count: int | None = None
@@ -284,10 +321,18 @@ class _JobLifecycleOperationExecutor:
         self._recovered_library_ids: tuple[str, ...] | None = None
         self._scan_root_ref: str | None = None
         self._preloss_root: ScanRootObservation | None = None
-        self._child_refs: tuple[str, ...] = ()
-        self._root_last_scan_ref: str | None = None
-        self._scan_job_ref: str | None = None
+        self._scan_run_relations: tuple[ScanRunRelation, ...] = ()
+        self._source_identity: JobIdentityObservation | None = None
+        self._successor_scan_run_relations: tuple[ScanRunRelation, ...] = ()
+        self._scan_run_ref: str | None = None
+        self._root_last_scan_state: str | None = None
+        self._root_view_job_run_ref: str | None = None
+        self._root_view_job_control_count: int | None = None
         self._successor_ref: str | None = None
+        self._successor_requested_root_refs: tuple[str, ...] | None = None
+        self._successor_admitted_root_refs: tuple[str, ...] | None = None
+        self._successor_excluded_root_refs: tuple[str, ...] | None = None
+        self._successor_exclusions: tuple[RootExclusionObservation, ...] | None = None
         self._successor_state: RecoveryState | None = None
         self._refresh_attempted = False
         self._refresh_started = False
@@ -367,21 +412,43 @@ class _JobLifecycleOperationExecutor:
         *,
         failure: str = "A typed lifecycle call failed or returned an uncertain outcome.",
     ):
-        budget = self._budget()
         try:
-            return _authorized_transport_call(self._session, budget, operation)
+            budget = self._budget()
+        except _JobLifecycleStop as stop:
+            raise _JobLifecycleStop(
+                stop.reason,
+                failed=stop.failed,
+                transport_invoked=False,
+            ) from stop
+
+        transport_invoked = False
+
+        def invoke(timeout: int):
+            nonlocal transport_invoked
+            transport_invoked = True
+            return operation(timeout)
+
+        try:
+            return _authorized_transport_call(self._session, budget, invoke)
         except _SessionIntegrityError:
             raise _JobLifecycleStop(
-                "The admitted session binding changed during transport."
+                "The admitted session binding changed during transport.",
+                transport_invoked=transport_invoked,
             ) from None
         except _OperationDeadlineExpired:
-            raise _JobLifecycleStop("The approved operation deadline expired.") from None
+            raise _JobLifecycleStop(
+                "The approved operation deadline expired.",
+                transport_invoked=transport_invoked,
+            ) from None
         except InterruptedError:
             raise KeyboardInterrupt from None
         except KeyboardInterrupt:
             raise
         except Exception:
-            raise _JobLifecycleStop(failure) from None
+            raise _JobLifecycleStop(
+                failure,
+                transport_invoked=transport_invoked,
+            ) from None
 
     def _verify_effect_target(
         self,
@@ -938,7 +1005,10 @@ class _JobLifecycleOperationExecutor:
                     expected_root_ref=expected_root_ref,
                 )
             )
-        except _JobLifecycleStop:
+        except _JobLifecycleStop as stop:
+            if stop.transport_invoked is False:
+                self._record_blocked(operation, "navigation_not_dispatched")
+                raise
             self._uncertain_effect(operation, f"{action} navigation")
         if ok is not True:
             self._uncertain_effect(operation, f"{action} navigation")
@@ -984,15 +1054,23 @@ class _JobLifecycleOperationExecutor:
             expected_root_ref=root_ref,
         )
 
-    def _step_open_scan_job_detail(self, operation, spec) -> None:
+    def _step_open_owner_refresh_detail(self, operation, spec) -> None:
         self._require(
-            _valid_ref(self._root_last_scan_ref),
-            "A uniquely observed Sources last-scan identity is unavailable.",
+            _valid_ref(self._parent_ref)
+            and self._root_view_job_control_count == 1
+            and _valid_ref(self._root_view_job_run_ref),
+            "The owning LibraryRefresh JobRun is unavailable from Sources.",
         )
+        if self._root_view_job_run_ref != self._parent_ref:
+            self._record_blocked(operation, "root_view_job_does_not_identify_parent")
+            raise _JobLifecycleStop(
+                "The root View Job destination is not independently verified as "
+                "the owning LibraryRefresh JobRun."
+            )
         self._navigate(
             operation,
             "open_scan_job_detail",
-            expected_run_ref=self._root_last_scan_ref,
+            expected_run_ref=self._parent_ref,
         )
 
     def _step_open_successor_detail(self, operation, spec) -> None:
@@ -1111,7 +1189,7 @@ class _JobLifecycleOperationExecutor:
         )
         if not (
             type(identity) is JobIdentityObservation
-            and identity.parent_child_complete()
+            and identity.parent_identity_complete()
             and identity.parent_state in ACTIVE_STATES
         ):
             self._record_blocked(operation, "new_refresh_identity_unavailable")
@@ -1140,6 +1218,9 @@ class _JobLifecycleOperationExecutor:
             )
         self._parent_ref = identity.parent_run_ref
         self._scope_ref = identity.frozen_scope_ref
+        self._requested_root_refs = identity.requested_root_refs
+        self._admitted_root_refs = identity.admitted_root_refs
+        self._excluded_root_refs = identity.excluded_root_refs
         self._parent_state = identity.parent_state
         self._record_result(operation, True)
 
@@ -1214,6 +1295,19 @@ class _JobLifecycleOperationExecutor:
         self._parent_state = observed.state
         self._record_result(operation, True)
 
+    def _matches_captured_root_scope(
+        self,
+        identity: JobIdentityObservation,
+    ) -> bool:
+        return (
+            type(identity) is JobIdentityObservation
+            and identity.root_scope_matches(
+                self._requested_root_refs,
+                self._admitted_root_refs,
+                self._excluded_root_refs,
+            )
+        )
+
     def _step_parent_child_identity(self, operation, spec) -> None:
         self._require(_valid_ref(self._parent_ref), "The parent refresh identity is unavailable.")
         identity = self._call(
@@ -1221,7 +1315,7 @@ class _JobLifecycleOperationExecutor:
         )
         self._require(
             type(identity) is JobIdentityObservation,
-            "The child attribution observation is unavailable.",
+            "The parent JobRun and ScanRun relation observation is unavailable.",
         )
         if (
             _valid_ref(identity.parent_run_ref)
@@ -1229,22 +1323,45 @@ class _JobLifecycleOperationExecutor:
         ):
             self._record_result(operation, False)
             raise _JobLifecycleStop(
-                "The child attribution names a different parent refresh.",
+                "The ScanRun relation names a different parent refresh.",
                 failed=True,
             )
-        if identity.frozen_scope_ref != self._scope_ref:
+        if (
+            identity.frozen_scope_ref != self._scope_ref
+            or not self._matches_captured_root_scope(identity)
+        ):
             self._record_blocked(operation, "parent_child_scope_mismatch")
             self._request_scope_extension(
-                "parent refresh child attribution scope",
-                "The child attribution scope differs from the scope captured for the parent.",
-                "An owner-authorized observer binds the exact parent and its frozen scope to its children.",
+                "parent refresh ScanRun scope",
+                "The ScanRun scope differs from the scope captured for the parent refresh.",
+                "An owner-authorized observer binds the parent JobRun and frozen root scope to its ScanRuns.",
             )
             raise _JobLifecycleStop(
-                "The parent-child attribution scope is ambiguous."
+                "The parent ScanRun scope is ambiguous."
             )
-        result = validate_identity(identity)
+        result = validate_identity(
+            identity,
+            expected_parent_ref=self._parent_ref,
+            expected_scope_ref=self._scope_ref,
+        )
         if result.outcome is evidence.AssertionOutcome.PASSED:
-            self._child_refs = identity.child_run_refs or ()
+            self._source_identity = identity
+            self._scan_run_relations = identity.scan_run_relations or ()
+            root_ref = self._scan_root_ref or (
+                None
+                if self._baseline is None
+                else self._baseline.selected_root_ref
+            )
+            matching = tuple(
+                relation
+                for relation in self._scan_run_relations
+                if relation.root_ref == root_ref
+            )
+            if len(matching) != 1:
+                self._record_blocked(operation, "selected_scan_root_not_admitted")
+                raise _JobLifecycleStop(
+                    "The authorized Sources root has no unique admitted ScanRun relation."
+                )
             self._append_assertion(
                 self._step_key(operation) + ":result",
                 evidence.AssertionOutcome.PASSED,
@@ -1252,11 +1369,11 @@ class _JobLifecycleOperationExecutor:
             return
         self._record_blocked(operation, "parent_child_attribution_unavailable")
         self._request_scope_extension(
-            "parent refresh child attribution",
-            "The UI surface does not expose the parent JobRunId or child ownership.",
-            "An owner-authorized observer binds the exact parent run to its committed child work.",
+            "parent refresh ScanRun attribution",
+            "The UI surface does not expose the parent JobRunId or per-root ScanRun ownership.",
+            "An owner-authorized observer binds the parent JobRun to its committed per-root ScanRuns.",
         )
-        raise _JobLifecycleStop("Parent-child attribution is BLOCKED.")
+        raise _JobLifecycleStop("Parent JobRun and ScanRun attribution is BLOCKED.")
 
     def _step_library_active(self, operation, spec) -> None:
         observed = self._observe_library(operation)
@@ -1528,6 +1645,25 @@ class _JobLifecycleOperationExecutor:
                 self._scan_root_ref, timeout
             )
         )
+        relation = _relation_for_root(self._scan_run_relations, self._scan_root_ref)
+        relation_result = validate_scan_root_relation(
+            observed,
+            expected_relation=relation,
+        )
+        if relation_result.outcome is evidence.AssertionOutcome.FAILED:
+            self._record_result(operation, False)
+            self._append_assertion(
+                self._step_key(operation) + ":refresh-scanrun-attribution",
+                evidence.AssertionOutcome.FAILED,
+            )
+            raise _JobLifecycleStop(relation_result.code, failed=True)
+        if relation_result.outcome is not evidence.AssertionOutcome.PASSED:
+            self._record_blocked(operation, relation_result.code)
+            self._append_assertion(
+                self._step_key(operation) + ":refresh-scanrun-attribution",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+            raise _JobLifecycleStop(relation_result.code)
         result = scan_root_recovery_persistence(self._preloss_root, observed)
         if result.outcome is evidence.AssertionOutcome.PASSED:
             self._root_persistence_verified = True
@@ -1536,20 +1672,10 @@ class _JobLifecycleOperationExecutor:
                 self._step_key(operation) + ":root-recovery-persistence",
                 evidence.AssertionOutcome.PASSED,
             )
-            child_refs = self._child_refs
-            if (
-                type(observed) is ScanRootObservation
-                and observed.view_job_run_ref in child_refs
-            ):
-                self._append_assertion(
-                    self._step_key(operation) + ":refresh-child-attribution",
-                    evidence.AssertionOutcome.PASSED,
-                )
-            else:
-                self._append_assertion(
-                    self._step_key(operation) + ":refresh-child-attribution",
-                    evidence.AssertionOutcome.BLOCKED,
-                )
+            self._append_assertion(
+                self._step_key(operation) + ":refresh-scanrun-attribution",
+                evidence.AssertionOutcome.PASSED,
+            )
             return
         if result.outcome is evidence.AssertionOutcome.FAILED:
             self._record_result(operation, False)
@@ -1578,6 +1704,7 @@ class _JobLifecycleOperationExecutor:
         result = library_recovery_persistence(
             self._preloss_library_ids,
             observed,
+            expected_job_run_ref=self._parent_ref,
         )
         if result.outcome is evidence.AssertionOutcome.PASSED:
             self._recovered_library_ids = observed.membership_ids
@@ -1634,18 +1761,28 @@ class _JobLifecycleOperationExecutor:
         admitted = (
             None if self._baseline is None else self._baseline.library_membership_ids
         )
-        if type(admitted) is not tuple or not admitted:
+        if type(admitted) is not tuple:
             self._record_blocked(operation, "library_admitted_identity_unavailable")
             raise _JobLifecycleStop(
                 "The admitted committed Library asset identities are unavailable."
             )
-        present = frozenset(observed.membership_ids)
-        if any(identity not in present for identity in admitted):
+        identity_result = library_recovery_persistence(
+            admitted,
+            observed,
+            expected_job_run_ref=self._parent_ref,
+        )
+        if identity_result.outcome is evidence.AssertionOutcome.FAILED:
             self._record_result(operation, False)
             raise _JobLifecycleStop(
                 "An admitted committed Library asset was already missing before "
                 "the controlled interruption.",
                 failed=True,
+            )
+        if identity_result.outcome is not evidence.AssertionOutcome.PASSED:
+            self._record_blocked(operation, identity_result.code)
+            raise _JobLifecycleStop(
+                "The exact pre-loss GameId set or its refresh-bound continuity "
+                "is unavailable."
             )
         self._library_count = observed.membership_count
         self._preloss_library_ids = observed.membership_ids
@@ -1653,6 +1790,23 @@ class _JobLifecycleOperationExecutor:
 
     def _step_pre_stop_guard(self, operation, spec) -> None:
         self._require(_valid_ref(self._parent_ref), "The parent refresh identity is unavailable.")
+        self._require(
+            self._preloss_root is not None and _valid_ref(self._scan_root_ref),
+            "The pre-loss Sources identity is unavailable.",
+        )
+        root_relation = _relation_for_root(
+            self._scan_run_relations, self._scan_root_ref
+        )
+        root_result = validate_scan_root_relation(
+            self._preloss_root,
+            expected_relation=root_relation,
+        )
+        if root_result.outcome is evidence.AssertionOutcome.FAILED:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(root_result.code, failed=True)
+        if root_result.outcome is not evidence.AssertionOutcome.PASSED:
+            self._record_blocked(operation, root_result.code)
+            raise _JobLifecycleStop(root_result.code)
         observed = self._observe_detail(operation, self._parent_ref)
         if not _valid_ref(observed.parent_run_ref):
             self._record_blocked(
@@ -1874,10 +2028,16 @@ class _JobLifecycleOperationExecutor:
             identity,
             expected_parent_ref=self._parent_ref,
             expected_scope_ref=self._scope_ref,
+            expected_requested_root_refs=self._requested_root_refs,
+            expected_admitted_root_refs=self._admitted_root_refs,
+            expected_excluded_root_refs=self._excluded_root_refs,
             expected_state=self._parent_state,
-            expected_child_refs=self._child_refs,
+            expected_scan_run_relations=self._scan_run_relations,
         )
         if precondition.outcome is not evidence.AssertionOutcome.PASSED:
+            if precondition.outcome is evidence.AssertionOutcome.FAILED:
+                self._record_result(operation, False)
+                raise _JobLifecycleStop(precondition.code, failed=True)
             self._record_blocked(operation, precondition.code)
             raise _JobLifecycleStop(
                 "The pre-Retry relationship proof is unavailable, ambiguous, or already "
@@ -1909,13 +2069,32 @@ class _JobLifecycleOperationExecutor:
             source_state=self._parent_state,
             dispatched=self._retry_dispatched,
             already_retried=False,
-        parent_ref=self._parent_ref,
-        frozen_scope_ref=self._scope_ref,
+            parent_ref=self._parent_ref,
+            frozen_scope_ref=self._scope_ref,
+            expected_source_identity=self._source_identity,
             successor_identity=identity if type(identity) is JobIdentityObservation else None,
         )
         if result.outcome is evidence.AssertionOutcome.PASSED:
             assert isinstance(identity, JobIdentityObservation)
+            if not self._matches_captured_root_scope(identity):
+                self._record_blocked(operation, "retry_source_root_scope_changed")
+                raise _JobLifecycleStop(
+                    "The Retry relation no longer matches the captured source root scope."
+                )
             self._successor_ref = identity.successor_run_ref
+            self._successor_scan_run_relations = (
+                identity.successor_scan_run_relations or ()
+            )
+            self._successor_requested_root_refs = (
+                identity.successor_requested_root_refs
+            )
+            self._successor_admitted_root_refs = (
+                identity.successor_admitted_root_refs
+            )
+            self._successor_excluded_root_refs = (
+                identity.successor_excluded_root_refs
+            )
+            self._successor_exclusions = identity.successor_exclusions
             self._record_result(operation, True)
             return
         if result.outcome is evidence.AssertionOutcome.NOT_RUN:
@@ -1937,14 +2116,46 @@ class _JobLifecycleOperationExecutor:
         identity = self._call(
             lambda timeout: self._observer.observe_identity(self._parent_ref, timeout)
         )
+        if type(identity) is not JobIdentityObservation:
+            self._record_blocked(operation, "retry_successor_scope_mismatch")
+            raise _JobLifecycleStop(
+                "The retry successor identity is not bound to the observed source and scope."
+            )
         if (
-            type(identity) is not JobIdentityObservation
-            or not identity.retry_complete()
+            _valid_ref(identity.parent_run_ref)
+            and identity.parent_run_ref != self._parent_ref
+        ):
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(
+                "The retry relation names a different source JobRunId.",
+                failed=True,
+            )
+        if (
+            _valid_ref(identity.successor_run_ref)
+            and identity.successor_run_ref != self._successor_ref
+        ):
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(
+                "The retry relation names a different successor JobRunId.",
+                failed=True,
+            )
+        if (
+            not identity.retry_complete()
             or identity.parent_run_ref != self._parent_ref
             or identity.source_run_ref != self._parent_ref
             or identity.frozen_scope_ref != self._scope_ref
             or identity.successor_scope_ref != self._scope_ref
             or identity.successor_run_ref != self._successor_ref
+            or not self._matches_captured_root_scope(identity)
+            or not identity.successor_root_scope_matches(
+                self._successor_requested_root_refs,
+                self._successor_admitted_root_refs,
+                self._successor_excluded_root_refs,
+                self._successor_exclusions,
+            )
+            or set(identity.scan_run_relations or ()) != set(self._scan_run_relations)
+            or set(identity.successor_scan_run_relations or ())
+            != set(self._successor_scan_run_relations)
         ):
             self._record_blocked(operation, "retry_successor_scope_mismatch")
             raise _JobLifecycleStop(
@@ -1984,6 +2195,7 @@ class _JobLifecycleOperationExecutor:
         result = library_post_retry_integrity(
             self._recovered_library_ids,
             observed,
+            expected_job_run_ref=self._successor_ref,
         )
         if result.outcome is evidence.AssertionOutcome.PASSED:
             self._library_count = observed.membership_count
@@ -2038,6 +2250,10 @@ class _JobLifecycleOperationExecutor:
             observed,
             expected_root_ref=self._scan_root_ref,
             expected_successor_run_ref=self._successor_ref,
+            expected_scan_run_ref=_relation_scan_run_ref(
+                self._successor_scan_run_relations,
+                self._scan_root_ref,
+            ),
         )
         if result.outcome is evidence.AssertionOutcome.PASSED:
             historical = (
@@ -2045,7 +2261,10 @@ class _JobLifecycleOperationExecutor:
                 and observed.historical_last_scan_identified()
             )
             if historical:
-                self._root_last_scan_ref = observed.view_job_run_ref
+                self._scan_run_ref = observed.scan_run_ref
+                self._root_last_scan_state = observed.last_scan_state
+                self._root_view_job_run_ref = observed.view_job_run_ref
+                self._root_view_job_control_count = observed.view_job_control_count
             self._record_result(operation, True)
             self._append_assertion(
                 self._step_key(operation) + ":root-post-retry-integrity",
@@ -2084,50 +2303,71 @@ class _JobLifecycleOperationExecutor:
                 self._scan_root_ref, timeout
             )
         )
+        relation = _relation_for_root(
+            self._scan_run_relations,
+            self._scan_root_ref,
+        )
+        result = validate_scan_root_relation(
+            observed,
+            expected_relation=relation,
+        )
+        if result.outcome is evidence.AssertionOutcome.FAILED:
+            self._record_result(operation, False)
+            raise _JobLifecycleStop(result.code, failed=True)
         if (
-            type(observed) is not ScanRootObservation
-            or not observed.established()
-            or observed.root_ref != self._scan_root_ref
+            result.outcome is not evidence.AssertionOutcome.PASSED
+            or not isinstance(observed, ScanRootObservation)
             or not observed.historical_last_scan_identified()
             or observed.last_scan_state not in ROOT_HISTORICAL_SCAN_STATES
         ):
             self._record_blocked(operation, "scan_root_state_unavailable")
             raise _JobLifecycleStop("The Sources root last-scan state is not proven.")
-        self._root_last_scan_ref = observed.view_job_run_ref
+        self._scan_run_ref = observed.scan_run_ref
+        self._root_last_scan_state = observed.last_scan_state
+        self._root_view_job_run_ref = observed.view_job_run_ref
+        self._root_view_job_control_count = observed.view_job_control_count
         self._record_result(operation, True)
 
-    def _step_scan_job_lifecycle(self, operation, spec) -> None:
+    def _step_scan_run_lifecycle(self, operation, spec) -> None:
+        self._require(
+            _valid_ref(self._parent_ref)
+            and _valid_ref(self._scan_run_ref)
+            and _valid_ref(self._scan_root_ref),
+            "The owner-bound per-root ScanRun identity is unavailable.",
+        )
         observed = self._call(
-            lambda timeout: self._transport.observe_scan_job(
-                self._root_last_scan_ref, timeout
+            lambda timeout: self._transport.observe_scan_run(
+                self._parent_ref,
+                self._scan_run_ref,
+                self._scan_root_ref,
+                timeout,
             )
         )
-        if type(observed) is not ScanJobObservation or not observed.established():
-            self._record_blocked(operation, "scan_job_state_unavailable")
-            raise _JobLifecycleStop("The Library Scan job state is not proven.")
-        if (
-            self._root_last_scan_ref is not None
-            and observed.run_ref != self._root_last_scan_ref
-        ):
+        relation = _relation_for_root(
+            self._scan_run_relations,
+            self._scan_root_ref,
+        )
+        result = validate_scan_run_observation(
+            observed,
+            expected_relation=relation,
+            expected_scan_state=self._root_last_scan_state,
+        )
+        if result.outcome is evidence.AssertionOutcome.FAILED:
             self._record_result(operation, False)
             raise _JobLifecycleStop(
-                "The Scan detail names a different run than the root View Job control.",
+                result.code,
                 failed=True,
             )
-        self._scan_job_ref = observed.run_ref
+        if result.outcome is not evidence.AssertionOutcome.PASSED:
+            self._record_blocked(operation, result.code)
+            raise _JobLifecycleStop("The owning refresh ScanRun state is not proven.")
         self._append_assertion(
             self._step_key(operation) + ":result",
             evidence.AssertionOutcome.PASSED,
         )
         self._append_assertion(
-            self._step_key(operation) + ":refresh-child-attribution",
-            evidence.AssertionOutcome.BLOCKED,
-        )
-        self._request_scope_extension(
-            "refresh child attribution from Sources",
-            "The Sources root View Job control references the root's last scan, "
-            "which is not independently linked to the tested LibraryRefresh.",
-            "An owner-authorized observer links the exact refresh run to a child scan run.",
+            self._step_key(operation) + ":refresh-scanrun-attribution",
+            evidence.AssertionOutcome.PASSED,
         )
 
     def _step_restore_foreground(self, operation, spec) -> None:

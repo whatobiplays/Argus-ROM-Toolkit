@@ -15,9 +15,9 @@ import json
 from typing import Iterable
 
 
-JOB_LIFECYCLE_CONTRACT_VERSION = 4
-JOB_LIFECYCLE_CAPABILITY_VERSION = 3
-JOB_LIFECYCLE_ORACLE_VERSION = 6
+JOB_LIFECYCLE_CONTRACT_VERSION = 5
+JOB_LIFECYCLE_CAPABILITY_VERSION = 4
+JOB_LIFECYCLE_ORACLE_VERSION = 7
 JOB_LIFECYCLE_QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
 JOB_LIFECYCLE_SCENARIO_AND_04 = "AND-04"
 JOB_LIFECYCLE_SCENARIO_AND_05 = "AND-05"
@@ -57,6 +57,21 @@ JOB_LIFECYCLE_RESERVE_SECONDS = {
 
 _CAPABILITY_DECLARATION = {
     "version": JOB_LIFECYCLE_CAPABILITY_VERSION,
+    "identity_model": {
+        "parent": "one_library_refresh_jobrun",
+        "per_root": "scan_run_owned_by_parent",
+        "relationship_fields": (
+            "parent_job_run_id",
+            "scan_run_id",
+            "library_root_id",
+        ),
+        "scope_fields": (
+            "requested_root_ids",
+            "admitted_root_ids",
+            "excluded_root_ids",
+        ),
+        "library_game_identity": "exact_gameid_sets_with_continuity_query_scope",
+    },
     "scenarios": {
         JOB_LIFECYCLE_SCENARIO_AND_04: {
             "operations": 31,
@@ -80,8 +95,22 @@ _CAPABILITY_DECLARATION = {
                 "issue_count",
             ),
             "retry_precondition": (
-                "fresh_parent_scope_state_children_and_absent_successor"
+                "fresh_parent_scope_scan_relations_and_empty_retry_relation"
             ),
+            "retry_source_binding": (
+                "same_captured_parent_root_partition_and_scanrun_set"
+            ),
+            "retry_successor_admission": (
+                "same_requested_roots_rechecked_with_current_admitted_excluded_partition"
+            ),
+            "retry_exclusion_reasons": (
+                "already_scanning",
+                "no_longer_configured",
+                "invalid_configuration",
+            ),
+            "retry_successor": "distinct_jobrun_with_exact_per_root_scan_runs",
+            "root_detail": "view_job_targets_parent_jobrun",
+            "scan_run_detail": "owner_refresh_detail",
         },
     },
 }
@@ -147,6 +176,40 @@ JOB_LIFECYCLE_ORACLE_SHA256 = _sha256({
         "status_key",
         "issue_count",
     ),
+    "identity_policy": {
+        "scan_run_relation": (
+            "parent_job_run_id",
+            "scan_run_id",
+            "library_root_id",
+        ),
+        "requested_admitted_excluded_partition": True,
+        "scan_run_ids_unique": True,
+        "one_scan_run_per_admitted_root": True,
+        "view_job_is_jobrun_not_scanrun": True,
+        "source_and_successor_scan_run_ids_are_disjoint": True,
+        "pre_retry_requires_empty_retry_relation": True,
+        "source_root_partitions_match_captured_scope": True,
+        "retry_outcome_binds_captured_source_scope_and_scan_runs": True,
+        "successor_requested_roots_match_source_intent": True,
+        "successor_scan_runs_match_current_admitted_roots": True,
+        "successor_exclusions_are_typed_and_exact": True,
+        "missing_identity": "BLOCKED",
+        "valid_foreign_identity": "FAILED",
+    },
+    "library_identity_policy": {
+        "identity": "GameId",
+        "complete_page_required": True,
+        "exact_unique_set_required": True,
+        "additions_do_not_mask_loss": True,
+        "missing_identity_without_continuity_proof": "BLOCKED",
+        "missing_identity_without_redirect_after_complete_lookup": "FAILED",
+        "authorized_redirect_must_bind_to_jobrun": True,
+        "continuity_query_scope_covers_all_missing_game_ids": True,
+        "missing_game_id_without_query_coverage": "BLOCKED",
+        "all_reported_redirect_sources_must_be_queried": True,
+        "used_redirect_targets_must_be_current_members": True,
+        "transitive_redirect_resolution": "BLOCKED",
+    },
     "latency_policy": _LATENCY_POLICY_DECLARATION,
 })
 
@@ -312,8 +375,8 @@ AND_04_OPERATIONS = (
     _nav(26, "navigate_sources"),
     _nav(27, "open_scan_root"),
     _obs(28, "scan_root_state", 20),
-    _nav(29, "open_scan_job_detail"),
-    _obs(30, "scan_job_lifecycle", 20),
+    _nav(29, "open_scan_job_detail", handler="open_owner_refresh_detail"),
+    _obs(30, "scan_job_lifecycle", 20, handler="scan_run_lifecycle"),
     _launch(31, "restore_qualification_foreground", 20, handler="restore_foreground"),
 )
 
@@ -669,58 +732,290 @@ class ProcessAndForegroundObservation:
 
 
 @dataclass(frozen=True)
+class ScanRunRelation:
+    """One per-root ScanRun owned by its LibraryRefresh JobRun."""
+
+    scan_run_ref: str | None
+    parent_run_ref: str | None
+    root_ref: str | None
+
+    def established(self) -> bool:
+        """Require the complete typed ScanRun attribution tuple."""
+        return all(
+            type(value) is str
+            and 1 <= len(value) <= 256
+            and bool(value.strip())
+            for value in (self.scan_run_ref, self.parent_run_ref, self.root_ref)
+        )
+
+    def digest(self) -> str:
+        """Return a digest of the exact run/root relation."""
+        return _sha256({
+            "scan_run": self.scan_run_ref,
+            "parent_run": self.parent_run_ref,
+            "root": self.root_ref,
+        })
+
+
+class RootExclusionReason(str, Enum):
+    """Typed SPEC-BE-013 reason that a requested root was not admitted."""
+
+    ALREADY_SCANNING = "already_scanning"
+    NO_LONGER_CONFIGURED = "no_longer_configured"
+    INVALID_CONFIGURATION = "invalid_configuration"
+
+
+@dataclass(frozen=True)
+class RootExclusionObservation:
+    """One successor root exclusion with its authoritative typed reason."""
+
+    root_ref: str | None
+    reason: RootExclusionReason | None
+
+    def established(self) -> bool:
+        """Require a bounded root identity and a recognized exclusion reason."""
+        return (
+            type(self.root_ref) is str
+            and 1 <= len(self.root_ref) <= 256
+            and bool(self.root_ref.strip())
+            and type(self.reason) is RootExclusionReason
+        )
+
+    def digest(self) -> str:
+        """Hash the excluded root and its typed reason for private evidence."""
+        return _sha256({
+            "root": self.root_ref,
+            "reason": self.reason.value if type(self.reason) is RootExclusionReason else None,
+        })
+
+
+def _root_scope_partition_complete(
+    requested_root_refs: object,
+    admitted_root_refs: object,
+    excluded_root_refs: object,
+) -> bool:
+    """Require a nonempty requested-root set split exactly into admitted/excluded roots."""
+    scopes = (requested_root_refs, admitted_root_refs, excluded_root_refs)
+    if any(
+        type(scope) is not tuple
+        or any(
+            type(value) is not str
+            or not 1 <= len(value) <= 256
+            or not value.strip()
+            for value in scope
+        )
+        or len(set(scope)) != len(scope)
+        for scope in scopes
+    ):
+        return False
+    requested, admitted, excluded = scopes
+    return (
+        bool(requested)
+        and not set(admitted).intersection(excluded)
+        and set(requested) == set(admitted).union(excluded)
+    )
+
+
+@dataclass(frozen=True)
 class JobIdentityObservation:
-    """Owner-private identity relations supplied by an approved observer."""
+    """Owner-private parent scope and per-root ScanRun relations."""
 
     parent_run_ref: str | None
-    child_run_refs: tuple[str, ...] | None
+    scan_run_relations: tuple[ScanRunRelation, ...] | None
+    requested_root_refs: tuple[str, ...] | None
+    admitted_root_refs: tuple[str, ...] | None
+    excluded_root_refs: tuple[str, ...] | None
     frozen_scope_ref: str | None
+    observer_ref: str | None
     parent_state: RecoveryState | None = None
     source_run_ref: str | None = None
     successor_run_ref: str | None = None
+    successor_scan_run_relations: tuple[ScanRunRelation, ...] | None = None
     successor_scope_ref: str | None = None
+    successor_requested_root_refs: tuple[str, ...] | None = None
+    successor_admitted_root_refs: tuple[str, ...] | None = None
+    successor_excluded_root_refs: tuple[str, ...] | None = None
+    successor_exclusions: tuple[RootExclusionObservation, ...] | None = None
     retry_relation_lookup_completed: bool | None = None
     retry_lookup_source_run_ref: str | None = None
 
-    def parent_child_complete(self) -> bool:
-        """Return whether parent scope and child attribution are complete."""
+    def root_scope_complete(self) -> bool:
+        """Require exact, unique requested/admitted/excluded root partitions."""
+        return (
+            _root_scope_partition_complete(
+                self.requested_root_refs,
+                self.admitted_root_refs,
+                self.excluded_root_refs,
+            )
+            and type(self.frozen_scope_ref) is str
+            and 1 <= len(self.frozen_scope_ref) <= 256
+            and bool(self.frozen_scope_ref.strip())
+        )
+
+    def root_scope_matches(
+        self,
+        expected_requested_root_refs: object,
+        expected_admitted_root_refs: object,
+        expected_excluded_root_refs: object,
+    ) -> bool:
+        """Require the same exact requested/admitted/excluded root identity sets."""
+        return (
+            self.root_scope_complete()
+            and _root_scope_partition_complete(
+                expected_requested_root_refs,
+                expected_admitted_root_refs,
+                expected_excluded_root_refs,
+            )
+            and set(self.requested_root_refs)
+            == set(expected_requested_root_refs)
+            and set(self.admitted_root_refs)
+            == set(expected_admitted_root_refs)
+            and set(self.excluded_root_refs)
+            == set(expected_excluded_root_refs)
+        )
+
+    def parent_identity_complete(self) -> bool:
+        """Validate the parent identity and its frozen root-scope snapshot."""
         return (
             type(self.parent_run_ref) is str
-            and bool(self.parent_run_ref)
-            and type(self.child_run_refs) is tuple
-            and bool(self.child_run_refs)
-            and all(type(value) is str and 1 <= len(value) <= 256 for value in self.child_run_refs)
-            and len(set(self.child_run_refs)) == len(self.child_run_refs)
-            and self.parent_run_ref not in self.child_run_refs
-            and type(self.frozen_scope_ref) is str
-            and bool(self.frozen_scope_ref)
+            and 1 <= len(self.parent_run_ref) <= 256
+            and bool(self.parent_run_ref.strip())
+            and self.root_scope_complete()
+            and type(self.observer_ref) is str
+            and bool(self.observer_ref)
             and (self.parent_state is None or type(self.parent_state) is RecoveryState)
         )
 
-    def retry_complete(self) -> bool:
-        """Return whether source, successor, and equivalent scope are linked."""
+    def scan_relationships_complete(self) -> bool:
+        """Require exactly one correctly owned ScanRun for every admitted root."""
+        if not self.parent_identity_complete():
+            return False
+        return _scan_run_relations_complete(
+            self.scan_run_relations,
+            expected_parent_ref=self.parent_run_ref,
+            expected_root_refs=self.admitted_root_refs,
+        )
+
+    def successor_root_scope_complete(self) -> bool:
+        """Require Retry to preserve requested roots and report its current partition."""
+        exclusions = self.successor_exclusions
         return (
-            self.parent_child_complete()
+            self.root_scope_complete()
+            and _root_scope_partition_complete(
+                self.successor_requested_root_refs,
+                self.successor_admitted_root_refs,
+                self.successor_excluded_root_refs,
+            )
+            and set(self.successor_requested_root_refs)
+            == set(self.requested_root_refs)
+            and type(exclusions) is tuple
+            and all(
+                type(exclusion) is RootExclusionObservation
+                and exclusion.established()
+                for exclusion in exclusions
+            )
+            and len({exclusion.root_ref for exclusion in exclusions})
+            == len(exclusions)
+            and {exclusion.root_ref for exclusion in exclusions}
+            == set(self.successor_excluded_root_refs)
+        )
+
+    def successor_root_scope_matches(
+        self,
+        expected_requested_root_refs: object,
+        expected_admitted_root_refs: object,
+        expected_excluded_root_refs: object,
+        expected_exclusions: object,
+    ) -> bool:
+        """Require a later observation to preserve the admitted Retry partition."""
+        return (
+            self.successor_root_scope_complete()
+            and _root_scope_partition_complete(
+                expected_requested_root_refs,
+                expected_admitted_root_refs,
+                expected_excluded_root_refs,
+            )
+            and set(self.successor_requested_root_refs)
+            == set(expected_requested_root_refs)
+            and set(self.successor_admitted_root_refs)
+            == set(expected_admitted_root_refs)
+            and set(self.successor_excluded_root_refs)
+            == set(expected_excluded_root_refs)
+            and type(expected_exclusions) is tuple
+            and all(
+                type(exclusion) is RootExclusionObservation
+                and exclusion.established()
+                for exclusion in expected_exclusions
+            )
+            and set(self.successor_exclusions) == set(expected_exclusions)
+        )
+
+    def retry_complete(self) -> bool:
+        """Require distinct runs and an exact current-eligibility successor partition."""
+        return (
+            self.scan_relationships_complete()
             and type(self.source_run_ref) is str
-            and bool(self.source_run_ref)
+            and self.source_run_ref == self.parent_run_ref
             and type(self.successor_run_ref) is str
-            and bool(self.successor_run_ref)
+            and 1 <= len(self.successor_run_ref) <= 256
+            and bool(self.successor_run_ref.strip())
             and self.successor_run_ref != self.source_run_ref
-            and self.successor_run_ref not in self.child_run_refs
+            and self.successor_root_scope_complete()
+            and _scan_run_relations_complete(
+                self.successor_scan_run_relations,
+                expected_parent_ref=self.successor_run_ref,
+                expected_root_refs=self.successor_admitted_root_refs,
+            )
+            and {
+                relation.scan_run_ref
+                for relation in self.scan_run_relations or ()
+            }.isdisjoint(
+                relation.scan_run_ref
+                for relation in self.successor_scan_run_relations or ()
+            )
             and type(self.successor_scope_ref) is str
             and self.successor_scope_ref == self.frozen_scope_ref
         )
 
     def digest(self) -> str:
-        """Return a relationship digest without exposing raw run identifiers."""
+        """Hash the relation and root scope without exposing raw identifiers."""
         return _sha256({
             "parent": self.parent_run_ref,
-            "children": self.child_run_refs,
+            "scan_run_relations": (
+                None
+                if self.scan_run_relations is None
+                else tuple(relation.digest() for relation in self.scan_run_relations)
+            ),
+            "requested_roots": self.requested_root_refs,
+            "admitted_roots": self.admitted_root_refs,
+            "excluded_roots": self.excluded_root_refs,
             "scope": self.frozen_scope_ref,
+            "observer": self.observer_ref,
             "parent_state": _recovery_state_value(self.parent_state),
             "source": self.source_run_ref,
             "successor": self.successor_run_ref,
+            "successor_scan_run_relations": (
+                None
+                if self.successor_scan_run_relations is None
+                else tuple(
+                    relation.digest()
+                    for relation in self.successor_scan_run_relations
+                    if type(relation) is ScanRunRelation
+                )
+            ),
             "successor_scope": self.successor_scope_ref,
+            "successor_requested_roots": self.successor_requested_root_refs,
+            "successor_admitted_roots": self.successor_admitted_root_refs,
+            "successor_excluded_roots": self.successor_excluded_root_refs,
+            "successor_exclusions": (
+                None
+                if self.successor_exclusions is None
+                else tuple(
+                    exclusion.digest()
+                    for exclusion in self.successor_exclusions
+                    if type(exclusion) is RootExclusionObservation
+                )
+            ),
             "retry_lookup_completed": self.retry_relation_lookup_completed,
             "retry_lookup_source": self.retry_lookup_source_run_ref,
         })
@@ -778,6 +1073,125 @@ def _optional_ref(value: object) -> bool:
     return value is None or (type(value) is str and 1 <= len(value) <= 256)
 
 
+def _scan_run_relations_complete(
+    relations: object,
+    *,
+    expected_parent_ref: object,
+    expected_root_refs: object,
+) -> bool:
+    """Validate one exact owner-bound ScanRun relation for each admitted root."""
+    if (
+        type(expected_parent_ref) is not str
+        or not 1 <= len(expected_parent_ref) <= 256
+        or not expected_parent_ref.strip()
+        or type(expected_root_refs) is not tuple
+        or not expected_root_refs
+        or type(relations) is not tuple
+        or any(
+            type(relation) is not ScanRunRelation or not relation.established()
+            for relation in relations
+        )
+    ):
+        return False
+    scan_ids = tuple(relation.scan_run_ref for relation in relations)
+    parent_ids = tuple(relation.parent_run_ref for relation in relations)
+    roots = tuple(relation.root_ref for relation in relations)
+    return (
+        len(scan_ids) == len(expected_root_refs)
+        and len(set(scan_ids)) == len(scan_ids)
+        and len(set(roots)) == len(roots)
+        and all(parent == expected_parent_ref for parent in parent_ids)
+        and set(roots) == set(expected_root_refs)
+    )
+
+
+@dataclass(frozen=True)
+class GameIdRedirect:
+    """One independently observed GameId continuity edge."""
+
+    source_game_id: str | None
+    canonical_game_id: str | None
+    job_run_ref: str | None
+
+    def established(self) -> bool:
+        """Require the redirect to name exact identities and its owning run."""
+        return all(
+            type(value) is str and 1 <= len(value) <= 256 and bool(value.strip())
+            for value in (
+                self.source_game_id,
+                self.canonical_game_id,
+                self.job_run_ref,
+            )
+        ) and self.source_game_id != self.canonical_game_id
+
+    def digest(self) -> str:
+        """Return a digest of the exact continuity edge."""
+        return _sha256({
+            "source": self.source_game_id,
+            "canonical": self.canonical_game_id,
+            "job_run": self.job_run_ref,
+        })
+
+
+@dataclass(frozen=True)
+class GameIdContinuityObservation:
+    """Complete, run-bound redirect lookup with its exact queried GameIds."""
+
+    job_run_ref: str | None
+    redirects: tuple[GameIdRedirect, ...] | None
+    complete: bool | None
+    observer_ref: str | None
+    queried_game_ids: tuple[str, ...] | None
+
+    def established(self) -> bool:
+        """Require complete redirect evidence and a bounded unique query scope."""
+        return (
+            type(self.job_run_ref) is str
+            and 1 <= len(self.job_run_ref) <= 256
+            and bool(self.job_run_ref.strip())
+            and type(self.redirects) is tuple
+            and all(
+                type(redirect) is GameIdRedirect and redirect.established()
+                for redirect in self.redirects
+            )
+            and all(
+                redirect.job_run_ref == self.job_run_ref
+                for redirect in self.redirects
+            )
+            and len({redirect.source_game_id for redirect in self.redirects})
+            == len(self.redirects)
+            and type(self.queried_game_ids) is tuple
+            and all(
+                type(game_id) is str
+                and 1 <= len(game_id) <= 256
+                and bool(game_id.strip())
+                for game_id in self.queried_game_ids
+            )
+            and len(set(self.queried_game_ids)) == len(self.queried_game_ids)
+            and all(
+                redirect.source_game_id in self.queried_game_ids
+                for redirect in self.redirects
+            )
+            and self.complete is True
+            and type(self.observer_ref) is str
+            and bool(self.observer_ref)
+        )
+
+    def digest(self) -> str:
+        """Return a digest without exposing raw GameIds or observer references."""
+        return _sha256({
+            "job_run": self.job_run_ref,
+            "redirects": (
+                None
+                if self.redirects is None
+                else tuple(redirect.digest() for redirect in self.redirects)
+            ),
+            "complete": self.complete,
+            "queried_game_ids": self.queried_game_ids,
+            "observer": self.observer_ref,
+        })
+
+
 @dataclass(frozen=True)
 class LibrarySurfaceObservation:
     """Library facts available on the verified Library surface."""
@@ -788,6 +1202,8 @@ class LibrarySurfaceObservation:
     refresh_active: bool | None
     observer_ref: str | None
     membership_ids: tuple[str, ...] | None = None
+    next_page_available: bool | None = None
+    identity_continuity: GameIdContinuityObservation | None = None
 
     def established(self) -> bool:
         """Return whether the Library surface and its fixed controls are proven."""
@@ -802,17 +1218,19 @@ class LibrarySurfaceObservation:
         )
 
     def membership_identity_complete(self) -> bool:
-        """Return whether exact committed asset identities are proven."""
+        """Return whether this one result covers the exact complete GameId set."""
         return (
             type(self.membership_ids) is tuple
-            and bool(self.membership_ids)
             and all(
-                type(value) is str and 1 <= len(value) <= 256
+                type(value) is str
+                and 1 <= len(value) <= 256
+                and bool(value.strip())
                 for value in self.membership_ids
             )
             and len(set(self.membership_ids)) == len(self.membership_ids)
             and type(self.membership_count) is int
             and self.membership_count == len(self.membership_ids)
+            and self.next_page_available is False
         )
 
     def digest(self) -> str:
@@ -824,6 +1242,12 @@ class LibrarySurfaceObservation:
                 None
                 if self.membership_ids is None
                 else sorted(self.membership_ids)
+            ),
+            "next_page_available": self.next_page_available,
+            "identity_continuity": (
+                None
+                if type(self.identity_continuity) is not GameIdContinuityObservation
+                else self.identity_continuity.digest()
             ),
             "refresh_control": self.refresh_control_present,
             "refresh_active": self.refresh_active,
@@ -927,7 +1351,7 @@ class RefreshDetailObservation:
 
 @dataclass(frozen=True)
 class ScanRootObservation:
-    """Sources root-detail last-scan facts, distinct from refresh attribution."""
+    """Sources root-detail scan identity, distinct from View Job navigation."""
 
     surface: JobLifecycleSurface | None
     root_ref: str | None
@@ -936,6 +1360,8 @@ class ScanRootObservation:
     view_job_run_ref: str | None
     observer_ref: str | None
     presentation: ScanRootPresentation | None = None
+    scan_run_ref: str | None = None
+    scan_parent_run_ref: str | None = None
 
     def established(self) -> bool:
         """Return whether the root identity and last-scan state are proven."""
@@ -947,20 +1373,30 @@ class ScanRootObservation:
             and bool(self.last_scan_state)
             and _optional_count(self.view_job_control_count)
             and _optional_ref(self.view_job_run_ref)
+            and type(self.scan_run_ref) is str
+            and 1 <= len(self.scan_run_ref) <= 256
+            and bool(self.scan_run_ref.strip())
+            and type(self.scan_parent_run_ref) is str
+            and 1 <= len(self.scan_parent_run_ref) <= 256
+            and bool(self.scan_parent_run_ref.strip())
             and type(self.observer_ref) is str
             and bool(self.observer_ref)
         )
 
     def _surface_identified(self) -> bool:
-        """Return whether the root and its single View Job control are exact."""
+        """Return whether the root ScanRun presentation is independently identified."""
         return (
             self.surface is JobLifecycleSurface.SCAN_ROOT_DETAIL
             and type(self.root_ref) is str
             and bool(self.root_ref)
-            and type(self.view_job_control_count) is int
-            and self.view_job_control_count == 1
-            and type(self.view_job_run_ref) is str
-            and bool(self.view_job_run_ref)
+            and _optional_count(self.view_job_control_count)
+            and _optional_ref(self.view_job_run_ref)
+            and type(self.scan_run_ref) is str
+            and 1 <= len(self.scan_run_ref) <= 256
+            and bool(self.scan_run_ref.strip())
+            and type(self.scan_parent_run_ref) is str
+            and 1 <= len(self.scan_parent_run_ref) <= 256
+            and bool(self.scan_parent_run_ref.strip())
             and type(self.observer_ref) is str
             and bool(self.observer_ref)
         )
@@ -990,30 +1426,42 @@ class ScanRootObservation:
             "presentation": None if self.presentation is None else self.presentation.value,
             "view_job_controls": self.view_job_control_count,
             "view_job_run": self.view_job_run_ref,
+            "scan_run": self.scan_run_ref,
+            "scan_parent_run": self.scan_parent_run_ref,
             "observer": self.observer_ref,
         })
 
 
 @dataclass(frozen=True)
-class ScanJobObservation:
-    """Library Scan job facts. These never establish refresh child attribution."""
+class ScanRunObservation:
+    """One per-root ScanRun row from its owning LibraryRefresh detail."""
 
     surface: JobLifecycleSurface | None
-    run_ref: str | None
+    parent_run_ref: str | None
+    scan_run_ref: str | None
+    root_ref: str | None
     parent_state: RecoveryState | None
-    child_state: str | None
+    scan_state: str | None
     observer_ref: str | None
 
     def established(self) -> bool:
-        """Return whether the scan job identity and parent state are proven."""
+        """Require exact parent/ScanRun/root identity and typed lifecycle facts."""
         return (
-            self.surface is JobLifecycleSurface.SCAN_JOB_DETAIL
-            and type(self.run_ref) is str
-            and bool(self.run_ref)
+            self.surface is JobLifecycleSurface.REFRESH_DETAIL
+            and all(
+                type(value) is str
+                and 1 <= len(value) <= 256
+                and bool(value.strip())
+                for value in (
+                    self.parent_run_ref,
+                    self.scan_run_ref,
+                    self.root_ref,
+                )
+            )
             and type(self.parent_state) is RecoveryState
             and self.parent_state in ACTIVE_STATES | TERMINAL_STATES
-            and type(self.child_state) is str
-            and bool(self.child_state)
+            and type(self.scan_state) is str
+            and self.scan_state in ROOT_HISTORICAL_SCAN_STATES | {"scanning"}
             and type(self.observer_ref) is str
             and bool(self.observer_ref)
         )
@@ -1022,8 +1470,10 @@ class ScanJobObservation:
         """Return a sanitized evidence digest."""
         return _sha256({
             "surface": None if self.surface is None else self.surface.value,
-            "run": self.run_ref,
+            "parent_run": self.parent_run_ref,
+            "scan_run": self.scan_run_ref,
+            "root": self.root_ref,
             "parent_state": _recovery_state_value(self.parent_state),
-            "child_state": self.child_state,
+            "scan_state": self.scan_state,
             "observer": self.observer_ref,
         })

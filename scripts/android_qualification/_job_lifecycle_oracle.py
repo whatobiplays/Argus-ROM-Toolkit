@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import re
 
 from . import evidence
 from ._job_lifecycle_contract import (
@@ -22,6 +23,7 @@ from ._job_lifecycle_contract import (
     JobIdentityObservation,
     LatencyCriterion,
     LatencyCycle,
+    _LATENCY_POLICY_DECLARATION,
     ProcessAndForegroundObservation,
     ProcessState,
     RecoveryState,
@@ -557,16 +559,66 @@ def recovery_terminal_consistency(state: object) -> OracleResult:
 
 
 def nearest_rank_percentile_95(samples: tuple[int, ...]) -> int:
-    """Return the nearest-rank 95th percentile for twenty integer-millisecond samples."""
+    """Return the configured nearest-rank percentile for integer samples."""
+    measured_cycles = _LATENCY_POLICY_DECLARATION["measured_cycles"]["value"]
+    elapsed_milliseconds = _LATENCY_POLICY_DECLARATION["elapsed_milliseconds"]
     if (
         type(samples) is not tuple
-        or len(samples) != 20
-        or any(type(value) is not int or value < 0 for value in samples)
+        or len(samples) != measured_cycles
+        or any(
+            not _latency_exact_type(
+                value,
+                elapsed_milliseconds["exact_type"],
+            )
+            or value < elapsed_milliseconds["minimum"]
+            for value in samples
+        )
     ):
-        raise ValueError("the 95th percentile requires twenty nonnegative integer samples")
+        raise ValueError(
+            f"the 95th percentile requires {measured_cycles} nonnegative integer samples"
+        )
     ordered = sorted(samples)
     rank = math.ceil(0.95 * len(ordered))
     return ordered[rank - 1]
+
+
+def _latency_exact_type(value: object, declared_type: str) -> bool:
+    """Match a canonical policy type tag to an exact built-in Python type."""
+    expected_types = {"bool": bool, "int": int, "str": str, "tuple": tuple}
+    expected_type = expected_types.get(declared_type)
+    return expected_type is not None and type(value) is expected_type
+
+
+def _valid_latency_reference(value: object) -> bool:
+    """Return whether a workload, environment, or evidence reference is usable."""
+    policy = _LATENCY_POLICY_DECLARATION["references"]
+    return (
+        _latency_exact_type(value, policy["exact_type"])
+        and policy["minimum_length"] <= len(value) <= policy["maximum_length"]
+        and (
+            not policy["nonblank_after_strip"]
+            or bool(value.strip())
+        )
+    )
+
+
+def _valid_latency_action_id(value: object) -> bool:
+    """Accept bounded ASCII identifiers for owner-pinned latency actions."""
+    policy = _LATENCY_POLICY_DECLARATION["action_ids"]
+    return (
+        _latency_exact_type(value, policy["item_exact_type"])
+        and policy["minimum_length"] <= len(value) <= policy["maximum_length"]
+        and re.fullmatch(policy["grammar"], value) is not None
+    )
+
+
+def _valid_latency_rule_digest(value: object) -> bool:
+    """Require a canonical lowercase SHA-256 owner-rule reference."""
+    policy = _LATENCY_POLICY_DECLARATION["rule_sha256"]
+    return (
+        _latency_exact_type(value, policy["exact_type"])
+        and re.fullmatch(policy["grammar"], value) is not None
+    )
 
 
 def evaluate_latency(
@@ -576,38 +628,117 @@ def evaluate_latency(
     active_overlap_confirmed: bool,
 ) -> OracleResult:
     """Evaluate the typed latency contract only when owner criteria are pinned."""
+    policy = _LATENCY_POLICY_DECLARATION
+    action_id_policy = policy["action_ids"]
+    timeout_policy = policy["per_cycle_timeout_seconds"]
+    ceiling_policy = policy["percentile_95_ceiling_milliseconds"]
+    warmup_policy = policy["warmup_cycles"]
+    measured_policy = policy["measured_cycles"]
+    boolean_policy = policy["boolean_observations"]
+    elapsed_policy = policy["elapsed_milliseconds"]
+    cycle_evidence_policy = policy["cycle_evidence_references"]
+    reference_policy = policy[cycle_evidence_policy["reference_policy"]]
+
     if type(criterion) is not LatencyCriterion:
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_criterion_unavailable")
     if (
-        not criterion.workload_ref
-        or not criterion.environment_ref
+        criterion.workload_ref is None
+        or criterion.environment_ref is None
         or criterion.rule_sha256 is None
         or criterion.percentile_95_ceiling_milliseconds is None
         or criterion.per_cycle_timeout_seconds is None
-        or not criterion.action_ids
-        or criterion.warmup_cycles != 5
-        or criterion.measured_cycles != 20
+        or (
+            _latency_exact_type(criterion.action_ids, action_id_policy["exact_type"])
+            and not criterion.action_ids
+        )
     ):
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_owner_rule_unavailable")
-    if not active_overlap_confirmed:
-        return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_active_overlap_unproven")
+    if (
+        not _valid_latency_reference(criterion.workload_ref)
+        or not _valid_latency_reference(criterion.environment_ref)
+        or not _valid_latency_rule_digest(criterion.rule_sha256)
+        or not _latency_exact_type(
+            criterion.per_cycle_timeout_seconds,
+            timeout_policy["exact_type"],
+        )
+        or not _latency_exact_type(
+            criterion.percentile_95_ceiling_milliseconds,
+            ceiling_policy["exact_type"],
+        )
+        or not _latency_exact_type(criterion.warmup_cycles, warmup_policy["exact_type"])
+        or not _latency_exact_type(criterion.measured_cycles, measured_policy["exact_type"])
+        or criterion.per_cycle_timeout_seconds < timeout_policy["minimum"]
+        or criterion.percentile_95_ceiling_milliseconds < ceiling_policy["minimum"]
+        or not _latency_exact_type(criterion.action_ids, action_id_policy["exact_type"])
+        or (action_id_policy["nonempty"] and not criterion.action_ids)
+        or any(not _valid_latency_action_id(action_id) for action_id in criterion.action_ids)
+        or (
+            action_id_policy["unique"]
+            and len(set(criterion.action_ids)) != len(criterion.action_ids)
+        )
+    ):
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_criterion_malformed")
+    if (
+        criterion.warmup_cycles != warmup_policy["value"]
+        or criterion.measured_cycles != measured_policy["value"]
+    ):
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_owner_rule_unavailable")
+    if not _latency_exact_type(active_overlap_confirmed, boolean_policy["exact_type"]):
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_active_overlap_unavailable")
     if type(cycles) is not tuple or any(type(cycle) is not LatencyCycle for cycle in cycles):
         return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_cycles_unavailable")
-    if (
-        criterion.per_cycle_timeout_seconds <= 0
-        or criterion.percentile_95_ceiling_milliseconds < 0
-    ):
-        return OracleResult(evidence.AssertionOutcome.FAILED, "latency_rule_invalid")
+
+    action_ids = frozenset(criterion.action_ids)
+    evidence_refs: set[str] = set()
+    for cycle in cycles:
+        if (
+            not _valid_latency_action_id(cycle.action_id)
+            or not _latency_exact_type(cycle.warmup, boolean_policy["exact_type"])
+            or not _latency_exact_type(
+                cycle.elapsed_milliseconds,
+                elapsed_policy["exact_type"],
+            )
+            or cycle.elapsed_milliseconds < elapsed_policy["minimum"]
+            or not _latency_exact_type(cycle.return_completed, boolean_policy["exact_type"])
+            or not _latency_exact_type(cycle.evidence_ref, reference_policy["exact_type"])
+        ):
+            return OracleResult(
+                evidence.AssertionOutcome.BLOCKED,
+                "latency_cycle_evidence_malformed",
+            )
+        if cycle.action_id not in action_ids:
+            return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_cycle_set_mismatch")
+        if cycle.evidence_ref == "":
+            return OracleResult(
+                evidence.AssertionOutcome.BLOCKED,
+                "latency_cycle_evidence_missing",
+            )
+        if (
+            not _valid_latency_reference(cycle.evidence_ref)
+            or (
+                cycle_evidence_policy["unique"]
+                and cycle.evidence_ref in evidence_refs
+            )
+        ):
+            return OracleResult(
+                evidence.AssertionOutcome.BLOCKED,
+                "latency_cycle_evidence_malformed",
+            )
+        evidence_refs.add(cycle.evidence_ref)
+
+    expected_cycles_per_action = warmup_policy["value"] + measured_policy["value"]
+    if len(cycles) != len(criterion.action_ids) * expected_cycles_per_action:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_cycle_count_mismatch")
+    if not active_overlap_confirmed:
+        return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_active_overlap_unproven")
     for action_id in criterion.action_ids:
         action_cycles = tuple(cycle for cycle in cycles if cycle.action_id == action_id)
         warmups = tuple(cycle for cycle in action_cycles if cycle.warmup)
         measured = tuple(cycle for cycle in action_cycles if not cycle.warmup)
-        if len(warmups) != 5 or len(measured) != 20:
+        if len(warmups) != warmup_policy["value"] or len(measured) != measured_policy["value"]:
             return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_cycle_count_mismatch")
         if any(not cycle.return_completed for cycle in action_cycles):
             return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_return_incomplete")
-        if any(not cycle.evidence_ref for cycle in action_cycles):
-            return OracleResult(evidence.AssertionOutcome.BLOCKED, "latency_cycle_evidence_missing")
         if any(
             cycle.elapsed_milliseconds > criterion.per_cycle_timeout_seconds * 1000
             for cycle in measured

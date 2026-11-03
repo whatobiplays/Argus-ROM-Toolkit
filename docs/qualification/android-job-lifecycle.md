@@ -72,10 +72,13 @@ evidence schema is unchanged. A blocked or undecided obligation is recorded as
 There is no persisted `NOT_APPLICABLE` outcome and no new event variant.
 
 The lifecycle contract is version 4, the capability is version 3, and the
-oracle is version 5. The capability declaration and digest are unchanged. The
+oracle is version 6. The capability declaration and digest are unchanged. The
+oracle digest is
+`2ef54c98c518e0625e50c38b1225af96128eee7ed2ffd2524a6c62262c8d5894`. The
 AND-05 capability declaration names the fresh Retry-relation precondition.
-Both scenario plan digests were recomputed from the new contract and oracle
-pins. Previous v3/v3/v4 and v2/v2/v3 bindings are rejected for both scenarios.
+The new oracle pin changes both scenario plan digests; an owner must recompute
+and approve each complete plan from its artifact, rules, and frozen operations.
+Previous v4/v3/v5, v3/v3/v4, and v2/v2/v3 bindings are rejected for both scenarios.
 Legacy, Issue #26, and Issue #27 pins are unaffected.
 
 ## 3. AND-04 operation table
@@ -438,19 +441,42 @@ recovery state does not prove that the controlled interruption occurred.
 ## 8. Latency contract
 
 The host-only slice ships the typed latency measurement contract with
-execution disabled. The contract requires five warmup cycles, twenty measured
-cycles, and the nearest-rank 95th percentile in integer milliseconds. Each cycle names an
-action, records whether its return completed, carries an evidence reference,
-and uses a monotonic elapsed duration. Evaluation also requires confirmed
-active-work overlap and an owner-pinned rule containing the workload and
-environment references, rule digest, per-cycle timeout, 95th-percentile ceiling, and
-action identifiers.
+execution disabled. Five warmups, twenty measured cycles, and nearest-rank
+p95 remain provisional. Timeout, ceiling, cycle counts, and elapsed samples
+must be built-in integers. Timeout must be positive; ceiling and elapsed
+values must be nonnegative; cycle counts stay at five and twenty. Active
+overlap, warmup, and return fields must be built-in Booleans. The evaluator
+also requires valid action IDs, unique cycle evidence references, and a
+well-typed owner rule with workload, environment, and rule digest. Action IDs
+are exact strings of at most 64 characters matching
+`[a-z][a-z0-9_-]{0,63}`. Workload, environment, and cycle evidence references
+are exact strings of at most 256 characters and must remain nonblank after
+stripping whitespace. The owner-rule digest is exactly 64 lowercase
+hexadecimal characters.
 
-An absent rule, unapproved ceiling, missing active overlap, incomplete cycle
-count, incomplete return, or missing evidence records `BLOCKED`. Host
-fake-clock tests do not create a physical latency verdict. Executing the 25
-cycles requires separately approved physical authorization and per-cycle
-bounds.
+The evaluator rejects duplicate evidence-reference values, action IDs outside
+the owner-pinned set, and missing or excessive total or per-action cycle
+counts. It cannot establish that different evidence references represent
+different executions, so it cannot detect semantic replay that uses a new
+reference.
+Malformed or unavailable criteria or evidence return `BLOCKED` without raising
+a Python exception. This includes a nonpositive per-cycle timeout or a
+negative p95 ceiling. A well-formed measured timeout or p95 ceiling violation
+remains `FAILED`.
+
+Baseline calibration and candidate acceptance are separate decisions.
+Representative baseline measurements may be collected and reported before an
+acceptance ceiling is chosen, but they do not produce a pass/fail result. A
+candidate verdict requires an immutable owner-approved workload, environment,
+action set, numerical ceiling, and rule digest. Each warmup and measured
+navigation effect requires its own bounded grant and evidence reference. Each
+required return or reset transition also requires its own bounded grant and
+evidence reference. A single one-use navigation grant cannot cover 25 hidden
+UI effects or their returns. The frozen 31- and 45-operation plans do not
+contain these per-cycle grants; latency therefore needs a separate physical
+authorization plan with its own deadline and reserves. The provisional method
+does not approve numerical criteria, and host fake-clock tests do not create a
+physical latency verdict.
 
 ## 9. Physical qualification blockers
 
@@ -497,6 +523,86 @@ lifecycle row. The raw `Active` or `Recent` label alone is insufficient.
 Flutter defines selected navigation state, but Android accessibility has not
 been physically verified to expose it. Missing or ambiguous selected-state or
 page structure remains `BLOCKED`.
+
+### Observer design for a later physical authorization
+
+Use two independent observation sources because the UI and Android OS prove
+different facts. The owner-attested baseline supplies expected values; it does
+not replace either observation.
+
+**A. Normal production accessibility semantics.** A host parser captures the
+ordinary Library, Jobs, refresh-detail, Sources-root, and scan-detail surfaces
+through the existing accessibility adapter in
+`scripts/android_qualification/physical/_job_lifecycle_ui.py`. Future product
+work would need to expose stable parent and child `JobRunId` values, frozen
+scope, root-to-job identity, and exact committed Library member identities
+through those standard surfaces. Current Jobs rows show an operation label and
+lifecycle state while the ID remains an internal route key; the Library view
+does not expose the exact committed member set; and the root's last scan is
+not necessarily a child of the tested refresh. Missing or ambiguous facts
+remain `BLOCKED`; a different valid identity or proven committed-state loss
+uses the existing operation-specific `FAILED` classification. Any production
+accessibility change requires its own product review, artifact pin, and
+requalification. The product touchpoints to review are
+`flutter/lib/features/jobs/presentation/jobs_page.dart`,
+`flutter/lib/features/jobs/presentation/job_detail_page.dart`,
+`flutter/lib/features/library/presentation/library_page.dart`,
+`flutter/lib/features/sources/presentation/sources_page.dart`, and
+`flutter/lib/features/sources/presentation/root_detail_page.dart`. Independent
+evidence comes from host-captured standard accessibility observations linked
+to the exact session and artifact. The current typed result boundary is
+`LibrarySurfaceObservation`, `RefreshDetailObservation`,
+`JobIdentityObservation`, and `ScanRootObservation` in
+`scripts/android_qualification/_job_lifecycle_contract.py`; parsers may fill
+them only from facts exposed on the verified surface. Row order, titles, and
+owner attestation cannot fill identity fields. Private database reads are
+excluded. No qualification-only endpoint is permitted by ARCH-003 or
+SPEC-X-003.
+
+**B. Fixed, read-only OS observer.** A future adapter, proposed at
+`scripts/android_qualification/physical/_job_lifecycle_os_observer.py`, would
+accept the privately bound exact target and expected package and return typed,
+sanitized package-artifact, signer, process, foreground, and task-continuity
+facts with observer provenance. It may query only allowlisted package-scoped
+OS surfaces, such as package metadata and the exact package's process
+presence. Read-only discovery established a package-scoped process-presence
+query, but no permitted target-specific task-continuity query. The platform
+version and identifying device attributes are omitted from shared
+qualification documentation; any future physical evidence must keep them in
+owner-private records. This shared plan retains only the sanitized capability
+result.
+Global stack or activity dumps would expose unrelated application state and
+are excluded. The observer must not enumerate other applications, retain broad
+`ps` or ActivityManager dumps, capture screenshots, or read app-private
+storage. A missing package, signer, process, or permitted task observation is
+`BLOCKED`; a valid observation of a different artifact, signer, package, or
+required process state is `FAILED`. OS facts cannot establish app-owned
+JobRunIds, refresh-child relationships, frozen scope, committed Library
+membership, or Sources attribution. If Android cannot return a required
+foreground or task fact without exposing unrelated app state, that assertion
+stays `BLOCKED`.
+
+The existing host boundary is the bounded `JobLifecycleTransport` observation
+API. The admission result uses `JobLifecycleBaselineObservation`; process and
+foreground results use `ProcessAndForegroundObservation`. The host binds each
+observation to the immutable target, package, artifact, and authorization and
+stores only the permitted sanitized receipt. Android PackageManager and the
+OS process service are the independent evidence sources for those OS facts;
+the app's own success text cannot establish them.
+
+For artifact identity, the future observer must read only the APK paths
+returned for the exact approved package, calculate the base APK SHA-256 on the
+host without retaining APK bytes, and compare it with the owner-pinned digest.
+Any installed splits must also be covered by the approved artifact pin; an
+unrepresented split set is `BLOCKED`. The observer must independently verify
+the expected signer; version labels and package metadata alone are
+insufficient.
+
+The recommended future design combines A for product-owned identities and
+committed state with B for independently observed artifact and OS state. The
+current target discovery did not find the qualification package installed and
+did not establish a permitted target-only foreground or task query. No
+physical observer or transport was implemented in this host-only change.
 
 G3, G4, and G5 remain separate owner-authorized physical gates. No host test,
 CI run, or synthetic observation may claim Android physical qualification or

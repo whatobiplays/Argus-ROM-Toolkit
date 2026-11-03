@@ -125,9 +125,11 @@ Model a **Qualification Latency Criterion** separate from action/scenario/sessio
 - The approved host contract keeps the five-warmup, twenty-measurement,
   nearest-rank p95 method provisional. It does not run the 25 physical UI
   actions, approve a numerical ceiling, or create a device latency verdict.
-- The host-only evaluator retains a P2: malformed negative latency samples can
-  raise `ValueError`. Correct and requalify that evaluator before latency
-  execution is enabled under a separately approved physical authorization.
+- Oracle v6 validates every warmup and measured sample before comparisons or
+  percentile calculation. Malformed or unavailable latency evidence returns
+  `BLOCKED`; well-typed timeout and p95 violations remain `FAILED`. Latency
+  execution stays disabled until its provisional method and numerical rule
+  receive separate owner approval and physical requalification.
 
 ### 4.4 Admission, evidence and interruption
 
@@ -454,3 +456,110 @@ At the November 2, 2026 prepublication review checkpoint, this two-file
 correction was unstaged and unpublished. No GitHub review-thread action, device
 access, or owner qualification verdict occurred during preparation. Subsequent
 publication status is authoritative in PR #58. TASK-P003-028 remains In Progress.
+
+### Oracle v6 and read-only target discovery (2026-11-02)
+
+Implementation started from branch `codex/issue-28-job-lifecycle-recovery` at
+`3783f669dacc0fbcf780b5192ba372e6e71a0f8e` with a clean feature worktree. The
+primary `main` checkout remains at the fixed baseline with its pre-existing
+untracked task document. The uncommitted candidate changes only this task
+record, the lifecycle qualification document, the contract version, the
+latency evaluator, and its tests. The cumulative PR inventory remains 15
+paths. No operation order, effect grant, timeout, or session deadline changed.
+
+The contract remains v4 and the capability remains v3. Oracle v6 is pinned to
+`2ef54c98c518e0625e50c38b1225af96128eee7ed2ffd2524a6c62262c8d5894`. The
+test-only synthetic AND-04 and AND-05 authorization fixtures now compute plan
+digests `d15692d43b3e840996ddfa24b8f04ea9405c6f6b347ebe11be343e1963381c79`
+and `a289078418a684f22a571f4ebe2e5d5ba98d67b927f8740200dd4fd2a652ad09`.
+Those are not owner authorization digests. No private owner plan or installed
+artifact was available to regenerate a real authorization; any oracle v5
+approval is stale and requires a new independently computed owner-approved
+plan digest. AND-04 remains 31 operations and AND-05 remains 45.
+
+Oracle v6 validates exact integer elapsed samples, exact Boolean fields,
+action IDs, unique evidence references, cycle membership, and owner-rule field
+types before comparisons or percentile evaluation. Malformed evidence or
+criteria, including a nonpositive cycle timeout or negative percentile
+ceiling, returns `BLOCKED`; valid measured timeout and percentile violations
+remain `FAILED`. The nearest-rank helper retains its strict direct-input
+behavior. Latency execution remains disabled, and five warmups, twenty
+measured cycles, and the p95 rule remain provisional pending separate owner
+approval and physical requalification.
+
+Scope note: §3.2 preserves the earlier no-device boundary. The owner's later
+conditional oracle-v6 approval superseded it only for bounded, read-only
+discovery of the explicitly selected target. It did not authorize device
+mutation, AND-04/AND-05 execution, or qualification. That later approval is the
+authority for the discovery below; the historical scope wording is retained.
+
+Read-only discovery addressed only the owner-selected target. It was present
+in ADB's `device` state and explicitly selected; no other ADB entries were
+present. Detailed identifying platform attributes and device-correlation
+references are omitted from this shared task record. Public product and
+benchmark material was considered as corroboration, but its CPU label did not
+match the OS-reported hardware label. The connection between those names
+remains unverified, so the public material does not establish authoritative
+silicon identity.
+
+The exact qualification package was absent: the package-path query returned
+no installed APK. Its version, signer, and byte digest are therefore
+unavailable. A package-scoped process-presence query is available, but no
+process observation was made because the package was absent. No permitted
+read-only target-specific foreground/task continuity query was established;
+broad process, activity, or window listings were not used. No app
+installation, launch, force-stop, UI input, setting change, or private-data
+query occurred. Physical admission and G3/G4/G5 remain `BLOCKED`.
+
+TDD recorded the new failures against the v5 implementation before the
+evaluator correction. Final focused lifecycle and physical-parser tests passed
+(284 tests). `just test-android-qualification` passed with 1,105 tests and two
+skips. Formatting, lint, architecture/dependency checks, qualification archive,
+naming, and qualification-record checks passed. `just check` passed on the
+final code and test files before the final documentation-only additions. The
+full Android suite also passed before this Completion Result was appended; no
+source or test code changed afterward. Archive, naming, record, and diff checks
+were run after the append. Available host disk space was 45 GiB after the full
+gate.
+
+TASK-P003-028 remains In Progress. Issue #28 and PR #58 were not changed. No
+device qualification, owner verdict, stage, commit, or push occurred.
+
+### Oracle v6 review correction and final validation (2026-11-02)
+
+An independent specification review found that a zero per-cycle timeout and a
+negative p95 ceiling were classified as product failures. These values are
+malformed owner criteria, so oracle v6 now classifies them as `BLOCKED` before
+examining cycle measurements. Valid measured-cycle timeouts and p95 ceiling
+violations remain `FAILED`. The canonical oracle declaration now pins this
+latency evidence policy. Contract v4, capability v3, oracle v6, and both frozen
+operation plans remain in force; no grants, order, timeout, or session deadline
+changed.
+
+The corrected oracle digest is
+`2ef54c98c518e0625e50c38b1225af96128eee7ed2ffd2524a6c62262c8d5894`. The
+synthetic test authorization plan digests are
+`d15692d43b3e840996ddfa24b8f04ea9405c6f6b347ebe11be343e1963381c79` for
+AND-04 and `a289078418a684f22a571f4ebe2e5d5ba98d67b927f8740200dd4fd2a652ad09`
+for AND-05. They are not owner authorization digests; real owner plans remain
+unavailable and must be independently recomputed and approved before use.
+
+The read-only target discovery was authorized by the later conditional oracle
+v6 approval, which superseded the earlier no-device boundary only for the
+explicitly selected target and read-only queries. It did not authorize device
+mutation or AND-04/AND-05 execution. Identifying platform properties and
+device-correlation references are omitted from this shared record; only
+sanitized capability conclusions are retained. The qualification package was
+absent, and no permitted read-only task-continuity query was established, so
+physical admission and G3/G4/G5 remain `BLOCKED`.
+
+TDD added zero-timeout and negative-ceiling expectations before changing the
+oracle; the targeted tests failed before and passed after the correction.
+Final focused lifecycle and physical-parser tests passed (284 tests), and
+`just test-android-qualification` passed with 1,105 tests and two skips.
+`just _format-check lint _architecture`, qualification archive, naming, record,
+and `git diff --check` passed. The prior `just check` pass predates this source
+correction and is not evidence for the final candidate. It was not rerun: only
+41 GiB remained available on a 96%-used filesystem, with the existing Rust
+target occupying 6.6 GiB. TASK-P003-028 remains In Progress; no physical
+qualification or owner verdict was issued.

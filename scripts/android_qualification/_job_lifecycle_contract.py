@@ -17,7 +17,7 @@ from typing import Iterable
 
 JOB_LIFECYCLE_CONTRACT_VERSION = 4
 JOB_LIFECYCLE_CAPABILITY_VERSION = 3
-JOB_LIFECYCLE_ORACLE_VERSION = 5
+JOB_LIFECYCLE_ORACLE_VERSION = 6
 JOB_LIFECYCLE_QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
 JOB_LIFECYCLE_SCENARIO_AND_04 = "AND-04"
 JOB_LIFECYCLE_SCENARIO_AND_05 = "AND-05"
@@ -102,6 +102,40 @@ def _sha256(value: object) -> str:
 
 
 JOB_LIFECYCLE_CAPABILITY_SHA256 = _sha256(_CAPABILITY_DECLARATION)
+
+_LATENCY_POLICY_DECLARATION = {
+    "warmup_cycles": {"exact_type": "int", "value": 5},
+    "measured_cycles": {"exact_type": "int", "value": 20},
+    "per_cycle_timeout_seconds": {"exact_type": "int", "minimum": 1},
+    "percentile_95_ceiling_milliseconds": {"exact_type": "int", "minimum": 0},
+    "elapsed_milliseconds": {"exact_type": "int", "minimum": 0},
+    "boolean_observations": {
+        "exact_type": "bool",
+        "fields": ("active_overlap_confirmed", "warmup", "return_completed"),
+    },
+    "action_ids": {
+        "exact_type": "tuple",
+        "nonempty": True,
+        "unique": True,
+        "item_exact_type": "str",
+        "minimum_length": 1,
+        "maximum_length": 64,
+        "grammar": r"[a-z][a-z0-9_-]{0,63}",
+    },
+    "references": {
+        "exact_type": "str",
+        "minimum_length": 1,
+        "maximum_length": 256,
+        "nonblank_after_strip": True,
+    },
+    "rule_sha256": {"exact_type": "str", "grammar": r"[0-9a-f]{64}"},
+    "cycle_evidence_references": {"reference_policy": "references", "unique": True},
+    "malformed_criteria_or_evidence": "BLOCKED",
+    "measured_timeout_exceeded": "FAILED",
+    "percentile_95": "nearest_rank",
+    "percentile_95_exceeded": "FAILED",
+}
+
 JOB_LIFECYCLE_ORACLE_SHA256 = _sha256({
     "contract_version": JOB_LIFECYCLE_CONTRACT_VERSION,
     "oracle_version": JOB_LIFECYCLE_ORACLE_VERSION,
@@ -113,6 +147,7 @@ JOB_LIFECYCLE_ORACLE_SHA256 = _sha256({
         "status_key",
         "issue_count",
     ),
+    "latency_policy": _LATENCY_POLICY_DECLARATION,
 })
 
 

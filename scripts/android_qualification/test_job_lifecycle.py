@@ -766,10 +766,14 @@ class ContractTests(unittest.TestCase):
     def test_exact_operation_counts_and_timeout_sums(self):
         self.assertEqual(contract.JOB_LIFECYCLE_CONTRACT_VERSION, 4)
         self.assertEqual(contract.JOB_LIFECYCLE_CAPABILITY_VERSION, 3)
-        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 5)
+        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 6)
         self.assertEqual(
             contract.JOB_LIFECYCLE_CAPABILITY_SHA256,
             "ec1754f5fdaa8327b8725e2e30b11113938721c566941dcefb0974edab1008f2",
+        )
+        self.assertEqual(
+            contract.JOB_LIFECYCLE_ORACLE_SHA256,
+            "2ef54c98c518e0625e50c38b1225af96128eee7ed2ffd2524a6c62262c8d5894",
         )
         self.assertEqual(contract.operation_count("AND-04"), 31)
         self.assertEqual(contract.operation_count("AND-05"), 45)
@@ -779,6 +783,59 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(contract.required_session_span("AND-05"), 1135)
         self.assertEqual(900 - 60 - 771, 69)
         self.assertEqual(1280 - 60 - 1135, 85)
+
+    def test_latency_policy_pins_exact_input_constraints(self):
+        policy = contract._LATENCY_POLICY_DECLARATION
+        self.assertEqual(policy["warmup_cycles"], {"exact_type": "int", "value": 5})
+        self.assertEqual(policy["measured_cycles"], {"exact_type": "int", "value": 20})
+        self.assertEqual(
+            policy["per_cycle_timeout_seconds"],
+            {"exact_type": "int", "minimum": 1},
+        )
+        self.assertEqual(
+            policy["percentile_95_ceiling_milliseconds"],
+            {"exact_type": "int", "minimum": 0},
+        )
+        self.assertEqual(
+            policy["elapsed_milliseconds"],
+            {"exact_type": "int", "minimum": 0},
+        )
+        self.assertEqual(
+            policy["boolean_observations"],
+            {
+                "exact_type": "bool",
+                "fields": ("active_overlap_confirmed", "warmup", "return_completed"),
+            },
+        )
+        self.assertEqual(
+            policy["references"],
+            {
+                "exact_type": "str",
+                "minimum_length": 1,
+                "maximum_length": 256,
+                "nonblank_after_strip": True,
+            },
+        )
+        self.assertEqual(
+            policy["action_ids"],
+            {
+                "exact_type": "tuple",
+                "nonempty": True,
+                "unique": True,
+                "item_exact_type": "str",
+                "minimum_length": 1,
+                "maximum_length": 64,
+                "grammar": r"[a-z][a-z0-9_-]{0,63}",
+            },
+        )
+        self.assertEqual(
+            policy["rule_sha256"],
+            {"exact_type": "str", "grammar": r"[0-9a-f]{64}"},
+        )
+        self.assertEqual(
+            policy["cycle_evidence_references"],
+            {"reference_policy": "references", "unique": True},
+        )
 
     def test_operation_ids_and_categories_are_closed(self):
         for scenario_id, scenarios in contract.JOB_LIFECYCLE_OPERATIONS.items():
@@ -1060,6 +1117,15 @@ class ManifestLifecycleTests(unittest.TestCase):
                     "AND-05": "104cea54d798e577e97a1bb5e9c8631c28d775dd6c8a0243c7ab7623f9b89c40",
                 },
             ),
+            (
+                "v4/v3/v5",
+                "5",
+                "22daf4e6f1de6a17f61523c9680e2491745ee0ece0074eb58966e602d9d99181",
+                {
+                    "AND-04": "20882c2555dc7050bde3f8f5495e026c2bddeb39ca0096ce5bbc2df096b767fe",
+                    "AND-05": "f19fde67ecd9c82e9b492609138210ea04057550646f11a2ff6536357e927700",
+                },
+            ),
         )
         for _, _, digest, _ in stale_revisions:
             self.assertNotEqual(digest, contract.JOB_LIFECYCLE_ORACLE_SHA256)
@@ -1069,6 +1135,13 @@ class ManifestLifecycleTests(unittest.TestCase):
                 self.assertEqual(
                     accepted.plan_sha256,
                     contract.plan_digest_for_authorization(accepted),
+                )
+                self.assertEqual(
+                    accepted.plan_sha256,
+                    {
+                        "AND-04": "d15692d43b3e840996ddfa24b8f04ea9405c6f6b347ebe11be343e1963381c79",
+                        "AND-05": "a289078418a684f22a571f4ebe2e5d5ba98d67b927f8740200dd4fd2a652ad09",
+                    }[scenario],
                 )
                 for label, stale_version, stale_digest, stale_plan_digests in stale_revisions:
                     with self.subTest(revision=label):
@@ -1089,6 +1162,11 @@ class ManifestLifecycleTests(unittest.TestCase):
 
     def test_lifecycle_parser_rejects_obsolete_oracle_pins(self):
         obsolete_oracles = (
+            (
+                "oracle-v5",
+                "5",
+                "22daf4e6f1de6a17f61523c9680e2491745ee0ece0074eb58966e602d9d99181",
+            ),
             (
                 "oracle-v4",
                 "4",
@@ -2411,11 +2489,23 @@ class OracleTests(unittest.TestCase):
 
         def cycles(*, warmups=5, measured=20, elapsed=100, completed=True, evidence_ref="e"):
             return tuple(
-                contract.LatencyCycle("open_jobs", True, elapsed, completed, evidence_ref)
-                for _ in range(warmups)
+                contract.LatencyCycle(
+                    "open_jobs",
+                    True,
+                    elapsed,
+                    completed,
+                    evidence_ref if evidence_ref == "" else f"{evidence_ref}-{index}",
+                )
+                for index in range(warmups)
             ) + tuple(
-                contract.LatencyCycle("open_jobs", False, elapsed, completed, evidence_ref)
-                for _ in range(measured)
+                contract.LatencyCycle(
+                    "open_jobs",
+                    False,
+                    elapsed,
+                    completed,
+                    evidence_ref if evidence_ref == "" else f"{evidence_ref}-{warmups + index}",
+                )
+                for index in range(measured)
             )
 
         self.assertEqual(
@@ -2452,7 +2542,7 @@ class OracleTests(unittest.TestCase):
                 cycles(),
                 active_overlap_confirmed=True,
             ).outcome,
-            evidence.AssertionOutcome.FAILED,
+            evidence.AssertionOutcome.BLOCKED,
         )
         self.assertEqual(
             oracle.evaluate_latency(
@@ -2497,6 +2587,269 @@ class OracleTests(unittest.TestCase):
         for bad in ((), tuple(range(19)), tuple(range(20)) + (-1,)):
             with self.assertRaises(ValueError):
                 oracle.nearest_rank_percentile_95(bad)
+
+    def test_latency_action_and_reference_boundaries_are_exact(self):
+        def evaluate(
+            *,
+            action_id="open_jobs",
+            workload_ref="workload",
+            environment_ref="environment",
+            evidence_refs=None,
+        ):
+            criterion = contract.LatencyCriterion(
+                workload_ref=workload_ref,
+                environment_ref=environment_ref,
+                rule_sha256="a" * 64,
+                per_cycle_timeout_seconds=2,
+                percentile_95_ceiling_milliseconds=1500,
+                action_ids=(action_id,),
+            )
+            references = evidence_refs or [f"evidence-{index}" for index in range(25)]
+            cycles = tuple(
+                contract.LatencyCycle(
+                    action_id,
+                    index < 5,
+                    100,
+                    True,
+                    references[index],
+                )
+                for index in range(25)
+            )
+            return oracle.evaluate_latency(
+                criterion,
+                cycles,
+                active_overlap_confirmed=True,
+            )
+
+        for action_id in ("a", "a0_b-z", "a" + "0_-" * 21):
+            with self.subTest(valid_action_id=action_id):
+                self.assertEqual(
+                    evaluate(action_id=action_id).outcome,
+                    evidence.AssertionOutcome.PASSED,
+                )
+
+        for action_id in (
+            "a" + "b" * 64,
+            "Open_jobs",
+            "1open_jobs",
+            "a.open",
+            "aé",
+        ):
+            with self.subTest(invalid_action_id=action_id):
+                result = evaluate(action_id=action_id)
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                self.assertEqual(result.code, "latency_criterion_malformed")
+
+        self.assertEqual(
+            evaluate(
+                workload_ref="w" * 256,
+                environment_ref=" " + "e" * 254 + " ",
+                evidence_refs=["r" * 256, *(f"evidence-{index}" for index in range(1, 25))],
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+        self.assertEqual(
+            evaluate(
+                workload_ref="w",
+                environment_ref="e",
+                evidence_refs=["r", *(f"evidence-{index}" for index in range(1, 25))],
+            ).outcome,
+            evidence.AssertionOutcome.PASSED,
+        )
+
+        for workload_ref, environment_ref in (
+            ("w" * 257, "environment"),
+            ("", "environment"),
+            (" " * 3, "environment"),
+            ("workload", "e" * 257),
+            ("workload", ""),
+            ("workload", " " * 3),
+        ):
+            with self.subTest(workload_ref=workload_ref, environment_ref=environment_ref):
+                result = evaluate(
+                    workload_ref=workload_ref,
+                    environment_ref=environment_ref,
+                )
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                self.assertEqual(result.code, "latency_criterion_malformed")
+
+        for invalid_reference in ("x" * 257, " " * 3):
+            with self.subTest(invalid_evidence_reference=invalid_reference):
+                references = [f"evidence-{index}" for index in range(25)]
+                references[0] = invalid_reference
+                result = evaluate(evidence_refs=references)
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                self.assertEqual(result.code, "latency_cycle_evidence_malformed")
+
+    def test_latency_blocks_malformed_elapsed_samples_in_warmups_and_measurements(self):
+        criterion = contract.LatencyCriterion(
+            workload_ref="workload",
+            environment_ref="environment",
+            rule_sha256="a" * 64,
+            per_cycle_timeout_seconds=2,
+            percentile_95_ceiling_milliseconds=1500,
+            action_ids=("open_jobs",),
+        )
+        valid_cycles = tuple(
+            contract.LatencyCycle("open_jobs", index < 5, 100, True, f"sample-{index}")
+            for index in range(25)
+        )
+        malformed_values = (-1, True, 1.5, float("nan"), float("inf"), "100", None)
+
+        for sample_index in (0, 5):
+            for malformed in malformed_values:
+                with self.subTest(sample_index=sample_index, value=repr(malformed)):
+                    changed = list(valid_cycles)
+                    changed[sample_index] = replace(
+                        changed[sample_index], elapsed_milliseconds=malformed
+                    )
+                    try:
+                        result = oracle.evaluate_latency(
+                            criterion, tuple(changed), active_overlap_confirmed=True
+                        )
+                    except (TypeError, ValueError):
+                        result = None
+                    self.assertIsNotNone(
+                        result,
+                        "malformed samples must return a categorical result, not raise",
+                    )
+                    self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                    self.assertEqual(result.code, "latency_cycle_evidence_malformed")
+
+    def test_latency_blocks_malformed_cycle_identity_and_provenance(self):
+        criterion = contract.LatencyCriterion(
+            workload_ref="workload",
+            environment_ref="environment",
+            rule_sha256="a" * 64,
+            per_cycle_timeout_seconds=2,
+            percentile_95_ceiling_milliseconds=1500,
+            action_ids=("open_jobs",),
+        )
+        valid_cycles = tuple(
+            contract.LatencyCycle("open_jobs", index < 5, 100, True, f"sample-{index}")
+            for index in range(25)
+        )
+        malformed_cases = []
+        for field, value in (
+            ("warmup", 1),
+            ("return_completed", 1),
+            ("evidence_ref", object()),
+            ("evidence_ref", "   "),
+            ("action_id", "Open Jobs"),
+        ):
+            changed = list(valid_cycles)
+            changed[0] = replace(changed[0], **{field: value})
+            malformed_cases.append((field, value, tuple(changed), criterion))
+
+        duplicate_refs = list(valid_cycles)
+        duplicate_refs[1] = replace(
+            duplicate_refs[1], evidence_ref=duplicate_refs[0].evidence_ref
+        )
+        malformed_cases.append(("duplicate_evidence_ref", None, tuple(duplicate_refs), criterion))
+
+        invalid_action_cycles = tuple(
+            replace(cycle, action_id="Open Jobs") for cycle in valid_cycles
+        )
+        malformed_cases.append(
+            ("invalid_action_identifier", None, invalid_action_cycles,
+             replace(criterion, action_ids=("Open Jobs",)))
+        )
+
+        unexpected = valid_cycles + (
+            contract.LatencyCycle("unexpected_action", False, 100, True, "extra-cycle"),
+        )
+        malformed_cases.append(("unexpected_action_cycle", None, unexpected, criterion))
+
+        for label, _, cycles, selected_criterion in malformed_cases:
+            with self.subTest(case=label):
+                result = oracle.evaluate_latency(
+                    selected_criterion, cycles, active_overlap_confirmed=True
+                )
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                if label == "unexpected_action_cycle":
+                    expected_code = "latency_cycle_set_mismatch"
+                elif label == "invalid_action_identifier":
+                    expected_code = "latency_criterion_malformed"
+                else:
+                    expected_code = "latency_cycle_evidence_malformed"
+                self.assertEqual(result.code, expected_code)
+
+    def test_latency_blocks_malformed_criteria_and_overlap_type(self):
+        criterion = contract.LatencyCriterion(
+            workload_ref="workload",
+            environment_ref="environment",
+            rule_sha256="a" * 64,
+            per_cycle_timeout_seconds=2,
+            percentile_95_ceiling_milliseconds=1500,
+            action_ids=("open_jobs",),
+        )
+        valid_cycles = tuple(
+            contract.LatencyCycle("open_jobs", index < 5, 100, True, f"sample-{index}")
+            for index in range(25)
+        )
+        malformed_criteria = (
+            replace(criterion, workload_ref=7),
+            replace(criterion, environment_ref=object()),
+            replace(criterion, rule_sha256="not-a-digest"),
+            replace(criterion, per_cycle_timeout_seconds=True),
+            replace(criterion, per_cycle_timeout_seconds=0),
+            replace(criterion, percentile_95_ceiling_milliseconds=1500.0),
+            replace(criterion, percentile_95_ceiling_milliseconds=-1),
+            replace(criterion, warmup_cycles=5.0),
+            replace(criterion, measured_cycles=20.0),
+            replace(criterion, action_ids=["open_jobs"]),
+            replace(criterion, action_ids=("open_jobs", "open_jobs")),
+        )
+        for malformed in malformed_criteria:
+            with self.subTest(criterion=malformed):
+                result = oracle.evaluate_latency(
+                    malformed, valid_cycles, active_overlap_confirmed=True
+                )
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                self.assertEqual(result.code, "latency_criterion_malformed")
+
+        overlap = oracle.evaluate_latency(
+            criterion, valid_cycles, active_overlap_confirmed=1
+        )
+        self.assertEqual(overlap.outcome, evidence.AssertionOutcome.BLOCKED)
+        self.assertEqual(overlap.code, "latency_active_overlap_unavailable")
+
+    def test_latency_preserves_nearest_rank_percentile_95_and_owner_failures(self):
+        criterion = contract.LatencyCriterion(
+            workload_ref="workload",
+            environment_ref="environment",
+            rule_sha256="a" * 64,
+            per_cycle_timeout_seconds=2,
+            percentile_95_ceiling_milliseconds=19,
+            action_ids=("open_jobs",),
+        )
+        cycles = tuple(
+            contract.LatencyCycle("open_jobs", True, 0, True, f"warmup-{index}")
+            for index in range(5)
+        ) + tuple(
+            contract.LatencyCycle("open_jobs", False, index, True, f"measured-{index}")
+            for index in range(1, 21)
+        )
+        self.assertEqual(
+            oracle.evaluate_latency(criterion, cycles, active_overlap_confirmed=True),
+            oracle.OracleResult(evidence.AssertionOutcome.PASSED, "latency_rule_satisfied"),
+        )
+        self.assertEqual(
+            oracle.evaluate_latency(
+                replace(criterion, percentile_95_ceiling_milliseconds=18),
+                cycles,
+                active_overlap_confirmed=True,
+            ).outcome,
+            evidence.AssertionOutcome.FAILED,
+        )
+        self.assertEqual(
+            oracle.evaluate_latency(
+                replace(criterion, percentile_95_ceiling_milliseconds=-1),
+                cycles,
+                active_overlap_confirmed=True,
+            ).outcome,
+            evidence.AssertionOutcome.BLOCKED,
+        )
 
     def test_terminal_successor_and_oracle_identity(self):
         self.assertEqual(
@@ -2556,7 +2909,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.FAILED,
         )
         self.assertRegex(oracle.oracle_sha256(), r"^[0-9a-f]{64}$")
-        self.assertEqual(oracle.oracle_version(), "5")
+        self.assertEqual(oracle.oracle_version(), "6")
         self.assertEqual(
             oracle.validate_refresh_progress(None).outcome,
             evidence.AssertionOutcome.BLOCKED,

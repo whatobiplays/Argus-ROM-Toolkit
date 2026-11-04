@@ -1,0 +1,28 @@
+.github/workflows/ci.yml
+  s_d969eb75192cea::t_e30f42aca71691 175-178,180-182,185-194
+  s_c4c26be2fc295a::t_7a4a9cdc57585a 195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54b558455498313c8674dfe5d0b35ed8eeff0a78",
+  "prompts": {},
+  "sessions": {
+    "s_c4c26be2fc295a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a04c-f768-77a2-b0d8-9e14583300b0",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_d969eb75192cea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18fec-1ff3-7f42-8866-fef568da3072",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

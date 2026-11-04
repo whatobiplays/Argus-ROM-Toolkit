@@ -897,18 +897,42 @@ class SimpleNamespace:
         self.__dict__.update(values)
 
 
+class _EqualityImpersonatingReference:
+    def __init__(self, expected: str):
+        self.expected = expected
+
+    def __eq__(self, other):
+        return other == self.expected
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
+class _EqualityImpersonatingString(str):
+    def __new__(cls, value: str, expected: str):
+        instance = super().__new__(cls, value)
+        instance.expected = expected
+        return instance
+
+    def __eq__(self, other):
+        return other == self.expected
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
 class ContractTests(unittest.TestCase):
     def test_exact_operation_counts_and_timeout_sums(self):
         self.assertEqual(contract.JOB_LIFECYCLE_CONTRACT_VERSION, 5)
         self.assertEqual(contract.JOB_LIFECYCLE_CAPABILITY_VERSION, 4)
-        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 8)
+        self.assertEqual(contract.JOB_LIFECYCLE_ORACLE_VERSION, 9)
         self.assertEqual(
             contract.JOB_LIFECYCLE_CAPABILITY_SHA256,
             "919d3bcf6e692a2936c53af929334326b54df60cd3c7089e0a5083fb7c691644",
         )
         self.assertEqual(
             contract.JOB_LIFECYCLE_ORACLE_SHA256,
-            "c15ee6d1d46043739d539367f16dd550e0c5b2e53708b5b30083551a42fe9e38",
+            "ffada5ef446923dfba24aaf8dd3b2dc7cb483e749aa5480cd23431ef5bf4be4f",
         )
         self.assertEqual(contract.operation_count("AND-04"), 31)
         self.assertEqual(contract.operation_count("AND-05"), 45)
@@ -1572,6 +1596,28 @@ class ManifestLifecycleTests(unittest.TestCase):
                     )
 
     def test_lifecycle_authorization_requires_current_oracle_revision(self):
+        published_v8_plan_digests = {
+            "AND-04": "5be168cf38cfd13288cdbd9536247f1d9d630245c4ab2ed38aa49b0229c04c41",
+            "AND-05": "dddbaa166f5d5b06f109445b199692b7f22fa95ed98ed63871683b9e291263d6",
+        }
+        for scenario, old_plan_digest in published_v8_plan_digests.items():
+            with self.subTest(published_revision="oracle-v8", scenario=scenario):
+                document = _authorization_document(scenario)
+                document["plan"]["plan_sha256"] = old_plan_digest
+                for operation in document["operations"]:
+                    operation["arguments"]["oracle_version"] = "8"
+                    operation["arguments"]["oracle_sha256"] = (
+                        "c15ee6d1d46043739d539367f16dd550e0c5b2e53708b5b30083551a42fe9e38"
+                    )
+                with self.assertRaises(manifest.AuthorizationError):
+                    manifest._load_job_lifecycle_authorization(
+                        write_private_json(
+                            self.directory,
+                            f"published-v8-{scenario}.json",
+                            document,
+                        )
+                    )
+
         published_v7_plan_digests = {
             "AND-04": "71c13ba6d003787d212be1d7283969b42735bb5a192cd7c133028d306d974e13",
             "AND-05": "d2898f073a89730619bdad4bc028ec935cbf0322c76fdcd7e9b7ae7e58896ad4",
@@ -1597,6 +1643,15 @@ class ManifestLifecycleTests(unittest.TestCase):
         # Plan digests come from those exact revisions rather than stale fields
         # pasted onto a current plan.
         stale_revisions = (
+            (
+                "v5/v4/v8",
+                "8",
+                "c15ee6d1d46043739d539367f16dd550e0c5b2e53708b5b30083551a42fe9e38",
+                {
+                    "AND-04": "5be168cf38cfd13288cdbd9536247f1d9d630245c4ab2ed38aa49b0229c04c41",
+                    "AND-05": "dddbaa166f5d5b06f109445b199692b7f22fa95ed98ed63871683b9e291263d6",
+                },
+            ),
             (
                 "v5/v4/v7 pre-direct-redirect-policy",
                 "7",
@@ -1655,8 +1710,8 @@ class ManifestLifecycleTests(unittest.TestCase):
                 self.assertEqual(
                     accepted.plan_sha256,
                     {
-                        "AND-04": "5be168cf38cfd13288cdbd9536247f1d9d630245c4ab2ed38aa49b0229c04c41",
-                        "AND-05": "dddbaa166f5d5b06f109445b199692b7f22fa95ed98ed63871683b9e291263d6",
+                        "AND-04": "437698c1128d0bd1096c6a6d87a7776ee048b83a35043723eb5b047b34fb7c81",
+                        "AND-05": "cd2a90e18a32856a2c097de5a937816030194a2645cf54187c9e71fc6faa1a04",
                     }[scenario],
                 )
                 for label, stale_version, stale_digest, stale_plan_digests in stale_revisions:
@@ -1678,6 +1733,11 @@ class ManifestLifecycleTests(unittest.TestCase):
 
     def test_lifecycle_parser_rejects_obsolete_oracle_pins(self):
         obsolete_oracles = (
+            (
+                "oracle-v8",
+                "8",
+                "c15ee6d1d46043739d539367f16dd550e0c5b2e53708b5b30083551a42fe9e38",
+            ),
             (
                 "oracle-v5",
                 "5",
@@ -3076,6 +3136,75 @@ class OracleTests(unittest.TestCase):
                     ).outcome,
                     expected,
                 )
+
+    def test_pre_retry_lookup_source_requires_bounded_exact_nonblank_string(self):
+        valid = _identity(
+            "parent",
+            scan_run_ids=("scan-run-a", "scan-run-b"),
+            state=contract.RecoveryState.FAILED,
+            scope="scope-ref",
+            retry_lookup=True,
+            lookup_source="parent",
+        )
+
+        def validate(observation, expected_parent_ref="parent"):
+            return oracle.validate_retry_precondition(
+                observation,
+                expected_parent_ref=expected_parent_ref,
+                expected_scope_ref="scope-ref",
+                expected_requested_root_refs=valid.requested_root_refs,
+                expected_admitted_root_refs=valid.admitted_root_refs,
+                expected_excluded_root_refs=valid.excluded_root_refs,
+                expected_state=contract.RecoveryState.FAILED,
+                expected_scan_run_relations=valid.scan_run_relations,
+            )
+
+        self.assertEqual(validate(valid).outcome, evidence.AssertionOutcome.PASSED)
+        invalid_sources = (
+            _EqualityImpersonatingReference("parent"),
+            _EqualityImpersonatingString("different", "parent"),
+            None,
+            True,
+            1,
+            1.0,
+            object(),
+            "",
+            " \t\n",
+            "p" * 257,
+            "another-parent",
+        )
+        for source in invalid_sources:
+            with self.subTest(source_type=type(source).__name__, source=source):
+                result = validate(
+                    replace(valid, retry_lookup_source_run_ref=source)
+                )
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.BLOCKED)
+                self.assertEqual(
+                    result.code,
+                    "retry_pre_dispatch_identity_ambiguous",
+                )
+
+        for parent_ref in ("p", "p" * 256):
+            with self.subTest(parent_ref_length=len(parent_ref)):
+                boundary_identity = _identity(
+                    parent_ref,
+                    scan_run_ids=("scan-run-a", "scan-run-b"),
+                    state=contract.RecoveryState.FAILED,
+                    scope="scope-ref",
+                    retry_lookup=True,
+                    lookup_source=parent_ref,
+                )
+                result = oracle.validate_retry_precondition(
+                    boundary_identity,
+                    expected_parent_ref=parent_ref,
+                    expected_scope_ref="scope-ref",
+                    expected_requested_root_refs=boundary_identity.requested_root_refs,
+                    expected_admitted_root_refs=boundary_identity.admitted_root_refs,
+                    expected_excluded_root_refs=boundary_identity.excluded_root_refs,
+                    expected_state=contract.RecoveryState.FAILED,
+                    expected_scan_run_relations=boundary_identity.scan_run_relations,
+                )
+                self.assertEqual(result.outcome, evidence.AssertionOutcome.PASSED)
         for mismatched, expected in (
             (
                 _identity("other-parent", source="other-parent", successor="successor"),
@@ -3538,7 +3667,7 @@ class OracleTests(unittest.TestCase):
             evidence.AssertionOutcome.FAILED,
         )
         self.assertRegex(oracle.oracle_sha256(), r"^[0-9a-f]{64}$")
-        self.assertEqual(oracle.oracle_version(), "8")
+        self.assertEqual(oracle.oracle_version(), "9")
         self.assertEqual(
             oracle.validate_refresh_progress(None).outcome,
             evidence.AssertionOutcome.BLOCKED,
@@ -7783,6 +7912,65 @@ class ExecutorLifecycleTests(unittest.TestCase):
                 evidence.AssertionOutcome.BLOCKED,
             )
         )
+
+    def test_pre_retry_equality_impersonation_blocks_before_retry_intent(self):
+        transport = ScriptedTransport("AND-05")
+        observer = ScriptedObserver(transport)
+        original = observer.observe_identity
+        forged_lookup_calls = 0
+
+        def observe(parent_ref, timeout):
+            nonlocal forged_lookup_calls
+            if (
+                transport.force_stop_calls
+                and not transport.retry_calls
+                and parent_ref == transport.parent
+            ):
+                forged_lookup_calls += 1
+                identity = original(parent_ref, timeout)
+                return replace(
+                    identity,
+                    retry_lookup_source_run_ref=(
+                        _EqualityImpersonatingReference(transport.parent)
+                    ),
+                )
+            return original(parent_ref, timeout)
+
+        observer.observe_identity = observe
+        executor, _, writer = self._executor(
+            "AND-05", transport=transport, observer=observer
+        )
+        self._force_stop_into(transport, contract.RecoveryState.FAILED)
+        result = executor.execute(now=NOW)
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.completed_operations, 34)
+        self.assertIn("pre-Retry relationship proof", result.blocker)
+        self.assertEqual(transport.retry_calls, 0)
+        self.assertEqual(forged_lookup_calls, 1)
+        self.assertTrue(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "retry_pre_dispatch_identity_ambiguous",
+                evidence.AssertionOutcome.BLOCKED,
+            )
+        )
+        self.assertFalse(
+            self._assertion_recorded(
+                executor,
+                writer,
+                "and-05-35",
+                "retry_pre_dispatch_identity_current_and_empty",
+                evidence.AssertionOutcome.PASSED,
+            )
+        )
+        intent_key = admission._add_scan_alias(
+            "operation",
+            f"{executor._spec.session_id}:and-05-35:intent",
+        )
+        self.assertFalse(any(key == intent_key for key, _ in writer.assertion_keys))
 
     def test_invalid_pre_retry_relations_never_dispatch_retry(self) -> None:
         valid = _identity(

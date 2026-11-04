@@ -291,10 +291,20 @@ def validate_retry_precondition(
             evidence.AssertionOutcome.BLOCKED,
             "retry_pre_dispatch_scan_relations_ambiguous",
         )
+    lookup_source_ref = observation.retry_lookup_source_run_ref
+    if (
+        type(lookup_source_ref) is not str
+        or not 1 <= len(lookup_source_ref) <= 256
+        or not lookup_source_ref.strip()
+    ):
+        return OracleResult(
+            evidence.AssertionOutcome.BLOCKED,
+            "retry_pre_dispatch_identity_ambiguous",
+        )
     successor_scan_run_relations = observation.successor_scan_run_relations
     if (
         observation.retry_relation_lookup_completed is not True
-        or observation.retry_lookup_source_run_ref != expected_parent_ref
+        or lookup_source_ref != expected_parent_ref
         or observation.successor_run_ref is not None
         or type(successor_scan_run_relations) is not tuple
         or bool(successor_scan_run_relations)

@@ -819,8 +819,49 @@ architecture; qualification archive, naming, record, and Android source
 contract checks; and `git diff --check`. The full `just check` gate is
 `NOT_RUN`: the volume had 14 GiB available at 99% capacity, which is not safe
 headroom for its Rust and Flutter build workload. Fresh independent Standards
-and Specification reviews are being run against this frozen candidate; their
-exact diff binding and dispositions are included in the final review report.
-No files will be changed after those reviews. Latency execution remains
+and Specification reviews were being run against this v8 candidate; those
+reviews do not attest to the separate v9 correction recorded below. Latency
+execution remains
 disabled; G3/G4/G5 remain `BLOCKED`. No device, ADB, GitHub, or PR state was
 changed.
+
+### Oracle v9 pre-Retry source-binding correction (2026-11-03)
+
+The candidate is based on PR #58 head
+`5b8a9023c6566b3e533566ee24ade982f51be9d8`. The reported P2 showed that
+`validate_retry_precondition()` compared the operation-35 lookup source with
+the admitted parent JobRunId before checking the observed value's exact
+runtime type. A deterministic equality-overriding object and a `str` subclass
+both reproduced the bypass: the oracle returned `PASSED`, and the executor
+continued beyond the 34-operation pre-Retry boundary instead of blocking.
+
+The oracle now requires the lookup source to be an exact `str`, 1–256
+characters long, with nonblank content after stripping, before comparing it
+to the already validated parent JobRunId. Malformed sources return the
+existing `BLOCKED` result `retry_pre_dispatch_identity_ambiguous`. The
+independent foreign-parent identity check remains ahead of this guard and
+retains its `FAILED` classification. Operation 35 therefore records no intent
+and dispatches no Retry for an equality-impersonating source. The executor
+regression verifies 34 completed operations, one lookup, zero Retry calls, no
+operation-35 intent, and no successful pre-Retry identity assertion.
+
+The canonical declaration now records the pre-dispatch source type, length,
+nonblank, and parent-binding requirements. Contract v5, capability v4, the
+capability digest, operation counts, grants, ordering, timeouts, and deadlines
+remain unchanged. Oracle v9 is pinned to
+`ffada5ef446923dfba24aaf8dd3b2dc7cb483e749aa5480cd23431ef5bf4be4f`. The
+synthetic test-fixture plan digests are AND-04
+`437698c1128d0bd1096c6a6d87a7776ee048b83a35043723eb5b047b34fb7c81` and
+AND-05 `cd2a90e18a32856a2c097de5a937816030194a2645cf54187c9e71fc6faa1a04`;
+they are not owner-approved authorizations. Tests reject published v8 oracle
+and plan pins, while the v8 records remain historical.
+
+Validation passed: 316 focused lifecycle and parser tests; 1,137 Android
+qualification tests with two skips; formatting; architecture; qualification
+archive, naming, record, and Android source-contract checks; and
+`git diff --check`. The aggregate `just check` gate is `NOT_RUN`: the volume
+had 35 GiB available at 97% capacity, so disk-intensive Rust and Flutter
+builds were not started. The candidate remains uncommitted and unstaged.
+Latency execution remains disabled; physical G3/G4/G5 remain `BLOCKED`; the
+task and Issue #28 remain In Progress/open. No device, ADB, GitHub, or PR state
+was changed.

@@ -17,7 +17,7 @@ from typing import Iterable
 
 JOB_LIFECYCLE_CONTRACT_VERSION = 5
 JOB_LIFECYCLE_CAPABILITY_VERSION = 4
-JOB_LIFECYCLE_ORACLE_VERSION = 8
+JOB_LIFECYCLE_ORACLE_VERSION = 9
 JOB_LIFECYCLE_QUALIFICATION_PACKAGE = "com.argusromtoolkit.argus.qualification"
 JOB_LIFECYCLE_SCENARIO_AND_04 = "AND-04"
 JOB_LIFECYCLE_SCENARIO_AND_05 = "AND-05"
@@ -197,6 +197,14 @@ JOB_LIFECYCLE_ORACLE_SHA256 = _sha256({
         "valid_foreign_identity": "FAILED",
     },
     "retry_lookup_policy": {
+        "pre_dispatch_source": {
+            "source_field": "retry_lookup_source_run_ref",
+            "source_exact_type": "str",
+            "source_minimum_length": 1,
+            "source_maximum_length": 256,
+            "source_nonblank_after_strip": True,
+            "source_must_equal": "admitted_parent_jobrun_id",
+        },
         "outcome": {
             "completed_field": "retry_relation_lookup_completed",
             "completed_exact_type": "bool",

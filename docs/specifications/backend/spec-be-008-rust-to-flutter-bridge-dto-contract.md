@@ -1830,6 +1830,21 @@ LibraryScanTargetExclusionDto
 
 Initial Scan All normally uses `AlreadyScanning` and `InvalidConfiguration`; retry revalidation may additionally use `NoLongerConfigured`.
 
+The variants above define the closed target-exclusion vocabulary. The current bridge carries these facts in the concrete `LibraryScanAdmissionExclusionDto` record, also used by `LibraryScanJobDetailDto`:
+
+```text
+LibraryScanAdmissionExclusionDto
+- libraryRootId: String
+- reason: String
+- activeJobRunId: String?
+- activeScanRunId: String?
+- applicationError: ApplicationErrorDto?
+```
+
+`reason` is one of `already_scanning`, `no_longer_configured`, or `invalid_configuration`, corresponding to the variants above. The active IDs and `applicationError` are nullable members of this concrete record; they are not separate DTO variants. When present, `applicationError` carries the bounded configuration error.
+
+The concrete fields follow the closed variant payloads: `already_scanning` carries both active IDs and no application error; `no_longer_configured` carries neither active ID nor application error; `invalid_configuration` carries its application error and no active IDs.
+
 ### 66.13 Root removal result
 
 Conceptually:
@@ -2362,7 +2377,7 @@ LibraryRootDto
 LibraryRootPageDto
 LibraryRootLastScanStatusDto
 LibraryScanChildAdmissionIssueDto
-LibraryScanTargetExclusionDto
+LibraryScanAdmissionExclusionDto
 SourceEntryDto
 SourceEntryDetailDto
 SourceEntryChildrenPageDto
@@ -2380,6 +2395,7 @@ JobDetailDto
 JobControlAvailabilityDto
 OperationDetailDto
 LibraryScanJobDetailDto
+ScanRunDto
 
 CancelJobResultDto
 RetryJobResultDto
@@ -2839,6 +2855,54 @@ Refresh intent includes the trigger/scope required to reconcile add-folder or on
 
 #### 68.6.1 Library refresh root outcomes
 
+`ScanRunDto` is the existing per-root projection used by `LibraryScanJobDetailDto` and `LibraryRefreshJobDetailDto`:
+
+```text
+ScanRunDto
+- scanRunId: String
+- jobRunId: String
+- libraryRootId: String
+- displayName: String
+- safeLocationDisplay: String
+- status: ScanRunStatusDto
+- startedAtMs: i64
+- completedAtMs: i64?
+- failureReason: String?
+```
+
+Its identity tuple is `(jobRunId, scanRunId, libraryRootId)`. In a `library_refresh` detail, `jobRunId` identifies the parent refresh `JobRun`; it does not identify a child `library_scan` job. `displayName` and `safeLocationDisplay` are bounded historical presentation snapshots and do not establish root identity or outcome attribution. `status` uses the canonical `Running`, `Complete`, `Partial`, `Failed`, `Cancelled`, and `Abandoned` values. The timestamps use the existing signed 64-bit millisecond representation. `failureReason` is null unless a recognized durable scan-failure code is available.
+
+The progress projection and its nested issue fact use these fields:
+
+```text
+RefreshIssueFactDto
+- kind: String
+- reason: String
+- providerId: String?
+- occurrences: u64
+
+RefreshProgressFactsDto
+- phase: String?
+- completedUnits: u64?
+- totalUnits: u64?
+- statusKey: String?
+- issueCount: u64?
+- issues: RefreshIssueFactDto[]
+```
+
+The closed `kind` keys are `matching`, `metadata`, `artwork_discovery`, `artwork_download`, `asset_store`, `content`, and `scope`. The closed `reason` keys and valid `kind` pairings are:
+
+| Reason keys | Valid `kind` keys | `providerId` |
+| --- | --- | --- |
+| `provider_authentication_failed`, `provider_authorization_failed`, `provider_misconfigured`, `provider_rate_limited`, `provider_timeout`, `provider_unavailable`, `provider_invalid_response`, `provider_unsupported_capability` | `matching`, `metadata`, `artwork_discovery`, `artwork_download` | Required |
+| `artwork_asset_too_large`, `artwork_asset_invalid_image`, `artwork_asset_dimensions_too_large`, `artwork_asset_store_unavailable` | `asset_store` | Null |
+| `content_unavailable`, `content_malformed_or_unsupported`, `content_encrypted_unsupported`, `content_dependency_missing`, `content_resource_limit_exceeded`, `content_changed_during_refresh`, `content_identity_unsupported`, `content_identification_failed`, `content_grouping_failed`, `content_refresh_failed` | `content` | Null |
+| `scope_root_not_admitted`, `scope_root_scan_incomplete`, `scope_root_scan_failed` | `scope` | Null |
+
+Every pairing in a row is valid; other kind/reason pairings are invalid. `providerId` is present exactly for the provider-owned reason keys and null for all other reasons. Each fact groups one `(kind, reason, providerId)` identity, and `occurrences` is its positive count. The issue list contains bounded normalized facts; it does not expose provider payloads, locators, paths, URLs, or raw failure text.
+
+`phase` and `statusKey` are null when unknown. `completedUnits` is null when work is indeterminate, and `totalUnits` is null when the total is unknown. When both counts are present, `completedUnits` does not exceed `totalUnits`; the DTO carries no percentage. `issueCount` is the known total number of issue occurrences, not the number of distinct facts. Null means the issue projection is unknown; zero means a known clean summary. `issues` is always present and may be empty both when the issue projection is unknown and when it is known to be empty, so consumers use `issueCount` to distinguish those states. Nullable fields remain members of the typed DTO; null does not mean that the field is omitted. The Rust-to-Flutter bridge does not define JSON serialization.
+
 The conceptual `LibraryRefreshJobDetailDto` contains these existing and additive fields:
 
 ```text
@@ -2851,7 +2915,7 @@ LibraryRefreshJobDetailDto
 - progress: RefreshProgressFactsDto
 - retrySourceJobRunId: String?
 - retrySuccessorJobRunId: String?
-- exclusions: LibraryScanTargetExclusionDto[]
+- exclusions: LibraryScanAdmissionExclusionDto[]
 - rootOutcomeCoverage: LibraryRefreshRootOutcomeCoverageDto
 ```
 
@@ -2859,7 +2923,7 @@ The existing `trigger` and `mode` fields remain strings; `trigger` carries the c
 
 `requestedRootIds` is an admission-ordered list of canonical root-ID strings. It contains one entry per represented root. When coverage is `Complete`, its members are the full immutable requested scope. List position does not establish outcome attribution. `scanRuns` and `exclusions` list known outcome facts; their row order carries no identity or attribution meaning, and their completeness is governed by `rootOutcomeCoverage`.
 
-The additive `exclusions` field uses the closed `LibraryScanTargetExclusionDto` vocabulary from §66.12. `rootOutcomeCoverage` is required and uses:
+The additive `exclusions` field uses the existing concrete `LibraryScanAdmissionExclusionDto` record defined in §66.12, the same record used by `LibraryScanJobDetailDto`. Its `reason` field carries the closed §66.12 target-exclusion vocabulary; this detail does not introduce a refresh-specific exclusion DTO. `rootOutcomeCoverage` is required and uses:
 
 ```text
 LibraryRefreshRootOutcomeCoverageDto
@@ -2867,7 +2931,7 @@ LibraryRefreshRootOutcomeCoverageDto
 - HistoricalUnavailable
 ```
 
-The existing `ScanRunDto` fields provide the admitted identity tuple `(jobRunId, scanRunId, libraryRootId)`. In a refresh detail, `jobRunId` is the parent `library_refresh` `JobRunId`; it does not identify a child `library_scan` job.
+The `ScanRunDto` identity tuple is the scan-side identity used for the admitted target/scan pairing described below. In a refresh detail, `jobRunId` is the parent `library_refresh` `JobRunId`.
 
 `Complete` is permitted only when the projection proves that `requestedRootIds` is the entire immutable scope admitted for this `JobRun` and that every requested root has exactly one outcome. Proof that the requested scope itself is complete must come from authoritative durable admission evidence governed by SPEC-BE-015; equality between observed requested roots and observed outcome roots does not prove either collection is complete.
 
@@ -2900,6 +2964,21 @@ Normal job, root, and scan labels and spoken accessible names must omit internal
 These additions are append-only DTO evolution under SPEC-X-001. Existing consumers may ignore the new fields. A consumer that requires partition proof must not default a missing coverage field or missing exclusion list to `Complete` or to an empty set of exclusions. Older persisted records are not backfilled or reconstructed from present-day roots; where the read can preserve supported facts but cannot establish the partition, the new projection reports `HistoricalUnavailable`.
 
 These product projections establish only Argus-owned job, root, scan, and Retry facts. They do not establish the installed package or signer, process interruption, foreground package identity, or Android task continuity. Qualification uses independent permitted OS observations for those platform-owned facts.
+
+#### 68.6.4 Active Phase 003 LibraryRefresh DTO catalog
+
+The operation-specific DTOs used by the active `LibraryRefreshJobDetailDto` contract are:
+
+```text
+LibraryRefreshJobDetailDto
+ScanRunDto
+RefreshProgressFactsDto
+RefreshIssueFactDto
+LibraryScanAdmissionExclusionDto
+LibraryRefreshRootOutcomeCoverageDto
+```
+
+`ScanRunDto` is also listed in the Active Phase 001 DTO catalog because `LibraryScanJobDetailDto` uses the same transport type. Phase 003 does not define a second scan-run projection.
 
 ### 68.7 Phase 003 notifications
 

@@ -1,0 +1,63 @@
+docs/specifications/frontend/spec-fe-009-jobs-and-background-operation-presentation.md
+  s_3bf536b29e3b47::t_9f05579ac340c1 1238
+  s_3bf536b29e3b47::t_1620ebc130af45 6
+  s_d969eb75192cea::t_ac70ed72720d4c 937,1302-1303
+  s_3bf536b29e3b47::t_541b1d5e930de7 932-936
+  s_d969eb75192cea::t_b4d84fb09cc67b 1301
+  s_d969eb75192cea::t_7310388fdf2891 1317-1331
+  s_d969eb75192cea::t_0b4f7f4eccf11f 1304
+  s_d969eb75192cea::t_c812543749f946 1332
+docs/specifications/backend/spec-be-013-library-source-management-scan-operations-and-source-projections.md
+  s_d969eb75192cea::t_a798b5fbea3fcf 1229
+  s_3bf536b29e3b47::t_1620ebc130af45 6
+  s_d969eb75192cea::t_974ebc1783bda7 1210
+  s_d969eb75192cea::t_ae3b148b930ec0 1217-1218
+  s_d969eb75192cea::t_105cb5359f129b 1202-1207,1213-1214,1216,1230
+  s_d969eb75192cea::t_447f50e462fa9a 1208-1209,1211-1212,1215,1219-1228
+docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md
+  s_d969eb75192cea::t_01465df74b842e 2888,2901-2902
+  s_3bf536b29e3b47::t_1620ebc130af45 6
+  s_3bf536b29e3b47::t_541b1d5e930de7 2858,2860-2863,2884,2895-2896,2898
+  s_3bf536b29e3b47::t_e2e93f45185c81 2874
+  s_d969eb75192cea::t_9321e719badbb6 2876-2877,2939-2942
+  s_d969eb75192cea::t_447f50e462fa9a 2872,2875,2878,2880,2943,2945-2948
+  s_3bf536b29e3b47::t_9f05579ac340c1 2842,2845-2857,2859,2864
+  s_d969eb75192cea::t_a779f6fa3541ef 2889-2894,2897
+  s_d969eb75192cea::t_239cf6ee5245ac 2938,2950-2951
+  s_d969eb75192cea::t_52d4eaf58c98cc 2944
+  s_d969eb75192cea::t_2347986ada6911 2949
+  s_d969eb75192cea::t_7a7d88866bfc56 2840-2841,2843-2844,2865-2871,2873,2879,2881-2883,2885-2887,2899-2900
+  s_d969eb75192cea::t_64d63420b87e66 2903
+docs/specifications/frontend/spec-fe-008-sources-and-library-folder-management.md
+  s_3bf536b29e3b47::t_1620ebc130af45 6
+  s_d969eb75192cea::t_c7216ca8950f55 1023-1024
+  s_3bf536b29e3b47::t_541b1d5e930de7 1109-1113
+  s_3bf536b29e3b47::t_9f05579ac340c1 1481,1528
+  s_d969eb75192cea::t_e60c9fadf9a5f2 1358-1359,1410-1411,1524-1527
+  s_3bf536b29e3b47::t_4d6437551ba281 1114
+  s_3bf536b29e3b47::t_17f48b9c34c5b7 1529
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6022ea47d92c9ca3c72e5d77d3fe64a51191051",
+  "prompts": {},
+  "sessions": {
+    "s_3bf536b29e3b47": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a7e8-339d-7d00-8430-eab53011a77f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_d969eb75192cea": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a18fec-1ff3-7f42-8866-fef568da3072",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

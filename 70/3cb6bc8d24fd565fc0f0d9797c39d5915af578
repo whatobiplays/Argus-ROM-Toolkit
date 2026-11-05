@@ -1,0 +1,19 @@
+docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md
+  s_13e02ffe7757b3::t_9f437f1af2961a 2128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "703cb6bc8d24fd565fc0f0d9797c39d5915af578",
+  "prompts": {},
+  "sessions": {
+    "s_13e02ffe7757b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a8aa-9104-7060-81c8-95af49053e7b",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

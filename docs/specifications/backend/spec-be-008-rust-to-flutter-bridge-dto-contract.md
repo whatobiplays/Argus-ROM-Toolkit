@@ -2125,7 +2125,7 @@ NotAdmitted(reason: RetryNotAdmittedReasonDto)
 RetryNotAdmittedReasonDto
 ├── SourceRunNotTerminal
 ├── OperationNotRetryable
-└── NoEligibleTargets(exclusions: LibraryScanTargetExclusionDto[])
+└── NoEligibleTargets(exclusions: LibraryScanAdmissionExclusionDto[])
 ```
 
 Rules:

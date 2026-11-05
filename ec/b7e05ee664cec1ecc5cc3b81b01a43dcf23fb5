@@ -1,0 +1,25 @@
+docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md
+  s_13e02ffe7757b3::t_d24abfbfe8a0b1 1833,1844
+  s_13e02ffe7757b3::t_9ccc2139206a7d 2904
+  s_13e02ffe7757b3::t_faba52f960c16f 2934
+  s_13e02ffe7757b3::t_2776c1f9611b4d 2398,2858-2891,2901,2903,2905,2968-2976,2978-2981
+  s_13e02ffe7757b3::t_be0c2a9892e59c 1846-1847
+  s_13e02ffe7757b3::t_e5787c48843e3b 1834-1843,1845,2380,2892-2900,2902,2918,2926,2977
+  s_13e02ffe7757b3::t_81f94a1d80b701 2982
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecb7e05ee664cec1ecc5cc3b81b01a43dcf23fb5",
+  "prompts": {},
+  "sessions": {
+    "s_13e02ffe7757b3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a8aa-9104-7060-81c8-95af49053e7b",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

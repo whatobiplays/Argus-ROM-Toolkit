@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-11-04\
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-BE-015, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -1830,6 +1830,21 @@ LibraryScanTargetExclusionDto
 
 Initial Scan All normally uses `AlreadyScanning` and `InvalidConfiguration`; retry revalidation may additionally use `NoLongerConfigured`.
 
+The variants above define the closed target-exclusion vocabulary. The current bridge carries these facts in the concrete `LibraryScanAdmissionExclusionDto` record, also used by `LibraryScanJobDetailDto`:
+
+```text
+LibraryScanAdmissionExclusionDto
+- libraryRootId: String
+- reason: String
+- activeJobRunId: String?
+- activeScanRunId: String?
+- applicationError: ApplicationErrorDto?
+```
+
+`reason` is one of `already_scanning`, `no_longer_configured`, or `invalid_configuration`, corresponding to the variants above. The active IDs and `applicationError` are nullable members of this concrete record; they are not separate DTO variants. When present, `applicationError` carries the bounded configuration error.
+
+The concrete fields follow the closed variant payloads: `already_scanning` carries both active IDs and no application error; `no_longer_configured` carries neither active ID nor application error; `invalid_configuration` carries its application error and no active IDs.
+
 ### 66.13 Root removal result
 
 Conceptually:
@@ -2110,7 +2125,7 @@ NotAdmitted(reason: RetryNotAdmittedReasonDto)
 RetryNotAdmittedReasonDto
 ├── SourceRunNotTerminal
 ├── OperationNotRetryable
-└── NoEligibleTargets(exclusions: LibraryScanTargetExclusionDto[])
+└── NoEligibleTargets(exclusions: LibraryScanAdmissionExclusionDto[])
 ```
 
 Rules:
@@ -2362,7 +2377,7 @@ LibraryRootDto
 LibraryRootPageDto
 LibraryRootLastScanStatusDto
 LibraryScanChildAdmissionIssueDto
-LibraryScanTargetExclusionDto
+LibraryScanAdmissionExclusionDto
 SourceEntryDto
 SourceEntryDetailDto
 SourceEntryChildrenPageDto
@@ -2380,6 +2395,7 @@ JobDetailDto
 JobControlAvailabilityDto
 OperationDetailDto
 LibraryScanJobDetailDto
+ScanRunDto
 
 CancelJobResultDto
 RetryJobResultDto
@@ -2837,6 +2853,133 @@ LibraryResolutionRefresh(LibraryResolutionRefreshJobDetailDto)
 
 Refresh intent includes the trigger/scope required to reconcile add-folder or onboarding transport ambiguity. Issue collections are bounded/paged and contain stable codes plus safe context rather than raw provider/parser payloads.
 
+#### 68.6.1 Library refresh root outcomes
+
+`ScanRunDto` is the existing per-root projection used by `LibraryScanJobDetailDto` and `LibraryRefreshJobDetailDto`:
+
+```text
+ScanRunDto
+- scanRunId: String
+- jobRunId: String
+- libraryRootId: String
+- displayName: String
+- safeLocationDisplay: String
+- status: ScanRunStatusDto
+- startedAtMs: i64
+- completedAtMs: i64?
+- failureReason: String?
+```
+
+Its identity tuple is `(jobRunId, scanRunId, libraryRootId)`. In a `library_refresh` detail, `jobRunId` identifies the parent refresh `JobRun`; it does not identify a child `library_scan` job. `displayName` and `safeLocationDisplay` are bounded historical presentation snapshots and do not establish root identity or outcome attribution. `status` uses the canonical `Running`, `Complete`, `Partial`, `Failed`, `Cancelled`, and `Abandoned` values. The timestamps use the existing signed 64-bit millisecond representation. `failureReason` is null unless a recognized durable scan-failure code is available.
+
+The progress projection and its nested issue fact use these fields:
+
+```text
+RefreshIssueFactDto
+- kind: String
+- reason: String
+- providerId: String?
+- occurrences: u64
+
+RefreshProgressFactsDto
+- phase: String?
+- completedUnits: u64?
+- totalUnits: u64?
+- statusKey: String?
+- issueCount: u64?
+- issues: RefreshIssueFactDto[]
+```
+
+The closed `kind` keys are `matching`, `metadata`, `artwork_discovery`, `artwork_download`, `asset_store`, `content`, and `scope`. The closed `reason` keys and valid `kind` pairings are:
+
+| Reason keys | Valid `kind` keys | `providerId` |
+| --- | --- | --- |
+| `provider_authentication_failed`, `provider_authorization_failed`, `provider_misconfigured`, `provider_rate_limited`, `provider_timeout`, `provider_unavailable`, `provider_invalid_response`, `provider_unsupported_capability` | `matching`, `metadata`, `artwork_discovery`, `artwork_download` | Required |
+| `artwork_asset_too_large`, `artwork_asset_invalid_image`, `artwork_asset_dimensions_too_large`, `artwork_asset_store_unavailable` | `asset_store` | Null |
+| `content_unavailable`, `content_malformed_or_unsupported`, `content_encrypted_unsupported`, `content_dependency_missing`, `content_resource_limit_exceeded`, `content_changed_during_refresh`, `content_identity_unsupported`, `content_identification_failed`, `content_grouping_failed`, `content_refresh_failed` | `content` | Null |
+| `scope_root_not_admitted`, `scope_root_scan_incomplete`, `scope_root_scan_failed` | `scope` | Null |
+
+Every pairing in a row is valid; other kind/reason pairings are invalid. `providerId` is present exactly for the provider-owned reason keys and null for all other reasons. Each fact groups one `(kind, reason, providerId)` identity, and `occurrences` is its positive count. The issue list contains bounded normalized facts; it does not expose provider payloads, locators, paths, URLs, or raw failure text.
+
+`phase` and `statusKey` are null when unknown. `completedUnits` is null when work is indeterminate, and `totalUnits` is null when the total is unknown. When both counts are present, `completedUnits` does not exceed `totalUnits`; the DTO carries no percentage. `issueCount` is the known total number of issue occurrences, not the number of distinct facts. Null means the issue projection is unknown; zero means a known clean summary. `issues` is always present and may be empty both when the issue projection is unknown and when it is known to be empty, so consumers use `issueCount` to distinguish those states. Nullable fields remain members of the typed DTO; null does not mean that the field is omitted. The Rust-to-Flutter bridge does not define JSON serialization.
+
+The conceptual `LibraryRefreshJobDetailDto` contains these existing and additive fields:
+
+```text
+LibraryRefreshJobDetailDto
+- trigger: String
+- triggerRootId: String?
+- mode: String
+- requestedRootIds: String[]
+- scanRuns: ScanRunDto[]
+- progress: RefreshProgressFactsDto
+- retrySourceJobRunId: String?
+- retrySuccessorJobRunId: String?
+- exclusions: LibraryScanAdmissionExclusionDto[]
+- rootOutcomeCoverage: LibraryRefreshRootOutcomeCoverageDto
+```
+
+The existing `trigger` and `mode` fields remain strings; `trigger` carries the closed values owned by `SPEC-BE-015`. `triggerRootId` is null when the trigger has no root and otherwise contains a canonical `LibraryRootId` string. The Retry fields are nullable canonical `JobRunId` strings for the direct source and successor.
+
+`requestedRootIds` is an admission-ordered list of canonical root-ID strings. It contains one entry per represented root. When coverage is `Complete`, its members are the full immutable requested scope. List position does not establish outcome attribution. `scanRuns` and `exclusions` list known outcome facts; their row order carries no identity or attribution meaning, and their completeness is governed by `rootOutcomeCoverage`.
+
+The additive `exclusions` field uses the existing concrete `LibraryScanAdmissionExclusionDto` record defined in §66.12, the same record used by `LibraryScanJobDetailDto`. Its `reason` field carries the closed §66.12 target-exclusion vocabulary; this detail does not introduce a refresh-specific exclusion DTO. `rootOutcomeCoverage` is required and uses:
+
+```text
+LibraryRefreshRootOutcomeCoverageDto
+- Complete
+- HistoricalUnavailable
+```
+
+The `ScanRunDto` identity tuple is the scan-side identity used for the admitted target/scan pairing described below. In a refresh detail, `jobRunId` is the parent `library_refresh` `JobRunId`.
+
+`Complete` is permitted only when the projection proves that `requestedRootIds` is the entire immutable scope admitted for this `JobRun` and that every requested root has exactly one outcome. Proof that the requested scope itself is complete must come from authoritative durable admission evidence governed by SPEC-BE-015; equality between observed requested roots and observed outcome roots does not prove either collection is complete.
+
+For an admitted outcome, the durable per-attempt admission-target record for that root must contain its exact `ScanRunId`, and exactly one `ScanRunDto` must match the tuple `(returned refresh JobRunId, admission-target ScanRunId, LibraryRootId)`. Every admitted-target record and every `ScanRunDto` in the partition must pair one-to-one by that tuple. A scan row alone cannot substitute for a missing admission-target record. A typed exclusion is the sole outcome for its root and cannot overlap an admitted target or ScanRun for the same root. In a `Complete` partition, every requested root has exactly one outcome, and no outcome lies outside the proven scope; each `ScanRunId` appears once. Repeated parent `JobRunId` values across `ScanRunDto` rows identify the same refresh and are expected. An orphan ScanRun, unpaired admitted target, duplicate outcome or `ScanRunId`, foreign parent/root, or target/ScanRun ID mismatch prevents `Complete`. A complete projection does not derive any outcome from current Sources configuration.
+
+An empty requested scope may be `Complete` only if SPEC-BE-015 permits an empty admission and authoritative durable evidence explicitly records that the scope was intentionally empty. An absent target collection or an empty result from a partial or unavailable historical read does not prove an empty scope. If requested-scope or target completeness cannot be proven while independently supported job facts remain available, the projection uses `HistoricalUnavailable`; it preserves known facts and does not treat a partial `requestedRootIds` list as the complete scope. Corrupt or contradictory scope/outcome records use existing typed error handling.
+
+`HistoricalUnavailable` applies only when independently supported historical facts are preserved but durable evidence is insufficient to establish the whole requested/admitted/excluded partition, including a target-to-ScanRun pairing. The projection retains the parent `JobRunDto`, its lifecycle facts, known Retry links, `ScanRunDto` rows, and typed exclusions. It does not convert an unknown root into an exclusion or infer an outcome from current configuration. Qualification assertions requiring a complete partition return `BLOCKED` in this state; dependent operations remain `NOT_RUN`.
+
+Reserve `HistoricalUnavailable` for genuinely incomplete historical evidence while independently supported facts remain available. Corrupt or malformed persistence follows existing error handling. A coherent authoritative read that proves a missing expected ScanRun, orphan ScanRun, unpaired admitted target, duplicate identity, conflicting target/ScanRun IDs, or foreign parent/root identity is contradictory evidence and follows existing typed integrity/error handling; it must not be downgraded to historical unavailability. Qualification consumers apply the active oracle's operation-specific classification: missing, stale, ambiguous, or incomplete identity evidence produces a `BLOCKED` assertion; an independently verified foreign or contradictory identity produces a `FAIL` assertion where required; dependent operations remain `NOT_RUN` when prerequisites are blocked.
+
+#### 68.6.2 Coherent detail and Retry identity
+
+`GetJob(parentJobRunId)` is the authoritative observation for the parent detail, requested targets, `ScanRunDto` rows, exclusions, progress, and direct Retry links. It must return these facts from one coherent read, using a consistent storage snapshot or an equivalent mechanism. Implementations must demonstrate that the persistence path provides this guarantee. The contract does not require a global snapshot or revision protocol.
+
+The projection must not report `Complete` from a torn or otherwise unverified read. `HistoricalUnavailable` is appropriate only when the read is coherent and historical partition evidence is genuinely unavailable while supported facts can be retained. If a read cannot distinguish missing history from a conflicting or inconsistent observation, use existing typed error handling rather than claiming either coverage state.
+
+Retry links remain direct `JobRunId` relationships under SPEC-BE-015. A successor is a distinct attempt. Its requested root ID set equals the source attempt's requested root ID set, while admitted/excluded outcomes may differ after eligibility revalidation. Every successor `ScanRunDto` names the successor parent, and its `scanRunId` is disjoint from the source attempt's ScanRun IDs. Source and successor details may be fetched separately; each detail must independently satisfy this coherent-read contract. A fresh authoritative detail with an explicit null successor establishes no successor at that read. An omitted field, failed read, or unavailable observation does not. Consumers do not infer lineage from labels, row order, timing, or navigation.
+
+#### 68.6.3 Selection rationale and rejected alternatives
+
+The existing typed `GetJob` projection is extended instead of adding a qualification-only observer. This keeps product-owned job facts under the existing Jobs authority and avoids a parallel source of truth. One coherent parent-detail read is preferred to reconciling separate parent, target, and `ScanRun` reads, which can observe different persisted states; one method call alone is not treated as a consistency guarantee. Source and successor details remain separate because they are distinct `JobRun` attempts.
+
+Root outcomes use durable per-attempt target and `ScanRun` facts. Reconstructing missing outcomes from current root configuration or replaying historical events without proven complete event coverage is rejected because it can turn missing evidence into a false exclusion. The direct `(parent JobRunId, ScanRunId, LibraryRootId)` tuple is exposed instead of treating `View Job` navigation as attribution: that control selects the parent job and does not prove which refresh owns a root's active or last scan.
+
+Normal job, root, and scan labels and spoken accessible names must omit internal IDs. Required machine-readable identities use ordinary accessibility semantics separate from those names.
+
+`SPEC-FE-009` §18 continues to permit the existing `JobRunId` display in support or troubleshooting detail when useful, provided it is not the primary title. This change adds no visible support-ID display to Sources. Raw persistence details or identifiers, provider-native identifiers, sensitive paths, and implementation internals must remain unavailable through the UI and accessibility semantics.
+
+These additions are append-only DTO evolution under SPEC-X-001. Existing consumers may ignore the new fields. A consumer that requires partition proof must not default a missing coverage field or missing exclusion list to `Complete` or to an empty set of exclusions. Older persisted records are not backfilled or reconstructed from present-day roots; where the read can preserve supported facts but cannot establish the partition, the new projection reports `HistoricalUnavailable`.
+
+These product projections establish only Argus-owned job, root, scan, and Retry facts. They do not establish the installed package or signer, process interruption, foreground package identity, or Android task continuity. Qualification uses independent permitted OS observations for those platform-owned facts.
+
+#### 68.6.4 Active Phase 003 LibraryRefresh DTO catalog
+
+The operation-specific DTOs used by the active `LibraryRefreshJobDetailDto` contract are:
+
+```text
+LibraryRefreshJobDetailDto
+ScanRunDto
+RefreshProgressFactsDto
+RefreshIssueFactDto
+LibraryScanAdmissionExclusionDto
+LibraryRefreshRootOutcomeCoverageDto
+```
+
+`ScanRunDto` is also listed in the Active Phase 001 DTO catalog because `LibraryScanJobDetailDto` uses the same transport type. Phase 003 does not define a second scan-run projection.
+
 ### 68.7 Phase 003 notifications
 
 The shared runtime event stream may carry notification-first variants equivalent to:
@@ -2871,6 +3014,20 @@ Bridge contract tests must exhaustively cover:
 - both concrete settings-update result families and preservation of committed settings after child-admission failure;
 - write-only credential mapping and absence of credential text from debug/error/event/result representations;
 - all three Phase 003 typed Job-detail variants and notification variants;
+- complete and historically unavailable LibraryRefresh root-outcome coverage, preserving known ScanRun and exclusion facts;
+- a `Complete` result requires durable proof that the requested-root scope itself is complete, as well as exactly one valid outcome for every requested root;
+- an entirely absent or partially persisted requested-target collection without explicit proof of an intentionally empty scope never yields `Complete`;
+- a legitimately empty scope yields `Complete` only when the authoritative SPEC-BE-015 admission contract permits it and durable admission evidence records it explicitly;
+- valid complete partitions yield `Complete`, while missing historical scope or target evidence preserves supported facts as `HistoricalUnavailable`;
+- exact one-to-one admitted-target/ScanRun matching by parent `JobRunId`, `LibraryRootId`, and the target's exact `ScanRunId`;
+- a matching admitted-target/ScanRun pair contributes an admitted outcome only within an otherwise fully proven partition; the pair alone never establishes `Complete`. A missing corresponding ScanRun or missing durable admitted-target record never yields `Complete`;
+- a target naming ScanRun A with an observed ScanRun B for the same parent/root is a contradiction, not a complete outcome;
+- foreign parent or root identity, orphan ScanRun, unpaired admitted target, duplicate identity, and typed exclusion overlapping an admitted outcome never yield `Complete` and follow existing typed contradiction handling when proven by a coherent authoritative read;
+- incomplete historical pairing evidence preserves supported facts as `HistoricalUnavailable`, distinct from a coherent read proving a missing or conflicting record;
+- refresh partition uniqueness, parent/root attribution, out-of-scope rows, duplicate/conflicting outcomes, exclusion/admission disjointness, and no inference from current roots;
+- coherent parent/target/ScanRun/Retry detail reads under interleaved writes, proving one `GetJob` response uses a consistent read;
+- direct source/successor identity, preserved requested root scope, and disjoint source/successor ScanRun IDs;
+- omitted coverage/exclusion fields not defaulted to a complete partition;
 - additive compatibility behavior under SPEC-X-001 without defaulting unknown required enum values.
 
 ## 69. References

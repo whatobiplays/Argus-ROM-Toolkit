@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-013  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-11-04\
 **Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -1198,6 +1198,35 @@ Normative rules:
 5. Scan checkpoints may publish committed changed-source invalidation so SPEC-BE-015 can pipeline identification downstream before every root reaches terminal state. Downstream work consumes committed source facts only.
 6. Process recovery performs no embedded scan work automatically. A stale refresh is recovered under BE-004/SPEC-BE-015 and a later explicit retry re-evaluates scan eligibility.
 7. The Phase 003 normal Library Add Folder experience may compose root creation with later `library_refresh` admission. Root creation remains durable if refresh admission fails. Existing Sources operational actions remain valid and explicit.
+
+## 33.2 Composed-refresh scan-stage observations
+
+`SPEC-BE-015` remains authoritative for `library_refresh` admission, trigger and scope, execution, completion, and Retry behavior. This subsection defines only the identity facts exposed for the scan stage; it does not change refresh execution semantics.
+
+For an admitted `library_refresh`, each embedded `ScanRun` is identified by the tuple `(parent JobRunId, ScanRunId, LibraryRootId)`. The parent is the one `library_refresh` `JobRun`. An embedded `ScanRun` is not a second top-level `library_scan` `JobRun`.
+
+The observable scan-stage facts come from durable per-attempt admission targets and `ScanRun` records. The application may report a complete root partition only when authoritative durable evidence independently establishes the full immutable requested-root scope and proves exactly one outcome for each requested root. Matching outcomes to only the target rows that happen to be present is insufficient.
+
+- for each admitted root, its durable admission-target record contains the exact `ScanRunId`, and exactly one `ScanRun` matches `(parent JobRunId, ScanRunId, LibraryRootId)`;
+- every admitted-target record and every `ScanRun` in the partition must pair one-to-one by that tuple; a `ScanRun` without a matching target, a target without its matching `ScanRun`, duplicate identity, foreign parent/root, or mismatched `ScanRunId` prevents a complete partition;
+- a typed admission exclusion is the sole outcome for its requested root and is disjoint from all admitted-target and `ScanRun` outcomes;
+- historical display snapshots explain a root to the user but do not establish root identity.
+
+Current Sources configuration, current root labels, list order, and navigation history do not establish historical requested, admitted, or excluded outcomes. When historical records cannot establish the complete partition or an admitted-target/`ScanRun` pairing, preserve supported `JobRun`, `ScanRun`, and exclusion facts and mark the application-owned projection as incomplete. Do not create exclusions for unknown outcomes. Corrupt, duplicate, conflicting, orphaned, unpaired, or parent/root-mismatched records remain distinguishable integrity or identity failures; they are not historical unavailability when a coherent authoritative read proves the contradiction.
+
+An empty requested scope is complete only if SPEC-BE-015 permits an empty admission and durable admission evidence explicitly records that scope as empty. Missing or partially persisted requested-target records do not establish an empty or complete scope.
+
+Persistence tests must cover:
+
+- an exact admitted-target/`ScanRun` match on parent `JobRunId`, `LibraryRootId`, and `ScanRunId`;
+- a missing corresponding `ScanRun` and a missing durable admitted-target record, neither of which may yield a complete partition;
+- mismatched `ScanRunId`, foreign parent identity, and foreign root identity;
+- orphan and duplicate `ScanRun` records, unpaired admitted targets, duplicate target identities, and typed exclusions overlapping admitted outcomes;
+- a complete requested scope with exactly one correctly paired admitted or excluded outcome per root;
+- entirely absent or partially persisted requested scope/target collections, preserving supported facts as incomplete when historical evidence is unavailable;
+- a coherent read that proves a missing or conflicting record, retaining its integrity/identity contradiction classification rather than normalizing it into historical unavailability.
+
+For example, if root R's durable admitted-target record names ScanRun A but the observed tuple is `(J, B, R)`, the partition is contradictory and cannot be `Complete`, even if every observed requested root appears to have an outcome. Tests for an empty scope follow the authoritative SPEC-BE-015 admission rules.
 
 ## 34. References
 

@@ -2,7 +2,7 @@
 //! LibraryScan operation handler.
 
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 mod common;
@@ -11,17 +11,22 @@ use argus_application::{
     ActiveScanOwnership, ApplicationError, ApplicationEvent, ApplicationEventSink,
     ApplicationPortError, BackgroundOperationHandler, BackgroundOperationStopReason, DiscoveryPath,
     DiscoverySegment, EnumerationOutcome, EnumerationResult, ErrorCode, EventRecorder,
-    EventRecordingError, JobProgress, JobProgressError, JobProgressReporter, JobRunId,
-    JobRunRepository, JobRunState, JobRunStateParseError, LibraryRootAvailability, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootQueries,
-    LibraryRootRepository, LibraryRootScanConfiguration, LibraryScanAdmissionContext,
+    EventRecordingError, JobControlAvailability, JobDetail, JobProgress, JobProgressError,
+    JobProgressReporter, JobRunId, JobRunProjection, JobRunRepository, JobRunState,
+    JobRunStateParseError, JobsQueries, LibraryRefreshJobDetail, LibraryRefreshRootOutcomeCoverage,
+    LibraryRefreshTrigger, LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus,
+    LibraryRootLastScanSummary, LibraryRootQueries, LibraryRootRepository,
+    LibraryRootScanConfiguration, LibraryScanAdmissionContext,
     LibraryScanAdmissionContextRepository, LibraryScanExecutionPlan, LibraryScanInvocationKind,
-    LibraryScanOperationHandler, LibraryScanTargetRepository, LibrarySourceAccess,
-    NativeIdentityMatch, NewJobRun, NewLibraryScanAdmissionContext, NewLibraryScanTarget,
-    NewScanRun, NewSourceEntry, ObservedEntryKind, OperationCompletion, OperationContext,
-    OperationName, PersistenceError, RelativeSourceLocator, RemoveLibraryRootCommand,
-    RemoveLibraryRootHandler, RemoveLibraryRootResult, ResolvedRoot, RootLocator, ScanRunId,
-    ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntriesChangeScope,
+    LibraryScanJobDetail, LibraryScanOperationHandler, LibraryScanTarget, LibraryScanTargetKind,
+    LibraryScanTargetRepository, LibrarySourceAccess, NativeIdentityMatch, NewJobRun,
+    NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, NewSourceEntry,
+    OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_SCAN, ObservedEntryKind,
+    OperationCompletion, OperationContext, OperationDetail, OperationName, PersistenceError,
+    RefreshMode, RefreshProgressFacts, RelativeSourceLocator, RemoveLibraryRootCommand,
+    RemoveLibraryRootHandler, RemoveLibraryRootResult, ResolvedRoot, RetryJobCommand,
+    RetryJobHandler, RetryJobResult, RetryNotAdmittedReason, RootLocator, ScanProgressFacts,
+    ScanRunId, ScanRunRepository, ScanRunStatus, SourceAccessError, SourceEntriesChangeScope,
     SourceEntriesChanged, SourceEntryId, SourceEntryRecord, SourceEntryRepository,
     SourceLocatorKey, SourceObservation, StartLibraryScanCommand, StartLibraryScanHandler,
     StartLibraryScanResult, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
@@ -106,6 +111,13 @@ struct FakeStore {
     configured: Vec<LibraryRootId>,
     active: Option<ActiveScanOwnership>,
     job_runs: Vec<JobRunId>,
+    retry_links: Vec<(JobRunId, JobRunId)>,
+    refresh_intents: Vec<(
+        JobRunId,
+        LibraryRefreshTrigger,
+        RefreshMode,
+        Vec<LibraryRootId>,
+    )>,
     scan_runs: Vec<ScanRunId>,
     targets: usize,
     admission_contexts: Vec<(JobRunId, LibraryScanInvocationKind)>,
@@ -117,6 +129,7 @@ struct FakeStore {
     last_scan: Option<LibraryRootLastScanSummary>,
     availability: Option<LibraryRootAvailability>,
     events: Vec<ApplicationEvent>,
+    unit_of_work_executions: usize,
 }
 
 #[derive(Clone)]
@@ -196,9 +209,30 @@ impl JobRunRepository for FakeJobRunRepository<'_> {
 
     fn insert_retry_link(
         &mut self,
-        _source_job_run_id: JobRunId,
-        _successor_job_run_id: JobRunId,
+        source_job_run_id: JobRunId,
+        successor_job_run_id: JobRunId,
     ) -> Result<(), PersistenceError> {
+        self.store
+            .lock()
+            .unwrap()
+            .retry_links
+            .push((source_job_run_id, successor_job_run_id));
+        Ok(())
+    }
+
+    fn insert_library_refresh_intent(
+        &mut self,
+        job_run_id: JobRunId,
+        trigger: LibraryRefreshTrigger,
+        mode: RefreshMode,
+        requested_root_ids: &[LibraryRootId],
+    ) -> Result<(), PersistenceError> {
+        self.store.lock().unwrap().refresh_intents.push((
+            job_run_id,
+            trigger,
+            mode,
+            requested_root_ids.to_vec(),
+        ));
         Ok(())
     }
 
@@ -597,6 +631,7 @@ impl UnitOfWorkFactory for FakeFactory {
             + Send
             + 'static,
     {
+        self.store.lock().unwrap().unit_of_work_executions += 1;
         operation(FakeUnitOfWork {
             store: Arc::clone(&self.store),
             marker: PhantomData,
@@ -1023,4 +1058,339 @@ fn link_like_entries_are_retained_but_never_traversed() {
     // The link-like entry is retained; no directory exists to schedule
     // traversal, so exactly one entry is committed.
     assert_eq!(store.lock().unwrap().entries, 1);
+}
+
+#[derive(Clone)]
+struct RetryQueries {
+    source: Option<JobDetail>,
+    requested_targets: Vec<LibraryScanTarget>,
+    invocation_kind: LibraryScanInvocationKind,
+    requested_target_lookups: Arc<AtomicUsize>,
+}
+
+impl RetryQueries {
+    fn new(
+        source: Option<JobDetail>,
+        requested_targets: Vec<LibraryScanTarget>,
+        invocation_kind: LibraryScanInvocationKind,
+    ) -> Self {
+        Self {
+            source,
+            requested_targets,
+            invocation_kind,
+            requested_target_lookups: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl JobsQueries for RetryQueries {
+    fn get_job(
+        &self,
+        _context: &OperationContext,
+        _job_run_id: JobRunId,
+    ) -> Result<Option<JobDetail>, PersistenceError> {
+        Ok(self.source.clone())
+    }
+
+    fn list_active(
+        &self,
+        _context: &OperationContext,
+    ) -> Result<Vec<argus_application::JobSummary>, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn list_recent_terminal(
+        &self,
+        _context: &OperationContext,
+        _offset: u32,
+        _page_size: u32,
+    ) -> Result<argus_application::JobSummaryPage, PersistenceError> {
+        Err(PersistenceError::Unavailable)
+    }
+
+    fn find_retry_successor(
+        &self,
+        _context: &OperationContext,
+        _job_run_id: JobRunId,
+    ) -> Result<Option<JobRunId>, PersistenceError> {
+        Ok(None)
+    }
+
+    fn list_requested_library_scan_targets(
+        &self,
+        _context: &OperationContext,
+        _job_run_id: JobRunId,
+    ) -> Result<Option<Vec<LibraryScanTarget>>, PersistenceError> {
+        self.requested_target_lookups.fetch_add(1, Ordering::SeqCst);
+        Ok(Some(self.requested_targets.clone()))
+    }
+
+    fn find_library_scan_invocation_kind(
+        &self,
+        _context: &OperationContext,
+        _job_run_id: JobRunId,
+    ) -> Result<Option<LibraryScanInvocationKind>, PersistenceError> {
+        Ok(Some(self.invocation_kind))
+    }
+
+    fn find_scan_admission_for_root(
+        &self,
+        _context: &OperationContext,
+        _library_root_id: LibraryRootId,
+    ) -> Result<Option<argus_application::ScanAdmissionReference>, PersistenceError> {
+        Ok(None)
+    }
+}
+
+fn retry_job_projection(job_run_id: JobRunId, operation_type: &str) -> JobRunProjection {
+    JobRunProjection::new(
+        job_run_id,
+        operation_type,
+        JobRunState::Failed,
+        None,
+        None,
+        None,
+        None,
+        1,
+        None,
+        Some(1),
+        Some(2),
+        false,
+        JobControlAvailability::new(false, true),
+        None,
+        None,
+    )
+}
+
+fn refresh_retry_source(
+    job_run_id: JobRunId,
+    requested_root_ids: Vec<LibraryRootId>,
+    coverage: LibraryRefreshRootOutcomeCoverage,
+) -> JobDetail {
+    let trigger_root_id = requested_root_ids[0];
+    let detail = LibraryRefreshJobDetail::new(
+        LibraryRefreshTrigger::AddedRoot(trigger_root_id),
+        RefreshMode::EligibleOnly,
+        requested_root_ids,
+        RefreshProgressFacts::new(None, None, None, None, None).expect("empty refresh progress"),
+        None,
+        None,
+    )
+    .with_root_outcome_coverage(coverage);
+    JobDetail::new(
+        retry_job_projection(job_run_id, OPERATION_TYPE_LIBRARY_REFRESH),
+        OperationDetail::LibraryRefresh(detail),
+    )
+}
+
+fn library_scan_retry_source(job_run_id: JobRunId) -> JobDetail {
+    JobDetail::new(
+        retry_job_projection(job_run_id, OPERATION_TYPE_LIBRARY_SCAN),
+        OperationDetail::LibraryScan(LibraryScanJobDetail::new(
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            ScanProgressFacts::default(),
+            None,
+            None,
+        )),
+    )
+}
+
+fn retry_target(root_id: LibraryRootId) -> LibraryScanTarget {
+    LibraryScanTarget::new(
+        LibraryScanTargetKind::Requested,
+        root_id,
+        "Games",
+        "/library/Games",
+        None,
+        None,
+    )
+}
+
+#[test]
+fn historical_unavailable_refresh_retry_stops_before_target_lookup_or_write() {
+    let source_job_run_id = job_id(3);
+    let surviving_root_id = root_id(ROOT);
+    let store = Arc::new(Mutex::new(FakeStore::default()));
+    let queries = RetryQueries::new(
+        Some(refresh_retry_source(
+            source_job_run_id,
+            vec![surviving_root_id],
+            LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable,
+        )),
+        vec![retry_target(surviving_root_id)],
+        LibraryScanInvocationKind::InitialLibraryRefresh,
+    );
+    let requested_target_lookups = Arc::clone(&queries.requested_target_lookups);
+
+    let result = RetryJobHandler::new(
+        queries,
+        FakeFactory {
+            store: Arc::clone(&store),
+        },
+    )
+    .handle(
+        RetryJobCommand::new(source_job_run_id),
+        context(),
+        FakeRecorder {
+            store: Arc::clone(&store),
+        },
+    )
+    .expect("incomplete refresh history is a typed non-admission");
+
+    assert!(matches!(
+        result.outcome(),
+        RetryJobResult::NotAdmitted(RetryNotAdmittedReason::OperationNotRetryable)
+    ));
+    assert!(result.admitted_scan().is_none());
+    assert!(result.admitted_job().is_none());
+    assert_eq!(requested_target_lookups.load(Ordering::SeqCst), 0);
+    let store = store.lock().unwrap();
+    assert_eq!(store.unit_of_work_executions, 0);
+    assert!(store.job_runs.is_empty());
+    assert!(store.scan_runs.is_empty());
+    assert_eq!(store.targets, 0);
+    assert!(store.retry_links.is_empty());
+    assert!(store.refresh_intents.is_empty());
+    assert!(store.admission_contexts.is_empty());
+    assert!(store.events.is_empty());
+}
+
+#[test]
+fn complete_refresh_retry_preserves_the_full_requested_root_set() {
+    let source_job_run_id = job_id(4);
+    let root_a = root_id(ROOT);
+    let root_b = root_id(OTHER);
+    let requested_root_ids = vec![root_b, root_a];
+    let store = Arc::new(Mutex::new(FakeStore {
+        configured: vec![root_a, root_b],
+        ..FakeStore::default()
+    }));
+    let queries = RetryQueries::new(
+        Some(refresh_retry_source(
+            source_job_run_id,
+            requested_root_ids.clone(),
+            LibraryRefreshRootOutcomeCoverage::Complete,
+        )),
+        vec![retry_target(root_a), retry_target(root_b)],
+        LibraryScanInvocationKind::InitialLibraryRefresh,
+    );
+    let requested_target_lookups = Arc::clone(&queries.requested_target_lookups);
+
+    let result = RetryJobHandler::new(
+        queries,
+        FakeFactory {
+            store: Arc::clone(&store),
+        },
+    )
+    .handle(
+        RetryJobCommand::new(source_job_run_id),
+        context(),
+        FakeRecorder {
+            store: Arc::clone(&store),
+        },
+    )
+    .expect("complete refresh scope is eligible for the existing retry path");
+
+    let successor_job_run_id = match result.outcome() {
+        RetryJobResult::Admitted(handle) => {
+            assert_eq!(handle.operation_type(), OPERATION_TYPE_LIBRARY_REFRESH);
+            handle.job_run_id()
+        }
+        other => panic!("expected admitted refresh retry, got {other:?}"),
+    };
+    assert_eq!(requested_target_lookups.load(Ordering::SeqCst), 1);
+    let store = store.lock().unwrap();
+    assert_eq!(store.unit_of_work_executions, 1);
+    assert_eq!(
+        store.refresh_intents,
+        vec![(
+            successor_job_run_id,
+            LibraryRefreshTrigger::AddedRoot(root_b),
+            RefreshMode::EligibleOnly,
+            requested_root_ids,
+        )]
+    );
+    assert_eq!(
+        store.retry_links,
+        vec![(source_job_run_id, successor_job_run_id)]
+    );
+}
+
+#[test]
+fn library_scan_retry_still_uses_the_existing_admission_path() {
+    let source_job_run_id = job_id(5);
+    let root_id = root_id(ROOT);
+    let store = Arc::new(Mutex::new(FakeStore {
+        configured: vec![root_id],
+        ..FakeStore::default()
+    }));
+    let queries = RetryQueries::new(
+        Some(library_scan_retry_source(source_job_run_id)),
+        vec![retry_target(root_id)],
+        LibraryScanInvocationKind::InitialSingleRoot,
+    );
+    let requested_target_lookups = Arc::clone(&queries.requested_target_lookups);
+
+    let result = RetryJobHandler::new(
+        queries,
+        FakeFactory {
+            store: Arc::clone(&store),
+        },
+    )
+    .handle(
+        RetryJobCommand::new(source_job_run_id),
+        context(),
+        FakeRecorder {
+            store: Arc::clone(&store),
+        },
+    )
+    .expect("LibraryScan retry remains admitted through the existing path");
+
+    assert!(matches!(
+        result.outcome(),
+        RetryJobResult::Admitted(handle) if handle.operation_type() == OPERATION_TYPE_LIBRARY_SCAN
+    ));
+    assert_eq!(requested_target_lookups.load(Ordering::SeqCst), 1);
+    let store = store.lock().unwrap();
+    assert_eq!(store.unit_of_work_executions, 1);
+    assert!(store.refresh_intents.is_empty());
+}
+
+#[test]
+fn missing_source_detail_does_not_trigger_target_lookup_or_retry() {
+    let source_job_run_id = job_id(6);
+    let surviving_root_id = root_id(ROOT);
+    let store = Arc::new(Mutex::new(FakeStore::default()));
+    let queries = RetryQueries::new(
+        None,
+        vec![retry_target(surviving_root_id)],
+        LibraryScanInvocationKind::InitialLibraryRefresh,
+    );
+    let requested_target_lookups = Arc::clone(&queries.requested_target_lookups);
+
+    let error = RetryJobHandler::new(
+        queries,
+        FakeFactory {
+            store: Arc::clone(&store),
+        },
+    )
+    .handle(
+        RetryJobCommand::new(source_job_run_id),
+        context(),
+        FakeRecorder {
+            store: Arc::clone(&store),
+        },
+    )
+    .expect_err("missing source detail remains a definite missing-job error");
+
+    assert_eq!(error.code, ErrorCode::JobRunNotFound);
+    assert_eq!(requested_target_lookups.load(Ordering::SeqCst), 0);
+    let store = store.lock().unwrap();
+    assert_eq!(store.unit_of_work_executions, 0);
+    assert!(store.job_runs.is_empty());
+    assert!(store.retry_links.is_empty());
+    assert!(store.refresh_intents.is_empty());
 }

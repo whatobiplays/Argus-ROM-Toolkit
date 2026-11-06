@@ -369,8 +369,8 @@ fn migration_latest_applies_fresh_and_upgrades_version_four() {
         migration_test_support::current_registry(),
     )
     .expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 18);
-    assert_eq!(fresh.migration_summary().applied_count, 14);
+    assert_eq!(fresh.migration_summary().current_version, 19);
+    assert_eq!(fresh.migration_summary().applied_count, 15);
     let index = fresh
         .with_connection_for_tests(context(), |connection| {
             connection.scalar_i64(

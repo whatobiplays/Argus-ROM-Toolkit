@@ -398,6 +398,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryRefreshRootOutcomeCoverageDto
+  dco_decode_library_refresh_root_outcome_coverage_dto(dynamic raw);
+
+  @protected
   LibraryResolutionRefreshJobDetailDto
   dco_decode_library_resolution_refresh_job_detail_dto(dynamic raw);
 
@@ -1354,6 +1358,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryRefreshJobDetailDto sse_decode_library_refresh_job_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRefreshRootOutcomeCoverageDto
+  sse_decode_library_refresh_root_outcome_coverage_dto(
     SseDeserializer deserializer,
   );
 
@@ -2535,6 +2545,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_library_refresh_job_detail_dto(
     LibraryRefreshJobDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_refresh_root_outcome_coverage_dto(
+    LibraryRefreshRootOutcomeCoverageDto self,
     SseSerializer serializer,
   );
 

@@ -709,6 +709,15 @@ sealed class LibraryScanJobDetail with _$LibraryScanJobDetail {
   }) = _LibraryScanJobDetail;
 }
 
+/// Evidence available for the complete root scope of one Library refresh.
+enum LibraryRefreshRootOutcomeCoverage {
+  /// Durable history proves an outcome for every originally requested root.
+  complete,
+
+  /// Available history cannot prove the complete original root scope.
+  historicalUnavailable,
+}
+
 /// Typed composed Library refresh detail.
 @freezed
 sealed class LibraryRefreshJobDetail with _$LibraryRefreshJobDetail {
@@ -721,6 +730,8 @@ sealed class LibraryRefreshJobDetail with _$LibraryRefreshJobDetail {
     required RefreshProgressFacts progress,
     JobRunId? retrySourceJobRunId,
     JobRunId? retrySuccessorJobRunId,
+    required List<LibraryScanAdmissionExclusion> exclusions,
+    required LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage,
   }) = _LibraryRefreshJobDetail;
 }
 

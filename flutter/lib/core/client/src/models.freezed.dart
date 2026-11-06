@@ -5859,7 +5859,7 @@ $ScanProgressFactsCopyWith<$Res> get progress {
 /// @nodoc
 mixin _$LibraryRefreshJobDetail {
 
- String get trigger; String? get triggerRootId; String get mode; List<LibraryRootId> get requestedRootIds; List<ScanRunSummary> get scanRuns; RefreshProgressFacts get progress; JobRunId? get retrySourceJobRunId; JobRunId? get retrySuccessorJobRunId;
+ String get trigger; String? get triggerRootId; String get mode; List<LibraryRootId> get requestedRootIds; List<ScanRunSummary> get scanRuns; RefreshProgressFacts get progress; JobRunId? get retrySourceJobRunId; JobRunId? get retrySuccessorJobRunId; List<LibraryScanAdmissionExclusion> get exclusions; LibraryRefreshRootOutcomeCoverage get rootOutcomeCoverage;
 /// Create a copy of LibraryRefreshJobDetail
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -5870,16 +5870,16 @@ $LibraryRefreshJobDetailCopyWith<LibraryRefreshJobDetail> get copyWith => _$Libr
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryRefreshJobDetail&&(identical(other.trigger, trigger) || other.trigger == trigger)&&(identical(other.triggerRootId, triggerRootId) || other.triggerRootId == triggerRootId)&&(identical(other.mode, mode) || other.mode == mode)&&const DeepCollectionEquality().equals(other.requestedRootIds, requestedRootIds)&&const DeepCollectionEquality().equals(other.scanRuns, scanRuns)&&(identical(other.progress, progress) || other.progress == progress)&&(identical(other.retrySourceJobRunId, retrySourceJobRunId) || other.retrySourceJobRunId == retrySourceJobRunId)&&(identical(other.retrySuccessorJobRunId, retrySuccessorJobRunId) || other.retrySuccessorJobRunId == retrySuccessorJobRunId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LibraryRefreshJobDetail&&(identical(other.trigger, trigger) || other.trigger == trigger)&&(identical(other.triggerRootId, triggerRootId) || other.triggerRootId == triggerRootId)&&(identical(other.mode, mode) || other.mode == mode)&&const DeepCollectionEquality().equals(other.requestedRootIds, requestedRootIds)&&const DeepCollectionEquality().equals(other.scanRuns, scanRuns)&&(identical(other.progress, progress) || other.progress == progress)&&(identical(other.retrySourceJobRunId, retrySourceJobRunId) || other.retrySourceJobRunId == retrySourceJobRunId)&&(identical(other.retrySuccessorJobRunId, retrySuccessorJobRunId) || other.retrySuccessorJobRunId == retrySuccessorJobRunId)&&const DeepCollectionEquality().equals(other.exclusions, exclusions)&&(identical(other.rootOutcomeCoverage, rootOutcomeCoverage) || other.rootOutcomeCoverage == rootOutcomeCoverage));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,trigger,triggerRootId,mode,const DeepCollectionEquality().hash(requestedRootIds),const DeepCollectionEquality().hash(scanRuns),progress,retrySourceJobRunId,retrySuccessorJobRunId);
+int get hashCode => Object.hash(runtimeType,trigger,triggerRootId,mode,const DeepCollectionEquality().hash(requestedRootIds),const DeepCollectionEquality().hash(scanRuns),progress,retrySourceJobRunId,retrySuccessorJobRunId,const DeepCollectionEquality().hash(exclusions),rootOutcomeCoverage);
 
 @override
 String toString() {
-  return 'LibraryRefreshJobDetail(trigger: $trigger, triggerRootId: $triggerRootId, mode: $mode, requestedRootIds: $requestedRootIds, scanRuns: $scanRuns, progress: $progress, retrySourceJobRunId: $retrySourceJobRunId, retrySuccessorJobRunId: $retrySuccessorJobRunId)';
+  return 'LibraryRefreshJobDetail(trigger: $trigger, triggerRootId: $triggerRootId, mode: $mode, requestedRootIds: $requestedRootIds, scanRuns: $scanRuns, progress: $progress, retrySourceJobRunId: $retrySourceJobRunId, retrySuccessorJobRunId: $retrySuccessorJobRunId, exclusions: $exclusions, rootOutcomeCoverage: $rootOutcomeCoverage)';
 }
 
 
@@ -5890,7 +5890,7 @@ abstract mixin class $LibraryRefreshJobDetailCopyWith<$Res>  {
   factory $LibraryRefreshJobDetailCopyWith(LibraryRefreshJobDetail value, $Res Function(LibraryRefreshJobDetail) _then) = _$LibraryRefreshJobDetailCopyWithImpl;
 @useResult
 $Res call({
- String trigger, String? triggerRootId, String mode, List<LibraryRootId> requestedRootIds, List<ScanRunSummary> scanRuns, RefreshProgressFacts progress, JobRunId? retrySourceJobRunId, JobRunId? retrySuccessorJobRunId
+ String trigger, String? triggerRootId, String mode, List<LibraryRootId> requestedRootIds, List<ScanRunSummary> scanRuns, RefreshProgressFacts progress, JobRunId? retrySourceJobRunId, JobRunId? retrySuccessorJobRunId, List<LibraryScanAdmissionExclusion> exclusions, LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage
 });
 
 
@@ -5907,7 +5907,7 @@ class _$LibraryRefreshJobDetailCopyWithImpl<$Res>
 
 /// Create a copy of LibraryRefreshJobDetail
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? trigger = null,Object? triggerRootId = freezed,Object? mode = null,Object? requestedRootIds = null,Object? scanRuns = null,Object? progress = null,Object? retrySourceJobRunId = freezed,Object? retrySuccessorJobRunId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? trigger = null,Object? triggerRootId = freezed,Object? mode = null,Object? requestedRootIds = null,Object? scanRuns = null,Object? progress = null,Object? retrySourceJobRunId = freezed,Object? retrySuccessorJobRunId = freezed,Object? exclusions = null,Object? rootOutcomeCoverage = null,}) {
   return _then(_self.copyWith(
 trigger: null == trigger ? _self.trigger : trigger // ignore: cast_nullable_to_non_nullable
 as String,triggerRootId: freezed == triggerRootId ? _self.triggerRootId : triggerRootId // ignore: cast_nullable_to_non_nullable
@@ -5917,7 +5917,9 @@ as List<LibraryRootId>,scanRuns: null == scanRuns ? _self.scanRuns : scanRuns //
 as List<ScanRunSummary>,progress: null == progress ? _self.progress : progress // ignore: cast_nullable_to_non_nullable
 as RefreshProgressFacts,retrySourceJobRunId: freezed == retrySourceJobRunId ? _self.retrySourceJobRunId : retrySourceJobRunId // ignore: cast_nullable_to_non_nullable
 as JobRunId?,retrySuccessorJobRunId: freezed == retrySuccessorJobRunId ? _self.retrySuccessorJobRunId : retrySuccessorJobRunId // ignore: cast_nullable_to_non_nullable
-as JobRunId?,
+as JobRunId?,exclusions: null == exclusions ? _self.exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusion>,rootOutcomeCoverage: null == rootOutcomeCoverage ? _self.rootOutcomeCoverage : rootOutcomeCoverage // ignore: cast_nullable_to_non_nullable
+as LibraryRefreshRootOutcomeCoverage,
   ));
 }
 /// Create a copy of LibraryRefreshJobDetail
@@ -6008,10 +6010,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String trigger,  String? triggerRootId,  String mode,  List<LibraryRootId> requestedRootIds,  List<ScanRunSummary> scanRuns,  RefreshProgressFacts progress,  JobRunId? retrySourceJobRunId,  JobRunId? retrySuccessorJobRunId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String trigger,  String? triggerRootId,  String mode,  List<LibraryRootId> requestedRootIds,  List<ScanRunSummary> scanRuns,  RefreshProgressFacts progress,  JobRunId? retrySourceJobRunId,  JobRunId? retrySuccessorJobRunId,  List<LibraryScanAdmissionExclusion> exclusions,  LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _LibraryRefreshJobDetail() when $default != null:
-return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRootIds,_that.scanRuns,_that.progress,_that.retrySourceJobRunId,_that.retrySuccessorJobRunId);case _:
+return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRootIds,_that.scanRuns,_that.progress,_that.retrySourceJobRunId,_that.retrySuccessorJobRunId,_that.exclusions,_that.rootOutcomeCoverage);case _:
   return orElse();
 
 }
@@ -6029,10 +6031,10 @@ return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRoot
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String trigger,  String? triggerRootId,  String mode,  List<LibraryRootId> requestedRootIds,  List<ScanRunSummary> scanRuns,  RefreshProgressFacts progress,  JobRunId? retrySourceJobRunId,  JobRunId? retrySuccessorJobRunId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String trigger,  String? triggerRootId,  String mode,  List<LibraryRootId> requestedRootIds,  List<ScanRunSummary> scanRuns,  RefreshProgressFacts progress,  JobRunId? retrySourceJobRunId,  JobRunId? retrySuccessorJobRunId,  List<LibraryScanAdmissionExclusion> exclusions,  LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage)  $default,) {final _that = this;
 switch (_that) {
 case _LibraryRefreshJobDetail():
-return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRootIds,_that.scanRuns,_that.progress,_that.retrySourceJobRunId,_that.retrySuccessorJobRunId);}
+return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRootIds,_that.scanRuns,_that.progress,_that.retrySourceJobRunId,_that.retrySuccessorJobRunId,_that.exclusions,_that.rootOutcomeCoverage);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -6046,10 +6048,10 @@ return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRoot
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String trigger,  String? triggerRootId,  String mode,  List<LibraryRootId> requestedRootIds,  List<ScanRunSummary> scanRuns,  RefreshProgressFacts progress,  JobRunId? retrySourceJobRunId,  JobRunId? retrySuccessorJobRunId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String trigger,  String? triggerRootId,  String mode,  List<LibraryRootId> requestedRootIds,  List<ScanRunSummary> scanRuns,  RefreshProgressFacts progress,  JobRunId? retrySourceJobRunId,  JobRunId? retrySuccessorJobRunId,  List<LibraryScanAdmissionExclusion> exclusions,  LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage)?  $default,) {final _that = this;
 switch (_that) {
 case _LibraryRefreshJobDetail() when $default != null:
-return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRootIds,_that.scanRuns,_that.progress,_that.retrySourceJobRunId,_that.retrySuccessorJobRunId);case _:
+return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRootIds,_that.scanRuns,_that.progress,_that.retrySourceJobRunId,_that.retrySuccessorJobRunId,_that.exclusions,_that.rootOutcomeCoverage);case _:
   return null;
 
 }
@@ -6061,7 +6063,7 @@ return $default(_that.trigger,_that.triggerRootId,_that.mode,_that.requestedRoot
 
 
 class _LibraryRefreshJobDetail implements LibraryRefreshJobDetail {
-  const _LibraryRefreshJobDetail({required this.trigger, this.triggerRootId, required this.mode, required final  List<LibraryRootId> requestedRootIds, required final  List<ScanRunSummary> scanRuns, required this.progress, this.retrySourceJobRunId, this.retrySuccessorJobRunId}): _requestedRootIds = requestedRootIds,_scanRuns = scanRuns;
+  const _LibraryRefreshJobDetail({required this.trigger, this.triggerRootId, required this.mode, required final  List<LibraryRootId> requestedRootIds, required final  List<ScanRunSummary> scanRuns, required this.progress, this.retrySourceJobRunId, this.retrySuccessorJobRunId, required final  List<LibraryScanAdmissionExclusion> exclusions, required this.rootOutcomeCoverage}): _requestedRootIds = requestedRootIds,_scanRuns = scanRuns,_exclusions = exclusions;
 
 
 @override final  String trigger;
@@ -6084,6 +6086,14 @@ class _LibraryRefreshJobDetail implements LibraryRefreshJobDetail {
 @override final  RefreshProgressFacts progress;
 @override final  JobRunId? retrySourceJobRunId;
 @override final  JobRunId? retrySuccessorJobRunId;
+ final  List<LibraryScanAdmissionExclusion> _exclusions;
+@override List<LibraryScanAdmissionExclusion> get exclusions {
+  if (_exclusions is EqualUnmodifiableListView) return _exclusions;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_exclusions);
+}
+
+@override final  LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage;
 
 /// Create a copy of LibraryRefreshJobDetail
 /// with the given fields replaced by the non-null parameter values.
@@ -6095,16 +6105,16 @@ _$LibraryRefreshJobDetailCopyWith<_LibraryRefreshJobDetail> get copyWith => __$L
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryRefreshJobDetail&&(identical(other.trigger, trigger) || other.trigger == trigger)&&(identical(other.triggerRootId, triggerRootId) || other.triggerRootId == triggerRootId)&&(identical(other.mode, mode) || other.mode == mode)&&const DeepCollectionEquality().equals(other._requestedRootIds, _requestedRootIds)&&const DeepCollectionEquality().equals(other._scanRuns, _scanRuns)&&(identical(other.progress, progress) || other.progress == progress)&&(identical(other.retrySourceJobRunId, retrySourceJobRunId) || other.retrySourceJobRunId == retrySourceJobRunId)&&(identical(other.retrySuccessorJobRunId, retrySuccessorJobRunId) || other.retrySuccessorJobRunId == retrySuccessorJobRunId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LibraryRefreshJobDetail&&(identical(other.trigger, trigger) || other.trigger == trigger)&&(identical(other.triggerRootId, triggerRootId) || other.triggerRootId == triggerRootId)&&(identical(other.mode, mode) || other.mode == mode)&&const DeepCollectionEquality().equals(other._requestedRootIds, _requestedRootIds)&&const DeepCollectionEquality().equals(other._scanRuns, _scanRuns)&&(identical(other.progress, progress) || other.progress == progress)&&(identical(other.retrySourceJobRunId, retrySourceJobRunId) || other.retrySourceJobRunId == retrySourceJobRunId)&&(identical(other.retrySuccessorJobRunId, retrySuccessorJobRunId) || other.retrySuccessorJobRunId == retrySuccessorJobRunId)&&const DeepCollectionEquality().equals(other._exclusions, _exclusions)&&(identical(other.rootOutcomeCoverage, rootOutcomeCoverage) || other.rootOutcomeCoverage == rootOutcomeCoverage));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,trigger,triggerRootId,mode,const DeepCollectionEquality().hash(_requestedRootIds),const DeepCollectionEquality().hash(_scanRuns),progress,retrySourceJobRunId,retrySuccessorJobRunId);
+int get hashCode => Object.hash(runtimeType,trigger,triggerRootId,mode,const DeepCollectionEquality().hash(_requestedRootIds),const DeepCollectionEquality().hash(_scanRuns),progress,retrySourceJobRunId,retrySuccessorJobRunId,const DeepCollectionEquality().hash(_exclusions),rootOutcomeCoverage);
 
 @override
 String toString() {
-  return 'LibraryRefreshJobDetail(trigger: $trigger, triggerRootId: $triggerRootId, mode: $mode, requestedRootIds: $requestedRootIds, scanRuns: $scanRuns, progress: $progress, retrySourceJobRunId: $retrySourceJobRunId, retrySuccessorJobRunId: $retrySuccessorJobRunId)';
+  return 'LibraryRefreshJobDetail(trigger: $trigger, triggerRootId: $triggerRootId, mode: $mode, requestedRootIds: $requestedRootIds, scanRuns: $scanRuns, progress: $progress, retrySourceJobRunId: $retrySourceJobRunId, retrySuccessorJobRunId: $retrySuccessorJobRunId, exclusions: $exclusions, rootOutcomeCoverage: $rootOutcomeCoverage)';
 }
 
 
@@ -6115,7 +6125,7 @@ abstract mixin class _$LibraryRefreshJobDetailCopyWith<$Res> implements $Library
   factory _$LibraryRefreshJobDetailCopyWith(_LibraryRefreshJobDetail value, $Res Function(_LibraryRefreshJobDetail) _then) = __$LibraryRefreshJobDetailCopyWithImpl;
 @override @useResult
 $Res call({
- String trigger, String? triggerRootId, String mode, List<LibraryRootId> requestedRootIds, List<ScanRunSummary> scanRuns, RefreshProgressFacts progress, JobRunId? retrySourceJobRunId, JobRunId? retrySuccessorJobRunId
+ String trigger, String? triggerRootId, String mode, List<LibraryRootId> requestedRootIds, List<ScanRunSummary> scanRuns, RefreshProgressFacts progress, JobRunId? retrySourceJobRunId, JobRunId? retrySuccessorJobRunId, List<LibraryScanAdmissionExclusion> exclusions, LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage
 });
 
 
@@ -6132,7 +6142,7 @@ class __$LibraryRefreshJobDetailCopyWithImpl<$Res>
 
 /// Create a copy of LibraryRefreshJobDetail
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? trigger = null,Object? triggerRootId = freezed,Object? mode = null,Object? requestedRootIds = null,Object? scanRuns = null,Object? progress = null,Object? retrySourceJobRunId = freezed,Object? retrySuccessorJobRunId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? trigger = null,Object? triggerRootId = freezed,Object? mode = null,Object? requestedRootIds = null,Object? scanRuns = null,Object? progress = null,Object? retrySourceJobRunId = freezed,Object? retrySuccessorJobRunId = freezed,Object? exclusions = null,Object? rootOutcomeCoverage = null,}) {
   return _then(_LibraryRefreshJobDetail(
 trigger: null == trigger ? _self.trigger : trigger // ignore: cast_nullable_to_non_nullable
 as String,triggerRootId: freezed == triggerRootId ? _self.triggerRootId : triggerRootId // ignore: cast_nullable_to_non_nullable
@@ -6142,7 +6152,9 @@ as List<LibraryRootId>,scanRuns: null == scanRuns ? _self._scanRuns : scanRuns /
 as List<ScanRunSummary>,progress: null == progress ? _self.progress : progress // ignore: cast_nullable_to_non_nullable
 as RefreshProgressFacts,retrySourceJobRunId: freezed == retrySourceJobRunId ? _self.retrySourceJobRunId : retrySourceJobRunId // ignore: cast_nullable_to_non_nullable
 as JobRunId?,retrySuccessorJobRunId: freezed == retrySuccessorJobRunId ? _self.retrySuccessorJobRunId : retrySuccessorJobRunId // ignore: cast_nullable_to_non_nullable
-as JobRunId?,
+as JobRunId?,exclusions: null == exclusions ? _self._exclusions : exclusions // ignore: cast_nullable_to_non_nullable
+as List<LibraryScanAdmissionExclusion>,rootOutcomeCoverage: null == rootOutcomeCoverage ? _self.rootOutcomeCoverage : rootOutcomeCoverage // ignore: cast_nullable_to_non_nullable
+as LibraryRefreshRootOutcomeCoverage,
   ));
 }
 

@@ -2251,6 +2251,16 @@ LibraryRefreshJobDetail libraryRefreshJobDetailFromDto(
     for (final rootId in value.requestedRootIds) libraryRootIdFromDto(rootId),
   ],
   scanRuns: [for (final scan in value.scanRuns) scanRunSummaryFromDto(scan)],
+  exclusions: [
+    for (final exclusion in value.exclusions)
+      libraryScanAdmissionExclusionFromDto(exclusion),
+  ],
+  rootOutcomeCoverage: switch (value.rootOutcomeCoverage) {
+    dto.LibraryRefreshRootOutcomeCoverageDto.complete =>
+      LibraryRefreshRootOutcomeCoverage.complete,
+    dto.LibraryRefreshRootOutcomeCoverageDto.historicalUnavailable =>
+      LibraryRefreshRootOutcomeCoverage.historicalUnavailable,
+  },
   progress: refreshProgressFactsFromDto(value.progress),
   retrySourceJobRunId: value.retrySourceJobRunId == null
       ? null

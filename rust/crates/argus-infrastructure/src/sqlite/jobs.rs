@@ -24,6 +24,9 @@ use argus_application::{
     StaleOperationQueries, StartLibraryScanAllResult, TechnicalClass, TraceId, Version,
     evaluate_retry_eligibility,
 };
+#[cfg(feature = "test-support")]
+use std::sync::Arc;
+
 use rusqlite::OptionalExtension;
 
 use super::appearance::map_executor_error;
@@ -141,8 +144,20 @@ impl<'scope, 'connection> SqliteJobRunRepository<'scope, 'connection> {
 impl JobRunRepository for SqliteJobRunRepository<'_, '_> {
     fn insert(&mut self, new: NewJobRun) -> Result<JobRunId, PersistenceError> {
         let transaction = self.work.transaction_mut()?;
-        let created: String = transaction
-            .query_row(
+        // Non-refresh jobs use the schema's default scope version `0`. Refresh
+        // admissions explicitly write `1` so their requested-scope manifest is required.
+        let created: String = (if new.operation_type() == OPERATION_TYPE_LIBRARY_REFRESH {
+            transaction.query_row(
+                "INSERT INTO job_run
+                    (job_run_id, operation_type, state, created_at, queued_at,
+                     library_refresh_scope_version)
+                 VALUES (lower(hex(randomblob(16))), ?1, 'queued', ?2, ?2, 1)
+                 RETURNING job_run_id",
+                rusqlite::params![new.operation_type(), new.created_at_ms()],
+                |row| row.get(0),
+            )
+        } else {
+            transaction.query_row(
                 "INSERT INTO job_run
                     (job_run_id, operation_type, state, created_at, queued_at)
                  VALUES (lower(hex(randomblob(16))), ?1, 'queued', ?2, ?2)
@@ -150,7 +165,8 @@ impl JobRunRepository for SqliteJobRunRepository<'_, '_> {
                 rusqlite::params![new.operation_type(), new.created_at_ms()],
                 |row| row.get(0),
             )
-            .map_err(map_persistence_operation_error)?;
+        })
+        .map_err(map_persistence_operation_error)?;
         parse_job_run_id(created)
     }
 
@@ -159,18 +175,31 @@ impl JobRunRepository for SqliteJobRunRepository<'_, '_> {
         job_run_id: JobRunId,
         trigger: LibraryRefreshTrigger,
         mode: RefreshMode,
+        requested_root_ids: &[LibraryRootId],
     ) -> Result<(), PersistenceError> {
+        let mut requested_ids = requested_root_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        requested_ids.sort();
+        if requested_ids.is_empty() || requested_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(PersistenceError::ConstraintViolation);
+        }
+        let requested_root_ids_json =
+            serde_json::to_string(&requested_ids).map_err(|_| PersistenceError::Internal)?;
         self.work
             .transaction_mut()?
             .execute(
                 "INSERT INTO library_refresh_intent
-                    (job_run_id, trigger_kind, trigger_root_id, mode)
-                 VALUES (?1, ?2, ?3, ?4)",
+                    (job_run_id, trigger_kind, trigger_root_id, mode,
+                     requested_root_ids_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![
                     job_run_id.to_string(),
                     trigger.kind(),
                     trigger.root_id().map(|root_id| root_id.to_string()),
                     mode.as_str(),
+                    requested_root_ids_json,
                 ],
             )
             .map_err(map_persistence_operation_error)?;
@@ -1602,12 +1631,29 @@ fn read_library_scan_targets(
 #[derive(Clone)]
 pub struct SqliteJobsQueries {
     executor: SqliteDatabaseExecutor,
+    #[cfg(feature = "test-support")]
+    get_job_after_parent_read_hook: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl SqliteJobsQueries {
     /// Creates a query adapter over an existing shared SQLite executor.
     pub const fn new(executor: SqliteDatabaseExecutor) -> Self {
-        Self { executor }
+        Self {
+            executor,
+            #[cfg(feature = "test-support")]
+            get_job_after_parent_read_hook: None,
+        }
+    }
+
+    /// Installs a bounded interleaving hook for GetJob snapshot tests.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn with_get_job_after_parent_read_hook_for_tests(
+        mut self,
+        hook: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        self.get_job_after_parent_read_hook = Some(Arc::new(hook));
+        self
     }
 }
 
@@ -1617,9 +1663,24 @@ impl JobsQueries for SqliteJobsQueries {
         context: &OperationContext,
         job_run_id: JobRunId,
     ) -> Result<Option<JobDetail>, PersistenceError> {
+        #[cfg(feature = "test-support")]
+        let after_parent_read = self.get_job_after_parent_read_hook.clone();
+
         self.executor
             .with_connection(context.clone(), move |connection| {
-                read_job_detail(connection, &job_run_id.to_string())
+                #[cfg(feature = "test-support")]
+                let result = with_deferred_read_snapshot(connection, |snapshot_connection| {
+                    read_job_detail(snapshot_connection, &job_run_id.to_string(), move || {
+                        if let Some(hook) = after_parent_read {
+                            hook();
+                        }
+                    })
+                });
+                #[cfg(not(feature = "test-support"))]
+                let result = with_deferred_read_snapshot(connection, |snapshot_connection| {
+                    read_job_detail(snapshot_connection, &job_run_id.to_string(), || {})
+                });
+                result
             })
             .map_err(map_executor_error)
     }
@@ -2077,13 +2138,15 @@ fn read_job_summaries(
 fn read_job_detail(
     connection: &mut SqliteConnection<'_>,
     job_run_id: &str,
+    after_parent_read: impl FnOnce(),
 ) -> Result<Option<JobDetail>, SqliteOperationError> {
     let raw = connection
         .connection
         .query_row(
             "SELECT job_run_id, operation_type, state, current_phase, completed_units,
                     total_units, status_key, created_at, queued_at, started_at, completed_at,
-                    cancellation_requested, terminal_error_code, terminal_safe_context
+                    cancellation_requested, terminal_error_code, terminal_safe_context,
+                    library_refresh_scope_version
              FROM job_run WHERE job_run_id = ?1",
             [job_run_id],
             |row| {
@@ -2102,11 +2165,13 @@ fn read_job_detail(
                     row.get::<_, i64>(11)?,
                     row.get::<_, Option<String>>(12)?,
                     row.get::<_, Option<String>>(13)?,
+                    row.get::<_, i64>(14)?,
                 ))
             },
         )
         .optional()
         .map_err(|error| super::errors::operation_error(&error))?;
+    after_parent_read();
     let Some((
         job,
         operation,
@@ -2122,6 +2187,7 @@ fn read_job_detail(
         cancellation,
         error_code,
         safe_context,
+        library_refresh_scope_version,
     )) = raw
     else {
         return Ok(None);
@@ -2133,12 +2199,17 @@ fn read_job_detail(
     let is_library_refresh = operation == OPERATION_TYPE_LIBRARY_REFRESH;
     let is_game_refresh = operation == OPERATION_TYPE_GAME_REFRESH;
     let is_library_resolution_refresh = operation == OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH;
+    if !(0..=1).contains(&library_refresh_scope_version)
+        || (!is_library_refresh && library_refresh_scope_version != 0)
+    {
+        return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+    }
     if !is_library_scan && !is_library_refresh && !is_game_refresh && !is_library_resolution_refresh
     {
         return Ok(None);
     }
 
-    let retry_source: Option<String> = connection
+    let admission_context: Option<Option<String>> = connection
         .connection
         .query_row(
             "SELECT retry_source_job_run_id
@@ -2147,8 +2218,9 @@ fn read_job_detail(
             |row| row.get::<_, Option<String>>(0),
         )
         .optional()
-        .map_err(|error| super::errors::operation_error(&error))?
-        .flatten();
+        .map_err(|error| super::errors::operation_error(&error))?;
+    let has_admission_context = admission_context.is_some();
+    let retry_source = admission_context.flatten();
     let retry_source = retry_source
         .map(parse_job_run_id)
         .transpose()
@@ -2343,6 +2415,12 @@ fn read_job_detail(
     let mut exclusions = Vec::new();
     let targets = read_library_scan_targets(connection.connection, &job_run_id.to_string())
         .map_err(corrupt_sqlite)?;
+    validate_library_scan_target_projection(
+        job_run_id,
+        has_admission_context,
+        &targets,
+        &scan_runs,
+    )?;
     let mut requested_targets = Vec::new();
     for target in &targets {
         match target.kind() {
@@ -2415,10 +2493,10 @@ fn read_job_detail(
         ));
     }
     let evaluation = evaluate_retry_eligibility(state, successor.is_some(), &eligibility_input);
-    let controls = JobControlAvailability::new(
-        state.is_active() && !cancellation_requested,
-        evaluation.can_retry(),
-    );
+    // The SQLite retry target query supports LibraryScan jobs only.
+    let can_retry = is_library_scan && evaluation.can_retry();
+    let controls =
+        JobControlAvailability::new(state.is_active() && !cancellation_requested, can_retry);
     let job_projection = JobRunProjection::new(
         job_run_id,
         operation.clone(),
@@ -2462,22 +2540,22 @@ fn read_job_detail(
             successor,
         ))
     } else {
-        let requested_root_ids: Vec<LibraryRootId> = requested_targets
+        let target_requested_root_ids: Vec<LibraryRootId> = requested_targets
             .iter()
             .map(LibraryScanTarget::library_root_id)
             .collect();
-        let persisted_intent: Option<(String, Option<String>, String)> = connection
+        let persisted_intent: Option<(String, Option<String>, String, Option<String>)> = connection
             .connection
             .query_row(
-                "SELECT trigger_kind, trigger_root_id, mode
+                "SELECT trigger_kind, trigger_root_id, mode, requested_root_ids_json
                  FROM library_refresh_intent WHERE job_run_id = ?1",
                 [job_run_id.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()
             .map_err(|error| super::errors::operation_error(&error))?;
-        let (trigger, mode) = match persisted_intent {
-            Some((kind, root_id, mode)) => {
+        let (trigger, mode, scope_manifest_json) = match persisted_intent {
+            Some((kind, root_id, mode, scope_manifest_json)) => {
                 let trigger = match kind.as_str() {
                     "manual" => LibraryRefreshTrigger::Manual,
                     "initial_onboarding" => LibraryRefreshTrigger::InitialOnboarding,
@@ -2492,16 +2570,48 @@ fn read_job_detail(
                     ),
                     _ => return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible)),
                 };
-                (trigger, parse_refresh_mode(&mode).map_err(corrupt_sqlite)?)
+                (
+                    trigger,
+                    parse_refresh_mode(&mode).map_err(corrupt_sqlite)?,
+                    scope_manifest_json,
+                )
             }
-            None => {
-                let trigger = if requested_root_ids.len() == 1 {
-                    LibraryRefreshTrigger::AddedRoot(requested_root_ids[0])
+            None if library_refresh_scope_version == 0 => {
+                let trigger = if target_requested_root_ids.len() == 1 {
+                    LibraryRefreshTrigger::AddedRoot(target_requested_root_ids[0])
                 } else {
                     LibraryRefreshTrigger::Manual
                 };
-                (trigger, RefreshMode::EligibleOnly)
+                (trigger, RefreshMode::EligibleOnly, None)
             }
+            None => return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible)),
+        };
+
+        let (requested_root_ids, root_outcome_coverage) = if library_refresh_scope_version == 1 {
+            let Some(scope_manifest_json) = scope_manifest_json else {
+                return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+            };
+            let requested_root_ids = parse_library_refresh_scope_manifest(&scope_manifest_json)
+                .map_err(corrupt_sqlite)?;
+            validate_library_refresh_scope_projection(
+                job_run_id,
+                &requested_root_ids,
+                &targets,
+                &scan_runs,
+                trigger,
+            )?;
+            (
+                requested_root_ids,
+                argus_application::LibraryRefreshRootOutcomeCoverage::Complete,
+            )
+        } else {
+            if scope_manifest_json.is_some() {
+                return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+            }
+            (
+                target_requested_root_ids,
+                argus_application::LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable,
+            )
         };
 
         // Refresh issue summaries become authoritative only after a successful
@@ -2539,10 +2649,211 @@ fn read_job_detail(
                 retry_source,
                 successor,
             )
-            .with_scan_runs(scan_runs),
+            .with_scan_runs(scan_runs)
+            .with_exclusions(exclusions)
+            .with_root_outcome_coverage(root_outcome_coverage),
         )
     };
     Ok(Some(JobDetail::new(job_projection, detail)))
+}
+
+fn with_deferred_read_snapshot<'connection, T>(
+    connection: &mut SqliteConnection<'connection>,
+    read: impl FnOnce(&mut SqliteConnection<'connection>) -> Result<T, SqliteOperationError>,
+) -> Result<T, SqliteOperationError> {
+    connection.execute_batch("BEGIN DEFERRED TRANSACTION")?;
+    match read(connection) {
+        Ok(value) => {
+            if let Err(commit_error) = connection.execute_batch("COMMIT") {
+                return match connection.execute_batch("ROLLBACK") {
+                    Ok(()) => Err(commit_error),
+                    Err(rollback_error) => Err(rollback_error),
+                };
+            }
+            Ok(value)
+        }
+        Err(read_error) => match connection.execute_batch("ROLLBACK") {
+            Ok(()) => Err(read_error),
+            Err(rollback_error) => Err(rollback_error),
+        },
+    }
+}
+
+fn validate_library_scan_target_projection(
+    job_run_id: JobRunId,
+    has_admission_context: bool,
+    targets: &[LibraryScanTarget],
+    scan_runs: &[ScanRunProjection],
+) -> Result<(), SqliteOperationError> {
+    let invalid = || corrupt_sqlite(PersistenceError::CorruptOrIncompatible);
+    if targets.is_empty() {
+        return if has_admission_context {
+            Err(invalid())
+        } else {
+            Ok(())
+        };
+    }
+
+    for outcome in targets
+        .iter()
+        .filter(|target| target.kind() != LibraryScanTargetKind::Requested)
+    {
+        let requested_count = targets
+            .iter()
+            .filter(|target| {
+                target.kind() == LibraryScanTargetKind::Requested
+                    && target.library_root_id() == outcome.library_root_id()
+            })
+            .count();
+        let outcome_count = targets
+            .iter()
+            .filter(|target| {
+                target.kind() != LibraryScanTargetKind::Requested
+                    && target.library_root_id() == outcome.library_root_id()
+            })
+            .count();
+        if requested_count != 1 || outcome_count != 1 {
+            return Err(invalid());
+        }
+    }
+
+    for admitted in targets
+        .iter()
+        .filter(|target| target.kind() == LibraryScanTargetKind::Admitted)
+    {
+        let Some(scan_run_id) = admitted.scan_run_id() else {
+            return Err(invalid());
+        };
+        let matching_scan_runs = scan_runs
+            .iter()
+            .filter(|scan_run| {
+                scan_run.job_run_id() == job_run_id
+                    && scan_run.library_root_id() == admitted.library_root_id()
+                    && scan_run.scan_run_id() == scan_run_id
+            })
+            .count();
+        if matching_scan_runs != 1 {
+            return Err(invalid());
+        }
+    }
+
+    for scan_run in scan_runs {
+        if scan_run.job_run_id() != job_run_id {
+            return Err(invalid());
+        }
+        let matching_admitted_targets = targets
+            .iter()
+            .filter(|target| {
+                target.kind() == LibraryScanTargetKind::Admitted
+                    && target.library_root_id() == scan_run.library_root_id()
+                    && target.scan_run_id() == Some(scan_run.scan_run_id())
+            })
+            .count();
+        if matching_admitted_targets != 1 {
+            return Err(invalid());
+        }
+    }
+
+    if has_admission_context {
+        let requested_targets: Vec<_> = targets
+            .iter()
+            .filter(|target| target.kind() == LibraryScanTargetKind::Requested)
+            .collect();
+        if requested_targets.is_empty() {
+            return Err(invalid());
+        }
+        for requested in requested_targets {
+            let outcome_count = targets
+                .iter()
+                .filter(|target| {
+                    target.kind() != LibraryScanTargetKind::Requested
+                        && target.library_root_id() == requested.library_root_id()
+                })
+                .count();
+            if outcome_count != 1 {
+                return Err(invalid());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_library_refresh_scope_projection(
+    job_run_id: JobRunId,
+    requested_root_ids: &[LibraryRootId],
+    targets: &[LibraryScanTarget],
+    scan_runs: &[ScanRunProjection],
+    trigger: LibraryRefreshTrigger,
+) -> Result<(), SqliteOperationError> {
+    let invalid = || corrupt_sqlite(PersistenceError::CorruptOrIncompatible);
+    if requested_root_ids.is_empty() {
+        return Err(invalid());
+    }
+
+    let expected_ids: Vec<_> = requested_root_ids.iter().map(ToString::to_string).collect();
+    let mut requested_ids: Vec<_> = targets
+        .iter()
+        .filter(|target| target.kind() == LibraryScanTargetKind::Requested)
+        .map(|target| target.library_root_id().to_string())
+        .collect();
+    requested_ids.sort();
+    if requested_ids != expected_ids {
+        return Err(invalid());
+    }
+
+    let mut outcome_ids: Vec<_> = targets
+        .iter()
+        .filter(|target| target.kind() != LibraryScanTargetKind::Requested)
+        .map(|target| target.library_root_id().to_string())
+        .collect();
+    outcome_ids.sort();
+    if outcome_ids != expected_ids
+        || scan_runs
+            .iter()
+            .any(|scan_run| scan_run.job_run_id() != job_run_id)
+    {
+        return Err(invalid());
+    }
+    if let Some(trigger_root_id) = trigger.root_id()
+        && (!requested_root_ids.contains(&trigger_root_id)
+            || !targets.iter().any(|target| {
+                target.kind() == LibraryScanTargetKind::Admitted
+                    && target.library_root_id() == trigger_root_id
+            }))
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
+fn parse_library_refresh_scope_manifest(
+    value: &str,
+) -> Result<Vec<LibraryRootId>, PersistenceError> {
+    let raw_ids = serde_json::from_str::<Vec<String>>(value)
+        .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+    if raw_ids.is_empty()
+        || serde_json::to_string(&raw_ids).map_err(|_| PersistenceError::CorruptOrIncompatible)?
+            != value
+    {
+        return Err(PersistenceError::CorruptOrIncompatible);
+    }
+
+    let mut requested_root_ids = Vec::with_capacity(raw_ids.len());
+    for raw_id in raw_ids {
+        let root_id = LibraryRootId::try_from(raw_id.as_str())
+            .map_err(|_| PersistenceError::CorruptOrIncompatible)?;
+        if root_id.to_string() != raw_id {
+            return Err(PersistenceError::CorruptOrIncompatible);
+        }
+        requested_root_ids.push(root_id);
+    }
+    if requested_root_ids
+        .windows(2)
+        .any(|pair| pair[0].to_string() >= pair[1].to_string())
+    {
+        return Err(PersistenceError::CorruptOrIncompatible);
+    }
+    Ok(requested_root_ids)
 }
 
 /// Reads and validates the durable refresh issue projection for one job.

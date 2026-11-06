@@ -22,11 +22,15 @@ struct JobFixture {
 }
 
 fn seed_jobs(executor: &SqliteDatabaseExecutor, fixtures: &[JobFixture]) {
-    let mut sql = String::new();
+    // These rows stand in for pre-v19 jobs, whose missing scope proof must
+    // remain historical rather than being treated as a new admission.
+    let mut sql = String::from("DROP TRIGGER job_run_refresh_scope_version_insert;\n");
     for fixture in fixtures {
         sql.push_str(&format!(
-            "INSERT INTO job_run (job_run_id, operation_type, state, created_at)
-             VALUES ('{}', 'library_refresh', '{}', 1);\n",
+            "INSERT INTO job_run
+                (job_run_id, operation_type, state, created_at,
+                 library_refresh_scope_version)
+             VALUES ('{}', 'library_refresh', '{}', 1, 0);\n",
             fixture.id, fixture.state
         ));
         if let Some(issue_count) = fixture.issue_count {

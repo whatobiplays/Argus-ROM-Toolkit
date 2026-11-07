@@ -1644,112 +1644,126 @@ void main() {
       tester,
     ) async {
       final semantics = tester.ensureSemantics();
-      const scanId = '11111111111111111111111111111111';
-      const jobId = '22222222222222222222222222222222';
-      final openedJobs = <JobRunId>[];
-      final root = fakeRoot().copyWith(
-        activeScan: const LibraryRootActiveScan(
-          scanRunId: scanId,
-          jobRunId: jobId,
-          owningJobRootCount: 1,
-        ),
-      );
-      final container = createContainer(FakeSourcesApi(roots: [root]));
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            theme: ArgusTheme.light,
-            home: SourcesRootDetailPage(
-              rootId: _rootId,
-              onMissingRoot: () {},
-              onRemoved: () {},
-              onOpenRoot: (_) {},
-              onOpenJob: openedJobs.add,
+      try {
+        const scanId = '11111111111111111111111111111111';
+        const jobId = '22222222222222222222222222222222';
+        final openedJobs = <JobRunId>[];
+        final root = fakeRoot().copyWith(
+          activeScan: const LibraryRootActiveScan(
+            scanRunId: scanId,
+            jobRunId: jobId,
+            owningJobRootCount: 1,
+          ),
+        );
+        final container = createContainer(FakeSourcesApi(roots: [root]));
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: ArgusTheme.light,
+              home: SourcesRootDetailPage(
+                rootId: _rootId,
+                onMissingRoot: () {},
+                onRemoved: () {},
+                onOpenRoot: (_) {},
+                onOpenJob: openedJobs.add,
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      final rootNode = tester.getSemantics(
-        find.bySemanticsIdentifier('library-root:${_rootId.value}'),
-      );
-      final jobNode = tester.getSemantics(
-        find.bySemanticsIdentifier('job-run:$jobId'),
-      );
-      final scanNode = tester.getSemantics(
-        find.bySemanticsIdentifier('scan-run:$scanId'),
-      );
-      expect(_isSemanticsDescendant(jobNode, rootNode), isTrue);
-      expect(_isSemanticsDescendant(scanNode, jobNode), isTrue);
-      expect(rootNode.getSemanticsData().label, isNot(contains(_rootId.value)));
-      expect(jobNode.getSemanticsData().label, isNot(contains(jobId)));
-      expect(scanNode.getSemanticsData().label, isNot(contains(scanId)));
-      expect(find.textContaining(scanId), findsNothing);
-      expect(find.textContaining(jobId), findsNothing);
+        final rootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${_rootId.value}'),
+        );
+        final jobNode = tester.getSemantics(
+          find.bySemanticsIdentifier('job-run:$jobId'),
+        );
+        final scanNode = tester.getSemantics(
+          find.bySemanticsIdentifier('scan-run:$scanId'),
+        );
+        expect(_isSemanticsDescendant(jobNode, rootNode), isTrue);
+        expect(_isSemanticsDescendant(scanNode, jobNode), isTrue);
+        expect(
+          rootNode.getSemanticsData().label,
+          isNot(contains(_rootId.value)),
+        );
+        expect(jobNode.getSemanticsData().label, isNot(contains(jobId)));
+        expect(scanNode.getSemanticsData().label, isNot(contains(scanId)));
+        expect(find.textContaining(scanId), findsNothing);
+        expect(find.textContaining(jobId), findsNothing);
 
-      await tester.tap(find.byKey(const ValueKey<String>('sources-view-job')));
-      expect(openedJobs, [JobRunId(jobId)]);
-      semantics.dispose();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('sources-view-job')),
+        );
+        expect(openedJobs, [JobRunId(jobId)]);
+      } finally {
+        semantics.dispose();
+      }
     });
 
     testWidgets('last ScanRun semantics bind root and parent JobRun', (
       tester,
     ) async {
       final semantics = tester.ensureSemantics();
-      const scanId = '33333333333333333333333333333333';
-      const jobId = '44444444444444444444444444444444';
-      final openedJobs = <JobRunId>[];
-      final root = fakeRoot().copyWith(
-        lastScan: const LibraryRootLastScan(
-          scanRunId: scanId,
-          jobRunId: jobId,
-          status: LibraryRootLastScanStatus.failed,
-          startedAtMs: 1,
-          completedAtMs: 2,
-        ),
-      );
-      final container = createContainer(FakeSourcesApi(roots: [root]));
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: MaterialApp(
-            theme: ArgusTheme.light,
-            home: SourcesRootDetailPage(
-              rootId: _rootId,
-              onMissingRoot: () {},
-              onRemoved: () {},
-              onOpenRoot: (_) {},
-              onOpenJob: openedJobs.add,
+      try {
+        const scanId = '33333333333333333333333333333333';
+        const jobId = '44444444444444444444444444444444';
+        final openedJobs = <JobRunId>[];
+        final root = fakeRoot().copyWith(
+          lastScan: const LibraryRootLastScan(
+            scanRunId: scanId,
+            jobRunId: jobId,
+            status: LibraryRootLastScanStatus.failed,
+            startedAtMs: 1,
+            completedAtMs: 2,
+          ),
+        );
+        final container = createContainer(FakeSourcesApi(roots: [root]));
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: ArgusTheme.light,
+              home: SourcesRootDetailPage(
+                rootId: _rootId,
+                onMissingRoot: () {},
+                onRemoved: () {},
+                onOpenRoot: (_) {},
+                onOpenJob: openedJobs.add,
+              ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      final rootNode = tester.getSemantics(
-        find.bySemanticsIdentifier('library-root:${_rootId.value}'),
-      );
-      final jobNode = tester.getSemantics(
-        find.bySemanticsIdentifier('job-run:$jobId'),
-      );
-      final scanNode = tester.getSemantics(
-        find.bySemanticsIdentifier('scan-run:$scanId'),
-      );
-      expect(_isSemanticsDescendant(jobNode, rootNode), isTrue);
-      expect(_isSemanticsDescendant(scanNode, jobNode), isTrue);
-      expect(rootNode.getSemanticsData().label, isNot(contains(_rootId.value)));
-      expect(jobNode.getSemanticsData().label, isNot(contains(jobId)));
-      expect(scanNode.getSemanticsData().label, isNot(contains(scanId)));
-      expect(find.textContaining(scanId), findsNothing);
-      expect(find.textContaining(jobId), findsNothing);
+        final rootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${_rootId.value}'),
+        );
+        final jobNode = tester.getSemantics(
+          find.bySemanticsIdentifier('job-run:$jobId'),
+        );
+        final scanNode = tester.getSemantics(
+          find.bySemanticsIdentifier('scan-run:$scanId'),
+        );
+        expect(_isSemanticsDescendant(jobNode, rootNode), isTrue);
+        expect(_isSemanticsDescendant(scanNode, jobNode), isTrue);
+        expect(
+          rootNode.getSemanticsData().label,
+          isNot(contains(_rootId.value)),
+        );
+        expect(jobNode.getSemanticsData().label, isNot(contains(jobId)));
+        expect(scanNode.getSemanticsData().label, isNot(contains(scanId)));
+        expect(find.textContaining(scanId), findsNothing);
+        expect(find.textContaining(jobId), findsNothing);
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('sources-view-last-job')),
-      );
-      expect(openedJobs, [JobRunId(jobId)]);
-      semantics.dispose();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('sources-view-last-job')),
+        );
+        expect(openedJobs, [JobRunId(jobId)]);
+      } finally {
+        semantics.dispose();
+      }
     });
 
     testWidgets('representative 2.0x text scale remains usable', (

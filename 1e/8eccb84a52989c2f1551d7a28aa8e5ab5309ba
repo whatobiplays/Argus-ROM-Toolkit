@@ -1,0 +1,28 @@
+rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0019_library_refresh_scope_manifest.sql
+  s_a9443de43ad0db::t_5ed83d10d9b8f6 51
+rust/crates/argus-application/tests/slice_006_scan_all.rs
+  s_a9443de43ad0db::t_fcda8d8d0cd6cd 848-853,855-856
+  s_a9443de43ad0db::t_e71a3e855bd54d 873-878
+  s_a9443de43ad0db::t_27c6234bd32621 63-68,196,202,867,879-891,933,935-937,939
+rust/crates/argus-infrastructure/tests/jobs.rs
+  s_a9443de43ad0db::t_a8a09a22290ab1 248
+  s_a9443de43ad0db::t_020b2d00b168c8 143
+rust/crates/argus-infrastructure/tests/migration_v19.rs
+  s_a9443de43ad0db::t_7c288d162a1bb7 303-306,325-332,334-361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e8eccb84a52989c2f1551d7a28aa8e5ab5309ba",
+  "prompts": {},
+  "sessions": {
+    "s_a9443de43ad0db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ad36-3c21-7883-b04f-4152c2e9d467",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

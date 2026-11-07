@@ -3,6 +3,7 @@ import 'package:argus/features/jobs/jobs.dart';
 import 'package:argus/features/jobs/presentation/jobs_messages.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'jobs_test_fakes.dart';
@@ -286,24 +287,45 @@ void main() {
   testWidgets('Jobs landing renders active, recent, and navigates rows', (
     tester,
   ) async {
-    final opened = <JobRunId>[];
-    final api = FakeJobsApi(
-      activeJobs: [jobItem(id: 'a' * 32)],
-      recentJobs: [jobItem(id: 'b' * 32, state: JobLifecycleState.completed)],
-    );
-    final container = createContainer(api);
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(home: JobsPage(onOpenJob: opened.add)),
-      ),
-    );
-    await tester.pumpAndSettle();
+    final semantics = tester.ensureSemantics();
+    try {
+      final opened = <JobRunId>[];
+      final api = FakeJobsApi(
+        activeJobs: [
+          jobItem(id: 'a' * 32),
+          jobItem(id: 'c' * 32),
+        ],
+        recentJobs: [jobItem(id: 'b' * 32, state: JobLifecycleState.completed)],
+      );
+      final container = createContainer(api);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(home: JobsPage(onOpenJob: opened.add)),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Active'), findsOneWidget);
-    expect(find.text('Recent'), findsOneWidget);
-    await tester.tap(find.byKey(ValueKey<String>('jobs-row-${'a' * 32}')));
-    expect(opened, [JobRunId('a' * 32)]);
+      expect(find.text('Active'), findsOneWidget);
+      expect(find.text('Recent'), findsOneWidget);
+      final firstJob = tester.getSemantics(
+        find.bySemanticsIdentifier('job-run:${'a' * 32}'),
+      );
+      final secondJob = tester.getSemantics(
+        find.bySemanticsIdentifier('job-run:${'c' * 32}'),
+      );
+      expect(firstJob.id, isNot(secondJob.id));
+      expect(
+        firstJob.getSemanticsData().label,
+        secondJob.getSemanticsData().label,
+      );
+      expect(firstJob.getSemanticsData().label, isNot(contains('a' * 32)));
+      expect(find.text('Library Scan'), findsNWidgets(3));
+      await tester.tap(find.byKey(ValueKey<String>('jobs-row-${'a' * 32}')));
+      expect(opened, [JobRunId('a' * 32)]);
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('Jobs landing empty state explains long-running work', (
@@ -517,6 +539,593 @@ void main() {
         .toList();
     expect(titles, ['Games', 'ROMs', 'BIOS', 'Extras', 'Arcade']);
   });
+
+  testWidgets(
+    'Complete Library refresh keeps each scan and exclusion identity separate',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final jobId = JobRunId('d' * 32);
+        const firstRoot = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        const secondRoot = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+        const excludedRoot = LibraryRootId('cccccccccccccccccccccccccccccccc');
+        const firstScan = ScanRunId('11111111111111111111111111111111');
+        const secondScan = ScanRunId('22222222222222222222222222222222');
+        final excludedActiveJob = JobRunId('e' * 32);
+        const excludedActiveScan = ScanRunId(
+          'ffffffffffffffffffffffffffffffff',
+        );
+        final scans = [
+          ScanRunSummary(
+            scanRunId: firstScan,
+            jobRunId: jobId,
+            libraryRootId: firstRoot,
+            displayName: 'Games',
+            safeLocationDisplay: '/library/First',
+            status: JobScanStatus.failed,
+            startedAtMs: 1,
+          ),
+          ScanRunSummary(
+            scanRunId: secondScan,
+            jobRunId: jobId,
+            libraryRootId: secondRoot,
+            displayName: 'Games',
+            safeLocationDisplay: '/library/Second',
+            status: JobScanStatus.failed,
+            startedAtMs: 2,
+          ),
+        ];
+        final exclusion = LibraryScanAdmissionExclusion(
+          libraryRootId: excludedRoot,
+          reason: 'already_scanning',
+          activeJobRunId: excludedActiveJob,
+          activeScanRunId: excludedActiveScan,
+        );
+        final detail = _refreshAttempt(
+          jobRunId: jobId,
+          requestedRootIds: const [excludedRoot, secondRoot, firstRoot],
+          scanRuns: scans,
+          exclusions: [exclusion],
+          coverage: LibraryRefreshRootOutcomeCoverage.complete,
+        );
+        final container = createContainer(
+          FakeJobsApi(details: {jobId: detail}),
+        );
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              home: JobDetailPage(
+                jobRunId: jobId,
+                onMissingJob: () {},
+                onOpenJob: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Folder coverage: complete.'), findsOneWidget);
+        expect(find.text('Games'), findsNWidgets(2));
+        expect(find.text('Library folder'), findsOneWidget);
+        expect(find.text('Already being scanned'), findsOneWidget);
+        expect(
+          tester
+              .widgetList<ListTile>(find.byType(ListTile))
+              .map((tile) => (tile.title! as Text).data)
+              .toList(),
+          ['Library folder', 'Games', 'Games'],
+        );
+        expect(find.textContaining(jobId.value), findsNothing);
+        expect(find.textContaining(firstScan.value), findsNothing);
+        expect(find.textContaining(excludedRoot.value), findsNothing);
+
+        final jobNode = tester.getSemantics(
+          find.bySemanticsIdentifier('job-run:${jobId.value}'),
+        );
+        final firstScanNode = tester.getSemantics(
+          find.bySemanticsIdentifier('scan-run:${firstScan.value}'),
+        );
+        final secondScanNode = tester.getSemantics(
+          find.bySemanticsIdentifier('scan-run:${secondScan.value}'),
+        );
+        final firstRootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${firstRoot.value}'),
+        );
+        final secondRootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${secondRoot.value}'),
+        );
+        final excludedRootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${excludedRoot.value}'),
+        );
+        expect(_isDescendantOf(firstScanNode, jobNode), isTrue);
+        expect(_isDescendantOf(secondScanNode, jobNode), isTrue);
+        expect(_isDescendantOf(firstRootNode, firstScanNode), isTrue);
+        expect(_isDescendantOf(secondRootNode, secondScanNode), isTrue);
+        expect(_isDescendantOf(excludedRootNode, jobNode), isTrue);
+        expect(
+          find.bySemanticsIdentifier('scan-run:${excludedActiveScan.value}'),
+          findsNothing,
+        );
+        expect(
+          find.bySemanticsIdentifier('job-run:${excludedActiveJob.value}'),
+          findsNothing,
+        );
+        final firstLabel = tester
+            .getSemantics(find.text('Games').first)
+            .getSemanticsData()
+            .label;
+        final secondLabel = tester
+            .getSemantics(find.text('Games').last)
+            .getSemanticsData()
+            .label;
+        expect(firstLabel, secondLabel);
+        expect(firstLabel, isNot(contains(jobId.value)));
+        expect(firstLabel, isNot(contains(firstScan.value)));
+        expect(jobNode.getSemanticsData().label, isNot(contains(jobId.value)));
+        expect(
+          secondScanNode.getSemanticsData().label,
+          isNot(contains(secondScan.value)),
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'Complete coverage renders only admitted and excluded requested outcomes',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final jobId = JobRunId('d' * 32);
+        const admittedRoot = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        const excludedRoot = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+        const unrelatedRoot = LibraryRootId('cccccccccccccccccccccccccccccccc');
+        const scanId = ScanRunId('11111111111111111111111111111111');
+        final detail = _refreshAttempt(
+          jobRunId: jobId,
+          requestedRootIds: const [admittedRoot, excludedRoot],
+          scanRuns: [_refreshScan(scanId.value, jobId, admittedRoot)],
+          exclusions: const [
+            LibraryScanAdmissionExclusion(
+              libraryRootId: excludedRoot,
+              reason: 'already_scanning',
+            ),
+          ],
+          coverage: LibraryRefreshRootOutcomeCoverage.complete,
+        );
+        final container = createContainer(
+          FakeJobsApi(details: {jobId: detail}),
+        );
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              home: JobDetailPage(
+                jobRunId: jobId,
+                onMissingJob: () {},
+                onOpenJob: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Folder coverage: complete.'), findsOneWidget);
+        expect(
+          find.text('Some historical folder outcomes are unavailable.'),
+          findsNothing,
+        );
+        expect(find.text('Games'), findsOneWidget);
+        expect(find.text('Library folder'), findsOneWidget);
+        expect(find.text('Already being scanned'), findsOneWidget);
+        expect(
+          find.bySemanticsIdentifier('scan-run:${scanId.value}'),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsIdentifier('library-root:${admittedRoot.value}'),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsIdentifier('library-root:${excludedRoot.value}'),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsIdentifier('library-root:${unrelatedRoot.value}'),
+          findsNothing,
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'HistoricalUnavailable retains known outcomes without filling missing roots',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final jobId = JobRunId('d' * 32);
+        const knownRoot = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        const excludedRoot = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+        const unavailableRoot = LibraryRootId(
+          'cccccccccccccccccccccccccccccccc',
+        );
+        const scanId = ScanRunId('11111111111111111111111111111111');
+        final activeJob = JobRunId('e' * 32);
+        const activeScan = ScanRunId('ffffffffffffffffffffffffffffffff');
+        final detail = _refreshAttempt(
+          jobRunId: jobId,
+          requestedRootIds: const [knownRoot, excludedRoot, unavailableRoot],
+          scanRuns: [
+            ScanRunSummary(
+              scanRunId: scanId,
+              jobRunId: jobId,
+              libraryRootId: knownRoot,
+              displayName: 'Recovered folder',
+              safeLocationDisplay: '/library/Recovered',
+              status: JobScanStatus.partial,
+              startedAtMs: 1,
+            ),
+          ],
+          exclusions: [
+            LibraryScanAdmissionExclusion(
+              libraryRootId: excludedRoot,
+              reason: 'already_scanning',
+              activeJobRunId: activeJob,
+              activeScanRunId: activeScan,
+            ),
+          ],
+          coverage: LibraryRefreshRootOutcomeCoverage.historicalUnavailable,
+        );
+        final container = createContainer(
+          FakeJobsApi(details: {jobId: detail}),
+        );
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              home: JobDetailPage(
+                jobRunId: jobId,
+                onMissingJob: () {},
+                onOpenJob: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Some historical folder outcomes are unavailable.'),
+          findsOneWidget,
+        );
+        expect(find.text('Recovered folder'), findsOneWidget);
+        expect(find.text('Library folder'), findsOneWidget);
+        expect(find.text('Already being scanned'), findsOneWidget);
+        expect(find.text('Unavailable folder'), findsNothing);
+        expect(
+          find.bySemanticsIdentifier('library-root:${unavailableRoot.value}'),
+          findsNothing,
+        );
+        final jobNode = tester.getSemantics(
+          find.bySemanticsIdentifier('job-run:${jobId.value}'),
+        );
+        final scanNode = tester.getSemantics(
+          find.bySemanticsIdentifier('scan-run:${scanId.value}'),
+        );
+        final knownRootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${knownRoot.value}'),
+        );
+        final excludedRootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${excludedRoot.value}'),
+        );
+        expect(_isDescendantOf(scanNode, jobNode), isTrue);
+        expect(_isDescendantOf(knownRootNode, scanNode), isTrue);
+        expect(_isDescendantOf(excludedRootNode, jobNode), isTrue);
+        expect(
+          find.bySemanticsIdentifier('scan-run:${activeScan.value}'),
+          findsNothing,
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'HistoricalUnavailable retains unmatched outcomes and requested order',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        addTearDown(tester.view.reset);
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1100, 1900);
+        final jobId = JobRunId('d' * 32);
+        const rootA = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        const rootB = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+        const excludedRoot = LibraryRootId('cccccccccccccccccccccccccccccccc');
+        const unknownRoot = LibraryRootId('dddddddddddddddddddddddddddddddd');
+        const unmatchedScanRoot = LibraryRootId(
+          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        );
+        const unmatchedExcludedRoot = LibraryRootId(
+          'ffffffffffffffffffffffffffffffff',
+        );
+        const scanA = ScanRunId('11111111111111111111111111111111');
+        const scanB = ScanRunId('22222222222222222222222222222222');
+        const scanExtra = ScanRunId('33333333333333333333333333333333');
+        ScanRunSummary record(
+          ScanRunId scanId,
+          LibraryRootId rootId,
+          String name,
+        ) => ScanRunSummary(
+          scanRunId: scanId,
+          jobRunId: jobId,
+          libraryRootId: rootId,
+          displayName: name,
+          safeLocationDisplay: '/library/test',
+          status: JobScanStatus.complete,
+          startedAtMs: 1,
+        );
+        final detail = _refreshAttempt(
+          jobRunId: jobId,
+          requestedRootIds: const [rootB, rootA, excludedRoot, unknownRoot],
+          scanRuns: [
+            record(scanA, rootA, 'Requested A'),
+            record(scanExtra, unmatchedScanRoot, 'Unmatched scan'),
+            record(scanB, rootB, 'Requested B'),
+          ],
+          exclusions: const [
+            LibraryScanAdmissionExclusion(
+              libraryRootId: unmatchedExcludedRoot,
+              reason: 'invalid_configuration',
+            ),
+            LibraryScanAdmissionExclusion(
+              libraryRootId: excludedRoot,
+              reason: 'already_scanning',
+            ),
+          ],
+          coverage: LibraryRefreshRootOutcomeCoverage.historicalUnavailable,
+        );
+        final container = createContainer(
+          FakeJobsApi(details: {jobId: detail}),
+        );
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              home: JobDetailPage(
+                jobRunId: jobId,
+                onMissingJob: () {},
+                onOpenJob: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Some historical folder outcomes are unavailable.'),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widgetList<ListTile>(find.byType(ListTile))
+              .map((tile) => (tile.title! as Text).data)
+              .toList(),
+          [
+            'Requested B',
+            'Requested A',
+            'Library folder',
+            'Unmatched scan',
+            'Library folder',
+          ],
+        );
+        expect(find.text('Already being scanned'), findsOneWidget);
+        expect(find.text('Invalid configuration'), findsOneWidget);
+        expect(
+          find.bySemanticsIdentifier('library-root:${unknownRoot.value}'),
+          findsNothing,
+        );
+        final parent = tester.getSemantics(
+          find.bySemanticsIdentifier('job-run:${jobId.value}'),
+        );
+        for (final id in [scanA, scanB, scanExtra]) {
+          final child = tester.getSemantics(
+            find.bySemanticsIdentifier('scan-run:${id.value}'),
+          );
+          expect(_isDescendantOf(child, parent), isTrue);
+        }
+        final extraScanNode = tester.getSemantics(
+          find.bySemanticsIdentifier('scan-run:${scanExtra.value}'),
+        );
+        final extraRootNode = tester.getSemantics(
+          find.bySemanticsIdentifier('library-root:${unmatchedScanRoot.value}'),
+        );
+        final extraExclusionNode = tester.getSemantics(
+          find.bySemanticsIdentifier(
+            'library-root:${unmatchedExcludedRoot.value}',
+          ),
+        );
+        expect(_isDescendantOf(extraRootNode, extraScanNode), isTrue);
+        expect(_isDescendantOf(extraExclusionNode, parent), isTrue);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'Library refresh retry lineage navigates exact attempts and keeps root intent',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final sourceId = JobRunId('a' * 32);
+        final currentId = JobRunId('b' * 32);
+        final successorId = JobRunId('c' * 32);
+        const firstRoot = LibraryRootId('11111111111111111111111111111111');
+        const secondRoot = LibraryRootId('22222222222222222222222222222222');
+        const requestedRoots = [firstRoot, secondRoot];
+        final sourceScans = [
+          _refreshScan('31111111111111111111111111111111', sourceId, firstRoot),
+          _refreshScan(
+            '32222222222222222222222222222222',
+            sourceId,
+            secondRoot,
+          ),
+        ];
+        final currentScans = [
+          _refreshScan(
+            '41111111111111111111111111111111',
+            currentId,
+            firstRoot,
+          ),
+          _refreshScan(
+            '42222222222222222222222222222222',
+            currentId,
+            secondRoot,
+          ),
+        ];
+        final successorScans = [
+          _refreshScan(
+            '51111111111111111111111111111111',
+            successorId,
+            firstRoot,
+          ),
+          _refreshScan(
+            '52222222222222222222222222222222',
+            successorId,
+            secondRoot,
+          ),
+        ];
+        final source = _refreshAttempt(
+          jobRunId: sourceId,
+          requestedRootIds: requestedRoots,
+          scanRuns: sourceScans,
+          retrySuccessorJobRunId: currentId,
+        );
+        final current = _refreshAttempt(
+          jobRunId: currentId,
+          requestedRootIds: requestedRoots,
+          scanRuns: currentScans,
+          retrySourceJobRunId: sourceId,
+          retrySuccessorJobRunId: successorId,
+        );
+        final successor = _refreshAttempt(
+          jobRunId: successorId,
+          requestedRootIds: requestedRoots,
+          scanRuns: successorScans,
+          retrySourceJobRunId: currentId,
+        );
+        final attempts = {
+          sourceId: source,
+          currentId: current,
+          successorId: successor,
+        };
+        final scanIds = [
+          ...sourceScans,
+          ...currentScans,
+          ...successorScans,
+        ].map((scan) => scan.scanRunId).toSet();
+        expect(scanIds, hasLength(6));
+        for (final attempt in attempts.values) {
+          final refresh =
+              (attempt.operationDetail as OperationDetailLibraryRefresh).detail;
+          expect(refresh.requestedRootIds, requestedRoots);
+        }
+        final api = FakeJobsApi(details: attempts);
+        final container = createContainer(api);
+        var selectedJobId = currentId;
+        final navigations = <JobRunId>[];
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              home: StatefulBuilder(
+                builder: (context, setState) => JobDetailPage(
+                  jobRunId: selectedJobId,
+                  onMissingJob: () {},
+                  onOpenJob: (jobRunId) {
+                    navigations.add(jobRunId);
+                    setState(() => selectedJobId = jobRunId);
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        void expectAttempt(JobRunId jobId, List<ScanRunSummary> scans) {
+          expect(
+            find.bySemanticsIdentifier('job-run:${jobId.value}'),
+            findsOneWidget,
+          );
+          for (final root in requestedRoots) {
+            expect(
+              find.bySemanticsIdentifier('library-root:${root.value}'),
+              findsOneWidget,
+            );
+          }
+          for (final scan in scans) {
+            expect(
+              find.bySemanticsIdentifier('scan-run:${scan.scanRunId.value}'),
+              findsOneWidget,
+            );
+          }
+        }
+
+        expectAttempt(currentId, currentScans);
+        expect(
+          find.bySemanticsIdentifier('job-run:${sourceId.value}'),
+          findsOneWidget,
+        );
+        expect(
+          find.bySemanticsIdentifier('job-run:${successorId.value}'),
+          findsOneWidget,
+        );
+        expect(find.textContaining(sourceId.value), findsNothing);
+        expect(find.textContaining(successorId.value), findsNothing);
+        expect(
+          find.byKey(const ValueKey<String>('jobs-retry-job')),
+          findsNothing,
+        );
+        expect(find.text('Resume'), findsNothing);
+        await tester.tap(find.text(JobsMessages.retriedFrom));
+        await tester.pumpAndSettle();
+        expect(navigations, [sourceId]);
+        expectAttempt(sourceId, sourceScans);
+        expect(
+          find.bySemanticsIdentifier(
+            'scan-run:${currentScans.first.scanRunId.value}',
+          ),
+          findsNothing,
+        );
+
+        await tester.tap(find.text(JobsMessages.retriedAs));
+        await tester.pumpAndSettle();
+        expect(navigations, [sourceId, currentId]);
+        expectAttempt(currentId, currentScans);
+
+        await tester.tap(find.text(JobsMessages.retriedAs));
+        await tester.pumpAndSettle();
+        expect(navigations, [sourceId, currentId, successorId]);
+        expectAttempt(successorId, successorScans);
+        expect(
+          find.bySemanticsIdentifier(
+            'scan-run:${currentScans.first.scanRunId.value}',
+          ),
+          findsNothing,
+        );
+        expect(api.retryCalls, 0);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
 
   testWidgets('failed Library refresh explains incomplete folder contents', (
     tester,
@@ -1068,3 +1677,60 @@ void main() {
 }
 
 void _noop(JobRunId _) {}
+
+JobDetail _refreshAttempt({
+  required JobRunId jobRunId,
+  required List<LibraryRootId> requestedRootIds,
+  required List<ScanRunSummary> scanRuns,
+  List<LibraryScanAdmissionExclusion> exclusions = const [],
+  LibraryRefreshRootOutcomeCoverage coverage =
+      LibraryRefreshRootOutcomeCoverage.complete,
+  JobRunId? retrySourceJobRunId,
+  JobRunId? retrySuccessorJobRunId,
+  bool canRetry = false,
+}) => JobDetail(
+  job: JobRunProjection(
+    jobRunId: jobRunId,
+    operationType: 'library_refresh',
+    lifecycleState: JobLifecycleState.failed,
+    createdAtMs: 1,
+    cancellationRequested: false,
+    controls: JobControlAvailability(canCancel: false, canRetry: canRetry),
+  ),
+  operationDetail: OperationDetail.libraryRefresh(
+    LibraryRefreshJobDetail(
+      trigger: 'manual',
+      mode: 'eligible_only',
+      requestedRootIds: requestedRootIds,
+      scanRuns: scanRuns,
+      exclusions: exclusions,
+      rootOutcomeCoverage: coverage,
+      retrySourceJobRunId: retrySourceJobRunId,
+      retrySuccessorJobRunId: retrySuccessorJobRunId,
+      progress: const RefreshProgressFacts(issues: []),
+    ),
+  ),
+);
+
+ScanRunSummary _refreshScan(
+  String scanRunId,
+  JobRunId jobRunId,
+  LibraryRootId rootId,
+) => ScanRunSummary(
+  scanRunId: ScanRunId(scanRunId),
+  jobRunId: jobRunId,
+  libraryRootId: rootId,
+  displayName: 'Games',
+  safeLocationDisplay: '/library/Games',
+  status: JobScanStatus.complete,
+  startedAtMs: 1,
+);
+
+bool _isDescendantOf(SemanticsNode node, SemanticsNode ancestor) {
+  SemanticsNode? parent = node.parent;
+  while (parent != null) {
+    if (parent.id == ancestor.id) return true;
+    parent = parent.parent;
+  }
+  return false;
+}

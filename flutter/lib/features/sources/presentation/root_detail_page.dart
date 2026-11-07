@@ -199,7 +199,20 @@ class _RootDetailContent extends StatelessWidget {
         : lastScan != null
         ? SourcesMessages.lastScanStatus(lastScan.status)
         : SourcesMessages.neverScanned;
-    return Scaffold(
+    final scanStatus = activeScan != null
+        ? _rootScanIdentity(
+            jobRunId: activeScan.jobRunId,
+            scanRunId: activeScan.scanRunId,
+            child: Chip(label: Text(statusLabel)),
+          )
+        : lastScan != null
+        ? _rootScanIdentity(
+            jobRunId: lastScan.jobRunId,
+            scanRunId: lastScan.scanRunId,
+            child: Chip(label: Text(statusLabel)),
+          )
+        : Chip(label: Text(statusLabel));
+    final content = Scaffold(
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -213,7 +226,7 @@ class _RootDetailContent extends StatelessWidget {
               const SizedBox(height: 4),
               Text(root.safeLocationPresentation),
               const SizedBox(height: 12),
-              Chip(label: Text(statusLabel)),
+              scanStatus,
               if (activeScan != null || admittedScanJobRunId != null) ...[
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
@@ -323,5 +336,28 @@ class _RootDetailContent extends StatelessWidget {
         ),
       ),
     );
+    return Semantics(
+      identifier: 'library-root:${root.id.value}',
+      container: true,
+      explicitChildNodes: true,
+      child: content,
+    );
   }
 }
+
+/// Nests a root's ScanRun identity under its owning parent job identity.
+Widget _rootScanIdentity({
+  required String jobRunId,
+  required String scanRunId,
+  required Widget child,
+}) => Semantics(
+  identifier: 'job-run:$jobRunId',
+  container: true,
+  explicitChildNodes: true,
+  child: Semantics(
+    identifier: 'scan-run:$scanRunId',
+    container: true,
+    explicitChildNodes: true,
+    child: child,
+  ),
+);

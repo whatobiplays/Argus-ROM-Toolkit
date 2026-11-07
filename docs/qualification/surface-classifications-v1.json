@@ -128,6 +128,12 @@
     {"path": "scripts/android_qualification/_library_interaction_executor.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/_library_interaction_oracle.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/physical/_library_interaction_ui.py", "classification": "active", "region": {"kind": "file"}},
-    {"path": "scripts/android_qualification/test_library_interactions.py", "classification": "active", "region": {"kind": "file"}}
+    {"path": "scripts/android_qualification/test_library_interactions.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_job_lifecycle_contract.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_job_lifecycle_oracle.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/_job_lifecycle_executor.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/physical/_job_lifecycle_ui.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/physical/test_job_lifecycle_ui.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_job_lifecycle.py", "classification": "active", "region": {"kind": "file"}}
   ]
 }

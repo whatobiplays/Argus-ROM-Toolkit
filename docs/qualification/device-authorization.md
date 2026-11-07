@@ -15,8 +15,9 @@ only that the supplied synthetic values satisfy the admission checks; it is
 not evidence about an Android device.
 
 No-reset admission returns `BLOCKED` because the repository has no independent
-observer for comparing the Library fixture membership, relevant job states,
-and pending cleanup with the owner-approved baseline. The authorization may
+observer for comparing exact Library asset identities, the complete
+terminal-refresh history, relevant job states, and pending cleanup with the
+owner-approved baseline. The authorization may
 carry that baseline, but it is not compared with fabricated observations or
 read from application storage. Fresh admission reports an absent qualification
 installation separately from a present but incompatible installation. The
@@ -91,9 +92,17 @@ plan vocabulary: absent-only qualification APK install, authorized
 qualification-package reset, manifest-bound fixture staging and cleanup,
 qualification launch, closed onboarding/navigation actions, and four named
 read-only observations. It rejects permission app-ops, reinstall, force-stop,
-refresh, shell, and generic path mutation. The reversible
-`MANAGE_EXTERNAL_STORAGE` permission/app-op transition is the only device
-operation enabled. It must
+refresh, shell, and generic path mutation. The Issue #28 lifecycle profile
+separately authorizes one AND-05 `retry_library_refresh` effect only after
+independent committed
+state checks and a fresh exact relation lookup proves the source has no
+successor identity or successor scope. That grant cannot be repeated or used
+by the legacy, Issue #26, or Issue #27 executors. The private `JOB_LIFECYCLE`
+profile is loaded by `_load_job_lifecycle_authorization` and run by
+`_JobLifecycleOperationExecutor` through an injected host transport; this
+implementation provides no production physical transport. The separate
+`admission.PermissionOperationExecutor` handles the reversible
+`MANAGE_EXTERNAL_STORAGE` permission/app-op transition. That operation must
 name the qualification package, the exact target, the expected prior state,
 and the desired `allowed` or `denied` state. The permission must appear in the
 pinned artifact's declared permission list. Unknown categories are rejected;
@@ -226,3 +235,37 @@ this schema does not provision a replacement recovery authorization. No
 deadline is extended and no product mutation is repeated. These guarantees
 are exercised with synthetic transports only; the repository has no device
 interface that proves exact physical stored-state restoration.
+
+## Issue #28 job lifecycle authorization
+
+The `JOB_LIFECYCLE` profile is a third private authorization profile for
+AND-04 and AND-05. It is accepted only by the private lifecycle loader and
+lifecycle admission function. The legacy and Library-interaction loaders keep
+their existing operation limits and reject the lifecycle scenarios.
+
+The profile pins the exact operation identifiers, categories, phases, timeouts,
+and arguments for its closed 31-operation AND-04 plan and 45-operation AND-05
+plan. A missing, extra, reordered, or invented operation is rejected before a
+session capability is claimed. The owner approval still binds the canonical
+authorization digest. The independently computed lifecycle plan digest must
+match `authorization.plan_sha256` and the admitted session binding.
+
+This profile does not add permission app-op mutation, install, reset, shell,
+generic path mutation, or ADB access. Its only product effects are the pinned
+Library refresh start, the AND-05 qualification-package force-stop and
+relaunch, the single AND-05 `retry_library_refresh` dispatch at operation 35
+(no second Retry is authorized), the AND-04 background and existing-task
+foreground return, and the final foreground restoration. Each effect is bound
+to one exact operation and the same owner-approved session. No public command
+or production transport uses this profile.
+
+Physical admission remains blocked until independent surfaces establish the
+exact package, artifact, and signer; the no-reset Library and job baseline;
+the parent LibraryRefresh JobRunId, source and successor JobRunIds, and each
+per-root `(parent JobRunId, ScanRunId, LibraryRootId)` relation; process and task
+continuity; committed Library asset identities; and pending cleanup and
+restoration facts. Per-root ScanRuns are not separate child JobRuns. Owner
+attestation can state expected values, but it does not replace those
+observations. Host tests establish only the parser, admission, evidence, and
+fail-closed behavior described in
+[Android job lifecycle recovery qualification boundary](android-job-lifecycle.md).

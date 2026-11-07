@@ -1,0 +1,21 @@
+flutter/lib/features/jobs/presentation/job_detail_page.dart
+  s_16b2fb77cc379a::t_3dda0d4440d1aa 380,383-479,495,559-583,605-614
+flutter/test/features/jobs/jobs_feature_test.dart
+  s_16b2fb77cc379a::t_853821ddb40afc 6,290,293-296,310-322,325,540-1087,1638-1694
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aaa7254842b87765b041faf59ab00402e0c9e572",
+  "prompts": {},
+  "sessions": {
+    "s_16b2fb77cc379a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a026-93e8-7c60-a7d9-924c4d99b49f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

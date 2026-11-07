@@ -48,6 +48,7 @@ WHEN (SELECT library_refresh_scope_version
            SELECT 1 FROM json_each(NEW.requested_root_ids_json)
            WHERE type <> 'text'
               OR length(value) <> 32
+              OR value = '00000000000000000000000000000000'
               OR value GLOB '*[^0-9a-f]*'
        ) THEN 1
        WHEN (SELECT COUNT(*) FROM json_each(NEW.requested_root_ids_json))

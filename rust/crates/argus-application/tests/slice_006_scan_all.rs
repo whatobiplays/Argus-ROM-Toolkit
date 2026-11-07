@@ -60,7 +60,12 @@ struct Store {
     scan_runs: Vec<ScanRunId>,
     targets: Vec<NewLibraryScanTarget>,
     admission_contexts: Vec<NewLibraryScanAdmissionContext>,
-    refresh_intents: Vec<(LibraryRefreshTrigger, RefreshMode, Vec<LibraryRootId>)>,
+    refresh_intents: Vec<(
+        JobRunId,
+        LibraryRefreshTrigger,
+        RefreshMode,
+        Vec<LibraryRootId>,
+    )>,
     events: Vec<ApplicationEvent>,
 }
 
@@ -188,12 +193,13 @@ impl JobRunRepository for FakeJobRunRepository<'_> {
 
     fn insert_library_refresh_intent(
         &mut self,
-        _job_run_id: JobRunId,
+        job_run_id: JobRunId,
         trigger: LibraryRefreshTrigger,
         mode: RefreshMode,
         requested_root_ids: &[LibraryRootId],
     ) -> Result<(), PersistenceError> {
         self.store.lock().unwrap().refresh_intents.push((
+            job_run_id,
             trigger,
             mode,
             requested_root_ids.to_vec(),
@@ -839,8 +845,15 @@ fn added_root_refresh_persists_its_required_scan_with_other_root_outcomes() {
     );
     assert_ne!(plans[0].scan_run_id(), plans[1].scan_run_id());
 
+    let added_root_scan_run_id = plans
+        .iter()
+        .find(|plan| plan.library_root_id() == root_id(ROOT_B))
+        .expect("AddedRoot scan plan")
+        .scan_run_id();
+
     let store = store.lock().unwrap();
-    assert_eq!(store.job_runs.len(), 1);
+    let job_run_id = job_id(0x11);
+    assert_eq!(store.job_runs, vec![job_run_id]);
     assert_eq!(
         store.scan_runs,
         plans
@@ -851,15 +864,31 @@ fn added_root_refresh_persists_its_required_scan_with_other_root_outcomes() {
     assert_eq!(
         store.refresh_intents,
         vec![(
+            job_run_id,
             LibraryRefreshTrigger::AddedRoot(root_id(ROOT_B)),
             RefreshMode::EligibleOnly,
             vec![root_id(ROOT_A), root_id(ROOT_B), root_id(ROOT_C)],
         )]
     );
-    assert!(store.targets.iter().any(|target| {
-        target.library_root_id() == root_id(ROOT_B)
-            && target.kind() == LibraryScanTargetKind::Admitted
-    }));
+    assert!(
+        store
+            .targets
+            .iter()
+            .all(|target| target.job_run_id() == job_run_id)
+    );
+    let added_root_target = store
+        .targets
+        .iter()
+        .find(|target| {
+            target.library_root_id() == root_id(ROOT_B)
+                && target.kind() == LibraryScanTargetKind::Admitted
+        })
+        .expect("AddedRoot has an admitted target");
+    assert_eq!(added_root_target.job_run_id(), job_run_id);
+    assert_eq!(
+        added_root_target.scan_run_id(),
+        Some(added_root_scan_run_id)
+    );
     assert!(store.targets.iter().any(|target| {
         target.library_root_id() == root_id(ROOT_C)
             && target.kind() == LibraryScanTargetKind::Excluded
@@ -901,11 +930,13 @@ fn manual_and_onboarding_refreshes_keep_partial_admission_semantics() {
             vec![root_id(ROOT_A)]
         );
         let store = store.lock().unwrap();
-        assert_eq!(store.job_runs.len(), 1);
+        assert_eq!(store.job_runs, vec![job_id(0x11)]);
         assert_eq!(store.scan_runs.len(), 1);
-        assert_eq!(store.refresh_intents[0].0, trigger);
+        assert_eq!(store.refresh_intents[0].0, job_id(0x11));
+        assert_eq!(store.refresh_intents[0].1, trigger);
+        assert_eq!(store.refresh_intents[0].2, RefreshMode::EligibleOnly);
         assert_eq!(
-            store.refresh_intents[0].2,
+            store.refresh_intents[0].3,
             vec![root_id(ROOT_A), root_id(ROOT_B)]
         );
         assert!(store.targets.iter().any(|target| {

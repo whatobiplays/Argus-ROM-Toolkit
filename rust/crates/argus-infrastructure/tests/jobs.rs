@@ -140,7 +140,7 @@ fn seed_refresh_with_admitted_and_excluded_roots(
     executor: &SqliteDatabaseExecutor,
     now: i64,
 ) -> RefreshFixture {
-    let fixture = executor
+    executor
         .execute(&context(), move |mut scope| {
             let source_id = scope.library_source().ensure_local_filesystem_source()?;
             let admitted_root_id = scope.library_roots().insert(NewLibraryRoot::new(
@@ -245,8 +245,7 @@ fn seed_refresh_with_admitted_and_excluded_roots(
                 scan_run_id,
             })
         })
-        .expect("seed Library refresh");
-    fixture
+        .expect("seed Library refresh")
 }
 
 fn delete_refresh_target(

@@ -300,6 +300,10 @@ fn new_scope_manifests_require_nonempty_sorted_unique_canonical_ids() {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5",
             "[ \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" ]",
         ),
+        (
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6",
+            "[\"00000000000000000000000000000000\"]",
+        ),
     ];
     for (job_run_id, manifest) in invalid_manifests {
         connection
@@ -318,7 +322,43 @@ fn new_scope_manifests_require_nonempty_sorted_unique_canonical_ids() {
             rusqlite::params![job_run_id, manifest],
         );
         assert!(insert.is_err(), "manifest {manifest} must be rejected");
+        let intent_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM library_refresh_intent WHERE job_run_id = ?1",
+                [job_run_id],
+                |row| row.get(0),
+            )
+            .expect("count rejected refresh intents");
+        assert_eq!(intent_count, 0, "rejected manifest must not persist");
     }
+
+    const VALID_JOB_RUN_ID: &str = "ffffffffffffffffffffffffffffffff";
+    const VALID_MANIFEST: &str = "[\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]";
+    connection
+        .execute(
+            "INSERT INTO job_run
+                (job_run_id, operation_type, state, created_at, queued_at,
+                 library_refresh_scope_version)
+             VALUES (?1, 'library_refresh', 'queued', 1, 1, 1)",
+            [VALID_JOB_RUN_ID],
+        )
+        .expect("insert versioned parent with nonzero job id");
+    connection
+        .execute(
+            "INSERT INTO library_refresh_intent
+                (job_run_id, trigger_kind, trigger_root_id, mode, requested_root_ids_json)
+             VALUES (?1, 'manual', NULL, 'eligible_only', ?2)",
+            rusqlite::params![VALID_JOB_RUN_ID, VALID_MANIFEST],
+        )
+        .expect("accept a valid nonzero root id");
+    let persisted_manifest: String = connection
+        .query_row(
+            "SELECT requested_root_ids_json FROM library_refresh_intent WHERE job_run_id = ?1",
+            [VALID_JOB_RUN_ID],
+            |row| row.get(0),
+        )
+        .expect("read accepted manifest");
+    assert_eq!(persisted_manifest, VALID_MANIFEST);
 }
 
 #[test]

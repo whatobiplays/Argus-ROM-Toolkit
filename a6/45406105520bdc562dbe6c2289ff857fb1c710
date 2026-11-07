@@ -1,0 +1,19 @@
+rust/crates/argus-runtime/tests/kernel_bootstrap.rs
+  s_a9443de43ad0db::t_68502071a5f3a6 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a645406105520bdc562dbe6c2289ff857fb1c710",
+  "prompts": {},
+  "sessions": {
+    "s_a9443de43ad0db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ad36-3c21-7883-b04f-4152c2e9d467",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

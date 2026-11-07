@@ -2871,6 +2871,10 @@ impl SseDecode for crate::LibraryRefreshJobDetailDto {
         let mut var_progress = <crate::RefreshProgressFactsDto>::sse_decode(deserializer);
         let mut var_retrySourceJobRunId = <Option<String>>::sse_decode(deserializer);
         let mut var_retrySuccessorJobRunId = <Option<String>>::sse_decode(deserializer);
+        let mut var_exclusions =
+            <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_decode(deserializer);
+        let mut var_rootOutcomeCoverage =
+            <crate::LibraryRefreshRootOutcomeCoverageDto>::sse_decode(deserializer);
         return crate::LibraryRefreshJobDetailDto {
             trigger: var_trigger,
             trigger_root_id: var_triggerRootId,
@@ -2880,6 +2884,23 @@ impl SseDecode for crate::LibraryRefreshJobDetailDto {
             progress: var_progress,
             retry_source_job_run_id: var_retrySourceJobRunId,
             retry_successor_job_run_id: var_retrySuccessorJobRunId,
+            exclusions: var_exclusions,
+            root_outcome_coverage: var_rootOutcomeCoverage,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryRefreshRootOutcomeCoverageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibraryRefreshRootOutcomeCoverageDto::Complete,
+            1 => crate::LibraryRefreshRootOutcomeCoverageDto::HistoricalUnavailable,
+            _ => unreachable!(
+                "Invalid variant for LibraryRefreshRootOutcomeCoverageDto: {}",
+                inner
+            ),
         };
     }
 }
@@ -6175,6 +6196,8 @@ impl flutter_rust_bridge::IntoDart for crate::LibraryRefreshJobDetailDto {
             self.progress.into_into_dart().into_dart(),
             self.retry_source_job_run_id.into_into_dart().into_dart(),
             self.retry_successor_job_run_id.into_into_dart().into_dart(),
+            self.exclusions.into_into_dart().into_dart(),
+            self.root_outcome_coverage.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -6187,6 +6210,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryRefreshJobDetailDto>
     for crate::LibraryRefreshJobDetailDto
 {
     fn into_into_dart(self) -> crate::LibraryRefreshJobDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryRefreshRootOutcomeCoverageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Complete => 0.into_dart(),
+            Self::HistoricalUnavailable => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryRefreshRootOutcomeCoverageDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryRefreshRootOutcomeCoverageDto>
+    for crate::LibraryRefreshRootOutcomeCoverageDto
+{
+    fn into_into_dart(self) -> crate::LibraryRefreshRootOutcomeCoverageDto {
         self
     }
 }
@@ -8828,6 +8872,27 @@ impl SseEncode for crate::LibraryRefreshJobDetailDto {
         <crate::RefreshProgressFactsDto>::sse_encode(self.progress, serializer);
         <Option<String>>::sse_encode(self.retry_source_job_run_id, serializer);
         <Option<String>>::sse_encode(self.retry_successor_job_run_id, serializer);
+        <Vec<crate::LibraryScanAdmissionExclusionDto>>::sse_encode(self.exclusions, serializer);
+        <crate::LibraryRefreshRootOutcomeCoverageDto>::sse_encode(
+            self.root_outcome_coverage,
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::LibraryRefreshRootOutcomeCoverageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibraryRefreshRootOutcomeCoverageDto::Complete => 0,
+                crate::LibraryRefreshRootOutcomeCoverageDto::HistoricalUnavailable => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 

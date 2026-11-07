@@ -1170,6 +1170,15 @@ pub struct RefreshProgressFactsDto {
     pub issues: Vec<RefreshIssueFactDto>,
 }
 
+/// Completeness evidence available for one Library refresh root scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryRefreshRootOutcomeCoverageDto {
+    /// Durable evidence proves every requested root has a known outcome.
+    Complete,
+    /// The available history does not prove the complete original root scope.
+    HistoricalUnavailable,
+}
+
 /// Typed composed Library refresh detail.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibraryRefreshJobDetailDto {
@@ -1181,6 +1190,8 @@ pub struct LibraryRefreshJobDetailDto {
     pub progress: RefreshProgressFactsDto,
     pub retry_source_job_run_id: Option<String>,
     pub retry_successor_job_run_id: Option<String>,
+    pub exclusions: Vec<LibraryScanAdmissionExclusionDto>,
+    pub root_outcome_coverage: LibraryRefreshRootOutcomeCoverageDto,
 }
 
 /// Typed bounded Game refresh detail.
@@ -4207,6 +4218,15 @@ fn library_refresh_job_detail_dto(detail: &LibraryRefreshJobDetail) -> LibraryRe
             .map(ToString::to_string)
             .collect(),
         scan_runs: detail.scan_runs().iter().map(scan_run_dto).collect(),
+        exclusions: detail.exclusions().iter().map(exclusion_dto).collect(),
+        root_outcome_coverage: match detail.root_outcome_coverage() {
+            argus_application::LibraryRefreshRootOutcomeCoverage::Complete => {
+                LibraryRefreshRootOutcomeCoverageDto::Complete
+            }
+            argus_application::LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable => {
+                LibraryRefreshRootOutcomeCoverageDto::HistoricalUnavailable
+            }
+        },
         progress: refresh_progress_facts_dto(detail.progress()),
         retry_source_job_run_id: detail.retry_source_job_run_id().map(|id| id.to_string()),
         retry_successor_job_run_id: detail.retry_successor_job_run_id().map(|id| id.to_string()),
@@ -4432,6 +4452,7 @@ mod scan_run_dto_tests {
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "cccccccccccccccccccccccccccccccc",
             "dddddddddddddddddddddddddddddddd",
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         ];
         let root_ids = root_values.map(|id| LibraryRootId::try_from(id).expect("root id"));
         let detail = argus_application::LibraryRefreshJobDetail::new(
@@ -4468,15 +4489,34 @@ mod scan_run_dto_tests {
                 ScanRunStatus::Failed,
                 Some("/private/test/path SELECT * FROM credentials"),
             ),
-        ]);
+        ])
+        .with_exclusions(vec![argus_application::LibraryScanAdmissionExclusion::new(
+            root_ids[3],
+            argus_application::LibraryScanTargetExclusionReason::AlreadyScanning,
+            None,
+            None,
+        )]);
 
         let dto = library_refresh_job_detail_dto(&detail);
 
+        assert_eq!(dto.trigger, "manual");
+        assert_eq!(dto.trigger_root_id, None);
+        assert_eq!(dto.mode, "eligible_only");
+        assert_eq!(dto.requested_root_ids, root_ids.map(|id| id.to_string()));
         assert_eq!(
             dto.progress.phase.as_deref(),
             Some("library_refresh.completed")
         );
+        assert_eq!(dto.retry_source_job_run_id, None);
+        assert_eq!(dto.retry_successor_job_run_id, None);
         assert_eq!(dto.scan_runs.len(), 3);
+        assert_eq!(dto.exclusions.len(), 1);
+        assert_eq!(dto.exclusions[0].library_root_id, root_ids[3].to_string());
+        assert_eq!(dto.exclusions[0].reason, "already_scanning");
+        assert_eq!(
+            dto.root_outcome_coverage,
+            LibraryRefreshRootOutcomeCoverageDto::HistoricalUnavailable
+        );
         assert_eq!(
             dto.scan_runs[0].scan_run_id,
             "22222222222222222222222222222222"
@@ -4498,6 +4538,29 @@ mod scan_run_dto_tests {
         );
         assert_eq!(dto.scan_runs[2].library_root_id, root_ids[2].to_string());
         assert_eq!(dto.scan_runs[2].failure_reason, None);
+    }
+
+    #[test]
+    fn library_refresh_dto_preserves_complete_root_outcome_coverage() {
+        let root_id = LibraryRootId::try_from("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").expect("root id");
+        let detail = argus_application::LibraryRefreshJobDetail::new(
+            argus_application::LibraryRefreshTrigger::Manual,
+            argus_application::RefreshMode::EligibleOnly,
+            vec![root_id],
+            argus_application::RefreshProgressFacts::new(None, None, None, None, None)
+                .expect("empty refresh progress"),
+            None,
+            None,
+        )
+        .with_root_outcome_coverage(argus_application::LibraryRefreshRootOutcomeCoverage::Complete);
+
+        let dto = library_refresh_job_detail_dto(&detail);
+
+        assert_eq!(dto.requested_root_ids, [root_id.to_string()]);
+        assert_eq!(
+            dto.root_outcome_coverage,
+            LibraryRefreshRootOutcomeCoverageDto::Complete
+        );
     }
 
     #[test]

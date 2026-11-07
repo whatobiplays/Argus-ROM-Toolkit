@@ -1043,6 +1043,15 @@ pub enum OperationDetail {
     LibraryResolutionRefresh(LibraryResolutionRefreshJobDetail),
 }
 
+/// Whether persisted refresh details prove the complete original root scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryRefreshRootOutcomeCoverage {
+    /// Durable evidence proves every requested root has a known outcome.
+    Complete,
+    /// The available history does not prove the complete original root scope.
+    HistoricalUnavailable,
+}
+
 /// Typed detail for one composed Library refresh.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibraryRefreshJobDetail {
@@ -1050,6 +1059,8 @@ pub struct LibraryRefreshJobDetail {
     mode: RefreshMode,
     requested_root_ids: Vec<LibraryRootId>,
     scan_runs: Vec<ScanRunProjection>,
+    exclusions: Vec<LibraryScanAdmissionExclusion>,
+    root_outcome_coverage: LibraryRefreshRootOutcomeCoverage,
     progress: RefreshProgressFacts,
     retry_source_job_run_id: Option<JobRunId>,
     retry_successor_job_run_id: Option<JobRunId>,
@@ -1070,6 +1081,8 @@ impl LibraryRefreshJobDetail {
             mode,
             requested_root_ids,
             scan_runs: Vec::new(),
+            exclusions: Vec::new(),
+            root_outcome_coverage: LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable,
             progress,
             retry_source_job_run_id,
             retry_successor_job_run_id,
@@ -1079,6 +1092,21 @@ impl LibraryRefreshJobDetail {
     /// Attaches the committed scan-run projections owned by this refresh.
     pub fn with_scan_runs(mut self, scan_runs: Vec<ScanRunProjection>) -> Self {
         self.scan_runs = scan_runs;
+        self
+    }
+
+    /// Attaches the durable admission exclusions available for this refresh.
+    pub fn with_exclusions(mut self, exclusions: Vec<LibraryScanAdmissionExclusion>) -> Self {
+        self.exclusions = exclusions;
+        self
+    }
+
+    /// Sets the evidence-backed coverage classification for the original scope.
+    pub fn with_root_outcome_coverage(
+        mut self,
+        coverage: LibraryRefreshRootOutcomeCoverage,
+    ) -> Self {
+        self.root_outcome_coverage = coverage;
         self
     }
 
@@ -1100,6 +1128,16 @@ impl LibraryRefreshJobDetail {
     /// Returns the committed scan-run projections.
     pub fn scan_runs(&self) -> &[ScanRunProjection] {
         &self.scan_runs
+    }
+
+    /// Returns the durable admission exclusions available for this refresh.
+    pub fn exclusions(&self) -> &[LibraryScanAdmissionExclusion] {
+        &self.exclusions
+    }
+
+    /// Returns whether the complete original root scope is proven by history.
+    pub const fn root_outcome_coverage(&self) -> LibraryRefreshRootOutcomeCoverage {
+        self.root_outcome_coverage
     }
 
     /// Returns the latest bounded progress facts.
@@ -1990,6 +2028,7 @@ pub trait JobRunRepository {
         _job_run_id: JobRunId,
         _trigger: LibraryRefreshTrigger,
         _mode: RefreshMode,
+        _requested_root_ids: &[LibraryRootId],
     ) -> Result<(), PersistenceError> {
         Ok(())
     }
@@ -3913,13 +3952,11 @@ where
 {
     /// Executes one retry admission.
     ///
-    /// Check order: the source job must exist; an existing direct successor
-    /// returns `AlreadyRetried` without branching; the operation must be a
-    /// LibraryScan or composed Library refresh; the source state must be
-    /// terminal and retryable; the
-    /// original requested targets are then revalidated through the shared
-    /// eligibility seam. Every admitted retry creates a fresh JobRunId and
-    /// ScanRunId and records a durable linear source/successor relationship.
+    /// The source must exist, be terminal and retryable, and have no direct
+    /// successor. Retry supports LibraryScan and composed LibraryRefresh jobs.
+    /// Refresh details must prove complete root coverage before target lookup.
+    /// The handler then revalidates original targets. Each admitted retry gets
+    /// fresh run identities and a durable direct successor link.
     pub fn handle<R>(
         &self,
         command: RetryJobCommand,
@@ -3970,7 +4007,16 @@ where
         let is_library_refresh = source.job().operation_type() == OPERATION_TYPE_LIBRARY_REFRESH;
         let refresh_intent = if is_library_refresh {
             match source.operation_detail() {
-                OperationDetail::LibraryRefresh(detail) => Some((detail.trigger(), detail.mode())),
+                OperationDetail::LibraryRefresh(detail)
+                    if detail.root_outcome_coverage()
+                        == LibraryRefreshRootOutcomeCoverage::Complete =>
+                {
+                    Some((
+                        detail.trigger(),
+                        detail.mode(),
+                        detail.requested_root_ids().to_vec(),
+                    ))
+                }
                 _ => None,
             }
         } else {
@@ -4071,10 +4117,13 @@ where
                 let job_run_id = scope
                     .job_runs()
                     .insert(NewJobRun::new(operation_type, created_at_ms))?;
-                if let Some((trigger, mode)) = refresh_intent {
-                    scope
-                        .job_runs()
-                        .insert_library_refresh_intent(job_run_id, trigger, mode)?;
+                if let Some((trigger, mode, requested_root_ids)) = refresh_intent {
+                    scope.job_runs().insert_library_refresh_intent(
+                        job_run_id,
+                        trigger,
+                        mode,
+                        &requested_root_ids,
+                    )?;
                 }
                 let invocation_kind = if is_library_refresh {
                     LibraryScanInvocationKind::RetryLibraryRefresh

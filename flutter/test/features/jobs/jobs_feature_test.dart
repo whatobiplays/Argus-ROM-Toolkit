@@ -440,6 +440,9 @@ void main() {
           mode: 'eligible_only',
           requestedRootIds: scans.map((scan) => scan.libraryRootId).toList(),
           scanRuns: scans,
+          exclusions: const [],
+          rootOutcomeCoverage:
+              LibraryRefreshRootOutcomeCoverage.historicalUnavailable,
           progress: const RefreshProgressFacts(
             phase: 'library_refresh.completed',
             completedUnits: 4,
@@ -553,6 +556,9 @@ void main() {
               failureReason: 'incomplete_scope',
             ),
           ],
+          exclusions: const [],
+          rootOutcomeCoverage:
+              LibraryRefreshRootOutcomeCoverage.historicalUnavailable,
           progress: const RefreshProgressFacts(
             phase: 'library_refresh.completed',
             completedUnits: 1,

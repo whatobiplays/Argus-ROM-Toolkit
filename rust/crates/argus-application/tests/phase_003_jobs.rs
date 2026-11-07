@@ -1,8 +1,8 @@
 use argus_application::{
-    GameId, JobRunId, LibraryRefreshJobDetail, LibraryRefreshTrigger,
-    LibraryResolutionRefreshJobDetail, OPERATION_TYPE_GAME_REFRESH, OPERATION_TYPE_LIBRARY_REFRESH,
-    OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH, RefreshIssueFact, RefreshIssueKind,
-    RefreshIssueReason, RefreshIssueSummary, RefreshMode, RefreshProgressFacts,
+    GameId, JobRunId, LibraryRefreshJobDetail, LibraryRefreshRootOutcomeCoverage,
+    LibraryRefreshTrigger, LibraryResolutionRefreshJobDetail, OPERATION_TYPE_GAME_REFRESH,
+    OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH, RefreshIssueFact,
+    RefreshIssueKind, RefreshIssueReason, RefreshIssueSummary, RefreshMode, RefreshProgressFacts,
 };
 
 fn job_run_id() -> JobRunId {
@@ -80,4 +80,24 @@ fn refresh_details_preserve_typed_intent_and_bounded_progress() {
     assert_eq!(resolution.settings_revision(), 7);
     assert_eq!(resolution.progress().completed_units(), Some(2));
     assert_eq!(game_id().as_bytes(), [2; 16]);
+}
+
+#[test]
+fn refresh_detail_without_scope_proof_is_never_complete_by_default() {
+    let root_id =
+        argus_application::LibraryRootId::from_bytes([3; 16]).expect("non-zero root identity");
+    let detail = LibraryRefreshJobDetail::new(
+        LibraryRefreshTrigger::AddedRoot(root_id),
+        RefreshMode::EligibleOnly,
+        vec![root_id],
+        RefreshProgressFacts::new(None, None, None, None, None).expect("empty progress"),
+        None,
+        None,
+    );
+
+    assert_eq!(
+        detail.root_outcome_coverage(),
+        LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable
+    );
+    assert!(detail.exclusions().is_empty());
 }

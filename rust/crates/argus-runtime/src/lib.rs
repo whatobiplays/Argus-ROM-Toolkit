@@ -1070,9 +1070,10 @@ impl argus_application::JobRunRepository for KernelJobRunRepository<'_, '_> {
         job_run_id: argus_application::JobRunId,
         trigger: argus_application::LibraryRefreshTrigger,
         mode: argus_application::RefreshMode,
+        requested_root_ids: &[argus_application::LibraryRootId],
     ) -> Result<(), PersistenceError> {
         self.inner
-            .insert_library_refresh_intent(job_run_id, trigger, mode)
+            .insert_library_refresh_intent(job_run_id, trigger, mode, requested_root_ids)
     }
 
     fn insert_game_refresh_intent(

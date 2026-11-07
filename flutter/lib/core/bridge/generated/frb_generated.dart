@@ -3121,8 +3121,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return LibraryRefreshJobDetailDto(
       trigger: dco_decode_String(arr[0]),
       triggerRootId: dco_decode_opt_String(arr[1]),
@@ -3132,7 +3132,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       progress: dco_decode_refresh_progress_facts_dto(arr[5]),
       retrySourceJobRunId: dco_decode_opt_String(arr[6]),
       retrySuccessorJobRunId: dco_decode_opt_String(arr[7]),
+      exclusions: dco_decode_list_library_scan_admission_exclusion_dto(arr[8]),
+      rootOutcomeCoverage: dco_decode_library_refresh_root_outcome_coverage_dto(
+        arr[9],
+      ),
     );
+  }
+
+  @protected
+  LibraryRefreshRootOutcomeCoverageDto
+  dco_decode_library_refresh_root_outcome_coverage_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return LibraryRefreshRootOutcomeCoverageDto.values[raw as int];
   }
 
   @protected
@@ -5959,6 +5970,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_progress = sse_decode_refresh_progress_facts_dto(deserializer);
     var var_retrySourceJobRunId = sse_decode_opt_String(deserializer);
     var var_retrySuccessorJobRunId = sse_decode_opt_String(deserializer);
+    var var_exclusions = sse_decode_list_library_scan_admission_exclusion_dto(
+      deserializer,
+    );
+    var var_rootOutcomeCoverage =
+        sse_decode_library_refresh_root_outcome_coverage_dto(deserializer);
     return LibraryRefreshJobDetailDto(
       trigger: var_trigger,
       triggerRootId: var_triggerRootId,
@@ -5968,7 +5984,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       progress: var_progress,
       retrySourceJobRunId: var_retrySourceJobRunId,
       retrySuccessorJobRunId: var_retrySuccessorJobRunId,
+      exclusions: var_exclusions,
+      rootOutcomeCoverage: var_rootOutcomeCoverage,
     );
+  }
+
+  @protected
+  LibraryRefreshRootOutcomeCoverageDto
+  sse_decode_library_refresh_root_outcome_coverage_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return LibraryRefreshRootOutcomeCoverageDto.values[inner];
   }
 
   @protected
@@ -9152,6 +9180,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_refresh_progress_facts_dto(self.progress, serializer);
     sse_encode_opt_String(self.retrySourceJobRunId, serializer);
     sse_encode_opt_String(self.retrySuccessorJobRunId, serializer);
+    sse_encode_list_library_scan_admission_exclusion_dto(
+      self.exclusions,
+      serializer,
+    );
+    sse_encode_library_refresh_root_outcome_coverage_dto(
+      self.rootOutcomeCoverage,
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_library_refresh_root_outcome_coverage_dto(
+    LibraryRefreshRootOutcomeCoverageDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

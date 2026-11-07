@@ -8,17 +8,18 @@ mod common;
 
 use argus_application::{
     ActiveScanOwnership, ApplicationEvent, ApplicationPortError, ErrorCode, EventRecorder,
-    EventRecordingError, FailureRole, JobRunId, JobRunRepository, JobRunState, LibraryRootId,
+    EventRecordingError, FailureRole, JobRunId, JobRunRepository, JobRunState,
+    LibraryRefreshAdmissionOutcome, LibraryRefreshTrigger, LibraryRootId,
     LibraryRootLastScanSummary, LibraryRootQueries, LibraryRootRepository,
     LibraryRootScanConfiguration, LibraryScanAdmissionContextRepository,
     LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup, LibraryScanInvocationKind,
     LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
     NewJobRun, NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, OperationContext,
-    OperationName, PersistenceError, RootLocator, SafeContextField, SafeContextValue, ScanRunId,
-    ScanRunRepository, ScanRunStatus, SourceEntryId, SourceEntryRecord, SourceEntryRepository,
-    SourceLocatorKey, StartLibraryScanAllCommand, StartLibraryScanAllHandler,
-    StartLibraryScanAllResult, SubsystemName, TechnicalClass, TraceId, UnitOfWork,
-    UnitOfWorkFactory,
+    OperationName, PersistenceError, RefreshLibraryCommand, RefreshMode, RootLocator,
+    SafeContextField, SafeContextValue, ScanRunId, ScanRunRepository, ScanRunStatus, SourceEntryId,
+    SourceEntryRecord, SourceEntryRepository, SourceLocatorKey, StartLibraryScanAllCommand,
+    StartLibraryScanAllHandler, StartLibraryScanAllResult, SubsystemName, TechnicalClass, TraceId,
+    UnitOfWork, UnitOfWorkFactory,
 };
 
 const ROOT_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -59,6 +60,12 @@ struct Store {
     scan_runs: Vec<ScanRunId>,
     targets: Vec<NewLibraryScanTarget>,
     admission_contexts: Vec<NewLibraryScanAdmissionContext>,
+    refresh_intents: Vec<(
+        JobRunId,
+        LibraryRefreshTrigger,
+        RefreshMode,
+        Vec<LibraryRootId>,
+    )>,
     events: Vec<ApplicationEvent>,
 }
 
@@ -183,6 +190,22 @@ impl JobRunRepository for FakeJobRunRepository<'_> {
     ) -> Result<bool, PersistenceError> {
         Err(PersistenceError::Unavailable)
     }
+
+    fn insert_library_refresh_intent(
+        &mut self,
+        job_run_id: JobRunId,
+        trigger: LibraryRefreshTrigger,
+        mode: RefreshMode,
+        requested_root_ids: &[LibraryRootId],
+    ) -> Result<(), PersistenceError> {
+        self.store.lock().unwrap().refresh_intents.push((
+            job_run_id,
+            trigger,
+            mode,
+            requested_root_ids.to_vec(),
+        ));
+        Ok(())
+    }
 }
 
 struct FakeScanRunRepository<'scope> {
@@ -192,8 +215,9 @@ struct FakeScanRunRepository<'scope> {
 
 impl ScanRunRepository for FakeScanRunRepository<'_> {
     fn insert(&mut self, _new: NewScanRun) -> Result<ScanRunId, PersistenceError> {
-        let id = scan_id(0x22);
-        self.store.lock().unwrap().scan_runs.push(id);
+        let mut store = self.store.lock().unwrap();
+        let id = scan_id(0x22 + store.scan_runs.len() as u8);
+        store.scan_runs.push(id);
         Ok(id)
     }
 
@@ -740,6 +764,186 @@ fn scan_all_nothing_eligible_creates_no_job() {
     assert!(store.job_runs.is_empty());
     assert!(store.scan_runs.is_empty());
     assert!(store.targets.is_empty());
+}
+
+#[test]
+fn added_root_refresh_rejects_a_trigger_outside_the_captured_scope() {
+    let (store, queries, factory, recorder) = fixture(&[ROOT_A]);
+    let result = StartLibraryScanAllHandler::new(queries, factory).handle_library_refresh(
+        RefreshLibraryCommand::new(RefreshMode::EligibleOnly),
+        context(),
+        recorder,
+        LibraryRefreshTrigger::AddedRoot(root_id(ROOT_B)),
+    );
+
+    let error = result.expect_err("missing AddedRoot target is rejected");
+    assert_eq!(error.code, ErrorCode::ConfigurationLibraryRootNotFound);
+
+    let store = store.lock().unwrap();
+    assert_eq!(store.configured, vec![root_id(ROOT_A)]);
+    assert!(store.job_runs.is_empty());
+    assert!(store.scan_runs.is_empty());
+    assert!(store.targets.is_empty());
+    assert!(store.refresh_intents.is_empty());
+}
+
+#[test]
+fn added_root_refresh_rejects_a_captured_trigger_that_is_excluded() {
+    let (store, queries, factory, recorder) = fixture(&[ROOT_A, ROOT_B]);
+    store.lock().unwrap().active.insert(
+        root_id(ROOT_B),
+        ActiveScanOwnership::new(job_id(7), scan_id(8), 1),
+    );
+
+    let result = StartLibraryScanAllHandler::new(queries, factory).handle_library_refresh(
+        RefreshLibraryCommand::new(RefreshMode::EligibleOnly),
+        context(),
+        recorder,
+        LibraryRefreshTrigger::AddedRoot(root_id(ROOT_B)),
+    );
+
+    let error = result.expect_err("AddedRoot must receive an admitted scan");
+    assert_eq!(error.code, ErrorCode::OperationCapacityUnavailable);
+
+    let store = store.lock().unwrap();
+    assert_eq!(store.configured, vec![root_id(ROOT_A), root_id(ROOT_B)]);
+    assert!(store.job_runs.is_empty());
+    assert!(store.scan_runs.is_empty());
+    assert!(store.targets.is_empty());
+    assert!(store.refresh_intents.is_empty());
+}
+
+#[test]
+fn added_root_refresh_persists_its_required_scan_with_other_root_outcomes() {
+    let (store, queries, factory, recorder) = fixture(&[ROOT_C, ROOT_B, ROOT_A]);
+    store.lock().unwrap().active.insert(
+        root_id(ROOT_C),
+        ActiveScanOwnership::new(job_id(9), scan_id(10), 1),
+    );
+
+    let result = StartLibraryScanAllHandler::new(queries, factory)
+        .handle_library_refresh(
+            RefreshLibraryCommand::new(RefreshMode::EligibleOnly),
+            context(),
+            recorder,
+            LibraryRefreshTrigger::AddedRoot(root_id(ROOT_B)),
+        )
+        .expect("valid AddedRoot refresh admission");
+    assert!(matches!(
+        result.outcome(),
+        LibraryRefreshAdmissionOutcome::Admitted(_)
+    ));
+    assert_eq!(result.admitted_job_exclusion_count(), 1);
+
+    let plans = result.admitted_job().expect("admitted child plans").plans();
+    assert_eq!(
+        plans
+            .iter()
+            .map(|plan| plan.library_root_id())
+            .collect::<Vec<_>>(),
+        vec![root_id(ROOT_A), root_id(ROOT_B)]
+    );
+    assert_ne!(plans[0].scan_run_id(), plans[1].scan_run_id());
+
+    let added_root_scan_run_id = plans
+        .iter()
+        .find(|plan| plan.library_root_id() == root_id(ROOT_B))
+        .expect("AddedRoot scan plan")
+        .scan_run_id();
+
+    let store = store.lock().unwrap();
+    let job_run_id = job_id(0x11);
+    assert_eq!(store.job_runs, vec![job_run_id]);
+    assert_eq!(
+        store.scan_runs,
+        plans
+            .iter()
+            .map(|plan| plan.scan_run_id())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        store.refresh_intents,
+        vec![(
+            job_run_id,
+            LibraryRefreshTrigger::AddedRoot(root_id(ROOT_B)),
+            RefreshMode::EligibleOnly,
+            vec![root_id(ROOT_A), root_id(ROOT_B), root_id(ROOT_C)],
+        )]
+    );
+    assert!(
+        store
+            .targets
+            .iter()
+            .all(|target| target.job_run_id() == job_run_id)
+    );
+    let added_root_target = store
+        .targets
+        .iter()
+        .find(|target| {
+            target.library_root_id() == root_id(ROOT_B)
+                && target.kind() == LibraryScanTargetKind::Admitted
+        })
+        .expect("AddedRoot has an admitted target");
+    assert_eq!(added_root_target.job_run_id(), job_run_id);
+    assert_eq!(
+        added_root_target.scan_run_id(),
+        Some(added_root_scan_run_id)
+    );
+    assert!(store.targets.iter().any(|target| {
+        target.library_root_id() == root_id(ROOT_C)
+            && target.kind() == LibraryScanTargetKind::Excluded
+    }));
+}
+
+#[test]
+fn manual_and_onboarding_refreshes_keep_partial_admission_semantics() {
+    for trigger in [
+        LibraryRefreshTrigger::Manual,
+        LibraryRefreshTrigger::InitialOnboarding,
+    ] {
+        let (store, queries, factory, recorder) = fixture(&[ROOT_A, ROOT_B]);
+        store.lock().unwrap().active.insert(
+            root_id(ROOT_B),
+            ActiveScanOwnership::new(job_id(7), scan_id(8), 1),
+        );
+
+        let result = StartLibraryScanAllHandler::new(queries, factory)
+            .handle_library_refresh(
+                RefreshLibraryCommand::new(RefreshMode::EligibleOnly),
+                context(),
+                recorder,
+                trigger,
+            )
+            .expect("non-AddedRoot refresh keeps partial admission behavior");
+        assert!(matches!(
+            result.outcome(),
+            LibraryRefreshAdmissionOutcome::Admitted(_)
+        ));
+        assert_eq!(
+            result
+                .admitted_job()
+                .expect("eligible root is admitted")
+                .plans()
+                .iter()
+                .map(|plan| plan.library_root_id())
+                .collect::<Vec<_>>(),
+            vec![root_id(ROOT_A)]
+        );
+        let store = store.lock().unwrap();
+        assert_eq!(store.job_runs, vec![job_id(0x11)]);
+        assert_eq!(store.scan_runs.len(), 1);
+        assert_eq!(store.refresh_intents[0].0, job_id(0x11));
+        assert_eq!(store.refresh_intents[0].1, trigger);
+        assert_eq!(store.refresh_intents[0].2, RefreshMode::EligibleOnly);
+        assert_eq!(
+            store.refresh_intents[0].3,
+            vec![root_id(ROOT_A), root_id(ROOT_B)]
+        );
+        assert!(store.targets.iter().any(|target| {
+            target.library_root_id() == root_id(ROOT_B)
+                && target.kind() == LibraryScanTargetKind::Excluded
+        }));
+    }
 }
 
 #[derive(Clone)]

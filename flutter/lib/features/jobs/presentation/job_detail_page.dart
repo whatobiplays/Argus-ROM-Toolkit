@@ -377,23 +377,105 @@ class _JobDetailContent extends StatelessWidget {
   };
 
   List<Widget> _buildScanRunTiles(List<ScanRunSummary> scanRuns) => [
-    for (final scan in scanRuns)
-      ListTile(
-        dense: true,
-        leading: const Icon(Icons.folder_outlined),
-        title: Text(scan.displayName),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_scanStatusLabel(scan.status)),
-            if (scan.status == JobScanStatus.failed ||
-                scan.status == JobScanStatus.partial)
-              Text(JobsMessages.scanFailureReasonLabel(scan.failureReason)),
-          ],
-        ),
-      ),
+    for (final scan in scanRuns) _buildScanRunTile(scan),
   ];
+
+  Widget _buildScanRunTile(ScanRunSummary scan) => ListTile(
+    dense: true,
+    leading: const Icon(Icons.folder_outlined),
+    title: Text(scan.displayName),
+    subtitle: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(_scanStatusLabel(scan.status)),
+        if (scan.status == JobScanStatus.failed ||
+            scan.status == JobScanStatus.partial)
+          Text(JobsMessages.scanFailureReasonLabel(scan.failureReason)),
+      ],
+    ),
+  );
+
+  /// Keeps a refresh ScanRun and its root on separate semantic nodes.
+  Widget _buildRefreshScanTile(ScanRunSummary scan) => Semantics(
+    identifier: 'scan-run:${scan.scanRunId.value}',
+    container: true,
+    explicitChildNodes: true,
+    child: Semantics(
+      identifier: 'library-root:${scan.libraryRootId.value}',
+      container: true,
+      explicitChildNodes: true,
+      child: _buildScanRunTile(scan),
+    ),
+  );
+
+  Widget _buildRefreshExclusionTile(LibraryScanAdmissionExclusion exclusion) =>
+      Semantics(
+        identifier: 'library-root:${exclusion.libraryRootId.value}',
+        container: true,
+        explicitChildNodes: true,
+        child: ListTile(
+          dense: true,
+          leading: const Icon(Icons.block),
+          title: const Text(JobsMessages.refreshExcludedRoot),
+          subtitle: Text(JobsMessages.exclusionLabel(exclusion.reason)),
+        ),
+      );
+
+  /// Orders known outcomes by requested root and keeps unmatched facts visible.
+  ///
+  /// Coverage still comes from `rootOutcomeCoverage`; a missing row stays
+  /// missing and never becomes a generated exclusion.
+  List<Widget> _buildRefreshOutcomeTiles(LibraryRefreshJobDetail detail) {
+    final tiles = <Widget>[];
+    final includedScans = <ScanRunId>{};
+    final includedExclusions = <LibraryRootId>{};
+
+    for (final rootId in detail.requestedRootIds) {
+      for (final scan in detail.scanRuns.where(
+        (scan) => scan.libraryRootId == rootId,
+      )) {
+        tiles.add(_buildRefreshScanTile(scan));
+        includedScans.add(scan.scanRunId);
+      }
+      for (final exclusion in detail.exclusions.where(
+        (exclusion) => exclusion.libraryRootId == rootId,
+      )) {
+        tiles.add(_buildRefreshExclusionTile(exclusion));
+        includedExclusions.add(exclusion.libraryRootId);
+      }
+    }
+
+    for (final scan in detail.scanRuns) {
+      if (!includedScans.contains(scan.scanRunId)) {
+        tiles.add(_buildRefreshScanTile(scan));
+      }
+    }
+    for (final exclusion in detail.exclusions) {
+      if (!includedExclusions.contains(exclusion.libraryRootId)) {
+        tiles.add(_buildRefreshExclusionTile(exclusion));
+      }
+    }
+    return tiles;
+  }
+
+  Widget _buildRefreshRetryLink({
+    required String key,
+    required String label,
+    required IconData icon,
+    required JobRunId jobRunId,
+  }) => Semantics(
+    identifier: 'job-run:${jobRunId.value}',
+    container: true,
+    explicitChildNodes: true,
+    child: ListTile(
+      key: ValueKey<String>(key),
+      dense: true,
+      leading: Icon(icon),
+      title: Text(label),
+      onTap: () => onOpenJob(jobRunId),
+    ),
+  );
 
   Widget _buildNonScanDetail(BuildContext context, JobDetail detail) {
     final operationLabel = switch (detail.operationDetail) {
@@ -410,7 +492,7 @@ class _JobDetailContent extends StatelessWidget {
     };
     final controls = detail.job.controls;
     final controlsBusy = cancelling || retrying;
-    return Scaffold(
+    final content = Scaffold(
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -474,9 +556,31 @@ class _JobDetailContent extends StatelessWidget {
                 const SizedBox(height: 16),
                 Text('Trigger: ${detail.trigger}'),
                 Text('Mode: ${detail.mode}'),
-                if (detail.triggerRootId != null)
-                  Text('Root: ${detail.triggerRootId}'),
-                ..._buildScanRunTiles(detail.scanRuns),
+                Text(switch (detail.rootOutcomeCoverage) {
+                  LibraryRefreshRootOutcomeCoverage.complete =>
+                    JobsMessages.refreshOutcomesComplete,
+                  LibraryRefreshRootOutcomeCoverage.historicalUnavailable =>
+                    JobsMessages.refreshOutcomesHistoricalUnavailable,
+                }),
+                ..._buildRefreshOutcomeTiles(detail),
+                if (detail.retrySourceJobRunId != null ||
+                    detail.retrySuccessorJobRunId != null) ...[
+                  const Divider(height: 32),
+                  if (detail.retrySourceJobRunId case final source?)
+                    _buildRefreshRetryLink(
+                      key: 'jobs-refresh-retry-source',
+                      label: JobsMessages.retriedFrom,
+                      icon: Icons.history,
+                      jobRunId: source,
+                    ),
+                  if (detail.retrySuccessorJobRunId case final successor?)
+                    _buildRefreshRetryLink(
+                      key: 'jobs-refresh-retry-successor',
+                      label: JobsMessages.retriedAs,
+                      icon: Icons.forward,
+                      jobRunId: successor,
+                    ),
+                ],
               ],
               if (detail.operationDetail case OperationDetailGameRefresh(
                 :final detail,
@@ -498,6 +602,16 @@ class _JobDetailContent extends StatelessWidget {
         ),
       ),
     );
+    if (detail.operationDetail is OperationDetailLibraryRefresh) {
+      // Keep child ScanRun and root identity nodes under their owning JobRun.
+      return Semantics(
+        identifier: 'job-run:${detail.job.jobRunId.value}',
+        container: true,
+        explicitChildNodes: true,
+        child: content,
+      );
+    }
+    return content;
   }
 }
 

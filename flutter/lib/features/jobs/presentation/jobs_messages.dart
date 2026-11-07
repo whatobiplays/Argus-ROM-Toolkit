@@ -53,6 +53,10 @@ abstract final class JobsMessages {
       'No original folder remains eligible, so no new scan was created.';
   static const String retriedFrom = 'Retried from';
   static const String retriedAs = 'Retried as';
+  static const String refreshOutcomesComplete = 'Folder coverage: complete.';
+  static const String refreshOutcomesHistoricalUnavailable =
+      'Some historical folder outcomes are unavailable.';
+  static const String refreshExcludedRoot = 'Library folder';
   static const String scanFailureUnknown =
       'No further failure reason is available.';
   static const String scanFailureInternal =

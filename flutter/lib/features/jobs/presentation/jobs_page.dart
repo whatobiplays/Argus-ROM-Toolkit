@@ -137,7 +137,7 @@ class _JobRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = _operationLabel(job.operationType);
     final stateLabel = _lifecycleLabel(job.lifecycleState);
-    return ListTile(
+    final tile = ListTile(
       key: ValueKey<String>('jobs-row-${job.jobRunId.value}'),
       leading: Icon(
         job.lifecycleState.isTerminal ? Icons.check_circle_outline : Icons.sync,
@@ -152,6 +152,13 @@ class _JobRow extends StatelessWidget {
       ),
       isThreeLine: false,
       onTap: () => onOpenJob(job.jobRunId),
+    );
+    // Keep the run identity separate from its operation and status labels.
+    return Semantics(
+      identifier: 'job-run:${job.jobRunId.value}',
+      container: true,
+      explicitChildNodes: true,
+      child: tile,
     );
   }
 }

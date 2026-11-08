@@ -101,6 +101,7 @@ class FocusedFlutterContractTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 64, (args, result.stderr))
                 self.assertEqual(self.commands(), [])
 
+    @unittest.skipIf(os.name == "nt", "Symlink creation requires Windows privileges.")
     def test_symlinked_parent_directory_cannot_escape_flutter_root(self) -> None:
         checkout = Path(self.tempdir.name) / "isolated-checkout"
         (checkout / "scripts").mkdir(parents=True)

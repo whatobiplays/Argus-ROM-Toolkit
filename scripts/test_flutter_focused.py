@@ -129,6 +129,22 @@ class FocusedFlutterContractTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 64, (args, result.stderr))
                 self.assertEqual(self.commands(), [])
 
+    @unittest.skipIf(os.name == "nt", "Symlink creation requires Windows privileges.")
+    def test_symlinked_flutter_root_cannot_escape_checkout(self) -> None:
+        checkout = Path(self.tempdir.name) / "symlinked-root-checkout"
+        (checkout / "scripts").mkdir(parents=True)
+        isolated_script = checkout / "scripts" / "run_flutter_focused.sh"
+        isolated_script.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        outside = Path(self.tempdir.name) / "external-flutter-root"
+        outside_test = outside / JOBS_TEST
+        outside_test.parent.mkdir(parents=True)
+        outside_test.write_text("// external fixture\n", encoding="utf-8")
+        (checkout / "flutter").symlink_to(outside, target_is_directory=True)
+
+        result = self.invoke(JOBS_TEST, script=isolated_script)
+        self.assertEqual(result.returncode, 64, result.stderr)
+        self.assertEqual(self.commands(), [])
+
     def test_formatter_failure_aborts_before_tests(self) -> None:
         self.env["FOCUSED_FLUTTER_FAIL_ON"] = "dart"
         result = self.invoke(JOBS_TEST)

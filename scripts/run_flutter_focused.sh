@@ -7,7 +7,12 @@ if [[ "$#" -lt 1 || "$#" -gt 2 || -z "$1" ]]; then
   exit 64
 fi
 
-flutter_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../flutter" && pwd -P)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+if [[ -L "$repo_root/flutter" ]]; then
+  echo 'Symlinked Flutter root' >&2
+  exit 64
+fi
+flutter_root="$(cd "$repo_root/flutter" && pwd -P)"
 
 split_paths() {
   local csv="$1"

@@ -110,8 +110,19 @@ build-macos-debug: test-macos-release-linkage
 _architecture:
     bash scripts/check_rust_dependencies.sh
 
+# Validate selected Dart files, then run only the selected Flutter tests.
+# Paths are comma-separated and relative to flutter/; tests are formatted too.
+flutter-focused tests formats="":
+    @bash scripts/run_flutter_focused.sh {{ quote(tests) }} {{ quote(formats) }}
+
+# Repo-owned MCP smoke profile, intentionally narrower than 'just check'.
+smoke:
+    @PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.test_flutter_focused
+    @just flutter-focused "test/features/jobs/jobs_feature_test.dart,test/features/sources/sources_feature_test.dart,test/core/bridge/frb_mapper_test.dart" "lib/features/jobs/presentation/job_detail_page.dart,lib/features/jobs/presentation/jobs_messages.dart,lib/features/jobs/presentation/jobs_page.dart,lib/features/sources/presentation/root_detail_page.dart"
+
 test:
     just test-android-qualification
+    PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.test_flutter_focused
     just test-cleanup
     bash scripts/test_macos_frb_exports.sh
     bash scripts/test_macos_rust_build_environment.sh

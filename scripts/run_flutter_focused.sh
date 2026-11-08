@@ -16,6 +16,12 @@ split_paths() {
   if [[ -z "$csv" ]]; then
     return
   fi
+  # Bash 'read' stops at the first newline. Reject line breaks before parsing
+  # so an otherwise valid first path cannot silently hide a trailing argument.
+  if [[ "$csv" == *$'\n'* || "$csv" == *$'\r'* ]]; then
+    echo "Invalid ${kind} path list (line break)" >&2
+    exit 64
+  fi
   if [[ ! "$csv" =~ ^[^,]+(,[^,]+)*$ ]]; then
     echo "Invalid ${kind} path list" >&2
     exit 64
@@ -36,6 +42,19 @@ split_paths() {
       fi
       format_paths+=("$path")
     fi
+    # Checking only the final file misses a symlinked directory ancestor.
+    # Reject every symlink component before invoking either formatter or tests.
+    local current="$flutter_root"
+    local component
+    local -a components=()
+    IFS='/' read -r -a components <<< "$path"
+    for component in "${components[@]}"; do
+      current="$current/$component"
+      if [[ -L "$current" ]]; then
+        echo "Symlinked Flutter path: $path" >&2
+        exit 64
+      fi
+    done
     if [[ ! -f "$flutter_root/$path" || -L "$flutter_root/$path" ]]; then
       echo "Missing or symlinked Flutter file: $path" >&2
       exit 64

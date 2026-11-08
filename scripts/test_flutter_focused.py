@@ -36,9 +36,9 @@ class FocusedFlutterContractTests(unittest.TestCase):
             "FOCUSED_FLUTTER_LOG": str(self.log),
         }
 
-    def invoke(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def invoke(self, *args: str, script: Path = SCRIPT) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["bash", str(SCRIPT), *args],
+            ["bash", str(script), *args],
             cwd=ROOT,
             env=self.env,
             capture_output=True,
@@ -88,12 +88,43 @@ class FocusedFlutterContractTests(unittest.TestCase):
             (JOBS_TEST, "lib/missing.dart"),
             (JOBS_TEST, "test/../../scripts/run_flutter_focused.sh"),
             (JOBS_TEST, "test/foo.dart,"),
+            (f"{JOBS_TEST}\ninvalid/path.dart",),
+            (JOBS_TEST, f"{JOBS_SOURCE}\ninvalid/path.dart"),
+            (f"{JOBS_TEST}\rinvalid/path.dart",),
+            (JOBS_TEST, f"{JOBS_SOURCE}\rinvalid/path.dart"),
             (JOBS_TEST, JOBS_SOURCE, SOURCES_TEST),
         ]
         for args in cases:
             with self.subTest(args=args):
                 self.log.unlink(missing_ok=True)
                 result = self.invoke(*args)
+                self.assertEqual(result.returncode, 64, (args, result.stderr))
+                self.assertEqual(self.commands(), [])
+
+    def test_symlinked_parent_directory_cannot_escape_flutter_root(self) -> None:
+        checkout = Path(self.tempdir.name) / "isolated-checkout"
+        (checkout / "scripts").mkdir(parents=True)
+        isolated_script = checkout / "scripts" / "run_flutter_focused.sh"
+        isolated_script.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        flutter = checkout / "flutter"
+        outside = Path(self.tempdir.name) / "external-files"
+        outside.mkdir()
+        (outside / "outside_test.dart").write_text("// external\n", encoding="utf-8")
+        for kind in ("test", "lib"):
+            directory = flutter / kind
+            directory.mkdir(parents=True)
+            (directory / "alias").symlink_to(outside, target_is_directory=True)
+        selected_test = flutter / JOBS_TEST
+        selected_test.parent.mkdir(parents=True)
+        selected_test.write_text("// fixture\n", encoding="utf-8")
+
+        for args in [
+            ("test/alias/outside_test.dart",),
+            (JOBS_TEST, "lib/alias/outside_test.dart"),
+        ]:
+            with self.subTest(args=args):
+                self.log.unlink(missing_ok=True)
+                result = self.invoke(*args, script=isolated_script)
                 self.assertEqual(result.returncode, 64, (args, result.stderr))
                 self.assertEqual(self.commands(), [])
 
@@ -106,11 +137,39 @@ class FocusedFlutterContractTests(unittest.TestCase):
             [f"dart format --output=none --set-exit-if-changed {JOBS_TEST}"],
         )
 
-    def test_just_declares_focused_and_smoke_targets(self) -> None:
-        justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-        self.assertIn('\nflutter-focused tests formats="":\n', justfile)
-        self.assertIn("\nsmoke:\n", justfile)
-        self.assertIn("scripts/run_flutter_focused.sh", justfile)
+    def test_just_recipe_forwards_test_and_format_paths(self) -> None:
+        result = subprocess.run(
+            ["just", "flutter-focused", f"{JOBS_TEST},{SOURCES_TEST}", JOBS_SOURCE],
+            cwd=ROOT,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.commands(),
+            [
+                "dart format --output=none --set-exit-if-changed "
+                f"{JOBS_TEST} {SOURCES_TEST} {JOBS_SOURCE}",
+                f"flutter test --no-pub {JOBS_TEST} {SOURCES_TEST}",
+            ],
+        )
+
+    def test_smoke_recipe_expands_to_focused_runner(self) -> None:
+        result = subprocess.run(
+            ["just", "--dry-run", "smoke"],
+            cwd=ROOT,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = result.stdout + result.stderr
+        self.assertIn("scripts.test_flutter_focused", output)
+        self.assertIn("just flutter-focused", output)
+        self.assertEqual(self.commands(), [])
 
 
 if __name__ == "__main__":

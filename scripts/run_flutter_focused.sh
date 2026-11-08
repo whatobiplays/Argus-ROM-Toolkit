@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Each CSV path is relative to flutter/. Validate all paths before invoking FVM.
+if [[ "$#" -lt 1 || "$#" -gt 2 || -z "$1" ]]; then
+  echo 'Usage: run_flutter_focused.sh test/path.dart[,test/path2.dart] [lib/path.dart[,test/path3.dart]]' >&2
+  exit 64
+fi
+
+flutter_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../flutter" && pwd -P)"
+
+split_paths() {
+  local csv="$1"
+  local kind="$2"
+  local path
+  if [[ -z "$csv" ]]; then
+    return
+  fi
+  if [[ ! "$csv" =~ ^[^,]+(,[^,]+)*$ ]]; then
+    echo "Invalid ${kind} path list" >&2
+    exit 64
+  fi
+  local -a entries=()
+  IFS=',' read -r -a entries <<< "$csv"
+  for path in "${entries[@]}"; do
+    if [[ "$kind" == tests ]]; then
+      if [[ ! "$path" =~ ^test/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.dart$ ]]; then
+        echo "Invalid test path: $path" >&2
+        exit 64
+      fi
+      test_paths+=("$path")
+    else
+      if [[ ! "$path" =~ ^(test|lib)/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.dart$ ]]; then
+        echo "Invalid format path: $path" >&2
+        exit 64
+      fi
+      format_paths+=("$path")
+    fi
+    if [[ ! -f "$flutter_root/$path" || -L "$flutter_root/$path" ]]; then
+      echo "Missing or symlinked Flutter file: $path" >&2
+      exit 64
+    fi
+  done
+}
+
+test_paths=()
+format_paths=()
+split_paths "$1" tests
+format_paths=("${test_paths[@]}")
+split_paths "${2:-}" format
+
+(
+  cd "$flutter_root"
+  fvm dart format --output=none --set-exit-if-changed "${format_paths[@]}"
+  fvm flutter test --no-pub "${test_paths[@]}"
+)

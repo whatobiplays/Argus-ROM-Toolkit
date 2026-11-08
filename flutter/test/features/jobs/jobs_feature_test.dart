@@ -64,6 +64,97 @@ void main() {
     },
   );
 
+  test('Complete refresh fixture preserves one supported outcome per root', () {
+    final jobId = JobRunId('d' * 32);
+    const rootA = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    const rootB = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    final scan = _refreshScan('11111111111111111111111111111111', jobId, rootA);
+    const exclusion = LibraryScanAdmissionExclusion(
+      libraryRootId: rootB,
+      reason: 'already_scanning',
+    );
+    final detail = _completeRefreshAttempt(
+      jobRunId: jobId,
+      requestedRootIds: const [rootB, rootA],
+      scanRuns: [scan],
+      exclusions: const [exclusion],
+    );
+    final refresh =
+        (detail.operationDetail as OperationDetailLibraryRefresh).detail;
+    expect(
+      refresh.rootOutcomeCoverage,
+      LibraryRefreshRootOutcomeCoverage.complete,
+    );
+    expect(refresh.requestedRootIds, const [rootB, rootA]);
+    expect(refresh.scanRuns, [scan]);
+    expect(refresh.exclusions, const [exclusion]);
+  });
+
+  test('Complete fixture rejects incomplete or contradictory outcomes', () {
+    final jobId = JobRunId('d' * 32);
+    final otherJobId = JobRunId('e' * 32);
+    const rootA = LibraryRootId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    const rootB = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+    final scanA = _refreshScan(
+      '11111111111111111111111111111111',
+      jobId,
+      rootA,
+    );
+    final scanB = _refreshScan(
+      '22222222222222222222222222222222',
+      jobId,
+      rootB,
+    );
+    final sameRoot = _refreshScan(
+      '33333333333333333333333333333333',
+      jobId,
+      rootA,
+    );
+    final duplicateScanId = _refreshScan(scanA.scanRunId.value, jobId, rootB);
+    final foreignJob = _refreshScan(
+      '44444444444444444444444444444444',
+      otherJobId,
+      rootA,
+    );
+    const excludedA = LibraryScanAdmissionExclusion(
+      libraryRootId: rootA,
+      reason: 'already_scanning',
+    );
+    const excludedB = LibraryScanAdmissionExclusion(
+      libraryRootId: rootB,
+      reason: 'already_scanning',
+    );
+
+    JobDetail attempt(
+      List<LibraryRootId> roots,
+      List<ScanRunSummary> scans,
+      List<LibraryScanAdmissionExclusion> exclusions,
+    ) => _completeRefreshAttempt(
+      jobRunId: jobId,
+      requestedRootIds: roots,
+      scanRuns: scans,
+      exclusions: exclusions,
+    );
+
+    final invalid = <String, JobDetail Function()>{
+      'missing root outcome': () => attempt([rootA, rootB], [scanA], []),
+      'duplicate requested root': () => attempt([rootA, rootA], [scanA], []),
+      'unrequested ScanRun': () => attempt([rootA], [scanA, scanB], []),
+      'duplicate ScanRun root': () => attempt([rootA], [scanA, sameRoot], []),
+      'ScanRun and exclusion collision': () =>
+          attempt([rootA], [scanA], [excludedA]),
+      'duplicate exclusion root': () =>
+          attempt([rootA, rootB], [scanA], [excludedB, excludedB]),
+      'unrequested exclusion': () => attempt([rootA], [scanA], [excludedB]),
+      'duplicate ScanRun identity': () =>
+          attempt([rootA, rootB], [scanA, duplicateScanId], []),
+      'ScanRun from another job': () => attempt([rootA], [foreignJob], []),
+    };
+    for (final entry in invalid.entries) {
+      expect(entry.value, throwsArgumentError, reason: entry.key);
+    }
+  });
+
   test('Library refresh detail fake defaults to a terminal lifecycle', () {
     expect(
       libraryRefreshJobDetail().job.lifecycleState,
@@ -581,12 +672,11 @@ void main() {
           activeJobRunId: excludedActiveJob,
           activeScanRunId: excludedActiveScan,
         );
-        final detail = _refreshAttempt(
+        final detail = _completeRefreshAttempt(
           jobRunId: jobId,
           requestedRootIds: const [excludedRoot, secondRoot, firstRoot],
           scanRuns: scans,
           exclusions: [exclusion],
-          coverage: LibraryRefreshRootOutcomeCoverage.complete,
         );
         final container = createContainer(
           FakeJobsApi(details: {jobId: detail}),
@@ -683,7 +773,7 @@ void main() {
         const excludedRoot = LibraryRootId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
         const unrelatedRoot = LibraryRootId('cccccccccccccccccccccccccccccccc');
         const scanId = ScanRunId('11111111111111111111111111111111');
-        final detail = _refreshAttempt(
+        final detail = _completeRefreshAttempt(
           jobRunId: jobId,
           requestedRootIds: const [admittedRoot, excludedRoot],
           scanRuns: [_refreshScan(scanId.value, jobId, admittedRoot)],
@@ -693,7 +783,6 @@ void main() {
               reason: 'already_scanning',
             ),
           ],
-          coverage: LibraryRefreshRootOutcomeCoverage.complete,
         );
         final container = createContainer(
           FakeJobsApi(details: {jobId: detail}),
@@ -756,7 +845,7 @@ void main() {
         const scanId = ScanRunId('11111111111111111111111111111111');
         final activeJob = JobRunId('e' * 32);
         const activeScan = ScanRunId('ffffffffffffffffffffffffffffffff');
-        final detail = _refreshAttempt(
+        final detail = _rawRefreshAttempt(
           jobRunId: jobId,
           requestedRootIds: const [knownRoot, excludedRoot, unavailableRoot],
           scanRuns: [
@@ -869,7 +958,7 @@ void main() {
           status: JobScanStatus.complete,
           startedAtMs: 1,
         );
-        final detail = _refreshAttempt(
+        final detail = _rawRefreshAttempt(
           jobRunId: jobId,
           requestedRootIds: const [rootB, rootA, excludedRoot, unknownRoot],
           scanRuns: [
@@ -1000,20 +1089,20 @@ void main() {
             secondRoot,
           ),
         ];
-        final source = _refreshAttempt(
+        final source = _completeRefreshAttempt(
           jobRunId: sourceId,
           requestedRootIds: requestedRoots,
           scanRuns: sourceScans,
           retrySuccessorJobRunId: currentId,
         );
-        final current = _refreshAttempt(
+        final current = _completeRefreshAttempt(
           jobRunId: currentId,
           requestedRootIds: requestedRoots,
           scanRuns: currentScans,
           retrySourceJobRunId: sourceId,
           retrySuccessorJobRunId: successorId,
         );
-        final successor = _refreshAttempt(
+        final successor = _completeRefreshAttempt(
           jobRunId: successorId,
           requestedRootIds: requestedRoots,
           scanRuns: successorScans,
@@ -1678,13 +1767,71 @@ void main() {
 
 void _noop(JobRunId _) {}
 
-JobDetail _refreshAttempt({
+// Valid Complete fixtures partition requested roots into admitted scans or typed
+// exclusions. HistoricalUnavailable and intentionally malformed DTOs use the raw
+// constructor below so negative tests do not accidentally acquire this invariant.
+JobDetail _completeRefreshAttempt({
   required JobRunId jobRunId,
   required List<LibraryRootId> requestedRootIds,
   required List<ScanRunSummary> scanRuns,
   List<LibraryScanAdmissionExclusion> exclusions = const [],
-  LibraryRefreshRootOutcomeCoverage coverage =
-      LibraryRefreshRootOutcomeCoverage.complete,
+  JobRunId? retrySourceJobRunId,
+  JobRunId? retrySuccessorJobRunId,
+  bool canRetry = false,
+}) {
+  final requested = <String>{};
+  for (final root in requestedRootIds) {
+    if (!requested.add(root.value)) {
+      throw ArgumentError('Duplicate requested LibraryRootId');
+    }
+  }
+
+  final covered = <String>{};
+  final seenScanIds = <String>{};
+  for (final scan in scanRuns) {
+    if (scan.jobRunId.value != jobRunId.value) {
+      throw ArgumentError('ScanRun belongs to a different JobRun');
+    }
+    if (!seenScanIds.add(scan.scanRunId.value)) {
+      throw ArgumentError('Duplicate ScanRunId');
+    }
+    if (!requested.contains(scan.libraryRootId.value)) {
+      throw ArgumentError('ScanRun belongs to an unrequested root');
+    }
+    if (!covered.add(scan.libraryRootId.value)) {
+      throw ArgumentError('Multiple outcomes for a requested root');
+    }
+  }
+  for (final exclusion in exclusions) {
+    if (!requested.contains(exclusion.libraryRootId.value)) {
+      throw ArgumentError('Exclusion belongs to an unrequested root');
+    }
+    if (!covered.add(exclusion.libraryRootId.value)) {
+      throw ArgumentError('Multiple outcomes for a requested root');
+    }
+  }
+  if (covered.length != requested.length) {
+    throw ArgumentError('Complete coverage requires one outcome per root');
+  }
+
+  return _rawRefreshAttempt(
+    jobRunId: jobRunId,
+    requestedRootIds: requestedRootIds,
+    scanRuns: scanRuns,
+    exclusions: exclusions,
+    coverage: LibraryRefreshRootOutcomeCoverage.complete,
+    retrySourceJobRunId: retrySourceJobRunId,
+    retrySuccessorJobRunId: retrySuccessorJobRunId,
+    canRetry: canRetry,
+  );
+}
+
+JobDetail _rawRefreshAttempt({
+  required JobRunId jobRunId,
+  required List<LibraryRootId> requestedRootIds,
+  required List<ScanRunSummary> scanRuns,
+  List<LibraryScanAdmissionExclusion> exclusions = const [],
+  required LibraryRefreshRootOutcomeCoverage coverage,
   JobRunId? retrySourceJobRunId,
   JobRunId? retrySuccessorJobRunId,
   bool canRetry = false,

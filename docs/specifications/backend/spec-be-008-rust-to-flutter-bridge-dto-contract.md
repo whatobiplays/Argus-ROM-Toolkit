@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-11-04\
+**Last Updated:** 2026-11-08\
 **Depends On:** ARCH-001, ARCH-002, PHASE-000, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-001, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-011, SPEC-BE-013, SPEC-BE-015, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -2640,6 +2640,13 @@ LibrarySortDto
 - field
 - direction: Ascending | Descending
 
+LibraryViewConsistencyDto
+- Latest
+- RevisionFenced
+
+LibraryViewTokenDto
+- opaque backend-issued value (maximum 4096 wire bytes)
+
 LibraryQueryDto
 - scope
 - searchText nullable
@@ -2647,6 +2654,8 @@ LibraryQueryDto
 - sort
 - cursor nullable
 - pageSize
+- viewConsistency: LibraryViewConsistencyDto nullable (Latest when omitted)
+- libraryViewToken: LibraryViewTokenDto nullable
 
 GameLibraryRowDto
 - gameId
@@ -2663,6 +2672,7 @@ GameLibraryRowDto
 GamePageDto
 - items[]
 - nextCursor nullable
+- libraryViewToken: LibraryViewTokenDto nullable
 
 LibraryFacetQueryDto
 - scope
@@ -2692,7 +2702,17 @@ LibraryFacetsDto
 - availabilityStates: AvailabilityStateFacetBucketDto[]
 ```
 
+The Library accessibility exception is defined in SPEC-FE-010 §33.1: an ordinary Library row may expose its exact `GameId` as a nonspoken machine-readable semantic. Page and row correlation values are presentation semantics derived from ordinary `GamePageDto` results and query state, not additional bridge DTO fields or a qualification-only API. This exception identifies only the displayed Library row. It does not expose a view token, database generation, cursor contents, query fingerprint, root or source locator, or other private data.
+
 The bridge validates bounded page-size/filter/query shapes and maps them to application-owned queries; it does not implement search/filter/sort/facet semantics itself. Facet requests carry the same scope/search/filter model but no cursor or sort.
+
+Omitting `viewConsistency` preserves the current tokenless query behavior, including v1/v2 cursor compatibility. A `RevisionFenced` first-page request has no cursor and no token; the successful page returns an opaque `libraryViewToken`. Every continuation sends that same token and the exact preceding `nextCursor`, with the same query shape and page size. The page response echoes the token. The token is separate from the cursor and callers do not inspect or edit its value. `Latest` requests omit the token.
+
+The view token binds database generation, persistent membership revision, query-contract version, and the normalized query fingerprint, including page size. The existing cursor wire formats do not change. The cursor's existing validation remains in force, and the token adds a separate check for revision, generation, and the full stable-view query shape.
+
+For a `RevisionFenced` `ListGames` request, `ApplicationErrorDto.code` is `ARGUS.V1.LIBRARY.STALE_VIEW` when a recognized token has a different current generation, membership revision, or supported query-contract version. It is `ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN` when the token is oversized, malformed, tampered, unsupported, bound to another query shape, or paired with a cursor from another query. A malformed cursor retains its existing cursor-validation error. A stable-view error returns no partial `GamePageDto`. Tokenless cursor errors retain their existing mapping.
+
+For a `Latest` `ListGames` request, including one where `viewConsistency` is omitted and therefore defaults to `Latest`, a non-null `libraryViewToken` returns `ApplicationErrorDto.code = ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN` and no `GamePageDto`. Tokenless `Latest` requests and their existing cursor behavior remain unchanged.
 
 ### 68.2 Game detail and redirect results
 
@@ -2704,7 +2724,13 @@ GetGameResultDto
 - Redirected(canonicalGameId)
 ```
 
-A missing non-redirected Game returns the published Game-not-found `ApplicationErrorDto`; it is not represented by `null` or a stale list row.
+A missing non-redirected Game returns the existing `ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND` `ApplicationErrorDto`; it is not represented by `null`, `StaleView`, or a stale list row.
+
+The ordinary `GetGame` request gains one optional `libraryViewToken` argument. Without it, lookup retains current behavior. With it, the bridge passes the token to the authoritative backend lookup, which validates its format, authenticity, generation, membership revision, and query-contract version in the same transaction as the lookup. A well-formed token whose generation, revision, or supported query-contract version is stale returns `ApplicationErrorDto.code = ARGUS.V1.LIBRARY.STALE_VIEW`. An oversized, malformed, unsupported, or tampered token returns `ApplicationErrorDto.code = ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN`. `GetGame` receives no Library query shape, so query-shape mismatch is validated only on `ListGames`, where the request shape can be compared with the token binding. Neither result contains a partial page or detail. These errors do not replace the existing Game-not-found error or `Redirected(canonicalGameId)` result.
+
+Positive example: the first `RevisionFenced` page has a null cursor and token, then returns page rows, `nextCursor = C1`, and token `V`. The next request supplies `C1` and `V`. A missing original GameId is checked once with `GetGame(originalId, V)`; `Redirected(canonicalId)` is accepted only if that ID occurs in the completed page chain.
+
+Negative examples: changing a filter while reusing `V` returns `INVALID_VIEW_TOKEN`; a committed query-affecting mutation between requests returns `STALE_VIEW`; a tokenless v1 or v2 request continues to use the existing behavior; a nonredirected missing Game still returns the existing Game-not-found error.
 
 ### 68.3 Artwork asset delivery
 
@@ -2959,7 +2985,7 @@ Root outcomes use durable per-attempt target and `ScanRun` facts. Reconstructing
 
 Normal job, root, and scan labels and spoken accessible names must omit internal IDs. Required machine-readable identities use ordinary accessibility semantics separate from those names.
 
-`SPEC-FE-009` §18 continues to permit the existing `JobRunId` display in support or troubleshooting detail when useful, provided it is not the primary title. This change adds no visible support-ID display to Sources. Raw persistence details or identifiers, provider-native identifiers, sensitive paths, and implementation internals must remain unavailable through the UI and accessibility semantics.
+`SPEC-FE-009` §18 continues to permit the existing `JobRunId` display in support or troubleshooting detail when useful, provided it is not the primary title. This change adds no visible support-ID display to Sources. Raw persistence details, identifiers not explicitly permitted by a product DTO or semantic contract, provider-native identifiers, sensitive paths, and implementation internals must remain unavailable through the UI and accessibility semantics.
 
 These additions are append-only DTO evolution under SPEC-X-001. Existing consumers may ignore the new fields. A consumer that requires partition proof must not default a missing coverage field or missing exclusion list to `Complete` or to an empty set of exclusions. Older persisted records are not backfilled or reconstructed from present-day roots; where the read can preserve supported facts but cannot establish the partition, the new projection reports `HistoricalUnavailable`.
 
@@ -3005,6 +3031,9 @@ Bridge contract tests must exhaustively cover:
 
 - every closed Library scope, hydration, availability, filter, sort, direction, and typed facet bucket variant;
 - query-bound opaque cursor validation and invalid page-size/filter combinations;
+- tokenless Latest requests preserving existing v1/v2 cursor behavior, revision-fenced initial token acquisition, continuation token echo/carry, and direct `GetGame` token validation;
+- exact `ARGUS.V1.LIBRARY.STALE_VIEW` and `ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN` mapping, with existing Game-not-found and `Redirected(canonicalGameId)` behavior unchanged;
+- rejection of a query-shape or cursor mismatch under a view token, without returning partial rows or details;
 - `Found`/`Redirected` Game results plus published not-found failure;
 - artwork-byte success, bounded payload metadata, asset-not-found, and prohibition of paths/URLs/handles;
 - all add-folder, child-admission, onboarding-step, completion, and refresh results;

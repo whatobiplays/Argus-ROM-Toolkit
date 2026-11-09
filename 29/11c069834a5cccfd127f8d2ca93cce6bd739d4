@@ -1,0 +1,65 @@
+docs/specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md
+  s_da794bffc27edb::t_0920e721cbe3b8 6
+  s_da794bffc27edb::t_82a39e15b11952 778-780,782
+  s_da794bffc27edb::t_42a2a9e9453907 811-815
+  s_da794bffc27edb::t_b805fb57f7ea6d 776,781,783-799
+  s_da794bffc27edb::t_3c862ea4603ed1 744-762
+  s_c7322073c3be8f::t_5cae5dba3571fc 728-743,763-775,777,800-810,816,1222-1223,1278
+docs/specifications/frontend/spec-fe-010-library-game-detail-and-enrichment-ux.md
+  s_da794bffc27edb::t_0920e721cbe3b8 6
+  s_da794bffc27edb::t_bfe8c9f5aec855 342-343,361
+  s_da794bffc27edb::t_aeb56bb54ae9fa 729
+  s_da794bffc27edb::t_75364f9f410131 731,742
+  s_da794bffc27edb::t_17ae0b50f8ae98 362-364,366,369-370
+  s_da794bffc27edb::t_bc2099016d3f8f 367
+  s_da794bffc27edb::t_d1521612693619 365
+  s_da794bffc27edb::t_52e782fae1f50b 368
+  s_da794bffc27edb::t_04e5ce144fe2d6 721-727,733-741,743-751
+  s_da794bffc27edb::t_f4614ac4c4c755 348,350,352
+  s_da794bffc27edb::t_8cf442730d59d0 837
+  s_da794bffc27edb::t_aa27ada141f5c6 349,351,353-358
+  s_da794bffc27edb::t_2d5d6eef3f0f70 339-341
+  s_da794bffc27edb::t_a9a0339463bb26 344-347
+  s_da794bffc27edb::t_c0ded003605ce6 359-360
+  s_da794bffc27edb::t_6c7d95ce538aa4 371
+  s_da794bffc27edb::t_08acc29b447785 719-720
+  s_da794bffc27edb::t_24e77148703bdc 728
+  s_da794bffc27edb::t_72ddccab3ef30e 730
+  s_da794bffc27edb::t_3a6b8ee0f5fcc0 732
+  s_da794bffc27edb::t_65aa1bda0af87a 752
+  s_da794bffc27edb::t_df889eae4547e5 834-836
+  s_da794bffc27edb::t_9e0b417b8091e4 334-338,833,928
+docs/specifications/backend/spec-be-008-rust-to-flutter-bridge-dto-contract.md
+  s_da794bffc27edb::t_3c862ea4603ed1 2729
+  s_da794bffc27edb::t_2f18d1774fb463 6,2988,3034-3036
+  s_da794bffc27edb::t_ccfa6c5fbaa24d 2705-2706
+  s_da794bffc27edb::t_eda7206f6af7f2 2715-2716
+  s_da794bffc27edb::t_c3d45b6a6400bf 2712-2714
+  s_da794bffc27edb::t_cb2cada51d46bf 2727-2728
+  s_da794bffc27edb::t_163aa31e9cf8b3 2730-2732
+  s_da794bffc27edb::t_2fe152fea21668 2643-2649,2657-2658,2675,2709-2711,2733
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2911c069834a5cccfd127f8d2ca93cce6bd739d4",
+  "prompts": {},
+  "sessions": {
+    "s_c7322073c3be8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ba0c-52c4-7f73-a566-c996b89fea2d",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_da794bffc27edb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1bdf7-f3f2-7530-bd1a-25eed31c6ba0",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

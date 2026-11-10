@@ -184,6 +184,11 @@ fn map_port_error(trace_id: crate::TraceId, error: ApplicationPortError) -> Appl
         ApplicationPortError::EventRecording => {
             application_error(trace_id, ErrorCode::InternalUnexpected, SafeContext::new())
         }
+        ApplicationPortError::LibraryViewStale
+        | ApplicationPortError::LibraryViewTokenInvalid
+        | ApplicationPortError::LibraryViewUnavailable => {
+            application_error(trace_id, ErrorCode::InternalUnexpected, SafeContext::new())
+        }
     }
 }
 

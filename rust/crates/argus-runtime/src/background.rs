@@ -658,5 +658,15 @@ fn map_port_error(error: argus_application::ApplicationPortError) -> Application
             argus_application::SafeContext::new(),
         )
         .expect("background error context follows the published catalog"),
+        argus_application::ApplicationPortError::LibraryViewStale
+        | argus_application::ApplicationPortError::LibraryViewTokenInvalid
+        | argus_application::ApplicationPortError::LibraryViewUnavailable => {
+            ApplicationError::from_code(
+                argus_application::ErrorCode::InternalUnexpected,
+                new_trace_id(),
+                argus_application::SafeContext::new(),
+            )
+            .expect("background error context follows the published catalog")
+        }
     }
 }

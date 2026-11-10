@@ -3,8 +3,8 @@ use argus_application::{
     GameContentPresence, GameContentSourceSummary, GameContentSummary, GameDetail, GameId,
     GameLibraryPage, GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary,
     GroupingBasis, HydrationState, IdentificationState, IdentityDigest, LibraryRootId,
-    LibrarySourceId, MembershipRelationship, MetadataFieldProvenance, PlatformId, ResolvedArtwork,
-    ResolvedMetadata, ScanRunId, SourceEntryId,
+    LibrarySourceId, LibraryViewToken, MembershipRelationship, MetadataFieldProvenance, PlatformId,
+    ResolvedArtwork, ResolvedMetadata, RevisionFencedGameLibraryPage, ScanRunId, SourceEntryId,
 };
 use argus_bridge::{game_detail_dto, game_library_row_dto, game_page_dto};
 
@@ -141,6 +141,19 @@ fn logical_library_bridge_dtos_preserve_bounded_projection_fields() {
             .as_deref()
             .is_some_and(|value| value.starts_with("v1:"))
     );
+    assert_eq!(page.library_view_token, None);
+}
+
+#[test]
+fn revision_fenced_page_mapper_echoes_token_on_ordinary_page_dto() {
+    let page = GameLibraryPage::new(Vec::new(), None);
+    let token = LibraryViewToken::try_from_external("view-token").expect("valid test token");
+    let fenced_page = RevisionFencedGameLibraryPage::new(page, token);
+
+    let dto = argus_bridge::revision_fenced_page_dto(&fenced_page);
+
+    assert_eq!(dto.page.library_view_token.as_deref(), Some("view-token"));
+    assert_eq!(dto.view_token.as_deref(), Some("view-token"));
 }
 
 #[test]

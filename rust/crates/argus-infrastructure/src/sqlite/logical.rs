@@ -8,17 +8,18 @@
 use std::collections::BTreeMap;
 
 use argus_application::{
-    AvailabilityStateFacetBucket, ContentIdentitySummary, ContentProvenanceMemberSummary,
-    ContentProvenanceRole, ContentProvenanceSummary, ContentType, ConvergenceOutcome,
-    GameContentId, GameContentPresence, GameContentSourceSummary, GameContentSummary, GameDetail,
-    GameId, GameLibraryPage, GameLibraryRow, GameLifecycle, GameListCursor, GameMembershipSummary,
-    GetGameResult, GroupingBasis, HydrationState, HydrationStateFacetBucket, IdentificationState,
-    IdentityConvergenceStore, IdentityDigest, LibraryFacetQuery, LibraryFacets, LibraryFilter,
-    LibraryRootId, LibraryScope, LibrarySort, LibrarySortDirection, LibrarySortField,
-    ListGamesQuery, LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship,
-    PersistenceError, PlatformFacetBucket, PlatformId, RegionFacetBucket, ScanRunId, SourceEntryId,
-    SourceVersionEvidence, SourceVersionKind, ValidatedContentDerivation, ValidatedM3uGrouping,
-    bounded_library_display_title, bounded_library_release_date,
+    ApplicationPortError, AvailabilityStateFacetBucket, ContentIdentitySummary,
+    ContentProvenanceMemberSummary, ContentProvenanceRole, ContentProvenanceSummary, ContentType,
+    ConvergenceOutcome, GameContentId, GameContentPresence, GameContentSourceSummary,
+    GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow, GameLifecycle,
+    GameListCursor, GameMembershipSummary, GetGameResult, GroupingBasis, HydrationState,
+    HydrationStateFacetBucket, IdentificationState, IdentityConvergenceStore, IdentityDigest,
+    LibraryFacetQuery, LibraryFacets, LibraryFilter, LibraryRootId, LibraryScope, LibrarySort,
+    LibrarySortDirection, LibrarySortField, LibraryViewToken, ListGamesQuery,
+    LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship, PersistenceError,
+    PlatformFacetBucket, PlatformId, RegionFacetBucket, RevisionFencedGameLibraryPage, ScanRunId,
+    SourceEntryId, SourceVersionEvidence, SourceVersionKind, ValidatedContentDerivation,
+    ValidatedM3uGrouping, bounded_library_display_title, bounded_library_release_date,
 };
 use rusqlite::{OptionalExtension, Row, params_from_iter, types::Value};
 
@@ -377,13 +378,16 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
     fn list_games(&mut self, query: &ListGamesQuery) -> Result<GameLibraryPage, PersistenceError> {
         let mut sql = String::from(
             "SELECT r.game_id, r.display_title, r.platform_id,
-                    r.presentation_region, r.selected_cover_asset_id,
-                    r.release_date, r.hydration_state, r.availability_state,
+            r.presentation_region, r.selected_cover_asset_id,
+            r.release_date, library_view.effective_hydration_state,
+            r.availability_state,
                     r.content_count, r.source_count,
                     COALESCE(CAST(strftime('%s', r.updated_at) AS INTEGER) * 1000,
                              CAST(r.updated_at AS INTEGER) * 1000, 0)
-             FROM game_library_row r
-             CROSS JOIN game g ON g.game_id = r.game_id
+        FROM game_library_row r
+        CROSS JOIN game g ON g.game_id = r.game_id
+        CROSS JOIN temp.library_view_current AS library_view
+            ON library_view.game_id = r.game_id
              WHERE g.lifecycle_state = 'active'
                AND NOT EXISTS (
                    SELECT 1 FROM game_redirect redirect
@@ -465,7 +469,14 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
         let game: Option<(String, String, String, String, String)> = self
             .transaction()?
             .query_row(
-                "SELECT platform_id, lifecycle_state, hydration_state, fallback_title,
+                "SELECT platform_id, lifecycle_state,
+                        COALESCE(
+                            (SELECT effective_hydration_state
+                             FROM temp.library_view_current
+                             WHERE game_id = game.game_id),
+                            game.hydration_state
+                        ),
+                        fallback_title,
                         (SELECT availability_state FROM game_library_row WHERE game_id = game.game_id)
                  FROM game
                  WHERE game_id = ?1",
@@ -589,6 +600,59 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
             availability,
         )))
     }
+
+    fn list_games_revision_fenced(
+        &mut self,
+        query: &ListGamesQuery,
+        token: Option<&LibraryViewToken>,
+    ) -> Result<RevisionFencedGameLibraryPage, ApplicationPortError> {
+        if query.cursor().is_some() != token.is_some() {
+            return Err(ApplicationPortError::LibraryViewTokenInvalid);
+        }
+        let key = match self.work.library_view_key().copied() {
+            Some(key) => key,
+            None if token.is_some() => {
+                return Err(ApplicationPortError::LibraryViewTokenInvalid);
+            }
+            None => return Err(ApplicationPortError::LibraryViewUnavailable),
+        };
+        let view_token = {
+            let transaction = self
+                .transaction()
+                .map_err(ApplicationPortError::Persistence)?;
+            match token {
+                Some(token) => {
+                    super::library_view::validate_list_token(transaction, &key, query, token)?;
+                    token.clone()
+                }
+                None => super::library_view::create_token(transaction, &key, query)?,
+            }
+        };
+        let page = self
+            .list_games(query)
+            .map_err(ApplicationPortError::Persistence)?;
+        Ok(RevisionFencedGameLibraryPage::new(page, view_token))
+    }
+
+    fn get_game_revision_fenced(
+        &mut self,
+        game_id: GameId,
+        token: &LibraryViewToken,
+    ) -> Result<GetGameResult, ApplicationPortError> {
+        let key = self
+            .work
+            .library_view_key()
+            .copied()
+            .ok_or(ApplicationPortError::LibraryViewTokenInvalid)?;
+        super::library_view::validate_game_token(
+            self.transaction()
+                .map_err(ApplicationPortError::Persistence)?,
+            &key,
+            token,
+        )?;
+        self.get_game(game_id)
+            .map_err(ApplicationPortError::Persistence)
+    }
 }
 
 fn append_library_scope(sql: &mut String, values: &mut Vec<Value>, scope: LibraryScope) {
@@ -643,7 +707,7 @@ fn append_library_filters(sql: &mut String, values: &mut Vec<Value>, filters: &L
     append_state_filter(
         sql,
         values,
-        "r.hydration_state",
+        "library_view.effective_hydration_state",
         filters
             .hydration_states()
             .iter()
@@ -904,6 +968,8 @@ fn facet_query_parts(query: &LibraryFacetQuery, omitted: FacetCategory) -> Facet
     let mut from_where = String::from(
         "FROM game_library_row r
          CROSS JOIN game g ON g.game_id = r.game_id
+         CROSS JOIN temp.library_view_current AS library_view
+             ON library_view.game_id = r.game_id
          WHERE g.lifecycle_state = 'active'
            AND NOT EXISTS (
                SELECT 1 FROM game_redirect redirect
@@ -932,7 +998,7 @@ fn facet_query_parts(query: &LibraryFacetQuery, omitted: FacetCategory) -> Facet
         append_state_filter(
             &mut from_where,
             &mut values,
-            "r.hydration_state",
+            "library_view.effective_hydration_state",
             filters
                 .hydration_states()
                 .iter()
@@ -1021,7 +1087,8 @@ fn read_hydration_facets(
 ) -> Result<Vec<HydrationStateFacetBucket>, PersistenceError> {
     let parts = facet_query_parts(query, FacetCategory::Hydration);
     let sql = format!(
-        "SELECT r.hydration_state, COUNT(*) {} GROUP BY r.hydration_state",
+        "SELECT library_view.effective_hydration_state, COUNT(*) {}
+         GROUP BY library_view.effective_hydration_state",
         parts.from_where
     );
     let mut statement = transaction

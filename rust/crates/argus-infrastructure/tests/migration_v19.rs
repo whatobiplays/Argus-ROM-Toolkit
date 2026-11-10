@@ -213,7 +213,15 @@ fn fresh_database_applies_v19_scope_schema() {
             row.get(0)
         })
         .expect("latest migration");
-    assert_eq!(latest_migration, 19);
+    assert_eq!(latest_migration, 20);
+    let v19_preserved: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 19)",
+            [],
+            |row| row.get(0),
+        )
+        .expect("inspect preserved migration 19");
+    assert!(v19_preserved);
     for (table, column) in [
         ("job_run", "library_refresh_scope_version"),
         ("library_refresh_intent", "requested_root_ids_json"),

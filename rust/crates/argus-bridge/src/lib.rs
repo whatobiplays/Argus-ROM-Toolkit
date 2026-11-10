@@ -24,21 +24,22 @@ use argus_application::{
     LibraryRootId, LibraryRootLastScanStatus, LibraryRootPage, LibraryRootProjection,
     LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanChildAdmissionIssue,
     LibraryScanJobDetail, LibraryScanRootSummary, LibraryScope, LibrarySort, LibrarySortDirection,
-    LibrarySortField, LibrarySourceId, ListGamesQuery, ListJobsQuery, ListJobsScope,
-    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor,
-    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot,
-    LocalFilesystemRootSelection, MembershipRelationship, MetadataFieldProvenance,
-    MetadataProviderReadiness, MetadataProviderReadinessProjection, MetadataProviderSettings,
-    MetadataProviderSettingsUpdateResult, MetadataSettings, MetadataSettingsUpdateResult,
-    MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail, PathClass,
-    PersistedSettingsReason, PlatformClass, PlatformId, PrivacyConsent, ProviderCapability,
-    ProviderCapabilityReadiness, ProviderId, ProviderReadinessState, Recoverability,
-    RefreshIssueFact, RefreshMode, RefreshProgressFacts, RemoveLibraryRootResult, ResolvedArtwork,
-    ResolvedMetadata, RetryJobResult, RetryNotAdmittedReason, RetryPolicy, RootRelationship,
-    SafeContext, SafeContextField, SafeContextValue, ScanProgressFacts, ScanRunProjection,
-    ScanRunStatus, SettingsDomain, SourceEntriesChangeScope, SourceEntryChildrenPage,
-    SourceEntryClassification, SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId,
-    SourceEntryKind, SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
+    LibrarySortField, LibrarySourceId, LibraryViewToken, ListGamesQuery, ListJobsQuery,
+    ListJobsScope, ListLibraryRootsQuery, ListSourceEntryChildrenQuery,
+    LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage,
+    LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, MembershipRelationship,
+    MetadataFieldProvenance, MetadataProviderReadiness, MetadataProviderReadinessProjection,
+    MetadataProviderSettings, MetadataProviderSettingsUpdateResult, MetadataSettings,
+    MetadataSettingsUpdateResult, MigrationOutcome, MountedLocalFilesystemVolume, OperationDetail,
+    PathClass, PersistedSettingsReason, PlatformClass, PlatformId, PrivacyConsent,
+    ProviderCapability, ProviderCapabilityReadiness, ProviderId, ProviderReadinessState,
+    Recoverability, RefreshIssueFact, RefreshMode, RefreshProgressFacts, RemoveLibraryRootResult,
+    ResolvedArtwork, ResolvedMetadata, RetryJobResult, RetryNotAdmittedReason, RetryPolicy,
+    RevisionFencedGameLibraryPage, RootRelationship, SafeContext, SafeContextField,
+    SafeContextValue, ScanProgressFacts, ScanRunProjection, ScanRunStatus, SettingsDomain,
+    SourceEntriesChangeScope, SourceEntryChildrenPage, SourceEntryClassification,
+    SourceEntryCursor, SourceEntryDetailProjection, SourceEntryId, SourceEntryKind,
+    SourceEntryProjection, StartLibraryScanAllResult, StartLibraryScanResult,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, ThemeMode,
 };
 use argus_runtime::{
@@ -527,8 +528,8 @@ pub struct LibrarySortDto {
     pub direction: LibrarySortDirectionDto,
 }
 
-/// Bounded logical-library request. The bridge maps the closed transport
-/// vocabulary into the application-owned query builder.
+/// Bounded logical-library query. Omitted consistency means `Latest`, and
+/// revision-fenced pages echo their token in `GamePageDto`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListGamesRequestDto {
     pub scope: LibraryScopeDto,
@@ -537,6 +538,30 @@ pub struct ListGamesRequestDto {
     pub sort: LibrarySortDto,
     pub cursor: Option<String>,
     pub page_size: u32,
+    pub view_consistency: Option<LibraryViewConsistencyDto>,
+    pub library_view_token: Option<String>,
+}
+
+/// Selects a latest-state read or a revision-fenced Library view.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryConsistencyModeDto {
+    Latest,
+    RevisionFenced,
+}
+
+/// Selects the consistency mode for an ordinary Library query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryViewConsistencyDto {
+    Latest,
+    RevisionFenced,
+}
+
+/// Additive request shape for Library reads with an explicit consistency mode.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryListRequestDto {
+    pub request: ListGamesRequestDto,
+    pub consistency: LibraryConsistencyModeDto,
+    pub view_token: Option<String>,
 }
 
 /// Scope/search/filter shape used to compute backend-owned facet counts.
@@ -774,11 +799,19 @@ pub struct GameLibraryRowDto {
     pub updated_at_ms: i64,
 }
 
-/// Bounded logical-library page with an opaque continuation cursor.
+/// Bounded logical-library page with a cursor and optional view token.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GamePageDto {
     pub items: Vec<GameLibraryRowDto>,
     pub next_cursor: Option<String>,
+    pub library_view_token: Option<String>,
+}
+
+/// Library page and optional token for continuing the same fenced view.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryListPageDto {
+    pub page: GamePageDto,
+    pub view_token: Option<String>,
 }
 
 /// Focused durable logical-game detail.
@@ -2007,11 +2040,59 @@ pub fn list_games(request: ListGamesRequestDto) -> Result<GamePageDto, Applicati
     let (context, _guard) = host()
         .begin_operation("library", "list_games")
         .map_err(|error| application_error_dto(&error))?;
-    let query = list_games_query_from_dto(request, context.trace_id())?;
-    host()
-        .list_games_with_context(query, &context)
-        .map(|page| game_page_dto(&page))
-        .map_err(|error| application_error_dto(&error))
+    match request
+        .view_consistency
+        .unwrap_or(LibraryViewConsistencyDto::Latest)
+    {
+        LibraryViewConsistencyDto::Latest => {
+            if request.library_view_token.is_some() {
+                return Err(library_view_failure(
+                    ErrorCode::LibraryViewTokenInvalid,
+                    context.trace_id(),
+                ));
+            }
+            let query = list_games_query_from_dto(request, context.trace_id())?;
+            host()
+                .list_games_with_context(query, &context)
+                .map(|page| game_page_dto(&page))
+                .map_err(|error| application_error_dto(&error))
+        }
+        LibraryViewConsistencyDto::RevisionFenced => {
+            let token_value = request.library_view_token.clone();
+            let query = revision_fenced_query_from_dto(request, context.trace_id())?;
+            let token = token_value
+                .map(|value| {
+                    LibraryViewToken::try_from_external(value).map_err(|_| {
+                        library_view_failure(ErrorCode::LibraryViewTokenInvalid, context.trace_id())
+                    })
+                })
+                .transpose()?;
+            host()
+                .list_games_revision_fenced_with_context(query, token, &context)
+                .map(|page| revision_fenced_game_page_dto(&page))
+                .map_err(|error| application_error_dto(&error))
+        }
+    }
+}
+
+/// Lists one Library page using its requested consistency mode.
+#[allow(clippy::result_large_err)]
+pub fn list_games_with_consistency(
+    request: LibraryListRequestDto,
+) -> Result<LibraryListPageDto, ApplicationErrorDto> {
+    let LibraryListRequestDto {
+        mut request,
+        consistency,
+        view_token,
+    } = request;
+    request.view_consistency = Some(match consistency {
+        LibraryConsistencyModeDto::Latest => LibraryViewConsistencyDto::Latest,
+        LibraryConsistencyModeDto::RevisionFenced => LibraryViewConsistencyDto::RevisionFenced,
+    });
+    request.library_view_token = view_token;
+    let page = list_games(request)?;
+    let view_token = page.library_view_token.clone();
+    Ok(LibraryListPageDto { page, view_token })
 }
 
 /// Reads backend-owned facet counts for one scope/search/filter shape.
@@ -2032,14 +2113,24 @@ pub fn get_library_facets(
 /// Reads one focused logical game. Redirects are represented explicitly;
 /// missing canonical games use the published typed application error.
 #[allow(clippy::result_large_err)]
-pub fn get_game(game_id: String) -> Result<GetGameResultDto, ApplicationErrorDto> {
+pub fn get_game(
+    game_id: String,
+    library_view_token: Option<String>,
+) -> Result<GetGameResultDto, ApplicationErrorDto> {
     let (context, _guard) = host()
         .begin_operation("library", "get_game")
         .map_err(|error| application_error_dto(&error))?;
     let game_id = parse_game_id(&game_id, context.trace_id())?;
-    let result = host()
-        .get_game_with_context(game_id, &context)
-        .map_err(|error| application_error_dto(&error))?;
+    let result = match library_view_token {
+        None => host().get_game_with_context(game_id, &context),
+        Some(value) => {
+            let token = LibraryViewToken::try_from_external(value).map_err(|_| {
+                library_view_failure(ErrorCode::LibraryViewTokenInvalid, context.trace_id())
+            })?;
+            host().get_game_revision_fenced_with_context(game_id, token, &context)
+        }
+    }
+    .map_err(|error| application_error_dto(&error))?;
     match result {
         GetGameResult::Found(detail) => Ok(GetGameResultDto::Found(game_detail_dto(&detail))),
         GetGameResult::Redirected(canonical_game_id) => Ok(GetGameResultDto::Redirected {
@@ -2054,6 +2145,15 @@ pub fn get_game(game_id: String) -> Result<GetGameResultDto, ApplicationErrorDto
             .expect("game-not-found error uses an allowlisted empty context"),
         )),
     }
+}
+
+/// Reads one game using the optional token for its current Library view.
+#[allow(clippy::result_large_err)]
+pub fn get_game_with_view(
+    game_id: String,
+    view_token: Option<String>,
+) -> Result<GetGameResultDto, ApplicationErrorDto> {
+    get_game(game_id, view_token)
 }
 
 /// Reads provider enablement and safe readiness without starting hydration.
@@ -2984,6 +3084,54 @@ fn list_games_query_from_dto(
 }
 
 #[allow(clippy::result_large_err)]
+fn revision_fenced_query_from_dto(
+    request: ListGamesRequestDto,
+    trace_id: argus_application::TraceId,
+) -> Result<ListGamesQuery, ApplicationErrorDto> {
+    let scope = library_scope_from_dto(request.scope, trace_id)?;
+    let filters = library_filter_from_dto(request.filters, trace_id)?;
+    let sort = library_sort_from_dto(request.sort);
+    let cursor = request
+        .cursor
+        .map(|value| {
+            GameListCursor::try_from_external(value).map_err(|_| validation_failure(trace_id))
+        })
+        .transpose()?;
+    let search_text = request.search_text;
+    let page_size = request.page_size;
+    let base_query = ListGamesQuery::builder()
+        .scope(scope)
+        .search(search_text.clone())
+        .filters(filters.clone())
+        .sort(sort)
+        .page_size(page_size)
+        .build()
+        .map_err(|_| validation_failure(trace_id))?;
+    let Some(cursor) = cursor else {
+        return Ok(base_query);
+    };
+    ListGamesQuery::builder()
+        .scope(scope)
+        .search(search_text)
+        .filters(filters)
+        .sort(sort)
+        .cursor(Some(cursor))
+        .page_size(page_size)
+        .build()
+        .map_err(|_| library_view_failure(ErrorCode::LibraryViewTokenInvalid, trace_id))
+}
+
+fn library_view_failure(
+    code: ErrorCode,
+    trace_id: argus_application::TraceId,
+) -> ApplicationErrorDto {
+    application_error_dto(
+        &ApplicationError::from_code(code, trace_id, SafeContext::new())
+            .expect("Library view errors use an allowlisted empty context"),
+    )
+}
+
+#[allow(clippy::result_large_err)]
 fn library_facet_query_from_dto(
     request: LibraryFacetQueryDto,
     trace_id: argus_application::TraceId,
@@ -3164,6 +3312,23 @@ pub fn game_page_dto(page: &GameLibraryPage) -> GamePageDto {
     GamePageDto {
         items: page.items().iter().map(game_library_row_dto).collect(),
         next_cursor: page.next_cursor().map(|cursor| cursor.as_str().to_owned()),
+        library_view_token: None,
+    }
+}
+
+fn revision_fenced_game_page_dto(page: &RevisionFencedGameLibraryPage) -> GamePageDto {
+    let mut dto = game_page_dto(page.page());
+    dto.library_view_token = Some(page.view_token().as_str().to_owned());
+    dto
+}
+
+#[allow(unexpected_cfgs)]
+#[flutter_rust_bridge::frb(ignore)]
+pub fn revision_fenced_page_dto(page: &RevisionFencedGameLibraryPage) -> LibraryListPageDto {
+    let page = revision_fenced_game_page_dto(page);
+    LibraryListPageDto {
+        view_token: page.library_view_token.clone(),
+        page,
     }
 }
 

@@ -200,6 +200,11 @@ impl MigrationRegistry {
                 "0019_library_refresh_scope_manifest",
                 include_bytes!("sql/0019_library_refresh_scope_manifest.sql"),
             ),
+            Migration::sql(
+                20,
+                "0020_library_view_state",
+                include_bytes!("sql/0020_library_view_state.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

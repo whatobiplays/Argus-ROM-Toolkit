@@ -99,6 +99,30 @@ final class ArgusClient implements ClientBootstrap {
   /// embedding/test gateways can remain functional without it.
   bool get supportsLibraryPhase003 => _gateway is LibraryPhase003Gateway;
 
+  /// Lists a page from a revision-fenced library view.
+  ///
+  /// Omit [viewToken] to start a view. Reuse the returned token for later
+  /// pages and detail reads. Throws a contract-mismatch [TransportFailure]
+  /// when the gateway does not support revision-fenced reads.
+  Future<RevisionFencedLibraryPage> listGamesRevisionFenced(
+    ListGamesRequest request, {
+    String? viewToken,
+  }) => _request(
+    () => _revisionFencedLibraryGateway().listGamesRevisionFenced(
+      request,
+      viewToken: viewToken,
+    ),
+  );
+
+  /// Reads game details from the library view identified by [viewToken].
+  /// Throws a contract-mismatch [TransportFailure] when the gateway does not
+  /// support revision-fenced reads.
+  Future<GetGameResult> getGameWithView(GameId gameId, String viewToken) =>
+      _request(
+        () =>
+            _revisionFencedLibraryGateway().getGameWithView(gameId, viewToken),
+      );
+
   @override
   Future<RuntimeState> initialize() async {
     final state = await _request(_gateway.initialize);
@@ -285,6 +309,17 @@ final class ArgusClient implements ClientBootstrap {
     }
     return (gateway as LibraryGateway).getGame(gameId);
   });
+
+  RevisionFencedLibraryGateway _revisionFencedLibraryGateway() {
+    final gateway = _gateway;
+    if (gateway is! RevisionFencedLibraryGateway) {
+      throw const TransportFailure(
+        'Revision-fenced library capability is unavailable',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    return gateway as RevisionFencedLibraryGateway;
+  }
 
   LibraryPhase003Gateway _phase003Gateway() {
     final gateway = _gateway;

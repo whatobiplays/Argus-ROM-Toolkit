@@ -8,8 +8,8 @@ use argus_domain::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ErrorCode, GameContentId, IdentityDigest, PersistenceError, ResolvedArtwork, ResolvedMetadata,
-    ScanRunId, SourceEntryId,
+    ApplicationPortError, ErrorCode, GameContentId, IdentityDigest, PersistenceError,
+    ResolvedArtwork, ResolvedMetadata, ScanRunId, SourceEntryId,
 };
 
 const MAX_CURSOR_WIRE_BYTES: usize = 4096;
@@ -1195,6 +1195,53 @@ pub enum GetGameResult {
     NotFound,
 }
 
+/// Opaque authentication value for one revision-fenced Library view.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryViewToken(String);
+
+impl LibraryViewToken {
+    /// Maximum encoded token size accepted by the Library query contract.
+    pub const MAX_BYTES: usize = 4096;
+
+    /// Creates a token from a bridge value or backend-generated encoding.
+    pub fn try_from_external(value: impl Into<String>) -> Result<Self, ApplicationPortError> {
+        let value = value.into();
+        if value.is_empty() || value.len() > Self::MAX_BYTES {
+            return Err(ApplicationPortError::LibraryViewTokenInvalid);
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the opaque wire value for transport adapters.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One complete Library page and the view token required by its continuation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RevisionFencedGameLibraryPage {
+    page: GameLibraryPage,
+    view_token: LibraryViewToken,
+}
+
+impl RevisionFencedGameLibraryPage {
+    /// Creates one page bound to its authenticated view token.
+    pub fn new(page: GameLibraryPage, view_token: LibraryViewToken) -> Self {
+        Self { page, view_token }
+    }
+
+    /// Returns the bounded page.
+    pub fn page(&self) -> &GameLibraryPage {
+        &self.page
+    }
+
+    /// Returns the token that must accompany any continuation.
+    pub fn view_token(&self) -> &LibraryViewToken {
+        &self.view_token
+    }
+}
+
 /// Application-owned read port for logical library projections.
 pub trait LogicalLibraryQueries {
     /// Lists one bounded page using backend-owned query semantics.
@@ -1208,6 +1255,30 @@ pub trait LogicalLibraryQueries {
 
     /// Retrieves one focused logical game result.
     fn get_game(&mut self, game_id: GameId) -> Result<GetGameResult, PersistenceError>;
+
+    /// Lists a page fenced to one persisted Library view.
+    ///
+    /// Implementations that do not support authenticated view tokens fail
+    /// closed and do not call the tokenless query.
+    fn list_games_revision_fenced(
+        &mut self,
+        _query: &ListGamesQuery,
+        token: Option<&LibraryViewToken>,
+    ) -> Result<RevisionFencedGameLibraryPage, ApplicationPortError> {
+        Err(match token {
+            Some(_) => ApplicationPortError::LibraryViewTokenInvalid,
+            None => ApplicationPortError::LibraryViewUnavailable,
+        })
+    }
+
+    /// Reads one game only while the supplied Library view remains current.
+    fn get_game_revision_fenced(
+        &mut self,
+        _game_id: GameId,
+        _token: &LibraryViewToken,
+    ) -> Result<GetGameResult, ApplicationPortError> {
+        Err(ApplicationPortError::LibraryViewTokenInvalid)
+    }
 }
 
 /// One platform facet bucket.

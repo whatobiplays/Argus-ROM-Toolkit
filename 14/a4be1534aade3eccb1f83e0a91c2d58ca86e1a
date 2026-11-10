@@ -1,0 +1,115 @@
+flutter/lib/core/bridge/generated/frb_generated.dart
+  s_c7322073c3be8f::t_65cac96ce19315 67,131-139,179-182,801-804,810,823,829-866,878,908,937,968,997,1027,1054,1084,1114,1144,1173,1203,1236,1267,1285-1317,1330,1363,1399,1430,1461,1497,1530,1563,1593,1623,1658,1694,1727,1760,1790,1820,1855,1891,1923,1955,1987,2021,2058,2094,2131,2165,2449-2456,2527-2534,2945-2946,2950,3127-3134,3186-3210,3524-3531,3591-3592,3600-3603,4209-4217,5196-5203,5280-5287,5815-5820,6028-6036,6098-6122,6510-6518,6627-6629,6637-6638,7485-7500,8614-8622,8704-8712,9171,9337-9345,9402-9422,9740-9748,9842-9846,10559-10571
+flutter/lib/core/bridge/generated/frb_generated.io.dart
+  s_c7322073c3be8f::t_cfd560d41866e6 112-116,156-160,379-383,396-401,487-491,729-732,1034-1038,1088-1092,1369-1373,1390-1399,1507-1511,1815-1820,2193-2198,2253-2258,2581-2586,2611-2622,2755-2760,3121-3126
+flutter/lib/core/bridge/generated/lib.dart
+  s_c7322073c3be8f::t_b872d45cb67c68 11,13-14,163-167,175-190,1018,1022,1024-1028,1031-1032,1040-1041,1339-1341,1439-1483,2011-2015,2023-2024,2033-2034,2044-2046,2058-2060
+flutter/lib/core/bridge/src/frb_argus_client_gateway.dart
+  s_16022e7cc88c7b::t_018e1aa6daac7a 36,349-350,352-357,374-407,756-766,1306-1312,1384,1387-1402
+flutter/lib/core/client/src/argus_client.dart
+  s_16022e7cc88c7b::t_5ea3bee2215f70 102-125,313-323
+flutter/lib/core/client/src/models.dart
+  s_16022e7cc88c7b::t_4c25da9bf91661 1725,1727,1731-1745,2054-2057,2066-2067,2076-2077
+flutter/lib/core/client/src/ports.dart
+  s_16022e7cc88c7b::t_54b4b8daa05a36 180-191
+flutter/test/core/bridge/frb_mapper_test.dart
+  s_16022e7cc88c7b::t_4d7b25bcc1ade4 80-177,1912-1952
+flutter/test/core/client/argus_client_test.dart
+  s_16022e7cc88c7b::t_ae2df7fcd3bc13 251-397,407-420,631-702
+rust/crates/argus-application/src/errors.rs
+  s_16022e7cc88c7b::t_6f99700a5617dc 101-102,289-332,400-401,696-711,781-783
+rust/crates/argus-application/src/jobs.rs
+  s_16022e7cc88c7b::t_97cf3450925dbd 4467-4472
+rust/crates/argus-application/src/lib.rs
+  s_16022e7cc88c7b::t_fa91bb652bdbd4 101-104
+rust/crates/argus-application/src/library.rs
+  s_16022e7cc88c7b::t_ee6bf2776ecc60 11-12,1198-1244,1258-1281
+rust/crates/argus-application/src/settings.rs
+  s_16022e7cc88c7b::t_0c1a9c478c2bc1 185-189
+rust/crates/argus-application/src/sources/library.rs
+  s_16022e7cc88c7b::t_7327526a027512 2190-2194
+rust/crates/argus-application/src/sources/scan.rs
+  s_16022e7cc88c7b::t_29a22921b89bca 870-875
+rust/crates/argus-bridge/src/frb_generated.rs
+  s_c7322073c3be8f::t_0b75e1b878cd9e 43,606,610-644,1108-1140,2567,2571,2816-2827,2892-2917,3328-3339,3439-3441,3449-3450,4215-4225,5156-5169,5175-5179,5185,5188-5194,5197-5208,5214-5215,5218,5885,6171-6191,6270-6304,6829-6849,6859-6860,8782,8994-9009,9060-9076,9399-9414,9494-9495,10111-10120
+rust/crates/argus-bridge/src/lib.rs
+  s_16022e7cc88c7b::t_f3fc7d410e4c42 27-42,531-532,541-564,802,807-814,2043-2095,2116-2119,2124-2133,2150-2158,3086-3133,3315-3331
+rust/crates/argus-bridge/tests/logical_library.rs
+  s_16022e7cc88c7b::t_f928ae9be2f825 6-7,144-156
+rust/crates/argus-infrastructure/src/sqlite/appearance.rs
+  s_16022e7cc88c7b::t_73c24c0731e4b6 94-99
+rust/crates/argus-infrastructure/src/sqlite/executor.rs
+  s_16022e7cc88c7b::t_e3e8aeabb5d2b7 72,113-126,131-139,197,203,212,332,342-346,370,385-389,755-762
+rust/crates/argus-infrastructure/src/sqlite/library_view.rs
+  s_16022e7cc88c7b::t_136d39a503dd20 1-722
+rust/crates/argus-infrastructure/src/sqlite/logical.rs
+  s_16022e7cc88c7b::t_96d5014739e0fa 11-22,381-383,387-390,472-479,603-655,710,971-972,1001,1090-1091
+rust/crates/argus-infrastructure/src/sqlite/migrations/mod.rs
+  s_16022e7cc88c7b::t_c55c7347709bd2 203-207
+rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0020_library_view_state.sql
+  s_16022e7cc88c7b::t_a9cf225c3f487f 1-15
+rust/crates/argus-infrastructure/src/sqlite/mod.rs
+  s_16022e7cc88c7b::t_6e0f2a2f8688a7 14
+rust/crates/argus-infrastructure/src/sqlite/unit_of_work.rs
+  s_16022e7cc88c7b::t_372bce740c3248 27,33-40,44,48-51,282-283,287-309
+rust/crates/argus-infrastructure/tests/library_view_revision.rs
+  s_16022e7cc88c7b::t_2586ba2603d866 1-1068
+rust/crates/argus-infrastructure/tests/logical_library.rs
+  s_16022e7cc88c7b::t_ec70cdddc0db0a 21
+rust/crates/argus-infrastructure/tests/metadata_persistence.rs
+  s_16022e7cc88c7b::t_3784e2d903911a 25
+rust/crates/argus-infrastructure/tests/migration_v12.rs
+  s_16022e7cc88c7b::t_92e366acd607f7 200-201
+rust/crates/argus-infrastructure/tests/migration_v14.rs
+  s_16022e7cc88c7b::t_c486940fec4fc4 190-191
+rust/crates/argus-infrastructure/tests/migration_v15.rs
+  s_16022e7cc88c7b::t_57eeaae5f5e91c 106,344-345,466-467,808-809
+rust/crates/argus-infrastructure/tests/migration_v19.rs
+  s_16022e7cc88c7b::t_38bf6372c1c4ef 216-224
+rust/crates/argus-infrastructure/tests/migration_v20.rs
+  s_16022e7cc88c7b::t_24d485e70e105e 1-90
+rust/crates/argus-infrastructure/tests/slice_005_retry.rs
+  s_16022e7cc88c7b::t_9f197f7320008a 97-98
+rust/crates/argus-infrastructure/tests/slice_006_scan_all_recovery.rs
+  s_16022e7cc88c7b::t_be4a93bac67791 135-136
+rust/crates/argus-infrastructure/tests/source_hierarchy.rs
+  s_16022e7cc88c7b::t_c008ae20b8c733 372-373
+rust/crates/argus-infrastructure/tests/sources.rs
+  s_16022e7cc88c7b::t_6989df751c1c31 57,81-82
+rust/crates/argus-infrastructure/tests/sqlite_kernel.rs
+  s_16022e7cc88c7b::t_d20a0bb3a95a64 107,233-234
+rust/crates/argus-runtime/src/background.rs
+  s_16022e7cc88c7b::t_0abba348dfdbf3 661-670
+rust/crates/argus-runtime/src/lib.rs
+  s_16022e7cc88c7b::t_3b377f46838d74 22,39-55,1312-1327,2005-2024,2063-2073,2620-2660,5196-5209,5212,5720-5722,5930-5938
+rust/crates/argus-runtime/src/runtime.rs
+  s_16022e7cc88c7b::t_cc3b7740c2b5b1 28-33,35-40,2033-2063,2119-2149
+rust/crates/argus-runtime/src/startup.rs
+  s_16022e7cc88c7b::t_7c412b2e488ee3 481-492
+rust/crates/argus-runtime/tests/kernel_bootstrap.rs
+  s_16022e7cc88c7b::t_4c7862c6130711 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14a4be1534aade3eccb1f83e0a91c2d58ca86e1a",
+  "prompts": {},
+  "sessions": {
+    "s_16022e7cc88c7b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1c014-4e37-72b1-aeae-92bca92346b1",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    },
+    "s_c7322073c3be8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1ba0c-52c4-7f73-a566-c996b89fea2d",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "WhatObiPlays <219249021+whatobiplays@users.noreply.github.com>"
+    }
+  }
+}

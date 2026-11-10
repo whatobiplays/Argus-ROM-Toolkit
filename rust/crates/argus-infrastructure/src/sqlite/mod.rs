@@ -11,6 +11,7 @@ mod connection;
 mod errors;
 mod executor;
 mod jobs;
+mod library_view;
 mod logical;
 mod metadata;
 mod migrations;

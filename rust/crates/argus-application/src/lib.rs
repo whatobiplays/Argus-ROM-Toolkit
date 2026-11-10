@@ -98,9 +98,10 @@ pub use library::{
     ContentProvenanceSummary, GameContentSourceSummary, GameContentSummary, GameDetail,
     GameLibraryPage, GameLibraryRow, GameListCursor, GameMembershipSummary, GetGameResult,
     HydrationStateFacetBucket, LibraryFacetQuery, LibraryFacets, LibraryFilter, LibraryScope,
-    LibrarySort, LibrarySortDirection, LibrarySortField, ListGamesQuery, ListGamesQueryBuilder,
-    LogicalLibraryQueries, MAX_LIBRARY_DISPLAY_TITLE_BYTES, MAX_LIBRARY_RELEASE_DATE_BYTES,
-    PlatformFacetBucket, ProvenanceVersionError, QueryValidationError, RegionFacetBucket,
+    LibrarySort, LibrarySortDirection, LibrarySortField, LibraryViewToken, ListGamesQuery,
+    ListGamesQueryBuilder, LogicalLibraryQueries, MAX_LIBRARY_DISPLAY_TITLE_BYTES,
+    MAX_LIBRARY_RELEASE_DATE_BYTES, PlatformFacetBucket, ProvenanceVersionError,
+    QueryValidationError, RegionFacetBucket, RevisionFencedGameLibraryPage,
     bounded_library_display_title, bounded_library_release_date,
 };
 pub use logical::{

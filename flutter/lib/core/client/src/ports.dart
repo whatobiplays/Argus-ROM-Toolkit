@@ -177,6 +177,18 @@ abstract interface class LibraryGateway {
   Future<GetGameResult> getGame(GameId gameId);
 }
 
+/// Optional library reads that keep page and detail requests on one view.
+abstract interface class RevisionFencedLibraryGateway {
+  /// Lists a page, starting a view when [viewToken] is null.
+  Future<RevisionFencedLibraryPage> listGamesRevisionFenced(
+    ListGamesRequest request, {
+    String? viewToken,
+  });
+
+  /// Reads a game from the view identified by [viewToken].
+  Future<GetGameResult> getGameWithView(GameId gameId, String viewToken);
+}
+
 /// Focused logical-library capability. It exposes durable local state only;
 /// provider metadata, rich presentation data, raw locators, and parser details
 /// remain out.

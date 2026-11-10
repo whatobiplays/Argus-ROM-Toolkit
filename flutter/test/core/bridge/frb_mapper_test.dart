@@ -77,6 +77,104 @@ dto.JobDetailDto _libraryRefreshJobDetailDto({
 );
 
 void main() {
+  test(
+    'ordinary Library bridge preserves omitted, Latest, and fenced views',
+    () async {
+      final api = _RevisionFencedRustLibApi();
+      final gateway = FrbArgusClientGateway(
+        api: api,
+        initializeNative: () async {},
+      );
+
+      final omittedModePage = await gateway.listGames(const ListGamesRequest());
+      expect(api.requests.last.viewConsistency, isNull);
+      expect(api.requests.last.libraryViewToken, isNull);
+      expect(omittedModePage.libraryViewToken, isNull);
+
+      final latestPage = await gateway.listGames(
+        const ListGamesRequest(viewConsistency: LibraryViewConsistency.latest),
+      );
+      expect(
+        api.requests.last.viewConsistency,
+        dto.LibraryViewConsistencyDto.latest,
+      );
+      expect(api.requests.last.libraryViewToken, isNull);
+      expect(latestPage.libraryViewToken, isNull);
+
+      final firstPage = await gateway.listGames(
+        const ListGamesRequest(
+          viewConsistency: LibraryViewConsistency.revisionFenced,
+        ),
+      );
+      final continuation = await gateway.listGames(
+        const ListGamesRequest(
+          cursor: 'next-page',
+          viewConsistency: LibraryViewConsistency.revisionFenced,
+          libraryViewToken: 'view-token',
+        ),
+      );
+
+      expect(firstPage.libraryViewToken, 'view-token');
+      expect(continuation.libraryViewToken, 'view-token');
+      expect(api.requests, hasLength(4));
+      expect(api.requests.map((request) => request.viewConsistency), [
+        null,
+        dto.LibraryViewConsistencyDto.latest,
+        dto.LibraryViewConsistencyDto.revisionFenced,
+        dto.LibraryViewConsistencyDto.revisionFenced,
+      ]);
+      expect(api.requests.map((request) => request.libraryViewToken), [
+        null,
+        null,
+        null,
+        'view-token',
+      ]);
+      expect(api.requests.last.cursor, 'next-page');
+
+      final compatibilityPage = await gateway.listGamesRevisionFenced(
+        const ListGamesRequest(),
+      );
+      expect(compatibilityPage.viewToken, 'view-token');
+      expect(
+        api.requests.last.viewConsistency,
+        dto.LibraryViewConsistencyDto.revisionFenced,
+      );
+
+      const gameId = GameId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      final legacyDetail = await gateway.getGame(gameId);
+      expect(legacyDetail, isA<GetGameRedirected>());
+      expect(api.detailViewToken, isNull);
+
+      final detail = await gateway.getGameWithView(gameId, 'view-token');
+      expect(
+        detail,
+        isA<GetGameRedirected>().having(
+          (result) => result.canonicalGameId,
+          'canonicalGameId',
+          const GameId('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+        ),
+      );
+      expect(api.detailGameId, gameId.value);
+      expect(api.detailViewToken, 'view-token');
+
+      api.responseToken = null;
+      await expectLater(
+        gateway.listGames(
+          const ListGamesRequest(
+            viewConsistency: LibraryViewConsistency.revisionFenced,
+          ),
+        ),
+        throwsA(
+          isA<TransportFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            TransportFailureKind.contractMismatch,
+          ),
+        ),
+      );
+    },
+  );
+
   test('scan run DTO preserves failure reason and child identity', () {
     final summary = scanRunSummaryFromDto(
       dto.ScanRunDto(
@@ -1809,6 +1907,47 @@ void main() {
       SourceEntryClassification.supportingEntry,
     );
   });
+}
+
+final class _RevisionFencedRustLibApi implements frb.RustLibApi {
+  final List<dto.ListGamesRequestDto> requests = [];
+  String? responseToken = 'view-token';
+  String? detailGameId;
+  String? detailViewToken;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (invocation.memberName == #crateListGames) {
+      requests.add(
+        invocation.namedArguments[const Symbol('request')]
+            as dto.ListGamesRequestDto,
+      );
+      final request = requests.last;
+      return Future<dto.GamePageDto>.value(
+        dto.GamePageDto(
+          items: const [],
+          libraryViewToken:
+              request.viewConsistency ==
+                  dto.LibraryViewConsistencyDto.revisionFenced
+              ? responseToken
+              : null,
+        ),
+      );
+    }
+    if (invocation.memberName == #crateGetGame) {
+      detailGameId =
+          invocation.namedArguments[const Symbol('gameId')] as String;
+      detailViewToken =
+          invocation.namedArguments[const Symbol('libraryViewToken')]
+              as String?;
+      return Future<dto.GetGameResultDto>.value(
+        const dto.GetGameResultDto.redirected(
+          canonicalGameId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        ),
+      );
+    }
+    return super.noSuchMethod(invocation);
+  }
 }
 
 /// Records the generated bridge entrypoint invoked by the gateway without

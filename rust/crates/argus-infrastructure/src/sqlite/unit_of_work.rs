@@ -24,15 +24,29 @@ use super::sources::{SqliteLibraryRootRepository, SqliteLibrarySourceRepository}
 pub struct SqliteUnitOfWork<'connection> {
     transaction: Option<Transaction<'connection>>,
     context: OperationContext,
+    library_view_key: Option<[u8; 32]>,
 }
 
 #[allow(dead_code)]
 impl<'connection> SqliteUnitOfWork<'connection> {
     pub(crate) fn new(transaction: Transaction<'connection>, context: OperationContext) -> Self {
+        Self::new_with_library_view_key(transaction, context, None)
+    }
+
+    pub(crate) fn new_with_library_view_key(
+        transaction: Transaction<'connection>,
+        context: OperationContext,
+        library_view_key: Option<[u8; 32]>,
+    ) -> Self {
         Self {
             transaction: Some(transaction),
             context,
+            library_view_key,
         }
+    }
+
+    pub(crate) const fn library_view_key(&self) -> Option<&[u8; 32]> {
+        self.library_view_key.as_ref()
     }
 
     /// Returns the operation context carried into this transaction scope.
@@ -265,7 +279,32 @@ impl<'connection> SqliteUnitOfWork<'connection> {
             .ok_or(ApplicationPortError::Persistence(
                 PersistenceError::Conflict,
             ))?;
+        super::library_view::prepare_commit(&transaction)
+            .map_err(ApplicationPortError::Persistence)?;
         transaction.commit().map_err(map_operation_error)
+    }
+
+    /// Advances the persisted query-contract version in this transaction.
+    pub fn advance_library_query_contract_version(&mut self) -> Result<(), ApplicationPortError> {
+        let transaction = self
+            .transaction
+            .as_ref()
+            .ok_or(ApplicationPortError::Persistence(
+                PersistenceError::Conflict,
+            ))?;
+        super::library_view::advance_query_contract_version(transaction)
+            .map_err(ApplicationPortError::Persistence)
+    }
+
+    /// Executes test-owned SQL inside this transaction when test support is enabled.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn execute_batch_for_tests(&mut self, sql: &str) -> Result<(), PersistenceError> {
+        self.transaction
+            .as_mut()
+            .ok_or(PersistenceError::Conflict)?
+            .execute_batch(sql)
+            .map_err(map_persistence_operation_error)
     }
 
     /// Rolls back the transaction and consumes this scope.

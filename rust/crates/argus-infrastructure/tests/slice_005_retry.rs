@@ -94,8 +94,8 @@ fn migration_0006_upgrades_a_slice_004_database_with_representative_history() {
         migration_test_support::current_registry(),
     )
     .expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 19);
-    assert_eq!(fresh.migration_summary().applied_count, 14);
+    assert_eq!(fresh.migration_summary().current_version, 20);
+    assert_eq!(fresh.migration_summary().applied_count, 15);
 
     fresh
         .execute(&context(), move |mut scope| {

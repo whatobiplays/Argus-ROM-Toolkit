@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1272198734;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 223881325;
 
 // Section: executor
 
@@ -603,10 +603,45 @@ fn wire__crate__get_game_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_game_id = <String>::sse_decode(&mut deserializer);
+            let api_library_view_token = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
-                    let output_ok = crate::get_game(api_game_id)?;
+                    let output_ok = crate::get_game(api_game_id, api_library_view_token)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__get_game_with_view_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_game_with_view",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_game_id = <String>::sse_decode(&mut deserializer);
+            let api_view_token = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::get_game_with_view(api_game_id, api_view_token)?;
                     Ok(output_ok)
                 })())
             }
@@ -1064,6 +1099,39 @@ fn wire__crate__list_games_impl(
             move |context| {
                 transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
                     let output_ok = crate::list_games(api_request)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__list_games_with_consistency_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_games_with_consistency",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_request = <crate::LibraryListRequestDto>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ApplicationErrorDto>((move || {
+                    let output_ok = crate::list_games_with_consistency(api_request)?;
                     Ok(output_ok)
                 })())
             }
@@ -2496,9 +2564,11 @@ impl SseDecode for crate::GamePageDto {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_items = <Vec<crate::GameLibraryRowDto>>::sse_decode(deserializer);
         let mut var_nextCursor = <Option<String>>::sse_decode(deserializer);
+        let mut var_libraryViewToken = <Option<String>>::sse_decode(deserializer);
         return crate::GamePageDto {
             items: var_items,
             next_cursor: var_nextCursor,
+            library_view_token: var_libraryViewToken,
         };
     }
 }
@@ -2743,6 +2813,18 @@ impl SseDecode for crate::LibraryAvailabilityStateDto {
     }
 }
 
+impl SseDecode for crate::LibraryConsistencyModeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibraryConsistencyModeDto::Latest,
+            1 => crate::LibraryConsistencyModeDto::RevisionFenced,
+            _ => unreachable!("Invalid variant for LibraryConsistencyModeDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::LibraryFacetQueryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2803,6 +2885,32 @@ impl SseDecode for crate::LibraryHydrationStateDto {
             2 => crate::LibraryHydrationStateDto::Unmatched,
             3 => crate::LibraryHydrationStateDto::Refreshing,
             _ => unreachable!("Invalid variant for LibraryHydrationStateDto: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryListPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_page = <crate::GamePageDto>::sse_decode(deserializer);
+        let mut var_viewToken = <Option<String>>::sse_decode(deserializer);
+        return crate::LibraryListPageDto {
+            page: var_page,
+            view_token: var_viewToken,
+        };
+    }
+}
+
+impl SseDecode for crate::LibraryListRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_request = <crate::ListGamesRequestDto>::sse_decode(deserializer);
+        let mut var_consistency = <crate::LibraryConsistencyModeDto>::sse_decode(deserializer);
+        let mut var_viewToken = <Option<String>>::sse_decode(deserializer);
+        return crate::LibraryListRequestDto {
+            request: var_request,
+            consistency: var_consistency,
+            view_token: var_viewToken,
         };
     }
 }
@@ -3217,6 +3325,18 @@ impl SseDecode for crate::LibrarySortFieldDto {
     }
 }
 
+impl SseDecode for crate::LibraryViewConsistencyDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::LibraryViewConsistencyDto::Latest,
+            1 => crate::LibraryViewConsistencyDto::RevisionFenced,
+            _ => unreachable!("Invalid variant for LibraryViewConsistencyDto: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3316,6 +3436,9 @@ impl SseDecode for crate::ListGamesRequestDto {
         let mut var_sort = <crate::LibrarySortDto>::sse_decode(deserializer);
         let mut var_cursor = <Option<String>>::sse_decode(deserializer);
         let mut var_pageSize = <u32>::sse_decode(deserializer);
+        let mut var_viewConsistency =
+            <Option<crate::LibraryViewConsistencyDto>>::sse_decode(deserializer);
+        let mut var_libraryViewToken = <Option<String>>::sse_decode(deserializer);
         return crate::ListGamesRequestDto {
             scope: var_scope,
             search_text: var_searchText,
@@ -3323,6 +3446,8 @@ impl SseDecode for crate::ListGamesRequestDto {
             sort: var_sort,
             cursor: var_cursor,
             page_size: var_pageSize,
+            view_consistency: var_viewConsistency,
+            library_view_token: var_libraryViewToken,
         };
     }
 }
@@ -4081,6 +4206,17 @@ impl SseDecode for Option<crate::LibraryRootScanAdmissionReferenceDto> {
             return Some(<crate::LibraryRootScanAdmissionReferenceDto>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::LibraryViewConsistencyDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::LibraryViewConsistencyDto>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -5017,67 +5153,69 @@ fn pde_ffi_dispatcher_primary_impl(
         15 => wire__crate__get_artwork_asset_bytes_impl(port, ptr, rust_vec_len, data_len),
         16 => wire__crate__get_event_attach_epoch_impl(port, ptr, rust_vec_len, data_len),
         17 => wire__crate__get_game_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__get_library_facets_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__get_library_onboarding_state_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__get_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__get_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__get_privacy_consent_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__initialize_with_standard_data_directory_impl(
+        18 => wire__crate__get_game_with_view_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__get_job_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__get_library_facets_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__get_library_onboarding_state_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__get_library_root_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__get_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__get_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__get_privacy_consent_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__get_root_scan_admission_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__get_runtime_state_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__get_source_entry_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__initialize_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__initialize_with_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__initialize_with_standard_data_directory_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__list_games_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__list_local_filesystem_browse_directories_impl(
+        32 => wire__crate__list_games_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__list_games_with_consistency_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__list_jobs_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__list_library_roots_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__list_local_filesystem_browse_directories_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        35 => {
+        37 => {
             wire__crate__list_local_filesystem_browse_roots_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => wire__crate__list_metadata_provider_readiness_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__record_library_provider_setup_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__refresh_library_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
-        42 => {
+        38 => wire__crate__list_metadata_provider_readiness_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__list_source_entry_children_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__open_startup_data_directory_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__record_library_provider_setup_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__refresh_library_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__remove_library_root_impl(port, ptr, rust_vec_len, data_len),
+        44 => {
             wire__crate__remove_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len)
         }
-        43 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__set_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__start_game_refresh_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
+        45 => wire__crate__report_execution_host_stop_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__reset_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__resolve_scan_all_request_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__retry_job_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__retry_startup_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__set_metadata_provider_credential_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__start_game_refresh_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__start_library_scan_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__start_library_scan_all_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__startup_technical_details_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__subscribe_events_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__sync_local_filesystem_mounted_volumes_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        55 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
-        56 => {
+        57 => wire__crate__update_appearance_settings_impl(port, ptr, rust_vec_len, data_len),
+        58 => {
             wire__crate__update_metadata_provider_settings_impl(port, ptr, rust_vec_len, data_len)
         }
-        57 => wire__crate__update_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__update_metadata_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5744,6 +5882,7 @@ impl flutter_rust_bridge::IntoDart for crate::GamePageDto {
         [
             self.items.into_into_dart().into_dart(),
             self.next_cursor.into_into_dart().into_dart(),
+            self.library_view_token.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -6029,6 +6168,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryAvailabilityStateDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryConsistencyModeDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Latest => 0.into_dart(),
+            Self::RevisionFenced => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryConsistencyModeDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryConsistencyModeDto>
+    for crate::LibraryConsistencyModeDto
+{
+    fn into_into_dart(self) -> crate::LibraryConsistencyModeDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::LibraryFacetQueryDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -6103,6 +6263,41 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibraryHydrationStateDto>
     for crate::LibraryHydrationStateDto
 {
     fn into_into_dart(self) -> crate::LibraryHydrationStateDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryListPageDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.page.into_into_dart().into_dart(),
+            self.view_token.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibraryListPageDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryListPageDto> for crate::LibraryListPageDto {
+    fn into_into_dart(self) -> crate::LibraryListPageDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryListRequestDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.request.into_into_dart().into_dart(),
+            self.consistency.into_into_dart().into_dart(),
+            self.view_token.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::LibraryListRequestDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryListRequestDto>
+    for crate::LibraryListRequestDto
+{
+    fn into_into_dart(self) -> crate::LibraryListRequestDto {
         self
     }
 }
@@ -6631,6 +6826,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::LibrarySortFieldDto> for crate::Li
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::LibraryViewConsistencyDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Latest => 0.into_dart(),
+            Self::RevisionFenced => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::LibraryViewConsistencyDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::LibraryViewConsistencyDto>
+    for crate::LibraryViewConsistencyDto
+{
+    fn into_into_dart(self) -> crate::LibraryViewConsistencyDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ListGamesRequestDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -6640,6 +6856,8 @@ impl flutter_rust_bridge::IntoDart for crate::ListGamesRequestDto {
             self.sort.into_into_dart().into_dart(),
             self.cursor.into_into_dart().into_dart(),
             self.page_size.into_into_dart().into_dart(),
+            self.view_consistency.into_into_dart().into_dart(),
+            self.library_view_token.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -8561,6 +8779,7 @@ impl SseEncode for crate::GamePageDto {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<crate::GameLibraryRowDto>>::sse_encode(self.items, serializer);
         <Option<String>>::sse_encode(self.next_cursor, serializer);
+        <Option<String>>::sse_encode(self.library_view_token, serializer);
     }
 }
 
@@ -8772,6 +8991,22 @@ impl SseEncode for crate::LibraryAvailabilityStateDto {
     }
 }
 
+impl SseEncode for crate::LibraryConsistencyModeDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibraryConsistencyModeDto::Latest => 0,
+                crate::LibraryConsistencyModeDto::RevisionFenced => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::LibraryFacetQueryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8819,6 +9054,23 @@ impl SseEncode for crate::LibraryHydrationStateDto {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::LibraryListPageDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::GamePageDto>::sse_encode(self.page, serializer);
+        <Option<String>>::sse_encode(self.view_token, serializer);
+    }
+}
+
+impl SseEncode for crate::LibraryListRequestDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::ListGamesRequestDto>::sse_encode(self.request, serializer);
+        <crate::LibraryConsistencyModeDto>::sse_encode(self.consistency, serializer);
+        <Option<String>>::sse_encode(self.view_token, serializer);
     }
 }
 
@@ -9144,6 +9396,22 @@ impl SseEncode for crate::LibrarySortFieldDto {
     }
 }
 
+impl SseEncode for crate::LibraryViewConsistencyDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::LibraryViewConsistencyDto::Latest => 0,
+                crate::LibraryViewConsistencyDto::RevisionFenced => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -9223,6 +9491,8 @@ impl SseEncode for crate::ListGamesRequestDto {
         <crate::LibrarySortDto>::sse_encode(self.sort, serializer);
         <Option<String>>::sse_encode(self.cursor, serializer);
         <u32>::sse_encode(self.page_size, serializer);
+        <Option<crate::LibraryViewConsistencyDto>>::sse_encode(self.view_consistency, serializer);
+        <Option<String>>::sse_encode(self.library_view_token, serializer);
     }
 }
 
@@ -9834,6 +10104,16 @@ impl SseEncode for Option<crate::LibraryRootScanAdmissionReferenceDto> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::LibraryRootScanAdmissionReferenceDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::LibraryViewConsistencyDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::LibraryViewConsistencyDto>::sse_encode(value, serializer);
         }
     }
 }

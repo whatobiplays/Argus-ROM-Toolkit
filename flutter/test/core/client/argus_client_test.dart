@@ -248,6 +248,153 @@ void main() {
     expect(client.boundGeneration, isNull);
     await client.dispose();
   });
+
+  test(
+    'revision-fenced list and detail reads keep the supplied view token',
+    () async {
+      final gateway = _RevisionFencedLibraryGatewayFake(
+        RuntimeInstanceId('v' * 32),
+      );
+      final client = ArgusClient(gateway: gateway);
+      const firstRequest = ListGamesRequest();
+
+      final firstPage = await client.listGamesRevisionFenced(firstRequest);
+      final continuationRequest = ListGamesRequest(
+        cursor: firstPage.page.nextCursor,
+      );
+      final continuationPage = await client.listGamesRevisionFenced(
+        continuationRequest,
+        viewToken: firstPage.viewToken,
+      );
+      final detail = await client.getGameWithView(
+        gateway.gameId,
+        continuationPage.viewToken,
+      );
+
+      expect(firstPage.page, same(gateway.revisionPage));
+      expect(firstPage.viewToken, 'view-token');
+      expect(continuationPage.viewToken, firstPage.viewToken);
+      expect(gateway.revisionRequests, <ListGamesRequest>[
+        firstRequest,
+        continuationRequest,
+      ]);
+      expect(gateway.revisionViewTokens, <String?>[null, 'view-token']);
+      expect(detail, same(gateway.legacyGameResult));
+      expect(gateway.detailGameIds, <GameId>[gateway.gameId]);
+      expect(gateway.detailViewTokens, <String>['view-token']);
+      expect(gateway.legacyListRequests, isEmpty);
+      expect(gateway.legacyGameIds, isEmpty);
+      await client.dispose();
+    },
+  );
+
+  test(
+    'revision-fenced reads fail closed when the gateway lacks the capability',
+    () async {
+      final gateway = _LibraryGatewayFake(RuntimeInstanceId('w' * 32));
+      final client = ArgusClient(gateway: gateway);
+
+      await expectLater(
+        client.listGamesRevisionFenced(
+          const ListGamesRequest(cursor: 'next-page'),
+          viewToken: 'existing-view',
+        ),
+        throwsA(
+          isA<TransportFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            TransportFailureKind.contractMismatch,
+          ),
+        ),
+      );
+      await expectLater(
+        client.getGameWithView(gateway.gameId, 'existing-view'),
+        throwsA(
+          isA<TransportFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            TransportFailureKind.contractMismatch,
+          ),
+        ),
+      );
+
+      expect(gateway.legacyListRequests, isEmpty);
+      expect(gateway.legacyGameIds, isEmpty);
+      await client.dispose();
+    },
+  );
+
+  test(
+    'revision-fenced application errors retain their stable codes',
+    () async {
+      final staleView = _libraryApplicationFailure(
+        'ARGUS.V1.LIBRARY.STALE_VIEW',
+      );
+      final invalidToken = _libraryApplicationFailure(
+        'ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN',
+      );
+      final gateway =
+          _RevisionFencedLibraryGatewayFake(RuntimeInstanceId('y' * 32))
+            ..revisionListFailure = staleView
+            ..revisionDetailFailure = invalidToken;
+      final client = ArgusClient(gateway: gateway);
+
+      await expectLater(
+        client.listGamesRevisionFenced(const ListGamesRequest()),
+        throwsA(
+          isA<ApplicationFailure>().having(
+            (failure) => failure.error.code.value,
+            'code',
+            'ARGUS.V1.LIBRARY.STALE_VIEW',
+          ),
+        ),
+      );
+      await expectLater(
+        client.getGameWithView(gateway.gameId, 'view-token'),
+        throwsA(
+          isA<ApplicationFailure>().having(
+            (failure) => failure.error.code.value,
+            'code',
+            'ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN',
+          ),
+        ),
+      );
+      gateway.revisionDetailFailure = _libraryApplicationFailure(
+        'ARGUS.V1.INTERNAL.UNEXPECTED',
+      );
+      await expectLater(
+        client.getGameWithView(gateway.gameId, 'view-token'),
+        throwsA(
+          isA<ApplicationFailure>().having(
+            (failure) => failure.error.code.value,
+            'code',
+            'ARGUS.V1.INTERNAL.UNEXPECTED',
+          ),
+        ),
+      );
+      await client.dispose();
+    },
+  );
+
+  test(
+    'legacy logical-library list and detail reads remain tokenless',
+    () async {
+      final gateway = _LibraryGatewayFake(RuntimeInstanceId('x' * 32));
+      final client = ArgusClient(gateway: gateway);
+      const request = ListGamesRequest(searchText: 'classic');
+
+      final page = await client.library.listGames(request);
+      final libraryDetail = await client.library.getGame(gateway.gameId);
+      final gameDetail = await client.games.getGame(gateway.gameId);
+
+      expect(page, same(gateway.legacyPage));
+      expect(libraryDetail, same(gateway.legacyGameResult));
+      expect(gameDetail, same(gateway.legacyGameResult));
+      expect(gateway.legacyListRequests, <ListGamesRequest>[request]);
+      expect(gateway.legacyGameIds, <GameId>[gateway.gameId, gateway.gameId]);
+      await client.dispose();
+    },
+  );
 }
 
 RuntimeEvent _event(RuntimeInstanceId id, int sequence) => RuntimeEvent(
@@ -256,6 +403,20 @@ RuntimeEvent _event(RuntimeInstanceId id, int sequence) => RuntimeEvent(
   occurredAtMs: BigInt.from(sequence),
   payload: const RuntimeEventPayload.appearanceSettingsChanged(),
 );
+
+ApplicationFailure _libraryApplicationFailure(String code) =>
+    ApplicationFailure(
+      ClientApplicationError(
+        code: ErrorCode(code),
+        category: ErrorCategory.operation,
+        severity: ApplicationSeverity.warning,
+        recoverability: Recoverability.retry,
+        retryPolicy: RetryPolicy.userInitiated,
+        messageKey: const MessageKey('errors.library.view'),
+        traceId: const TraceId('01010101010101010101010101010101'),
+        safeContext: const <SafeContextEntry>[],
+      ),
+    );
 
 final class FakeGateway
     with SourcesGatewayStub, JobsGatewayStub
@@ -465,5 +626,77 @@ final class FakeGateway
     );
     controllers.add(controller);
     return EventBindResult(stream: controller.stream, nativeAttached: true);
+  }
+}
+
+final class _LibraryGatewayFake extends FakeGateway implements LibraryGateway {
+  _LibraryGatewayFake(super.id);
+
+  final GamePage legacyPage = const GamePage(
+    items: <GameLibraryRow>[],
+    nextCursor: 'legacy-next',
+  );
+  late final GameId gameId = GameId('g' * 32);
+  late final GetGameResult legacyGameResult = GetGameRedirected(gameId);
+  final legacyListRequests = <ListGamesRequest>[];
+  final legacyGameIds = <GameId>[];
+
+  @override
+  Future<GamePage> listGames(ListGamesRequest request) async {
+    legacyListRequests.add(request);
+    return legacyPage;
+  }
+
+  @override
+  Future<LibraryFacets> getLibraryFacets(LibraryFacetQuery request) async =>
+      const LibraryFacets(
+        platforms: <PlatformFacetBucket>[],
+        regions: <RegionFacetBucket>[],
+        hydrationStates: <HydrationStateFacetBucket>[],
+        availabilityStates: <AvailabilityStateFacetBucket>[],
+      );
+
+  @override
+  Future<GetGameResult> getGame(GameId gameId) async {
+    legacyGameIds.add(gameId);
+    return legacyGameResult;
+  }
+}
+
+final class _RevisionFencedLibraryGatewayFake extends _LibraryGatewayFake
+    implements RevisionFencedLibraryGateway {
+  _RevisionFencedLibraryGatewayFake(super.id);
+
+  final GamePage revisionPage = const GamePage(
+    items: <GameLibraryRow>[],
+    nextCursor: 'revision-next',
+  );
+  final revisionRequests = <ListGamesRequest>[];
+  final revisionViewTokens = <String?>[];
+  final detailGameIds = <GameId>[];
+  final detailViewTokens = <String>[];
+  Object? revisionListFailure;
+  Object? revisionDetailFailure;
+
+  @override
+  Future<RevisionFencedLibraryPage> listGamesRevisionFenced(
+    ListGamesRequest request, {
+    String? viewToken,
+  }) async {
+    if (revisionListFailure case final Object error) throw error;
+    revisionRequests.add(request);
+    revisionViewTokens.add(viewToken);
+    return RevisionFencedLibraryPage(
+      page: revisionPage,
+      viewToken: viewToken ?? 'view-token',
+    );
+  }
+
+  @override
+  Future<GetGameResult> getGameWithView(GameId gameId, String viewToken) async {
+    if (revisionDetailFailure case final Object error) throw error;
+    detailGameIds.add(gameId);
+    detailViewTokens.add(viewToken);
+    return legacyGameResult;
   }
 }

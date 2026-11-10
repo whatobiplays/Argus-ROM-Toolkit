@@ -25,18 +25,19 @@ use argus_application::{
     LibraryProviderSetupDecision, LibraryRefreshAdmissionOutcome, LibraryRefreshTrigger,
     LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryScanAdmissionResult,
     LibraryScanAllRequestIdentity, LibraryScanChildAdmission, LibraryScanChildCompletion,
-    LibraryScanExecutionPlan, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
-    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
-    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection,
-    MetadataProviderSettings, MetadataProviderSettingsUpdateResult, MetadataSettings,
-    MetadataSettingsUpdateResult, OperationCompletion, OperationContext, OperationName,
-    PrivacyConsent, RefreshIssueAccumulator, RefreshIssueKind, RefreshIssueReason,
+    LibraryScanExecutionPlan, LibraryViewToken, ListGamesQuery, ListJobsQuery,
+    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor,
+    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot,
+    LocalFilesystemRootSelection, MetadataProviderSettings, MetadataProviderSettingsUpdateResult,
+    MetadataSettings, MetadataSettingsUpdateResult, OperationCompletion, OperationContext,
+    OperationName, PrivacyConsent, RefreshIssueAccumulator, RefreshIssueKind, RefreshIssueReason,
     RefreshIssueRepository, RefreshIssueSummary, RefreshMode, RefreshUnitOfWork,
-    RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand, ScanAdmissionReference,
-    SourceEntriesChangeScope, SourceEntriesChanged, SourceEntryChildrenPage,
-    SourceEntryDetailProjection, SourceEntryId, StartLibraryScanAllResult, StartLibraryScanResult,
-    SubsystemName, SyncLocalFilesystemMountedVolumesCommand, TraceId, TransformationBudget,
-    UnitOfWork, UnitOfWorkFactory, aggregate_library_scan_state,
+    RemoveLibraryRootResult, RetryJobAdmissionResult, RetryJobCommand,
+    RevisionFencedGameLibraryPage, ScanAdmissionReference, SourceEntriesChangeScope,
+    SourceEntriesChanged, SourceEntryChildrenPage, SourceEntryDetailProjection, SourceEntryId,
+    StartLibraryScanAllResult, StartLibraryScanResult, SubsystemName,
+    SyncLocalFilesystemMountedVolumesCommand, TraceId, TransformationBudget, UnitOfWork,
+    UnitOfWorkFactory, aggregate_library_scan_state,
 };
 
 use crate::{
@@ -2029,6 +2030,37 @@ impl ApplicationHost {
         })
     }
 
+    /// Executes one bounded page from a revision-fenced Library view.
+    pub fn list_games_revision_fenced(
+        &self,
+        query: ListGamesQuery,
+        token: Option<LibraryViewToken>,
+    ) -> Result<RevisionFencedGameLibraryPage, ApplicationError> {
+        let (context, _guard) = self.begin_operation("library", "list_games_revision_fenced")?;
+        self.list_games_revision_fenced_with_context(query, token, &context)
+    }
+
+    /// Executes a revision-fenced Library page under an existing context.
+    pub fn list_games_revision_fenced_with_context(
+        &self,
+        query: ListGamesQuery,
+        token: Option<LibraryViewToken>,
+        context: &OperationContext,
+    ) -> Result<RevisionFencedGameLibraryPage, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.list_games_revision_fenced_with_context(&query, token.as_ref(), context)
+        })
+    }
+
     /// Executes the backend-owned facet query for one logical-library shape.
     pub fn get_library_facets(
         &self,
@@ -2081,6 +2113,37 @@ impl ApplicationHost {
         }
         self.with_ready_kernel(context, move |kernel| {
             kernel.get_game_with_context(game_id, context)
+        })
+    }
+
+    /// Executes one focused game lookup fenced to a committed Library view.
+    pub fn get_game_revision_fenced(
+        &self,
+        game_id: GameId,
+        token: LibraryViewToken,
+    ) -> Result<GetGameResult, ApplicationError> {
+        let (context, _guard) = self.begin_operation("library", "get_game_revision_fenced")?;
+        self.get_game_revision_fenced_with_context(game_id, token, &context)
+    }
+
+    /// Executes a fenced game lookup under an existing context.
+    pub fn get_game_revision_fenced_with_context(
+        &self,
+        game_id: GameId,
+        token: LibraryViewToken,
+        context: &OperationContext,
+    ) -> Result<GetGameResult, ApplicationError> {
+        let guard = {
+            let generation = self.lock_generation_with_context(context)?;
+            generation.admit_operation_with_context(context, OperationClass::Query)?
+        };
+        if guard.token().is_cancelled() {
+            return Err(crate::operations::cancelled_error_with_trace(
+                context.trace_id(),
+            ));
+        }
+        self.with_ready_kernel(context, move |kernel| {
+            kernel.get_game_revision_fenced_with_context(game_id, &token, context)
         })
     }
 

@@ -33,6 +33,7 @@ final class FrbArgusClientGateway
         ArgusClientGateway,
         DiagnosticsSharingGateway,
         LibraryGateway,
+        RevisionFencedLibraryGateway,
         LibraryPhase003Gateway,
         PrivacyGateway,
         MetadataProvidersGateway,
@@ -345,11 +346,15 @@ final class FrbArgusClientGateway
   );
 
   @override
-  Future<GamePage> listGames(ListGamesRequest request) => _call(
-    () async => gamePageFromDto(
+  Future<GamePage> listGames(ListGamesRequest request) => _call(() async {
+    final page = gamePageFromDto(
       await _rustApi.crateListGames(request: listGamesRequestToDto(request)),
-    ),
-  );
+    );
+    if (request.viewConsistency == LibraryViewConsistency.revisionFenced) {
+      _requireLibraryViewToken(page);
+    }
+    return page;
+  });
 
   @override
   Future<LibraryFacets> getLibraryFacets(LibraryFacetQuery request) => _call(
@@ -365,6 +370,40 @@ final class FrbArgusClientGateway
     () async =>
         getGameResultFromDto(await _rustApi.crateGetGame(gameId: gameId.value)),
   );
+
+  @override
+  Future<RevisionFencedLibraryPage> listGamesRevisionFenced(
+    ListGamesRequest request, {
+    String? viewToken,
+  }) => _call(() async {
+    final query = listGamesRequestToDto(request);
+    final result = await _rustApi.crateListGames(
+      request: dto.ListGamesRequestDto(
+        scope: query.scope,
+        searchText: query.searchText,
+        filters: query.filters,
+        sort: query.sort,
+        cursor: query.cursor,
+        pageSize: query.pageSize,
+        viewConsistency: dto.LibraryViewConsistencyDto.revisionFenced,
+        libraryViewToken: viewToken,
+      ),
+    );
+    final page = gamePageFromDto(result);
+    final token = _requireLibraryViewToken(page);
+    return RevisionFencedLibraryPage(page: page, viewToken: token);
+  });
+
+  @override
+  Future<GetGameResult> getGameWithView(GameId gameId, String viewToken) =>
+      _call(
+        () async => getGameResultFromDto(
+          await _rustApi.crateGetGame(
+            gameId: gameId.value,
+            libraryViewToken: viewToken,
+          ),
+        ),
+      );
 
   @override
   Future<List<MetadataProviderReadiness>> listMetadataProviderReadiness() =>
@@ -712,6 +751,17 @@ final class FrbArgusClientGateway
     } catch (error, stackTrace) {
       throw _mapFailure(error, stackTrace);
     }
+  }
+
+  String _requireLibraryViewToken(GamePage page) {
+    final token = page.libraryViewToken;
+    if (token == null || token.isEmpty) {
+      throw const TransportFailure(
+        'Revision-fenced library response omitted its view token',
+        kind: TransportFailureKind.contractMismatch,
+      );
+    }
+    return token;
   }
 
   /// Runs one provider-dependent Sources operation after a serialized native
@@ -1253,6 +1303,13 @@ dto.ListGamesRequestDto listGamesRequestToDto(ListGamesRequest value) =>
       ),
       cursor: value.cursor,
       pageSize: value.pageSize,
+      viewConsistency: switch (value.viewConsistency) {
+        null => null,
+        LibraryViewConsistency.latest => dto.LibraryViewConsistencyDto.latest,
+        LibraryViewConsistency.revisionFenced =>
+          dto.LibraryViewConsistencyDto.revisionFenced,
+      },
+      libraryViewToken: value.libraryViewToken,
     );
 
 dto.LibraryFacetQueryDto libraryFacetQueryToDto(LibraryFacetQuery value) =>
@@ -1324,7 +1381,24 @@ dto.LibrarySortDirectionDto librarySortDirectionToDto(
 GamePage gamePageFromDto(dto.GamePageDto value) => GamePage(
   items: [for (final item in value.items) gameLibraryRowFromDto(item)],
   nextCursor: value.nextCursor,
+  libraryViewToken: value.libraryViewToken,
 );
+
+RevisionFencedLibraryPage revisionFencedLibraryPageFromDto(
+  dto.LibraryListPageDto value,
+) {
+  final token = value.viewToken;
+  if (token == null || token.isEmpty) {
+    throw const TransportFailure(
+      'Revision-fenced library response omitted its view token',
+      kind: TransportFailureKind.contractMismatch,
+    );
+  }
+  return RevisionFencedLibraryPage(
+    page: gamePageFromDto(value.page),
+    viewToken: token,
+  );
+}
 
 GameLibraryRow gameLibraryRowFromDto(dto.GameLibraryRowDto value) =>
     GameLibraryRow(

@@ -4466,6 +4466,12 @@ fn map_port_error(trace_id: TraceId, error: ApplicationPortError) -> Application
             ApplicationError::from_code(ErrorCode::InternalUnexpected, trace_id, SafeContext::new())
                 .expect("internal unexpected uses an allowlisted empty context")
         }
+        ApplicationPortError::LibraryViewStale
+        | ApplicationPortError::LibraryViewTokenInvalid
+        | ApplicationPortError::LibraryViewUnavailable => {
+            ApplicationError::from_code(ErrorCode::InternalUnexpected, trace_id, SafeContext::new())
+                .expect("internal unexpected uses an allowlisted empty context")
+        }
     }
 }
 

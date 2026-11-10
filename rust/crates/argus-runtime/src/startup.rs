@@ -478,9 +478,18 @@ impl StartupCoordinator {
             .as_ref()
             .ok_or_else(|| configuration_error(self.trace_id))?;
         let database_path = data_directory.join("argus.sqlite3");
-        let executor =
-            SqliteDatabaseExecutor::open_with_capacity(&database_path, DEFAULT_QUEUE_CAPACITY)
-                .map_err(|error| persistence_error(self.trace_id, error))?;
+        let view_key = crate::library_view_process_key().map_err(|_| {
+            persistence_error(
+                self.trace_id,
+                argus_infrastructure::sqlite::SqliteExecutorError::Internal,
+            )
+        })?;
+        let executor = SqliteDatabaseExecutor::open_with_capacity_and_view_key(
+            &database_path,
+            DEFAULT_QUEUE_CAPACITY,
+            view_key,
+        )
+        .map_err(|error| persistence_error(self.trace_id, error))?;
         let artwork_store = ArtworkObjectStore::new(data_directory.join("artwork-assets"))
             .map_err(|_| {
                 persistence_error(

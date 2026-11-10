@@ -91,7 +91,12 @@ pub(crate) fn map_executor_error(error: SqliteExecutorError) -> PersistenceError
     match error {
         SqliteExecutorError::ApplicationCallback(error) => match error {
             argus_application::ApplicationPortError::Persistence(error) => error,
-            argus_application::ApplicationPortError::EventRecording => PersistenceError::Internal,
+            argus_application::ApplicationPortError::EventRecording
+            | argus_application::ApplicationPortError::LibraryViewStale
+            | argus_application::ApplicationPortError::LibraryViewTokenInvalid
+            | argus_application::ApplicationPortError::LibraryViewUnavailable => {
+                PersistenceError::Internal
+            }
         },
         SqliteExecutorError::DatabaseLocked => PersistenceError::DatabaseLocked,
         SqliteExecutorError::DatabaseOpenFailed

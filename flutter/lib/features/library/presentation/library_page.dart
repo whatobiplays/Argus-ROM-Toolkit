@@ -610,31 +610,43 @@ class _LibraryBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state.phase == LibraryLoadPhase.failed && state.games.isEmpty) {
-      return _LibraryLoadFailure(onRetry: onRetry);
+      return _withPageBoundaries(
+        _LibraryLoadFailure(onRetry: onRetry),
+        controller.emptyStatePageBoundaries,
+      );
     }
     if (state.phase == LibraryLoadPhase.loading && state.games.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return _withPageBoundaries(
+        const Center(child: CircularProgressIndicator()),
+        controller.emptyStatePageBoundaries,
+      );
     }
     final roots = state.roots;
     if (scope is LibraryScopeAll && roots != null && roots.totalCount == 0) {
-      return _LibraryEmptyState(
-        icon: Icons.folder_open,
-        title: 'Add a library root to begin',
-        message:
-            'Library games appear here after a configured source is scanned.',
-        actionLabel: 'Open Sources',
-        onAction: onOpenSources,
+      return _withPageBoundaries(
+        _LibraryEmptyState(
+          icon: Icons.folder_open,
+          title: 'Add a library root to begin',
+          message:
+              'Library games appear here after a configured source is scanned.',
+          actionLabel: 'Open Sources',
+          onAction: onOpenSources,
+        ),
+        controller.emptyStatePageBoundaries,
       );
     }
     if (state.games.isEmpty) {
-      return _LibraryEmptyState(
-        icon: Icons.grid_view_outlined,
-        title: 'No games match this query',
-        message: state.searchText?.isNotEmpty == true
-            ? 'Try a different search or remove a filter.'
-            : 'Refresh the Library after your sources have finished scanning.',
-        actionLabel: 'Open Sources',
-        onAction: onOpenSources,
+      return _withPageBoundaries(
+        _LibraryEmptyState(
+          icon: Icons.grid_view_outlined,
+          title: 'No games match this query',
+          message: state.searchText?.isNotEmpty == true
+              ? 'Try a different search or remove a filter.'
+              : 'Refresh the Library after your sources have finished scanning.',
+          actionLabel: 'Open Sources',
+          onAction: onOpenSources,
+        ),
+        controller.emptyStatePageBoundaries,
       );
     }
     return state.viewMode == LibraryViewMode.grid
@@ -654,6 +666,41 @@ class _LibraryBody extends StatelessWidget {
             onForceRefresh: onForceRefresh,
           );
   }
+}
+
+Widget _withPageBoundaries(
+  Widget child,
+  List<LibraryPageCorrelation> boundaries,
+) {
+  for (final boundary in boundaries.reversed) {
+    child = Semantics(
+      container: true,
+      explicitChildNodes: true,
+      identifier: boundary.semanticsIdentifier,
+      child: child,
+    );
+  }
+  return child;
+}
+
+class _PageBoundaryFooter extends StatelessWidget {
+  const _PageBoundaryFooter({required this.boundaries});
+
+  final List<LibraryPageCorrelation> boundaries;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final boundary in boundaries)
+        Semantics(
+          container: true,
+          explicitChildNodes: true,
+          identifier: boundary.semanticsIdentifier,
+          child: const SizedBox(width: 1, height: 1),
+        ),
+    ],
+  );
 }
 
 class _LibraryGrid extends StatelessWidget {
@@ -682,33 +729,56 @@ class _LibraryGrid extends StatelessWidget {
         LibraryWidthClass.expanded => 4,
         LibraryWidthClass.large => 5,
       };
-      return GridView.builder(
-        key: const PageStorageKey<String>('library-game-grid'),
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columns,
-          crossAxisSpacing: 14,
-          mainAxisSpacing: 14,
-          childAspectRatio: widthClass.index >= LibraryWidthClass.expanded.index
-              ? 1.15
-              : 0.95,
-        ),
-        itemCount: state.games.length,
-        itemBuilder: (context, index) => _GameCard(
-          game: state.games[index],
-          selected: state.selectedGameIds.contains(state.games[index].gameId),
-          grid: true,
-          onOpen: onOpenGame,
-          onTap: (gameId) => _activateLibraryGame(
-            state: state,
-            controller: controller,
-            gameId: gameId,
-            onOpen: onOpenGame,
+      return Column(
+        children: [
+          Expanded(
+            child: GridView.builder(
+              key: const PageStorageKey<String>('library-game-grid'),
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 14,
+                mainAxisSpacing: 14,
+                childAspectRatio:
+                    widthClass.index >= LibraryWidthClass.expanded.index
+                    ? 1.15
+                    : 0.95,
+              ),
+              itemCount: state.games.length,
+              itemBuilder: (context, index) {
+                final game = state.games[index];
+                final card = _GameCard(
+                  game: game,
+                  selected: state.selectedGameIds.contains(game.gameId),
+                  grid: true,
+                  rowIdentifier: controller
+                      .rowCorrelationForIndex(index)
+                      ?.semanticsIdentifier,
+                  onOpen: onOpenGame,
+                  onTap: (gameId) => _activateLibraryGame(
+                    state: state,
+                    controller: controller,
+                    gameId: gameId,
+                    onOpen: onOpenGame,
+                  ),
+                  onToggleSelection: controller.toggleSelection,
+                  onForceRefresh: onForceRefresh,
+                );
+                final pageBoundary = controller.pageBoundaryForRow(index);
+                if (pageBoundary == null) return card;
+                return Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  identifier: pageBoundary.semanticsIdentifier,
+                  child: card,
+                );
+              },
+            ),
           ),
-          onToggleSelection: controller.toggleSelection,
-          onForceRefresh: onForceRefresh,
-        ),
+          if (controller.trailingPageBoundaries.isNotEmpty)
+            _PageBoundaryFooter(boundaries: controller.trailingPageBoundaries),
+        ],
       );
     },
   );
@@ -730,26 +800,48 @@ class _LibraryList extends StatelessWidget {
   final Future<void> Function(GameId gameId) onForceRefresh;
 
   @override
-  Widget build(BuildContext context) => ListView.separated(
-    key: const PageStorageKey<String>('library-game-list'),
-    controller: scrollController,
-    padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-    itemCount: state.games.length,
-    separatorBuilder: (context, index) => const SizedBox(height: 8),
-    itemBuilder: (context, index) => _GameCard(
-      game: state.games[index],
-      selected: state.selectedGameIds.contains(state.games[index].gameId),
-      grid: false,
-      onOpen: onOpenGame,
-      onTap: (gameId) => _activateLibraryGame(
-        state: state,
-        controller: controller,
-        gameId: gameId,
-        onOpen: onOpenGame,
+  Widget build(BuildContext context) => Column(
+    children: [
+      Expanded(
+        child: ListView.separated(
+          key: const PageStorageKey<String>('library-game-list'),
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+          itemCount: state.games.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final game = state.games[index];
+            final card = _GameCard(
+              game: game,
+              selected: state.selectedGameIds.contains(game.gameId),
+              grid: false,
+              rowIdentifier: controller
+                  .rowCorrelationForIndex(index)
+                  ?.semanticsIdentifier,
+              onOpen: onOpenGame,
+              onTap: (gameId) => _activateLibraryGame(
+                state: state,
+                controller: controller,
+                gameId: gameId,
+                onOpen: onOpenGame,
+              ),
+              onToggleSelection: controller.toggleSelection,
+              onForceRefresh: onForceRefresh,
+            );
+            final pageBoundary = controller.pageBoundaryForRow(index);
+            if (pageBoundary == null) return card;
+            return Semantics(
+              container: true,
+              explicitChildNodes: true,
+              identifier: pageBoundary.semanticsIdentifier,
+              child: card,
+            );
+          },
+        ),
       ),
-      onToggleSelection: controller.toggleSelection,
-      onForceRefresh: onForceRefresh,
-    ),
+      if (controller.trailingPageBoundaries.isNotEmpty)
+        _PageBoundaryFooter(boundaries: controller.trailingPageBoundaries),
+    ],
   );
 }
 
@@ -757,6 +849,7 @@ class _GameCard extends StatelessWidget {
   const _GameCard({
     required this.game,
     required this.selected,
+    required this.rowIdentifier,
     required this.grid,
     required this.onOpen,
     required this.onTap,
@@ -766,6 +859,7 @@ class _GameCard extends StatelessWidget {
 
   final GameLibraryRow game;
   final bool selected;
+  final String? rowIdentifier;
   final bool grid;
   final void Function(GameId gameId) onOpen;
   final void Function(GameId gameId) onTap;
@@ -828,6 +922,7 @@ class _GameCard extends StatelessWidget {
       color: selected ? Theme.of(context).colorScheme.secondaryContainer : null,
       child: Semantics(
         container: true,
+        identifier: rowIdentifier,
         label: '${game.displayTitle}, ${_platformLabel(game.platformId)}',
         selected: selected,
         child: Focus(

@@ -6,6 +6,7 @@ import 'package:argus/features/library/application/library_state.dart';
 /// Deterministic Library read fake that records every bounded request.
 final class FakeLibraryReads implements LibraryReads {
   FakeLibraryReads({
+    this.revisionFencedToken = 'test-library-view-token',
     this.facets = const LibraryFacets(
       platforms: [],
       regions: [],
@@ -16,6 +17,8 @@ final class FakeLibraryReads implements LibraryReads {
 
   final List<ListGamesRequest> requests = [];
   final List<LibraryFacetQuery> facetRequests = [];
+  final String revisionFencedToken;
+  bool omitRevisionFencedToken = false;
   LibraryFacets facets;
   FutureOr<GamePage> Function(ListGamesRequest request)? onListGames;
   GetGameResult Function(GameId gameId)? onGetGame;
@@ -32,8 +35,19 @@ final class FakeLibraryReads implements LibraryReads {
       throw failure;
     }
     final handler = onListGames;
-    if (handler != null) return await handler(request);
-    return const GamePage(items: []);
+    final page = handler == null
+        ? const GamePage(items: [])
+        : await handler(request);
+    if (request.viewConsistency != LibraryViewConsistency.revisionFenced ||
+        omitRevisionFencedToken ||
+        page.libraryViewToken != null) {
+      return page;
+    }
+    return GamePage(
+      items: page.items,
+      nextCursor: page.nextCursor,
+      libraryViewToken: revisionFencedToken,
+    );
   }
 
   @override
@@ -196,6 +210,19 @@ LibraryOnboardingState completeLibraryOnboardingState() =>
       credentialConfigured: false,
       complete: true,
     );
+
+ApplicationFailure libraryApplicationFailure(String code) => ApplicationFailure(
+  ClientApplicationError(
+    code: ErrorCode(code),
+    category: ErrorCategory.persistence,
+    severity: ApplicationSeverity.warning,
+    recoverability: Recoverability.retry,
+    retryPolicy: RetryPolicy.userInitiated,
+    messageKey: const MessageKey('errors.library.view'),
+    traceId: const TraceId('01010101010101010101010101010101'),
+    safeContext: const <SafeContextEntry>[],
+  ),
+);
 
 /// Deterministic single-Game read/refresh fake for detail tests.
 final class FakeGamesApi implements GamesApi {

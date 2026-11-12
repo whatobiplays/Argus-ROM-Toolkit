@@ -137,6 +137,7 @@ final class _LibraryObservation {
   _LibraryObservation({
     required this.observationId,
     required this.queryShape,
+    required this.queryProfile,
     this.viewToken,
     this.nextCursor,
     this.canContinue = true,
@@ -149,6 +150,7 @@ final class _LibraryObservation {
 
   final String observationId;
   final _LibraryQueryShape queryShape;
+  final String queryProfile;
   final String? viewToken;
   final String? nextCursor;
   final bool canContinue;
@@ -163,7 +165,7 @@ final class _LibraryObservation {
         : pages.last.firstRowIndex + pages.last.rowCount;
     final correlation = LibraryPageCorrelation(
       observationId: observationId,
-      queryProfile: 'OrdinaryUserQuery',
+      queryProfile: queryProfile,
       pageOrdinal: pageOrdinal,
       isFirstPage: pageOrdinal == 1,
       isContinuationPage: pageOrdinal > 1,
@@ -178,6 +180,7 @@ final class _LibraryObservation {
     return _LibraryObservation(
       observationId: observationId,
       queryShape: queryShape,
+      queryProfile: queryProfile,
       viewToken: viewToken ?? page.libraryViewToken,
       nextCursor: page.nextCursor,
       canContinue: page.nextCursor != null,
@@ -197,6 +200,7 @@ final class _LibraryObservation {
   _LibraryObservation withoutContinuation() => _LibraryObservation(
     observationId: observationId,
     queryShape: queryShape,
+    queryProfile: queryProfile,
     canContinue: false,
     pages: pages,
     seenGameIds: seenGameIds,
@@ -216,6 +220,9 @@ final class LibraryController extends ChangeNotifier {
   static const int pageSize = 50;
   static const int maxRefreshSelected = 64;
   static const Duration defaultSearchDebounce = Duration(milliseconds: 300);
+  static const String ordinaryUserQueryProfile = 'OrdinaryUserQuery';
+  static const String allActiveMembershipBaselineProfile =
+      'AllActiveMembershipBaseline';
   static int _observationSequence = 0;
 
   LibraryController({
@@ -280,8 +287,62 @@ final class LibraryController extends ChangeNotifier {
   bool _disposed = false;
   bool _staleRecoveryUsed = false;
   GameId? _selectionAnchor;
+  int _scrollResetGeneration = 0;
 
   LibraryState get state => _state;
+
+  /// Whether the normal Library page can select the all-active query.
+  bool get canResetAllActive => _isReady && _state.scope is LibraryScopeAll;
+
+  /// Starts a fresh All-scope observation after a deliberate user action.
+  ///
+  /// The baseline profile belongs to this in-memory observation and follows
+  /// its pages through continuation and stale-view recovery.
+  Future<void> resetAllActive() {
+    if (!canResetAllActive) return Future<void>.value();
+
+    _searchTimer?.cancel();
+    _requestToken++;
+    _staleRecoveryUsed = false;
+    _retainedStaleFailureBoundaries = const <LibraryPageCorrelation>[];
+    _selectionAnchor = null;
+    _scrollResetGeneration++;
+
+    final nextState = _state.copyWith(
+      searchText: null,
+      filters: const LibraryFilter(),
+      sort: const LibrarySort(),
+      games: const <GameLibraryRow>[],
+      nextCursor: null,
+      facets: null,
+      roots: null,
+      phase: LibraryLoadPhase.loading,
+      refreshing: false,
+      loadingMore: false,
+      lastFailure: null,
+      selectedGameIds: const <GameId>{},
+      gridScrollOffset: 0,
+      listScrollOffset: 0,
+    );
+    final observation = _newObservation(
+      nextState,
+      queryProfile: allActiveMembershipBaselineProfile,
+    );
+    _publish(
+      state: nextState,
+      rowsObservation: null,
+      requestObservation: observation,
+      pendingPageCorrelation: _pageAttempt(
+        observation,
+        pageOrdinal: 1,
+        status: LibraryPageStatus.loading,
+      ),
+    );
+    return _load();
+  }
+
+  /// Changes when both saved layout offsets must be discarded.
+  int get scrollResetGeneration => _scrollResetGeneration;
 
   /// Returns the page boundary attached to the first row of a completed page.
   LibraryPageCorrelation? pageBoundaryForRow(int rowIndex) {
@@ -357,7 +418,10 @@ final class LibraryController extends ChangeNotifier {
   Future<void> refresh() {
     _searchTimer?.cancel();
     _requestToken++;
-    _requestObservation = null;
+    final profile =
+        (_requestObservation ?? _rowsObservation)?.queryProfile ??
+        ordinaryUserQueryProfile;
+    _requestObservation = _newObservation(_state, queryProfile: profile);
     _staleRecoveryUsed = false;
     _retainedStaleFailureBoundaries = const <LibraryPageCorrelation>[];
     return _load();
@@ -715,11 +779,14 @@ final class LibraryController extends ChangeNotifier {
     }
   }
 
-  _LibraryObservation _newObservation(LibraryState state) =>
-      _LibraryObservation(
-        observationId: 'obs-${++_observationSequence}',
-        queryShape: _LibraryQueryShape.fromState(state),
-      );
+  _LibraryObservation _newObservation(
+    LibraryState state, {
+    String queryProfile = ordinaryUserQueryProfile,
+  }) => _LibraryObservation(
+    observationId: 'obs-${++_observationSequence}',
+    queryShape: _LibraryQueryShape.fromState(state),
+    queryProfile: queryProfile,
+  );
 
   LibraryPageCorrelation _pageAttempt(
     _LibraryObservation observation, {
@@ -728,7 +795,7 @@ final class LibraryController extends ChangeNotifier {
     GamePage? response,
   }) => LibraryPageCorrelation(
     observationId: observation.observationId,
-    queryProfile: 'OrdinaryUserQuery',
+    queryProfile: observation.queryProfile,
     pageOrdinal: pageOrdinal,
     isFirstPage: pageOrdinal == 1,
     isContinuationPage: pageOrdinal > 1,
@@ -841,7 +908,10 @@ final class LibraryController extends ChangeNotifier {
         loadingMore: false,
         lastFailure: failure,
       );
-      final replacement = _newObservation(nextState);
+      final replacement = _newObservation(
+        nextState,
+        queryProfile: observation.queryProfile,
+      );
       _publish(
         state: nextState,
         rowsObservation: _rowsObservation,

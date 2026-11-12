@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ui' show Tristate;
 
 import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/application/library_controller.dart';
 import 'package:argus/features/library/library.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -19,6 +21,148 @@ void main() {
     expect(libraryWidthClassForWidth(1199), LibraryWidthClass.expanded);
     expect(libraryWidthClassForWidth(1200), LibraryWidthClass.large);
   });
+
+  testWidgets(
+    'Reset All Active is an accessible action only on the All scope',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final semantics = tester.ensureSemantics();
+
+      final allController = await _readyController(
+        FakeLibraryReads(),
+        scope: const LibraryScopeAll(),
+      );
+      addTearDown(allController.dispose);
+      await tester.pumpWidget(_libraryHarness(controller: allController));
+      await tester.pumpAndSettle();
+
+      final action = find.byKey(
+        const ValueKey<String>('library-reset-all-active'),
+      );
+      expect(action, findsOneWidget);
+      final actionSemantics = tester.getSemantics(action).getSemanticsData();
+      expect(actionSemantics.label, 'Reset All Active');
+      expect(actionSemantics.flagsCollection.isButton, isTrue);
+      expect(actionSemantics.hasAction(SemanticsAction.tap), isTrue);
+      expect(actionSemantics.flagsCollection.isEnabled, Tristate.isTrue);
+
+      final platformController = await _readyController(FakeLibraryReads());
+      addTearDown(platformController.dispose);
+      await tester.pumpWidget(_libraryHarness(controller: platformController));
+      await tester.pumpAndSettle();
+      expect(action, findsNothing);
+
+      final preReadyController = LibraryController.preReady(
+        scope: const LibraryScopeAll(),
+        runtimeContext: const LibraryRuntimeContext.preReady(),
+        demandSource: const LibraryReconciliationDemandSource(
+          Stream<LibraryReconciliationDemand>.empty(),
+        ),
+      );
+      addTearDown(preReadyController.dispose);
+      await tester.pumpWidget(_libraryHarness(controller: preReadyController));
+      await tester.pumpAndSettle();
+      expect(action, findsOneWidget);
+      expect(tester.widget<OutlinedButton>(action).onPressed, isNull);
+      final disabledSemantics = tester.getSemantics(action).getSemanticsData();
+      expect(disabledSemantics.flagsCollection.isButton, isTrue);
+      expect(disabledSemantics.flagsCollection.isEnabled, Tristate.isFalse);
+      semantics.dispose();
+    },
+  );
+
+  testWidgets(
+    'reset restores the canonical query without launching a Library refresh',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final first = libraryRow(id: '11111111111111111111111111111111');
+      final reads = FakeLibraryReads()
+        ..onListGames = (_) => GamePage(items: [first]);
+      final refresh = FakeLibraryRefreshApi();
+      final controller = await _readyController(
+        reads,
+        refreshApi: refresh,
+        scope: const LibraryScopeAll(),
+        searchDebounce: const Duration(days: 1),
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _libraryHarness(controller: controller, refreshApi: refresh),
+      );
+      await tester.pumpAndSettle();
+
+      controller.toggleSelection(first.gameId);
+      controller.setScrollOffset(120);
+      controller.setViewMode(LibraryViewMode.list);
+      controller.setScrollOffset(320);
+      await controller.setFilters(const LibraryFilter(regions: ['us']));
+      await controller.setSort(
+        const LibrarySort(
+          field: LibrarySortField.platform,
+          direction: LibrarySortDirection.descending,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('library-search')),
+        'incidental search',
+      );
+      await tester.pump();
+      expect(controller.state.searchText, 'incidental search');
+      expect(controller.state.selectedGameIds, {first.gameId});
+
+      final priorRequestCount = reads.requests.length;
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library-reset-all-active')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(controller.state.searchText, isNull);
+      expect(controller.state.filters, const LibraryFilter());
+      expect(controller.state.sort, const LibrarySort());
+      expect(controller.state.viewMode, LibraryViewMode.list);
+      expect(controller.state.selectedGameIds, isEmpty);
+      expect(controller.state.gridScrollOffset, 0);
+      expect(controller.state.listScrollOffset, 0);
+      expect(reads.requests, hasLength(priorRequestCount + 1));
+      final baselineRequest = reads.requests.last;
+      expect(baselineRequest.scope, isA<LibraryScopeAll>());
+      expect(baselineRequest.searchText, isNull);
+      expect(baselineRequest.filters, const LibraryFilter());
+      expect(baselineRequest.sort, const LibrarySort());
+      expect(baselineRequest.pageSize, 50);
+      expect(
+        baselineRequest.viewConsistency,
+        LibraryViewConsistency.revisionFenced,
+      );
+      expect(baselineRequest.cursor, isNull);
+      expect(baselineRequest.libraryViewToken, isNull);
+      expect(
+        controller.pageBoundaryForRow(0)!.queryProfile,
+        'AllActiveMembershipBaseline',
+      );
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey<String>('library-search')),
+            )
+            .controller
+            ?.text,
+        isEmpty,
+      );
+      expect(find.byType(GridView), findsNothing);
+      expect(refresh.libraryRefreshCalls, 0);
+      expect(refresh.gameRefreshTargets, isEmpty);
+
+      await tester.pump(const Duration(days: 1));
+      expect(reads.requests, hasLength(priorRequestCount + 1));
+    },
+  );
 
   testWidgets('renders bounded rows and compact controls at 2x text scale', (
     tester,
@@ -204,16 +348,12 @@ void main() {
           findsNothing,
         );
 
-        await tester.drag(
-          find.byKey(
-            PageStorageKey<String>(
-              viewMode == LibraryViewMode.grid
-                  ? 'library-game-grid'
-                  : 'library-game-list',
-            ),
-          ),
-          const Offset(0, -20000),
-        );
+        final scrollable = viewMode == LibraryViewMode.grid
+            ? find.byType(GridView)
+            : find.byWidgetPredicate(
+                (widget) => widget is ListView && widget.controller != null,
+              );
+        await tester.drag(scrollable, const Offset(0, -20000));
         await tester.pumpAndSettle();
 
         expect(
@@ -498,7 +638,7 @@ void main() {
     },
   );
 
-  testWidgets('keeps a 10,000-plus logical library widget-lazy', (
+  testWidgets('keeps 10,000-plus baseline rows lazy in Grid and List', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(900, 800);
@@ -528,8 +668,13 @@ void main() {
           nextCursor: end < rows.length ? 'cursor-$end' : null,
         );
       };
-    final controller = await _readyController(reads);
+    final controller = await _readyController(
+      reads,
+      scope: const LibraryScopeAll(),
+      sourcesApi: FakeSourcesApi(roots: [fakeRoot()]),
+    );
     addTearDown(controller.dispose);
+    await controller.resetAllActive();
     for (
       var loaded = LibraryController.pageSize;
       loaded < totalRows;
@@ -539,16 +684,134 @@ void main() {
     }
     expect(controller.state.games, hasLength(totalRows));
 
+    final semantics = tester.ensureSemantics();
+    for (final viewMode in LibraryViewMode.values) {
+      controller.setViewMode(viewMode);
+      await tester.pumpWidget(_libraryHarness(controller: controller));
+      await tester.pumpAndSettle();
+
+      final builtRows = find.byWidgetPredicate(
+        (widget) =>
+            widget is Card &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith('library-game-'),
+      );
+      expect(tester.widgetList<Card>(builtRows).length, lessThan(totalRows));
+      expect(
+        find.byType(GridView),
+        viewMode == LibraryViewMode.grid ? findsOneWidget : findsNothing,
+      );
+      expect(
+        controller.pageBoundaryForRow(0)!.queryProfile,
+        'AllActiveMembershipBaseline',
+      );
+      final firstPage = controller.pageBoundaryForRow(0)!;
+      final lastRow = controller.rowCorrelationForIndex(totalRows - 1)!;
+      expect(lastRow.gameId, rows.last.gameId);
+      expect(lastRow.pageOrdinal, 201);
+      expect(lastRow.rowOrdinalWithinPage, 50);
+      expect(
+        find.bySemanticsIdentifier(firstPage.semanticsIdentifier),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsIdentifier(lastRow.semanticsIdentifier),
+        findsNothing,
+      );
+    }
+    semantics.dispose();
+  });
+
+  testWidgets('reset returns both attached layouts to their first row', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final rows = List<GameLibraryRow>.generate(
+      150,
+      (index) => libraryRow(
+        id: (index + 1).toRadixString(16).padLeft(32, '0'),
+        title: 'Game $index',
+      ),
+    );
+    final reads = FakeLibraryReads()
+      ..onListGames = (request) {
+        final start = request.cursor == null
+            ? 0
+            : int.parse(request.cursor!.substring('cursor-'.length));
+        final items = rows
+            .skip(start)
+            .take(LibraryController.pageSize)
+            .toList();
+        final end = start + items.length;
+        return GamePage(
+          items: items,
+          nextCursor: end < rows.length ? 'cursor-$end' : null,
+        );
+      };
+    final controller = await _readyController(
+      reads,
+      scope: const LibraryScopeAll(),
+      sourcesApi: FakeSourcesApi(roots: [fakeRoot()]),
+    );
+    addTearDown(controller.dispose);
     await tester.pumpWidget(_libraryHarness(controller: controller));
     await tester.pumpAndSettle();
+    final preResetGridKey = tester.widget<GridView>(find.byType(GridView)).key;
+    await controller.resetAllActive();
+    await tester.pumpAndSettle();
 
-    final builtRows = find.byWidgetPredicate(
-      (widget) =>
-          widget is Card &&
-          widget.key is ValueKey<String> &&
-          (widget.key! as ValueKey<String>).value.startsWith('library-game-'),
+    for (final viewMode in LibraryViewMode.values) {
+      controller.setViewMode(viewMode);
+      for (
+        var loaded = controller.state.games.length;
+        loaded < rows.length;
+        loaded += LibraryController.pageSize
+      ) {
+        await controller.loadMore();
+      }
+      await tester.pumpAndSettle();
+
+      final scrollController = viewMode == LibraryViewMode.grid
+          ? tester.widget<GridView>(find.byType(GridView)).controller!
+          : tester
+                .widget<ListView>(
+                  find.byWidgetPredicate(
+                    (widget) => widget is ListView && widget.controller != null,
+                  ),
+                )
+                .controller!;
+      scrollController.jumpTo(500);
+      await tester.pump();
+      expect(scrollController.offset, 500);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library-reset-all-active')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(controller.state.viewMode, viewMode);
+      expect(controller.state.games, hasLength(LibraryController.pageSize));
+      expect(controller.state.gridScrollOffset, 0);
+      expect(controller.state.listScrollOffset, 0);
+      expect(scrollController.hasClients, isTrue);
+      expect(scrollController.offset, 0);
+    }
+
+    final replacement = await _readyController(
+      reads,
+      scope: const LibraryScopeAll(),
+      sourcesApi: FakeSourcesApi(roots: [fakeRoot()]),
     );
-    expect(tester.widgetList<Card>(builtRows).length, lessThan(totalRows));
+    addTearDown(replacement.dispose);
+    await tester.pumpWidget(_libraryHarness(controller: replacement));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<GridView>(find.byType(GridView)).key,
+      isNot(preResetGridKey),
+    );
   });
 
   testWidgets('library refresh fake failures reach the toolbar error path', (
@@ -625,21 +888,25 @@ void main() {
 Future<LibraryController> _readyController(
   FakeLibraryReads reads, {
   FakeLibraryRefreshApi? refreshApi,
+  FakeSourcesApi? sourcesApi,
   LibraryReconciliationDemandSource? demandSource,
+  LibraryScope scope = const LibraryScope.platform('nintendo.nes'),
+  Duration? searchDebounce,
   bool initialize = true,
 }) async {
   final controller = LibraryController(
     reads: reads,
-    sources: FakeSourcesApi(),
+    sources: sourcesApi ?? FakeSourcesApi(),
     refreshApi: refreshApi ?? FakeLibraryRefreshApi(),
     gamesApi: FakeGamesApi(),
-    scope: const LibraryScope.platform('nintendo.nes'),
+    scope: scope,
     runtimeContext: readyLibraryRuntimeContext,
     demandSource:
         demandSource ??
         const LibraryReconciliationDemandSource(
           Stream<LibraryReconciliationDemand>.empty(),
         ),
+    searchDebounce: searchDebounce ?? LibraryController.defaultSearchDebounce,
   );
   if (initialize) await controller.initialize();
   return controller;
@@ -650,6 +917,7 @@ Widget _libraryHarness({
   TextScaler? textScaler,
   LibraryRefreshApi? refreshApi,
 }) => ProviderScope(
+  key: ObjectKey(controller),
   overrides: [
     libraryControllerProvider(
       controller.state.scope,

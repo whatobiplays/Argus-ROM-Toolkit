@@ -39,6 +39,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   late final TextEditingController _searchController;
   late final ScrollController _gridScrollController;
   late final ScrollController _listScrollController;
+  LibraryController? _scrollResetController;
+  int? _observedScrollResetGeneration;
 
   @override
   void initState() {
@@ -80,6 +82,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       animation: controller,
       builder: (context, _) {
         final state = controller.state;
+        _observeScrollReset(controller);
         if (_searchController.text != (state.searchText ?? '')) {
           _searchController.value = TextEditingValue(
             text: state.searchText ?? '',
@@ -115,6 +118,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                               widthClass: widthClass,
                               searchController: _searchController,
                               onSearchChanged: controller.setSearchText,
+                              onResetAllActive: controller.canResetAllActive
+                                  ? () => unawaited(controller.resetAllActive())
+                                  : null,
                               onRefreshLibrary: () => _refreshLibrary(context),
                               onRefreshSelected: () =>
                                   _refreshSelected(context, controller),
@@ -133,6 +139,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                           scope: widget.scope,
                           state: state,
                           controller: controller,
+                          scrollResetGeneration:
+                              controller.scrollResetGeneration,
                           gridScrollController: _gridScrollController,
                           listScrollController: _listScrollController,
                           widthClass: widthClass,
@@ -152,6 +160,32 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         );
       },
     );
+  }
+
+  void _observeScrollReset(LibraryController controller) {
+    final generation = controller.scrollResetGeneration;
+    if (!identical(_scrollResetController, controller)) {
+      _scrollResetController = controller;
+      _observedScrollResetGeneration = generation;
+      return;
+    }
+    if (_observedScrollResetGeneration == generation) return;
+    _observedScrollResetGeneration = generation;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !identical(
+            ref.read(libraryControllerProvider(widget.scope)),
+            controller,
+          )) {
+        return;
+      }
+      if (_gridScrollController.hasClients) {
+        _gridScrollController.jumpTo(0);
+      }
+      if (_listScrollController.hasClients) {
+        _listScrollController.jumpTo(0);
+      }
+    });
   }
 
   Future<void> _refreshLibrary(BuildContext context) async {
@@ -245,6 +279,7 @@ class _LibraryHeader extends StatelessWidget {
     required this.widthClass,
     required this.searchController,
     required this.onSearchChanged,
+    required this.onResetAllActive,
     required this.onRefreshLibrary,
     required this.onRefreshSelected,
     required this.onViewModeChanged,
@@ -256,6 +291,7 @@ class _LibraryHeader extends StatelessWidget {
   final LibraryWidthClass widthClass;
   final TextEditingController searchController;
   final ValueChanged<String> onSearchChanged;
+  final VoidCallback? onResetAllActive;
   final VoidCallback onRefreshLibrary;
   final VoidCallback onRefreshSelected;
   final ValueChanged<LibraryViewMode> onViewModeChanged;
@@ -281,6 +317,16 @@ class _LibraryHeader extends StatelessWidget {
                 _scopeTitle(scope),
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
+              if (scope is LibraryScopeAll)
+                Semantics(
+                  identifier: 'argus.library.reset_all_active.v1',
+                  child: OutlinedButton.icon(
+                    key: const ValueKey<String>('library-reset-all-active'),
+                    onPressed: onResetAllActive,
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Reset All Active'),
+                  ),
+                ),
               if (state.refreshing)
                 const SizedBox(
                   width: 18,
@@ -587,6 +633,7 @@ class _LibraryBody extends StatelessWidget {
     required this.scope,
     required this.state,
     required this.controller,
+    required this.scrollResetGeneration,
     required this.gridScrollController,
     required this.listScrollController,
     required this.widthClass,
@@ -599,6 +646,7 @@ class _LibraryBody extends StatelessWidget {
   final LibraryScope scope;
   final LibraryState state;
   final LibraryController controller;
+  final int scrollResetGeneration;
   final ScrollController gridScrollController;
   final ScrollController listScrollController;
   final LibraryWidthClass widthClass;
@@ -653,6 +701,7 @@ class _LibraryBody extends StatelessWidget {
         ? _LibraryGrid(
             state: state,
             controller: controller,
+            scrollResetGeneration: scrollResetGeneration,
             scrollController: gridScrollController,
             widthClass: widthClass,
             onOpenGame: onOpenGame,
@@ -661,6 +710,7 @@ class _LibraryBody extends StatelessWidget {
         : _LibraryList(
             state: state,
             controller: controller,
+            scrollResetGeneration: scrollResetGeneration,
             scrollController: listScrollController,
             onOpenGame: onOpenGame,
             onForceRefresh: onForceRefresh,
@@ -707,6 +757,7 @@ class _LibraryGrid extends StatelessWidget {
   const _LibraryGrid({
     required this.state,
     required this.controller,
+    required this.scrollResetGeneration,
     required this.scrollController,
     required this.widthClass,
     required this.onOpenGame,
@@ -715,6 +766,7 @@ class _LibraryGrid extends StatelessWidget {
 
   final LibraryState state;
   final LibraryController controller;
+  final int scrollResetGeneration;
   final ScrollController scrollController;
   final LibraryWidthClass widthClass;
   final void Function(GameId gameId) onOpenGame;
@@ -733,7 +785,11 @@ class _LibraryGrid extends StatelessWidget {
         children: [
           Expanded(
             child: GridView.builder(
-              key: const PageStorageKey<String>('library-game-grid'),
+              key: PageStorageKey<(String, int, int)>((
+                'grid',
+                controller.pageStorageInstanceId,
+                scrollResetGeneration,
+              )),
               controller: scrollController,
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -788,6 +844,7 @@ class _LibraryList extends StatelessWidget {
   const _LibraryList({
     required this.state,
     required this.controller,
+    required this.scrollResetGeneration,
     required this.scrollController,
     required this.onOpenGame,
     required this.onForceRefresh,
@@ -795,6 +852,7 @@ class _LibraryList extends StatelessWidget {
 
   final LibraryState state;
   final LibraryController controller;
+  final int scrollResetGeneration;
   final ScrollController scrollController;
   final void Function(GameId gameId) onOpenGame;
   final Future<void> Function(GameId gameId) onForceRefresh;
@@ -804,7 +862,11 @@ class _LibraryList extends StatelessWidget {
     children: [
       Expanded(
         child: ListView.separated(
-          key: const PageStorageKey<String>('library-game-list'),
+          key: PageStorageKey<(String, int, int)>((
+            'list',
+            controller.pageStorageInstanceId,
+            scrollResetGeneration,
+          )),
           controller: scrollController,
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
           itemCount: state.games.length,

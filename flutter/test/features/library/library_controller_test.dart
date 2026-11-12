@@ -11,6 +11,18 @@ import '../sources/sources_test_fakes.dart';
 import 'library_test_fakes.dart';
 
 void main() {
+  test('page storage identity is stable and increases per controller', () {
+    final first = _controller();
+    final firstIdentity = first.pageStorageInstanceId;
+    final second = _controller();
+
+    expect(first.pageStorageInstanceId, firstIdentity);
+    expect(second.pageStorageInstanceId, greaterThan(firstIdentity));
+
+    first.dispose();
+    second.dispose();
+  });
+
   test(
     'loads bounded first and continuation pages with backend facets',
     () async {
@@ -104,6 +116,396 @@ void main() {
       controller.dispose();
     },
   );
+
+  test('explicit reset selects the exact all-active request profile', () async {
+    final ordinary = libraryRow(id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    final first = libraryRow(id: '11111111111111111111111111111111');
+    final second = libraryRow(id: '22222222222222222222222222222222');
+    final reads = FakeLibraryReads();
+    reads.onListGames = (request) {
+      if (reads.requests.length == 1) return GamePage(items: [ordinary]);
+      if (request.cursor == null) {
+        return GamePage(items: [first], nextCursor: 'baseline-cursor');
+      }
+      return GamePage(items: [second]);
+    };
+    final controller = _controller(
+      reads: reads,
+      scope: const LibraryScopeAll(),
+    );
+
+    await controller.initialize();
+    final ordinaryPage = controller.pageBoundaryForRow(0)!;
+    expect(ordinaryPage.queryProfile, 'OrdinaryUserQuery');
+    final ordinaryRequest = reads.requests.single;
+    expect(ordinaryRequest.scope, isA<LibraryScopeAll>());
+    expect(ordinaryRequest.searchText, isNull);
+    expect(ordinaryRequest.filters, const LibraryFilter());
+    expect(ordinaryRequest.sort, const LibrarySort());
+
+    await controller.resetAllActive();
+    final firstRequest = reads.requests.last;
+    expect(firstRequest.scope, isA<LibraryScopeAll>());
+    expect(firstRequest.searchText, isNull);
+    expect(firstRequest.filters, const LibraryFilter());
+    expect(firstRequest.sort, const LibrarySort());
+    expect(firstRequest.sort.field, LibrarySortField.displayTitle);
+    expect(firstRequest.sort.direction, LibrarySortDirection.ascending);
+    expect(firstRequest.pageSize, 50);
+    expect(firstRequest.viewConsistency, LibraryViewConsistency.revisionFenced);
+    expect(firstRequest.cursor, isNull);
+    expect(firstRequest.libraryViewToken, isNull);
+
+    final baselinePage = controller.pageBoundaryForRow(0)!;
+    expect(baselinePage.queryProfile, 'AllActiveMembershipBaseline');
+    expect(baselinePage.observationId, isNot(ordinaryPage.observationId));
+
+    controller.toggleSelection(first.gameId);
+    controller.setViewMode(LibraryViewMode.list);
+    controller.setScrollOffset(140);
+    expect(
+      controller.pageBoundaryForRow(0)!.observationId,
+      baselinePage.observationId,
+    );
+    await controller.loadMore();
+    final continuationRequest = reads.requests.last;
+    expect(continuationRequest.scope, isA<LibraryScopeAll>());
+    expect(continuationRequest.searchText, isNull);
+    expect(continuationRequest.filters, const LibraryFilter());
+    expect(continuationRequest.sort, const LibrarySort());
+    expect(continuationRequest.pageSize, 50);
+    expect(
+      continuationRequest.viewConsistency,
+      LibraryViewConsistency.revisionFenced,
+    );
+    expect(continuationRequest.cursor, 'baseline-cursor');
+    expect(continuationRequest.libraryViewToken, reads.revisionFencedToken);
+    final continuationPage = controller.pageBoundaryForRow(1)!;
+    expect(continuationPage.queryProfile, 'AllActiveMembershipBaseline');
+    expect(continuationPage.observationId, baselinePage.observationId);
+    expect(continuationPage.pageOrdinal, 2);
+    expect(controller.rowCorrelationForIndex(1)!.gameId, second.gameId);
+
+    await controller.refresh();
+    expect(
+      controller.pageBoundaryForRow(0)!.queryProfile,
+      'AllActiveMembershipBaseline',
+    );
+    expect(
+      controller.pageBoundaryForRow(0)!.observationId,
+      isNot(baselinePage.observationId),
+    );
+
+    await controller.setFilters(const LibraryFilter(regions: ['us']));
+    expect(controller.pageBoundaryForRow(0)!.queryProfile, 'OrdinaryUserQuery');
+    controller.dispose();
+  });
+
+  test('baseline profile follows empty first and terminal pages', () async {
+    final first = libraryRow(id: '11111111111111111111111111111111');
+    final reads = FakeLibraryReads();
+    reads.onListGames = (request) {
+      if (reads.requests.length <= 2) return const GamePage(items: []);
+      return request.cursor == null
+          ? GamePage(items: [first], nextCursor: 'baseline-cursor')
+          : const GamePage(items: []);
+    };
+    final controller = _controller(
+      reads: reads,
+      scope: const LibraryScopeAll(),
+    );
+
+    await controller.initialize();
+    expect(
+      controller.emptyStatePageBoundaries.single.queryProfile,
+      'OrdinaryUserQuery',
+    );
+
+    await controller.resetAllActive();
+    expect(controller.state.games, isEmpty);
+    expect(controller.state.hasMore, isFalse);
+    final emptyFirstPage = controller.emptyStatePageBoundaries.single;
+    expect(emptyFirstPage.queryProfile, 'AllActiveMembershipBaseline');
+    expect(emptyFirstPage.pageOrdinal, 1);
+    expect(emptyFirstPage.pageStatus, LibraryPageStatus.complete);
+    expect(emptyFirstPage.expectedRowCount, 0);
+    expect(emptyFirstPage.isFinalPage, isTrue);
+
+    await controller.resetAllActive();
+    await controller.loadMore();
+    expect(controller.state.games, [first]);
+    expect(controller.state.hasMore, isFalse);
+    final emptyTerminalPage = controller.trailingPageBoundaries.single;
+    expect(emptyTerminalPage.queryProfile, 'AllActiveMembershipBaseline');
+    expect(emptyTerminalPage.pageOrdinal, 2);
+    expect(emptyTerminalPage.pageStatus, LibraryPageStatus.complete);
+    expect(emptyTerminalPage.expectedRowCount, 0);
+    expect(emptyTerminalPage.isFinalPage, isTrue);
+    expect(
+      emptyTerminalPage.observationId,
+      controller.rowCorrelationForIndex(0)!.observationId,
+    );
+    controller.dispose();
+  });
+
+  test(
+    'baseline reset clears selection and both scroll states while fencing in-flight pages',
+    () async {
+      final first = libraryRow(id: '11111111111111111111111111111111');
+      final second = libraryRow(id: '22222222222222222222222222222222');
+      final filteredResponse = Completer<GamePage>();
+      final baselineResponse = Completer<GamePage>();
+      final baselineRequestStarted = Completer<void>();
+      final reads = FakeLibraryReads();
+      reads.onListGames = (request) {
+        if (reads.requests.length == 1) return GamePage(items: [first, second]);
+        if (request.filters.regions.contains('us')) {
+          return filteredResponse.future;
+        }
+        if (!baselineRequestStarted.isCompleted) {
+          baselineRequestStarted.complete();
+        }
+        return baselineResponse.future;
+      };
+      final controller = _controller(
+        reads: reads,
+        scope: const LibraryScopeAll(),
+        searchDebounce: const Duration(days: 1),
+      );
+      await controller.initialize();
+
+      controller.toggleSelection(first.gameId);
+      controller.setScrollOffset(125);
+      controller.setViewMode(LibraryViewMode.list);
+      controller.setScrollOffset(425);
+      final priorGeneration = controller.scrollResetGeneration;
+      final filteredLoad = controller.setFilters(
+        const LibraryFilter(regions: ['us']),
+      );
+      expect(reads.requests, hasLength(2));
+      controller.setSearchText('pending search');
+
+      await controller.resetAllActive();
+      expect(controller.state.searchText, isNull);
+      expect(controller.state.filters, const LibraryFilter());
+      expect(controller.state.sort, const LibrarySort());
+      expect(controller.state.games, isEmpty);
+      expect(controller.state.nextCursor, isNull);
+      expect(controller.state.hasMore, isFalse);
+      expect(controller.state.selectedGameIds, isEmpty);
+      expect(controller.state.viewMode, LibraryViewMode.list);
+      expect(controller.state.gridScrollOffset, 0);
+      expect(controller.state.listScrollOffset, 0);
+      expect(controller.scrollResetGeneration, priorGeneration + 1);
+      expect(reads.requests, hasLength(2));
+
+      final baselinePage = Completer<void>();
+      controller.addListener(() {
+        if (controller.state.phase == LibraryLoadPhase.ready &&
+            controller.state.games.length == 2 &&
+            controller.pageBoundaryForRow(0)?.queryProfile ==
+                'AllActiveMembershipBaseline' &&
+            !baselinePage.isCompleted) {
+          baselinePage.complete();
+        }
+      });
+      filteredResponse.complete(
+        GamePage(items: [first, second], nextCursor: 'late-filter-cursor'),
+      );
+      await baselineRequestStarted.future;
+      expect(reads.requests, hasLength(3));
+      expect(controller.state.games, isEmpty);
+      expect(
+        controller.emptyStatePageBoundaries.single.queryProfile,
+        'AllActiveMembershipBaseline',
+      );
+
+      baselineResponse.complete(GamePage(items: [first, second]));
+      await baselinePage.future;
+      await filteredLoad;
+      expect(controller.state.games, [first, second]);
+      controller.selectRange(second.gameId);
+      expect(controller.state.selectedGameIds, {second.gameId});
+      controller.dispose();
+    },
+  );
+
+  test(
+    'baseline profile follows stale recovery and failed continuation pages',
+    () async {
+      final oldRow = libraryRow(id: '11111111111111111111111111111111');
+      final newRow = libraryRow(id: '22222222222222222222222222222222');
+      final recoveredPage = Completer<void>();
+      final reads = FakeLibraryReads();
+      reads.onListGames = (request) {
+        switch (reads.requests.length) {
+          case 1:
+            return const GamePage(items: []);
+          case 2:
+            return GamePage(items: [oldRow], nextCursor: 'stale-cursor');
+          case 3:
+            throw libraryApplicationFailure('ARGUS.V1.LIBRARY.STALE_VIEW');
+          case 4:
+            return GamePage(items: [newRow], nextCursor: 'retry-cursor');
+          case 5:
+            throw const TransportFailure('continuation failed');
+          default:
+            throw StateError('Unexpected Library request');
+        }
+      };
+      final controller = _controller(
+        reads: reads,
+        scope: const LibraryScopeAll(),
+      );
+      await controller.initialize();
+      await controller.resetAllActive();
+      final oldObservation = controller.pageBoundaryForRow(0)!.observationId;
+      controller.addListener(() {
+        if (controller.state.phase == LibraryLoadPhase.ready &&
+            controller.state.games.length == 1 &&
+            controller.state.games.single.gameId == newRow.gameId &&
+            !recoveredPage.isCompleted) {
+          recoveredPage.complete();
+        }
+      });
+
+      await controller.loadMore();
+      await recoveredPage.future;
+      expect(controller.state.games, [newRow]);
+      final recoveredBoundary = controller.pageBoundaryForRow(0)!;
+      expect(recoveredBoundary.queryProfile, 'AllActiveMembershipBaseline');
+      expect(recoveredBoundary.observationId, isNot(oldObservation));
+      expect(controller.rowCorrelationForIndex(0)!.gameId, newRow.gameId);
+
+      await controller.loadMore();
+      final failedBoundary = controller.trailingPageBoundaries.single;
+      expect(failedBoundary.queryProfile, 'AllActiveMembershipBaseline');
+      expect(failedBoundary.pageOrdinal, 2);
+      expect(failedBoundary.pageStatus, LibraryPageStatus.failed);
+      expect(reads.requests.last.cursor, 'retry-cursor');
+      expect(reads.requests.last.libraryViewToken, reads.revisionFencedToken);
+      controller.dispose();
+    },
+  );
+
+  test(
+    'baseline profile remains on both boundaries after repeated stale failure',
+    () async {
+      final retained = libraryRow(id: '11111111111111111111111111111111');
+      final repeatedStale = Completer<void>();
+      final reads = FakeLibraryReads();
+      reads.onListGames = (_) {
+        switch (reads.requests.length) {
+          case 1:
+            return const GamePage(items: []);
+          case 2:
+            return GamePage(items: [retained], nextCursor: 'cursor-1');
+          case 3:
+          case 4:
+            throw libraryApplicationFailure('ARGUS.V1.LIBRARY.STALE_VIEW');
+          default:
+            throw StateError('Unexpected Library request');
+        }
+      };
+      final controller = _controller(
+        reads: reads,
+        scope: const LibraryScopeAll(),
+      );
+      await controller.initialize();
+      await controller.resetAllActive();
+      final acceptedObservation = controller
+          .pageBoundaryForRow(0)!
+          .observationId;
+      controller.addListener(() {
+        if (controller.state.lastFailure != null &&
+            controller.trailingPageBoundaries.length == 2 &&
+            controller.trailingPageBoundaries.every(
+              (boundary) => boundary.pageStatus == LibraryPageStatus.failed,
+            ) &&
+            !repeatedStale.isCompleted) {
+          repeatedStale.complete();
+        }
+      });
+
+      await controller.loadMore();
+      await repeatedStale.future;
+      final failures = controller.trailingPageBoundaries;
+      expect(failures, hasLength(2));
+      expect(
+        failures.map((failure) => failure.queryProfile),
+        everyElement('AllActiveMembershipBaseline'),
+      );
+      expect(failures.first.observationId, acceptedObservation);
+      expect(failures.last.observationId, isNot(acceptedObservation));
+      expect(controller.state.games, [retained]);
+      expect(
+        controller.pageBoundaryForRow(0)!.observationId,
+        acceptedObservation,
+      );
+      controller.dispose();
+    },
+  );
+
+  test('runtime replacement returns to an ordinary query profile', () async {
+    final runtimeState =
+        NotifierProvider<LibraryRuntimeContextHolder, LibraryRuntimeContext>(
+          LibraryRuntimeContextHolder.new,
+        );
+    final reads = FakeLibraryReads()
+      ..onListGames = (_) => const GamePage(items: []);
+    final container = ProviderContainer(
+      overrides: [
+        libraryRuntimeContextProvider.overrideWith(
+          (ref) => ref.watch(runtimeState),
+        ),
+        libraryApiProvider.overrideWithValue(reads),
+        librarySourcesApiProvider.overrideWithValue(FakeSourcesApi()),
+        libraryRefreshApiProvider.overrideWithValue(FakeLibraryRefreshApi()),
+        libraryGamesApiProvider.overrideWithValue(FakeGamesApi()),
+        libraryReconciliationDemandProvider.overrideWithValue(
+          const LibraryReconciliationDemandSource(
+            Stream<LibraryReconciliationDemand>.empty(),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    const scope = LibraryScopeAll();
+    final provider = libraryControllerProvider(scope);
+    final providerSubscription = container.listen(provider, (_, _) {});
+    addTearDown(providerSubscription.close);
+    final first = container.read(provider);
+    final firstReady = Completer<void>();
+    first.addListener(() {
+      if (first.state.phase == LibraryLoadPhase.ready &&
+          !firstReady.isCompleted) {
+        firstReady.complete();
+      }
+    });
+    if (first.state.phase == LibraryLoadPhase.ready) firstReady.complete();
+    await firstReady.future;
+    await first.resetAllActive();
+    expect(
+      first.emptyStatePageBoundaries.single.queryProfile,
+      'AllActiveMembershipBaseline',
+    );
+
+    container
+        .read(runtimeState.notifier)
+        .replace(
+          const LibraryRuntimeContext.ready(
+            runtimeInstanceId: RuntimeInstanceId(
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            ),
+          ),
+        );
+    final replacement = container.read(provider);
+    expect(identical(replacement, first), isFalse);
+    expect(
+      replacement.emptyStatePageBoundaries.single.queryProfile,
+      'OrdinaryUserQuery',
+    );
+  });
 
   test(
     'query shape changes get fresh observations; view mode does not',
@@ -1054,6 +1456,7 @@ LibraryController _controller({
   FakeLibraryReads? reads,
   FakeLibraryRefreshApi? refreshApi,
   FakeGamesApi? gamesApi,
+  LibraryScope scope = const LibraryScope.platform('nintendo.nes'),
   Duration? searchDebounce,
 }) {
   final libraryReads = reads ?? FakeLibraryReads();
@@ -1063,7 +1466,7 @@ LibraryController _controller({
     sources: FakeSourcesApi(),
     refreshApi: refreshApi ?? FakeLibraryRefreshApi(),
     gamesApi: gamesApi ?? FakeGamesApi(),
-    scope: const LibraryScope.platform('nintendo.nes'),
+    scope: scope,
     runtimeContext: readyLibraryRuntimeContext,
     demandSource: const LibraryReconciliationDemandSource(
       Stream<LibraryReconciliationDemand>.empty(),

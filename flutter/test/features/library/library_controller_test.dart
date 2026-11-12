@@ -232,7 +232,11 @@ void main() {
         loadingObservations.addAll(
           controller.emptyStatePageBoundaries.map((page) => page.observationId),
         );
-        if (controller.state.lastFailure != null && !failed.isCompleted) {
+        if (reads.requests.length == 2 &&
+            controller.state.lastFailure != null &&
+            controller.emptyStatePageBoundaries.last.pageStatus ==
+                LibraryPageStatus.failed &&
+            !failed.isCompleted) {
           failed.complete();
         }
       });
@@ -243,11 +247,212 @@ void main() {
       expect(reads.requests, hasLength(2));
       expect(controller.state.games, isEmpty);
       expect(controller.state.lastFailure, isA<ApplicationFailure>());
-      final failedPage = controller.emptyStatePageBoundaries.single;
-      expect(failedPage.pageStatus, LibraryPageStatus.failed);
-      expect(failedPage.pageOrdinal, 1);
+      final failedPages = controller.emptyStatePageBoundaries;
+      expect(failedPages, hasLength(2));
+      expect(
+        failedPages.map((page) => page.pageStatus),
+        everyElement(LibraryPageStatus.failed),
+      );
+      expect(failedPages.map((page) => page.pageOrdinal), everyElement(1));
       expect(loadingObservations.toSet(), hasLength(2));
-      expect(failedPage.observationId, loadingObservations.last);
+      expect(failedPages.first.observationId, loadingObservations.first);
+      expect(failedPages.last.observationId, loadingObservations.last);
+      expect(
+        failedPages.first.observationId,
+        isNot(failedPages.last.observationId),
+      );
+      controller.dispose();
+    },
+  );
+
+  test('StaleView can recover a later invalidated observation', () async {
+    final first = libraryRow(id: '11111111111111111111111111111111');
+    final refreshed = libraryRow(id: '22222222222222222222222222222222');
+    final newest = libraryRow(id: '33333333333333333333333333333333');
+    final recoveryResponse = Completer<GamePage>();
+    final laterRecoveryResponse = Completer<GamePage>();
+    var firstPageRequests = 0;
+    var continuationRequests = 0;
+    final laterRecoveryStarted = Completer<void>();
+    final reads = FakeLibraryReads()
+      ..onListGames = (request) {
+        if (request.cursor != null) {
+          continuationRequests++;
+          throw libraryApplicationFailure('ARGUS.V1.LIBRARY.STALE_VIEW');
+        }
+        firstPageRequests++;
+        return switch (firstPageRequests) {
+          1 => GamePage(items: [first], nextCursor: 'cursor-1'),
+          2 => recoveryResponse.future,
+          3 => () {
+            if (!laterRecoveryStarted.isCompleted) {
+              laterRecoveryStarted.complete();
+            }
+            return laterRecoveryResponse.future;
+          }(),
+          _ => GamePage(items: [newest]),
+        };
+      };
+    final controller = _controller(reads: reads);
+    final recoveryStarted = Completer<void>();
+    final recovered = Completer<void>();
+    final latestRecovered = Completer<void>();
+    controller.addListener(() {
+      if (controller.state.refreshing &&
+          controller.state.games.any((row) => row.gameId == first.gameId) &&
+          !recoveryStarted.isCompleted) {
+        recoveryStarted.complete();
+      }
+      if (controller.state.games.any((row) => row.gameId == refreshed.gameId) &&
+          !recovered.isCompleted) {
+        recovered.complete();
+      }
+      if (controller.state.games.any((row) => row.gameId == newest.gameId) &&
+          !latestRecovered.isCompleted) {
+        latestRecovered.complete();
+      }
+    });
+
+    await controller.initialize();
+    final originalObservation = controller
+        .rowCorrelationForIndex(0)!
+        .observationId;
+    await controller.loadMore();
+    await recoveryStarted.future;
+
+    expect(controller.state.games, [first]);
+    expect(
+      controller.rowCorrelationForIndex(0)!.observationId,
+      originalObservation,
+    );
+    final staleRecoveryBoundaries = controller.trailingPageBoundaries;
+    expect(staleRecoveryBoundaries, hasLength(2));
+    expect(staleRecoveryBoundaries.map((page) => page.pageStatus), [
+      LibraryPageStatus.failed,
+      LibraryPageStatus.loading,
+    ]);
+    expect(staleRecoveryBoundaries.first.observationId, originalObservation);
+    expect(staleRecoveryBoundaries.first.pageOrdinal, 2);
+    expect(
+      staleRecoveryBoundaries.last.observationId,
+      isNot(originalObservation),
+    );
+    expect(staleRecoveryBoundaries.last.pageOrdinal, 1);
+
+    recoveryResponse.complete(
+      GamePage(items: [refreshed], nextCursor: 'cursor-2'),
+    );
+    await recovered.future;
+
+    expect(reads.requests, hasLength(3));
+    expect(reads.requests[1].cursor, 'cursor-1');
+    expect(reads.requests[1].libraryViewToken, reads.revisionFencedToken);
+    expect(reads.requests[2].cursor, isNull);
+    expect(reads.requests[2].libraryViewToken, isNull);
+    expect(
+      reads.requests[2].viewConsistency,
+      LibraryViewConsistency.revisionFenced,
+    );
+    expect(controller.state.games, [refreshed]);
+    expect(controller.state.lastFailure, isNull);
+
+    final recoveredObservation = controller
+        .rowCorrelationForIndex(0)!
+        .observationId;
+    await controller.loadMore();
+    await laterRecoveryStarted.future;
+
+    expect(controller.state.games, [refreshed]);
+    expect(
+      controller.rowCorrelationForIndex(0)!.observationId,
+      recoveredObservation,
+    );
+    expect(controller.trailingPageBoundaries.map((page) => page.pageStatus), [
+      LibraryPageStatus.failed,
+      LibraryPageStatus.loading,
+    ]);
+    laterRecoveryResponse.complete(GamePage(items: [newest]));
+    await latestRecovered.future;
+
+    expect(reads.requests, hasLength(5));
+    expect(reads.requests[3].cursor, 'cursor-2');
+    expect(reads.requests[3].libraryViewToken, reads.revisionFencedToken);
+    expect(reads.requests[4].cursor, isNull);
+    expect(reads.requests[4].libraryViewToken, isNull);
+    expect(controller.state.games, [newest]);
+    expect(controller.state.lastFailure, isNull);
+    final latestPage = controller.pageBoundaryForRow(0)!;
+    expect(latestPage.pageOrdinal, 1);
+    expect(latestPage.pageStatus, LibraryPageStatus.complete);
+    expect(latestPage.observationId, isNot(originalObservation));
+    expect(latestPage.observationId, isNot(recoveredObservation));
+    expect(continuationRequests, 2);
+    controller.dispose();
+  });
+
+  test(
+    'repeated StaleView after a continuation retry preserves accepted rows',
+    () async {
+      final first = libraryRow(id: '11111111111111111111111111111111');
+      final continuationFailure = libraryApplicationFailure(
+        'ARGUS.V1.LIBRARY.STALE_VIEW',
+      );
+      final retryFailure = libraryApplicationFailure(
+        'ARGUS.V1.LIBRARY.STALE_VIEW',
+      );
+      late final FakeLibraryReads reads;
+      reads = FakeLibraryReads()
+        ..onListGames = (request) {
+          if (request.cursor != null) throw continuationFailure;
+          if (reads.requests.length == 1) {
+            return GamePage(items: [first], nextCursor: 'cursor-1');
+          }
+          throw retryFailure;
+        };
+      final controller = _controller(reads: reads);
+      final failed = Completer<void>();
+      controller.addListener(() {
+        if (identical(controller.state.lastFailure, retryFailure) &&
+            !failed.isCompleted) {
+          failed.complete();
+        }
+      });
+
+      await controller.initialize();
+      final acceptedObservation = controller
+          .rowCorrelationForIndex(0)!
+          .observationId;
+      final acceptedRowIdentifier = controller
+          .rowCorrelationForIndex(0)!
+          .semanticsIdentifier;
+      await controller.loadMore();
+      await failed.future;
+
+      expect(reads.requests, hasLength(3));
+      expect(reads.requests[2].cursor, isNull);
+      expect(reads.requests[2].libraryViewToken, isNull);
+      expect(controller.state.games, [first]);
+      expect(controller.state.lastFailure, same(retryFailure));
+      expect(controller.state.nextCursor, isNull);
+      expect(controller.state.hasMore, isFalse);
+      expect(
+        controller.rowCorrelationForIndex(0)!.semanticsIdentifier,
+        acceptedRowIdentifier,
+      );
+      final boundaries = controller.trailingPageBoundaries;
+      expect(boundaries, hasLength(2));
+      expect(
+        boundaries.map((page) => page.pageStatus),
+        everyElement(LibraryPageStatus.failed),
+      );
+      expect(boundaries.first.observationId, acceptedObservation);
+      expect(boundaries.first.pageOrdinal, 2);
+      expect(boundaries.last.observationId, isNot(acceptedObservation));
+      expect(boundaries.last.pageOrdinal, 1);
+
+      await controller.loadMore();
+      expect(reads.requests, hasLength(3));
+      expect(controller.trailingPageBoundaries, boundaries);
       controller.dispose();
     },
   );
@@ -255,75 +460,38 @@ void main() {
   test(
     'InvalidViewToken fails continuation without retry or row mixing',
     () async {
-      final first = libraryRow(id: '11111111111111111111111111111111');
-      final reads = FakeLibraryReads()
-        ..onListGames = (request) {
-          if (request.cursor == null) {
-            return GamePage(items: [first], nextCursor: 'cursor-1');
-          }
-          throw libraryApplicationFailure(
-            'ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN',
-          );
-        };
-      final controller = _controller(reads: reads);
-
-      await controller.initialize();
-      final acceptedObservation = controller
-          .rowCorrelationForIndex(0)!
-          .observationId;
-      await controller.loadMore();
-
-      expect(reads.requests, hasLength(2));
-      expect(reads.requests.last.cursor, 'cursor-1');
-      expect(reads.requests.last.libraryViewToken, reads.revisionFencedToken);
-      expect(controller.state.games, [first]);
-      expect(controller.state.nextCursor, isNull);
-      expect(
-        controller.rowCorrelationForIndex(0)!.observationId,
-        acceptedObservation,
+      await _expectFailedContinuationRequiresFreshQuery(
+        failure: libraryApplicationFailure(
+          'ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN',
+        ),
       );
-      final failedPage = controller.trailingPageBoundaries.single;
-      expect(failedPage.observationId, acceptedObservation);
-      expect(failedPage.pageOrdinal, 2);
-      expect(failedPage.pageStatus, LibraryPageStatus.failed);
-      expect(failedPage.expectedRowCount, isNull);
-      expect(controller.state.lastFailure, isA<ApplicationFailure>());
-
-      await controller.loadMore();
-      expect(reads.requests, hasLength(2));
-      controller.dispose();
     },
   );
 
   test(
-    'unknown application failure stays typed and does not stale-retry',
+    'unknown application failure closes continuation until explicit refresh',
     () async {
-      final first = libraryRow(id: '11111111111111111111111111111111');
-      final failure = libraryApplicationFailure('ARGUS.V1.LIBRARY.READ_FAILED');
-      final reads = FakeLibraryReads()
-        ..onListGames = (request) {
-          if (request.cursor == null) {
-            return GamePage(items: [first], nextCursor: 'cursor-1');
-          }
-          throw failure;
-        };
-      final controller = _controller(reads: reads);
-
-      await controller.initialize();
-      await controller.loadMore();
-
-      expect(reads.requests, hasLength(2));
-      expect(controller.state.lastFailure, same(failure));
-      expect(controller.state.games, [first]);
-      expect(
-        controller.trailingPageBoundaries.single.pageStatus,
-        LibraryPageStatus.failed,
+      await _expectFailedContinuationRequiresFreshQuery(
+        failure: libraryApplicationFailure('ARGUS.V1.LIBRARY.READ_FAILED'),
       );
-      expect(
-        controller.rowCorrelationForIndex(0)!.observationId,
-        controller.trailingPageBoundaries.single.observationId,
+    },
+  );
+
+  test('TransportFailure closes continuation until explicit refresh', () async {
+    await _expectFailedContinuationRequiresFreshQuery(
+      failure: const TransportFailure(
+        'Continuation transport failed',
+        kind: TransportFailureKind.communicationFailed,
+      ),
+    );
+  });
+
+  test(
+    'unexpected continuation errors close continuation until explicit refresh',
+    () async {
+      await _expectFailedContinuationRequiresFreshQuery(
+        failure: StateError('unexpected continuation error'),
       );
-      controller.dispose();
     },
   );
 
@@ -367,13 +535,27 @@ void main() {
     ];
 
     for (final malformedPage in malformedPages) {
-      final reads = FakeLibraryReads()
-        ..onListGames = (request) => request.cursor == null
-            ? GamePage(items: [first], nextCursor: 'cursor-1')
-            : malformedPage;
+      final second = libraryRow(id: '22222222222222222222222222222222');
+      final refreshed = libraryRow(id: '33333333333333333333333333333333');
+      var continuationRequests = 0;
+      late final FakeLibraryReads reads;
+      reads = FakeLibraryReads()
+        ..onListGames = (request) {
+          if (request.cursor == null) {
+            return reads.requests.length == 1
+                ? GamePage(items: [first], nextCursor: 'cursor-1')
+                : GamePage(items: [refreshed]);
+          }
+          continuationRequests++;
+          return continuationRequests == 1
+              ? malformedPage
+              : GamePage(items: [second]);
+        };
       final controller = _controller(reads: reads);
 
       await controller.initialize();
+      final acceptedPage = controller.pageBoundaryForRow(0)!;
+      final acceptedRow = controller.rowCorrelationForIndex(0)!;
       await controller.loadMore();
 
       expect(controller.state.games, [first]);
@@ -386,6 +568,47 @@ void main() {
         controller.trailingPageBoundaries.single.pageStatus,
         LibraryPageStatus.failed,
       );
+      final failedPage = controller.trailingPageBoundaries.single;
+      final failedPageIdentifier = failedPage.semanticsIdentifier;
+      final malformedFailure = controller.state.lastFailure;
+      expect(failedPage.observationId, acceptedPage.observationId);
+      expect(failedPage.pageOrdinal, 2);
+      expect(controller.state.nextCursor, isNull);
+      expect(controller.state.hasMore, isFalse);
+      expect(
+        controller.pageBoundaryForRow(0)!.semanticsIdentifier,
+        acceptedPage.semanticsIdentifier,
+      );
+      expect(
+        controller.rowCorrelationForIndex(0)!.semanticsIdentifier,
+        acceptedRow.semanticsIdentifier,
+      );
+
+      for (var attempt = 0; attempt < 3; attempt++) {
+        await controller.loadMore();
+      }
+      expect(reads.requests, hasLength(2));
+      expect(
+        controller.trailingPageBoundaries.single.semanticsIdentifier,
+        failedPageIdentifier,
+      );
+      expect(controller.state.games, [first]);
+      expect(controller.state.lastFailure, same(malformedFailure));
+
+      await controller.refresh();
+      expect(reads.requests, hasLength(3));
+      expect(reads.requests.last.cursor, isNull);
+      expect(reads.requests.last.libraryViewToken, isNull);
+      expect(
+        reads.requests.last.viewConsistency,
+        LibraryViewConsistency.revisionFenced,
+      );
+      expect(controller.state.games, [refreshed]);
+      final refreshedPage = controller.pageBoundaryForRow(0)!;
+      expect(refreshedPage.pageOrdinal, 1);
+      expect(refreshedPage.pageStatus, LibraryPageStatus.complete);
+      expect(refreshedPage.observationId, isNot(acceptedPage.observationId));
+      expect(controller.trailingPageBoundaries, isEmpty);
       controller.dispose();
     }
   });
@@ -722,6 +945,99 @@ void main() {
     expect(refresh.gameRefreshTargets, isEmpty);
     controller.dispose();
   });
+}
+
+Future<void> _expectFailedContinuationRequiresFreshQuery({
+  required Object failure,
+}) async {
+  final first = libraryRow(id: '11111111111111111111111111111111');
+  final retryOnly = libraryRow(id: '22222222222222222222222222222222');
+  final refreshed = libraryRow(id: '33333333333333333333333333333333');
+  var continuationRequests = 0;
+  late final FakeLibraryReads reads;
+  reads = FakeLibraryReads()
+    ..onListGames = (request) {
+      if (request.cursor == null) {
+        return reads.requests.length == 1
+            ? GamePage(items: [first], nextCursor: 'cursor-1')
+            : GamePage(items: [refreshed]);
+      }
+      continuationRequests++;
+      if (continuationRequests == 1) throw failure;
+      return GamePage(items: [retryOnly]);
+    };
+  final controller = _controller(reads: reads);
+
+  try {
+    await controller.initialize();
+    final acceptedPage = controller.pageBoundaryForRow(0)!;
+    final acceptedRow = controller.rowCorrelationForIndex(0)!;
+    await controller.loadMore();
+
+    expect(reads.requests, hasLength(2));
+    expect(reads.requests.last.cursor, 'cursor-1');
+    expect(reads.requests.last.libraryViewToken, reads.revisionFencedToken);
+    expect(controller.state.games, [first]);
+    expect(controller.state.nextCursor, isNull);
+    expect(controller.state.hasMore, isFalse);
+    expect(controller.state.loadingMore, isFalse);
+    if (failure is ClientFailure) {
+      expect(controller.state.lastFailure, same(failure));
+    } else {
+      final recordedFailure = controller.state.lastFailure;
+      expect(recordedFailure, isA<TransportFailure>());
+      expect(
+        (recordedFailure! as TransportFailure).kind,
+        TransportFailureKind.unexpectedTransportFailure,
+      );
+      expect(recordedFailure.cause, same(failure));
+    }
+
+    final recordedFailure = controller.state.lastFailure;
+    final failedPage = controller.trailingPageBoundaries.single;
+    final failedPageIdentifier = failedPage.semanticsIdentifier;
+    expect(failedPage.observationId, acceptedPage.observationId);
+    expect(failedPage.pageOrdinal, 2);
+    expect(failedPage.pageStatus, LibraryPageStatus.failed);
+    expect(failedPage.expectedRowCount, isNull);
+    expect(
+      controller.pageBoundaryForRow(0)!.semanticsIdentifier,
+      acceptedPage.semanticsIdentifier,
+    );
+    expect(
+      controller.rowCorrelationForIndex(0)!.semanticsIdentifier,
+      acceptedRow.semanticsIdentifier,
+    );
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      await controller.loadMore();
+    }
+    expect(reads.requests, hasLength(2));
+    expect(controller.state.lastFailure, same(recordedFailure));
+    expect(controller.state.games, [first]);
+    expect(
+      controller.trailingPageBoundaries.single.semanticsIdentifier,
+      failedPageIdentifier,
+    );
+
+    await controller.refresh();
+    expect(reads.requests, hasLength(3));
+    expect(reads.requests.last.cursor, isNull);
+    expect(reads.requests.last.libraryViewToken, isNull);
+    expect(
+      reads.requests.last.viewConsistency,
+      LibraryViewConsistency.revisionFenced,
+    );
+    expect(controller.state.games, [refreshed]);
+    expect(controller.state.lastFailure, isNull);
+    expect(controller.trailingPageBoundaries, isEmpty);
+    final refreshedPage = controller.pageBoundaryForRow(0)!;
+    expect(refreshedPage.pageOrdinal, 1);
+    expect(refreshedPage.pageStatus, LibraryPageStatus.complete);
+    expect(refreshedPage.observationId, isNot(acceptedPage.observationId));
+  } finally {
+    controller.dispose();
+  }
 }
 
 final class LibraryRuntimeContextHolder

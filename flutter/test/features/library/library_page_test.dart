@@ -299,6 +299,9 @@ void main() {
     await tester.pumpWidget(_libraryHarness(controller: controller));
     await tester.pumpAndSettle();
 
+    final acceptedRowIdentifier = controller
+        .rowCorrelationForIndex(0)!
+        .semanticsIdentifier;
     final load = controller.loadMore();
     await tester.pump();
     final loadingPage = controller.trailingPageBoundaries.single;
@@ -329,6 +332,24 @@ void main() {
     expect(
       controller.rowCorrelationForIndex(0)!.observationId,
       failedPage.observationId,
+    );
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      await controller.loadMore();
+    }
+    await tester.pumpAndSettle();
+    expect(reads.requests, hasLength(2));
+    expect(
+      controller.rowCorrelationForIndex(0)!.semanticsIdentifier,
+      acceptedRowIdentifier,
+    );
+    expect(
+      controller.trailingPageBoundaries.single.semanticsIdentifier,
+      failedPage.semanticsIdentifier,
+    );
+    expect(
+      find.bySemanticsIdentifier(failedPage.semanticsIdentifier),
+      findsOneWidget,
     );
     semantics.dispose();
   });
@@ -377,6 +398,105 @@ void main() {
     expect(terminalController.state.games, [first]);
     semantics.dispose();
   });
+
+  testWidgets(
+    'StaleView continuation keeps old failure and fresh loading semantics separate',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final semantics = tester.ensureSemantics();
+
+      final first = libraryRow(id: '11111111111111111111111111111111');
+      final refreshed = libraryRow(id: '22222222222222222222222222222222');
+      final recoveryResponse = Completer<GamePage>();
+      final recoveryStarted = Completer<void>();
+      final recovered = Completer<void>();
+      var firstPageRequests = 0;
+      late final FakeLibraryReads reads;
+      reads = FakeLibraryReads()
+        ..onListGames = (request) {
+          if (request.cursor != null) {
+            throw libraryApplicationFailure('ARGUS.V1.LIBRARY.STALE_VIEW');
+          }
+          firstPageRequests++;
+          if (firstPageRequests == 1) {
+            return GamePage(items: [first], nextCursor: 'cursor-1');
+          }
+          if (firstPageRequests == 2) {
+            recoveryStarted.complete();
+            return recoveryResponse.future;
+          }
+          return GamePage(items: [refreshed]);
+        };
+      final controller = await _readyController(reads);
+      addTearDown(controller.dispose);
+      controller.addListener(() {
+        if (controller.state.games.any(
+              (row) => row.gameId == refreshed.gameId,
+            ) &&
+            !recovered.isCompleted) {
+          recovered.complete();
+        }
+      });
+
+      await tester.pumpWidget(_libraryHarness(controller: controller));
+      await tester.pumpAndSettle();
+      final acceptedRow = controller.rowCorrelationForIndex(0)!;
+      final load = controller.loadMore();
+      await load;
+      await recoveryStarted.future;
+      await tester.pump();
+
+      expect(controller.state.games, [first]);
+      expect(
+        controller.rowCorrelationForIndex(0)!.semanticsIdentifier,
+        acceptedRow.semanticsIdentifier,
+      );
+      final boundaries = controller.trailingPageBoundaries;
+      expect(boundaries, hasLength(2));
+      expect(boundaries.map((page) => page.pageStatus), [
+        LibraryPageStatus.failed,
+        LibraryPageStatus.loading,
+      ]);
+      expect(boundaries.first.observationId, acceptedRow.observationId);
+      expect(boundaries.first.pageOrdinal, 2);
+      expect(boundaries.last.observationId, isNot(acceptedRow.observationId));
+      for (final boundary in boundaries) {
+        expect(
+          find.bySemanticsIdentifier(boundary.semanticsIdentifier),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .getSemantics(
+                find.bySemanticsIdentifier(boundary.semanticsIdentifier),
+              )
+              .identifier,
+          boundary.semanticsIdentifier,
+        );
+      }
+      expect(
+        find.bySemanticsIdentifier(acceptedRow.semanticsIdentifier),
+        findsOneWidget,
+      );
+
+      recoveryResponse.complete(GamePage(items: [refreshed]));
+      await recovered.future;
+      await tester.pumpAndSettle();
+      final refreshedRow = controller.rowCorrelationForIndex(0)!;
+      expect(refreshedRow.observationId, isNot(acceptedRow.observationId));
+      expect(
+        find.bySemanticsIdentifier(acceptedRow.semanticsIdentifier),
+        findsNothing,
+      );
+      expect(
+        find.bySemanticsIdentifier(refreshedRow.semanticsIdentifier),
+        findsOneWidget,
+      );
+      semantics.dispose();
+    },
+  );
 
   testWidgets('keeps a 10,000-plus logical library widget-lazy', (
     tester,

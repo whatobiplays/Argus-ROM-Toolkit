@@ -269,6 +269,8 @@ final class LibraryController extends ChangeNotifier {
   _LibraryObservation? _rowsObservation;
   _LibraryObservation? _requestObservation;
   LibraryPageCorrelation? _pendingPageCorrelation;
+  List<LibraryPageCorrelation> _retainedStaleFailureBoundaries =
+      const <LibraryPageCorrelation>[];
   StreamSubscription<LibraryReconciliationDemand>? _demandSubscription;
   Timer? _searchTimer;
   int _requestToken = 0;
@@ -319,6 +321,7 @@ final class LibraryController extends ChangeNotifier {
       for (final page
           in _rowsObservation?.pages ?? const <_LibraryAcceptedPage>[])
         if (page.rowCount == 0) page.correlation,
+      ..._retainedStaleFailureBoundaries,
     ];
     final pending = _pendingPageCorrelation;
     if (pending != null) boundaries.add(pending);
@@ -333,6 +336,7 @@ final class LibraryController extends ChangeNotifier {
       for (final page
           in _rowsObservation?.pages ?? const <_LibraryAcceptedPage>[])
         if (page.rowCount == 0) page.correlation,
+      ..._retainedStaleFailureBoundaries,
     ];
     final pending = _pendingPageCorrelation;
     if (pending != null) boundaries.add(pending);
@@ -355,6 +359,7 @@ final class LibraryController extends ChangeNotifier {
     _requestToken++;
     _requestObservation = null;
     _staleRecoveryUsed = false;
+    _retainedStaleFailureBoundaries = const <LibraryPageCorrelation>[];
     return _load();
   }
 
@@ -366,6 +371,7 @@ final class LibraryController extends ChangeNotifier {
     _searchTimer?.cancel();
     _requestToken++;
     _staleRecoveryUsed = false;
+    _retainedStaleFailureBoundaries = const <LibraryPageCorrelation>[];
     final nextState = _state.copyWith(
       searchText: searchText,
       games: const <GameLibraryRow>[],
@@ -395,6 +401,7 @@ final class LibraryController extends ChangeNotifier {
     _searchTimer?.cancel();
     _requestToken++;
     _staleRecoveryUsed = false;
+    _retainedStaleFailureBoundaries = const <LibraryPageCorrelation>[];
     final nextState = _state.copyWith(
       filters: filters,
       games: const <GameLibraryRow>[],
@@ -424,6 +431,7 @@ final class LibraryController extends ChangeNotifier {
     _searchTimer?.cancel();
     _requestToken++;
     _staleRecoveryUsed = false;
+    _retainedStaleFailureBoundaries = const <LibraryPageCorrelation>[];
     final nextState = _state.copyWith(
       sort: sort,
       games: const <GameLibraryRow>[],
@@ -584,7 +592,9 @@ final class LibraryController extends ChangeNotifier {
             nextCursor: null,
             refreshing: hadRows,
             loadingMore: false,
-            lastFailure: null,
+            lastFailure: _retainedStaleFailureBoundaries.isEmpty
+                ? null
+                : _state.lastFailure,
           );
 
     _requestInFlight = true;
@@ -635,6 +645,10 @@ final class LibraryController extends ChangeNotifier {
       }
       if (!_canPublish(token)) return;
       final acceptedObservation = observation.acceptPage(page, cursor);
+      if (!loadMore) {
+        _staleRecoveryUsed = false;
+        _retainedStaleFailureBoundaries = const <LibraryPageCorrelation>[];
+      }
       final rows = loadMore ? [..._state.games, ...page.items] : page.items;
       final nextState = _state.copyWith(
         games: List.unmodifiable(rows),
@@ -665,6 +679,7 @@ final class LibraryController extends ChangeNotifier {
         failure: failure,
         response: response,
         closeContinuation:
+            loadMore ||
             code == 'ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN' ||
             requestStage == _LibraryRequestStage.auxiliary,
       );
@@ -674,7 +689,8 @@ final class LibraryController extends ChangeNotifier {
         observation: observation,
         failure: failure,
         response: response,
-        closeContinuation: requestStage == _LibraryRequestStage.auxiliary,
+        closeContinuation:
+            loadMore || requestStage == _LibraryRequestStage.auxiliary,
       );
     } catch (error, stackTrace) {
       if (!_canPublish(token)) return;
@@ -687,7 +703,8 @@ final class LibraryController extends ChangeNotifier {
           stackTrace: stackTrace,
         ),
         response: response,
-        closeContinuation: requestStage == _LibraryRequestStage.auxiliary,
+        closeContinuation:
+            loadMore || requestStage == _LibraryRequestStage.auxiliary,
       );
     } finally {
       _requestInFlight = false;
@@ -806,19 +823,28 @@ final class LibraryController extends ChangeNotifier {
   ) {
     if (!_staleRecoveryUsed) {
       _staleRecoveryUsed = true;
+      final pending =
+          _pendingPageCorrelation ??
+          _pageAttempt(
+            observation,
+            pageOrdinal: observation.pages.length + 1,
+            status: LibraryPageStatus.loading,
+          );
+      _retainedStaleFailureBoundaries = [
+        ..._retainedStaleFailureBoundaries,
+        _failedPageBoundary(pending),
+      ];
       final nextState = _state.copyWith(
-        games: const <GameLibraryRow>[],
         nextCursor: null,
-        facets: null,
         phase: LibraryLoadPhase.loading,
-        refreshing: false,
+        refreshing: _state.games.isNotEmpty,
         loadingMore: false,
-        lastFailure: null,
+        lastFailure: failure,
       );
       final replacement = _newObservation(nextState);
       _publish(
         state: nextState,
-        rowsObservation: null,
+        rowsObservation: _rowsObservation,
         requestObservation: replacement,
         pendingPageCorrelation: _pageAttempt(
           replacement,
@@ -837,33 +863,36 @@ final class LibraryController extends ChangeNotifier {
           pageOrdinal: observation.pages.length + 1,
           status: LibraryPageStatus.loading,
         );
-    final failedPage = LibraryPageCorrelation(
-      observationId: pending.observationId,
-      queryProfile: pending.queryProfile,
-      pageOrdinal: pending.pageOrdinal,
-      isFirstPage: pending.isFirstPage,
-      isContinuationPage: pending.isContinuationPage,
-      pageStatus: LibraryPageStatus.failed,
-      hasNextPage: null,
-      isFinalPage: null,
-      pageSize: pending.pageSize,
-      expectedRowCount: null,
-    );
+    final failedPage = _failedPageBoundary(pending);
+    final retainRows =
+        _retainedStaleFailureBoundaries.isNotEmpty && _state.games.isNotEmpty;
     _publish(
       state: _state.copyWith(
-        games: const <GameLibraryRow>[],
         nextCursor: null,
-        facets: null,
-        phase: LibraryLoadPhase.failed,
+        phase: retainRows ? LibraryLoadPhase.ready : LibraryLoadPhase.failed,
         refreshing: false,
         loadingMore: false,
         lastFailure: failure,
       ),
-      rowsObservation: null,
+      rowsObservation: _rowsObservation,
       requestObservation: observation.withoutContinuation(),
       pendingPageCorrelation: failedPage,
     );
   }
+
+  LibraryPageCorrelation _failedPageBoundary(LibraryPageCorrelation pending) =>
+      LibraryPageCorrelation(
+        observationId: pending.observationId,
+        queryProfile: pending.queryProfile,
+        pageOrdinal: pending.pageOrdinal,
+        isFirstPage: pending.isFirstPage,
+        isContinuationPage: pending.isContinuationPage,
+        pageStatus: LibraryPageStatus.failed,
+        hasNextPage: null,
+        isFinalPage: null,
+        pageSize: pending.pageSize,
+        expectedRowCount: null,
+      );
 
   /// Installs rows and their immutable page ledger before notifying the page.
   void _publish({

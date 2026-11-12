@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-010  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-09-03  
+**Last Updated:** 2026-11-08\
 **Depends On:** ARCH-001, ARCH-002, PHASE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-007, SPEC-BE-008, SPEC-BE-009, SPEC-BE-010, SPEC-BE-013, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-FE-009, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -330,6 +330,44 @@ The frontend:
 - does not require total count for correctness.
 
 First-page loading may show a skeleton/contained loading state. Loading later pages must not replace already rendered rows with a global spinner.
+
+### 12.1 Revision-fenced pages
+
+Ordinary browsing may use the existing latest-view behavior. A caller that needs one coherent membership set opts into `RevisionFenced` through the ordinary Library query. The first request acquires a backend view token with the first page. Every continuation carries that token, the exact prior cursor, the same query shape, and the same page size. The client appends a page only after the backend accepts that token and the page continues the active query instance.
+
+Changing scope, search, filters, sort, or page size starts a new query chain. The token binds every one of these fields even though the existing cursor wire format remains unchanged. A process restart discards the in-memory cursor and token and begins a new view at page one.
+
+For Issue #28 membership verification, the authorized baseline is the active, nonredirect Library set with `LibraryScope::All`, no search, empty filters, `DisplayTitle` ascending, and the page size fixed by the authorization. This scope comes from the approved plan or other explicit authority, not the UI's current filter, search, selected rows, scroll position, or grid/list mode. A different query does not stand in for the baseline.
+
+The stable-view token and complete-enumeration proof requirements are defined in SPEC-BE-015 §§21.1–21.5. The frontend's page state and accessibility semantics preserve that backend proof chain; they do not establish membership independently.
+
+### 12.2 Stale views and qualification outcomes
+
+When an ordinary product query receives `StaleView`, the client discards that query's pages, cursor, and token, then may query again from page one. It does not append new pages to the old view. An invalid view token is surfaced as the typed request error and cannot be treated as a stale page.
+
+Qualification uses the complete revision-fenced All-active baseline authorized before the query begins. If that baseline or current membership evidence is incomplete, qualification is `BLOCKED`; incomplete evidence does not prove loss. For each previously required `GameId` absent from that complete set, issue exactly one direct `GetGame` lookup for the original ID under the same view token. Only a `Redirected(canonicalGameId)` whose target is in the completed set proves continuity for the absent ID. Otherwise, its stable absence is a retention `FAIL`; specifically, `Found` for the original is `FAIL` even when its detail still resolves. Do not issue a second lookup, reconstruct a redirect chain, or change the membership scope. Classify the lookup as follows:
+
+| Direct `GetGame` result | Per-ID disposition |
+| --- | --- |
+| `Redirected(canonicalGameId)` and the target is in the completed set | Continuity is proven; this required-ID check passes. |
+| `Redirected(canonicalGameId)` and the target is absent from the completed set | `FAIL`. |
+| `Found` for the absent original `GameId` | `FAIL`; resolvable detail is not active-membership or redirect continuity. |
+| Game-not-found | `FAIL`. |
+| `StaleView`, `InvalidViewToken`, uncertain transport, or another result that cannot establish one of the outcomes above | `BLOCKED`; invalidate the observation. |
+
+`StaleView`, invalid token, missing or skipped page, cursor gap, changed query shape, interrupted process, or uncertain transport also makes a membership observation `BLOCKED`. Qualification cannot silently restart, replace an invalidated observation, or combine pages from different revisions. A dependent Retry after a blocked prerequisite remains `NOT_RUN`; Retry requires a separate passing prerequisite result and explicit authorization. A duplicate or out-of-scope `GameId` in stable backend page responses is a proven query-contract failure and is `FAIL`. Duplicate, merged, or otherwise ambiguous Android semantics remain `BLOCKED` until physically verified.
+
+This contract does not change qualification contract v5, capability v4, oracle v9, the existing AND-04/AND-05 operation counts of 31/45, or their authorization pins. It authorizes no new pagination, scroll, navigation, or device-observation step. Those steps require a separately approved plan and authorization.
+
+Specific implementation and verification gates require separate approval:
+
+- Rust query/token/error behavior belongs in `rust/crates/argus-application/src/library.rs`, with compatibility and query coverage in `rust/crates/argus-application/tests/library_queries.rs` and `rust/crates/argus-application/tests/library_contract.rs`.
+- SQLite revision updates and transaction validation belong in `rust/crates/argus-infrastructure/src/sqlite/logical.rs` and `rust/crates/argus-infrastructure/src/sqlite/executor.rs`. Migration registration belongs in `rust/crates/argus-infrastructure/src/sqlite/migrations/mod.rs` and `rust/crates/argus-infrastructure/src/sqlite/migrations/runner.rs`, with a new schema-v20 migration at `rust/crates/argus-infrastructure/src/sqlite/migrations/sql/0020_library_view_state.sql` and coverage in `rust/crates/argus-infrastructure/tests/migration_v20.rs`.
+- Bridge DTO/error mapping belongs in `rust/crates/argus-bridge/src/lib.rs`, with contract coverage in `rust/crates/argus-bridge/tests/contracts.rs` and `rust/crates/argus-bridge/tests/logical_library.rs`. Regenerate and review `rust/crates/argus-bridge/src/frb_generated.rs`, `flutter/lib/core/bridge/generated/frb_generated.dart`, and `flutter/lib/core/bridge/generated/frb_generated.io.dart`.
+- Flutter query state, controller behavior, and virtualized Grid/List semantics belong in `flutter/lib/features/library/application/library_state.dart`, `flutter/lib/features/library/application/library_controller.dart`, and `flutter/lib/features/library/presentation/library_page.dart`. Future controller tests use ordinary Library page responses to assert that `expectedRowCount` matches `items.length` and that page identity and status remain consistent. Widget tests verify that each row semantic at ordinal `i` exposes `items[i - 1].gameId`, then inspect the semantics tree while scrolling the virtualized Grid and List to cover complete per-page GameId coverage, including empty pages. These tests do not add a qualification-only API or materialize the full Library.
+- Physical Android verification must separately confirm page boundaries, row ordinals, exact GameIds, and complete scrolling coverage in both Grid and List modes under an approved qualification plan. Specification and Flutter test evidence do not establish physical Android behavior.
+
+Compatibility checks must retain tokenless Latest callers, v1/v2 cursor behavior, and existing Game-not-found and flattened redirect semantics. The frozen plans and pins authorize none of these new observation steps.
 
 ## 13. Progressive Hydration
 
@@ -678,6 +716,40 @@ Required:
 
 Game artwork itself should not produce redundant verbose semantics when adjacent title text already identifies the game; meaningful artwork-type/provenance controls remain labeled.
 
+### 33.1 Library page correlation semantics
+
+The ordinary virtualized Grid and List expose enough nonspoken semantics to verify page continuity and exact row identity without rendering the full Library at once. Each completed page boundary exposes:
+
+- a fresh, presentation-generated `observationId` scoped to one in-memory query instance;
+- a nonspoken `queryProfile` of `AllActiveMembershipBaseline` or `OrdinaryUserQuery`;
+- a one-based `pageOrdinal`, `isFirstPage`, `isContinuationPage`, `pageStatus` (`Loading`, `Complete`, or `Failed`), `hasNextPage`, and `isFinalPage`;
+- the effective bounded `pageSize` for the query;
+- `expectedRowCount`, equal to the number of rows in that page's authoritative backend result (`GamePageDto.items.length`), not a total Library count.
+
+Each row exposes its exact `GameId`, the same `observationId` and `pageOrdinal` as its page boundary, and a one-based `rowOrdinalWithinPage`. These are nonspoken machine-readable semantics, separate from spoken titles and labels. For an authoritative `GamePageDto.items` list, ordinal `i` maps to `items[i - 1]`, and that row's semantic `GameId` must equal `items[i - 1].gameId`. The frontend derives the ordinal and `GameId` from the same item; viewport position, Grid/List layout, spoken title, or another client-side order cannot remap them. The row association remains inspectable as virtualized rows enter the viewport, even when off-screen row nodes are absent.
+
+Every page in one observation uses the same `observationId`, `queryProfile`, and `pageSize`, and has `pageStatus = Complete` before it contributes coverage. Page one has `pageOrdinal = 1`, `isFirstPage = true`, and `isContinuationPage = false`. Each later page advances `pageOrdinal` by one, has `isFirstPage = false` and `isContinuationPage = true`. For a completed page, `isFinalPage` is true exactly when the authoritative page result has no next page; a single page may be both first and final. A complete page must expose `expectedRowCount`. Any missing or contradictory boundary marker, changed profile, page size, or observation identity, loading or failed page, or unavailable page boundary makes the observation `BLOCKED`.
+
+For a page with `expectedRowCount = N`, the observer independently captures each `rowOrdinalWithinPage` from `1` through `N`, paired with one exact `GameId`. It must see the full ordinal range for every page while scrolling; a short terminal page is complete only after every row on that page is observed. Repeated capture of the same `(rowOrdinalWithinPage, GameId)` pair while scrolling does not add coverage. Two presented rows with the same ordinal, one ordinal associated with conflicting `GameId` values, a missing ordinal, merged or otherwise ambiguous semantics, or incomplete scrolling makes the observation `BLOCKED`.
+
+`observationId` is not the backend view token and cannot be sent to an API. It is generated anew for each query instance, is not persisted or logged, and is discarded on stale state, client replacement, or process restart. Accessibility semantics do not expose the raw view token, database generation, internal cursor contents, query fingerprint, search text, private root/source data, paths, or credentials. The page profile is a fixed nonprivate category, not a projection of arbitrary filter values. `GameId`, row and page ordinals, row counts, loading state, and completion flags are not spoken.
+
+These semantics correlate presentation with successful revision-fenced page responses; they do not replace backend token validation. Complete observation requires one uninterrupted first-to-final page chain, consistent observation identity/profile/page size, valid first/continuation/final markers, complete page status, and exact `GameId` coverage for every expected row ordinal. Counts, titles, screenshots, or a final marker cannot substitute for exact row identity and page continuity. A final marker alone does not prove enumeration. Stable backend duplicates or out-of-scope IDs remain query-contract `FAIL`; ambiguous Android row semantics are `BLOCKED` until physically verified.
+
+Positive examples:
+
+- A completed page has `expectedRowCount = 3`. While scrolling the virtualized Grid, the observer captures `(1, A)`, `(2, B)`, and `(3, C)` under one page boundary. The page is covered without rendering other pages or the full Library.
+- An empty authorized membership baseline returns one completed page with `pageOrdinal = 1`, `isFirstPage = true`, `isContinuationPage = false`, `isFinalPage = true`, `expectedRowCount = 0`, `hasNextPage = false`, and no row semantics. With the revision-fenced backend chain complete, the observed membership set is empty.
+- Two games with the same spoken title have distinct nonspoken `GameId` values and row ordinals. Page ordinals are consecutive, every page is complete, and only the terminal page has `isFinalPage = true` and no next page.
+
+Negative examples:
+
+- A short terminal page has `expectedRowCount = 2`, but scrolling captures only ordinal `1`. The terminal marker and count do not cover ordinal `2`; the observation is `BLOCKED`.
+- Two presented rows on one page use `rowOrdinalWithinPage = 1`, or ordinal `2` is associated with `B` in one capture and `C` in another. The duplicate or conflicting row identity makes the observation `BLOCKED`.
+- A missing ordinal, unavailable page boundary, changed observation identity/profile/page size, incomplete scroll, merged row, or missing first/continuation/final marker makes the observation `BLOCKED`.
+- A completed empty page lacks the first/final boundary or a trustworthy `expectedRowCount = 0`. It cannot prove empty membership and is `BLOCKED`.
+- Seeing only the final page, or substituting a count, title, screenshot, or route for exact `GameId` coverage, does not establish the observation.
+
 ## 34. Performance
 
 - Use lazy/virtualized grid/list rendering.
@@ -758,6 +830,11 @@ Widget/controller tests cover:
 - closed platform/region/hydration/availability filters and display-title/platform/release-date/updated-at sorts;
 - backend facet requests whose own category is excluded from its count calculation;
 - cursor/stale-request handling;
+- revision-fenced page chains that retain one token and exact query shape, reject stale or invalid results, and restart ordinary UX from the first page without mixing revisions;
+- complete membership proof that requires the first page, every consecutive page, exact GameIds, unique identities, and a terminal page; a terminal page alone is insufficient;
+- one direct `GetGame` lookup for each missing original GameId, acceptance only of a flattened canonical redirect whose target occurs in the completed set, and rejection of client-reconstructed chains;
+- safe nonspoken page correlation in the virtualized Grid and List, including first/continuation/final markers, consecutive page ordinals, exact GameIds, and no exposed view token, database generation, cursor contents, or private data;
+- BLOCKED classification for stale/incomplete observations and ambiguous Android semantics, FAIL only for a complete stable contradiction, and NOT_RUN for dependent Retry; no frozen-plan operation is inferred from these semantics;
 - progressive Game/metadata/artwork appearance;
 - unmatched/partial/unavailable presentation;
 - orphan removal only after authoritative query changes;
@@ -848,6 +925,7 @@ SPEC-FE-010 is satisfied when:
 21. Artwork rendering uses `ArtworkAssetId`/bounded bytes and never exposes object-store paths or provider URLs to feature code.
 22. Product-onboarding routing uses one runtime-generation-aware app-owned projection of backend authority; redirect evaluation is synchronous and performs no focused API/FRB/native I/O.
 23. Active Phase 003 refresh work does not prevent foreground Library/Sources/Jobs/onboarding queries, shell branch switching, or job control from remaining usable, and a previously usable Library does not revert to global blocking loading solely because the refresh remains active.
+24. The ordinary Library query can opt into revision-fenced pages without changing tokenless callers, and the virtualized Grid/List expose exact nonspoken GameIds and page continuity while keeping backend view tokens and database internals private.
 
 ## 40. Prohibited Patterns
 

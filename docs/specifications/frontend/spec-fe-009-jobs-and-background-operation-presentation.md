@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-009  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-11-04\
 **Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-FE-008, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -929,6 +929,12 @@ Required semantics include:
 - Retry communicates that a new execution attempt will be created;
 - per-root outcomes remain distinguishable without relying on color alone.
 
+For the later Phase 003 `LibraryRefresh` detail, each identity-bearing job row and per-root scan detail exposes its stable `JobRunId` through an ordinary machine-readable accessibility semantic separate from its spoken accessible name. Per-root detail exposes the exact parent `JobRunId`, `ScanRunId`, and `LibraryRootId` tuple. Retry detail exposes distinct source and successor `JobRunId` identities. These semantics come from typed facts, independent of operation labels, row position, timestamps, routes, or Flutter widget keys.
+
+Normal job, root, and scan labels and spoken accessible names omit internal IDs. The optional `JobRunId` support or troubleshooting display allowed by §18 remains permitted as supporting detail, not as the primary title. This addition adds no other visible identity display and does not expand the Phase 001 milestone.
+
+Qualification evidence may rely on these identities only after verification confirms that Android's accessibility projection preserves each value without dropping, merging, or duplicating it.
+
 ## 45. Keyboard and Focus Requirements
 
 Desktop Jobs interaction must be fully keyboard-operable.
@@ -1229,6 +1235,7 @@ SPEC-FE-009 is satisfied when:
 39. Restart presentation reflects pre-readiness backend reconciliation, distinguishes accepted cancellation (`Cancelled`) from unexpected loss (`Abandoned`), preserves already-terminal child aggregation, and never automatically resumes or retries LibraryScan.
 40. Deterministic controller/widget/client tests cover the approved list, detail, progress, control, uncertainty, shell-indicator, adaptive, and accessibility contracts.
 41. Phase 001 integration/native verification exercises a real LibraryScan through Jobs and the shell indicator without treating deferred manual checks as passed.
+42. Later Phase 003 addition: Jobs exposes nonspoken machine-readable `JobRunId` and LibraryRefresh parent/ScanRun/root identities through ordinary accessibility semantics. Qualification evidence may rely on these identities only after Android's accessibility projection is verified to preserve them without dropping, merging, or duplicating them. This addition does not expand the Phase 001 milestone.
 
 ## 61. Phase 002 Android Foreground-Job Presentation Amendment
 
@@ -1291,6 +1298,10 @@ A selected reference without downloaded bytes is shown as a bounded future-enric
 
 Unknown totals stay unknown; Flutter does not manufacture percentages.
 
+The typed LibraryRefresh detail also presents the root-outcome coverage from SPEC-BE-008. When coverage is `Complete`, it presents each requested root as either an admitted ScanRun with its parent/ScanRun/root identities or a typed excluded outcome. When coverage is `HistoricalUnavailable`, it retains independently supported job lifecycle, Retry, ScanRun, and exclusion facts and tells the user that some historical root outcomes are unavailable. It does not display unknown roots as excluded or fill the gap from the current Sources list.
+
+Retry presentation uses the direct source and successor identities from the typed detail. A successor is a separate JobRun attempt with distinct ScanRun identities. The view does not infer the relationship from labels, row order, timestamps, or the navigation path. Refresh execution, requested scope, and eligibility semantics remain owned by SPEC-BE-015.
+
 ### 62.2 `CompletedWithIssues`
 
 For network/content refresh operations, `CompletedWithIssues` may represent a safe durable result with meaningful successes plus scoped unresolved work such as unmatched content, an otherwise-eligible enabled provider failure/unavailability, malformed/unsupported content, or artwork download failure. Disabled or intentionally skipped/unconfigured providers are exclusions, not issues. For `library_resolution_refresh`, a selected reference with no local asset is a normal bounded result (`asset_id = null`/future full-refresh eligibility), not independently a `CompletedWithIssues` cause. The generic state label remains capability-neutral; the operation-specific detail explains actual issues.
@@ -1302,6 +1313,22 @@ Cancel routes through the existing generic backend Cancel Job authority. Retry c
 ### 62.4 Privacy and scale
 
 Provider detail shows safe provider IDs/readiness/error summaries, never credentials, request headers, full remote payloads, or credential-bearing URLs. Per-game/provider issue lists are bounded/paged rather than rendering unbounded thousands of rows in one detail snapshot.
+
+### 62.5 Phase 003 identity and coverage tests
+
+These test additions apply to the Phase 003 refresh-job presentation. They do not change the Phase 001 client, mapper, widget, or integration requirements in §§53–55.
+
+Deterministic Phase 003 widget tests cover:
+
+- `Complete` and `HistoricalUnavailable` presentation without inventing excluded roots;
+- nonspoken `JobRunId` and parent/`ScanRunId`/`LibraryRootId` semantics independent of accessible labels, including identical adjacent labels;
+- direct Retry source/successor identities, preserved requested-root intent, and disjoint ScanRun IDs;
+- missing, duplicated, or merged identity semantics failing to establish an observer identity fact.
+
+Phase 003 client/mapper tests cover:
+
+- coverage-state and typed-exclusion mapping that preserves known partial facts and never defaults missing scope evidence to complete;
+- exact parent/ScanRun/root tuple and direct Retry source/successor identity mapping.
 
 ## 63. References
 

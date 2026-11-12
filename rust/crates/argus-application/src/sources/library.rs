@@ -1259,6 +1259,7 @@ where
                         job_run_id,
                         LibraryRefreshTrigger::AddedRoot(root_id),
                         RefreshMode::EligibleOnly,
+                        &[root_id],
                     )?;
                 }
                 scope.library_scan_admission_context().insert(
@@ -1450,7 +1451,8 @@ where
     /// Admits one composed refresh without a public Scan-All request
     /// identity. The same root admission/planning transaction is reused, but
     /// the durable context records the refresh invocation kind instead of a
-    /// standalone Scan-All intent.
+    /// standalone Scan-All intent. An `AddedRoot` trigger must be in the
+    /// captured scope and receive an admitted scan plan in that transaction.
     pub fn handle_library_refresh<R>(
         &self,
         command: RefreshLibraryCommand,
@@ -1529,6 +1531,19 @@ where
             .list_root_configurations(&context)
             .map_err(|error| map_persistence_error(trace_id, error))?;
         configured_roots.sort_by_key(|configuration| configuration.root_id());
+        let requested_root_ids = configured_roots
+            .iter()
+            .map(|configuration| configuration.root_id())
+            .collect::<Vec<_>>();
+        if refresh_trigger
+            .and_then(LibraryRefreshTrigger::root_id)
+            .is_some_and(|root_id| !requested_root_ids.contains(&root_id))
+        {
+            return Err(application_error(
+                trace_id,
+                ErrorCode::ConfigurationLibraryRootNotFound,
+            ));
+        }
 
         let created_at_ms = now_millis();
         let work = self
@@ -1602,6 +1617,22 @@ where
                     });
                 }
 
+                if let Some(required_root_id) =
+                    refresh_trigger.and_then(LibraryRefreshTrigger::root_id)
+                {
+                    let required_root = evaluations
+                        .iter()
+                        .find(|evaluation| evaluation.root_id == required_root_id);
+                    if !required_root.is_some_and(|evaluation| evaluation.exclusion.is_none()) {
+                        let exclusion =
+                            required_root.and_then(|evaluation| evaluation.exclusion.clone());
+                        scope.commit()?;
+                        return Ok::<_, ApplicationPortError>(
+                            ScanAllAdmissionWork::RequiredRefreshRootNotAdmitted { exclusion },
+                        );
+                    }
+                }
+
                 let eligible_count = evaluations
                     .iter()
                     .filter(|evaluation| evaluation.exclusion.is_none())
@@ -1624,6 +1655,7 @@ where
                         job_run_id,
                         refresh_trigger.unwrap_or(LibraryRefreshTrigger::Manual),
                         RefreshMode::EligibleOnly,
+                        &requested_root_ids,
                     )?;
                 }
                 let admission_context = match request_identity {
@@ -1749,6 +1781,31 @@ where
                     admitted,
                 ))
             }
+            ScanAllAdmissionWork::RequiredRefreshRootNotAdmitted { exclusion } => {
+                let error = match exclusion {
+                    Some(exclusion) => match exclusion.application_error() {
+                        Some(error) => error.clone(),
+                        None => {
+                            let code = match exclusion.reason() {
+                                LibraryScanTargetExclusionReason::AlreadyScanning => {
+                                    ErrorCode::OperationCapacityUnavailable
+                                }
+                                LibraryScanTargetExclusionReason::NoLongerConfigured => {
+                                    ErrorCode::ConfigurationLibraryRootNotFound
+                                }
+                                LibraryScanTargetExclusionReason::InvalidConfiguration => {
+                                    ErrorCode::ConfigurationInvalid
+                                }
+                            };
+                            application_error(trace_id, code)
+                        }
+                    },
+                    None => {
+                        application_error(trace_id, ErrorCode::ConfigurationLibraryRootNotFound)
+                    }
+                };
+                Err(error)
+            }
         }
     }
 }
@@ -1771,6 +1828,10 @@ impl LibraryScanAllRequestLookup for NoLibraryScanAllRequestLookup {
 enum ScanAllAdmissionWork {
     NothingEligible {
         exclusions: Vec<LibraryScanAdmissionExclusion>,
+    },
+    /// The AddedRoot trigger was not admitted with its initial scan.
+    RequiredRefreshRootNotAdmitted {
+        exclusion: Option<LibraryScanAdmissionExclusion>,
     },
     Admitted {
         job_run_id: JobRunId,
@@ -2124,6 +2185,11 @@ fn map_port_error(trace_id: crate::TraceId, error: ApplicationPortError) -> Appl
     match error {
         ApplicationPortError::Persistence(error) => map_persistence_error(trace_id, error),
         ApplicationPortError::EventRecording => {
+            application_error(trace_id, ErrorCode::InternalUnexpected)
+        }
+        ApplicationPortError::LibraryViewStale
+        | ApplicationPortError::LibraryViewTokenInvalid
+        | ApplicationPortError::LibraryViewUnavailable => {
             application_error(trace_id, ErrorCode::InternalUnexpected)
         }
     }

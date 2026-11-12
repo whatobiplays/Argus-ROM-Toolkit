@@ -19,7 +19,7 @@ pub mod startup;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use argus_application::{
     AddLocalLibraryRootCommand, AddLocalLibraryRootResult, AppearanceSettings,
@@ -36,22 +36,23 @@ use argus_application::{
     LibraryRootId, LibraryRootPage, LibraryRootProjection, LibraryRootRepository,
     LibraryScanAdmissionResult, LibraryScanAllAdmissionResult, LibraryScanAllRequestIdentity,
     LibraryScanAllRequestLookup, LibraryScope, LibraryService, LibrarySort, LibrarySourceAccess,
-    LibrarySourceRepository, ListGamesQuery, ListJobsQuery, ListLibraryRootsQuery,
-    ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor, LocalFilesystemBrowseLocation,
-    LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot, LocalFilesystemRootSelection, LogEvent,
-    LogLevel, LogicalContentRepository, LogicalContentUnitOfWork, LogicalLibraryQueries,
-    M3uGroupingMember, MetadataProviderReadiness, MetadataProviderReadinessProjection,
-    MetadataProviderRegistry, MetadataProviderService, MetadataProviderSettings,
-    MetadataRepository, MetadataResolutionPolicy, MetadataSettings, MigrationOutcome, NewJobRun,
-    NewLibraryScanAdmissionContext, ObservabilitySink, OperationContext, OperationHandle,
-    OperationName, PathClass, PersistenceError, PlatformClass, PlatformId, PrivacyConsent,
-    ProvenanceMember, ProviderError, ProviderId, ProviderReadinessState, RefreshIssueAccumulator,
-    RefreshIssueKind, RefreshIssueReason, RefreshLibraryCommand, RefreshMode,
-    RemoveLibraryRootCommand, RemoveLibraryRootResult, SafeContext, SafeContextField,
-    SafeContextValue, SecureCredentialStore, SettingsService, SourceEntryChildrenPage,
-    SourceEntryDetailProjection, SourceEntryId, SourceEntryKind, SourceEntryRecord,
-    SourceEntryRepository, SourceVersionEvidence, StartLibraryScanAllCommand,
-    StartLibraryScanAllResult, StartLibraryScanCommand, StartupCollector, SubsystemName,
+    LibrarySourceRepository, LibraryViewToken, ListGamesQuery, ListJobsQuery,
+    ListLibraryRootsQuery, ListSourceEntryChildrenQuery, LocalFilesystemBrowseCursor,
+    LocalFilesystemBrowseLocation, LocalFilesystemBrowsePage, LocalFilesystemBrowseRoot,
+    LocalFilesystemRootSelection, LogEvent, LogLevel, LogicalContentRepository,
+    LogicalContentUnitOfWork, LogicalLibraryQueries, M3uGroupingMember, MetadataProviderReadiness,
+    MetadataProviderReadinessProjection, MetadataProviderRegistry, MetadataProviderService,
+    MetadataProviderSettings, MetadataRepository, MetadataResolutionPolicy, MetadataSettings,
+    MigrationOutcome, NewJobRun, NewLibraryScanAdmissionContext, ObservabilitySink,
+    OperationContext, OperationHandle, OperationName, PathClass, PersistenceError, PlatformClass,
+    PlatformId, PrivacyConsent, ProvenanceMember, ProviderError, ProviderId,
+    ProviderReadinessState, RefreshIssueAccumulator, RefreshIssueKind, RefreshIssueReason,
+    RefreshLibraryCommand, RefreshMode, RemoveLibraryRootCommand, RemoveLibraryRootResult,
+    RevisionFencedGameLibraryPage, SafeContext, SafeContextField, SafeContextValue,
+    SecureCredentialStore, SettingsService, SourceEntryChildrenPage, SourceEntryDetailProjection,
+    SourceEntryId, SourceEntryKind, SourceEntryRecord, SourceEntryRepository,
+    SourceVersionEvidence, StartLibraryScanAllCommand, StartLibraryScanAllResult,
+    StartLibraryScanCommand, StartupCollector, SubsystemName,
     SyncLocalFilesystemMountedVolumesCommand, TechnicalClass, TraceEvent, TraceEventPhase, TraceId,
     TransformationFailure, TransformationRegistry, UnitOfWork, UnitOfWorkFactory,
     UpdateAppearanceSettingsCommand, ValidatedContentDerivation, ValidatedM3uGrouping, Version,
@@ -1070,9 +1071,10 @@ impl argus_application::JobRunRepository for KernelJobRunRepository<'_, '_> {
         job_run_id: argus_application::JobRunId,
         trigger: argus_application::LibraryRefreshTrigger,
         mode: argus_application::RefreshMode,
+        requested_root_ids: &[argus_application::LibraryRootId],
     ) -> Result<(), PersistenceError> {
         self.inner
-            .insert_library_refresh_intent(job_run_id, trigger, mode)
+            .insert_library_refresh_intent(job_run_id, trigger, mode, requested_root_ids)
     }
 
     fn insert_game_refresh_intent(
@@ -1306,6 +1308,22 @@ impl LogicalLibraryQueries for KernelLogicalContentRepository<'_, '_> {
 
     fn get_game(&mut self, game_id: GameId) -> Result<GetGameResult, PersistenceError> {
         self.inner.get_game(game_id)
+    }
+
+    fn list_games_revision_fenced(
+        &mut self,
+        query: &ListGamesQuery,
+        token: Option<&LibraryViewToken>,
+    ) -> Result<RevisionFencedGameLibraryPage, ApplicationPortError> {
+        self.inner.list_games_revision_fenced(query, token)
+    }
+
+    fn get_game_revision_fenced(
+        &mut self,
+        game_id: GameId,
+        token: &LibraryViewToken,
+    ) -> Result<GetGameResult, ApplicationPortError> {
+        self.inner.get_game_revision_fenced(game_id, token)
     }
 }
 
@@ -1984,6 +2002,26 @@ impl KernelBootstrap {
         .map_err(|error| map_application_port_error(context.trace_id(), error))
     }
 
+    /// Reads one bounded page fenced to the persisted Library view.
+    pub fn list_games_revision_fenced_with_context(
+        &self,
+        query: &ListGamesQuery,
+        token: Option<&LibraryViewToken>,
+        context: &OperationContext,
+    ) -> Result<RevisionFencedGameLibraryPage, ApplicationError> {
+        let query = query.clone();
+        let token = token.cloned();
+        self.execute(context, move |mut work| {
+            let page = {
+                let mut logical = work.logical_content();
+                logical.list_games_revision_fenced(&query, token.as_ref())?
+            };
+            work.commit()?;
+            Ok(page)
+        })
+        .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
     /// Reads facet counts for a bounded logical-library query shape.
     pub fn get_library_facets_with_context(
         &self,
@@ -2020,6 +2058,17 @@ impl KernelBootstrap {
     ) -> Result<GetGameResult, ApplicationError> {
         self.library_execution_context()
             .get_game_with_context(game_id, context)
+    }
+
+    /// Reads one game only while its supplied Library view remains current.
+    pub fn get_game_revision_fenced_with_context(
+        &self,
+        game_id: GameId,
+        token: &LibraryViewToken,
+        context: &OperationContext,
+    ) -> Result<GetGameResult, ApplicationError> {
+        self.library_execution_context()
+            .get_game_revision_fenced_with_context(game_id, token, context)
     }
 
     /// Reads the durable onboarding record and composes it with the current
@@ -2540,6 +2589,47 @@ impl LibraryExecutionContext {
                     logical
                         .get_game(game_id)
                         .map_err(ApplicationPortError::Persistence)?
+                };
+                let result = match result {
+                    GetGameResult::Found(detail) => {
+                        let canonical_game_id = detail.game_id();
+                        let resolved_metadata = {
+                            let mut metadata = work.metadata();
+                            metadata
+                                .resolved_metadata_for_game(canonical_game_id)
+                                .map_err(ApplicationPortError::Persistence)?
+                        };
+                        let resolved_artwork = {
+                            let mut artwork = work.artwork();
+                            artwork
+                                .resolved_artwork_for_game(canonical_game_id)
+                                .map_err(ApplicationPortError::Persistence)?
+                        };
+                        GetGameResult::Found(
+                            detail.with_enrichment(resolved_metadata, resolved_artwork),
+                        )
+                    }
+                    other => other,
+                };
+                work.commit()?;
+                Ok(result)
+            })
+            .map_err(|error| map_application_port_error(context.trace_id(), error))
+    }
+
+    /// Reads one game and enrichment projection under a validated Library view.
+    pub(crate) fn get_game_revision_fenced_with_context(
+        &self,
+        game_id: GameId,
+        token: &LibraryViewToken,
+        context: &OperationContext,
+    ) -> Result<GetGameResult, ApplicationError> {
+        let token = token.clone();
+        self.unit_of_work
+            .execute(context, move |mut work| {
+                let result = {
+                    let mut logical = work.logical_content();
+                    logical.get_game_revision_fenced(game_id, &token)?
                 };
                 let result = match result {
                     GetGameResult::Found(detail) => {
@@ -5103,9 +5193,23 @@ pub fn bootstrap_kernel_with_event_bus(
     );
 
     let database_path = data_directory.join("argus.sqlite3");
-    let executor = SqliteDatabaseExecutor::open_with_capacity(
+    let view_key = library_view_process_key().map_err(|_| {
+        let (code, technical) = error_class(&SqliteExecutorError::Internal);
+        failure(
+            trace_id,
+            KernelBootstrapStage::Persistence,
+            code,
+            technical,
+            path_class,
+            platform_class,
+            architecture,
+            collector.clone(),
+        )
+    })?;
+    let executor = SqliteDatabaseExecutor::open_with_capacity_and_view_key(
         &database_path,
         argus_infrastructure::sqlite::DEFAULT_QUEUE_CAPACITY,
+        view_key,
     )
     .map_err(|error| {
         let (code, technical) = error_class(&error);
@@ -5613,6 +5717,9 @@ pub(crate) fn map_application_port_error(
         ApplicationPortError::Persistence(PersistenceError::PersistedSettingsInvalid(_)) => {
             ErrorCode::ConfigurationPersistedSettingsInvalid
         }
+        ApplicationPortError::LibraryViewStale => ErrorCode::LibraryViewStale,
+        ApplicationPortError::LibraryViewTokenInvalid => ErrorCode::LibraryViewTokenInvalid,
+        ApplicationPortError::LibraryViewUnavailable => ErrorCode::InternalUnexpected,
         ApplicationPortError::Persistence(_) | ApplicationPortError::EventRecording => {
             ErrorCode::InternalUnexpected
         }
@@ -5820,6 +5927,15 @@ pub(crate) fn reset_appearance_with_executor(
 }
 
 static EMERGENCY_TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
+static PROCESS_LIBRARY_VIEW_KEY: OnceLock<Result<[u8; 32], ()>> = OnceLock::new();
+
+pub(crate) fn library_view_process_key() -> Result<[u8; 32], ()> {
+    *PROCESS_LIBRARY_VIEW_KEY.get_or_init(|| {
+        let mut key = [0_u8; 32];
+        getrandom::fill(&mut key).map_err(|_| ())?;
+        Ok(key)
+    })
+}
 
 pub fn new_trace_id() -> TraceId {
     let mut bytes = [0_u8; 16];

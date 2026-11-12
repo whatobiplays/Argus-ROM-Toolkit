@@ -226,6 +226,9 @@ JobDetail libraryRefreshJobDetail({
         mode: 'eligible_only',
         requestedRootIds: const [],
         scanRuns: const [],
+        exclusions: const [],
+        rootOutcomeCoverage:
+            LibraryRefreshRootOutcomeCoverage.historicalUnavailable,
         progress: RefreshProgressFacts(
           phase: 'library_refresh.completed',
           completedUnits: 1,

@@ -709,6 +709,15 @@ sealed class LibraryScanJobDetail with _$LibraryScanJobDetail {
   }) = _LibraryScanJobDetail;
 }
 
+/// Evidence available for the complete root scope of one Library refresh.
+enum LibraryRefreshRootOutcomeCoverage {
+  /// Durable history proves an outcome for every originally requested root.
+  complete,
+
+  /// Available history cannot prove the complete original root scope.
+  historicalUnavailable,
+}
+
 /// Typed composed Library refresh detail.
 @freezed
 sealed class LibraryRefreshJobDetail with _$LibraryRefreshJobDetail {
@@ -721,6 +730,8 @@ sealed class LibraryRefreshJobDetail with _$LibraryRefreshJobDetail {
     required RefreshProgressFacts progress,
     JobRunId? retrySourceJobRunId,
     JobRunId? retrySuccessorJobRunId,
+    required List<LibraryScanAdmissionExclusion> exclusions,
+    required LibraryRefreshRootOutcomeCoverage rootOutcomeCoverage,
   }) = _LibraryRefreshJobDetail;
 }
 
@@ -1711,12 +1722,27 @@ final class GameLibraryRow {
   final int updatedAtMs;
 }
 
-/// Bounded logical-library page with an opaque continuation cursor.
+/// Bounded logical-library page with a cursor and optional view token.
 final class GamePage {
-  const GamePage({required this.items, this.nextCursor});
+  const GamePage({required this.items, this.nextCursor, this.libraryViewToken});
 
   final List<GameLibraryRow> items;
   final String? nextCursor;
+  final String? libraryViewToken;
+}
+
+/// A logical-library page and the token for reading its view.
+///
+/// Pass [viewToken] to continuation-page and detail reads that must use the
+/// same view.
+final class RevisionFencedLibraryPage {
+  const RevisionFencedLibraryPage({
+    required this.page,
+    required this.viewToken,
+  });
+
+  final GamePage page;
+  final String viewToken;
 }
 
 /// Scope/search/filter shape used to request facet counts.
@@ -2025,7 +2051,10 @@ final class LibrarySort {
   final LibrarySortDirection direction;
 }
 
-/// Full logical-library query shape. Semantics remain backend-owned.
+/// Selects whether a query reads latest state or a revision-fenced view.
+enum LibraryViewConsistency { latest, revisionFenced }
+
+/// Full logical-library query shape. Omitted consistency means Latest.
 final class ListGamesRequest {
   const ListGamesRequest({
     this.scope = const LibraryScopeAll(),
@@ -2034,6 +2063,8 @@ final class ListGamesRequest {
     this.sort = const LibrarySort(),
     this.cursor,
     this.pageSize = 50,
+    this.viewConsistency,
+    this.libraryViewToken,
   });
 
   final LibraryScope scope;
@@ -2042,6 +2073,8 @@ final class ListGamesRequest {
   final LibrarySort sort;
   final String? cursor;
   final int pageSize;
+  final LibraryViewConsistency? viewConsistency;
+  final String? libraryViewToken;
 }
 
 /// Safe authoritative row projection for one source entry.

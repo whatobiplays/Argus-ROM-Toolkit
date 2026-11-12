@@ -94,8 +94,8 @@ fn migration_0006_upgrades_a_slice_004_database_with_representative_history() {
         migration_test_support::current_registry(),
     )
     .expect("upgraded open");
-    assert_eq!(fresh.migration_summary().current_version, 18);
-    assert_eq!(fresh.migration_summary().applied_count, 13);
+    assert_eq!(fresh.migration_summary().current_version, 20);
+    assert_eq!(fresh.migration_summary().applied_count, 15);
 
     fresh
         .execute(&context(), move |mut scope| {
@@ -176,6 +176,41 @@ fn retry_link_and_progress_facts_round_trip_with_integrity() {
                     Some(source_job),
                 ))?;
             scope.job_runs().insert_retry_link(source_job, retry_job)?;
+            scope
+                .library_scan_targets()
+                .insert(NewLibraryScanTarget::new(
+                    source_job,
+                    LibraryScanTargetKind::Requested,
+                    root,
+                    "Games",
+                    "/library/Games",
+                    None,
+                    None,
+                ))?;
+            let source_scan = scope.scan_runs().insert(NewScanRun::new(
+                source_job,
+                root,
+                RootLocator::from_provider("/library/Games".to_owned()),
+                "Games",
+                "/library/Games",
+                1,
+                1,
+                1_250,
+            ))?;
+            scope
+                .library_scan_targets()
+                .insert(NewLibraryScanTarget::new(
+                    source_job,
+                    LibraryScanTargetKind::Admitted,
+                    root,
+                    "Games",
+                    "/library/Games",
+                    Some(source_scan),
+                    None,
+                ))?;
+            scope
+                .scan_runs()
+                .set_status(source_scan, ScanRunStatus::Failed, Some(1_500), None)?;
             scope
                 .library_scan_targets()
                 .insert(NewLibraryScanTarget::new(

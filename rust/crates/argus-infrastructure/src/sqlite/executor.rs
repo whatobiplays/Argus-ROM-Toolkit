@@ -69,6 +69,7 @@ struct SharedExecutor {
 pub struct SqliteDatabaseExecutor {
     shared: Arc<SharedExecutor>,
     migration_summary: MigrationSummary,
+    library_view_key: Option<[u8; 32]>,
 }
 
 thread_local! {
@@ -109,10 +110,33 @@ impl SqliteDatabaseExecutor {
         Self::open_with_capacity_and_registry(path, DEFAULT_QUEUE_CAPACITY, registry)
     }
 
+    /// Opens the database with the process key used to authenticate Library views.
+    pub fn open_with_capacity_and_view_key(
+        path: impl AsRef<Path>,
+        capacity: usize,
+        library_view_key: [u8; 32],
+    ) -> Result<Self, SqliteExecutorError> {
+        Self::open_with_capacity_and_registry_and_view_key(
+            path,
+            capacity,
+            MigrationRegistry::embedded(),
+            Some(library_view_key),
+        )
+    }
+
     fn open_with_capacity_and_registry(
         path: impl AsRef<Path>,
         capacity: usize,
         registry: MigrationRegistry,
+    ) -> Result<Self, SqliteExecutorError> {
+        Self::open_with_capacity_and_registry_and_view_key(path, capacity, registry, None)
+    }
+
+    fn open_with_capacity_and_registry_and_view_key(
+        path: impl AsRef<Path>,
+        capacity: usize,
+        registry: MigrationRegistry,
+        library_view_key: Option<[u8; 32]>,
     ) -> Result<Self, SqliteExecutorError> {
         if capacity == 0 {
             return Err(SqliteExecutorError::Internal);
@@ -170,11 +194,13 @@ impl SqliteDatabaseExecutor {
             Ok(Ok(summary)) => Ok(Self {
                 shared,
                 migration_summary: summary,
+                library_view_key,
             }),
             Ok(Err(error)) => {
                 let executor = Self {
                     shared,
                     migration_summary: empty_summary(),
+                    library_view_key,
                 };
                 let _ = executor.shutdown();
                 Err(error)
@@ -183,6 +209,7 @@ impl SqliteDatabaseExecutor {
                 let executor = Self {
                     shared,
                     migration_summary: empty_summary(),
+                    library_view_key,
                 };
                 let _ = executor.shutdown();
                 Err(SqliteExecutorError::DatabaseOpenFailed)
@@ -302,6 +329,7 @@ impl SqliteDatabaseExecutor {
             + Send
             + 'static,
     {
+        let library_view_key = self.library_view_key;
         self.submit_job(
             context,
             Box::new(move |connection, operation_context| {
@@ -311,7 +339,11 @@ impl SqliteDatabaseExecutor {
                         SqliteOperationError::Locked => SqliteExecutorError::DatabaseLocked,
                         _ => SqliteExecutorError::Internal,
                     })?;
-                let work = SqliteUnitOfWork::new(transaction, operation_context);
+                let work = SqliteUnitOfWork::new_with_library_view_key(
+                    transaction,
+                    operation_context,
+                    library_view_key,
+                );
                 callback(work)
                     .map(|value| Box::new(value) as Box<dyn Any + Send>)
                     .map_err(SqliteExecutorError::ApplicationCallback)
@@ -335,6 +367,7 @@ impl SqliteDatabaseExecutor {
             + Send
             + 'static,
     {
+        let library_view_key = self.library_view_key;
         let (value, statement_count): (T, usize) = self.submit_job(
             context,
             Box::new(move |connection, operation_context| {
@@ -349,7 +382,11 @@ impl SqliteDatabaseExecutor {
                         SqliteOperationError::Locked => SqliteExecutorError::DatabaseLocked,
                         _ => SqliteExecutorError::Internal,
                     })?;
-                let work = SqliteUnitOfWork::new(transaction, operation_context);
+                let work = SqliteUnitOfWork::new_with_library_view_key(
+                    transaction,
+                    operation_context,
+                    library_view_key,
+                );
                 let result = callback(work)
                     .map(|value| {
                         let statement_count = TEST_SQL_STATEMENT_COUNT.with(std::cell::Cell::get);
@@ -715,6 +752,14 @@ fn worker_main(
             return;
         }
     };
+    if let Err(error) = super::library_view::install_tracking(&connection) {
+        let _ = startup_sender.send(Err(match operation_error(&error) {
+            SqliteOperationError::Locked => SqliteExecutorError::DatabaseLocked,
+            _ => SqliteExecutorError::Internal,
+        }));
+        IN_DATABASE_WORKER.with(|active| active.set(false));
+        return;
+    }
     let _ = startup_sender.send(Ok(migration_summary));
     while let Ok(Command::Work(item)) = receiver.recv() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

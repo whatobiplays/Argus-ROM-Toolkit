@@ -3,7 +3,7 @@
 **Document ID:** SPEC-FE-008  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-08-23  
+**Last Updated:** 2026-11-04\
 **Depends On:** ARCH-001, ARCH-002, PHASE-001, PHASE-002, PHASE-003, SPEC-BE-004, SPEC-BE-008, SPEC-BE-013, SPEC-BE-015, SPEC-FE-001, SPEC-FE-002, SPEC-FE-003, SPEC-FE-004, SPEC-FE-005, SPEC-FE-006, SPEC-FE-007, SPEC-X-001, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -1020,6 +1020,8 @@ Sources must not construct raw Jobs URIs through string concatenation.
 
 The detailed Jobs route shape is owned by SPEC-FE-009.
 
+For an active or historical scan, **View Job** targets the owning parent `JobRunId`. Navigation identifies a destination; it does not independently prove the parent/`ScanRun`/root relationship. That relationship is established only from the typed identity facts in the authoritative job and root projections.
+
 ## 42. Folder Selection Boundary
 
 Folder selection is a presentation/platform side effect and must be isolated behind a narrow Flutter-side seam. The concrete interaction is platform-adapted: supported desktop platforms may use their native picker, while Android Phase 002 uses the Argus-owned mounted-filesystem browser.
@@ -1103,6 +1105,12 @@ Required semantics include:
 - removal confirmation identifies the configured folder and consequence;
 - **Cancel Scan & Remove** is distinguishable from ordinary cancellation;
 - removal explicitly communicates that filesystem content remains untouched.
+
+For Phase 003 views that present a root scan owned by a composed `LibraryRefresh`, root detail exposes its stable `LibraryRootId` through an ordinary machine-readable accessibility semantic separate from the spoken accessible name. When active or last scan facts are available, their semantics expose the exact `ScanRunId` and owning parent `JobRunId` alongside the root identity. These are narrowly scoped application identities, not persistence keys.
+
+Raw persistence details, provider-native identifiers, and sensitive paths must not appear in Sources labels or accessibility semantics. Internal IDs stay out of visible Sources labels and spoken accessible names; their machine-readable values remain separate. The contract does not select a Flutter property.
+
+Qualification evidence may rely on these identities only after verification confirms that Android's accessibility projection preserves each value without dropping, merging, or duplicating it. This Phase 003 addition does not expand the Phase 001 milestone and adds no visible support-ID display to Sources.
 
 ## 47. Focus Management
 
@@ -1347,6 +1355,8 @@ Required coverage includes:
 
 ## 63. Accessibility and Keyboard Tests
 
+Phase 001 tests in this section cover existing Sources and standalone `LibraryScan` interactions. Phase 003 `LibraryRefresh` identity tests are specified in §70.1 and do not expand the Phase 001 milestone.
+
 Required coverage includes:
 
 - root semantics include name plus meaningful state;
@@ -1397,7 +1407,8 @@ FE-008 implementations must not:
 - add source-entry search/filtering in Phase 001;
 - infer future archive/game semantics from filename extensions;
 - block the entire Sources destination during one root mutation;
-- expose raw provider/native errors or internal persistence identifiers.
+- expose raw provider/native errors, raw persistence details or identifiers, provider-native identifiers, or sensitive paths through UI or accessibility semantics;
+- display or speak internal identifiers. The narrowly scoped application-owned `LibraryRootId`, `JobRunId`, and `ScanRunId` values required by §46 are permitted only in nonspoken machine-readable accessibility semantics.
 
 ## 66. Out of Scope
 
@@ -1467,6 +1478,7 @@ SPEC-FE-008 is satisfied when:
 30. Deterministic controller/widget tests cover all approved workflows, uncertainty behavior, adaptive layouts, hierarchy paging/reconciliation, and accessibility interactions.
 31. Phase 001 native/integration verification exercises the real Sources workflow without treating deferred manual checks as passed.
 32. Sources presents the exact Phase 001 kind/classification/traversal mapping, retains hidden/system ordinary entries, and never presents an incomplete resource-limited scope as a complete hierarchy.
+33. Later Phase 003 addition: when Sources presents a composed `LibraryRefresh` scan, root detail exposes nonspoken machine-readable `LibraryRootId`, `ScanRunId`, and parent `JobRunId` identities through ordinary accessibility semantics. Qualification evidence may rely on them only after Android's accessibility projection is verified to preserve each identity without dropping, merging, or duplicating it. This addition does not expand the Phase 001 milestone.
 
 ## 69. Phase 002 Android Folder-Browser and Root-Availability Amendment
 
@@ -1508,6 +1520,12 @@ The Library flow must not roll back a successfully committed root or mislabel th
 Sources retains explicit operational actions for users who need lower-level control, including existing scan/rescan controls and an advanced `Add Without Refreshing` path where the active product surface exposes it. A Sources-originated standalone scan still creates the `library_scan` operation defined by SPEC-BE-013; it does not masquerade as full metadata/artwork hydration.
 
 Archive/disc/playlist semantic expansion introduced by Phase 003 remains backend transformation/Game authority. FE-008 continues to render the source graph it is given and does not infer game/media identity from filenames or extensions.
+
+### 70.1 LibraryRefresh identity semantics and tests
+
+When Sources presents a root scan owned by a composed `LibraryRefresh`, its typed facts expose the parent `JobRunId`, `ScanRunId`, and `LibraryRootId` tuple. **View Job** continues to navigate to the parent job; navigation history does not establish the tuple relationship.
+
+Phase 003 widget tests verify that these identities come from typed facts rather than labels, row order, routes, or widget keys. They also verify that identical spoken labels do not merge distinct identities and that missing, duplicated, or merged accessibility semantics cannot establish identity. These are later-phase additions and do not change Phase 001 acceptance or milestone tests. Qualification evidence may rely on these identities only after verification confirms that Android's accessibility projection preserves them without dropping, merging, or duplicating them.
 
 ## 71. References
 

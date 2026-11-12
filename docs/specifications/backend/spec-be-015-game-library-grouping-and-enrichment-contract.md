@@ -3,7 +3,7 @@
 **Document ID:** SPEC-BE-015  
 **Status:** Ready for Implementation  
 **Owner:** Daniel  
-**Last Updated:** 2026-09-03  
+**Last Updated:** 2026-11-08\
 **Depends On:** ARCH-001, ARCH-002, PHASE-003, SPEC-BE-002, SPEC-BE-003, SPEC-BE-004, SPEC-BE-005, SPEC-BE-006, SPEC-BE-007, SPEC-BE-009, SPEC-BE-010, SPEC-BE-012, SPEC-BE-013, SPEC-BE-014, SPEC-X-002  
 **Supersedes:** None  
 **Superseded By:** None
@@ -725,6 +725,95 @@ Normal queries exclude `Redirected` and `InactiveOrphan` Games. Explicit histori
 
 Flutter must not load the entire Library to implement search, filters, facets, or sorting locally.
 
+### 21.1 Optional revision-fenced Library views
+
+The ordinary Library query supports an optional `RevisionFenced` consistency mode. Omitting the mode preserves the existing latest-view behavior. The existing v1 and v2 keyset cursor formats remain independent of the new view token and retain their current validation and continuation semantics.
+
+At verified base `b081603eb285f3f0dc282fb6100075aa78e18d47`, `GameListCursor::try_from_external` accepts v1/v2 cursor values in `rust/crates/argus-application/src/library.rs:323-374`, and `list_query_fingerprint` binds scope, search, filters, and sort in `rust/crates/argus-application/src/library.rs:1636-1650`; it does not bind page size or a committed data revision. Bounded keyset reads are in `SqliteLogicalContentRepository::list_games` at `rust/crates/argus-infrastructure/src/sqlite/logical.rs:376-440`. Each operation uses a short `IMMEDIATE` transaction through `SqliteExecutor::with_unit_of_work` at `rust/crates/argus-infrastructure/src/sqlite/executor.rs:294-320`. `get_game` at `rust/crates/argus-infrastructure/src/sqlite/logical.rs:458-504` calls `resolve_redirect` at `rust/crates/argus-infrastructure/src/sqlite/logical.rs:2636-2661` and returns a direct canonical result without binding the lookup to a revision. The production migration registry at `rust/crates/argus-infrastructure/src/sqlite/migrations/mod.rs:129-203` currently ends at schema version 19.
+
+The first `RevisionFenced` request has no cursor and no view token. In the same database transaction, the backend reads the current Library database generation and membership revision, binds them to the normalized query fingerprint, issues an opaque `LibraryViewToken`, and reads the first bounded page. The token fingerprint includes the complete query shape: scope, normalized search, every filter, sort field and direction, deterministic tie-breakers, fixed page size, and Library query-contract version.
+
+Supplying a token on the first page, omitting it on a continuation, sending a cursor without a token in `RevisionFenced` mode, or supplying a token in `Latest` mode returns `InvalidViewToken`. A caller begins a new stable view by making a new tokenless first-page request.
+
+Every continuation request carries the same token, the same query shape, and exactly the `nextCursor` returned by the preceding page. The backend validates the token and reads that page in one transaction. Each successful page returns the same opaque token alongside its ordinary cursor. A direct `GetGame` query may carry that token and must validate it in the same transaction as the lookup. No database transaction remains open between pages or lookups.
+
+The token has no wall-clock expiry and retains no database snapshot or server-side page state. Its encoded size is capped at 4096 bytes, independent of Library size or page count, and the database stores one view-state row rather than a record per token. It is valid only while its database generation, membership revision, query-contract version, and query binding remain current. Clients keep it in the in-memory query instance and discard it when that instance or application process ends. Reopening the same database preserves its generation and revision; an interrupted enumeration starts again from page one.
+
+### 21.2 Persistent revision and invalidation
+
+The database stores one persistent Library view-state record containing a unique generation, a positive signed 64-bit membership revision, and a positive signed 64-bit query-contract version. A fresh database initializes a new generation, revision `1`, and query-contract version `1`. The next production schema migration initializes this state in its migration transaction for every supported schema-8+ database. It leaves the current production migration floor unchanged, including rejection of schema 1–7 history. A later migration or startup transition that changes Library query semantics increments the persisted query-contract version atomically before serving queries and invalidates earlier view tokens. If migration or generation initialization fails, Library queries remain unavailable.
+
+Every committed mutation that can change the GameId result set, its filters, facets, scope, search matches, or page ordering advances the global membership revision in the same transaction as that mutation. Advance it once per committing transaction, even when that transaction changes several relevant rows. Do not advance it for a no-op or rolled-back transaction. The closed set of revision-affecting changes is:
+
+- adding, removing, activating, deactivating, or orphaning a Game that changes normal Library inclusion;
+- creating, moving, removing, merging, or splitting current Game memberships, or changing grouping state that changes the Library identity projection;
+- creating, removing, flattening, or retargeting a redirect;
+- changing current source/content-to-root relationships when they alter a Library scope;
+- changing any value used by search, scope, filters, or facets, including searchable-title projection, platform, region, hydration, or availability;
+- changing any ordering key or tie-breaker, including display title, platform, release date, `updatedAt`, and the final `GameId` ordering rule;
+- changing the normalization, inclusion, filter, scope, sort, tie-breaker, or other query-contract rule that can change results or page boundaries.
+
+This set is defined by every persisted value and rule consumed by Library inclusion, scope, search, filters, facets, sorting, and cursor continuation. New query-affecting values must join this set before they are used by a Library query. A presentation-only update does not advance the revision when it leaves those values unchanged. Artwork selection, provenance, and row counts are examples only when their update does not change a query key. If such an update also changes a query key such as `updatedAt`, it advances the revision.
+
+The revision guarantees a stable GameId membership set and page order. It does not freeze unrelated row presentation fields. A page may show a newer cover or count while retaining the same membership proof when that field does not affect inclusion or ordering. The revision is global and may invalidate a query that a particular mutation would not have changed; this conservative invalidation keeps one view token contract for every query shape.
+
+Database creation and migration assign a new generation. Every supported database restore or replacement rotates the generation and resets the revision to `1` before Library queries become available. If rotation fails, Library queries remain unavailable and the restored generation is not accepted. Database recreation also starts a new generation. A raw database replacement outside a supported restore path cannot establish continuity and is not eligible for membership proof. The generation is never reused.
+
+At the maximum signed 64-bit revision, the next relevant mutation rotates the generation and resets the revision to `1` in the same transaction. If the query-contract version reaches its maximum, a query-semantic migration rotates the generation and resets that version to `1` atomically before queries become available. If a fresh generation cannot be created, the mutation or migration rolls back and Library queries remain unavailable. Counter wraparound is prohibited. A token with a supported format and matching query binding whose generation, revision, or previously supported query-contract version no longer matches returns `StaleView`. An oversized, malformed, tampered, unsupported, or query-mismatched token, or a token paired with a cursor from another query, returns `InvalidViewToken`. Neither outcome returns a partial page or lookup result.
+
+### 21.3 Complete membership enumeration
+
+An enumeration proves membership only after an uninterrupted first-to-last continuation chain. The first request has no cursor. Each next request uses exactly the preceding page's cursor, and each page succeeds under the same view token, generation, revision, query fingerprint, query-contract version, and fixed page size. Every page contains at most the requested page size; a nonterminal page contains at least one GameId and a cursor; the terminal page has no cursor. No page may be skipped, reordered, repeated, or fetched with a different query shape. No GameId may appear twice in the chain.
+
+The complete set is the distinct `GameId` values returned by that chain. An empty first page with no cursor proves an empty set. Seeing a terminal page by itself, a page count, a total count, matching titles, or rows accumulated from different view tokens does not prove completeness.
+
+For Issue #28 committed-membership verification, the expected baseline is the ordinary active, nonredirect Library query with `LibraryScope::All`, no search text, empty filters, `DisplayTitle` ascending, and one fixed bounded page size. The qualification plan or other explicit authority defines this scope before the query begins. The UI's current filter, search, scroll position, selected rows, and grid/list mode cannot select or narrow the authorized scope. Other consumers may choose a different scope, but must bind and verify that exact scope independently.
+
+Application restart ends the enumeration. Normal UX may begin a new view at page one; qualification cannot resume or combine the pre-restart pages with the new view. A stale token, missing page, cursor gap, query-shape change, process restart, incomplete terminal state, or duplicate identity prevents a membership proof.
+
+### 21.4 Direct redirect proof
+
+For each previously committed `GameId` absent from the complete, revision-fenced, authorized All-active membership set defined in §21.3, issue exactly one authoritative `GetGame` lookup for the original ID using that enumeration's view token. The lookup validates the token in its own database transaction.
+
+An absent previously required ID needs direct redirect proof to preserve continuity. A `Redirected(canonicalGameId)` whose target is in the completed set proves continuity for that ID. Otherwise, the stable absence is a retention `FAIL`; in particular, `Found` for the original is not redirect continuity and fails even when the detail still resolves.
+
+| `GetGame` result | Per-ID disposition |
+| --- | --- |
+| `Redirected(canonicalGameId)` and the target is in the completed membership set | Continuity is proven; this required-ID check passes. |
+| `Redirected(canonicalGameId)` and the target is absent from the completed membership set | `FAIL`. |
+| `Found` for the original `GameId` | `FAIL`; a resolvable detail does not prove active membership or redirect continuity. |
+| Game-not-found | `FAIL`. |
+| `StaleView`, `InvalidViewToken`, uncertain transport, or another result that cannot establish one of the outcomes above | `BLOCKED`; invalidate the observation. |
+
+An incomplete baseline or incomplete current membership evidence is `BLOCKED`. A dependent Retry after a blocked prerequisite remains `NOT_RUN`. The backend owns canonical redirect resolution and exposes its flattened canonical target. The client and observer do not follow redirect chains, issue another lookup for an intermediate ID, or reconstruct a transitive path. A revision change during redirect checks invalidates the observation; pages and lookups from different revisions cannot be combined.
+
+### 21.5 Contract examples
+
+| Case | Result |
+| --- | --- |
+| Page one returns GameIds `A, B`, cursor `C1`, and token `V`; page two sends `C1` and `V`, returns `C`, and no cursor. All pages used the same fixed query and no identity repeats. | The complete set is `{A, B, C}`. |
+| A prior GameId `OLD` is absent from that completed set. One `GetGame(OLD, V)` returns `Redirected(B)`, and `B` is in the set. | The backend's direct redirect is proven. No follow-up lookup is made for `B`. |
+| The complete authorized All-active set omits previously required `OLD`; its one token-validated `GetGame(OLD, V)` returns `Found`. | `FAIL`; resolving the original detail does not establish active membership or redirect continuity. |
+| The one lookup returns `Redirected(B)`, but `B` is absent from the completed set. | `FAIL`; no second lookup or inferred chain may repair the result. |
+| The one lookup returns Game-not-found. | `FAIL`; the required original has no proven active member or canonical target. |
+| A page or direct lookup is stale, has an invalid token, or has uncertain transport; or the baseline/current membership chain is incomplete. | `BLOCKED`; invalidate the observation and leave dependent Retry `NOT_RUN`. |
+| A grouping mutation commits after page one and advances the revision before page two. | Page two returns `StaleView`; page one cannot contribute to a successful membership proof. |
+| The last page is observed without page one, a cursor is skipped, or a GameId repeats in the chain. | Enumeration is incomplete or contradictory and does not establish a set. |
+| A caller changes the search, filter, sort, or page size while reusing the token. | The token is invalid for that request; no mixed-shape result is returned. |
+| A supported restore loads an older backup containing an earlier revision. | Restore rotates the database generation before queries resume; tokens from before restore are stale. |
+| Artwork changes without changing a query key. | The membership revision may remain unchanged. If the write changes `updatedAt` or another query key, the revision advances atomically. |
+| A query-affecting write arrives when the revision is at its maximum. | The write commits with a fresh generation and revision `1`, or rolls back if a fresh generation cannot be created. |
+
+### 21.6 Design rationale and rejected alternatives
+
+Revision-fenced keyset pagination uses the existing bounded cursor path and adds one persistent generation/revision state. Each page and lookup uses a short transaction; no read transaction or connection remains pinned while a user scrolls. A committed query-affecting write invalidates the view and returns `StaleView`, so pages from different committed states cannot be combined. Frequent writes can force a fresh enumeration, and the global revision can invalidate a query that a particular mutation would not have changed.
+
+A bounded materialized snapshot-token design was also considered. It would create an immutable per-view ordered GameId sequence and the direct canonical redirect facts needed by the same observation in one short SQLite transaction; pages and redirect lookups would then read those captured facts in short transactions. It avoids holding a SQLite read transaction open and allows concurrent writes without changing the captured membership or redirect result. To remain bounded, it needs hard limits on snapshot rows, bytes, and active views, plus a fixed lifetime and cleanup policy. Hitting a limit must fail before proof is issued; expiration, missing snapshot state, or generation change must invalidate the entire observation with a typed failure. Continuing after process restart would require the client to persist the opaque token and the database to retain its snapshot until expiry. Database restore must invalidate the stored snapshots and rotate generation. A unique non-reused snapshot identity avoids ABA reuse, but the design still pays O(N) materialization and retention for every active view, and needs a policy for large Libraries that exceed its caps. Snapshot expiry and capacity errors would be separate from `StaleView` and `InvalidViewToken`.
+
+The materialized design is rejected for this contract because it adds per-view storage, full-set work on the first page, expiry and cleanup policy, restore handling, and new error cases. A pinned SQLite read transaction across pages is rejected because it retains a database snapshot and connection for a user-controlled interval, interferes with normal database maintenance, and cannot continue after process loss. Tokenless best-effort pages are rejected because a successful terminal page alone cannot show that earlier pages belong to the same committed state.
+
+The selected revision-fenced design has no wall-clock cursor expiry and stores no per-view membership copy. Its opaque token remains bounded to 4096 bytes regardless of Library size. Each page or direct lookup opens and closes its own transaction; a relevant committed mutation advances the revision, so the next operation returns `StaleView` and the observation must start over. Generation rotation on restore/recreation and at revision overflow prevents old tokens from becoming current through ABA or numeric wraparound. Process restart discards the in-memory token and requires a new first page. Malformed, tampered, unsupported, or query-mismatched tokens return `InvalidViewToken`. These limits favor low retained storage and simple cleanup at the cost of restarting enumeration after relevant writes.
+
 ## 22. Refresh Operations
 
 Stable operation types are:
@@ -1130,6 +1219,8 @@ Tests cover:
 
 Tests cover historical Phase 000-002 migration fixtures through an explicitly configured custom/full registry, production forward migration from supported schema-8+ state, safe rejection of validated production schema 1–7 history, current-membership and acyclic redirect/continuity-anchor constraints, retained identity-evidence separation, concurrent grouping/mapping updates, query-bound cursor stability, closed filter/sort semantics, own-category-excluded facet counts, exact hydration/availability precedence, active/orphan/redirect query behavior, incremental projection maintenance, and event-loss authoritative re-query.
 
+Stable-view tests cover generation initialization and restore rotation, atomic revision advancement, no revision change for no-op, rollback, or query-neutral presentation updates, overflow handling, first-page acquisition and continuation, stale and invalid token outcomes, no duplicate GameIds in a complete page chain, and direct redirect membership checks.
+
 ## 36. Out of Scope
 
 - manual metadata field editor;
@@ -1184,6 +1275,7 @@ SPEC-BE-015 is satisfied when:
 32. Disabled and intentionally unconfigured metadata-provider capabilities are exclusions rather than automatic partial-failure causes.
 33. `library_refresh`, `game_refresh`, and `library_resolution_refresh` execute without retaining the runtime/kernel lifecycle mutex across long-running business work, and foreground focused reads/job control remain available while those operations are active.
 34. Deterministic concurrency coverage proves foreground query/control responsiveness while refresh execution is intentionally blocked at a test-owned provider/enrichment seam, then proves normal terminalization after release.
+35. Revision-fenced pagination proves a complete GameId set only from one uninterrupted cursor chain under one database generation, revision, and exact query shape; direct redirect lookups use that same view and require the canonical target in the completed set.
 
 ## 38. Prohibited Patterns
 

@@ -110,6 +110,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryListRequestDto dco_decode_box_autoadd_library_list_request_dto(
+    dynamic raw,
+  );
+
+  @protected
   LibraryOnboardingStateDto dco_decode_box_autoadd_library_onboarding_state_dto(
     dynamic raw,
   );
@@ -145,6 +150,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryScanJobDetailDto dco_decode_box_autoadd_library_scan_job_detail_dto(
+    dynamic raw,
+  );
+
+  @protected
+  LibraryViewConsistencyDto dco_decode_box_autoadd_library_view_consistency_dto(
     dynamic raw,
   );
 
@@ -367,6 +377,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryConsistencyModeDto dco_decode_library_consistency_mode_dto(
+    dynamic raw,
+  );
+
+  @protected
   LibraryFacetQueryDto dco_decode_library_facet_query_dto(dynamic raw);
 
   @protected
@@ -377,6 +392,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryHydrationStateDto dco_decode_library_hydration_state_dto(dynamic raw);
+
+  @protected
+  LibraryListPageDto dco_decode_library_list_page_dto(dynamic raw);
+
+  @protected
+  LibraryListRequestDto dco_decode_library_list_request_dto(dynamic raw);
 
   @protected
   LibraryOnboardingProgressDto dco_decode_library_onboarding_progress_dto(
@@ -396,6 +417,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LibraryRefreshJobDetailDto dco_decode_library_refresh_job_detail_dto(
     dynamic raw,
   );
+
+  @protected
+  LibraryRefreshRootOutcomeCoverageDto
+  dco_decode_library_refresh_root_outcome_coverage_dto(dynamic raw);
 
   @protected
   LibraryResolutionRefreshJobDetailDto
@@ -458,6 +483,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibrarySortFieldDto dco_decode_library_sort_field_dto(dynamic raw);
+
+  @protected
+  LibraryViewConsistencyDto dco_decode_library_view_consistency_dto(
+    dynamic raw,
+  );
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -695,6 +725,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_opt_box_autoadd_library_root_scan_admission_reference_dto(
     dynamic raw,
   );
+
+  @protected
+  LibraryViewConsistencyDto?
+  dco_decode_opt_box_autoadd_library_view_consistency_dto(dynamic raw);
 
   @protected
   ResolvedMetadataDto? dco_decode_opt_box_autoadd_resolved_metadata_dto(
@@ -998,6 +1032,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryListRequestDto sse_decode_box_autoadd_library_list_request_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LibraryOnboardingStateDto sse_decode_box_autoadd_library_onboarding_state_dto(
     SseDeserializer deserializer,
   );
@@ -1043,6 +1082,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryScanJobDetailDto sse_decode_box_autoadd_library_scan_job_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryViewConsistencyDto sse_decode_box_autoadd_library_view_consistency_dto(
     SseDeserializer deserializer,
   );
 
@@ -1323,6 +1367,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  LibraryConsistencyModeDto sse_decode_library_consistency_mode_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   LibraryFacetQueryDto sse_decode_library_facet_query_dto(
     SseDeserializer deserializer,
   );
@@ -1335,6 +1384,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryHydrationStateDto sse_decode_library_hydration_state_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryListPageDto sse_decode_library_list_page_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryListRequestDto sse_decode_library_list_request_dto(
     SseDeserializer deserializer,
   );
 
@@ -1354,6 +1413,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibraryRefreshJobDetailDto sse_decode_library_refresh_job_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryRefreshRootOutcomeCoverageDto
+  sse_decode_library_refresh_root_outcome_coverage_dto(
     SseDeserializer deserializer,
   );
 
@@ -1436,6 +1501,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LibrarySortFieldDto sse_decode_library_sort_field_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryViewConsistencyDto sse_decode_library_view_consistency_dto(
     SseDeserializer deserializer,
   );
 
@@ -1739,6 +1809,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   LibraryRootScanAdmissionReferenceDto?
   sse_decode_opt_box_autoadd_library_root_scan_admission_reference_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  LibraryViewConsistencyDto?
+  sse_decode_opt_box_autoadd_library_view_consistency_dto(
     SseDeserializer deserializer,
   );
 
@@ -2115,6 +2191,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_library_list_request_dto(
+    LibraryListRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_library_onboarding_state_dto(
     LibraryOnboardingStateDto self,
     SseSerializer serializer,
@@ -2165,6 +2247,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_library_scan_job_detail_dto(
     LibraryScanJobDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_library_view_consistency_dto(
+    LibraryViewConsistencyDto self,
     SseSerializer serializer,
   );
 
@@ -2491,6 +2579,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_library_consistency_mode_dto(
+    LibraryConsistencyModeDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_library_facet_query_dto(
     LibraryFacetQueryDto self,
     SseSerializer serializer,
@@ -2515,6 +2609,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_library_list_page_dto(
+    LibraryListPageDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_list_request_dto(
+    LibraryListRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_library_onboarding_progress_dto(
     LibraryOnboardingProgressDto self,
     SseSerializer serializer,
@@ -2535,6 +2641,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_library_refresh_job_detail_dto(
     LibraryRefreshJobDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_refresh_root_outcome_coverage_dto(
+    LibraryRefreshRootOutcomeCoverageDto self,
     SseSerializer serializer,
   );
 
@@ -2637,6 +2749,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_library_sort_field_dto(
     LibrarySortFieldDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_library_view_consistency_dto(
+    LibraryViewConsistencyDto self,
     SseSerializer serializer,
   );
 
@@ -2997,6 +3115,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_library_root_scan_admission_reference_dto(
     LibraryRootScanAdmissionReferenceDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_library_view_consistency_dto(
+    LibraryViewConsistencyDto? self,
     SseSerializer serializer,
   );
 

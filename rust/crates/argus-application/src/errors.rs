@@ -98,6 +98,8 @@ pub enum ErrorCode {
     FilesystemSourceValidationIndeterminate,
     ValidationContentRecognitionAmbiguous,
     OperationTransformationResourceLimitExceeded,
+    LibraryViewStale,
+    LibraryViewTokenInvalid,
 }
 
 /// Central policy metadata for one published code.
@@ -284,6 +286,50 @@ impl ErrorCode {
         ]
     }
 
+    /// Returns the catalog entries added for revision-fenced Library reads.
+    pub const fn phase_004_all() -> &'static [Self; 38] {
+        &[
+            Self::ValidationInvalidArgument,
+            Self::ConfigurationInvalid,
+            Self::ConfigurationPersistedSettingsInvalid,
+            Self::PersistenceDatabaseOpenFailed,
+            Self::PersistenceDatabaseLocked,
+            Self::PersistenceMigrationFailed,
+            Self::PersistenceIncompatibleSchema,
+            Self::FilesystemPermissionDenied,
+            Self::RuntimeBridgeInitializationFailed,
+            Self::RuntimeCoreServiceInitializationFailed,
+            Self::RuntimeNotReady,
+            Self::RuntimeStartupFailed,
+            Self::RuntimeShuttingDown,
+            Self::RuntimeStopped,
+            Self::RuntimeStaleInstance,
+            Self::OperationCancelled,
+            Self::InternalUnexpected,
+            Self::InternalInvariantViolation,
+            Self::ConfigurationLibraryRootNotFound,
+            Self::FilesystemInvalidRootSelection,
+            Self::JobRunNotFound,
+            Self::OperationCapacityUnavailable,
+            Self::ConfigurationSourceEntryNotFound,
+            Self::ConfigurationGameNotFound,
+            Self::OperationSourceChangedDuringProcessing,
+            Self::FilesystemArtworkAssetNotFound,
+            Self::ProviderConfigurationInvalid,
+            Self::ConfigurationCredentialStoreUnavailable,
+            Self::ValidationContentMalformed,
+            Self::ValidationContentUnsupportedRepresentation,
+            Self::ValidationContentEncryptedUnsupported,
+            Self::ValidationMultiGameContainerUnsupported,
+            Self::FilesystemContentDependencyMissing,
+            Self::FilesystemSourceValidationIndeterminate,
+            Self::ValidationContentRecognitionAmbiguous,
+            Self::OperationTransformationResourceLimitExceeded,
+            Self::LibraryViewStale,
+            Self::LibraryViewTokenInvalid,
+        ]
+    }
+
     /// Returns the permanent machine-readable code.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -351,6 +397,8 @@ impl ErrorCode {
             Self::OperationTransformationResourceLimitExceeded => {
                 "ARGUS.V1.OPERATION.TRANSFORMATION_RESOURCE_LIMIT_EXCEEDED"
             }
+            Self::LibraryViewStale => "ARGUS.V1.LIBRARY.STALE_VIEW",
+            Self::LibraryViewTokenInvalid => "ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN",
         }
     }
 
@@ -645,6 +693,22 @@ impl ErrorCode {
                 "errors.operation.transformation_resource_limit_exceeded",
                 COMMON_FAILURE_FIELDS,
             ),
+            Self::LibraryViewStale => policy(
+                ErrorCategory::Operation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.library.stale_view",
+                &[],
+            ),
+            Self::LibraryViewTokenInvalid => policy(
+                ErrorCategory::Validation,
+                ApplicationSeverity::Warning,
+                Recoverability::UserAction,
+                RetryPolicy::Never,
+                "errors.library.invalid_view_token",
+                &[],
+            ),
         }
     }
 }
@@ -714,6 +778,9 @@ impl PersistenceError {
 pub enum ApplicationPortError {
     Persistence(PersistenceError),
     EventRecording,
+    LibraryViewStale,
+    LibraryViewTokenInvalid,
+    LibraryViewUnavailable,
 }
 
 impl From<PersistenceError> for ApplicationPortError {

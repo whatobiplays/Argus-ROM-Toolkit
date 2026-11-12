@@ -3,16 +3,17 @@
 use std::path::Path;
 
 use argus_application::{
-    JobRunId, JobRunRepository, JobRunState, JobsQueries, LibraryRootAvailability, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootQueries, LibraryRootRepository,
-    LibraryScanAdmissionContextRepository, LibraryScanAllRequestIdentity,
+    JobRunId, JobRunRepository, JobRunState, JobsQueries, LibraryRefreshTrigger,
+    LibraryRootAvailability, LibraryRootId, LibraryRootLastScanStatus, LibraryRootQueries,
+    LibraryRootRepository, LibraryScanAdmissionContextRepository, LibraryScanAllRequestIdentity,
     LibraryScanInvocationKind, LibraryScanRecoveryHandler, LibraryScanTargetKind,
     LibraryScanTargetRepository, LibrarySourceRepository, NewJobRun, NewLibraryRoot,
     NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, OPERATION_TYPE_GAME_REFRESH,
     OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
-    OPERATION_TYPE_LIBRARY_SCAN, OperationContext, OperationDetail, OperationName, RootLocator,
-    ScanRunId, ScanRunRepository, ScanRunStatus, StaleLibraryScanQueries, StaleOperationQueries,
-    StaleOperationRecoveryHandler, SubsystemName, TraceId, UnitOfWork, UnitOfWorkFactory,
+    OPERATION_TYPE_LIBRARY_SCAN, OperationContext, OperationDetail, OperationName, RefreshMode,
+    RootLocator, ScanRunId, ScanRunRepository, ScanRunStatus, StaleLibraryScanQueries,
+    StaleOperationQueries, StaleOperationRecoveryHandler, SubsystemName, TraceId, UnitOfWork,
+    UnitOfWorkFactory,
 };
 use argus_infrastructure::sqlite::{
     SqliteDatabaseExecutor, SqliteJobsQueries, SqliteLibraryRootQueries,
@@ -70,6 +71,14 @@ fn make_active_operation(
             let job = scope
                 .job_runs()
                 .insert(NewJobRun::new(operation_type.clone(), 1_000))?;
+            if is_library_refresh {
+                scope.job_runs().insert_library_refresh_intent(
+                    job,
+                    LibraryRefreshTrigger::Manual,
+                    RefreshMode::EligibleOnly,
+                    &[root],
+                )?;
+            }
             scope
                 .job_runs()
                 .set_state(job, JobRunState::Running, 1_001)?;
@@ -157,6 +166,28 @@ fn recovery_abandons_running_children_without_cancellation_and_preserves_complet
             scope
                 .scan_runs()
                 .set_status(completed, ScanRunStatus::Complete, Some(1_003), None)?;
+            scope
+                .library_scan_targets()
+                .insert(NewLibraryScanTarget::new(
+                    job,
+                    LibraryScanTargetKind::Requested,
+                    completed_root,
+                    "B",
+                    "/library/B",
+                    None,
+                    None,
+                ))?;
+            scope
+                .library_scan_targets()
+                .insert(NewLibraryScanTarget::new(
+                    job,
+                    LibraryScanTargetKind::Admitted,
+                    completed_root,
+                    "B",
+                    "/library/B",
+                    Some(completed),
+                    None,
+                ))?;
             scope.commit()?;
             Ok::<_, argus_application::ApplicationPortError>(())
         })

@@ -22,8 +22,18 @@ fn providerless_refresh_issue_identity_is_unique_after_v18_migration() {
         .with_connection_for_tests(context(), |connection| {
             connection
                 .execute_batch(
-                    "INSERT INTO job_run (job_run_id, operation_type, state, created_at)
-                     VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'library_refresh', 'completed', 1);
+                    "INSERT INTO job_run (
+                         job_run_id, operation_type, state, created_at,
+                         library_refresh_scope_version
+                     ) VALUES (
+                         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'library_refresh', 'completed', 1, 1
+                     );
+                     INSERT INTO library_refresh_intent (
+                         job_run_id, trigger_kind, trigger_root_id, mode, requested_root_ids_json
+                     ) VALUES (
+                         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'manual', NULL, 'eligible_only',
+                         '[\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]'
+                     );
                      INSERT INTO library_refresh_issue_fact
                          (job_run_id, issue_ordinal, issue_kind, issue_reason, provider_id, occurrences)
                      VALUES

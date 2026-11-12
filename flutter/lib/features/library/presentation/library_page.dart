@@ -785,9 +785,9 @@ class _LibraryGrid extends StatelessWidget {
         children: [
           Expanded(
             child: GridView.builder(
-              key: PageStorageKey<(String, LibraryController, int)>((
+              key: PageStorageKey<(String, int, int)>((
                 'grid',
-                controller,
+                controller.pageStorageInstanceId,
                 scrollResetGeneration,
               )),
               controller: scrollController,
@@ -862,9 +862,9 @@ class _LibraryList extends StatelessWidget {
     children: [
       Expanded(
         child: ListView.separated(
-          key: PageStorageKey<(String, LibraryController, int)>((
+          key: PageStorageKey<(String, int, int)>((
             'list',
-            controller,
+            controller.pageStorageInstanceId,
             scrollResetGeneration,
           )),
           controller: scrollController,

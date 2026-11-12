@@ -722,6 +722,220 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('Grid and List storage keys use value identities', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final reads = FakeLibraryReads()
+      ..onListGames = (_) =>
+          GamePage(items: [libraryRow(id: '11111111111111111111111111111111')]);
+    final controller = await _readyController(
+      reads,
+      scope: const LibraryScopeAll(),
+      sourcesApi: FakeSourcesApi(roots: [fakeRoot()]),
+    );
+    addTearDown(controller.dispose);
+    controller.setViewMode(LibraryViewMode.grid);
+    await tester.pumpWidget(_libraryHarness(controller: controller));
+    await tester.pumpAndSettle();
+
+    final gridKey =
+        _libraryLayoutStorageKey(tester, LibraryViewMode.grid)
+            as PageStorageKey<(String, int, int)>;
+    expect(gridKey.value, (
+      'grid',
+      controller.pageStorageInstanceId,
+      controller.scrollResetGeneration,
+    ));
+    expect(gridKey.value.$1, isA<String>());
+    expect(gridKey.value.$2, isA<int>());
+    expect(gridKey.value.$3, isA<int>());
+
+    controller.setViewMode(LibraryViewMode.list);
+    await tester.pumpAndSettle();
+    final listKey =
+        _libraryLayoutStorageKey(tester, LibraryViewMode.list)
+            as PageStorageKey<(String, int, int)>;
+    expect(listKey.value, (
+      'list',
+      controller.pageStorageInstanceId,
+      controller.scrollResetGeneration,
+    ));
+
+    await tester.pumpWidget(_libraryHarness(controller: controller));
+    await tester.pumpAndSettle();
+    expect(_libraryLayoutStorageKey(tester, LibraryViewMode.list), listKey);
+    controller.setViewMode(LibraryViewMode.grid);
+    await tester.pumpAndSettle();
+    expect(_libraryLayoutStorageKey(tester, LibraryViewMode.grid), gridKey);
+  });
+
+  testWidgets(
+    'Grid and List restore independently and replacement rejects saved offsets',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final rows = List<GameLibraryRow>.generate(
+        150,
+        (index) => libraryRow(
+          id: (index + 1).toRadixString(16).padLeft(32, '0'),
+          title: 'Game $index',
+        ),
+      );
+      FakeLibraryReads readsForRows() {
+        final reads = FakeLibraryReads();
+        reads.onListGames = (request) {
+          final start = request.cursor == null
+              ? 0
+              : int.parse(request.cursor!.substring('cursor-'.length));
+          final items = rows
+              .skip(start)
+              .take(LibraryController.pageSize)
+              .toList();
+          final end = start + items.length;
+          return GamePage(
+            items: items,
+            nextCursor: end < rows.length ? 'cursor-$end' : null,
+          );
+        };
+        return reads;
+      }
+
+      Future<LibraryController> loadedController() async {
+        final controller = await _readyController(
+          readsForRows(),
+          scope: const LibraryScopeAll(),
+          sourcesApi: FakeSourcesApi(roots: [fakeRoot()]),
+        );
+        for (
+          var loaded = controller.state.games.length;
+          loaded < rows.length;
+          loaded += LibraryController.pageSize
+        ) {
+          await controller.loadMore();
+        }
+        return controller;
+      }
+
+      final first = await loadedController();
+      addTearDown(first.dispose);
+      expect(first.state.games, hasLength(rows.length));
+      first.setViewMode(LibraryViewMode.grid);
+      expect(first.state.viewMode, LibraryViewMode.grid);
+      final scope = const LibraryScopeAll();
+      final selectedControllerProvider =
+          NotifierProvider<_LibraryControllerSelection, LibraryController>(
+            () => _LibraryControllerSelection(first),
+          );
+      final bucket = PageStorageBucket();
+      late ProviderContainer providerContainer;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            libraryControllerProvider(
+              scope,
+            ).overrideWith((ref) => ref.watch(selectedControllerProvider)),
+          ],
+          child: Builder(
+            builder: (context) {
+              providerContainer = ProviderScope.containerOf(context);
+              return MaterialApp(
+                home: PageStorage(
+                  bucket: bucket,
+                  child: LibraryPage(
+                    scope: scope,
+                    onOpenAll: () {},
+                    onOpenSources: () {},
+                    onOpenGame: (_) {},
+                    onOpenJob: (_) {},
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        providerContainer.read(libraryControllerProvider(scope)),
+        same(first),
+      );
+      expect(
+        providerContainer.read(libraryControllerProvider(scope)).state.games,
+        hasLength(rows.length),
+      );
+      expect(
+        providerContainer.read(libraryControllerProvider(scope)).state.viewMode,
+        LibraryViewMode.grid,
+      );
+      expect(
+        providerContainer.read(libraryControllerProvider(scope)).state.phase,
+        LibraryLoadPhase.ready,
+      );
+      final pageState = tester.state(find.byType(LibraryPage));
+      expect(find.byType(GridView), findsOneWidget);
+
+      final gridController = tester
+          .widget<GridView>(find.byType(GridView))
+          .controller!;
+      gridController.jumpTo(420);
+      await tester.pumpAndSettle();
+      expect(gridController.offset, 420);
+      final oldGridKey = _libraryLayoutStorageKey(tester, LibraryViewMode.grid);
+
+      first.setViewMode(LibraryViewMode.list);
+      await tester.pumpAndSettle();
+      final listController = tester
+          .widget<ListView>(
+            find.byWidgetPredicate(
+              (widget) => widget is ListView && widget.controller != null,
+            ),
+          )
+          .controller!;
+      listController.jumpTo(500);
+      await tester.pumpAndSettle();
+      expect(listController.offset, 500);
+      final oldListKey = _libraryLayoutStorageKey(tester, LibraryViewMode.list);
+
+      first.setViewMode(LibraryViewMode.grid);
+      await tester.pumpAndSettle();
+      expect(gridController.offset, 420);
+      first.setViewMode(LibraryViewMode.list);
+      await tester.pumpAndSettle();
+      expect(listController.offset, 500);
+
+      final replacement = await loadedController();
+      addTearDown(replacement.dispose);
+      replacement.setViewMode(LibraryViewMode.list);
+      expect(replacement.scrollResetGeneration, first.scrollResetGeneration);
+      providerContainer
+          .read(selectedControllerProvider.notifier)
+          .replace(replacement);
+      await tester.pumpAndSettle();
+
+      expect(tester.state(find.byType(LibraryPage)), same(pageState));
+      expect(
+        _libraryLayoutStorageKey(tester, LibraryViewMode.list),
+        isNot(oldListKey),
+      );
+      expect(listController.offset, 0);
+
+      replacement.setViewMode(LibraryViewMode.grid);
+      await tester.pumpAndSettle();
+      expect(
+        _libraryLayoutStorageKey(tester, LibraryViewMode.grid),
+        isNot(oldGridKey),
+      );
+      expect(gridController.offset, 0);
+    },
+  );
+
   testWidgets('reset returns both attached layouts to their first row', (
     tester,
   ) async {
@@ -774,6 +988,8 @@ void main() {
       }
       await tester.pumpAndSettle();
 
+      final keyBeforeReset = _libraryLayoutStorageKey(tester, viewMode);
+
       final scrollController = viewMode == LibraryViewMode.grid
           ? tester.widget<GridView>(find.byType(GridView)).controller!
           : tester
@@ -792,6 +1008,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(_libraryLayoutStorageKey(tester, viewMode), isNot(keyBeforeReset));
       expect(controller.state.viewMode, viewMode);
       expect(controller.state.games, hasLength(LibraryController.pageSize));
       expect(controller.state.gridScrollOffset, 0);
@@ -938,3 +1155,29 @@ Widget _libraryHarness({
     ),
   ),
 );
+
+Key _libraryLayoutStorageKey(WidgetTester tester, LibraryViewMode viewMode) {
+  if (viewMode == LibraryViewMode.grid) {
+    return tester.widget<GridView>(find.byType(GridView)).key!;
+  }
+  return tester
+      .widget<ListView>(
+        find.byWidgetPredicate(
+          (widget) => widget is ListView && widget.controller != null,
+        ),
+      )
+      .key!;
+}
+
+class _LibraryControllerSelection extends Notifier<LibraryController> {
+  _LibraryControllerSelection(this.initialController);
+
+  final LibraryController initialController;
+
+  @override
+  LibraryController build() => initialController;
+
+  void replace(LibraryController controller) {
+    state = controller;
+  }
+}

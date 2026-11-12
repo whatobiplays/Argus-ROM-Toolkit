@@ -11,6 +11,18 @@ import '../sources/sources_test_fakes.dart';
 import 'library_test_fakes.dart';
 
 void main() {
+  test('page storage identity is stable and increases per controller', () {
+    final first = _controller();
+    final firstIdentity = first.pageStorageInstanceId;
+    final second = _controller();
+
+    expect(first.pageStorageInstanceId, firstIdentity);
+    expect(second.pageStorageInstanceId, greaterThan(firstIdentity));
+
+    first.dispose();
+    second.dispose();
+  });
+
   test(
     'loads bounded first and continuation pages with backend facets',
     () async {

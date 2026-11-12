@@ -224,6 +224,10 @@ final class LibraryController extends ChangeNotifier {
   static const String allActiveMembershipBaselineProfile =
       'AllActiveMembershipBaseline';
   static int _observationSequence = 0;
+  static int _pageStorageInstanceSequence = 0;
+
+  /// Stable primitive identity used to isolate this controller's saved offsets.
+  final int pageStorageInstanceId = ++_pageStorageInstanceSequence;
 
   LibraryController({
     required LibraryReads reads,

@@ -4,10 +4,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 import unittest
+from unittest.mock import patch
 from xml.sax.saxutils import escape
 
 from scripts.android_qualification._job_lifecycle_contract import (
+    JobIdentityObservation,
     JobLifecycleSurface,
+    JobsSurfaceObservation,
+    LibrarySurfaceObservation,
+    RecoveryState,
+    RootExclusionReason,
+    ScanRootObservation,
+    ScanRunObservation,
+    ScanRunRelation,
 )
 from scripts.android_qualification.physical import _job_lifecycle_ui as lifecycle_ui
 from scripts.android_qualification.physical import ui
@@ -35,14 +44,20 @@ def node_xml(
     clickable: bool = True,
     selected: bool = False,
     index: int = 0,
+    resource_id: str | None = None,
 ) -> str:
     """Build one accessibility node with explicit control-state evidence."""
     text_value = escape(text, {chr(34): "&quot;"}).replace("\n", "&#10;")
     description_value = escape(content_desc, {chr(34): "&quot;"}).replace(
         "\n", "&#10;"
     )
+    resource_value = ""
+    if resource_id is not None:
+        resource_value = (
+            'resource-id="' + escape(resource_id, {chr(34): "&quot;"}) + '" '
+        )
     return (
-        f'<node package="{QUALIFICATION_PACKAGE}" '
+        f'<node package="{QUALIFICATION_PACKAGE}" {resource_value}'
         f'text="{text_value}" content-desc="{description_value}" '
         f'enabled="{str(enabled).lower()}" '
         f'clickable="{str(clickable).lower()}" '
@@ -53,6 +68,178 @@ def node_xml(
 
 def wrap_nodes(*nodes: str) -> str:
     return '<hierarchy rotation="0">' + "".join(nodes) + "</hierarchy>"
+
+
+def semantic_node_xml(
+    *,
+    resource_id: str,
+    text: str = "",
+    package: str = QUALIFICATION_PACKAGE,
+    children: str = "",
+    enabled: bool = False,
+    clickable: bool = False,
+) -> str:
+    resource_value = escape(resource_id, {chr(34): "&quot;"})
+    text_value = escape(text, {chr(34): "&quot;"}).replace("\n", "&#10;")
+    return (
+        f'<node package="{package}" resource-id="{resource_value}" '
+        f'text="{text_value}" content-desc="" '
+        f'enabled="{str(enabled).lower()}" clickable="{str(clickable).lower()}" '
+        f'selected="false" visible-to-user="true" bounds="[0,0][20,20]">'
+        f"{children}</node>"
+    )
+
+
+def library_page_identifier(
+    *,
+    page: int,
+    expected_rows: int,
+    has_next: bool,
+    observation: str = "obs-1",
+    profile: str = "AllActiveMembershipBaseline",
+    status: str = "complete",
+    page_size: int = 50,
+) -> str:
+    return (
+        "argus.library.page.v1;"
+        f"observation={observation};profile={profile};page={page};"
+        f"first={str(page == 1).lower()};"
+        f"continuation={str(page > 1).lower()};status={status};"
+        f"hasNext={str(has_next).lower()};final={str(not has_next).lower()};"
+        f"pageSize={page_size};expectedRows={expected_rows}"
+    )
+
+
+def library_row_identifier(
+    *, page: int, row: int, game_id: str, observation: str = "obs-1"
+) -> str:
+    return (
+        "argus.library.row.v1;"
+        f"observation={observation};page={page};row={row};gameId={game_id}"
+    )
+
+
+def library_hierarchy(
+    pages: tuple[tuple[int, bool, tuple[str, ...]], ...],
+    *,
+    observation: str = "obs-1",
+    include_page_boundaries: bool = True,
+    package: str = QUALIFICATION_PACKAGE,
+    expected_row_counts: dict[int, int] | None = None,
+) -> str:
+    navigation = "".join(
+        node_xml(text=label, index=index)
+        for index, label in enumerate(
+            ("Search Library", "Refresh Library", "Library", "Jobs", "Sources")
+        )
+    )
+    page_nodes = []
+    for page, has_next, game_ids in pages:
+        rows = "".join(
+            semantic_node_xml(
+                resource_id=library_row_identifier(
+                    page=page, row=row, game_id=game_id, observation=observation
+                ),
+                package=package,
+            )
+            for row, game_id in enumerate(game_ids, start=1)
+        )
+        boundary = semantic_node_xml(
+            resource_id=library_page_identifier(
+                page=page,
+                expected_rows=(
+                    len(game_ids)
+                    if expected_row_counts is None
+                    else expected_row_counts[page]
+                ),
+                has_next=has_next,
+                observation=observation,
+            ),
+            children=rows,
+            package=package,
+        )
+        page_nodes.append(boundary if include_page_boundaries else rows)
+    return wrap_nodes(navigation, *page_nodes)
+
+
+def refresh_detail_hierarchy(
+    *,
+    parent: str = "a" * 32,
+    scan: str = "b" * 32,
+    admitted_root: str = "c" * 32,
+    excluded_root: str = "d" * 32,
+    source: str = "e" * 32,
+    successor: str = "f" * 32,
+    coverage: str = "Folder coverage: complete.",
+    scan_status: str | None = None,
+    parent_status: str | None = "Running",
+) -> str:
+    scan_node = semantic_node_xml(
+        resource_id=f"scan-run:{scan}",
+        children=(
+            (node_xml(text=scan_status) if scan_status is not None else "")
+            + semantic_node_xml(
+                resource_id=f"library-root:{admitted_root}", text="Complete"
+            )
+        ),
+    )
+    exclusion_node = semantic_node_xml(
+        resource_id=f"library-root:{excluded_root}",
+        text="Library folder",
+        children=node_xml(text="Already being scanned"),
+    )
+    retry_source = semantic_node_xml(
+        resource_id=f"job-run:{source}", text="Retried from"
+    )
+    retry_successor = semantic_node_xml(
+        resource_id=f"job-run:{successor}", text="Retried as"
+    )
+    detail = semantic_node_xml(
+        resource_id=f"job-run:{parent}",
+        text=(
+            "Library Refresh\n"
+            + (f"{parent_status}\n" if parent_status is not None else "")
+            + "Phase: scanning\nCompleted units: 1\n"
+            f"Total units: 2\n{coverage}"
+        ),
+        children=(
+            scan_node
+            + exclusion_node
+            + retry_source
+            + retry_successor
+            + node_xml(text="Retry")
+        ),
+    )
+    return wrap_nodes(detail)
+
+
+def identity_for_refresh(
+    *,
+    parent: str = "a" * 32,
+    scan: str = "b" * 32,
+    admitted_root: str = "c" * 32,
+    excluded_root: str = "d" * 32,
+    scope: tuple[str, ...] | None = None,
+) -> JobIdentityObservation:
+    requested = scope or (admitted_root, excluded_root)
+    admitted = (admitted_root,) if admitted_root in requested else ()
+    excluded = (excluded_root,) if excluded_root in requested else ()
+    return JobIdentityObservation(
+        parent_run_ref=parent,
+        scan_run_relations=(
+            ScanRunRelation(
+                scan_run_ref=scan,
+                parent_run_ref=parent,
+                root_ref=admitted_root,
+            ),
+        ),
+        requested_root_refs=requested,
+        admitted_root_refs=admitted,
+        excluded_root_refs=excluded,
+        frozen_scope_ref="frozen-scope",
+        observer_ref="independent-identity-observer",
+        parent_state=RecoveryState.ACTIVE,
+    )
 
 
 def merged_xml(*groups: tuple[str, ...], package: str = QUALIFICATION_PACKAGE) -> str:
@@ -102,6 +289,543 @@ class SurfaceParsingTests(unittest.TestCase):
         self.assertTrue(observed.sources_navigation_present)
         self.assertTrue(observed.refresh_control_present)
         self.assertIsNone(observed.progress)
+
+    def test_sources_and_retry_survive_shared_allowlist_removal(self):
+        with patch.dict(ui._LABELS):
+            ui._LABELS.pop("Sources", None)
+            ui._LABELS.pop("Retry", None)
+            library = lifecycle_ui.parse_job_lifecycle_surface(
+                xml(
+                    "Search Library", "Refresh Library", "Library", "Jobs", "Sources"
+                )
+            )
+            refresh = lifecycle_ui.parse_job_lifecycle_surface(
+                wrap_nodes(
+                    node_xml(text="Library Refresh", index=0),
+                    node_xml(text="Abandoned", index=1),
+                    node_xml(text="Phase: finalizing", index=2),
+                    node_xml(text="Retry", index=3),
+                )
+            )
+        self.assertTrue(library.sources_navigation_present)
+        self.assertEqual(refresh.retry_control_count, 1)
+
+    def test_library_resource_ids_expose_complete_page_and_row_facts(self):
+        observed = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, False, ("a" * 32, "b" * 32)),))
+        )
+        pages = observed.library_pages
+        rows = observed.library_rows
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(pages[0].observation_id, "obs-1")
+        self.assertEqual(pages[0].query_profile, "AllActiveMembershipBaseline")
+        self.assertEqual(pages[0].page_ordinal, 1)
+        self.assertEqual(pages[0].expected_row_count, 2)
+        self.assertEqual(tuple(row.game_id for row in rows), ("a" * 32, "b" * 32))
+
+    def test_complete_single_capture_builds_existing_library_observation(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, False, ("a" * 32, "b" * 32)),))
+        )
+        observed = lifecycle_ui.adapt_library_surface_observation(
+            screen, refresh_active=False, observer_ref="authorized-observer"
+        )
+        self.assertIs(type(observed), LibrarySurfaceObservation)
+        self.assertEqual(observed.membership_count, 2)
+        self.assertEqual(observed.membership_ids, ("a" * 32, "b" * 32))
+        self.assertFalse(observed.next_page_available)
+        self.assertIsNone(observed.identity_continuity)
+
+    def test_virtualized_missing_rows_block_even_on_terminal_page(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                ((1, False, ("a" * 32,)),), expected_row_counts={1: 2}
+            )
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
+
+    def test_missing_offscreen_page_boundary_blocks_membership(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                ((1, True, ("a" * 32,)), (2, False, ("b" * 32,))),
+                include_page_boundaries=False,
+            )
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
+
+    def test_process_restart_reusing_obs_one_cannot_join_capture_pages(self):
+        before_restart = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, True, ("a" * 32,)),))
+        )
+        after_restart = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((2, False, ("b" * 32,)),))
+        )
+        combined = replace(
+            before_restart,
+            library_pages=before_restart.library_pages + after_restart.library_pages,
+            library_rows=before_restart.library_rows + after_restart.library_rows,
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                combined,
+                refresh_active=False,
+                observer_ref="same-task-and-observer",
+            )
+
+    def test_library_adapter_rejects_nonbaseline_and_inconsistent_page_chains(self):
+        ordinary_profile = library_hierarchy(((1, False, ("a" * 32,)),)).replace(
+            "AllActiveMembershipBaseline", "OrdinaryUserQuery"
+        )
+        gapped_pages = library_hierarchy(
+            ((1, True, ("a" * 32,)), (3, False, ("c" * 32,)))
+        )
+        for capture in (ordinary_profile, gapped_pages):
+            with self.subTest(capture=capture[:120]):
+                screen = lifecycle_ui.parse_job_lifecycle_surface(capture)
+                with self.assertRaises(ui.UIBlocked):
+                    lifecycle_ui.adapt_library_surface_observation(
+                        screen,
+                        refresh_active=False,
+                        observer_ref="authorized-observer",
+                    )
+
+    def test_library_rows_require_their_page_boundary_and_one_based_identity(self):
+        no_boundary = library_hierarchy(
+            ((1, False, ("a" * 32,)),), include_page_boundaries=False
+        )
+        zero_based_row = library_hierarchy(((1, False, ("a" * 32,)),)).replace(
+            ";row=1;", ";row=0;"
+        )
+        for capture in (no_boundary, zero_based_row):
+            with self.subTest(capture=capture[:100]):
+                with self.assertRaises(ui.UIBlocked):
+                    screen = lifecycle_ui.parse_job_lifecycle_surface(capture)
+                    lifecycle_ui.adapt_library_surface_observation(
+                        screen,
+                        refresh_active=False,
+                        observer_ref="authorized-observer",
+                    )
+
+    def test_jobs_rows_keep_jobrun_identity_but_not_complete_history(self):
+        base = jobs_surface_xml(("Active",), ("Recent",))
+        row = semantic_node_xml(
+            resource_id=f"job-run:{'a' * 32}",
+            text="Library Refresh\nRunning",
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            base.replace("</hierarchy>", row + "</hierarchy>")
+        )
+        self.assertEqual(screen.surface, JobLifecycleSurface.JOBS)
+        self.assertEqual(len(screen.job_run_rows), 1)
+        self.assertEqual(screen.job_run_rows[0].job_run_ref, "a" * 32)
+        self.assertEqual(screen.job_run_rows[0].operation_label, "Library Refresh")
+        self.assertEqual(screen.job_run_rows[0].lifecycle_status, "Running")
+        observed = lifecycle_ui.adapt_jobs_surface_observation(
+            screen, observer_ref="authorized-observer"
+        )
+        self.assertIs(type(observed), JobsSurfaceObservation)
+        self.assertEqual(observed.parent_run_ref, "a" * 32)
+        self.assertFalse(observed.history_complete)
+        self.assertFalse(observed.established())
+
+    def test_invalid_semantic_jobs_rows_cannot_fall_back_to_visible_labels(self):
+        visible_rows = jobs_surface_xml(
+            ("Active",), ("Library Refresh", "Running")
+        )
+        missing_row_evidence = visible_rows.replace(
+            "</hierarchy>",
+            semantic_node_xml(resource_id=f"job-run:{'a' * 32}")
+            + "</hierarchy>",
+        )
+        duplicate_identity = jobs_surface_xml(("Active",)).replace(
+            "</hierarchy>",
+            semantic_node_xml(
+                resource_id=f"job-run:{'a' * 32}",
+                text="Library Refresh\nRunning",
+            )
+            + semantic_node_xml(
+                resource_id=f"job-run:{'a' * 32}",
+                text="Library Refresh\nCompleted",
+            )
+            + "</hierarchy>",
+        )
+        label_only_row = jobs_surface_xml(
+            ("Active",), ("Library Refresh", "Running")
+        )
+
+        for capture in (missing_row_evidence, duplicate_identity, label_only_row):
+            with self.subTest(capture=capture[-220:]), self.assertRaises(
+                ui.UIBlocked
+            ):
+                lifecycle_ui.parse_job_lifecycle_surface(capture)
+
+    def test_jobs_adapter_blocks_duplicate_jobrun_row_identities(self):
+        base = jobs_surface_xml(("Active",), ("Recent",))
+        row = semantic_node_xml(
+            resource_id=f"job-run:{'a' * 32}",
+            text="Library Refresh\nCompleted",
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            base.replace("</hierarchy>", row + "</hierarchy>")
+        )
+        duplicated = replace(
+            screen,
+            job_run_rows=screen.job_run_rows + screen.job_run_rows,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_jobs_surface_observation(
+                duplicated,
+                observer_ref="authorized-observer",
+            )
+
+    def test_jobs_adapter_blocks_unrepresented_cancellation_intent(self):
+        base = jobs_surface_xml(("Active",), ("Recent",))
+        row = semantic_node_xml(
+            resource_id=f"job-run:{'a' * 32}",
+            text="Library Refresh\nRunning\nCancelling…",
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            base.replace("</hierarchy>", row + "</hierarchy>")
+        )
+        self.assertTrue(screen.cancellation_requested)
+        self.assertEqual(screen.job_run_rows[0].lifecycle_status, "Running")
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_jobs_surface_observation(
+                screen,
+                observer_ref="authorized-observer",
+            )
+
+    def test_refresh_detail_maps_parent_child_root_and_retry_ids(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(refresh_detail_hierarchy())
+        identity = identity_for_refresh()
+        self.assertEqual(screen.parent_run_ref, identity.parent_run_ref)
+        self.assertEqual(screen.scan_run_relations, identity.scan_run_relations)
+        self.assertEqual(screen.root_refs, ("c" * 32, "d" * 32))
+        self.assertEqual(screen.excluded_root_refs, ("d" * 32,))
+        self.assertEqual(
+            screen.root_exclusions[0].reason,
+            RootExclusionReason.ALREADY_SCANNING,
+        )
+        self.assertTrue(screen.root_outcome_coverage_complete)
+        self.assertEqual(screen.retry_source_run_ref, "e" * 32)
+        self.assertEqual(screen.retry_successor_run_ref, "f" * 32)
+
+        detail = lifecycle_ui.adapt_refresh_detail_observation(
+            screen,
+            identity=identity,
+            observer_ref="authorized-observer",
+        )
+        self.assertEqual(detail.parent_run_ref, "a" * 32)
+        self.assertEqual(detail.retry_source_run_ref, "e" * 32)
+        self.assertEqual(detail.retry_successor_run_ref, "f" * 32)
+        self.assertTrue(detail.established())
+
+        scan = lifecycle_ui.adapt_scan_run_observation(
+            screen,
+            identity.scan_run_relations[0],
+            identity=identity,
+            observer_ref="authorized-observer",
+        )
+        self.assertIs(type(scan), ScanRunObservation)
+        self.assertEqual(scan.parent_run_ref, "a" * 32)
+        self.assertEqual(scan.scan_run_ref, "b" * 32)
+        self.assertEqual(scan.root_ref, "c" * 32)
+        self.assertEqual(scan.scan_state, "complete")
+        self.assertTrue(scan.established())
+
+    def test_refresh_detail_blocks_duplicate_parent_and_child_status_evidence(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            refresh_detail_hierarchy(scan_status="Running")
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_refresh_detail_observation(
+                screen,
+                identity=identity_for_refresh(),
+                observer_ref="authorized-observer",
+            )
+        self.assertIsNone(screen.lifecycle_status)
+        parent_rows = tuple(
+            row for row in screen.job_run_rows
+            if row.job_run_ref == screen.parent_run_ref
+        )
+        self.assertEqual(len(parent_rows), 1)
+        self.assertEqual(parent_rows[0].lifecycle_status, "Running")
+
+    def test_refresh_detail_does_not_attribute_child_only_status_to_parent(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            refresh_detail_hierarchy(parent_status=None, scan_status="Completed")
+        )
+        parent_rows = tuple(
+            row for row in screen.job_run_rows
+            if row.job_run_ref == screen.parent_run_ref
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_refresh_detail_observation(
+                screen,
+                identity=identity_for_refresh(),
+                observer_ref="authorized-observer",
+            )
+        self.assertEqual(screen.lifecycle_status, "Completed")
+        self.assertEqual(len(parent_rows), 1)
+        self.assertIsNone(parent_rows[0].lifecycle_status)
+
+    def test_refresh_detail_blocks_malformed_status_values(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(refresh_detail_hierarchy())
+        parent_rows = tuple(
+            replace(row, lifecycle_status=[])
+            if row.job_run_ref == screen.parent_run_ref
+            else row
+            for row in screen.job_run_rows
+        )
+        malformed = replace(
+            screen,
+            lifecycle_status=[],
+            job_run_rows=parent_rows,
+        )
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_refresh_detail_observation(
+                malformed,
+                identity=identity_for_refresh(),
+                observer_ref="authorized-observer",
+            )
+
+    def test_refresh_detail_blocks_unhashable_root_references(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(refresh_detail_hierarchy())
+        malformed = replace(screen, root_refs=([],))
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_refresh_detail_observation(
+                malformed,
+                identity=identity_for_refresh(),
+                observer_ref="authorized-observer",
+            )
+
+    def test_scan_run_adapter_blocks_malformed_status_values(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(refresh_detail_hierarchy())
+        scan_screen = replace(
+            screen.scan_run_screen_observations[0], lifecycle_status=[]
+        )
+        malformed = replace(screen, scan_run_screen_observations=(scan_screen,))
+        identity = identity_for_refresh()
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_scan_run_observation(
+                malformed,
+                identity.scan_run_relations[0],
+                identity=identity,
+                observer_ref="authorized-observer",
+            )
+
+    def test_retry_labels_without_resource_ids_do_not_infer_run_identity(self):
+        capture = refresh_detail_hierarchy()
+        capture = capture.replace(f'resource-id="job-run:{"e" * 32}" ', "")
+        capture = capture.replace(f'resource-id="job-run:{"f" * 32}" ', "")
+        screen = lifecycle_ui.parse_job_lifecycle_surface(capture)
+        self.assertIsNone(screen.retry_source_run_ref)
+        self.assertIsNone(screen.retry_successor_run_ref)
+
+    def test_retry_labels_on_intermediate_nodes_do_not_bind_nested_run_ids(self):
+        source = "e" * 32
+        successor = "f" * 32
+
+        def nested_retry_link(label: str, outer_ref: str, target_ref: str) -> str:
+            target = semantic_node_xml(resource_id=f"job-run:{target_ref}")
+            label_container = semantic_node_xml(
+                resource_id="", text=label, children=target
+            )
+            return semantic_node_xml(
+                resource_id=f"job-run:{outer_ref}", children=label_container
+            )
+
+        capture = refresh_detail_hierarchy()
+        capture = capture.replace(
+            semantic_node_xml(resource_id=f"job-run:{source}", text="Retried from"),
+            nested_retry_link("Retried from", "1" * 32, source),
+        )
+        capture = capture.replace(
+            semantic_node_xml(resource_id=f"job-run:{successor}", text="Retried as"),
+            nested_retry_link("Retried as", "2" * 32, successor),
+        )
+
+        screen = lifecycle_ui.parse_job_lifecycle_surface(capture)
+
+        self.assertIsNone(screen.retry_source_run_ref)
+        self.assertIsNone(screen.retry_successor_run_ref)
+
+    def test_refresh_scope_and_historical_coverage_must_be_complete(self):
+        identity = identity_for_refresh()
+        historical = lifecycle_ui.parse_job_lifecycle_surface(
+            refresh_detail_hierarchy(
+                coverage="Some historical folder outcomes unavailable."
+            )
+        )
+        complete_but_wrong_scope = lifecycle_ui.parse_job_lifecycle_surface(
+            refresh_detail_hierarchy()
+        )
+        for screen, candidate_identity in (
+            (historical, identity),
+            (
+                complete_but_wrong_scope,
+                identity_for_refresh(scope=("a" * 32, "b" * 32)),
+            ),
+        ):
+            with self.subTest(coverage=screen.root_outcome_coverage_complete):
+                with self.assertRaises(ui.UIBlocked):
+                    lifecycle_ui.adapt_refresh_detail_observation(
+                        screen,
+                        identity=candidate_identity,
+                        observer_ref="authorized-observer",
+                    )
+
+    def test_refresh_blocks_root_exclusion_for_unknown_identity(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(refresh_detail_hierarchy())
+        wrong_exclusion = replace(screen.root_exclusions[0], root_ref="e" * 32)
+        malformed = replace(screen, root_exclusions=(wrong_exclusion,))
+
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_refresh_detail_observation(
+                malformed,
+                identity=identity_for_refresh(),
+                observer_ref="authorized-observer",
+            )
+
+    def test_refresh_coverage_marker_outside_parent_jobrun_does_not_prove_scope(self):
+        capture = refresh_detail_hierarchy(coverage="Coverage summary omitted.")
+        capture = capture.replace(
+            "</hierarchy>",
+            node_xml(text="Folder coverage: complete.") + "</hierarchy>",
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(capture)
+
+        self.assertIsNone(screen.root_outcome_coverage_complete)
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_refresh_detail_observation(
+                screen,
+                identity=identity_for_refresh(),
+                observer_ref="authorized-observer",
+            )
+
+    def test_sources_root_maps_owner_jobrun_separately_from_scanrun(self):
+        root_ref = "a" * 32
+        parent_ref = "b" * 32
+        scan_ref = "c" * 32
+        root = semantic_node_xml(
+            resource_id=f"library-root:{root_ref}",
+            children=semantic_node_xml(
+                resource_id=f"job-run:{parent_ref}",
+                children=(
+                    semantic_node_xml(
+                        resource_id=f"scan-run:{scan_ref}",
+                        text="Last scan: complete",
+                    )
+                    + semantic_node_xml(
+                        resource_id=f"job-run:{parent_ref}",
+                        children=node_xml(text="View Job"),
+                    )
+                ),
+            )
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(wrap_nodes(root))
+        identity = JobIdentityObservation(
+            parent_run_ref=parent_ref,
+            scan_run_relations=(
+                ScanRunRelation(
+                    scan_run_ref=scan_ref,
+                    parent_run_ref=parent_ref,
+                    root_ref=root_ref,
+                ),
+            ),
+            requested_root_refs=(root_ref,),
+            admitted_root_refs=(root_ref,),
+            excluded_root_refs=(),
+            frozen_scope_ref="frozen-scope",
+            observer_ref="independent-identity-observer",
+            parent_state=RecoveryState.COMPLETED,
+        )
+        observed = lifecycle_ui.adapt_scan_root_observation(
+            screen,
+            identity=identity,
+            observer_ref="authorized-observer",
+        )
+        self.assertIs(type(observed), ScanRootObservation)
+        self.assertEqual(observed.root_ref, root_ref)
+        self.assertEqual(observed.view_job_run_ref, parent_ref)
+        self.assertEqual(observed.scan_run_ref, scan_ref)
+        self.assertNotEqual(observed.view_job_run_ref, observed.scan_run_ref)
+        self.assertTrue(observed.established())
+
+        with self.subTest(malformed_root_last_scan=True):
+            with self.assertRaises(ui.UIBlocked):
+                lifecycle_ui.adapt_scan_root_observation(
+                    replace(screen, root_last_scan=[]),
+                    identity=identity,
+                    observer_ref="authorized-observer",
+                )
+
+    def test_sources_root_requires_view_job_target_resource_identity(self):
+        root_ref = "a" * 32
+        parent_ref = "b" * 32
+        scan_ref = "c" * 32
+        mismatched_view_job_ref = "d" * 32
+        identity = JobIdentityObservation(
+            parent_run_ref=parent_ref,
+            scan_run_relations=(
+                ScanRunRelation(
+                    scan_run_ref=scan_ref,
+                    parent_run_ref=parent_ref,
+                    root_ref=root_ref,
+                ),
+            ),
+            requested_root_refs=(root_ref,),
+            admitted_root_refs=(root_ref,),
+            excluded_root_refs=(),
+            frozen_scope_ref="frozen-scope",
+            observer_ref="independent-identity-observer",
+            parent_state=RecoveryState.COMPLETED,
+        )
+        view_job_controls = (
+            node_xml(text="View Job"),
+            semantic_node_xml(
+                resource_id=f"job-run:{mismatched_view_job_ref}",
+                children=node_xml(text="View Job"),
+            ),
+        )
+        for control in view_job_controls:
+            with self.subTest(control=control[:40]):
+                root = semantic_node_xml(
+                    resource_id=f"library-root:{root_ref}",
+                    children=(
+                        semantic_node_xml(
+                            resource_id=f"job-run:{parent_ref}",
+                            children=semantic_node_xml(
+                                resource_id=f"scan-run:{scan_ref}",
+                                text="Last scan: complete",
+                            ),
+                        )
+                        + control
+                    ),
+                )
+                screen = lifecycle_ui.parse_job_lifecycle_surface(
+                    wrap_nodes(root)
+                )
+                with self.assertRaises(ui.UIBlocked):
+                    lifecycle_ui.adapt_scan_root_observation(
+                        screen,
+                        identity=identity,
+                        observer_ref="authorized-observer",
+                    )
 
     def test_library_navigation_and_refresh_controls_require_actionable_unique_nodes(self):
         base = (
@@ -221,7 +945,14 @@ class SurfaceParsingTests(unittest.TestCase):
                     jobs_surface_xml((marker,))
                 )
         recent = lifecycle_ui.parse_job_lifecycle_surface(
-            jobs_surface_xml(("Recent",), ("Library Refresh", "Completed"))
+            jobs_surface_xml(("Recent",)).replace(
+                "</hierarchy>",
+                semantic_node_xml(
+                    resource_id=f"job-run:{'a' * 32}",
+                    text="Library Refresh\nCompleted",
+                )
+                + "</hierarchy>",
+            )
         )
         self.assertIs(recent.surface, JobLifecycleSurface.JOBS)
 
@@ -279,7 +1010,12 @@ class SurfaceParsingTests(unittest.TestCase):
         mirrored = lifecycle_ui.parse_job_lifecycle_surface(
             wrap_nodes(
                 prefix,
-                node_xml(text=row, content_desc=row, index=3),
+                node_xml(
+                    text=row,
+                    content_desc=row,
+                    index=3,
+                    resource_id=f"job-run:{'a' * 32}",
+                ),
             )
         )
         self.assertEqual(mirrored.lifecycle_status, "Running")
@@ -293,16 +1029,20 @@ class SurfaceParsingTests(unittest.TestCase):
                         text=row,
                         content_desc=row + "\nRunning",
                         index=3,
+                        resource_id=f"job-run:{'a' * 32}",
                     ),
                 )
             )
 
     def test_jobs_surface_counts_one_refresh_row_and_active_state(self) -> None:
         observed = lifecycle_ui.parse_job_lifecycle_surface(
-            jobs_surface_xml(
-                ("Active",),
-                ("Recent",),
-                ("Library Refresh", "Running"),
+            jobs_surface_xml(("Active",), ("Recent",)).replace(
+                "</hierarchy>",
+                semantic_node_xml(
+                    resource_id=f"job-run:{'a' * 32}",
+                    text="Library Refresh\nRunning",
+                )
+                + "</hierarchy>",
             )
         )
         self.assertIs(observed.surface, JobLifecycleSurface.JOBS)
@@ -504,10 +1244,17 @@ class SurfaceParsingTests(unittest.TestCase):
 
     def test_jobs_row_status_ignores_a_neighbouring_job_status(self) -> None:
         observed = lifecycle_ui.parse_job_lifecycle_surface(
-            jobs_surface_xml(
-                ("Active",),
-                ("Library Scan", "Running"),
-                ("Library Refresh", "Completed"),
+            jobs_surface_xml(("Active",)).replace(
+                "</hierarchy>",
+                semantic_node_xml(
+                    resource_id=f"job-run:{'a' * 32}",
+                    text="Library Scan\nRunning",
+                )
+                + semantic_node_xml(
+                    resource_id=f"job-run:{'b' * 32}",
+                    text="Library Refresh\nCompleted",
+                )
+                + "</hierarchy>",
             )
         )
         self.assertIs(observed.surface, JobLifecycleSurface.JOBS)

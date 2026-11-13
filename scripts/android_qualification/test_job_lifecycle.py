@@ -15,6 +15,7 @@ from scripts.android_qualification import _job_lifecycle_contract as contract
 from scripts.android_qualification import _job_lifecycle_executor as lifecycle_executor
 from scripts.android_qualification import _job_lifecycle_oracle as oracle
 from scripts.android_qualification import admission, evidence, manifest
+from scripts.android_qualification.physical import _job_lifecycle_ui as lifecycle_ui
 from scripts.android_qualification.manifest import (
     OperationCategory,
     QUALIFICATION_PACKAGE,
@@ -4242,6 +4243,64 @@ class OracleTests(unittest.TestCase):
             ).outcome,
             evidence.AssertionOutcome.BLOCKED,
         )
+
+
+class ParserOracleIntegrationTests(unittest.TestCase):
+    def test_single_capture_library_projection_reaches_existing_recovery_oracle(self):
+        game_id = "a" * 32
+        observation_id = "obs-1"
+
+        def semantic_node(resource_id, *, text="", children="", enabled=False, clickable=False):
+            return (
+                f'<node package="{QUALIFICATION_PACKAGE}" '
+                f'resource-id="{resource_id}" text="{text}" content-desc="" '
+                f'enabled="{str(enabled).lower()}" '
+                f'clickable="{str(clickable).lower()}" selected="false" '
+                f'visible-to-user="true" bounds="[0,0][20,20]">'
+                f"{children}</node>"
+            )
+
+        def control(label):
+            return semantic_node(
+                "",
+                text=label,
+                enabled=True,
+                clickable=True,
+            ).replace('resource-id="" ', "")
+
+        row = semantic_node(
+            "argus.library.row.v1;"
+            f"observation={observation_id};page=1;row=1;gameId={game_id}"
+        )
+        page = semantic_node(
+            "argus.library.page.v1;"
+            f"observation={observation_id};profile=AllActiveMembershipBaseline;"
+            "page=1;first=true;continuation=false;status=complete;"
+            "hasNext=false;final=true;pageSize=50;expectedRows=1",
+            children=row,
+        )
+        hierarchy = (
+            '<hierarchy rotation="0">'
+            + control("Search Library")
+            + control("Refresh Library")
+            + control("Library")
+            + control("Jobs")
+            + control("Sources")
+            + page
+            + "</hierarchy>"
+        )
+
+        screen = lifecycle_ui.parse_job_lifecycle_surface(hierarchy)
+        library = lifecycle_ui.adapt_library_surface_observation(
+            screen,
+            refresh_active=False,
+            observer_ref="authorized-observer",
+        )
+        result = oracle.library_recovery_persistence((game_id,), library)
+
+        self.assertIs(type(library), contract.LibrarySurfaceObservation)
+        self.assertEqual(library.membership_ids, (game_id,))
+        self.assertEqual(result.outcome, evidence.AssertionOutcome.PASSED)
 
 
 class ExecutorLifecycleTests(unittest.TestCase):

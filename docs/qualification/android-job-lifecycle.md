@@ -366,14 +366,15 @@ status key, or conflicting progress records `BLOCKED` and stops dependent
 operations. An issue count by itself also remains `BLOCKED`; it cannot
 authorize a dependent effect.
 
-The Jobs surface exposes refresh row and lifecycle status but not a durable
-JobRunId. A row status is reported only when one accessibility node binds
-exactly one `Library Refresh` title with exactly one lifecycle status, so a
-neighbouring job status cannot be attributed to the refresh row. When the
-capture cannot establish that binding, the row status and active-row count
-are withheld and dependent operations record `BLOCKED`. The private executor
-accepts a parent run identity only from an authorized independent observer. A
-row position, matching label, or detail page title cannot supply identity. Jobs preflight compares complete observed
+The Flutter Jobs surface emits a `job-run:<JobRunId>` semantics resource on
+each row, but Android accessibility has not been verified to preserve it. The
+host parser reports a row operation or status only when that validated
+resource and its hierarchy bind the labels to the row; a neighbouring label
+cannot supply identity. When the capture cannot establish that binding, the
+row status and active-row count are withheld and dependent operations record
+`BLOCKED`. The private executor accepts a parent run identity only from an
+authorized independent observer. A row position, matching label, or detail
+page title cannot supply identity. Jobs preflight compares complete observed
 terminal-refresh history against the admitted
 `JobLifecycleBaselineObservation.terminal_refresh_run_refs` and visible row
 count. Extra, missing, substituted, duplicated, or paginated history blocks
@@ -567,43 +568,11 @@ parent JobRunId, per-root ScanRunId and LibraryRootId relations, retry source
 and successor identity, process presence and task continuity, committed
 Library state, and pending cleanup and restoration facts.
 
-The pinned refresh detail does not expose the required parent JobRunId and
-per-root ScanRun relation. The Sources root-detail route exposes `View Job` as
-JobRun navigation; it does not prove that the displayed ScanRun belongs to the
-tested refresh. The current accessibility parser also raises an
-ambiguous-surface block when an active Sources root shows `Scanning in
-progress` next to `View Job`, so it cannot identify an active scan
-presentation. A last-scan label does not establish a ScanRunId. Physical
-operations 15, 19, 20, 27, 29, 30, 37, and 42 therefore remain `BLOCKED` until
-permitted surfaces and a separately authorized independent observer establish
-the exact parent JobRunId, frozen root scope, and per-root ScanRun tuple.
-Operation 42 must bind the root ScanRun and owning parent to the verified Retry
-successor. The `View Job` reference does not establish this relation.
+Flutter now emits a `job-run:<JobRunId>` semantics resource on each Jobs row and on the Library Refresh detail. The refresh detail nests each `scan-run:<ScanRunId>` under its parent JobRun and each `library-root:<LibraryRootId>` under that ScanRun. Sources root detail nests the root, owning JobRun, and ScanRun identities around its scan-state node. The host parser maps these resource IDs and checks the resulting relations against an independent `JobIdentityObservation`. The `View Job` control alone does not prove root ownership. Physical operations 15, 19, 20, 27, 29, 30, 37, and 42 remain `BLOCKED` until Android exposes those semantics in an authorized capture and an independent observer confirms the parent, frozen root scope, and per-root relation. Operation 42 must bind the root ScanRun and owning parent to the verified Retry successor. A last-scan label by itself does not establish a ScanRunId.
 
-The accessibility parser exposes a Library membership count but not the exact
-committed asset identities required by operations 12 and 29. A count or row
-title cannot substitute for those identities. Physical Library recovery and
-post-Retry integrity therefore remain `BLOCKED` until an authorized observer
-can supply identity-bound membership evidence. The qualification UI also does
-not independently prove foreground process loss or task continuity. These
-gaps keep AND-04 and AND-05 physical qualification `BLOCKED` even when host
-tests pass.
+Flutter Library page markers and row markers now carry the observation, baseline profile, page ordinal, expected row count, and exact GameId. The host adapter accepts membership only when one hierarchy capture contains the complete page chain and every expected row under its matching page boundary. The Library uses lazy grid and list builders, so Android accessibility may omit offscreen rows or boundary nodes. A terminal marker and the currently visible subset cannot establish complete membership. The adapter rejects page facts from separate parser captures even when their `obs-N`, task, or observer references match. Its in-memory capture reference identifies a parser call; it is not an Android process-incarnation signal. No C5 device-capture implementation or OS process observer is added. The Android projection and physical Library recovery remain `BLOCKED` until an authorized observation path supplies a complete chain. Synthetic parser tests do not establish that the chain is physically obtainable. The qualification UI also does not independently prove foreground process loss or task continuity.
 
-The Jobs accessibility parser binds a row status to the tested refresh row
-only inside one merged accessibility node. The pinned production surface has
-not yet demonstrated that binding, so physical Jobs state remains `BLOCKED`
-until one capture shows the title and exactly one lifecycle status occurrence
-in the same node and an authorized independent observer confirms the row
-identity. Jobs classification also requires one selected Jobs destination and
-a separate Jobs page title. A populated page may contain one or both standalone
-`Active` and `Recent` section markers. It must have a separate row node
-containing exactly one `Library Refresh` or `Library Scan` title and exactly
-one lifecycle status occurrence. Missing, duplicate, or conflicting row
-statuses block classification. An empty page requires one `No jobs yet` marker and no
-lifecycle row. The raw `Active` or `Recent` label alone is insufficient.
-Flutter defines selected navigation state, but Android accessibility has not
-been physically verified to expose it. Missing or ambiguous selected-state or
-page structure remains `BLOCKED`.
+The Jobs parser binds operation and lifecycle labels to a validated `job-run` row subtree or to one merged row node. The adapter rejects duplicate JobRun IDs before projecting row counts or history references. It returns `BLOCKED` when a Jobs observation reports cancellation intent because the existing Jobs type cannot carry that fact. Refresh detail status is accepted only when one status belongs to the identified parent JobRun subtree; nested JobRun and ScanRun subtrees cannot supply it. The screen-level status must match that parent row, and missing, duplicate, child-only, or conflicting evidence remains `BLOCKED`. The typed Jobs observation keeps visible row identities but marks history incomplete; it cannot claim that offscreen or unprojected rows are absent. Physical Jobs state therefore remains `BLOCKED` until Android projection and complete history evidence are verified. Jobs classification still requires a selected Jobs destination, a separate page title, and coherent section markers. Each observed row must contain exactly one `Library Refresh` or `Library Scan` title and one lifecycle status. Missing, duplicate, or conflicting statuses block classification. An empty page requires one `No jobs yet` marker and no lifecycle row. Flutter defines selected navigation state, but Android accessibility has not been verified to expose it. Missing or ambiguous selected state or page structure remains `BLOCKED`.
 
 ### Observer design for a later physical authorization
 
@@ -611,35 +580,15 @@ Use two independent observation sources because the UI and Android OS prove
 different facts. The owner-attested baseline supplies expected values; it does
 not replace either observation.
 
-**A. Normal production accessibility semantics.** A host parser captures the
-ordinary Library, Jobs, refresh-detail, Sources-root, and scan-detail surfaces
-through the existing accessibility adapter in
-`scripts/android_qualification/physical/_job_lifecycle_ui.py`. Future product
-work would need to expose the parent JobRunId, its frozen root scope, each
-per-root `(JobRunId, ScanRunId, LibraryRootId)` relation, and exact committed
-Library member identities through standard surfaces. Current Jobs rows show
-an operation label and lifecycle state while the ID remains an internal route
-key; the Library view does not expose the exact committed member set; and the
-root's `View Job` navigation does not establish ScanRun ownership. Missing or
-ambiguous facts remain `BLOCKED`; a different valid identity or proven
-committed-state loss
-uses the existing operation-specific `FAILED` classification. Any production
-accessibility change requires its own product review, artifact pin, and
-requalification. The product touchpoints to review are
-`flutter/lib/features/jobs/presentation/jobs_page.dart`,
-`flutter/lib/features/jobs/presentation/job_detail_page.dart`,
-`flutter/lib/features/library/presentation/library_page.dart`,
-`flutter/lib/features/sources/presentation/sources_page.dart`, and
-`flutter/lib/features/sources/presentation/root_detail_page.dart`. Independent
-evidence comes from host-captured standard accessibility observations linked
-to the exact session and artifact. The current typed result boundary is
-`LibrarySurfaceObservation`, `RefreshDetailObservation`,
-`JobIdentityObservation`, and `ScanRootObservation` in
-`scripts/android_qualification/_job_lifecycle_contract.py`; parsers may fill
-them only from facts exposed on the verified surface. Row order, titles, and
-owner attestation cannot fill identity fields. Private database reads are
-excluded. No qualification-only endpoint is permitted by ARCH-003 or
-SPEC-X-003.
+**A. Normal production accessibility semantics.** The host parser reads ordinary Library, Jobs, refresh-detail, Sources-root, and scan-detail hierarchies through `scripts/android_qualification/physical/_job_lifecycle_ui.py`. Flutter source now provides JobRunId, ScanRunId, LibraryRootId, page, and GameId semantics for the relevant rows. The parser accepts only validated `resource-id` values and their hierarchy relationships.
+
+A complete Library hierarchy maps to `LibrarySurfaceObservation.membership_ids` only when one capture contains every baseline page marker and all expected rows under the matching page boundary. The parser's capture reference distinguishes parser calls; it does not identify an Android process. The adapter rejects multi-capture composition, including pages whose C4 `obs-N` values match after a process restart. Lazy builders may hide offscreen rows or boundaries, so an incomplete snapshot remains `BLOCKED`.
+
+A Jobs row maps its `job-run` identity, operation, and lifecycle state from the row's semantic subtree. `JobsSurfaceObservation.history_complete` remains false because visible rows do not prove complete history. A refresh-detail JobRunId comes from its `job-run` resource. Each Retry source or successor comes only from a `job-run` resource node that itself carries the corresponding `Retried from` or `Retried as` label; labels on wrappers, nested content, or nearby nodes do not supply an identity.
+
+A refresh detail maps nested `scan-run` and `library-root` resource IDs to `ScanRunRelation(scan_run_ref, parent_run_ref, root_ref)`. The parser cross-checks those relations against an independently supplied `JobIdentityObservation`; it never creates that independent observation. Root-coverage markers count only within the identified refresh JobRun subtree; a marker elsewhere in the hierarchy cannot establish complete scope. A Sources root maps its root, ScanRun, and owning JobRun to separate fields in `ScanRootObservation`. The View Job target comes from a validated `job-run:` resource node whose local hierarchy subtree contains the control. A nearby label alone cannot establish that target, which must match the independently verified parent JobRun. Missing or mismatched target identity, missing root scope, unavailable historical coverage, or mismatched root outcomes remain `BLOCKED`.
+
+This module parses supplied XML and adapts parsed facts to the existing lifecycle types. It does not capture a device hierarchy or implement a physical transport. Android accessibility projection remains unverified, and synthetic parser tests do not establish physical qualification. Missing or ambiguous facts remain `BLOCKED`; a different valid identity or proven committed-state loss uses the existing operation-specific `FAILED` classification. Any production accessibility change requires its own product review, artifact pin, and requalification. The product touchpoints to review are `flutter/lib/features/jobs/presentation/jobs_page.dart`, `flutter/lib/features/jobs/presentation/job_detail_page.dart`, `flutter/lib/features/library/presentation/library_page.dart`, `flutter/lib/features/sources/presentation/sources_page.dart`, and `flutter/lib/features/sources/presentation/root_detail_page.dart`. Private database reads and qualification-only endpoints remain excluded.
 
 **B. Fixed, read-only OS observer.** A future adapter, proposed at
 `scripts/android_qualification/physical/_job_lifecycle_os_observer.py`, would

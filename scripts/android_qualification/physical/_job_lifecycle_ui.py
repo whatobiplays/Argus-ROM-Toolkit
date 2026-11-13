@@ -101,6 +101,7 @@ class LibraryPageObservation:
     page_size: int
     expected_row_count: int | None
     capture_ref: str
+    traversal_ordinal: int
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ class LibraryRowObservation:
     game_id: str
     boundary_page_ordinal: int | None
     capture_ref: str
+    traversal_ordinal: int
 
 
 @dataclass(frozen=True)
@@ -392,7 +394,7 @@ def _identifier_fields(
 
 
 def _parse_library_page_identifier(
-    resource_id: str, *, capture_ref: str
+    resource_id: str, *, capture_ref: str, traversal_ordinal: int = 0
 ) -> LibraryPageObservation:
     code = "Library page identity is malformed or unsupported."
     values = _identifier_fields(
@@ -452,6 +454,7 @@ def _parse_library_page_identifier(
         page_size=page_size,
         expected_row_count=expected_rows,
         capture_ref=capture_ref,
+        traversal_ordinal=traversal_ordinal,
     )
 
 
@@ -460,6 +463,7 @@ def _parse_library_row_identifier(
     *,
     capture_ref: str,
     boundary_page_ordinal: int | None,
+    traversal_ordinal: int,
 ) -> LibraryRowObservation:
     code = "Library row identity is malformed or unsupported."
     values = _identifier_fields(
@@ -485,6 +489,7 @@ def _parse_library_row_identifier(
         game_id=game_id,
         boundary_page_ordinal=boundary_page_ordinal,
         capture_ref=capture_ref,
+        traversal_ordinal=traversal_ordinal,
     )
 
 
@@ -893,13 +898,17 @@ def parse_job_lifecycle_surface(
         raise ui.UIFailed("The Release UI reports a product operation failure.")
     library_pages: list[LibraryPageObservation] = []
     library_rows: list[LibraryRowObservation] = []
-    for node in accessibility_nodes:
+    for traversal_ordinal, node in enumerate(accessibility_nodes, start=1):
         resource_id = node.resource_id
         if resource_id is None:
             continue
         if resource_id.startswith("argus.library.page.v1"):
             library_pages.append(
-                _parse_library_page_identifier(resource_id, capture_ref=capture_ref)
+                _parse_library_page_identifier(
+                    resource_id,
+                    capture_ref=capture_ref,
+                    traversal_ordinal=traversal_ordinal,
+                )
             )
         elif resource_id.startswith("argus.library.row.v1"):
             page_ancestors = tuple(
@@ -921,6 +930,7 @@ def parse_job_lifecycle_surface(
                     resource_id,
                     capture_ref=capture_ref,
                     boundary_page_ordinal=boundary_page_ordinal,
+                    traversal_ordinal=traversal_ordinal,
                 )
             )
     labels = tuple(label for group in label_groups for label in group)
@@ -1524,6 +1534,17 @@ def adapt_library_surface_observation(
         for row in rows
     ):
         raise ui.UIBlocked("Library row ordinals are malformed.")
+    if any(
+        type(record.traversal_ordinal) is not int
+        or record.traversal_ordinal < 1
+        for record in (*pages, *rows)
+    ):
+        raise ui.UIBlocked("Library hierarchy traversal ordinals are malformed.")
+    traversal_ordinals = [
+        record.traversal_ordinal for record in (*pages, *rows)
+    ]
+    if len(set(traversal_ordinals)) != len(traversal_ordinals):
+        raise ui.UIBlocked("Library hierarchy traversal order is ambiguous.")
     if any(type(page.expected_row_count) is not int for page in pages):
         raise ui.UIBlocked("Library page row counts are malformed.")
     if any(type(page.has_next_page) is not bool for page in pages):
@@ -1534,6 +1555,39 @@ def adapt_library_surface_observation(
         raise ui.UIBlocked("Library page ordinals are incomplete or out of order.")
     if any(page.has_next_page and page.expected_row_count == 0 for page in pages):
         raise ui.UIBlocked("A nonterminal Library page cannot be empty.")
+
+    page_by_ordinal = {page.page_ordinal: page for page in pages}
+    traversal_events = sorted(
+        [
+            (page.traversal_ordinal, False, page.page_ordinal)
+            for page in pages
+        ]
+        + [
+            (row.traversal_ordinal, True, row.page_ordinal)
+            for row in rows
+        ]
+    )
+    traversal_page_ordinal = 0
+    traversal_row_count = 0
+    for _, is_row, page_ordinal in traversal_events:
+        if is_row:
+            if page_ordinal != traversal_page_ordinal:
+                raise ui.UIBlocked(
+                    "Library rows cross a page boundary in hierarchy traversal."
+                )
+            traversal_row_count += 1
+            continue
+        if traversal_page_ordinal and (
+            traversal_row_count
+            != page_by_ordinal[traversal_page_ordinal].expected_row_count
+        ):
+            raise ui.UIBlocked(
+                "Library page boundaries interrupt a preceding page."
+            )
+        if page_ordinal != traversal_page_ordinal + 1:
+            raise ui.UIBlocked("Library page boundaries are out of traversal order.")
+        traversal_page_ordinal = page_ordinal
+        traversal_row_count = 0
 
     rows_by_page: dict[int, list[LibraryRowObservation]] = {
         page.page_ordinal: [] for page in pages

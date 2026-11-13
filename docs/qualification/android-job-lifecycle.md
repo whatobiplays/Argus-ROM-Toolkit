@@ -426,6 +426,16 @@ a process-recovery loss. The sanitized observation digest binds the sorted
 membership identities, so different committed sets cannot share a digest. Raw
 identifiers stay owner-private and outside shared evidence.
 
+For one Library hierarchy capture, the host parser keeps a sanitized preorder
+ordinal for each page marker and row. The adapter requires every row on page N
+to precede page N+1's boundary. The first row remains nested under its page
+marker, and later rows remain siblings. An empty terminal page, including a
+terminal continuation page, is valid; a boundary that interrupts the prior
+page or any row after an empty terminal boundary blocks membership. This
+checks the supplied host capture only. Android accessibility may omit offscreen
+rows or page markers, so it does not establish that the full chain is
+physically available.
+
 The executor records persistence intent and result as separate append-only
 assertions. The recovery checks use the
 `:root-preloss`, `:root-recovery-persistence`, `:refresh-scanrun-attribution`,

@@ -168,6 +168,17 @@ def library_hierarchy(
     return wrap_nodes(navigation, *page_nodes)
 
 
+def library_hierarchy_with_nodes(*page_nodes: str) -> str:
+    """Build a Library capture with caller-controlled semantic node order."""
+    navigation = "".join(
+        node_xml(text=label, index=index)
+        for index, label in enumerate(
+            ("Search Library", "Refresh Library", "Library", "Jobs", "Sources")
+        )
+    )
+    return wrap_nodes(navigation, *page_nodes)
+
+
 def refresh_detail_hierarchy(
     *,
     parent: str = "a" * 32,
@@ -409,6 +420,74 @@ class SurfaceParsingTests(unittest.TestCase):
         )
         self.assertEqual(observed.membership_count, 1)
         self.assertEqual(observed.membership_ids, ("a" * 32,))
+
+    def test_multirow_page_before_empty_terminal_continuation_is_complete(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                ((1, True, ("a" * 32, "b" * 32)), (2, False, ()))
+            )
+        )
+        observed = lifecycle_ui.adapt_library_surface_observation(
+            screen, refresh_active=False, observer_ref="authorized-observer"
+        )
+        self.assertEqual(observed.membership_count, 2)
+        self.assertEqual(observed.membership_ids, ("a" * 32, "b" * 32))
+
+    def test_empty_terminal_boundary_cannot_interrupt_prior_page_siblings(self):
+        first_row = semantic_node_xml(
+            resource_id=library_row_identifier(page=1, row=1, game_id="a" * 32)
+        )
+        first_page = semantic_node_xml(
+            resource_id=library_page_identifier(
+                page=1, expected_rows=2, has_next=True
+            ),
+            children=first_row,
+        )
+        empty_terminal_page = semantic_node_xml(
+            resource_id=library_page_identifier(
+                page=2, expected_rows=0, has_next=False
+            )
+        )
+        prior_page_sibling = semantic_node_xml(
+            resource_id=library_row_identifier(page=1, row=2, game_id="b" * 32)
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy_with_nodes(
+                first_page, empty_terminal_page, prior_page_sibling
+            )
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
+
+    def test_empty_terminal_boundary_cannot_be_followed_by_a_sibling_row(self):
+        first_row = semantic_node_xml(
+            resource_id=library_row_identifier(page=1, row=1, game_id="a" * 32)
+        )
+        first_page = semantic_node_xml(
+            resource_id=library_page_identifier(
+                page=1, expected_rows=1, has_next=True
+            ),
+            children=first_row,
+        )
+        empty_terminal_page = semantic_node_xml(
+            resource_id=library_page_identifier(
+                page=2, expected_rows=0, has_next=False
+            )
+        )
+        unexpected_sibling = semantic_node_xml(
+            resource_id=library_row_identifier(page=2, row=2, game_id="b" * 32)
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy_with_nodes(
+                first_page, empty_terminal_page, unexpected_sibling
+            )
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
 
     def test_empty_nonterminal_page_requires_an_exact_integer_count(self):
         screen = lifecycle_ui.parse_job_lifecycle_surface(

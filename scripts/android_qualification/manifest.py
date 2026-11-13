@@ -20,6 +20,16 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from ._library_interaction_contract import LIBRARY_INTERACTION_CONTRACT_VERSION
+from ._job_lifecycle_contract import (
+    JOB_LIFECYCLE_CONTRACT_VERSION,
+    JOB_LIFECYCLE_OPERATIONS,
+    JOB_LIFECYCLE_ORACLE_SHA256,
+    JOB_LIFECYCLE_ORACLE_VERSION,
+    JOB_LIFECYCLE_QUALIFICATION_PACKAGE,
+    JOB_LIFECYCLE_SCENARIOS,
+    operation_count,
+    validate_job_lifecycle_authorization,
+)
 
 
 SCHEMA_VERSION = 1
@@ -271,6 +281,7 @@ class _AuthorizationProfile(str, Enum):
 
     LEGACY = "legacy"
     LIBRARY_INTERACTIONS = "library_interactions"
+    JOB_LIFECYCLE = "job_lifecycle"
 
 
 class OperationCategory(str, Enum):
@@ -356,6 +367,8 @@ class NoResetBaseline:
     library_fixture_ids: tuple[str, ...]
     job_states: tuple[tuple[str, str], ...]
     pending_cleanup_ids: tuple[str, ...]
+    root_id: str = ""
+    pending_restoration_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -898,11 +911,40 @@ def canonical_sha256(document: object) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def _parse_baseline(value: object, error_type: type[AuthorizationError]) -> NoResetBaseline:
+def _parse_baseline(
+    value: object,
+    error_type: type[AuthorizationError],
+    profile: _AuthorizationProfile = _AuthorizationProfile.LEGACY,
+) -> NoResetBaseline:
     baseline = _object(value, error_type)
-    _fields(baseline, {"library_fixture_ids", "job_states", "pending_cleanup_ids"}, error_type)
+    if profile is _AuthorizationProfile.JOB_LIFECYCLE:
+        _fields(
+            baseline,
+            {
+                "library_fixture_ids",
+                "job_states",
+                "pending_cleanup_ids",
+                "root_id",
+                "pending_restoration_ids",
+            },
+            error_type,
+        )
+    else:
+        _fields(
+            baseline,
+            {"library_fixture_ids", "job_states", "pending_cleanup_ids"},
+            error_type,
+        )
     fixture_ids = _string_list(baseline["library_fixture_ids"], error_type, allow_empty=True)
     cleanup_ids = _string_list(baseline["pending_cleanup_ids"], error_type, allow_empty=True)
+    if profile is _AuthorizationProfile.JOB_LIFECYCLE:
+        root_id = _string(baseline["root_id"], error_type)
+        restoration_ids = _string_list(
+            baseline["pending_restoration_ids"], error_type, allow_empty=True
+        )
+    else:
+        root_id = ""
+        restoration_ids = ()
     raw_jobs = baseline["job_states"]
     if type(raw_jobs) is not list or len(raw_jobs) > 512:
         _invalid(error_type, "INVALID_VALUE")
@@ -913,7 +955,13 @@ def _parse_baseline(value: object, error_type: type[AuthorizationError]) -> NoRe
         jobs.append((_string(job["job_id"], error_type), _string(job["state"], error_type)))
     if len({job_id for job_id, _ in jobs}) != len(jobs):
         _invalid(error_type, "INVALID_VALUE")
-    return NoResetBaseline(fixture_ids, tuple(jobs), cleanup_ids)
+    return NoResetBaseline(
+        fixture_ids,
+        tuple(jobs),
+        cleanup_ids,
+        root_id=root_id,
+        pending_restoration_ids=restoration_ids,
+    )
 
 
 def _parse_operation(
@@ -1028,6 +1076,13 @@ def _parse_add_scan_operation_arguments(
             _invalid(AuthorizationError, "INVALID_VALUE")
         return ()
     arguments = _object(value, AuthorizationError)
+    if profile is _AuthorizationProfile.JOB_LIFECYCLE:
+        return _parse_job_lifecycle_operation_arguments(
+            arguments,
+            category=category,
+            phase=phase,
+            package_name=package_name,
+        )
     if category is OperationCategory.INSTALL_ABSENT:
         _fields(
             arguments,
@@ -1158,6 +1213,45 @@ def _parse_add_scan_operation_arguments(
         _invalid(AuthorizationError, "INVALID_VALUE")
     return tuple(sorted((key, _string(item, AuthorizationError, 256))
                         for key, item in arguments.items()))
+
+
+def _parse_job_lifecycle_operation_arguments(
+    arguments: dict[str, object],
+    *,
+    category: OperationCategory,
+    phase: str,
+    package_name: str,
+) -> tuple[tuple[str, str], ...]:
+    """Parse only the closed Issue #28 lifecycle operation vocabulary."""
+    by_category: dict[str, tuple[str, set[str]]] = {}
+    for operation_category in ("read_only", "navigation", "refresh", "launch", "force_stop"):
+        argument_key = "observation" if operation_category == "read_only" else "action"
+        allowed_values = {
+            spec.value
+            for scenario in JOB_LIFECYCLE_SCENARIOS
+            for spec in JOB_LIFECYCLE_OPERATIONS[scenario]
+            if spec.category == operation_category
+        }
+        by_category[operation_category] = (argument_key, allowed_values)
+    expected = by_category.get(category.value)
+    if expected is None:
+        _invalid(AuthorizationError, "INVALID_VALUE")
+    argument_key, allowed_values = expected
+    _fields(
+        arguments,
+        {argument_key, "oracle_sha256", "oracle_version"},
+        AuthorizationError,
+    )
+    value = _string(arguments[argument_key], AuthorizationError, 128)
+    if (
+        phase != "qualification"
+        or package_name != JOB_LIFECYCLE_QUALIFICATION_PACKAGE
+        or value not in allowed_values
+        or arguments["oracle_sha256"] != JOB_LIFECYCLE_ORACLE_SHA256
+        or arguments["oracle_version"] != str(JOB_LIFECYCLE_ORACLE_VERSION)
+    ):
+        _invalid(AuthorizationError, "INVALID_VALUE")
+    return tuple(sorted((key, _string(item, AuthorizationError, 256)) for key, item in arguments.items()))
 
 
 def _parse_restoration(
@@ -1319,7 +1413,7 @@ def _validate_authorization(
         baseline = None
     else:
         inherited_id = _string(inherited, error_type)
-        baseline = _parse_baseline(baseline_value, error_type)
+        baseline = _parse_baseline(baseline_value, error_type, profile)
 
     reserves = _object(root["reserves"], error_type)
     _fields(reserves, {"storage_bytes", "cleanup_seconds"}, error_type)
@@ -1329,11 +1423,14 @@ def _validate_authorization(
         _invalid(error_type, "INVALID_VALUE")
 
     raw_operations = root["operations"]
-    maximum_operations = (
-        _LIBRARY_INTERACTION_SESSION_OPERATIONS
-        if profile is _AuthorizationProfile.LIBRARY_INTERACTIONS
-        else _MAX_LEGACY_SESSION_OPERATIONS
-    )
+    if profile is _AuthorizationProfile.JOB_LIFECYCLE:
+        if len(scenario_ids) != 1 or scenario_ids[0] not in JOB_LIFECYCLE_SCENARIOS:
+            _invalid(error_type, "INVALID_VALUE")
+        maximum_operations = operation_count(scenario_ids[0])
+    elif profile is _AuthorizationProfile.LIBRARY_INTERACTIONS:
+        maximum_operations = _LIBRARY_INTERACTION_SESSION_OPERATIONS
+    else:
+        maximum_operations = _MAX_LEGACY_SESSION_OPERATIONS
     if (
         type(raw_operations) is not list
         or not raw_operations
@@ -1341,6 +1438,10 @@ def _validate_authorization(
         or (
             profile is _AuthorizationProfile.LIBRARY_INTERACTIONS
             and len(raw_operations) != _LIBRARY_INTERACTION_SESSION_OPERATIONS
+        )
+        or (
+            profile is _AuthorizationProfile.JOB_LIFECYCLE
+            and len(raw_operations) != maximum_operations
         )
     ):
         _invalid(error_type, "INVALID_VALUE")
@@ -1432,6 +1533,17 @@ def _load_library_interaction_authorization(path: Path) -> SessionAuthorization:
         path,
         _AuthorizationProfile.LIBRARY_INTERACTIONS,
     )
+
+
+def _load_job_lifecycle_authorization(path: Path) -> SessionAuthorization:
+    """Load the closed Issue #28 lifecycle profile without widening legacy callers."""
+    authorization = _load_authorization_for_profile(
+        path,
+        _AuthorizationProfile.JOB_LIFECYCLE,
+    )
+    if not validate_job_lifecycle_authorization(authorization):
+        raise AuthorizationError(AuthorizationErrorCode.INVALID_VALUE)
+    return authorization
 
 
 def _restoration_context_matches(

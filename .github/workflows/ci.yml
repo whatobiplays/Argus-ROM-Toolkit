@@ -172,8 +172,26 @@ jobs:
           rust_channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
           rustup toolchain install "$rust_channel" --profile minimal
 
+      - name: Report Linux disk space before provider tests
+        continue-on-error: true
+        run: df -h . || true
+
       - name: Run real LocalFilesystem provider tests
+        env:
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_TEST_DEBUG: "0"
         run: just test-local-filesystem-native
+
+      - name: Report Linux disk space after provider tests
+        if: always()
+        continue-on-error: true
+        run: |
+          df -h . || true
+          if [ -d rust/target ]; then
+            du -sh rust/target || true
+          else
+            echo "rust/target not present"
+          fi
 
   phase-001-native:
     name: Phase 001 native milestone

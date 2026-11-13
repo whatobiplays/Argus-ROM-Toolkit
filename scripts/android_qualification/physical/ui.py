@@ -63,8 +63,10 @@ _LABELS = {
     "Library": "library_navigation",
     "Settings": "settings_navigation",
     "Jobs": "jobs_navigation",
+    "Sources": "sources_navigation",
     "Search Library": "search",
     "Refresh Library": "refresh",
+    "Retry": "retry",
     "Grid": "grid",
     "List": "list",
     "Ascending": "ascending",
@@ -88,8 +90,9 @@ _ACTION_KEYS = {
     "accept_terms", "decline_exit", "preferences", "skip_provider", "add_root",
     "commit_root", "add_and_scan", "view_job", "select_folder", "owned_folder",
     "owned_fixture_folder", "storage_root",
-    "library_navigation", "settings_navigation", "jobs_navigation", "search",
-    "refresh", "grid", "list", "ascending", "descending", "game_action",
+    "library_navigation", "settings_navigation", "jobs_navigation",
+    "sources_navigation", "search", "refresh", "retry", "grid", "list",
+    "ascending", "descending", "game_action",
     "credential_field",
 }
 

@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 from xml.sax.saxutils import escape
 
+from scripts.android_qualification import _job_lifecycle_oracle as lifecycle_oracle
 from scripts.android_qualification._job_lifecycle_contract import (
     JobIdentityObservation,
     JobLifecycleSurface,
@@ -124,6 +125,7 @@ def library_hierarchy(
     *,
     observation: str = "obs-1",
     include_page_boundaries: bool = True,
+    wrap_first_row_with_page_boundary: bool = True,
     package: str = QUALIFICATION_PACKAGE,
     expected_row_counts: dict[int, int] | None = None,
 ) -> str:
@@ -135,7 +137,7 @@ def library_hierarchy(
     )
     page_nodes = []
     for page, has_next, game_ids in pages:
-        rows = "".join(
+        rows = tuple(
             semantic_node_xml(
                 resource_id=library_row_identifier(
                     page=page, row=row, game_id=game_id, observation=observation
@@ -144,6 +146,8 @@ def library_hierarchy(
             )
             for row, game_id in enumerate(game_ids, start=1)
         )
+        first_row = rows[:1] if wrap_first_row_with_page_boundary else ()
+        sibling_rows = rows[len(first_row) :]
         boundary = semantic_node_xml(
             resource_id=library_page_identifier(
                 page=page,
@@ -155,10 +159,12 @@ def library_hierarchy(
                 has_next=has_next,
                 observation=observation,
             ),
-            children=rows,
+            children="".join(first_row),
             package=package,
         )
-        page_nodes.append(boundary if include_page_boundaries else rows)
+        if include_page_boundaries:
+            page_nodes.append(boundary)
+        page_nodes.extend(sibling_rows if include_page_boundaries else rows)
     return wrap_nodes(navigation, *page_nodes)
 
 
@@ -323,6 +329,9 @@ class SurfaceParsingTests(unittest.TestCase):
         self.assertEqual(pages[0].page_ordinal, 1)
         self.assertEqual(pages[0].expected_row_count, 2)
         self.assertEqual(tuple(row.game_id for row in rows), ("a" * 32, "b" * 32))
+        self.assertEqual(
+            tuple(row.boundary_page_ordinal for row in rows), (1, None)
+        )
 
     def test_complete_single_capture_builds_existing_library_observation(self):
         screen = lifecycle_ui.parse_job_lifecycle_surface(
@@ -336,6 +345,90 @@ class SurfaceParsingTests(unittest.TestCase):
         self.assertEqual(observed.membership_ids, ("a" * 32, "b" * 32))
         self.assertFalse(observed.next_page_available)
         self.assertIsNone(observed.identity_continuity)
+        self.assertEqual(
+            tuple(row.boundary_page_ordinal for row in screen.library_rows),
+            (1, None),
+        )
+
+    def test_complete_multi_page_sibling_rows_match_lifecycle_oracle(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                (
+                    (1, True, ("a" * 32, "b" * 32)),
+                    (2, False, ("c" * 32, "d" * 32)),
+                )
+            )
+        )
+        self.assertEqual(
+            tuple(row.boundary_page_ordinal for row in screen.library_rows),
+            (1, None, 2, None),
+        )
+        observed = lifecycle_ui.adapt_library_surface_observation(
+            screen, refresh_active=False, observer_ref="authorized-observer"
+        )
+        result = lifecycle_oracle.library_recovery_persistence(
+            observed.membership_ids, observed
+        )
+        self.assertEqual(
+            observed.membership_ids,
+            ("a" * 32, "b" * 32, "c" * 32, "d" * 32),
+        )
+        self.assertEqual(result.outcome.name, "PASSED")
+
+    def test_empty_terminal_first_page_remains_complete_membership(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, False, ()),))
+        )
+        observed = lifecycle_ui.adapt_library_surface_observation(
+            screen, refresh_active=False, observer_ref="authorized-observer"
+        )
+        self.assertEqual(observed.membership_count, 0)
+        self.assertEqual(observed.membership_ids, ())
+
+    def test_nonterminal_library_page_cannot_be_empty(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                ((1, True, ()), (2, False, ("b" * 32,)))
+            )
+        )
+        with self.assertRaisesRegex(
+            ui.UIBlocked, "A nonterminal Library page cannot be empty"
+        ):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
+
+    def test_empty_terminal_continuation_page_can_complete_membership(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                ((1, True, ("a" * 32,)), (2, False, ()))
+            )
+        )
+        observed = lifecycle_ui.adapt_library_surface_observation(
+            screen, refresh_active=False, observer_ref="authorized-observer"
+        )
+        self.assertEqual(observed.membership_count, 1)
+        self.assertEqual(observed.membership_ids, ("a" * 32,))
+
+    def test_empty_nonterminal_page_requires_an_exact_integer_count(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                ((1, True, ()), (2, False, ("b" * 32,)))
+            )
+        )
+        malformed = replace(
+            screen,
+            library_pages=(
+                replace(screen.library_pages[0], expected_row_count="0"),
+                screen.library_pages[1],
+            ),
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                malformed,
+                refresh_active=False,
+                observer_ref="authorized-observer",
+            )
 
     def test_virtualized_missing_rows_block_even_on_terminal_page(self):
         screen = lifecycle_ui.parse_job_lifecycle_surface(
@@ -372,12 +465,116 @@ class SurfaceParsingTests(unittest.TestCase):
             library_pages=before_restart.library_pages + after_restart.library_pages,
             library_rows=before_restart.library_rows + after_restart.library_rows,
         )
+        self.assertEqual(
+            tuple(page.observation_id for page in combined.library_pages),
+            ("obs-1", "obs-1"),
+        )
         with self.assertRaises(ui.UIBlocked):
             lifecycle_ui.adapt_library_surface_observation(
                 combined,
                 refresh_active=False,
                 observer_ref="same-task-and-observer",
             )
+
+    def test_duplicate_library_page_boundary_cannot_establish_membership(self):
+        capture = library_hierarchy(((1, False, ("a" * 32,)),))
+        duplicate_boundary = semantic_node_xml(
+            resource_id=library_page_identifier(
+                page=1,
+                expected_rows=1,
+                has_next=False,
+                observation="obs-1",
+            ),
+            package=QUALIFICATION_PACKAGE,
+        )
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            capture.replace("</hierarchy>", duplicate_boundary + "</hierarchy>")
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
+
+    def test_first_row_must_be_nested_under_its_page_boundary(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(
+                ((1, False, ("a" * 32, "b" * 32)),),
+                wrap_first_row_with_page_boundary=False,
+            )
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
+
+    def test_library_sibling_rows_must_keep_their_page_and_traversal_order(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, False, ("a" * 32, "b" * 32)),))
+        )
+        first, sibling = screen.library_rows
+        other_capture = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, False, ("a" * 32, "b" * 32)),))
+        )
+        cases = {
+            "missing sibling": replace(screen, library_rows=(first,)),
+            "reordered sibling": replace(
+                screen, library_rows=(sibling, first)
+            ),
+            "duplicated sibling": replace(
+                screen, library_rows=(first, sibling, sibling)
+            ),
+            "sibling attributed to another page": replace(
+                screen,
+                library_rows=(first, replace(sibling, page_ordinal=2)),
+            ),
+            "row from another observation": replace(
+                screen,
+                library_rows=(first, replace(sibling, observation_id="obs-2")),
+            ),
+            "row from another parser capture": replace(
+                screen, library_rows=(first, other_capture.library_rows[1])
+            ),
+        }
+        for name, malformed in cases.items():
+            with self.subTest(case=name), self.assertRaises(ui.UIBlocked):
+                lifecycle_ui.adapt_library_surface_observation(
+                    malformed,
+                    refresh_active=False,
+                    observer_ref="authorized-observer",
+                )
+
+    def test_duplicate_game_ids_cannot_complete_membership(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, False, ("a" * 32, "a" * 32)),))
+        )
+        with self.assertRaises(ui.UIBlocked):
+            lifecycle_ui.adapt_library_surface_observation(
+                screen, refresh_active=False, observer_ref="authorized-observer"
+            )
+
+    def test_library_ordinals_must_be_exact_integers(self):
+        screen = lifecycle_ui.parse_job_lifecycle_surface(
+            library_hierarchy(((1, False, ("a" * 32,)),))
+        )
+        page = screen.library_pages[0]
+        row = screen.library_rows[0]
+        malformed_observations = (
+            replace(screen, library_pages=(replace(page, page_ordinal=True),)),
+            replace(screen, library_rows=(replace(row, page_ordinal=True),)),
+            replace(screen, library_rows=(replace(row, row_ordinal=True),)),
+            replace(
+                screen,
+                library_rows=(replace(row, boundary_page_ordinal=True),),
+            ),
+        )
+        for malformed in malformed_observations:
+            with self.subTest(observation=malformed.library_pages):
+                with self.assertRaises(ui.UIBlocked):
+                    lifecycle_ui.adapt_library_surface_observation(
+                        malformed,
+                        refresh_active=False,
+                        observer_ref="authorized-observer",
+                    )
 
     def test_library_adapter_rejects_nonbaseline_and_inconsistent_page_chains(self):
         ordinary_profile = library_hierarchy(((1, False, ("a" * 32,)),)).replace(
@@ -664,13 +861,14 @@ class SurfaceParsingTests(unittest.TestCase):
         self.assertIsNone(screen.retry_source_run_ref)
         self.assertIsNone(screen.retry_successor_run_ref)
 
-    def test_refresh_scope_and_historical_coverage_must_be_complete(self):
+    def test_refresh_scope_and_production_historical_coverage_must_be_complete(self):
         identity = identity_for_refresh()
         historical = lifecycle_ui.parse_job_lifecycle_surface(
             refresh_detail_hierarchy(
-                coverage="Some historical folder outcomes unavailable."
+                coverage="Some historical folder outcomes are unavailable."
             )
         )
+        self.assertFalse(historical.root_outcome_coverage_complete)
         complete_but_wrong_scope = lifecycle_ui.parse_job_lifecycle_surface(
             refresh_detail_hierarchy()
         )

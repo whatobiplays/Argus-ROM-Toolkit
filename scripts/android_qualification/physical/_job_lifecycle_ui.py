@@ -64,7 +64,7 @@ _LIBRARY_PROFILES = frozenset({
     "OrdinaryUserQuery", "AllActiveMembershipBaseline",
 })
 _ROOT_COVERAGE_COMPLETE = "Folder coverage: complete."
-_ROOT_COVERAGE_UNAVAILABLE = "Some historical folder outcomes unavailable."
+_ROOT_COVERAGE_UNAVAILABLE = "Some historical folder outcomes are unavailable."
 _JOB_OPERATIONS = frozenset({
     "Library Refresh", "Library Scan", "Game Refresh", "Metadata Resolution",
 })
@@ -1504,19 +1504,58 @@ def adapt_library_surface_observation(
     ):
         raise ui.UIBlocked("Library pages do not share one baseline capture.")
 
+    if any(
+        type(page.page_ordinal) is not int or page.page_ordinal < 1
+        for page in pages
+    ):
+        raise ui.UIBlocked("Library page ordinals are malformed.")
+    if any(
+        type(row.page_ordinal) is not int
+        or row.page_ordinal < 1
+        or type(row.row_ordinal) is not int
+        or row.row_ordinal < 1
+        or (
+            row.boundary_page_ordinal is not None
+            and (
+                type(row.boundary_page_ordinal) is not int
+                or row.boundary_page_ordinal < 1
+            )
+        )
+        for row in rows
+    ):
+        raise ui.UIBlocked("Library row ordinals are malformed.")
+    if any(type(page.expected_row_count) is not int for page in pages):
+        raise ui.UIBlocked("Library page row counts are malformed.")
+    if any(type(page.has_next_page) is not bool for page in pages):
+        raise ui.UIBlocked("Library page continuation state is malformed.")
+
     page_ordinals = [page.page_ordinal for page in pages]
     if page_ordinals != list(range(1, len(pages) + 1)):
         raise ui.UIBlocked("Library page ordinals are incomplete or out of order.")
+    if any(page.has_next_page and page.expected_row_count == 0 for page in pages):
+        raise ui.UIBlocked("A nonterminal Library page cannot be empty.")
 
     rows_by_page: dict[int, list[LibraryRowObservation]] = {
         page.page_ordinal: [] for page in pages
     }
+    current_page_ordinal = 0
     for row in rows:
-        if (
-            row.page_ordinal not in rows_by_page
-            or row.boundary_page_ordinal != row.page_ordinal
-        ):
-            raise ui.UIBlocked("A Library row has no page boundary.")
+        if row.page_ordinal not in rows_by_page:
+            raise ui.UIBlocked("A Library row has no validated page boundary.")
+        if row.boundary_page_ordinal is not None:
+            if (
+                row.boundary_page_ordinal != row.page_ordinal
+                or row.row_ordinal != 1
+                or row.page_ordinal != current_page_ordinal + 1
+            ):
+                raise ui.UIBlocked(
+                    "Library page boundaries do not bind the first row in order."
+                )
+            current_page_ordinal = row.page_ordinal
+        elif row.page_ordinal != current_page_ordinal:
+            raise ui.UIBlocked(
+                "A Library sibling row is outside its page boundary sequence."
+            )
         rows_by_page[row.page_ordinal].append(row)
 
     ordered_game_ids: list[str] = []
@@ -1525,7 +1564,6 @@ def adapt_library_surface_observation(
         if (
             page.status != "complete"
             or page.page_size != 50
-            or type(page.expected_row_count) is not int
             or not 0 <= page.expected_row_count <= page.page_size
             or page.is_first_page is not (index == 0)
             or page.is_continuation_page is not (index > 0)

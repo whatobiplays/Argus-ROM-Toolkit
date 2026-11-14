@@ -106,6 +106,19 @@ if [[ -n ${FAIL_DF_PATTERN:-} && "$*" == *"$FAIL_DF_PATTERN"* ]]; then
   printf 'simulated df failure\n' >&2
   exit 1
 fi
+if [[ -n ${EMPTY_DF_PATTERN:-} && "$*" == *"$EMPTY_DF_PATTERN"* ]]; then
+  exit 0
+fi
+if [[ -n ${WHITESPACE_DF_PATTERN:-} && "$*" == *"$WHITESPACE_DF_PATTERN"* ]]; then
+  printf 'Filesystem 1K-blocks Used Available Use%% Mounted on\n'
+  printf '   \n'
+  exit 0
+fi
+if [[ -n ${MALFORMED_DF_PATTERN:-} && "$*" == *"$MALFORMED_DF_PATTERN"* ]]; then
+  printf 'Filesystem 1K-blocks Used Available Use%% Mounted on\n'
+  printf 'unexpected output\n'
+  exit 0
+fi
 printf 'Filesystem 1K-blocks Used Available Use%% Mounted on\n'
 printf '/dev/fake 1000000 1000 999000 1%% /fake\n'
 """,
@@ -222,6 +235,91 @@ printf '1.2G %s\n' "$last_argument"
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(f"FVM cache: not present ({self.fvm_cache})", result.stdout)
         self.assertNotIn(f"0 B {self.fvm_cache}", result.stdout)
+
+    def test_root_capacity_is_reported_in_every_phase_without_optional_paths(self) -> None:
+        optional_directories = (
+            self.target,
+            self.pub_cache,
+            self.fvm_cache,
+            self.action_sdk,
+            self.sdk_cache,
+            self.project_cache,
+            self.project_git_cache,
+            self.relative_target,
+            self.git_cache,
+            self.default_fvm_cache,
+            self.flutter_sdk_link,
+            self.flutter_project / ".dart_tool",
+            self.flutter_project / "build",
+        )
+        for path in optional_directories:
+            if path.is_symlink():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+
+        repository_root = self.fixture / "repository"
+        expected_capacity = (
+            "Repository filesystem: /dev/fake 1000000 1000 999000 1% /fake"
+        )
+        phases = ("before-flutter", "after-bootstrap", "before-check", "after-check")
+
+        for phase in phases:
+            with self.subTest(phase=phase):
+                self.tool_log.write_text("", encoding="utf-8")
+                result = self._run_report(phase)
+
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn(expected_capacity, result.stdout)
+                measurement_calls = self.tool_log.read_text(encoding="utf-8").splitlines()
+                self.assertEqual(
+                    [f"df:-h {repository_root.resolve()}"],
+                    [call for call in measurement_calls if call.startswith("df:")],
+                )
+
+    def test_root_capacity_failure_does_not_stop_other_measurements(self) -> None:
+        repository_root = self.fixture / "repository"
+        result = self._run_report(
+            "before-flutter", FAIL_DF_PATTERN=str(repository_root.resolve())
+        )
+        output = result.stdout + result.stderr
+        calls = self.tool_log.read_text(encoding="utf-8")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "Repository filesystem: unavailable (df exited with status 1)", output
+        )
+        self.assertIn(f"Cargo target: {self.target.resolve()}", result.stdout)
+        self.assertIn("filesystem: /dev/fake 1000000 1000 999000 1% /fake", result.stdout)
+        self.assertIn(f"df:-h {self.target.resolve()}", calls)
+        self.assertIn(f"du:{self.target.resolve()}", calls)
+
+    def test_missing_or_invalid_root_capacity_does_not_stop_directory_reports(self) -> None:
+        repository_root = self.fixture / "repository"
+        for pattern in (
+            "EMPTY_DF_PATTERN",
+            "WHITESPACE_DF_PATTERN",
+            "MALFORMED_DF_PATTERN",
+        ):
+            with self.subTest(pattern=pattern):
+                self.tool_log.write_text("", encoding="utf-8")
+                result = self._run_report(
+                    "before-flutter", **{pattern: str(repository_root.resolve())}
+                )
+                output = result.stdout + result.stderr
+                calls = self.tool_log.read_text(encoding="utf-8")
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(
+                    "Repository filesystem: unavailable (df returned no usable filesystem data)",
+                    output,
+                )
+                self.assertIn(f"Cargo target: {self.target.resolve()}", result.stdout)
+                self.assertIn(
+                    "filesystem: /dev/fake 1000000 1000 999000 1% /fake",
+                    result.stdout,
+                )
+                self.assertIn(f"du:{self.target.resolve()}", calls)
 
     def test_default_fvm_cache_paths_are_reported(self) -> None:
         (self.flutter_project / ".fvmrc").write_text(

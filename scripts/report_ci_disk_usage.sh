@@ -29,6 +29,26 @@ cd "$repository_root" || exit 1
 printf 'CI disk report (phase=%s)\n' "$phase"
 
 report_status=0
+
+# Report root capacity before optional build and cache paths exist.
+repository_filesystem_report=$(LC_ALL=C df -h "$repository_root" 2>/dev/null)
+repository_filesystem_status=$?
+repository_filesystem_header=${repository_filesystem_report%%$'\n'*}
+repository_filesystem_summary=$(printf '%s\n' "$repository_filesystem_report" | tail -n 1)
+if [[ $repository_filesystem_status -ne 0 ]]; then
+  printf 'Repository filesystem: unavailable (df exited with status %s)\n' \
+    "$repository_filesystem_status"
+  report_status=1
+elif [[ -n "${repository_filesystem_summary//[[:space:]]/}" \
+  && "$repository_filesystem_report" == *$'\n'* \
+  && "$repository_filesystem_header" == Filesystem* \
+  && "$repository_filesystem_summary" =~ [[:space:]][0-9]+%[[:space:]] ]]; then
+  printf 'Repository filesystem: %s\n' "$repository_filesystem_summary"
+else
+  printf 'Repository filesystem: unavailable (df returned no usable filesystem data)\n'
+  report_status=1
+fi
+
 cargo_target_directory=
 cargo_target_error=
 

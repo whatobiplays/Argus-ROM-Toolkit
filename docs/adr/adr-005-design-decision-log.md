@@ -1,6 +1,14 @@
+**Document ID:** REF-QUAL-003
+**Status:** Draft
+**Owner:** Daniel
+**Last Updated:** 2026-11-14
+**Depends On:** ADR-005
+**Supersedes:** None
+**Superseded By:** None
+
 # ADR-005 decision log (working draft)
 
-**Status:** Owner design choices Q1-Q36 confirmed by Q37 (2026-11-14); architecture and contract changes pending independent review and essential physical feasibility; ADR-005 remains Draft.
+**Decision approval:** The owner approved Q1–Q37 as architectural choices on 2026-11-14. Draft status tracks the readiness of this document and the architecture; the approvals remain in effect.
 **Source:** Owner's answers in the ADR-005 Grill with Docs session, 2026-11-13 through 2026-11-14.
 **Repository companion:** [ADR-005](adr-005-physical-product-observation-boundary.md). This document preserves the full rationale and is not itself an active qualification contract.
 **Implementation authority:** None. Publication of this documentation does not amend the pinned qualification contract, capability, oracle, artifact, or permissions for device access.

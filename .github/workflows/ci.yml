@@ -30,7 +30,16 @@ jobs:
       - name: Run focused cleanup contract tests
         run: just test-cleanup
 
+      - name: Test CI disk usage reporter
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts.test_ci_disk_usage
+
+      - name: Report disk usage before Flutter setup
+        if: always()
+        continue-on-error: true
+        run: bash scripts/report_ci_disk_usage.sh before-flutter
+
       - name: Set up pinned Flutter
+        id: flutter
         uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
@@ -52,8 +61,38 @@ jobs:
       - name: Bootstrap repository
         run: just bootstrap
 
+      - name: Report disk usage after bootstrap
+        if: always()
+        continue-on-error: true
+        env:
+          FLUTTER_SDK_PATH: ${{ steps.flutter.outputs['CACHE-PATH'] }}
+          PUB_CACHE_PATH: ${{ steps.flutter.outputs['PUB-CACHE-PATH'] }}
+        run: bash scripts/report_ci_disk_usage.sh after-bootstrap
+
+      - name: Report disk usage before canonical quality gate
+        if: always()
+        continue-on-error: true
+        env:
+          FLUTTER_SDK_PATH: ${{ steps.flutter.outputs['CACHE-PATH'] }}
+          PUB_CACHE_PATH: ${{ steps.flutter.outputs['PUB-CACHE-PATH'] }}
+        run: bash scripts/report_ci_disk_usage.sh before-check
+
       - name: Run canonical quality gate
-        run: just check
+        env:
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_TEST_DEBUG: "0"
+        run: |
+          test "$CARGO_INCREMENTAL" = "0"
+          test "$CARGO_PROFILE_TEST_DEBUG" = "0"
+          just check
+
+      - name: Report disk usage after canonical quality gate
+        if: always()
+        continue-on-error: true
+        env:
+          FLUTTER_SDK_PATH: ${{ steps.flutter.outputs['CACHE-PATH'] }}
+          PUB_CACHE_PATH: ${{ steps.flutter.outputs['PUB-CACHE-PATH'] }}
+        run: bash scripts/report_ci_disk_usage.sh after-check
 
   native-desktop:
     name: Native desktop compile (${{ matrix.os }})

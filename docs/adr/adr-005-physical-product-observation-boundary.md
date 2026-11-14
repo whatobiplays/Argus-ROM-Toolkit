@@ -3,7 +3,7 @@
 **Document ID:** ADR-005
 **Status:** Draft
 **Owner:** Daniel
-**Last Updated:** 2026-11-13
+**Last Updated:** 2026-11-14
 **Depends On:** ADR-001, ADR-002, SPEC-BE-008, SPEC-BE-015, Issues #28, #57, and #68
 **Supersedes:** None
 **Superseded By:** None
@@ -12,7 +12,7 @@
 
 The owner approved investigation of the smallest authenticated, read-only production observation path on 2026-11-13. That approval covers architectural and security exploration only. It does not approve a transport, permission scheme, production API, evidence algorithm, contract change, device operation, or physical qualification. The recorded decision is in the [Issue #68 owner comment](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/68#issuecomment-6853983880).
 
-This ADR remains Draft. It records the approved direction and the boundaries that any later architecture decision must resolve; it does not select an implementation architecture.
+This ADR remains Draft. The 2026-11-13 investigation and Stage B feasibility findings below are historical snapshots, not a current veto on the owner's later design selection. On 2026-11-14, the owner confirmed the Q1-Q36 design choices and closed the decision tree at Q37. This authorizes documentation-only reconciliation, **not** implementation, device operations, contract activation or ADR completion. See the [decision log](adr-005-design-decision-log.md) and [proposed contract crosswalk](../qualification/adr-005-contract-reconciliation-proposal.md).
 
 ## Context
 
@@ -121,6 +121,23 @@ Android process, foreground, and task-continuity evidence remain separate from p
 - Before any implementation, obtain owner decisions on the trust root and session authority, the required independence threshold, controller ownership, multi-capture evidence, complete-history scope, and permitted Android observations.
 - Any approved production API or Android change needs a new exact artifact pin. Evidence-schema, C5, Jobs-history, or oracle changes need separately reviewed specification/contract revisions and new pins.
 - Read-only device commands, installed APK byte reads, temporary device-file mutations, UI navigation, and full qualification remain separate authorization boundaries. A pre-existing fixed-path accessibility file of uncertain ownership is a stop condition; establish exclusive ownership before creating or deleting it.
+
+## Owner design-tree reconciliation (2026-11-14; pending independent review)
+
+The owner approved **design direction only** through Q1-Q36 and confirmed the complete decision tree in Q37. The following replaces the *open design questions* of the Stage A/B investigation, not its historical evidence, and does not authorize implementation. The previous Decision section's "Not approved" list is still binding as **implementation and device-operation authority** until explicit separate review. Full rationale, rejected options, race/lifecycle failures, and invariants are preserved in the [decision log](adr-005-design-decision-log.md).
+
+| Design boundary | Owner's selected direction |
+| --- | --- |
+| Authority and threat model (Q1-Q4, Q24-Q25) | Rust product data remains authoritative; separately defined oracle expectations and Android OS evidence check correctness. Trust owner-controlled ADB host; require basic target-qualified socket peer UID, read-only allowlist, private typed IDs and sanitized shared evidence. Deliberate attacker conflicts are not design drivers; no PKI/key rotation by default. |
+| Transport and lifecycle (Q3, Q8-Q9, Q12-Q13, Q18-Q19, Q23) | Investigate process-scoped Unix-domain socket reached through ADB forwarding. Same implementation in qualification and distributable Release; default-OFF Advanced/Diagnostics toggle survives restart when enabled. No observer-triggered app cold start, UI controller creation, navigation, new job, keepalive or process manipulation. One observer request at a time; Busy is non-evidence. |
+| Product Job/Library proof (Q2, Q5-Q6, Q10, Q14-Q17) | A distinct read-only RevisionFenced Library enumeration inside the running app proves committed membership and direct redirects; it is not the Flutter UI query. C5 presentation assertions remain separate until explicitly revised. Jobs history means **all retained LibraryRefresh** JobRuns using one bounded coherent read; incomplete or changed observations BLOCK and cannot be silently retried. |
+| OS/process/task evidence (Q7, Q11, Q20-Q21, Q26, Q30) | Checkpointed OS-backed package/process/foreground/task facts and transient locally filtered diagnostics, without a monitoring service. **Android PID only** for process identity (no extra runtime ID); equality across an unobserved gap cannot prove continuity. AND-04 requires same task on return; AND-05 requires independently verified stop/relaunch and durable state, not same task across force-stop. |
+| Failure, cleanup, performance (Q27, Q29, Q31, Q33-Q35) | Distinguish FAILED product contradictions from BLOCKED incomplete evidence and downstream NOT_RUN. All-or-nothing socket results, no hidden retry; incomplete cleanup remains blocked until separately authorized remediation. Match diagnostics/workload in latency calibration; distributable smoke verifies disabled default/socket absent without enabling full qualification. |
+| Gates and governance (Q22, Q28, Q32, Q36-Q37) | Propose G3 = admission/baseline, G4 = frozen AND-04 (31), G5 = frozen AND-05 (45). Produce assertion-level crosswalk; update versioned contracts first, then independently review. ADR remains Draft until essential target-specific socket/UID/OS/lifecycle feasibility is demonstrated and reviewed. |
+
+**Outstanding engineering evidence, not unresolved owner choices:** Exact peer UID from ADB forwarding, socket feasibility and denial behavior, approved OS task-observation source, versioned API fields/bounds, static vs live diagnostics overhead, and applicability of each PAC/TAC requirement. Unsupported mechanisms remain NO-GO and dependent assertions BLOCKED; do not invent evidence.
+
+**Frozen contracts:** Qualification contract v5, capability v4, oracle v9 and AND-04/AND-05 31/45 operations remain unchanged by this documentation. The [proposed contract reconciliation](../qualification/adr-005-contract-reconciliation-proposal.md) identifies future review work but is explicitly NON-NORMATIVE. Physical device access, installs, resets, ADB commands, observer coding, revised artifact pins, and qualification execution require their own approvals.
 
 ## Stage B feasibility assessment
 

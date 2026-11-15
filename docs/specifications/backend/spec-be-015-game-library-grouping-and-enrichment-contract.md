@@ -814,6 +814,95 @@ The materialized design is rejected for this contract because it adds per-view s
 
 The selected revision-fenced design has no wall-clock cursor expiry and stores no per-view membership copy. Its opaque token remains bounded to 4096 bytes regardless of Library size. Each page or direct lookup opens and closes its own transaction; a relevant committed mutation advances the revision, so the next operation returns `StaleView` and the observation must start over. Generation rotation on restore/recreation and at revision overflow prevents old tokens from becoming current through ABA or numeric wraparound. Process restart discards the in-memory token and requires a new first page. Malformed, tampered, unsupported, or query-mismatched tokens return `InvalidViewToken`. These limits favor low retained storage and simple cleanup at the cost of restarting enumeration after relevant writes.
 
+### 21.7 Inactive observer-owned membership and identity read
+
+**Status:** Normative successor requirement, inactive. Existing Library and redirect behavior in §§21.1–21.6 and existing `LibraryViewTokenV1` consumers remain unchanged. This observer contract requires the separately versioned `LibraryIdentityViewV2` below; `LibraryViewTokenV1` cannot establish the identity binding and is not an acceptable fallback.
+
+ObserverV1 framing, operation envelopes, and the membership result JSON member set are defined in [android-job-lifecycle.md §11.2](../../qualification/android-job-lifecycle.md#112-closed-wire-contract). This section defines the inactive V2 revision and identity-binding semantics and supplies the nested membership and identity-binding payload constraints. It does not override the ObserverV1 operation wrapper.
+
+#### 21.7.1 Identity-complete revision fence
+
+`LibraryViewTokenV1` authenticates the existing generation, `membership_revision`, query-contract version, page size, and query binding. Its current revision contract proves a stable GameId result set and page order; it does not include the complete content-identity projection used by C5. Do not change those V1 claims or make existing V1 consumers stale for identity-only changes.
+
+The inactive successor uses an opaque `LibraryViewTokenV2` whose authenticated claims bind the database generation, a distinct positive signed 64-bit `identity_membership_revision`, the query-contract version, page size, and normalized query binding. Its token version is `lvt2`; it is not interchangeable with `lvt1`. The observer's membership result reports `identityViewContractVersion: 2` and the same view's `identityMembershipRevision`. Raw tokens and query bindings remain inside the app.
+
+A reviewed future migration initializes `identity_membership_revision` to `1` without changing the existing `membership_revision`. Every committed mutation that would advance the V1 membership revision also advances `identity_membership_revision`. In addition, advance the V2 revision when the qualification identity projection changes, even if the visible GameId set and V1 query keys do not. Advance it once per committing transaction; a no-op or rollback does not advance it. Generation rotation, overflow, restore, and query-contract transitions invalidate V2 tokens under the same fail-closed rules as the existing view contract.
+
+The closed V2 revision projection for each current Game consists of:
+
+- the GameId, lifecycle and redirect eligibility used by the fixed All-active query;
+- every current `GameMembership` row's GameContentId, relationship, grouping basis, and grouping revision; and
+- for each related GameContent, its platform, content type, identification state, and complete set of current identity tuples `(schemeId, revision, digest)`.
+
+Identity tuples are compared as sets. The emitted and compared tuple values use the exact spellings, integer bounds, and digest encoding in [SPEC-BE-008 §68.2.1](spec-be-008-rust-to-flutter-bridge-dto-contract.md#6821-inactive-observer-json-mapping). Any insertion, removal, or change to a current `GameMembership` row advances the V2 revision, as does a change to GameId lifecycle or redirect eligibility, a currentness transition, an identity tuple insertion/removal/replacement, or a change to a tuple, platform, content type, or identification state. Provenance-only updates that leave this projection unchanged do not.
+
+This revision projection is the internal stale-view fence. The C5 `memberIdentityBindings` payload intentionally contains only the identity tuples used by the independently prepared fixture manifest; it omits random `GameContentId` values and membership relationship, grouping-basis, and grouping-revision fields. Before emitting a binding, the observer verifies that `memberships` and `content` contain the same complete `GameContentId` set and that every content entry has a current identity. C5 compares the resulting identity groups with the manifest; it does not assert membership metadata as separate fixture outcomes. If any field in the revision projection changes between pages or `GetGame` reads, the same `lvt2` token becomes stale and the observer discards the attempt.
+
+The implementation must capture the affected Games' projection before and after every such write inside the same Unit of Work that performs the mutation. It must discover affected Games through both the old and new GameContent membership relationships, including on identity-row moves or deletes. It advances `identity_membership_revision` before that Unit of Work commits. A direct or indirect mutation path that can change this projection without the before/after capture is unsupported for V2 and must not return a membership result. If complete coverage cannot be established, the observer returns no partial result and C5 remains `BLOCKED`.
+
+The runtime writers that need explicit V2 coverage include identity creation or retained-identity reactivation in [`converge_identity`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L141), identity clearing during [`finalize_source_absence`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L1164), and membership changes through [`apply_m3u_grouping_transaction`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L1337), [`upsert_current_membership`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L1673), [`reconcile_m3u_grouping_evidence`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L1305), and [`detach_content_to_provisional_game`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L1853). Identification-state changes include [`refresh_content`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L2147), reached through [`refresh_root_availability`](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L60) from [`set_availability`](../../../rust/crates/argus-infrastructure/src/sqlite/sources.rs#L396). This inventory names paths visible in the current source; it is a review starting point. Every direct or indirect writer, bulk statement, migration that can run after V2 tokens exist, and future mutation path must be covered before V2 can be enabled.
+
+Every V2 page request validates the same `lvt2` token and reads its page in one transaction. Every member and prior-ID `GetGame` validates that same token and reads the requested detail in the same transaction. A write between any two operations that changes either the All-active membership or the V2 identity projection advances the revision checked by the next operation, which returns `StaleView`. The observer discards all pages and bindings from that attempt. V1 page and detail requests retain their existing `lvt1` behavior.
+
+At the reviewed PR base, the active SQLite tracker records the V1 row and membership key in `library_view.rs` and advances its revision in `prepare_commit`; its current key does not contain the content identity tuple set and it installs no `content_identity` tracking trigger ([`library_view.rs`](../../../rust/crates/argus-infrastructure/src/sqlite/library_view.rs#L226-L305), [`library_view.rs`](../../../rust/crates/argus-infrastructure/src/sqlite/library_view.rs#L320-L376), [`library_view.rs`](../../../rust/crates/argus-infrastructure/src/sqlite/library_view.rs#L577-L614)). This is evidence for the V1 boundary, not proof of V2 coverage. No product implementation or migration is included in this PR. C5 cannot pass until a separately reviewed V2 implementation proves atomic invalidation across every identity and membership mutation path.
+
+The successor observer may request a separate, read-only All-active membership result. The query is fixed to `LibraryScope::All`, no search, empty filters, `DisplayTitle` ascending with the existing deterministic tie-breakers, and the successor's fixed `ObserverMembershipPageSizeV1`. The caller cannot supply or change query shape or page size. The page-size value is an unresolved resource-budget parameter until supported by representative workload evidence.
+
+The observer starts with a tokenless first-page request for `LibraryIdentityViewV2`, then follows one uninterrupted chain using exactly the preceding page's cursor and the same `lvt2` token. Every page must preserve the same generation, identity membership revision, query fingerprint, query-contract version, identity-view contract version `2`, and page size. The complete result contains every unique GameId in order and proves the terminal page. The app must discard the entire result after a stale view, interrupted chain, process loss, duplicate ID, missing or skipped page, query mismatch, unsupported token version, or unavailable V2 implementation. It must not join pages across attempts, process restarts, or revisions.
+
+For every returned member GameId, the observer performs one direct `GetGame` with the same `lvt2` token and revision and emits the minimal identity projection in `memberIdentityBindings` below. This binds the runtime GameId to the content identities needed by the independent fixture manifest without copying titles or artwork into the membership result. For every required prior GameId absent from the completed set, the observer performs one direct `GetGame` using that same token and revision. `Redirected(canonicalGameId)` proves continuity only when the canonical target is in the completed set. `Found` for an absent original ID, `GameNotFound`, or a redirect to a target outside the set is a conclusive failure. A same-view `Redirected`, `GameNotFound`, or `Found` non-active Game for an ID listed as a current member is a conclusive membership contradiction. Stale or invalid view state, uncertain transport, or incomplete evidence is blocked. The observer never follows a second redirect.
+
+Raw view tokens and cursors remain private to the app. `ObserverMembershipQueryV1` is a closed enum with the single value `AllActiveDisplayTitleAscendingV1`. `ObserverMembershipPageSizeV1` is a positive unsigned 32-bit constant; its value remains unresolved until representative-workload evidence supports it. The complete result is the closed `ObserverMembershipResultV1` type:
+
+| Field | Type and constraint |
+| --- | --- |
+| `query` | The single `ObserverMembershipQueryV1` value `AllActiveDisplayTitleAscendingV1`. |
+| `pageSize` | Positive unsigned 32-bit integer equal to `ObserverMembershipPageSizeV1`. |
+| `pageCount` | Positive exact unsigned 64-bit integer equal to the number of pages in the validated first-to-terminal chain. |
+| `identityMembershipRevision` | Positive signed 64-bit integer from the `LibraryIdentityViewV2` token. |
+| `identityViewContractVersion` | Exact unsigned 32-bit integer `2`. |
+| `queryContractVersion` | Positive signed 64-bit integer from the same view. |
+| `gameIds` | Unique `GameId` values in page and within-page order, containing the complete set and no other values. The maximum count is governed by `ObserverResourceBudgetV1`. |
+| `memberIdentityBindings` | Exactly one `ObserverMemberIdentityBindingV1` for every `gameIds` value, in the same order; no other entries are allowed. |
+| `priorLookups` | Array of `ObserverDirectGameLookupV1` values, with exactly one entry for each unique `prior_game_id` absent from `gameIds`, in the order those IDs appeared in the request; no other entries are allowed. |
+
+`ObserverMemberIdentityBindingV1` is a closed record with `requestedGameId: GameId` and a tagged `result`. Its exact JSON forms are:
+
+```json
+{"requestedGameId":"<GameId>","result":{"kind":"Found","gameId":"<same GameId>","lifecycle":"Active","contentIdentities":[{"platformId":"<PlatformIdDto>","contentType":"<ContentTypeDto>","schemeId":"<scheme id>","revision":1,"digest":"<64 lowercase hexadecimal characters>"}]}}
+{"requestedGameId":"<GameId>","result":{"kind":"FoundNonActive","gameId":"<same GameId>","lifecycle":"InactiveOrphan"}}
+{"requestedGameId":"<GameId>","result":{"kind":"Redirected","canonicalGameId":"<GameId>"}}
+{"requestedGameId":"<GameId>","result":{"kind":"GameNotFound","applicationError":<ApplicationErrorDto>}}
+```
+
+The member-binding and direct-lookup `GameNotFound` wrappers use the same
+exact `ApplicationErrorDto` mapping defined in [android-job-lifecycle.md
+§11.2](../../qualification/android-job-lifecycle.md#11-inactive-versioned-product-observer-successor): code
+`ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND`, its fixed category, severity,
+recoverability, retry policy, and message key, plus `safeContext: []`. The
+`traceId` is the underlying `GetGame` operation's nonzero 128-bit ID in the
+canonical 32-character lowercase hexadecimal form.
+
+The active `Found` projection has exactly `kind`, `gameId`, `lifecycle`, and `contentIdentities`; `lifecycle` is exactly `Active`. Each identity object has exactly `platformId`, `contentType`, `schemeId`, `revision`, and `digest`. `gameId` must equal `requestedGameId`. The identity array contains exactly one tuple for every current `content` entry in the complete `GameDetailDto` returned by same-token V2 `GetGame`, projected from `(platformId, contentType, identity.schemeId, identity.revision, identity.digest)`. `contentIdentities` is nonempty, contains no duplicate tuples, and treats array order as nonsemantic. Before emitting it, the observer verifies that `memberships` and `content` identify the same complete set of `GameContentId` values and that every content entry is `Identified` with a non-null current identity. An incomplete content detail, unidentified entry, or absent current identity returns `IncompleteMembership` with no partial result.
+
+`FoundNonActive` has exactly `kind`, `gameId`, and `lifecycle`; `gameId` equals `requestedGameId`, and `lifecycle` is exactly `InactiveOrphan`. The existing lookup returns redirect chains through its separate `Redirected` result before it constructs a `Found` detail ([logical.rs:462–466](../../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L462-L466)). A `Found` detail with lifecycle `Redirected` is therefore malformed and must be rejected; C5 classifies that incomplete or inconsistent observation as `BLOCKED`. A valid `FoundNonActive` result is a complete same-view contradiction for a GameId in the All-active result and is returned for the host to classify `FAILED`; it carries no identity tuple member. Separate `Redirected` and `GameNotFound` results for a GameId in `gameIds` are also complete membership contradictions and are classified `FAILED`. A coherent but duplicate or incomplete identity projection is `BLOCKED`, not an inferred match. The observer projection omits random `GameContentId` values, provenance, titles, metadata, artwork, sources, and other `GameDetailDto` fields. Enum spellings and digest encoding follow [SPEC-BE-008 §68.2.1](spec-be-008-rust-to-flutter-bridge-dto-contract.md#6821-inactive-observer-json-mapping); `revision` is a positive uint32 and `digest` is exactly 64 lowercase hexadecimal characters.
+
+`ObserverDirectGameLookupV1` is a closed record with `requestedGameId: GameId` and `result`. The result is one of the existing `GetGameResultDto` tagged variants, serialized as `{"kind":"Found","game":<GameDetailDto>}` or `{"kind":"Redirected","canonicalGameId":"<GameId>"}`, or the observer's `{"kind":"GameNotFound","applicationError":<ApplicationErrorDto>}` wrapper. The error code must be exactly `ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND`. The `Found` payload is the full existing `GameDetailDto` with the JSON mapping in SPEC-BE-008 §68.2.1; its `gameId` equals `requestedGameId`, and its lifecycle cannot be `Redirected`. A `Found` detail with `lifecycle: Redirected` is malformed and must be rejected; C5 classifies this incomplete or inconsistent observation as `BLOCKED`. The requested ID must match one absent input ID. A `Redirected` target must occur in `gameIds`; `Found` or `GameNotFound` for an absent required ID is a conclusive failure under §21.4. Other typed application errors abort the operation with the top-level `ApplicationFailure` form in the Android lifecycle successor contract.
+
+The observer validates one database generation, identity membership revision, identity-view contract version, query fingerprint, query-contract version, and page size internally across the entire chain and all direct lookups. The response reports the fixed query identity, `identityMembershipRevision`, `identityViewContractVersion`, query-contract version, page count, ordered GameIds, one same-order member binding for every GameId, and typed prior lookups. Generation, query fingerprint, raw view token, and cursors remain application-private. A complete result has no partial-success variant. The `ObserverResourceBudgetV1` register defines required page, ID, byte, time, and memory limits; exceeding any limit returns no partial result.
+
+Match view errors by `ApplicationErrorDto.code` before applying the generic
+`ApplicationFailure` mapping. Map `ARGUS.V1.LIBRARY.STALE_VIEW` to the observer
+failure `StaleLibraryView` at stage `Read`, and map
+`ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN` to `InvalidLibraryViewToken` at stage
+`Validate`. These mappings take precedence over `ApplicationFailure` and omit
+`applicationError`. Every other typed application error uses the top-level
+`ApplicationFailure` shape with its complete DTO. A missing, skipped,
+duplicated, or interrupted page chain or missing required lookup maps to
+`IncompleteMembership`; a bound failure maps to `ResourceLimitExceeded`.
+These evidence failures are `BLOCKED`; a complete direct lookup or membership
+result that contradicts the required identity is classified under §21.4.
+
 ## 22. Refresh Operations
 
 Stable operation types are:

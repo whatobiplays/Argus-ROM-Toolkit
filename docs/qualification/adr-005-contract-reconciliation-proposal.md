@@ -196,12 +196,14 @@ A failed observer attempt must be recorded with bounded sanitized provenance, no
 
 ## 7. Draft framing and connection-lifetime rationale
 
-The inactive v1 contract recommends a four-byte unsigned big-endian length
-prefix followed by strict UTF-8 JSON. The receiver can validate the advertised
-length against a reviewed cap before allocating the body, while the closed JSON
-schema remains inspectable during review. The length prefix does not set a
-production size limit; the `ObserverResourceBudgetV1` register in the lifecycle
-contract remains authoritative, and unsupported values block implementation.
+The framing and connection rules are specified in [android-job-lifecycle.md
+§11.2](android-job-lifecycle.md#112-closed-wire-contract). This section records
+their rationale and alternatives; it does not define a second wire profile. A
+length prefix lets the receiver check the advertised body size before
+allocation, and strict JSON keeps the schema inspectable. The prefix does not
+set a production size limit; the `ObserverResourceBudgetV1` register in the
+lifecycle contract remains authoritative, and unsupported values block
+implementation.
 
 NDJSON would make individual messages easy to inspect, but still needs a hard
 line-length cap and explicit EOF, partial-line, and newline-escaping rules.
@@ -211,17 +213,14 @@ representative workload evidence currently justifies those added costs. These
 options remain open for review before implementation; Q1–Q37 did not approve a
 wire format.
 
-One request per connection bounds server state and gives each request one
-cancellation and response lifetime. Its connection cost must fit inside the
-existing frozen host deadline and be measured in B1/B2 evidence. A persistent
-multiplexed stream would add queue, cancellation, replay, and connection-loss
-state. It also creates pressure to resume or repeat reads after an interrupted
-attempt, which Q23 and Q34 prohibit. The draft therefore permits one active
-request per process, returns `Busy` for a concurrent request, and does not queue
-or resume work. A matching `Cancel` frame stays on the active connection; a
-separate cancellation socket would add another endpoint and identity-binding
-path. The observer must monitor the active connection while reading. EOF alone
-is recorded as `Disconnected`, not as cancellation or process loss.
+The one-request connection model in §11.2 bounds server state and ties each
+request to one cancellation and response lifetime. Its connection cost must fit
+inside the existing frozen host deadline and be measured in B1/B2 evidence. A
+persistent multiplexed stream would add queue, cancellation, replay, and
+connection-loss state. It could also encourage retrying an interrupted read,
+which Q23 and Q34 prohibit. A separate cancellation socket would add another
+endpoint and identity-binding path. The connection and EOF rules remain defined
+in the lifecycle contract.
 
 Android documents `LocalServerSocket` as an abstract-namespace local listener
 and exposes `LocalSocket.getPeerCredentials()` for a connected socket. These

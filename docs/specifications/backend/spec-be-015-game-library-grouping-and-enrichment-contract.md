@@ -818,6 +818,8 @@ The selected revision-fenced design has no wall-clock cursor expiry and stores n
 
 **Status:** Normative successor requirement, inactive. Existing Library and redirect behavior in §§21.1–21.6 and existing `LibraryViewTokenV1` consumers remain unchanged. This observer contract requires the separately versioned `LibraryIdentityViewV2` below; `LibraryViewTokenV1` cannot establish the identity binding and is not an acceptable fallback.
 
+ObserverV1 framing, operation envelopes, and the membership result JSON member set are defined in [android-job-lifecycle.md §11.2](../../qualification/android-job-lifecycle.md#112-closed-wire-contract). This section defines the inactive V2 revision and identity-binding semantics and supplies the nested membership and identity-binding payload constraints. It does not override the ObserverV1 operation wrapper.
+
 #### 21.7.1 Identity-complete revision fence
 
 `LibraryViewTokenV1` authenticates the existing generation, `membership_revision`, query-contract version, page size, and query binding. Its current revision contract proves a stable GameId result set and page order; it does not include the complete content-identity projection used by C5. Do not change those V1 claims or make existing V1 consumers stale for identity-only changes.
@@ -872,6 +874,14 @@ Raw view tokens and cursors remain private to the app. `ObserverMembershipQueryV
 {"requestedGameId":"<GameId>","result":{"kind":"Redirected","canonicalGameId":"<GameId>"}}
 {"requestedGameId":"<GameId>","result":{"kind":"GameNotFound","applicationError":<ApplicationErrorDto>}}
 ```
+
+The member-binding and direct-lookup `GameNotFound` wrappers use the same
+exact `ApplicationErrorDto` mapping defined in [android-job-lifecycle.md
+§11.2](../../qualification/android-job-lifecycle.md#11-inactive-versioned-product-observer-successor): code
+`ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND`, its fixed category, severity,
+recoverability, retry policy, and message key, plus `safeContext: []`. The
+`traceId` is the underlying `GetGame` operation's nonzero 128-bit ID in the
+canonical 32-character lowercase hexadecimal form.
 
 The active `Found` projection has exactly `kind`, `gameId`, `lifecycle`, and `contentIdentities`; `lifecycle` is exactly `Active`. Each identity object has exactly `platformId`, `contentType`, `schemeId`, `revision`, and `digest`. `gameId` must equal `requestedGameId`. The identity array contains exactly one tuple for every current `content` entry in the complete `GameDetailDto` returned by same-token V2 `GetGame`, projected from `(platformId, contentType, identity.schemeId, identity.revision, identity.digest)`. `contentIdentities` is nonempty, contains no duplicate tuples, and treats array order as nonsemantic. Before emitting it, the observer verifies that `memberships` and `content` identify the same complete set of `GameContentId` values and that every content entry is `Identified` with a non-null current identity. An incomplete content detail, unidentified entry, or absent current identity returns `IncompleteMembership` with no partial result.
 

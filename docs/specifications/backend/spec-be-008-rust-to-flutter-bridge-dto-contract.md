@@ -2728,20 +2728,13 @@ A missing non-redirected Game returns the existing `ARGUS.V1.CONFIGURATION.GAME_
 
 #### 68.2.1 Inactive observer JSON mapping
 
-**Status:** Inactive observer serialization profile. It does not change the Rust-to-Flutter DTOs or the FRB transport.
+**Status:** Nested ObserverV1 JSON mappings for `GameDetailDto` and `ApplicationErrorDto`; the Rust-to-Flutter DTOs and FRB transport remain unchanged.
 
-The DTOs below describe conceptual values crossing the existing bridge. FRB uses its generated SSE codec for this bridge; it does not serialize these values as JSON. The observer JSON profile is a separate wire contract. It uses the lower-camel-case member names in this section, explicit string enum values, and closed objects. Every listed member is required. A Rust `Option<T>` becomes a required JSON member with either `null` or a `T` value; a vector becomes a JSON array. Numeric values use exact JSON integers within the Rust type's range. Unknown fields, enum values, or variants are rejected.
+Rust-to-Flutter DTO declarations describe conceptual bridge values. FRB uses its generated codec; it does not serialize these values as JSON. This section supplies only the named nested DTO field, enum, and scalar mappings. The complete ObserverV1 profile, including framing, operation envelopes, result wrappers, and failure mappings, is defined in [android-job-lifecycle.md §11.2](../../qualification/android-job-lifecycle.md#112-closed-wire-contract).
 
 The observer does not serialize a Library view token in JSON. Existing `lvt1` tokens retain the V1 membership revision semantics in SPEC-BE-015 §§21.1–21.6. The inactive C5 successor requires the separate `lvt2` identity-complete view in SPEC-BE-015 §21.7.1; every page and `GetGame` detail read in that observer attempt uses the same opaque V2 token internally. No JSON decoder may treat an `lvt1` token or V1 revision as an identity-complete view.
 
-`GetGameResultDto` has exactly these tagged JSON forms:
-
-```json
-{"kind":"Found","game":<GameDetailDto>}
-{"kind":"Redirected","canonicalGameId":"<GameId>"}
-```
-
-`Found` carries the complete `GameDetailDto`. `Redirected` carries only the canonical target. Missing Game remains the existing `ApplicationErrorDto` result at the bridge boundary; the observer's `GameNotFound` wrapper and its JSON form are defined in the Android lifecycle successor contract.
+The conceptual `GetGameResultDto` variants remain `Found(GameDetailDto)` and `Redirected(canonicalGameId)`. Their ObserverV1 JSON tags and wrappers are defined in android-job-lifecycle.md §11.2. A missing non-redirected Game remains the existing `ApplicationErrorDto` at the bridge boundary; its observer `GameNotFound` wrapper is defined there as well.
 
 | Object | Required members and types |
 | --- | --- |
@@ -3132,9 +3125,9 @@ The successor's numeric row, byte, time, and memory limits are defined by the `O
 
 #### 68.6.6 Inactive observer JSON mapping for JobDetailDto
 
-**Status:** Inactive observer serialization profile. It does not change the active DTOs or FRB transport.
+**Status:** Nested ObserverV1 JSON mappings for `JobDetailDto` and its payloads; active DTOs and FRB transport remain unchanged.
 
-This section defines the nested JSON objects used by observer `GetJob` and retained-history results. Rust and Flutter DTO declarations continue to describe conceptual bridge values. The observer JSON profile serializes them separately, using lower-camel-case field names and the exact per-field string values listed below. DTO enums use their listed PascalCase variants; string-backed vocabularies such as `operationType`, refresh trigger, and mode use their explicit lower-case values. Each listed object is closed, every member is required, and each optional member is present as `null` when its DTO value is absent. Arrays remain arrays when empty. Numeric values use exact JSON integer syntax and the declared signedness and width.
+This section supplies only the nested JSON field, enum, and scalar mappings for `JobDetailDto` and its operation-detail payloads. The complete ObserverV1 operation result shapes, including `GetJob` and retained-history wrappers, are defined in [android-job-lifecycle.md §11.2](../../qualification/android-job-lifecycle.md#112-closed-wire-contract).
 
 `JobDetailDto` is the complete `GetJob` result and has exactly `job: JobRunDto` and `operationDetail: OperationDetailDto`. Its JSON shape is:
 

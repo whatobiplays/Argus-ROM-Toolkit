@@ -3006,6 +3006,32 @@ LibraryRefreshRootOutcomeCoverageDto
 
 `ScanRunDto` is also listed in the Active Phase 001 DTO catalog because `LibraryScanJobDetailDto` uses the same transport type. Phase 003 does not define a second scan-run projection.
 
+#### 68.6.5 Inactive successor: complete retained history read
+
+**Status:** Normative successor requirement, inactive. It does not change the active per-run `GetJob` contract or authorize a production observer.
+
+The successor observer contract defines a separate `RetainedLibraryRefreshHistoryV1` read. It returns one coherent snapshot of every `library_refresh` JobRun retained by the store at the snapshot boundary, including active, terminal, and prior attempts. It does not include other JobRun types.
+
+`RetainedHistoryScopeV1` is a closed enum with exactly one value:
+`AllRetainedLibraryRefreshRunsAtSnapshot`. `RetainedLibraryRefreshHistoryV1`
+is a closed result type with these fields:
+
+| Field | Type and constraint |
+| --- | --- |
+| `retentionScope` | The single `RetainedHistoryScopeV1` value `AllRetainedLibraryRefreshRunsAtSnapshot`. It declares the read boundary; it does not change retention policy. |
+| `snapshotStartedElapsedRealtimeMs` | Exact unsigned 64-bit integer milliseconds from the observer's Android elapsed-realtime clock. |
+| `snapshotFinishedElapsedRealtimeMs` | Exact unsigned 64-bit integer milliseconds from the same clock and boot; it is greater than or equal to the start value. |
+| `retainedJobCount` | Unsigned 64-bit integer, equal to the number of `jobs` entries and bounded by `ObserverResourceBudgetV1`. |
+| `jobs` | Array of existing `LibraryRefreshJobDetailDto` values. Every JobRunId is unique. The array contains all retained LibraryRefresh attempts at the same snapshot boundary. |
+
+The type has no offset, cursor, page, newest-N limit, or partial-result variant. It may be returned only when the store proves that `jobs` is the entire retained LibraryRefresh history at that snapshot. The snapshot times describe the observer read interval; they are not wall-clock timestamps and are not comparable to host clock values.
+
+Each detail preserves the immutable requested root scope, admitted and excluded root outcomes, and every ScanRun relation. Every requested root has exactly one admitted or excluded outcome. Each admitted root has exactly one matching ScanRun identity tuple (`parent JobRunId, ScanRunId, LibraryRootId`). Exclusions do not overlap admitted roots or ScanRuns. Direct Retry source and successor JobRunIds are preserved as relationships; consumers must not infer them from row order, labels, or timing.
+
+The complete result is all-or-nothing. If the snapshot is incoherent, required retained detail or root/Retry relationships cannot be proven, or a resource limit is exceeded, the observer returns `IncompleteHistory` or `ResourceLimitExceeded` and no partial success result. A genuine absence of historical evidence remains distinct from a coherent contradictory record. Contradictory or corrupt records return `IntegrityConflict` and must not be relabeled `HistoricalUnavailable`.
+
+The successor's numeric row, byte, time, and memory limits are defined by the `ObserverResourceBudgetV1` register in the Android lifecycle successor contract. A value without representative workload evidence remains unresolved and blocks production implementation. No limit may cause silent truncation, pruning, retention changes, or deletion of historical Jobs.
+
 ### 68.7 Phase 003 notifications
 
 The shared runtime event stream may carry notification-first variants equivalent to:

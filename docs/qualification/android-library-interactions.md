@@ -151,3 +151,96 @@ remain unresolved for physical execution. No permission workaround, device
 mutation, ROM access, install, reset, physical run, or owner verdict is part of
 this work. Host tests and source inspection do not establish physical Android
 qualification.
+
+## 6. Inactive C5 backend-membership assertion
+
+**Status:** Normative successor assertion, inactive. The existing 42 physical
+operations, 24 UI outcomes, their order, deadlines, one-capture membership
+rule, and dependency chain remain unchanged. `C5.backend-membership.complete`
+is an assertion key, not a new physical operation or a twenty-fifth UI case.
+This P assertion is eligible only under a separately versioned successor
+oracle and session authorization. The current private oracle revision 3 marks
+complete membership unsupported and does not pin a complete expected GameId
+set; it does not authorize this assertion.
+
+The assertion uses evidence class `P` and the observer-owned
+RevisionFenced membership contract in
+[SPEC-BE-015 §21.7](../specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md#217-inactive-observer-owned-membership-read).
+It passes only when the fixed All-active query is read without search or
+filters, in title-ascending order and the specified fixed page size; every
+page is fetched from first through the single terminal page under the same
+token, generation, revision, query fingerprint, and observation attempt; the
+completed GameId set is unique; and every required direct `GetGame` lookup
+uses that token. Each `Redirected` target must occur in the completed set.
+No second redirect hop is followed. View tokens and cursors remain inside the
+app, and pages cannot be joined across revisions or attempts.
+
+The P read is eligible only after the existing Add & Scan flow reaches its
+terminal scan state and before final fixture cleanup begins, while the
+approved fixture set remains intact. No membership-mutating operation may
+occur between scan terminalization and the P read. If the scan is not terminal,
+the fixture set has changed, or cleanup has begun, classify the P assertion as
+`BLOCKED`; do not compare that read with the final expected set.
+
+A future execution requires a separately versioned C5 successor oracle and
+approved fixture manifest. The successor oracle must pin the complete expected
+GameId set and its mapping to fixture identities before the session; both
+digests must be covered by the future session authorization. The current
+revision-3 oracle and its expectations cannot be reused as that pin. The
+expected set never comes from the observer response or UI capture.
+
+| Assertion result | Classification |
+| --- | --- |
+| Complete coherent set matches the separately versioned and authorized expected GameId set, and every required direct lookup is valid | `PASSED` |
+| Missing successor pin, nonterminal scan state, changed fixture baseline, or cleanup already begun | `BLOCKED` |
+| Missing, stale, duplicate, incomplete, unauthorized, timed-out, or over-bound evidence; uncertain identity or revision | `BLOCKED` |
+| A coherent authoritative read proves a wrong committed set or invalid required direct redirect | `FAILED` |
+
+The separate P assertion does not establish that Library cards rendered,
+filters or sorts behaved correctly, a selection persisted, a detail screen
+opened, or navigation returned to Library. It cannot replace U evidence or
+any H authorization/provenance. OS-owned claims still require their specified
+O evidence. Conversely, a complete UI hierarchy cannot prove the backend's
+committed GameId set or redirect relation.
+
+The original UI `membership` outcome still requires the existing single
+hierarchy capture to establish its complete visible page chain. The backend
+result cannot fill a missing page or be combined with multiple UI captures.
+If that UI case is `BLOCKED`, the existing 23 dependent UI cases remain
+`NOT_RUN`. The P result does not change any of the original UI case outcomes
+or their dependency propagation. C5 as a whole cannot pass unless the new P
+assertion and every applicable existing UI, host, and OS assertion pass under
+their own evidence rules.
+
+| Existing C5 UI case | Existing U/H contract | Can P replace it? |
+| --- | --- | --- |
+| `membership` | Existing one-capture complete visible-membership assertion remains mandatory. | No. It has its own separate P assertion. |
+| `search_exact` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `search_partial` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `search_empty` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `search_clear` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `filter_platform` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `filter_region` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `filter_hydration` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `filter_availability` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `filter_reset` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `selection` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `sort_title` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `sort_title_ascending` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `sort_title_descending` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `sort_platform` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `sort_platform_ascending` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `sort_platform_descending` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `view_list` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `view_grid` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `search_after_selection` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `detail_open` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `detail_observation` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `return_to_library` | Existing U/H criteria and outcome remain unchanged. | No. |
+| `return_observation` | Existing U/H criteria and outcome remain unchanged. | No. |
+
+The P assertion uses its own operation grant, attempt identity, observer
+reference, and read interval under the inactive lifecycle protocol in
+[android-job-lifecycle.md §11](android-job-lifecycle.md#11-inactive-versioned-product-observer-successor).
+It is reported separately from the 42 physical-operation count and 24 UI
+outcomes. B1, B2, G3, G4, and G5 remain separately gated as specified there.

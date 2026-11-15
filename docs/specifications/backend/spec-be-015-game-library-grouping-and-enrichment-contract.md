@@ -814,6 +814,39 @@ The materialized design is rejected for this contract because it adds per-view s
 
 The selected revision-fenced design has no wall-clock cursor expiry and stores no per-view membership copy. Its opaque token remains bounded to 4096 bytes regardless of Library size. Each page or direct lookup opens and closes its own transaction; a relevant committed mutation advances the revision, so the next operation returns `StaleView` and the observation must start over. Generation rotation on restore/recreation and at revision overflow prevents old tokens from becoming current through ABA or numeric wraparound. Process restart discards the in-memory token and requires a new first page. Malformed, tampered, unsupported, or query-mismatched tokens return `InvalidViewToken`. These limits favor low retained storage and simple cleanup at the cost of restarting enumeration after relevant writes.
 
+### 21.7 Inactive observer-owned membership read
+
+**Status:** Normative successor requirement, inactive. Existing Library and redirect behavior in §§21.1–21.6 remains unchanged.
+
+The successor observer may request a separate, read-only All-active membership result. The query is fixed to `LibraryScope::All`, no search, empty filters, `DisplayTitle` ascending with the existing deterministic tie-breakers, and the successor's fixed `ObserverMembershipPageSizeV1`. The caller cannot supply or change query shape or page size. The page-size value is an unresolved resource-budget parameter until supported by representative workload evidence.
+
+The observer starts with a tokenless first-page request, then follows one uninterrupted chain using exactly the preceding page's cursor and the same token. Every page must preserve the same generation, membership revision, query fingerprint, query-contract version, and page size. The complete result contains every unique GameId in order and proves the terminal page. The app must discard the entire result after a stale view, interrupted chain, process loss, duplicate ID, missing or skipped page, or query mismatch. It must not join pages across attempts, process restarts, or revisions.
+
+For every required prior GameId absent from the completed set, the observer performs one direct `GetGame` using the same token and revision. `Redirected(canonicalGameId)` proves continuity only when the canonical target is in the completed set. `Found` for an absent original ID, `NotFound`, or a redirect to a target outside the set is a conclusive failure. Stale or invalid view state, uncertain transport, or incomplete evidence is blocked. The observer never follows a second redirect.
+
+Raw view tokens and cursors remain private to the app. `ObserverMembershipQueryV1` is a closed enum with the single value `AllActiveDisplayTitleAscendingV1`. `ObserverMembershipPageSizeV1` is a positive unsigned 32-bit constant; its value remains unresolved until representative-workload evidence supports it. The complete result is the closed `ObserverMembershipResultV1` type:
+
+| Field | Type and constraint |
+| --- | --- |
+| `query` | The single `ObserverMembershipQueryV1` value `AllActiveDisplayTitleAscendingV1`. |
+| `pageSize` | Positive unsigned 32-bit integer equal to `ObserverMembershipPageSizeV1`. |
+| `pageCount` | Positive exact unsigned 64-bit integer equal to the number of pages in the validated first-to-terminal chain. |
+| `membershipRevision` | Positive signed 64-bit integer from the revision-fenced view. |
+| `queryContractVersion` | Positive signed 64-bit integer from the same view. |
+| `gameIds` | Unique `GameId` values in page and within-page order, containing the complete set and no other values. The maximum count is governed by `ObserverResourceBudgetV1`. |
+| `priorLookups` | Array of `ObserverDirectGameLookupV1` values, with exactly one entry for each unique `prior_game_id` absent from `gameIds`, in the order those IDs appeared in the request; no other entries are allowed. |
+
+`ObserverDirectGameLookupV1` is a closed record with `requestedGameId: GameId` and `result`, which is either the existing `GetGameResultDto` or the existing `ApplicationErrorDto` with code `ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND`. The successful result uses the existing `Found(GameDetailDto)` or `Redirected(canonicalGameId)` variant; no second redirect variant or observer-only fallback is added. The requested ID must match one absent input ID. A `Redirected` target must occur in `gameIds`; `Found` or Game-not-found for an absent required ID is a conclusive failure under §21.4.
+
+The observer validates one database generation, revision, query fingerprint, query-contract version, and page size internally across the entire chain and all direct lookups. The response reports the fixed query identity, revision, query-contract version, page count, ordered GameIds, and typed direct lookup results. Generation, query fingerprint, raw view token, and cursors remain application-private. A complete result has no partial-success variant. The `ObserverResourceBudgetV1` register defines required page, ID, byte, time, and memory limits; exceeding any limit returns no partial result.
+
+Map `ARGUS.V1.LIBRARY.STALE_VIEW` to `StaleLibraryView` and
+`ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN` to `InvalidLibraryViewToken`. A missing,
+skipped, duplicated, or interrupted page chain or missing required lookup maps
+to `IncompleteMembership`. A bound failure maps to `ResourceLimitExceeded`.
+These evidence failures are `BLOCKED`; a complete direct lookup or membership
+result that contradicts the required identity is classified under §21.4.
+
 ## 22. Refresh Operations
 
 Stable operation types are:

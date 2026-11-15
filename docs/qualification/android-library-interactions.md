@@ -160,20 +160,25 @@ rule, and dependency chain remain unchanged. `C5.backend-membership.complete`
 is an assertion key, not a new physical operation or a twenty-fifth UI case.
 This P assertion is eligible only under a separately versioned successor
 oracle and session authorization. The current private oracle revision 3 marks
-complete membership unsupported and does not pin a complete expected GameId
-set; it does not authorize this assertion.
+complete membership unsupported and does not pin an independent fixture
+identity manifest; it does not authorize this assertion.
 
 The assertion uses evidence class `P` and the observer-owned
 RevisionFenced membership contract in
-[SPEC-BE-015 §21.7](../specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md#217-inactive-observer-owned-membership-read).
+[SPEC-BE-015 §21.7](../specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md#217-inactive-observer-owned-membership-and-identity-read).
 It passes only when the fixed All-active query is read without search or
 filters, in title-ascending order and the specified fixed page size; every
-page is fetched from first through the single terminal page under the same
-token, generation, revision, query fingerprint, and observation attempt; the
-completed GameId set is unique; and every required direct `GetGame` lookup
-uses that token. Each `Redirected` target must occur in the completed set.
-No second redirect hop is followed. View tokens and cursors remain inside the
-app, and pages cannot be joined across revisions or attempts.
+page is fetched from first through the single terminal page under one
+`LibraryIdentityViewV2` token, generation, identity membership revision,
+query fingerprint, and observation attempt. The completed GameId set is
+unique, and each returned GameId has exactly one same-token `GetGame` result
+in `memberIdentityBindings`. Each active `Found`
+binding must report the exact same `requestedGameId` and `gameId`,
+`lifecycle: Active`, and all current content identity tuples from its complete
+detail. Every required prior-ID lookup uses that same token. A prior
+`Redirected` target must occur in the completed set. No second redirect hop
+is followed. View tokens and cursors remain inside the app, and pages cannot
+be joined across revisions or attempts.
 
 The P read is eligible only after the existing Add & Scan flow reaches its
 terminal scan state and before final fixture cleanup begins, while the
@@ -182,19 +187,72 @@ occur between scan terminalization and the P read. If the scan is not terminal,
 the fixture set has changed, or cleanup has begun, classify the P assertion as
 `BLOCKED`; do not compare that read with the final expected set.
 
+A fresh Add & Scan cannot generally have its exact runtime GameIds pinned in
+advance. When convergence creates a new `GameContent` and `Game`, the SQLite
+adapter generates both `game_content_id` and `game_id` with
+`lower(hex(randomblob(16)))`
+([logical.rs:267–298](../../rust/crates/argus-infrastructure/src/sqlite/logical.rs#L267-L298)).
+An identity that already exists may reuse its persisted GameId, so that value
+depends on product database state rather than fixture bytes. SPEC-BE-015 calls
+GameId an opaque Argus-owned durable identity ([§5](../specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md#5-game))
+and permits later reconciliation to merge Games or allocate IDs when a Game
+splits ([§8](../specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md#8-provisional-membership-and-reconciliation)).
+The C5 pin therefore names expected fixture identities and logical groups,
+not future GameIds or `GameContentId` values.
+
+The observer must use the inactive `LibraryIdentityViewV2` contract in
+[SPEC-BE-015 §21.7.1](../specifications/backend/spec-be-015-game-library-grouping-and-enrichment-contract.md#2171-identity-complete-revision-fence).
+The result must report `identityViewContractVersion: 2` and
+`identityMembershipRevision`; all pages, member bindings, and prior-ID
+lookups use the same opaque `lvt2` token. The active `LibraryViewTokenV1`
+does not fence the complete identity projection and is not acceptable for
+C5. The current SQLite tracking key does not include the current identity
+tuple set and has no `content_identity` tracking trigger
+([library_view.rs](../../rust/crates/argus-infrastructure/src/sqlite/library_view.rs#L226-L305),
+[library_view.rs](../../rust/crates/argus-infrastructure/src/sqlite/library_view.rs#L320-L376)).
+No V2 implementation or migration is part of this PR. Until a separately
+reviewed, versioned implementation proves atomic invalidation for every
+membership and identity mutation path, this assertion remains `BLOCKED` and
+must not produce a pass.
+
 A future execution requires a separately versioned C5 successor oracle and
-approved fixture manifest. The successor oracle must pin the complete expected
-GameId set and its mapping to fixture identities before the session; both
-digests must be covered by the future session authorization. The current
-revision-3 oracle and its expectations cannot be reused as that pin. The
-expected set never comes from the observer response or UI capture.
+an approved, private, versioned fixture expectation manifest. Before the
+session, the manifest pins its digest, the exact fixture-set digest, and each
+expected logical group as a set of identity tuples:
+`(platformId, contentType, schemeId, revision, digest)`. The tuples are
+computed from the exact fixture bytes using the canonicalization and identity
+rules in [SPEC-BE-012](../specifications/backend/spec-be-012-transformation-and-hash-scheme-contract.md)
+and [SPEC-BE-014](../specifications/backend/spec-be-014-production-content-identity-catalog.md).
+The verifier and its fixture-byte provenance are controlled independently of
+the app under test. Expected grouping also records any approved fixture
+relationship facts needed to define one logical Game. A tuple may belong to
+only one expected group. Missing provenance, overlapping groups, or any
+unresolved expected identity makes the manifest insufficient and the P
+assertion `BLOCKED`. The manifest does not contain a runtime GameId.
+
+After the complete membership read, the host binds each runtime GameId to one
+expected group by comparing the independently pinned group tuple sets with
+the same-view `memberIdentityBindings`. It compares each `requestedGameId`
+exactly with the binding's `gameId`; it does not use display titles, UI
+rendering, or observer output to create expected identities. A complete set of
+unique runtime identity groups that differs from the manifest proves wrong
+membership, including a missing, extra, merged, or split group, and is
+`FAILED`. A listed member whose same-view result is `Redirected`,
+`GameNotFound`, or `FoundNonActive` is a conclusive membership contradiction
+and is `FAILED`. A missing binding, incomplete detail, absent current content
+identity, duplicate tuple across runtime GameIds, unsupported V2 token, stale
+view, or other ambiguous/insufficient fixture-to-GameId attribution is
+`BLOCKED`. A non-`GameNotFound` typed application error is also `BLOCKED` with
+its original `ApplicationErrorDto` preserved. The current revision-3 oracle
+and its expectations cannot be reused as the new pin. The manifest and
+oracle digests must be covered by the future session authorization.
 
 | Assertion result | Classification |
 | --- | --- |
-| Complete coherent set matches the separately versioned and authorized expected GameId set, and every required direct lookup is valid | `PASSED` |
-| Missing successor pin, nonterminal scan state, changed fixture baseline, or cleanup already begun | `BLOCKED` |
-| Missing, stale, duplicate, incomplete, unauthorized, timed-out, or over-bound evidence; uncertain identity or revision | `BLOCKED` |
-| A coherent authoritative read proves a wrong committed set or invalid required direct redirect | `FAILED` |
+| Complete coherent V2 membership and identity bindings match every manifest group one-to-one; each binding satisfies `requestedGameId == gameId`; required prior lookups are valid | `PASSED`, only after V2 implementation coverage is independently reviewed and qualified |
+| Missing successor pin or fixture manifest, nonterminal scan state, changed fixture baseline, cleanup already begun, or ambiguous/insufficient fixture-to-GameId attribution | `BLOCKED` |
+| Missing, stale, duplicate, incomplete, unauthorized, timed-out, or over-bound evidence; unavailable/unverified V2 implementation; uncertain identity or revision | `BLOCKED` |
+| Complete coherent bindings prove an extra, missing, merged, or split expected group; a listed GameId returns a non-active result; or an invalid required prior redirect | `FAILED` |
 
 The separate P assertion does not establish that Library cards rendered,
 filters or sorts behaved correctly, a selection persisted, a detail screen

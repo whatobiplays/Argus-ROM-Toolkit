@@ -2726,7 +2726,104 @@ GetGameResultDto
 
 A missing non-redirected Game returns the existing `ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND` `ApplicationErrorDto`; it is not represented by `null`, `StaleView`, or a stale list row.
 
-The ordinary `GetGame` request gains one optional `libraryViewToken` argument. Without it, lookup retains current behavior. With it, the bridge passes the token to the authoritative backend lookup, which validates its format, authenticity, generation, membership revision, and query-contract version in the same transaction as the lookup. A well-formed token whose generation, revision, or supported query-contract version is stale returns `ApplicationErrorDto.code = ARGUS.V1.LIBRARY.STALE_VIEW`. An oversized, malformed, unsupported, or tampered token returns `ApplicationErrorDto.code = ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN`. `GetGame` receives no Library query shape, so query-shape mismatch is validated only on `ListGames`, where the request shape can be compared with the token binding. Neither result contains a partial page or detail. These errors do not replace the existing Game-not-found error or `Redirected(canonicalGameId)` result.
+#### 68.2.1 Inactive observer JSON mapping
+
+**Status:** Inactive observer serialization profile. It does not change the Rust-to-Flutter DTOs or the FRB transport.
+
+The DTOs below describe conceptual values crossing the existing bridge. FRB uses its generated SSE codec for this bridge; it does not serialize these values as JSON. The observer JSON profile is a separate wire contract. It uses the lower-camel-case member names in this section, explicit string enum values, and closed objects. Every listed member is required. A Rust `Option<T>` becomes a required JSON member with either `null` or a `T` value; a vector becomes a JSON array. Numeric values use exact JSON integers within the Rust type's range. Unknown fields, enum values, or variants are rejected.
+
+The observer does not serialize a Library view token in JSON. Existing `lvt1` tokens retain the V1 membership revision semantics in SPEC-BE-015 §§21.1–21.6. The inactive C5 successor requires the separate `lvt2` identity-complete view in SPEC-BE-015 §21.7.1; every page and `GetGame` detail read in that observer attempt uses the same opaque V2 token internally. No JSON decoder may treat an `lvt1` token or V1 revision as an identity-complete view.
+
+`GetGameResultDto` has exactly these tagged JSON forms:
+
+```json
+{"kind":"Found","game":<GameDetailDto>}
+{"kind":"Redirected","canonicalGameId":"<GameId>"}
+```
+
+`Found` carries the complete `GameDetailDto`. `Redirected` carries only the canonical target. Missing Game remains the existing `ApplicationErrorDto` result at the bridge boundary; the observer's `GameNotFound` wrapper and its JSON form are defined in the Android lifecycle successor contract.
+
+| Object | Required members and types |
+| --- | --- |
+| `GameDetailDto` | `gameId: String`, `platformId: PlatformIdDto`, `lifecycle: GameLifecycleDto`, `hydrationState: HydrationStateDto`, `fallbackTitle: String`, `memberships: GameMembershipSummaryDto[]`, `content: ContentSummaryDto[]`, `availabilityState: GameAvailabilityStateDto`, `resolvedMetadata: ResolvedMetadataDto \| null`, `resolvedArtwork: ResolvedArtworkDto[] \| null`. |
+| `GameMembershipSummaryDto` | `gameContentId: String`, `relationship: MembershipRelationshipDto`, `groupingBasis: GroupingBasisDto`, `groupingRevision: uint32`. |
+| `ContentSummaryDto` | `gameContentId: String`, `platformId: PlatformIdDto`, `contentType: ContentTypeDto`, `presence: ContentPresenceDto`, `identification: IdentificationStateDto`, `sourceCount: uint32`, `identity: ContentIdentitySummaryDto \| null`, `provenance: ContentProvenanceSummaryDto \| null`, `sources: GameContentSourceSummaryDto[]`. |
+| `ContentIdentitySummaryDto` | `schemeId: String`, `revision: uint32`, `digest: String`. `digest` is the lowercase hexadecimal encoding of the 32-byte SHA-256 identity digest. Scheme and canonical-byte semantics are owned by SPEC-BE-012 and SPEC-BE-014. |
+| `ContentProvenanceSummaryDto` | `sourceEntryId: String`, `associationKey: String`, `sourceFingerprint: String \| null`, `derivedFingerprint: String \| null`, `lastObservedScanId: String`, `members: ContentProvenanceMemberDto[]`. |
+| `ContentProvenanceMemberDto` | `role: String`, `associationKey: String \| null`, `sourceEntryId: String`, `sourceFingerprint: String \| null`, `derivedFingerprint: String \| null`, `lastObservedScanId: String`. |
+| `GameContentSourceSummaryDto` | `sourceEntryId: String`, `librarySourceId: String`, `sourceDisplayName: String`, `libraryRootId: String`, `rootDisplayName: String`, `safeLocationPresentation: String`. Raw locators and filesystem paths are not fields in this DTO. |
+| `ResolvedMetadataDto` | `displayTitle: String \| null`, `sortTitle: String \| null`, `description: String \| null`, `releaseDate: String \| null`, `developers: String[]`, `publishers: String[]`, `genres: String[]`, `presentationRegion: String \| null`, `presentationLanguages: String[]`, `fieldProvenance: MetadataFieldProvenanceDto[]`, `resolutionRevision: uint64`, `resolvedAt: int64`, `providerId: String \| null`. |
+| `MetadataFieldProvenanceDto` | `field: String`, `providerId: String \| null`, `externalGameId: String \| null`, `source: String`. |
+| `ResolvedArtworkDto` | `artworkType: String`, `referenceId: String`, `assetId: String \| null`, `ordering: uint32`, `selectionReason: String`, `resolutionRevision: uint64`, `resolvedAt: int64`. |
+
+Enums in these objects are JSON strings that exactly match these Rust variant spellings:
+
+| Type | Closed JSON string values |
+| --- | --- |
+| `PlatformIdDto` | `NintendoGb`, `NintendoGbc`, `NintendoGba`, `NintendoNes`, `NintendoFds`, `NintendoSnes`, `NintendoN64`, `NintendoNds`, `Nintendo3ds`, `SegaSms`, `SegaGameGear`, `SegaGenesis`, `Sega32x`, `NintendoGameCube`, `NintendoWii`, `SegaCd`, `SegaSaturn`, `SegaDreamcast`, `SonyPlaystation`, `SonyPlaystation2`, `SonyPsp`. |
+| `ContentTypeDto` | `CartridgeImage`, `MagneticDiskImage`, `OpticalDiscCd`, `OpticalDiscGd`, `OpticalDiscDvd`, `OpticalDiscGameCube`, `OpticalDiscWii`, `OpticalDiscUmd`. |
+| `ContentPresenceDto` | `Available`, `PartiallyUnavailable`, `Unavailable`, `Orphaned`. |
+| `IdentificationStateDto` | `Identified`, `NeedsReidentification`, `Unidentified`. |
+| `GameLifecycleDto` | `Active`, `InactiveOrphan`, `Redirected`. |
+| `HydrationStateDto` | `Hydrated`, `PartiallyHydrated`, `Unmatched`, `Refreshing`. |
+| `GameAvailabilityStateDto` | `Available`, `PartiallyUnavailable`, `Unavailable`, `InactiveOrphan`. |
+| `MembershipRelationshipDto` | `Primary`, `Secondary`, `PrimaryContent`, `RegionalVariant`, `LanguageVariant`, `RevisionVariant`, `Disc`, `EquivalentReleaseRepresentation`. |
+| `GroupingBasisDto` | `ExactContentIdentity`, `Provisional`, `ExplicitRelationshipEvidence`. |
+
+`ApplicationErrorDto` also has a closed wire mapping. Its member names are
+exactly `code`, `category`, `severity`, `recoverability`, `retryPolicy`,
+`messageKey`, `traceId`, and `safeContext`. `category` is exactly one of
+`validation`, `persistence`, `filesystem`, `provider`, `runtime`,
+`configuration`, `operation`, or `internal`. `severity` is `Info`, `Warning`,
+`Error`, or `Fatal`; `recoverability` is `None`, `Retry`, `UserAction`,
+`RestartRequired`, or `ManualIntervention`; `retryPolicy` is `Never`,
+`Immediate`, `Backoff`, or `UserInitiated`. These strings are the bridge's
+explicit mappings, not a blanket Rust-enum casing rule. `code` is a published
+`ErrorCode` and `messageKey` is the catalog value for that code; their exact
+pairing and the other error metadata follow
+[SPEC-BE-003 §§8–12](spec-be-003-application-errors-logging-and-diagnostics.md).
+`traceId` is exactly 32 lowercase hexadecimal characters and cannot be all
+zeroes.
+
+`safeContext` is an array of closed `{field, value}` records. `field` is one of
+`stage`, `path_class`, `migration_count`, `schema_version`,
+`migration_outcome`, `application_version`, `backend_version`, `platform`,
+`architecture`, `technical_class`, `failure_role`, `settings_domain`, or
+`persisted_settings_reason`. An error code may use only its SPEC-BE-003
+allowlisted fields; a field appears at most once, and the array may be empty.
+Entries are emitted in the field order just listed. Both members are strings.
+For integer-valued fields, `value` is the canonical base-10 representation of
+a uint32. A version value is 1–256 UTF-8 bytes, uses only ASCII alphanumeric
+characters or `.`, `+`, `-`, `_`, and case-insensitively contains none of
+`password`, `passwd`, `secret`, `token`, `credential`, `api_key`, `apikey`,
+`auth`, `bearer`, `private_key`, `key`, `select`, `insert`, `update`, `delete`,
+`pragma`, `sqlite`, `drop`, `create`, or `alter`. Other values use these exact
+mappings:
+
+| `field` | Allowed `value` strings |
+| --- | --- |
+| `stage` | `environment`, `observability`, `persistence`. |
+| `path_class` | `standard_application_data`, `explicit_override`. |
+| `migration_outcome` | `applied`, `already_current`. |
+| `platform` | `windows`, `macos`, `unix`, `android`. |
+| `architecture` | `x86_64`, `aarch64`, `x86`, `arm`, `unknown`. |
+| `technical_class` | `configuration_invalid`, `filesystem_permission_denied`, `database_open_failed`, `database_locked`, `migration_failed`, `incompatible_schema`, `internal`. |
+| `failure_role` | `primary`, `secondary`. |
+| `settings_domain` | `appearance`. |
+| `persisted_settings_reason` | `missing`, `invalid_value`, `mapping_failed`. |
+
+The observer rejects an unknown category, severity, recoverability, retry
+policy, safe-context field, or field/value pairing. It also rejects an
+unpublished error code, a code whose metadata disagrees with the SPEC-BE-003
+catalog, or a message key that does not belong to that code. The current
+bridge maps the object in [`application_error_dto`](../../../rust/crates/argus-bridge/src/lib.rs#L1472-L1482),
+the enum strings in its [error-name helpers](../../../rust/crates/argus-bridge/src/lib.rs#L4849-L4888),
+and `safeContext` in the [field/value helpers](../../../rust/crates/argus-bridge/src/lib.rs#L4900-L4972).
+The bounded version rule follows the [application `Version` validator](../../../rust/crates/argus-application/src/observability.rs#L234-L283).
+
+No omitted member is defaulted. In particular, `resolvedMetadata`, `resolvedArtwork`, `identity`, `provenance`, and every optional nested metadata or provenance member must appear with either `null` or a value. The profile does not add titles or presentation fields to the identity used by the C5 fixture comparison.
+
+The ordinary `GetGame` request gains one optional `libraryViewToken` argument. Without it, lookup retains current behavior. With an `lvt1` token, the bridge passes the token to the authoritative backend lookup, which validates its format, authenticity, generation, V1 membership revision, and query-contract version in the same transaction as the lookup. The inactive C5 successor may pass an `lvt2` token only after the versioned identity-view implementation in SPEC-BE-015 §21.7.1 is approved; that implementation also validates `identity_membership_revision` in the same transaction as the detail read. A well-formed token whose generation, applicable revision, or supported query-contract version is stale returns `ApplicationErrorDto.code = ARGUS.V1.LIBRARY.STALE_VIEW`. An oversized, malformed, unsupported, or tampered token returns `ApplicationErrorDto.code = ARGUS.V1.LIBRARY.INVALID_VIEW_TOKEN`. `GetGame` receives no Library query shape, so query-shape mismatch is validated only on `ListGames`, where the request shape can be compared with the token binding. Neither result contains a partial page or detail. These errors do not replace the existing Game-not-found error or `Redirected(canonicalGameId)` result.
 
 Positive example: the first `RevisionFenced` page has a null cursor and token, then returns page rows, `nextCursor = C1`, and token `V`. The next request supplies `C1` and `V`. A missing original GameId is checked once with `GetGame(originalId, V)`; `Redirected(canonicalId)` is accepted only if that ID occurs in the completed page chain.
 
@@ -2872,6 +2969,7 @@ No bridge read returns credential plaintext. Request mappers, debug representati
 `OperationDetailDto` adds explicit variants equivalent to:
 
 ```text
+LibraryScan(LibraryScanJobDetailDto)
 LibraryRefresh(LibraryRefreshJobDetailDto)
 GameRefresh(GameRefreshJobDetailDto)
 LibraryResolutionRefresh(LibraryResolutionRefreshJobDetailDto)
@@ -3022,7 +3120,7 @@ is a closed result type with these fields:
 | `snapshotStartedElapsedRealtimeMs` | Exact unsigned 64-bit integer milliseconds from the observer's Android elapsed-realtime clock. |
 | `snapshotFinishedElapsedRealtimeMs` | Exact unsigned 64-bit integer milliseconds from the same clock and boot; it is greater than or equal to the start value. |
 | `retainedJobCount` | Unsigned 64-bit integer, equal to the number of `jobs` entries and bounded by `ObserverResourceBudgetV1`. |
-| `jobs` | Array of existing `LibraryRefreshJobDetailDto` values. Every JobRunId is unique. The array contains all retained LibraryRefresh attempts at the same snapshot boundary. |
+| `jobs` | Array of complete `JobDetailDto` values, each using the `GetJob` mapping in §68.6.6 and each carrying `operationDetail.kind == "LibraryRefresh"`. Every `job.jobRunId` is unique. The array contains all retained LibraryRefresh attempts at the same snapshot boundary. |
 
 The type has no offset, cursor, page, newest-N limit, or partial-result variant. It may be returned only when the store proves that `jobs` is the entire retained LibraryRefresh history at that snapshot. The snapshot times describe the observer read interval; they are not wall-clock timestamps and are not comparable to host clock values.
 
@@ -3031,6 +3129,68 @@ Each detail preserves the immutable requested root scope, admitted and excluded 
 The complete result is all-or-nothing. If the snapshot is incoherent, required retained detail or root/Retry relationships cannot be proven, or a resource limit is exceeded, the observer returns `IncompleteHistory` or `ResourceLimitExceeded` and no partial success result. A genuine absence of historical evidence remains distinct from a coherent contradictory record. Contradictory or corrupt records return `IntegrityConflict` and must not be relabeled `HistoricalUnavailable`.
 
 The successor's numeric row, byte, time, and memory limits are defined by the `ObserverResourceBudgetV1` register in the Android lifecycle successor contract. A value without representative workload evidence remains unresolved and blocks production implementation. No limit may cause silent truncation, pruning, retention changes, or deletion of historical Jobs.
+
+#### 68.6.6 Inactive observer JSON mapping for JobDetailDto
+
+**Status:** Inactive observer serialization profile. It does not change the active DTOs or FRB transport.
+
+This section defines the nested JSON objects used by observer `GetJob` and retained-history results. Rust and Flutter DTO declarations continue to describe conceptual bridge values. The observer JSON profile serializes them separately, using lower-camel-case field names and the exact per-field string values listed below. DTO enums use their listed PascalCase variants; string-backed vocabularies such as `operationType`, refresh trigger, and mode use their explicit lower-case values. Each listed object is closed, every member is required, and each optional member is present as `null` when its DTO value is absent. Arrays remain arrays when empty. Numeric values use exact JSON integer syntax and the declared signedness and width.
+
+`JobDetailDto` is the complete `GetJob` result and has exactly `job: JobRunDto` and `operationDetail: OperationDetailDto`. Its JSON shape is:
+
+```json
+{"job":<JobRunDto>,"operationDetail":<OperationDetailDto>}
+```
+
+`JobRunDto` has exactly these members:
+
+| Member | JSON type and rule |
+| --- | --- |
+| `jobRunId` | String containing canonical `JobRunId`. |
+| `operationType` | String; for this closed detail union, one of `library_scan`, `library_refresh`, `game_refresh`, or `library_resolution_refresh`. |
+| `state` | `JobRunStateDto`: `Queued`, `Preparing`, `Running`, `Completed`, `CompletedWithIssues`, `Failed`, `Cancelled`, `Interrupted`, or `Abandoned`. |
+| `phase` | String or `null`. |
+| `completedUnits` | uint64 or `null`. |
+| `totalUnits` | uint64 or `null`. |
+| `statusKey` | String or `null`. |
+| `createdAtMs` | int64. |
+| `queuedAtMs` | int64 or `null`. |
+| `startedAtMs` | int64 or `null`. |
+| `terminalAtMs` | int64 or `null`. |
+| `cancellationRequested` | Boolean. |
+| `controls` | Closed `JobControlAvailabilityDto` object with required Boolean members `canCancel` and `canRetry`. |
+| `boundedTerminalFailure` | `BoundedTerminalFailureDto` object or `null`. When present, it has exactly `errorCode: String \| null` and `safeContext: String \| null`. |
+
+`operationDetail` is a closed tagged union. Its `kind` member is first; each variant has exactly one `detail` payload. The JSON shapes are:
+
+```json
+{"kind":"LibraryScan","detail":<LibraryScanJobDetailDto>}
+{"kind":"LibraryRefresh","detail":<LibraryRefreshJobDetailDto>}
+{"kind":"GameRefresh","detail":<GameRefreshJobDetailDto>}
+{"kind":"LibraryResolutionRefresh","detail":<LibraryResolutionRefreshJobDetailDto>}
+```
+
+No other tags or payload member names are valid. In particular, `field0`, positional arrays, external tags, and serde's default enum representation are not part of the observer schema. `operationDetail.kind` must agree with `job.operationType` using the four values above.
+
+| Object | Required JSON members and types |
+| --- | --- |
+| `LibraryScanJobDetailDto` | `requestedRoots: LibraryScanRootSummaryDto[]`, `admittedRoots: LibraryScanRootSummaryDto[]`, `exclusions: LibraryScanAdmissionExclusionDto[]`, `scanRuns: ScanRunDto[]`, `progress: ScanProgressFactsDto`, `retrySourceJobRunId: String \| null`, `retrySuccessorJobRunId: String \| null`. |
+| `LibraryScanRootSummaryDto` | `libraryRootId: String`, `displayName: String`, `safeLocationDisplay: String`. |
+| `LibraryScanAdmissionExclusionDto` | `libraryRootId: String`, `reason: String` using §66.12's closed vocabulary, `activeJobRunId: String \| null`, `activeScanRunId: String \| null`, `applicationError: ApplicationErrorDto \| null`. |
+| `ScanRunDto` | `scanRunId: String`, `jobRunId: String`, `libraryRootId: String`, `displayName: String`, `safeLocationDisplay: String`, `status: ScanRunStatusDto`, `startedAtMs: int64`, `completedAtMs: int64 \| null`, `failureReason: String \| null`. `ScanRunStatusDto` is `Running`, `Complete`, `Partial`, `Failed`, `Cancelled`, or `Abandoned`. |
+| `ScanProgressFactsDto` | `phase: String \| null`, `completedUnits: uint64 \| null`, `totalUnits: uint64 \| null`, `statusKey: String \| null`, `rootsRequested: uint32`, `rootsAdmitted: uint32`, `rootsTerminal: uint32`, `entriesObserved: uint64 \| null`, `entriesCommitted: uint64 \| null`, `issueCount: uint64 \| null`. |
+| `LibraryRefreshJobDetailDto` | `trigger: "manual" \| "added_root" \| "initial_onboarding"`, `triggerRootId: String \| null`, `mode: "eligible_only" \| "force"`, `requestedRootIds: String[]`, `scanRuns: ScanRunDto[]`, `progress: RefreshProgressFactsDto`, `retrySourceJobRunId: String \| null`, `retrySuccessorJobRunId: String \| null`, `exclusions: LibraryScanAdmissionExclusionDto[]`, `rootOutcomeCoverage: LibraryRefreshRootOutcomeCoverageDto`. `triggerRootId` is a canonical `LibraryRootId` exactly when `trigger` is `added_root`; it is required and null for the other trigger values. |
+| `RefreshProgressFactsDto` | `phase: String \| null`, `completedUnits: uint64 \| null`, `totalUnits: uint64 \| null`, `statusKey: String \| null`, `issueCount: uint64 \| null`, `issues: RefreshIssueFactDto[]`. |
+| `RefreshIssueFactDto` | `kind: String`, `reason: String`, `providerId: String \| null`, `occurrences: uint64`. The closed `kind`/`reason` pairings and conditional `providerId` rule are in §68.6.1. |
+| `LibraryRefreshRootOutcomeCoverageDto` | One exact string: `Complete` or `HistoricalUnavailable`. |
+| `GameRefreshJobDetailDto` | `gameIds: String[]`, `mode: "eligible_only" \| "force"`, `progress: RefreshProgressFactsDto`, `retrySourceJobRunId: String \| null`, `retrySuccessorJobRunId: String \| null`. `gameIds` is nonempty, each entry uses canonical `GameId`, and `mode: "force"` requires exactly one entry. |
+| `LibraryResolutionRefreshJobDetailDto` | `jobRunId: String`, `settingsRevision: uint64`, `progress: RefreshProgressFactsDto`, `retrySourceJobRunId: String \| null`, `retrySuccessorJobRunId: String \| null`. |
+| `ApplicationErrorDto` | `code: String`, `category: String`, `severity: String`, `recoverability: String`, `retryPolicy: String`, `messageKey: String`, `traceId: String`, `safeContext: SafeContextEntryDto[]`. All members are required; `safeContext` may be empty. |
+| `SafeContextEntryDto` | `field: String`, `value: String`. |
+
+All strings use the existing DTO semantics and bounds. `LibraryScanAdmissionExclusionDto.reason`, `RefreshIssueFactDto.kind` and `reason`, `trigger`, and `mode` are validated against their owning closed vocabularies; they are not arbitrary enum extensions. `ApplicationErrorDto.code` is preserved exactly. A missing, unknown, or wrongly cased member or enum value rejects the complete JSON message.
+
+The retained-history `jobs` array uses this same `JobDetailDto` object, exactly as the observer `GetJob` response does. Each element has its own `job` lifecycle projection and `operationDetail`; the history operation does not serialize a bare `LibraryRefreshJobDetailDto`. Every history element's operation tag is `LibraryRefresh`, and its `job.jobRunId` is the unique retained run identity.
 
 ### 68.7 Phase 003 notifications
 

@@ -6,6 +6,7 @@ import 'package:argus/features/library/application/library_controller.dart';
 import 'package:argus/features/library/library.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -666,6 +667,160 @@ void main() {
         await tester.pumpAndSettle();
         expect(gamesApi.refreshedGameIds, [game.gameId]);
         expect(gamesApi.refreshModes, [RefreshMode.force]);
+        semantics.dispose();
+      },
+    );
+  }
+
+  for (final viewMode in LibraryViewMode.values) {
+    testWidgets(
+      'row activation follows touch, semantics, and keyboard behavior in ${viewMode.name}',
+      (tester) async {
+        tester.view.physicalSize = const Size(900, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final semantics = tester.ensureSemantics();
+
+        final gameA = libraryRow(
+          id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          title: 'Game A',
+        );
+        final gameB = libraryRow(
+          id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          title: 'Game B',
+        );
+        final gameC = libraryRow(
+          id: 'cccccccccccccccccccccccccccccccc',
+          title: 'Game C',
+        );
+        final reads = FakeLibraryReads()
+          ..onListGames = (_) => GamePage(items: [gameA, gameB, gameC]);
+        final controller = await _readyController(reads);
+        addTearDown(controller.dispose);
+        controller.setViewMode(viewMode);
+        final openedGameIds = <GameId>[];
+
+        await tester.pumpWidget(
+          _libraryHarness(
+            controller: controller,
+            onOpenGame: openedGameIds.add,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        Finder cardFor(GameLibraryRow game) =>
+            find.byKey(ValueKey<String>('library-game-${game.gameId.value}'));
+
+        final rowA = controller.rowCorrelationForIndex(0)!;
+        final rowB = controller.rowCorrelationForIndex(1)!;
+        final rowC = controller.rowCorrelationForIndex(2)!;
+        expect(
+          [rowA.gameId, rowB.gameId, rowC.gameId],
+          [gameA.gameId, gameB.gameId, gameC.gameId],
+        );
+        expect({
+          rowA.semanticsIdentifier,
+          rowB.semanticsIdentifier,
+          rowC.semanticsIdentifier,
+        }, hasLength(3));
+        final rowASemantics = find.semantics.byPredicate(
+          (node) => node.identifier == rowA.semanticsIdentifier,
+        );
+        final rowBSemantics = find.semantics.byPredicate(
+          (node) => node.identifier == rowB.semanticsIdentifier,
+        );
+        final rowCSemantics = find.semantics.byPredicate(
+          (node) => node.identifier == rowC.semanticsIdentifier,
+        );
+
+        expect(cardFor(gameA), findsOneWidget);
+        expect(cardFor(gameB), findsOneWidget);
+        expect(cardFor(gameC), findsOneWidget);
+        expect(rowASemantics, findsOneWidget);
+        expect(rowBSemantics, findsOneWidget);
+        expect(rowCSemantics, findsOneWidget);
+
+        await tester.tap(cardFor(gameA));
+        await tester.pumpAndSettle();
+        expect(openedGameIds, [gameA.gameId]);
+        expect(controller.state.selectedGameIds, isEmpty);
+
+        tester.semantics.tap(rowASemantics);
+        await tester.pumpAndSettle();
+        expect(openedGameIds, [gameA.gameId, gameA.gameId]);
+        expect(controller.state.selectedGameIds, isEmpty);
+
+        await tester.longPress(cardFor(gameA));
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {gameA.gameId});
+
+        tester.semantics.tap(rowBSemantics);
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {gameA.gameId, gameB.gameId});
+        expect(openedGameIds, [gameA.gameId, gameA.gameId]);
+
+        await tester.tap(cardFor(gameB));
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {gameA.gameId});
+        expect(openedGameIds, [gameA.gameId, gameA.gameId]);
+
+        tester.semantics.tap(rowBSemantics);
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {gameA.gameId, gameB.gameId});
+
+        await tester.tap(cardFor(gameB));
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {gameA.gameId});
+        final rowBInkWell = find.descendant(
+          of: cardFor(gameB),
+          matching: find.byType(InkWell),
+        );
+        Focus.of(tester.element(rowBInkWell.first)).requestFocus();
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(openedGameIds, [gameA.gameId, gameA.gameId, gameB.gameId]);
+        expect(controller.state.selectedGameIds, {gameA.gameId});
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {gameA.gameId, gameB.gameId});
+        expect(openedGameIds, [gameA.gameId, gameA.gameId, gameB.gameId]);
+
+        for (final toggleKey in [
+          LogicalKeyboardKey.controlLeft,
+          LogicalKeyboardKey.metaLeft,
+        ]) {
+          controller.clearSelection();
+          await tester.pumpAndSettle();
+          await tester.sendKeyDownEvent(toggleKey);
+          await tester.tap(cardFor(gameC));
+          await tester.sendKeyUpEvent(toggleKey);
+          await tester.pumpAndSettle();
+          expect(controller.state.selectedGameIds, {gameC.gameId});
+          expect(openedGameIds, [gameA.gameId, gameA.gameId, gameB.gameId]);
+        }
+
+        controller.clearSelection();
+        await tester.pumpAndSettle();
+        await tester.longPress(cardFor(gameA));
+        await tester.pumpAndSettle();
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.tap(cardFor(gameC));
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {
+          gameA.gameId,
+          gameB.gameId,
+          gameC.gameId,
+        });
+        expect(controller.rowCorrelationForIndex(1)!.gameId, gameB.gameId);
+        expect(
+          find.bySemanticsIdentifier(rowB.semanticsIdentifier),
+          findsOneWidget,
+        );
+        expect(openedGameIds, [gameA.gameId, gameA.gameId, gameB.gameId]);
+        expect(tester.takeException(), isNull);
         semantics.dispose();
       },
     );
@@ -1424,6 +1579,7 @@ Widget _libraryHarness({
   required LibraryController controller,
   TextScaler? textScaler,
   LibraryRefreshApi? refreshApi,
+  void Function(GameId gameId)? onOpenGame,
 }) => ProviderScope(
   key: ObjectKey(controller),
   overrides: [
@@ -1440,7 +1596,7 @@ Widget _libraryHarness({
         scope: controller.state.scope,
         onOpenAll: () {},
         onOpenSources: () {},
-        onOpenGame: (_) {},
+        onOpenGame: onOpenGame ?? (_) {},
         onOpenJob: (_) {},
       ),
     ),

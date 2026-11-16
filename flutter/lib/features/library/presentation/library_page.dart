@@ -658,6 +658,10 @@ LibraryFilter _withAvailabilityFilter(
   );
 }
 
+/// Uses selection behavior for row activation when selection is already active.
+///
+/// With no selection, a plain activation opens the Game. Shift selects a range,
+/// while Control/Command toggles selection regardless of current selection.
 void _activateLibraryGame({
   required LibraryState state,
   required LibraryController controller,
@@ -675,7 +679,7 @@ void _activateLibraryGame({
       pressedKeys.contains(LogicalKeyboardKey.metaRight);
   if (shiftPressed) {
     controller.selectRange(gameId);
-  } else if (togglePressed || state.selectedGameIds.contains(gameId)) {
+  } else if (togglePressed || state.selectedGameIds.isNotEmpty) {
     controller.toggleSelection(gameId);
   } else {
     onOpen(gameId);

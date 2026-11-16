@@ -4,6 +4,7 @@ import 'package:argus/core/client/client.dart';
 import 'package:argus/features/library/library.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'library_test_fakes.dart';
@@ -24,6 +25,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1200, 1000);
       addTearDown(tester.view.reset);
+      final semantics = tester.ensureSemantics();
 
       final gameId = GameId('11111111111111111111111111111111');
       final contentId = ContentId('22222222222222222222222222222222');
@@ -102,6 +104,30 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(
+        find.bySemanticsIdentifier('game-detail-state-ready'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsIdentifier(
+          'game-detail-requested-identity-${gameId.value}',
+        ),
+        findsOneWidget,
+      );
+      final resolvedIdentity = find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${detail.gameId.value}',
+      );
+      expect(resolvedIdentity, findsOneWidget);
+      expect(
+        tester.getSemantics(resolvedIdentity).getSemanticsData().label,
+        contains(detail.gameId.value),
+      );
+      expect(
+        find.bySemanticsIdentifier(
+          'game-detail-redirect-target-${detail.gameId.value}',
+        ),
+        findsNothing,
+      );
       expect(find.text('Overview'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('game-overview-title')),
@@ -151,6 +177,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Front cover'), findsOneWidget);
       expect(find.text('Artwork not downloaded'), findsWidgets);
+      semantics.dispose();
     },
   );
 
@@ -190,9 +217,157 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('pre-ready detail exposes only its requested identity', (
+    tester,
+  ) async {
+    final requested = const GameId('13131313131313131313131313131313');
+    final semantics = tester.ensureSemantics();
+    final controller = GameDetailController(
+      games: FakeGamesApi(),
+      gameId: requested,
+      runtimeContext: const LibraryRuntimeContext.preReady(),
+      demandSource: _emptyDemandSource,
+    );
+    await controller.initialize();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _detailHarness(gameId: requested, controller: controller),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.bySemanticsIdentifier('game-detail-state-preReady'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-requested-identity-${requested.value}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${requested.value}',
+      ),
+      findsNothing,
+    );
+    expect(
+      find.text('Game detail is available when the runtime is ready.'),
+      findsOneWidget,
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('loading detail does not invent resolved or redirect identity', (
+    tester,
+  ) async {
+    final requested = const GameId('14141414141414141414141414141414');
+    final response = Completer<GetGameResult>();
+    final controller = GameDetailController(
+      games: FakeGamesApi()..onGetGame = (_) => response.future,
+      gameId: requested,
+      runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
+    );
+    final load = controller.initialize();
+    addTearDown(controller.dispose);
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(
+      _detailHarness(gameId: requested, controller: controller),
+    );
+    await tester.pump();
+
+    expect(
+      find.bySemanticsIdentifier('game-detail-state-loading'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-requested-identity-${requested.value}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${requested.value}',
+      ),
+      findsNothing,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-redirect-target-${requested.value}',
+      ),
+      findsNothing,
+    );
+
+    response.complete(GetGameFound(gameDetail(id: requested.value)));
+    await load;
+    await tester.pumpAndSettle();
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${requested.value}',
+      ),
+      findsOneWidget,
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('failed detail exposes requested identity without a resolution', (
+    tester,
+  ) async {
+    final requested = const GameId('15151515151515151515151515151515');
+    final controller = GameDetailController(
+      games: FakeGamesApi()..getFailure = const TransportFailure('read failed'),
+      gameId: requested,
+      runtimeContext: readyLibraryRuntimeContext,
+      demandSource: _emptyDemandSource,
+    );
+    await controller.initialize();
+    addTearDown(controller.dispose);
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(
+      _detailHarness(gameId: requested, controller: controller),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.bySemanticsIdentifier('game-detail-state-failed'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-requested-identity-${requested.value}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${requested.value}',
+      ),
+      findsNothing,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-redirect-target-${requested.value}',
+      ),
+      findsNothing,
+    );
+    expect(
+      tester
+          .getSemantics(find.bySemanticsIdentifier('game-detail-state-failed'))
+          .identifier,
+      'game-detail-state-failed',
+    );
+    semantics.dispose();
+  });
+
   testWidgets('redirect and typed not-found states remain explicit', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     final requested = GameId('55555555555555555555555555555555');
     final canonical = GameId('66666666666666666666666666666666');
     final games = FakeGamesApi()..result = GetGameRedirected(canonical);
@@ -215,6 +390,37 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('This Game has moved.'), findsOneWidget);
+    expect(
+      find.bySemanticsIdentifier('game-detail-state-redirected'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-requested-identity-${requested.value}',
+      ),
+      findsOneWidget,
+    );
+    final redirectTarget = find.bySemanticsIdentifier(
+      'game-detail-redirect-target-${canonical.value}',
+    );
+    expect(redirectTarget, findsOneWidget);
+    expect(
+      tester.getSemantics(redirectTarget).getSemanticsData().label,
+      'Open canonical Game',
+    );
+    expect(
+      tester
+          .getSemantics(redirectTarget)
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${requested.value}',
+      ),
+      findsNothing,
+    );
     await tester.tap(find.text('Open canonical Game'));
     expect(openedCanonical, isTrue);
 
@@ -238,8 +444,31 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Game not found'), findsOneWidget);
+    expect(
+      find.bySemanticsIdentifier('game-detail-state-missing'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-requested-identity-${requested.value}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${requested.value}',
+      ),
+      findsNothing,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-redirect-target-${requested.value}',
+      ),
+      findsNothing,
+    );
     await tester.tap(find.text('Back to Library'));
     expect(returnedToLibrary, isTrue);
+    semantics.dispose();
   });
 
   testWidgets(
@@ -324,6 +553,7 @@ void main() {
   testWidgets('shows a retained-detail refresh failure with retry', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     final gameId = const GameId('12121212121212121212121212121212');
     final initial = gameDetail(id: gameId.value, title: 'Retained detail');
     final updated = gameDetail(id: gameId.value, title: 'Retried detail');
@@ -361,6 +591,26 @@ void main() {
       find.byKey(const ValueKey<String>('game-detail-refresh-failure')),
       findsOneWidget,
     );
+    expect(
+      find.bySemanticsIdentifier('game-detail-state-ready'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-requested-identity-${gameId.value}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier(
+        'game-detail-resolved-identity-${initial.gameId.value}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsIdentifier('game-detail-refresh-failed'),
+      findsOneWidget,
+    );
     final failureMessageSemantics = tester.widget<Semantics>(
       find
           .ancestor(
@@ -377,6 +627,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Retried detail'), findsWidgets);
     expect(find.text('refresh failed'), findsNothing);
+    semantics.dispose();
   });
 
   testWidgets('recreates artwork cache when the artwork API changes', (

@@ -42,6 +42,10 @@ void main() {
         const ValueKey<String>('library-reset-all-active'),
       );
       expect(action, findsOneWidget);
+      expect(
+        find.bySemanticsIdentifier('argus.library.reset_all_active.v1'),
+        findsOneWidget,
+      );
       final actionSemantics = tester.getSemantics(action).getSemanticsData();
       expect(actionSemantics.label, 'Reset All Active');
       expect(actionSemantics.flagsCollection.isButton, isTrue);
@@ -72,6 +76,140 @@ void main() {
       semantics.dispose();
     },
   );
+
+  testWidgets('Library controls expose stable actionable semantics', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final semantics = tester.ensureSemantics();
+
+    final reads = FakeLibraryReads(
+      facets: const LibraryFacets(
+        platforms: [
+          PlatformFacetBucket(platformId: PlatformId.nintendoNes, count: 2),
+        ],
+        regions: [RegionFacetBucket(region: 'us', count: 2)],
+        hydrationStates: [
+          HydrationStateFacetBucket(
+            hydrationState: HydrationState.hydrated,
+            count: 2,
+          ),
+        ],
+        availabilityStates: [
+          AvailabilityStateFacetBucket(
+            availabilityState: AvailabilityState.available,
+            count: 2,
+          ),
+        ],
+      ),
+    )..onListGames = (_) => GamePage(items: [libraryRow()]);
+    final controller = await _readyController(
+      reads,
+      scope: const LibraryScopeAll(),
+    );
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_libraryHarness(controller: controller));
+    await tester.pumpAndSettle();
+
+    final search = find.bySemanticsIdentifier('library-search');
+    expect(search, findsOneWidget);
+    final searchData = tester.getSemantics(search).getSemanticsData();
+    expect(searchData.label, 'Search Library');
+    expect(searchData.hasAction(SemanticsAction.tap), isTrue);
+    expect(searchData.flagsCollection.isTextField, isTrue);
+
+    for (final identifier in [
+      'library-sort-field',
+      'library-sort-direction',
+      'library-view-grid',
+      'library-view-list',
+      'library-filter-platform-nintendo.nes',
+      'library-filter-region-us',
+      'library-filter-hydration-hydrated',
+      'library-filter-availability-available',
+    ]) {
+      expect(find.bySemanticsIdentifier(identifier), findsOneWidget);
+    }
+
+    final sortField = tester
+        .getSemantics(find.bySemanticsIdentifier('library-sort-field'))
+        .getSemanticsData();
+    expect(sortField.hasAction(SemanticsAction.tap), isTrue);
+    expect(sortField.label, contains('Title'));
+
+    final sortDirectionFinder = find.bySemanticsIdentifier(
+      'library-sort-direction',
+    );
+    final sortDirection = tester
+        .getSemantics(sortDirectionFinder)
+        .getSemanticsData();
+    expect(sortDirection.label, 'Ascending');
+    expect(sortDirection.hasAction(SemanticsAction.tap), isTrue);
+    await tester.tap(sortDirectionFinder);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSemantics(sortDirectionFinder).getSemanticsData().label,
+      'Descending',
+    );
+
+    final grid = find.bySemanticsIdentifier('library-view-grid');
+    final list = find.bySemanticsIdentifier('library-view-list');
+    expect(
+      tester.getSemantics(grid).getSemanticsData().flagsCollection.isSelected,
+      Tristate.isTrue,
+    );
+    expect(
+      tester.getSemantics(list).getSemanticsData().flagsCollection.isSelected,
+      Tristate.isFalse,
+    );
+    expect(
+      tester
+          .getSemantics(list)
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    await tester.tap(list);
+    await tester.pumpAndSettle();
+    expect(controller.state.viewMode, LibraryViewMode.list);
+    expect(
+      tester.getSemantics(list).getSemanticsData().flagsCollection.isSelected,
+      Tristate.isTrue,
+    );
+    expect(
+      tester.getSemantics(grid).getSemanticsData().flagsCollection.isSelected,
+      Tristate.isFalse,
+    );
+
+    final region = find.bySemanticsIdentifier('library-filter-region-us');
+    final regionData = tester.getSemantics(region).getSemanticsData();
+    expect(regionData.label, 'US (2)');
+    expect(regionData.hasAction(SemanticsAction.tap), isTrue);
+    expect(regionData.flagsCollection.isSelected, Tristate.isFalse);
+    await tester.tap(region);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSemantics(region).getSemanticsData().flagsCollection.isSelected,
+      Tristate.isTrue,
+    );
+
+    await tester.enterText(search, 'private search phrase');
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsIdentifier('library-search'), findsOneWidget);
+    expect(
+      tester
+          .getSemantics(find.bySemanticsIdentifier('library-search'))
+          .identifier,
+      'library-search',
+    );
+    expect(
+      find.bySemanticsIdentifier('library-search private search phrase'),
+      findsNothing,
+    );
+    semantics.dispose();
+  });
 
   testWidgets(
     'reset restores the canonical query without launching a Library refresh',
@@ -376,6 +514,97 @@ void main() {
           tester.widgetList<Card>(builtRows).length,
           lessThan(rows.length),
         );
+        semantics.dispose();
+      },
+    );
+  }
+
+  for (final viewMode in LibraryViewMode.values) {
+    testWidgets(
+      'row actions remain separately actionable in ${viewMode.name} semantics',
+      (tester) async {
+        tester.view.physicalSize = const Size(900, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final semantics = tester.ensureSemantics();
+
+        final game = libraryRow(
+          id: 'abababababababababababababababab',
+          title: 'Actionable Game',
+        );
+        final reads = FakeLibraryReads()
+          ..onListGames = (_) => GamePage(items: [game]);
+        final gamesApi = FakeGamesApi();
+        final controller = await _readyController(reads, gamesApi: gamesApi);
+        addTearDown(controller.dispose);
+        controller.setViewMode(viewMode);
+
+        await tester.pumpWidget(_libraryHarness(controller: controller));
+        await tester.pumpAndSettle();
+
+        final rowIdentifier = controller
+            .rowCorrelationForIndex(0)!
+            .semanticsIdentifier;
+        final selectIdentifier = 'library-row-${game.gameId.value}-select';
+        final refreshIdentifier =
+            'library-row-${game.gameId.value}-force-refresh';
+        final row = find.bySemanticsIdentifier(rowIdentifier);
+        final select = find.bySemanticsIdentifier(selectIdentifier);
+        final forceRefresh = find.bySemanticsIdentifier(refreshIdentifier);
+
+        expect(row, findsOneWidget);
+        expect(select, findsOneWidget);
+        expect(forceRefresh, findsOneWidget);
+        final rowNode = tester.getSemantics(row);
+        final selectNode = tester.getSemantics(select);
+        final forceRefreshNode = tester.getSemantics(forceRefresh);
+        expect(rowNode.id, isNot(selectNode.id));
+        expect(rowNode.id, isNot(forceRefreshNode.id));
+        expect(selectNode.id, isNot(forceRefreshNode.id));
+        expect(
+          rowNode.getSemanticsData().label,
+          'Actionable Game, Nintendo Entertainment System',
+        );
+        expect(
+          rowNode.getSemanticsData().hasAction(SemanticsAction.tap),
+          isTrue,
+        );
+        expect(
+          rowNode.getSemanticsData().hasAction(SemanticsAction.longPress),
+          isTrue,
+        );
+
+        final selectData = selectNode.getSemanticsData();
+        expect(selectData.label, 'Select Actionable Game');
+        expect(selectData.hasAction(SemanticsAction.tap), isTrue);
+        expect(controller.state.selectedGameIds, isEmpty);
+        final initialCheckedState = selectData.flagsCollection.isChecked;
+        await tester.tap(select);
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {game.gameId});
+        expect(
+          tester
+              .getSemantics(select)
+              .getSemanticsData()
+              .flagsCollection
+              .isChecked,
+          isNot(initialCheckedState),
+        );
+
+        final refreshData = tester
+            .getSemantics(forceRefresh)
+            .getSemanticsData();
+        expect(refreshData.label, 'Force refresh this Game');
+        expect(refreshData.hasAction(SemanticsAction.tap), isTrue);
+        final refreshButton = find.descendant(
+          of: forceRefresh,
+          matching: find.byType(IconButton),
+        );
+        expect(refreshButton, findsOneWidget);
+        await tester.tap(refreshButton);
+        await tester.pumpAndSettle();
+        expect(gamesApi.refreshedGameIds, [game.gameId]);
+        expect(gamesApi.refreshModes, [RefreshMode.force]);
         semantics.dispose();
       },
     );
@@ -1105,6 +1334,7 @@ void main() {
 Future<LibraryController> _readyController(
   FakeLibraryReads reads, {
   FakeLibraryRefreshApi? refreshApi,
+  FakeGamesApi? gamesApi,
   FakeSourcesApi? sourcesApi,
   LibraryReconciliationDemandSource? demandSource,
   LibraryScope scope = const LibraryScope.platform('nintendo.nes'),
@@ -1115,7 +1345,7 @@ Future<LibraryController> _readyController(
     reads: reads,
     sources: sourcesApi ?? FakeSourcesApi(),
     refreshApi: refreshApi ?? FakeLibraryRefreshApi(),
-    gamesApi: FakeGamesApi(),
+    gamesApi: gamesApi ?? FakeGamesApi(),
     scope: scope,
     runtimeContext: readyLibraryRuntimeContext,
     demandSource:

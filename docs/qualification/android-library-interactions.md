@@ -135,6 +135,18 @@ approved, source-grounded transport and accessibility contract can observe the
 required facts. This implementation does not add ADB commands, invent
 selectors, or broaden the legacy runner.
 
+The Flutter Library exposes stable semantics identifiers for `library-search`,
+`library-sort-field`, `library-sort-direction`, `library-view-grid`,
+`library-view-list`, `library-filter-*`, and the separate
+`library-row-<GameId>-select` and `library-row-<GameId>-force-refresh` actions.
+Game detail semantics identify the current phase and distinguish requested,
+resolved, and redirect-target identities. The host widget tests verify these
+identifiers, labels, actions, and states. The Issue #27 parser and transport do
+not consume these identifiers, and they do not establish complete backend
+membership or change the authorized operation sequence. If the approved
+observation cannot prove complete membership, `membership` remains `BLOCKED`
+and its 23 dependent cases remain `NOT_RUN`.
+
 ## 5. Failure and physical qualification status
 
 No product mutation is retried after an uncertain result. The one Add & Scan

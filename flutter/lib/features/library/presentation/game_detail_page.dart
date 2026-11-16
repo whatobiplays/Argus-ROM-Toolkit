@@ -62,7 +62,7 @@ class _GameDetailPageState extends ConsumerState<GameDetailPage> {
           animation: controller,
           builder: (context, _) {
             final state = controller.state;
-            return switch (state.phase) {
+            final content = switch (state.phase) {
               GameDetailLoadPhase.preReady => const Center(
                 child: Text(
                   'Game detail is available when the runtime is ready.',
@@ -91,6 +91,18 @@ class _GameDetailPageState extends ConsumerState<GameDetailPage> {
                 onRetry: controller.reload,
               ),
             };
+            return Semantics(
+              container: true,
+              explicitChildNodes: true,
+              identifier:
+                  'game-detail-requested-identity-${state.requestedGameId.value}',
+              child: Semantics(
+                container: true,
+                explicitChildNodes: true,
+                identifier: 'game-detail-state-${state.phase.name}',
+                child: content,
+              ),
+            );
           },
         ),
       ),
@@ -286,8 +298,12 @@ class _OverviewSection extends StatelessWidget {
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        '${_gamePlatform(detail.platformId)} · ${detail.gameId.value}',
+                      Semantics(
+                        identifier:
+                            'game-detail-resolved-identity-${detail.gameId.value}',
+                        child: Text(
+                          '${_gamePlatform(detail.platformId)} · ${detail.gameId.value}',
+                        ),
                       ),
                       if (metadata?.presentationRegion case final region?)
                         Text('Region: $region'),
@@ -814,9 +830,14 @@ class _GameRedirect extends StatelessWidget {
       children: [
         const Text('This Game has moved.'),
         const SizedBox(height: 12),
-        FilledButton(
-          onPressed: () => onOpenGame(canonicalGameId),
-          child: const Text('Open canonical Game'),
+        MergeSemantics(
+          child: Semantics(
+            identifier: 'game-detail-redirect-target-${canonicalGameId.value}',
+            child: FilledButton(
+              onPressed: () => onOpenGame(canonicalGameId),
+              child: const Text('Open canonical Game'),
+            ),
+          ),
         ),
       ],
     ),
@@ -893,6 +914,7 @@ class _GameDetailRefreshFailure extends StatelessWidget {
                 const SizedBox(height: 4),
                 Semantics(
                   liveRegion: true,
+                  identifier: 'game-detail-refresh-failed',
                   label: failure.message,
                   child: Text(failure.message),
                 ),

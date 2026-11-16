@@ -351,16 +351,22 @@ class _LibraryHeader extends StatelessWidget {
               ),
               SegmentedButton<LibraryViewMode>(
                 key: const ValueKey<String>('library-view-mode'),
-                segments: const [
+                segments: [
                   ButtonSegment(
                     value: LibraryViewMode.grid,
                     icon: Icon(Icons.grid_view),
-                    label: Text('Grid'),
+                    label: Semantics(
+                      identifier: 'library-view-grid',
+                      child: Text('Grid'),
+                    ),
                   ),
                   ButtonSegment(
                     value: LibraryViewMode.list,
                     icon: Icon(Icons.view_list),
-                    label: Text('List'),
+                    label: Semantics(
+                      identifier: 'library-view-list',
+                      child: Text('List'),
+                    ),
                   ),
                 ],
                 selected: {state.viewMode},
@@ -397,61 +403,85 @@ class _LibraryHeader extends StatelessWidget {
     );
   }
 
-  Widget _searchField() => TextField(
-    key: const ValueKey<String>('library-search'),
-    controller: searchController,
-    onChanged: onSearchChanged,
-    textInputAction: TextInputAction.search,
-    decoration: const InputDecoration(
-      border: OutlineInputBorder(),
-      prefixIcon: Icon(Icons.search),
-      hintText: 'Search title, alternate title, or platform',
-      labelText: 'Search Library',
+  Widget _searchField() => Semantics(
+    identifier: 'library-search',
+    child: TextField(
+      key: const ValueKey<String>('library-search'),
+      controller: searchController,
+      onChanged: onSearchChanged,
+      textInputAction: TextInputAction.search,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        prefixIcon: Icon(Icons.search),
+        hintText: 'Search title, alternate title, or platform',
+        labelText: 'Search Library',
+      ),
     ),
   );
 
-  Widget _sortField() => DropdownButton<LibrarySortField>(
-    value: state.sort.field,
-    onChanged: (field) {
-      if (field == null) return;
-      onSortChanged(LibrarySort(field: field, direction: state.sort.direction));
-    },
-    items: const [
-      DropdownMenuItem(
-        value: LibrarySortField.displayTitle,
-        child: Text('Title'),
-      ),
-      DropdownMenuItem(
-        value: LibrarySortField.platform,
-        child: Text('Platform'),
-      ),
-      DropdownMenuItem(
-        value: LibrarySortField.releaseDate,
-        child: Text('Release date'),
-      ),
-      DropdownMenuItem(
-        value: LibrarySortField.updatedAt,
-        child: Text('Updated'),
-      ),
-    ],
-  );
-
-  Widget _sortDirectionButton() => IconButton(
-    tooltip: state.sort.direction == LibrarySortDirection.ascending
-        ? 'Ascending'
-        : 'Descending',
-    onPressed: () => onSortChanged(
-      LibrarySort(
-        field: state.sort.field,
-        direction: state.sort.direction == LibrarySortDirection.ascending
-            ? LibrarySortDirection.descending
-            : LibrarySortDirection.ascending,
+  Widget _sortField() => MergeSemantics(
+    child: Semantics(
+      identifier: 'library-sort-field',
+      label: switch (state.sort.field) {
+        LibrarySortField.displayTitle => 'Title',
+        LibrarySortField.platform => 'Platform',
+        LibrarySortField.releaseDate => 'Release date',
+        LibrarySortField.updatedAt => 'Updated',
+      },
+      child: DropdownButton<LibrarySortField>(
+        value: state.sort.field,
+        onChanged: (field) {
+          if (field == null) return;
+          onSortChanged(
+            LibrarySort(field: field, direction: state.sort.direction),
+          );
+        },
+        items: const [
+          DropdownMenuItem(
+            value: LibrarySortField.displayTitle,
+            child: Text('Title'),
+          ),
+          DropdownMenuItem(
+            value: LibrarySortField.platform,
+            child: Text('Platform'),
+          ),
+          DropdownMenuItem(
+            value: LibrarySortField.releaseDate,
+            child: Text('Release date'),
+          ),
+          DropdownMenuItem(
+            value: LibrarySortField.updatedAt,
+            child: Text('Updated'),
+          ),
+        ],
       ),
     ),
-    icon: Icon(
-      state.sort.direction == LibrarySortDirection.ascending
-          ? Icons.arrow_upward
-          : Icons.arrow_downward,
+  );
+
+  Widget _sortDirectionButton() => MergeSemantics(
+    child: Semantics(
+      identifier: 'library-sort-direction',
+      label: state.sort.direction == LibrarySortDirection.ascending
+          ? 'Ascending'
+          : 'Descending',
+      child: IconButton(
+        tooltip: state.sort.direction == LibrarySortDirection.ascending
+            ? 'Ascending'
+            : 'Descending',
+        onPressed: () => onSortChanged(
+          LibrarySort(
+            field: state.sort.field,
+            direction: state.sort.direction == LibrarySortDirection.ascending
+                ? LibrarySortDirection.descending
+                : LibrarySortDirection.ascending,
+          ),
+        ),
+        icon: Icon(
+          state.sort.direction == LibrarySortDirection.ascending
+              ? Icons.arrow_upward
+              : Icons.arrow_downward,
+        ),
+      ),
     ),
   );
 }
@@ -488,13 +518,18 @@ class _LibraryFilters extends StatelessWidget {
     final wire = _platformWire(bucket.platformId);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(
-          '${_platformShortLabel(bucket.platformId)} (${bucket.count})',
-        ),
-        selected: filters.platformIds.contains(wire),
-        onSelected: (_) => onFiltersChanged(
-          _withStringFilter(filters, wire, FilterDimension.platform),
+      child: MergeSemantics(
+        child: Semantics(
+          identifier: 'library-filter-platform-$wire',
+          child: FilterChip(
+            label: Text(
+              '${_platformShortLabel(bucket.platformId)} (${bucket.count})',
+            ),
+            selected: filters.platformIds.contains(wire),
+            onSelected: (_) => onFiltersChanged(
+              _withStringFilter(filters, wire, FilterDimension.platform),
+            ),
+          ),
         ),
       ),
     );
@@ -503,11 +538,17 @@ class _LibraryFilters extends StatelessWidget {
   Widget _regionChip(RegionFacetBucket bucket, LibraryFilter filters) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text('${bucket.region.toUpperCase()} (${bucket.count})'),
-        selected: filters.regions.contains(bucket.region),
-        onSelected: (_) => onFiltersChanged(
-          _withStringFilter(filters, bucket.region, FilterDimension.region),
+      child: MergeSemantics(
+        child: Semantics(
+          identifier:
+              'library-filter-region-${Uri.encodeComponent(bucket.region)}',
+          child: FilterChip(
+            label: Text('${bucket.region.toUpperCase()} (${bucket.count})'),
+            selected: filters.regions.contains(bucket.region),
+            onSelected: (_) => onFiltersChanged(
+              _withStringFilter(filters, bucket.region, FilterDimension.region),
+            ),
+          ),
         ),
       ),
     );
@@ -519,13 +560,18 @@ class _LibraryFilters extends StatelessWidget {
   ) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(
-          '${_hydrationLabel(bucket.hydrationState)} (${bucket.count})',
-        ),
-        selected: filters.hydrationStates.contains(bucket.hydrationState),
-        onSelected: (_) => onFiltersChanged(
-          _withHydrationFilter(filters, bucket.hydrationState),
+      child: MergeSemantics(
+        child: Semantics(
+          identifier: 'library-filter-hydration-${bucket.hydrationState.name}',
+          child: FilterChip(
+            label: Text(
+              '${_hydrationLabel(bucket.hydrationState)} (${bucket.count})',
+            ),
+            selected: filters.hydrationStates.contains(bucket.hydrationState),
+            onSelected: (_) => onFiltersChanged(
+              _withHydrationFilter(filters, bucket.hydrationState),
+            ),
+          ),
         ),
       ),
     );
@@ -537,13 +583,21 @@ class _LibraryFilters extends StatelessWidget {
   ) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(
-          '${_availabilityLabel(bucket.availabilityState)} (${bucket.count})',
-        ),
-        selected: filters.availabilityStates.contains(bucket.availabilityState),
-        onSelected: (_) => onFiltersChanged(
-          _withAvailabilityFilter(filters, bucket.availabilityState),
+      child: MergeSemantics(
+        child: Semantics(
+          identifier:
+              'library-filter-availability-${bucket.availabilityState.name}',
+          child: FilterChip(
+            label: Text(
+              '${_availabilityLabel(bucket.availabilityState)} (${bucket.count})',
+            ),
+            selected: filters.availabilityStates.contains(
+              bucket.availabilityState,
+            ),
+            onSelected: (_) => onFiltersChanged(
+              _withAvailabilityFilter(filters, bucket.availabilityState),
+            ),
+          ),
         ),
       ),
     );
@@ -604,6 +658,10 @@ LibraryFilter _withAvailabilityFilter(
   );
 }
 
+/// Uses selection behavior for row activation when selection is already active.
+///
+/// With no selection, a plain activation opens the Game. Shift selects a range,
+/// while Control/Command toggles selection regardless of current selection.
 void _activateLibraryGame({
   required LibraryState state,
   required LibraryController controller,
@@ -621,7 +679,7 @@ void _activateLibraryGame({
       pressedKeys.contains(LogicalKeyboardKey.metaRight);
   if (shiftPressed) {
     controller.selectRange(gameId);
-  } else if (togglePressed || state.selectedGameIds.contains(gameId)) {
+  } else if (togglePressed || state.selectedGameIds.isNotEmpty) {
     controller.toggleSelection(gameId);
   } else {
     onOpen(gameId);
@@ -984,9 +1042,12 @@ class _GameCard extends StatelessWidget {
       color: selected ? Theme.of(context).colorScheme.secondaryContainer : null,
       child: Semantics(
         container: true,
+        explicitChildNodes: true,
         identifier: rowIdentifier,
         label: '${game.displayTitle}, ${_platformLabel(game.platformId)}',
         selected: selected,
+        onTap: () => onTap(game.gameId),
+        onLongPress: () => onToggleSelection(game.gameId),
         child: Focus(
           onKeyEvent: (node, event) {
             if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -1013,6 +1074,7 @@ class _GameCard extends StatelessWidget {
             return KeyEventResult.ignored;
           },
           child: InkWell(
+            excludeFromSemantics: true,
             onTap: () => onTap(game.gameId),
             onLongPress: () => onToggleSelection(game.gameId),
             child: Padding(
@@ -1025,19 +1087,33 @@ class _GameCard extends StatelessWidget {
                         Positioned(
                           top: -8,
                           right: -8,
-                          child: Checkbox(
-                            value: selected,
-                            onChanged: (_) => onToggleSelection(game.gameId),
+                          child: Semantics(
+                            identifier:
+                                'library-row-${game.gameId.value}-select',
+                            child: Checkbox(
+                              value: selected,
+                              semanticLabel: 'Select ${game.displayTitle}',
+                              onChanged: (_) => onToggleSelection(game.gameId),
+                            ),
                           ),
                         ),
                         Positioned(
                           bottom: -4,
                           right: -4,
-                          child: IconButton(
-                            tooltip: 'Force refresh this Game',
-                            onPressed: () =>
-                                unawaited(onForceRefresh(game.gameId)),
-                            icon: const Icon(Icons.restart_alt),
+                          child: Semantics(
+                            identifier:
+                                'library-row-${game.gameId.value}-force-refresh',
+                            label: 'Force refresh this Game',
+                            button: true,
+                            onTap: () => unawaited(onForceRefresh(game.gameId)),
+                            child: ExcludeSemantics(
+                              child: IconButton(
+                                tooltip: 'Force refresh this Game',
+                                onPressed: () =>
+                                    unawaited(onForceRefresh(game.gameId)),
+                                icon: const Icon(Icons.restart_alt),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -1045,15 +1121,28 @@ class _GameCard extends StatelessWidget {
                   : Row(
                       children: [
                         Expanded(child: content),
-                        Checkbox(
-                          value: selected,
-                          onChanged: (_) => onToggleSelection(game.gameId),
+                        Semantics(
+                          identifier: 'library-row-${game.gameId.value}-select',
+                          child: Checkbox(
+                            value: selected,
+                            semanticLabel: 'Select ${game.displayTitle}',
+                            onChanged: (_) => onToggleSelection(game.gameId),
+                          ),
                         ),
-                        IconButton(
-                          tooltip: 'Force refresh this Game',
-                          onPressed: () =>
-                              unawaited(onForceRefresh(game.gameId)),
-                          icon: const Icon(Icons.restart_alt),
+                        Semantics(
+                          identifier:
+                              'library-row-${game.gameId.value}-force-refresh',
+                          label: 'Force refresh this Game',
+                          button: true,
+                          onTap: () => unawaited(onForceRefresh(game.gameId)),
+                          child: ExcludeSemantics(
+                            child: IconButton(
+                              tooltip: 'Force refresh this Game',
+                              onPressed: () =>
+                                  unawaited(onForceRefresh(game.gameId)),
+                              icon: const Icon(Icons.restart_alt),
+                            ),
+                          ),
                         ),
                         const Icon(Icons.chevron_right),
                       ],

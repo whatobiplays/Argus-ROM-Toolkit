@@ -467,7 +467,8 @@ void main() {
           ..onListGames = (request) => request.cursor == null
               ? GamePage(items: rows.take(50).toList(), nextCursor: 'cursor-1')
               : GamePage(items: rows.skip(50).toList());
-        final controller = await _readyController(reads);
+        final gamesApi = FakeGamesApi();
+        final controller = await _readyController(reads, gamesApi: gamesApi);
         addTearDown(controller.dispose);
         await controller.loadMore();
         controller.setViewMode(viewMode);
@@ -477,6 +478,18 @@ void main() {
 
         final pageTwo = controller.pageBoundaryForRow(50)!;
         final rowFifty = controller.rowCorrelationForIndex(50)!;
+        final gameFifty = rows[50];
+        final selectIdentifier = 'library-row-${gameFifty.gameId.value}-select';
+        final refreshIdentifier =
+            'library-row-${gameFifty.gameId.value}-force-refresh';
+        final select = find.bySemanticsIdentifier(selectIdentifier);
+        final forceRefresh = find.bySemanticsIdentifier(refreshIdentifier);
+        final selectSemantics = find.semantics.byPredicate(
+          (node) => node.identifier == selectIdentifier,
+        );
+        final refreshSemantics = find.semantics.byPredicate(
+          (node) => node.identifier == refreshIdentifier,
+        );
         expect(
           find.bySemanticsIdentifier(pageTwo.semanticsIdentifier),
           findsNothing,
@@ -485,6 +498,10 @@ void main() {
           find.bySemanticsIdentifier(rowFifty.semanticsIdentifier),
           findsNothing,
         );
+        expect(select, findsNothing);
+        expect(forceRefresh, findsNothing);
+        expect(selectSemantics, findsNothing);
+        expect(refreshSemantics, findsNothing);
 
         final scrollable = viewMode == LibraryViewMode.grid
             ? find.byType(GridView)
@@ -502,6 +519,50 @@ void main() {
           find.bySemanticsIdentifier(rowFifty.semanticsIdentifier),
           findsOneWidget,
         );
+        expect(select, findsOneWidget);
+        expect(forceRefresh, findsOneWidget);
+        expect(selectSemantics, findsOneWidget);
+        expect(refreshSemantics, findsOneWidget);
+        final pageTwoNode = tester.getSemantics(
+          find.bySemanticsIdentifier(pageTwo.semanticsIdentifier),
+        );
+        final rowFiftyNode = tester.getSemantics(
+          find.bySemanticsIdentifier(rowFifty.semanticsIdentifier),
+        );
+        final selectNode = tester.getSemantics(select);
+        final refreshNode = tester.getSemantics(forceRefresh);
+        expect({
+          pageTwoNode.id,
+          rowFiftyNode.id,
+          selectNode.id,
+          refreshNode.id,
+        }, hasLength(4));
+        final selectData = selectNode.getSemanticsData();
+        expect(selectData.label, 'Select Game 50');
+        expect(selectData.hasAction(SemanticsAction.tap), isTrue);
+        expect(controller.state.selectedGameIds, isEmpty);
+        final initialCheckedState = selectData.flagsCollection.isChecked;
+        tester.semantics.tap(selectSemantics);
+        await tester.pumpAndSettle();
+        expect(controller.state.selectedGameIds, {gameFifty.gameId});
+        expect(
+          tester
+              .getSemantics(select)
+              .getSemanticsData()
+              .flagsCollection
+              .isChecked,
+          isNot(initialCheckedState),
+        );
+
+        final refreshNodeAfterSelection = tester.getSemantics(forceRefresh);
+        final refreshData = refreshNodeAfterSelection.getSemanticsData();
+        expect(refreshData.label, 'Force refresh this Game');
+        expect(refreshData.hasAction(SemanticsAction.tap), isTrue);
+        tester.semantics.tap(refreshSemantics);
+        await tester.pumpAndSettle();
+        expect(gamesApi.refreshedGameIds, [gameFifty.gameId]);
+        expect(gamesApi.refreshModes, [RefreshMode.force]);
+
         final builtRows = find.byWidgetPredicate(
           (widget) =>
               widget is Card &&

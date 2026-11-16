@@ -498,14 +498,39 @@ class CurrentNamingInventoryTests(unittest.TestCase):
             }
             for relative in ISSUE28_CLASSIFICATIONS
         ]
-        self.assertEqual(current["surfaces"][issue27_end:], expected_issue28)
+        issue28_end = issue27_end + len(expected_issue28)
+        self.assertEqual(current["surfaces"][issue27_end:issue28_end], expected_issue28)
+        expected_readiness_surfaces = [
+            {
+                "path": relative,
+                "classification": "active",
+                "region": {"kind": "file"},
+            }
+            for relative in (
+                "scripts/android_qualification/readiness_probe_artifact.py",
+                "scripts/android_qualification/readiness_probe_session.py",
+                "scripts/android_qualification/test_readiness_probe_artifact.py",
+                "scripts/android_qualification/test_readiness_probe_session.py",
+                "scripts/android_qualification/readiness_probe.py",
+                "scripts/android_qualification/test_readiness_probe.py",
+                "docs/qualification/android-readiness-probe.md",
+            )
+        ] + [
+            {
+                "path": ".github/workflows/ci.yml",
+                "classification": "active",
+                "region": {"kind": "yaml_job", "name": "android-readiness-probe"},
+            }
+        ]
+        self.assertEqual(current["surfaces"][issue28_end:], expected_readiness_surfaces)
         self.assertEqual(
             len(current["surfaces"]),
             len(retained_archived)
             + len(expected_issue24)
             + len(expected_issue25)
             + len(expected_issue27)
-            + len(expected_issue28),
+            + len(expected_issue28)
+            + len(expected_readiness_surfaces),
         )
 
     def test_issue25_files_are_active_whole_file_classifications(self) -> None:

@@ -492,3 +492,55 @@ jobs:
             flutter/build/qualification/qualification-build.json
             flutter/build/qualification/native-build.json
             flutter/build/qualification/prebuild-source.json
+
+  android-readiness-probe:
+    name: Isolated Android Readiness probe
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up repository-pinned just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: 1.58.0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install standalone Android SDK
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - name: Verify standalone task graph
+        run: |
+          android-readiness-probe/gradlew -p android-readiness-probe tasks --all
+          android-readiness-probe/gradlew -p android-readiness-probe testProbeUnitTest lintProbe assembleProbe --dry-run
+      - name: Test, lint and build unsigned probe
+        run: android-readiness-probe/gradlew -p android-readiness-probe testProbeUnitTest lintProbe assembleProbe
+      - name: Run host-only probe and qualification tests
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/android_qualification -p 'test_*.py' -t .
+      - name: Sign disposable CI test copy and inspect artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          probe_signing_dir="$(mktemp -d "${RUNNER_TEMP}/probe-signing.XXXXXX")"
+          trap 'rm -rf "$probe_signing_dir"' EXIT
+          export PROBE_TEST_PASSWORD
+          PROBE_TEST_PASSWORD="$(openssl rand -hex 32)"
+          keytool -genkeypair -keystore "$probe_signing_dir/test-keystore" -storetype PKCS12 \
+            -storepass:env PROBE_TEST_PASSWORD -keypass:env PROBE_TEST_PASSWORD \
+            -alias probe -keyalg RSA -keysize 2048 -validity 1 -dname "CN=Disposable probe CI" >/dev/null 2>&1
+          probe_unsigned="$(find android-readiness-probe/build/outputs/apk/probe -name '*-unsigned.apk' -type f)"
+          test -f "$probe_unsigned"
+          probe_tools="${ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          "$probe_tools/apksigner" sign --ks "$probe_signing_dir/test-keystore" \
+            --ks-pass env:PROBE_TEST_PASSWORD --key-pass env:PROBE_TEST_PASSWORD \
+            --out "$probe_signing_dir/test.apk" "$probe_unsigned"
+          "$probe_tools/apksigner" verify --verbose --print-certs "$probe_signing_dir/test.apk"
+          probe_certificate="$("$probe_tools/apksigner" verify --print-certs "$probe_signing_dir/test.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          python3 -m scripts.android_qualification.readiness_probe_artifact \
+            --apk "$probe_signing_dir/test.apk" --source-commit "$GITHUB_SHA" \
+            --certificate-sha256 "$probe_certificate" \
+            --aapt2 "$probe_tools/aapt2" --apksigner "$probe_tools/apksigner"

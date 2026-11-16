@@ -23,9 +23,16 @@ CODES = frozenset('Busy Cancelled TimedOut StaleLibraryView InvalidLibraryViewTo
 HEX = re.compile(r'[0-9a-f]{32}\Z')
 
 class ProbeError(ValueError):
-    """Carries a closed classification, never raw transport or payload text."""
-    def __init__(self, code='MalformedRequest', stage='Validate'):
+    """Carries closed failure codes, never raw transport or payload text.
+
+    Secondary codes describe host request and release failures only. They are
+    retained in the private record envelope, not the wire or receipt schema.
+    """
+    def __init__(self, code='MalformedRequest', stage='Validate', *,
+                 request_failure_code=None, cleanup_failure_code=None):
         self.code, self.stage = code, stage
+        self.request_failure_code = request_failure_code
+        self.cleanup_failure_code = cleanup_failure_code
         super().__init__(code)
 
 def require(ok, code='MalformedRequest', stage='Validate'):
@@ -135,12 +142,31 @@ def validate_receipt(receipt):
     require(len(compact(receipt))<=4096,'ResourceLimitExceeded')
 
 
+def validate_host_failures(causes, receipt):
+    """Validate optional private host metadata beside the unchanged receipt."""
+    require(type(causes) is dict
+            and set(causes) in ({'cleanup_code'}, {'cleanup_code','request_code'}),
+            'IntegrityConflict')
+    require(receipt['failure_code']=='IncompleteEvidence'
+            and receipt['failure_stage']=='Transport'
+            and type(causes['cleanup_code']) is str
+            and causes['cleanup_code']=='IncompleteEvidence','IntegrityConflict')
+    if 'request_code' in causes:
+        require(type(causes['request_code']) is str
+                and causes['request_code'] in CODES | {'Disconnected','ProcessLost'},
+                'IntegrityConflict')
+
+
 class EvidenceStore:
     """Private, non-evicting hash chain; retain the returned head separately.
 
     A hash chain detects edits and reordering. Detecting tail deletion requires
     the caller's separately retained expected head. It is not an authenticity
     signature and does not protect against a malicious filesystem owner.
+
+    Optional host_failures metadata preserves request and cleanup causes beside
+    the closed receipt. It is covered by the record hash. Earlier records
+    without that metadata remain readable.
     """
     def __init__(self, root: Path):
         self.root=Path(root)
@@ -161,11 +187,14 @@ class EvidenceStore:
         require(slot in self.reserved and slot==self.next_slot-1,'IntegrityConflict')
         self.reserved.remove(slot)
         self.next_slot-=1
-    def append(self, slot, receipt):
+    def append(self, slot, receipt, *, host_failures=None):
         require(slot in self.reserved and slot == len(self.records),'IntegrityConflict')
         validate_receipt(receipt)
         previous=self.records[-1]['digest'] if self.records else '0'*64
         entry={'sequence':slot,'previous':previous,'receipt':receipt}
+        if host_failures is not None:
+            validate_host_failures(host_failures, receipt)
+            entry['host_failures']=dict(host_failures)
         entry['digest']=hashlib.sha256(compact(entry)).hexdigest()
         path=self.root/f'{slot:02d}.json'
         fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
@@ -192,9 +221,14 @@ class EvidenceStore:
                     return dict(pairs)
                 entry=json.loads(path.read_bytes(),object_pairs_hook=unique_pairs)
                 digest=entry.pop('digest')
-                require(set(entry)=={'sequence','previous','receipt'} and type(entry['sequence']) is int and entry['sequence']==i and entry['previous']==previous,'IntegrityConflict')
+                require(set(entry) in ({'sequence','previous','receipt'},
+                                      {'sequence','previous','receipt','host_failures'})
+                        and type(entry['sequence']) is int and entry['sequence']==i
+                        and entry['previous']==previous,'IntegrityConflict')
                 require(hashlib.sha256(compact(entry)).hexdigest()==digest,'IntegrityConflict')
                 validate_receipt(entry['receipt'])
+                if 'host_failures' in entry:
+                    validate_host_failures(entry['host_failures'], entry['receipt'])
                 entry['digest']=digest
             except (KeyError,ValueError,TypeError): raise ProbeError('IntegrityConflict') from None
             records.append(entry); previous=digest
@@ -224,7 +258,7 @@ class AttemptRunner:
         require(int((deadline-started)*1000)>0,'TimedOut')
         slot=self.store.reserve()
         self.used.update(vars(ids).values()); self.active=True
-        body_count=0; sent_cancel=False; result=None; failure=None
+        body_count=0; sent_cancel=False; result=None; failure=None; cleanup_failure=None
         payload=frame(request(ids,min(5000,int((deadline-started)*1000))),REQUEST_CAP)
         def checkpoint():
             nonlocal sent_cancel
@@ -263,10 +297,18 @@ class AttemptRunner:
             try:
                 transport.close(release_deadline)
                 require(self.clock()<=release_deadline,'IncompleteEvidence','Transport')
-            except Exception: failure=ProbeError('IncompleteEvidence','Transport')
+            except Exception: cleanup_failure=ProbeError('IncompleteEvidence','Transport')
             self.active=False
         finished=self.clock()
-        if finished>=deadline: failure=ProbeError('TimedOut','Transport')
+        if finished>=deadline and failure is None:
+            failure=ProbeError('TimedOut','Transport')
+        if cleanup_failure is not None:
+            # Unverified release takes precedence. The receipt's existing host
+            # interval retains deadline overrun evidence; callers also receive
+            # both closed codes without exposing raw cleanup exceptions.
+            failure=ProbeError('IncompleteEvidence','Transport',
+                               request_failure_code=failure.code if failure else None,
+                               cleanup_failure_code=cleanup_failure.code)
         if failure is None:
             self.store.release(slot)
             return result
@@ -275,6 +317,11 @@ class AttemptRunner:
                  'failure_stage':failure.stage if failure else 'Read',
                  'host_started':int(started*1000),'host_deadline':int(deadline*1000),'host_finished':int(finished*1000),
                  'request_body_bytes':len(payload)-4,'response_body_bytes':body_count,'sanitizer_version':'1'}
-        self.store.append(slot,receipt)
+        causes=None
+        if cleanup_failure is not None:
+            causes={'cleanup_code':cleanup_failure.code}
+            if failure.request_failure_code is not None:
+                causes['request_code']=failure.request_failure_code
+        self.store.append(slot,receipt,host_failures=causes)
         if failure: raise failure
         return result

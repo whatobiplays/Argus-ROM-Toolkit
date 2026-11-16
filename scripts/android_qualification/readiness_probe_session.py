@@ -14,8 +14,8 @@ from .readiness_probe import require, ProbeError, HEX, compact, uint
 class Discovery:
     """Private probe-source transcription, not independent OS evidence.
 
-    Android elapsed endpoints can include the five-second discovery window and
-    its one-second release allowance. The six-second interval cap does not
+    Android elapsed endpoints must cover the five-second discovery window and
+    may include its one-second release allowance. The six-second cap does not
     extend the five-second admission gate. Host and Android times stay separate;
     these source-bound values provide no cryptographic host authentication.
     """
@@ -30,7 +30,7 @@ class Discovery:
     def __post_init__(self):
         require(uint(self.android_started_ms,64) and uint(self.android_finished_ms,64)
                 and self.android_started_ms<=self.android_finished_ms
-                and self.android_finished_ms-self.android_started_ms<=6000,'IncompleteEvidence')
+                and 5000<=self.android_finished_ms-self.android_started_ms<=6000,'IncompleteEvidence')
 
 class ForwardAdapter(Protocol):
     """All calls honor the absolute host-monotonic deadline, including I/O.
@@ -120,11 +120,21 @@ class ForwardSession:
         self.state='Armed'
 
     def correlate(self,observation,host_started,host_finished,response_bytes,owner_confirmed):
+        """Review completed discovery within the original session authority.
+
+        The host interval describes the connection attempt, not owner review.
+        It must finish inside the five-second admission window. The probe's
+        full-window result and owner confirmation can arrive later; neither
+        starts a new window or extends the authorized session.
+        """
         require(self.state=='Armed')
         self.state='Rejected'
         require(isinstance(observation,Discovery),'IncompleteEvidence')
-        deadline=self.phase_deadline(limit=self.armed+5)
-        require(owner_confirmed is True and self.armed<=host_started<=host_finished<=self.clock(),'IncompleteEvidence')
+        deadline=self.phase_deadline()
+        require(owner_confirmed is True
+                and self.clock()>=self.armed+5
+                and self.armed<=host_started<=host_finished<self.armed+5
+                and host_finished<=self.clock(),'IncompleteEvidence')
         require(observation.session==self.session and observation.attempt==self.attempt and observation.endpoint==self.remote,'IntegrityConflict')
         require(observation.count==1 and type(observation.uid) is int and 0<=observation.uid<2**32 and response_bytes==0,'IntegrityConflict')
         self.check_identity(deadline)

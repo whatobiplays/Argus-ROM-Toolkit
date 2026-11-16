@@ -211,3 +211,181 @@ class ReceiptSchemaTests(unittest.TestCase):
                 store.append(slot,complete_receipt())
             self.assertEqual(store.records,[])
             self.assertIn(slot,store.reserved)
+
+class CleanupFailurePrecedenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = p.EvidenceStore(Path(self.temp.name)/'private')
+        self.now = [1]
+        self.runner = p.AttemptRunner(self.store, lambda: self.now[0])
+        self.ids = p.Identity('a'*32, 'b'*32, 'c'*32)
+        self.refs = {key: 'opaque' for key in (
+            'target_ref', 'artifact_ref', 'authorization_ref', 'rules_ref',
+            'assertion_alias', 'evidence_ref')}
+        self.transport = MemoryTransport(p.frame(p.success(self.ids, 1, 2), p.RESPONSE_CAP))
+
+    def timeout_request(self):
+        def read(count, deadline):
+            self.now[0] = deadline
+            raise TimeoutError()
+        self.transport.read = read
+
+    def assert_failure(self, code):
+        with self.assertRaises(p.ProbeError) as caught:
+            self.runner.run(self.ids, self.transport, 10, self.refs)
+        self.assertEqual(caught.exception.code, code)
+        receipt = self.store.verify()[0]['receipt']
+        self.assertEqual(receipt['failure_code'], code)
+        self.assertFalse(self.runner.active)
+        return caught.exception, receipt
+
+    def test_timeout_with_verified_cleanup_remains_timeout(self):
+        self.timeout_request()
+        self.assert_failure('TimedOut')
+        self.assertTrue(self.transport.closed)
+
+    def test_cleanup_failure_before_request_deadline_is_not_success(self):
+        def close(deadline):
+            raise OSError('private cleanup detail')
+        self.transport.close = close
+        error, _ = self.assert_failure('IncompleteEvidence')
+        self.assertIsNone(error.request_failure_code)
+        self.assertEqual(error.cleanup_failure_code, 'IncompleteEvidence')
+        self.assertEqual(self.store.verify()[0]['host_failures'],
+                         {'cleanup_code': 'IncompleteEvidence'})
+        self.assertFalse(self.transport.closed)
+        self.assertNotIn('private cleanup detail', str(error))
+
+    def test_timeout_cannot_hide_failed_resource_release(self):
+        self.timeout_request()
+        def close(deadline):
+            raise OSError('private cleanup detail')
+        self.transport.close = close
+        error, receipt = self.assert_failure('IncompleteEvidence')
+        self.assertEqual(error.request_failure_code, 'TimedOut')
+        self.assertEqual(error.cleanup_failure_code, 'IncompleteEvidence')
+        self.assertEqual(self.store.verify()[0]['host_failures'], {
+            'request_code': 'TimedOut', 'cleanup_code': 'IncompleteEvidence'})
+        self.assertGreaterEqual(receipt['host_finished'], receipt['host_deadline'])
+        self.assertFalse(self.transport.closed)
+
+    def test_cleanup_overrun_after_request_timeout_remains_unverified(self):
+        self.timeout_request()
+        def close(deadline):
+            self.now[0] = deadline + 0.1
+        self.transport.close = close
+        error, receipt = self.assert_failure('IncompleteEvidence')
+        self.assertEqual(error.request_failure_code, 'TimedOut')
+        self.assertEqual(error.cleanup_failure_code, 'IncompleteEvidence')
+        self.assertGreater(receipt['host_finished'], receipt['host_deadline'])
+        self.assertFalse(self.transport.closed)
+
+class VerifiedLateCleanupTests(unittest.TestCase):
+    def run_attempt(self, request_failure, finished):
+        with tempfile.TemporaryDirectory() as directory:
+            store = p.EvidenceStore(Path(directory)/'private')
+            now = [1]
+            runner = p.AttemptRunner(store, lambda: now[0])
+            ids = p.Identity('a'*32, 'b'*32, 'c'*32)
+            refs = {key: 'opaque' for key in (
+                'target_ref', 'artifact_ref', 'authorization_ref', 'rules_ref',
+                'assertion_alias', 'evidence_ref')}
+            response = p.success(ids, 1, 2)
+            if request_failure == 'Busy':
+                response = {**p.base(ids), 'outcome': {
+                    'kind': 'Failure', 'code': 'Busy', 'stage': 'Read'}}
+            transport = MemoryTransport(p.frame(response, p.RESPONSE_CAP))
+            original_read = transport.read
+            def read(count, deadline):
+                result = original_read(count, deadline)
+                if not transport.data:
+                    now[0] = 5.5
+                return result
+            def close(deadline):
+                self.assertEqual(deadline, 6.5)
+                now[0] = finished
+                transport.closed = True
+            transport.read = read
+            transport.close = close
+            expected = request_failure or 'TimedOut'
+            with self.assertRaises(p.ProbeError) as caught:
+                runner.run(ids, transport, 10, refs,
+                           lambda: request_failure == 'Cancelled')
+            self.assertEqual(caught.exception.code, expected)
+            self.assertEqual(store.verify()[0]['receipt']['failure_code'], expected)
+            self.assertTrue(transport.closed)
+
+    def test_late_verified_close_preserves_observer_failure(self):
+        for finished in (6, 6.1):
+            with self.subTest(finished=finished):
+                self.run_attempt('Busy', finished)
+
+    def test_late_verified_close_preserves_cancellation(self):
+        for finished in (6, 6.1):
+            with self.subTest(finished=finished):
+                self.run_attempt('Cancelled', finished)
+
+    def test_late_completion_cannot_turn_success_into_a_verified_attempt(self):
+        for finished in (6, 6.1):
+            with self.subTest(finished=finished):
+                self.run_attempt(None, finished)
+
+class HostFailureEnvelopeTests(unittest.TestCase):
+    def test_both_failure_causes_survive_durable_readback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = p.EvidenceStore(Path(directory)/'private')
+            receipt = {**complete_receipt(), 'failure_code': 'IncompleteEvidence'}
+            causes = {'request_code': 'TimedOut', 'cleanup_code': 'IncompleteEvidence'}
+            store.append(store.reserve(), receipt, host_failures=causes)
+            replay = p.EvidenceStore(store.root).verify()[0]
+            self.assertEqual(replay['host_failures'], causes)
+            self.assertEqual(set(replay['receipt']), p.RECEIPT_FIELDS)
+
+    def test_unknown_or_inconsistent_host_causes_are_rejected(self):
+        for causes in ({'raw': 'private detail'}, {'request_code': 'TimedOut'},
+                       {'cleanup_code': 'TimedOut'},
+                       {'cleanup_code': 'IncompleteEvidence', 'request_code': '/private/path'}):
+            with self.subTest(causes=causes), tempfile.TemporaryDirectory() as directory:
+                store = p.EvidenceStore(Path(directory)/'private')
+                receipt = {**complete_receipt(), 'failure_code': 'IncompleteEvidence'}
+                with self.assertRaises(p.ProbeError):
+                    store.append(store.reserve(), receipt, host_failures=causes)
+                self.assertEqual(list(store.root.iterdir()), [])
+
+    def test_recomputed_hash_cannot_authorize_invalid_host_causes(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            store = p.EvidenceStore(Path(directory)/'private')
+            receipt = {**complete_receipt(), 'failure_code': 'IncompleteEvidence'}
+            store.append(store.reserve(), receipt,
+                         host_failures={'cleanup_code': 'IncompleteEvidence'})
+            path = next(store.root.iterdir())
+            entry = json.loads(path.read_bytes())
+            entry['host_failures']['request_code'] = 'Unrecognized'
+            del entry['digest']
+            entry['digest'] = hashlib.sha256(p.compact(entry)).hexdigest()
+            path.write_bytes(p.compact(entry))
+            with self.assertRaises(p.ProbeError):
+                store.verify()
+
+    def test_maximal_private_record_still_fits_existing_bound(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = p.EvidenceStore(Path(directory)/'private')
+            receipt = {**complete_receipt(), 'failure_code': 'IncompleteEvidence',
+                       'host_started': 2**64-5001, 'host_deadline': 2**64-1,
+                       'host_finished': 2**64-1, 'response_body_bytes': p.RESPONSE_CAP}
+            for key in ('target_ref', 'artifact_ref', 'authorization_ref',
+                        'rules_ref', 'assertion_alias', 'evidence_ref'):
+                receipt[key] = 'x'*256
+            store.append(store.reserve(), receipt, host_failures={
+                'cleanup_code': 'IncompleteEvidence', 'request_code': 'InvalidLibraryViewToken'})
+            self.assertLessEqual(next(store.root.iterdir()).stat().st_size, 4096)
+
+    def test_private_causes_are_not_wire_response_fields(self):
+        ids = p.Identity('a'*32, 'b'*32, 'c'*32)
+        response = {**p.base(ids), 'outcome': {
+            'kind': 'Failure', 'code': 'IncompleteEvidence', 'stage': 'Transport'},
+            'host_failures': {'request_code': 'TimedOut', 'cleanup_code': 'IncompleteEvidence'}}
+        with self.assertRaises(p.ProbeError):
+            p.validate_response(response, ids)

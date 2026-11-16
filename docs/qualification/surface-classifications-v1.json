@@ -134,6 +134,14 @@
     {"path": "scripts/android_qualification/_job_lifecycle_executor.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/physical/_job_lifecycle_ui.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/physical/test_job_lifecycle_ui.py", "classification": "active", "region": {"kind": "file"}},
-    {"path": "scripts/android_qualification/test_job_lifecycle.py", "classification": "active", "region": {"kind": "file"}}
+    {"path": "scripts/android_qualification/test_job_lifecycle.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/readiness_probe_artifact.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/readiness_probe_session.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_readiness_probe_artifact.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_readiness_probe_session.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/readiness_probe.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_readiness_probe.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "docs/qualification/android-readiness-probe.md", "classification": "active", "region": {"kind": "file"}},
+    {"path": ".github/workflows/ci.yml", "classification": "active", "region": {"kind": "yaml_job", "name": "android-readiness-probe"}}
   ]
 }

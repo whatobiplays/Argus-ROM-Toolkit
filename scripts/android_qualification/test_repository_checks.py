@@ -513,6 +513,8 @@ class CurrentNamingInventoryTests(unittest.TestCase):
                 "scripts/android_qualification/test_readiness_probe_session.py",
                 "scripts/android_qualification/readiness_probe.py",
                 "scripts/android_qualification/test_readiness_probe.py",
+                "scripts/android_qualification/adb_forward.py",
+                "scripts/android_qualification/test_adb_forward.py",
                 "docs/qualification/android-readiness-probe.md",
             )
         ] + [

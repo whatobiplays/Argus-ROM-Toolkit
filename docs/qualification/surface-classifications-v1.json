@@ -141,6 +141,8 @@
     {"path": "scripts/android_qualification/test_readiness_probe_session.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/readiness_probe.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_readiness_probe.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/adb_forward.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_adb_forward.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "docs/qualification/android-readiness-probe.md", "classification": "active", "region": {"kind": "file"}},
     {"path": ".github/workflows/ci.yml", "classification": "active", "region": {"kind": "yaml_job", "name": "android-readiness-probe"}}
   ]

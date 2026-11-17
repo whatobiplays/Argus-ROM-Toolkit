@@ -236,7 +236,11 @@ class EvidenceStore:
         return records
 
 class Transport(Protocol):
-    """Every method must honor its absolute host-monotonic deadline."""
+    """Every method must honor its absolute host-monotonic deadline.
+
+    The forwarded socket implementation connects only to loopback after the
+    host session verifies ownership of the corresponding ADB forward.
+    """
     def write(self, data: bytes, deadline: float) -> None: ...
     def read(self, count: int, deadline: float) -> bytes: ...
     def close(self, deadline: float) -> None: ...

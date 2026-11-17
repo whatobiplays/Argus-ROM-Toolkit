@@ -168,6 +168,17 @@ jobs:
         working-directory: flutter
         run: fvm install
 
+      - name: Install ripgrep for macOS Rust contract
+        if: runner.os == 'macOS'
+        run: brew install ripgrep
+
+      - name: Verify arm64 macOS Rust build contract
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          test "$(uname -m)" = "arm64"
+          just test-macos-rust-build-contract
+
       - name: Verify macOS Release linkage
         if: runner.os == 'macOS'
         run: just test-macos-release-linkage

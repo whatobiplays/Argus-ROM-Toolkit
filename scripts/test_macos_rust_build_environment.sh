@@ -159,6 +159,35 @@ reset_policy_environment() {
   unset TARGET_CFLAGS
 }
 
+(
+  cfg_output_padding="$(awk 'BEGIN { for (block = 0; block < 64; block++) printf "%65536s", "x" }')"
+  assert_equal "4194304" "${#cfg_output_padding}" \
+    "the cfg matcher fixture must exceed the pipe buffer"
+  ARGUS_MACOS_TARGET_CFG_OUTPUT=$'target_arch="aarch64"\ntarget_os="macos"\n'"$cfg_output_padding"
+  ARGUS_MACOS_TARGET_CFG_OUTPUT_LOADED=true
+
+  if ! argus_cfg_predicate_matches_target 'target_arch="aarch64"'; then
+    fail "an early matching architecture predicate must survive pipefail"
+  fi
+  if ! argus_cfg_predicate_matches_target 'target_os="macos"'; then
+    fail "an early matching operating-system predicate must survive pipefail"
+  fi
+  if argus_cfg_predicate_matches_target 'target_arch="aarch"'; then
+    fail "a partial architecture predicate must not match"
+  fi
+  if ! argus_cfg_expression_matches_target \
+    'all(target_arch = "aarch64", target_os = "macos")'; then
+    fail "a matching cfg expression must remain true"
+  fi
+  if argus_cfg_expression_matches_target \
+    'any(target_os = "ios", target_arch = "x86_64")'; then
+    fail "a nonmatching cfg expression must remain false"
+  fi
+  if argus_cfg_expression_matches_target 'all(target_arch = "aarch64"'; then
+    fail "a malformed cfg expression must remain false"
+  fi
+)
+
 reset_policy_environment
 argus_configure_macos_rust_build_environment Darwin arm64 cargo build
 assert_equal "12.0" "$MACOSX_DEPLOYMENT_TARGET" \
@@ -536,7 +565,7 @@ run_pinned_cargo_build_probe() {
     --package argus-domain --lib --locked \
     --target "$ARGUS_MACOS_RUST_TARGET" \
     --target-dir "$target_directory" \
-    "$@" >"$log_file" 2>&1; then
+    "$@" -vv >"$log_file" 2>&1; then
     fail "pinned Cargo build probe failed; inspect $log_file"
   fi
 
@@ -1086,6 +1115,8 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] &&
   first_transition_log="$(run_pinned_cargo_build_probe \
     "$encoded_transition_directory")"
   assert_file_contains "$first_transition_log" "Compiling argus-domain"
+  assert_file_contains "$first_transition_log" "$higher_rust_fingerprint"
+  assert_file_not_contains "$first_transition_log" "$floor_rust_fingerprint"
 
   reset_policy_environment
   export CARGO_ENCODED_RUSTFLAGS="-C${encoded_separator}opt-level=1"
@@ -1098,6 +1129,38 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] &&
     "$encoded_transition_directory")"
   assert_file_contains "$second_transition_log" "Compiling argus-domain"
   assert_file_not_contains "$second_transition_log" "Fresh argus-domain"
+  assert_file_contains "$second_transition_log" "$floor_rust_fingerprint"
+  assert_file_not_contains "$second_transition_log" "$higher_rust_fingerprint"
+
+  cfg_transition_directory="$cargo_probe_root/cfg-transition"
+  reset_policy_environment
+  export MACOSX_DEPLOYMENT_TARGET=26.5
+  argus_configure_macos_rust_build_environment Darwin arm64 cargo build \
+    --target "$ARGUS_MACOS_RUST_TARGET" --config "$matching_cfg_config"
+  assert_contains "$higher_rust_fingerprint" \
+    "$CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS" \
+    "the 26.5 cfg-target flags must carry the higher fingerprint"
+  assert_unset CARGO_BUILD_RUSTFLAGS
+  first_cfg_transition_log="$(run_pinned_cargo_build_probe \
+    "$cfg_transition_directory" --config "$matching_cfg_config")"
+  assert_file_contains "$first_cfg_transition_log" "Compiling argus-domain"
+  assert_file_contains "$first_cfg_transition_log" "$higher_rust_fingerprint"
+  assert_file_not_contains "$first_cfg_transition_log" "$floor_rust_fingerprint"
+
+  reset_policy_environment
+  export MACOSX_DEPLOYMENT_TARGET=12.0
+  argus_configure_macos_rust_build_environment Darwin arm64 cargo build \
+    --target "$ARGUS_MACOS_RUST_TARGET" --config "$matching_cfg_config"
+  assert_contains "$floor_rust_fingerprint" \
+    "$CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS" \
+    "the 12.0 cfg-target flags must carry the floor fingerprint"
+  assert_unset CARGO_BUILD_RUSTFLAGS
+  second_cfg_transition_log="$(run_pinned_cargo_build_probe \
+    "$cfg_transition_directory" --config "$matching_cfg_config")"
+  assert_file_contains "$second_cfg_transition_log" "Compiling argus-domain"
+  assert_file_not_contains "$second_cfg_transition_log" "Fresh argus-domain"
+  assert_file_contains "$second_cfg_transition_log" "$floor_rust_fingerprint"
+  assert_file_not_contains "$second_cfg_transition_log" "$higher_rust_fingerprint"
 
   # Cargo's own fingerprint cannot make a native build script rebuild when only
   # the deployment target changes; the effective C flag fingerprint is that

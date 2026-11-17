@@ -11,6 +11,13 @@ def parse_diagnostic(chunks,profile,clock,deadline,**kwargs):
         binding=s.DiagnosticBinding(profile.build,profile.package,profile.source,s.profile_digest(profile))
     return s.parse_diagnostic(chunks,profile,clock,deadline,binding=binding,**kwargs)
 
+class FakeTransport:
+    def __init__(self,on_close=None): self.on_close=on_close
+    def read(self,count,deadline): return b''
+    def write(self,data,deadline): pass
+    def close(self,deadline):
+        if self.on_close is not None: self.on_close()
+
 class FakeADB:
     def __init__(self): self.forwards={}; self.removed=[]; self.deadlines=[]
     def identity(self,target,*,deadline):
@@ -23,20 +30,81 @@ class FakeADB:
         self.forwards[target,local]=remote
     def remove(self,target,local,*,deadline):
         self.deadlines.append(deadline); self.removed.append((target,local)); del self.forwards[target,local]
+    def open_transport(self,session,authorization=None,*,deadline):
+        phase=session._consume_transport_authorization(authorization,deadline=deadline)
+        self.deadlines.append(deadline)
+        on_close=lambda: session._mark_transport_closed(phase)
+        return FakeTransport(on_close)
+
+def complete_discovery_transport(session):
+    transport=session.open_discovery_transport()
+    transport.close(session.armed+6)
+    return transport
 
 class SessionTests(unittest.TestCase):
     def session(self): return s.ForwardSession(FakeADB(),'target','build','a'*32,'tcp:12345','localabstract:probe_session',0,600,clock=lambda:2,obligation=lambda record:None)
+    def test_correlation_requires_a_successful_closed_discovery_transport(self):
+        observation=s.Discovery('a'*32,'b'*32,'localabstract:probe_session',1,2000,100,5100)
+        x=self.session(); x.create(); x.arm('b'*32,1)
+        x.clock=lambda:7
+        with self.assertRaises(ProbeError):
+            x.correlate(observation,1.1,1.2,0,True)
+        with self.assertRaises(ProbeError): x.enforce(2000,True)
+
+        x=self.session(); x.create(); x.arm('b'*32,1)
+        x.open_discovery_transport()
+        x.clock=lambda:7
+        with self.assertRaises(ProbeError):
+            x.correlate(observation,1.1,1.2,0,True)
+        self.assertTrue(x.discovery_transport_opened)
+        self.assertFalse(x.discovery_transport_closed)
+        with self.assertRaises(ProbeError): x.enforce(2000,True)
+
     def test_owner_correlation(self):
         x=self.session(); x.create(); x.arm('b'*32,1)
+        complete_discovery_transport(x)
         x.clock=lambda:7
         x.correlate(s.Discovery('a'*32,'b'*32,'localabstract:probe_session',1,2000,100,5100),1.1,1.2,0,True)
         with self.assertRaises(ProbeError): x.enforce(2000,False)
         x.enforce(2000,True)
         with self.assertRaises(ProbeError): x.enforce(2000,True)
         x.cleanup(); self.assertEqual(len(x.adb.removed),1)
+    def test_cleanup_waits_for_every_open_transport_to_close(self):
+        x=self.session(); x.create(); x.arm('b'*32,1)
+        transport=x.open_discovery_transport()
+
+        with self.assertRaises(ProbeError):
+            x.cleanup()
+
+        self.assertEqual(x.adb.removed,[])
+        transport.close(x.armed+6)
+        x.cleanup()
+        self.assertEqual(len(x.adb.removed),1)
+
+    def test_cleanup_waits_for_readiness_transport_close(self):
+        x=self.session(); x.create(); x.arm('b'*32,1)
+        complete_discovery_transport(x)
+        x.clock=lambda:7
+        x.correlate(
+            s.Discovery('a'*32,'b'*32,'localabstract:probe_session',
+                        1,2000,100,5100),
+            1.1,1.2,0,True,
+        )
+        x.enforce(2000,True)
+        transport=x.open_readiness_transport()
+
+        with self.assertRaises(ProbeError):
+            x.cleanup()
+
+        self.assertEqual(x.adb.removed,[])
+        transport.close(13)
+        x.cleanup()
+        self.assertEqual(len(x.adb.removed),1)
+
     def test_unsolicited_and_stale(self):
         for count,session in [(2,'a'*32),(1,'c'*32)]:
             x=self.session(); x.create(); x.arm('b'*32,1)
+            complete_discovery_transport(x)
             x.clock=lambda:7
             with self.assertRaises(ProbeError):
                 x.correlate(s.Discovery(session,'b'*32,'localabstract:probe_session',count,2000,100,5100),1.1,1.2,0,True)
@@ -67,6 +135,7 @@ class ExpiryTests(SessionTests):
         self.assertEqual(journal[1]['state'],'owned')
         now[0]=2
         x.arm('b'*32,1)
+        complete_discovery_transport(x)
         now[0]=7
         x.correlate(s.Discovery('a'*32,'b'*32,'localabstract:probe_session',1,2000,100,5100),1.1,1.2,0,True)
         now[0]=601
@@ -178,6 +247,7 @@ class ForwardDeadlineTests(unittest.TestCase):
     def test_expired_correlation_uses_clock_despite_old_interval(self):
         self.now[0]=1
         self.session.arm('b'*32,1)
+        complete_discovery_transport(self.session)
         self.now[0]=600
         with self.assertRaises(ProbeError):
             self.session.correlate(s.Discovery('a'*32,'b'*32,'localabstract:probe_session',1,2000,100,5100),1.1,1.2,0,True)
@@ -233,6 +303,7 @@ class DiscoveryIntervalTests(unittest.TestCase):
         session=s.ForwardSession(FakeADB(),'target','build','a'*32,'tcp:12345',
             'localabstract:probe_session',0,600,clock=lambda:now[0],obligation=records.append)
         session.create(); session.arm('b'*32,1)
+        complete_discovery_transport(session)
         now[0]=7
         observation=s.Discovery('a'*32,'b'*32,'localabstract:probe_session',1,2000,9000000,9006000)
         session.correlate(observation,1.1,1.2,0,True)
@@ -246,6 +317,7 @@ class DiscoveryIntervalTests(unittest.TestCase):
         session=s.ForwardSession(FakeADB(),'target','build','a'*32,'tcp:12345',
             'localabstract:probe_session',0,600,clock=lambda:now[0],obligation=lambda row:None)
         session.create(); session.arm('b'*32,1)
+        complete_discovery_transport(session)
         observation=s.Discovery('a'*32,'b'*32,'localabstract:probe_session',1,2000,9000000,9005001)
         now[0]=7
         with self.assertRaises(ProbeError): session.correlate(observation,6,6.1,0,True)
@@ -260,6 +332,7 @@ class DiscoveryReviewWindowTests(unittest.TestCase):
             clock=lambda: self.now[0], obligation=self.records.append)
         self.session.create()
         self.session.arm('b'*32, 0)
+        complete_discovery_transport(self.session)
         self.observation = s.Discovery(
             'a'*32, 'b'*32, 'localabstract:probe_session', 1, 2000,
             9000000, 9005000)
@@ -332,6 +405,7 @@ class DiscoveryCompletionEvidenceTests(unittest.TestCase):
             clock=lambda: now[0], obligation=lambda row: None)
         session.create()
         session.arm('b'*32, 0)
+        complete_discovery_transport(session)
         now[0] = 4.9
         observation = s.Discovery(
             'a'*32, 'b'*32, 'localabstract:probe_session', 1, 2000,

@@ -34,6 +34,8 @@ Stream output directly into a local bounded parser: at most 1 MiB total, 16 KiB 
 
 The owner must separately approve the exact reviewed source and signed APK SHA-256, signer certificate, target/build, private controls, UID correlation/pinning, fixed requests, forward tuple, OS commands, deadlines, evidence retention date and cleanup effects. Historical target selection and CI artifacts grant no authority.
 
+Use the [Issue #74 B1 authorization packet proposal](issue-74-b1-authorization-packet.md) to collect these approvals. The unpopulated template grants no authority.
+
 Record restoration obligations before mutation. Remove only a forward proven session owned and still matching the approved tuple. Do not adopt pre-existing resources. An uncertain create, replacement, ownership or restoration leaves a durable blocker. Cleanup is not successful merely because a command exited zero. Further recovery requires exact owner authority.
 
 ## 6. Outcomes and review

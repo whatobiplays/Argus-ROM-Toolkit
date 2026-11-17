@@ -97,8 +97,9 @@ argus_cfg_predicate_matches_target() {
   fi
 
   argus_load_macos_target_cfg_output || return 1
-  if printf '%s\n' "$ARGUS_MACOS_TARGET_CFG_OUTPUT" |
-    grep -Fqx "$predicate"; then
+  # A here-string removes printf from the pipe, so pipefail cannot turn an
+  # early exact match into a false miss when grep closes its input.
+  if grep -Fqx -- "$predicate" <<<"$ARGUS_MACOS_TARGET_CFG_OUTPUT"; then
     return 0
   fi
 

@@ -2,7 +2,7 @@
 
 **Status: unpopulated proposal. This file is not an authorization. Physical B1 remains NOT_RUN.**
 
-Prepare one copy for each proposed B1 attempt. Keep serials, owner identity, signatures and raw evidence in owner-private storage. Complete every required field and obtain independent pre-device review before the owner authorizes any operation. This template grants no device access or command authority.
+Prepare a separate copy for each preliminary target-observation attempt or physical B1 attempt. Keep serials, owner identity, signatures and permitted identifying evidence in owner-private storage. Raw diagnostic output and stderr must never be retained, including privately. Complete every required field and obtain independent pre-device review before the owner authorizes any operation. This template grants no device access or command authority.
 
 ## 1. Candidate source and artifact
 
@@ -90,3 +90,22 @@ Record each restoration obligation before mutation. Never adopt a pre-existing f
 5. Authorization time window and approval reference: `OWNER ENTRY REQUIRED`
 
 Proceed only after every required field is complete. Mark inapplicable items as not used and record the reason. The reviewer must approve the exact packet digest, and the owner must authorize each listed operation. Any changed source, APK, signer, target, command or procedure requires a new review and approval. Until then, B1 stays NOT_RUN and Issue #74 stays open.
+
+## 9. Attempt scope and preliminary observation admission
+
+1. Attempt kind, either preliminary target observation or physical B1: `OWNER ENTRY REQUIRED`
+2. Exact purpose, required facts and bounded collection count: `OWNER ENTRY REQUIRED`
+3. Private target/build reference, Android user, package/component and initial installed/task/process state: `OWNER ENTRY REQUIRED`
+4. Existing authorized evidence or authoritative source references supporting the proposed collection format: `OWNER ENTRY REQUIRED`
+5. Exact commands/arguments, permitted setup effects, acquisition checkpoints and start/expiry: `OWNER ENTRY REQUIRED`
+6. Reviewed transient filter/procedure revision and digest, target-ownership rules and ambiguity rejection rules: `OWNER ENTRY REQUIRED`
+7. Complete-output semantics, command-exit proof, byte/line limits and device/host deadlines: `OWNER ENTRY REQUIRED`
+8. Sanitized retained fields, independent acquisition intervals, private storage, publication scope, retention end date and deletion owner: `OWNER ENTRY REQUIRED`
+9. Baseline, restoration obligations, exact permitted actions, independent readback and unresolved-cleanup escalation: `OWNER ENTRY REQUIRED`
+10. Independent review of the completed packet digest and explicit owner approval of each operation/effect: `OWNER ENTRY REQUIRED`
+
+A preliminary observation authorizes only its enumerated scope. It grants no physical B1 authority or implicit install, launch, forwarding, UID discovery/enrollment, reset or cleanup permission. Mark all unused B1 fields and command rows explicitly excluded with reasons. If an observation needs setup or restoration effects, name and approve each effect before execution. Historical Issue #28 target authorization does not authorize either attempt kind.
+
+A safe filter and reliable completion contract must be reviewed before collection. Preserve the runbook's exact Q7 command restriction, 1 MiB total and 16 KiB line limits, three-second device timeout and five-second host deadline. Do not retain raw output or raw-dump hashes, use fallback commands, retry automatically, or publish partial facts. Missing, inconsistent, ambiguous, truncated, stale or unsupported evidence blocks the observation.
+
+The existing parser cannot establish the complete physical OS fact set. Its fixtures are not target evidence. Target selection, a completed preliminary packet or a successful preliminary observation does not qualify that parser or satisfy B1. Any later parser/acquisition implementation requires a separately approved concrete plan. Physical B1 additionally requires the exact reviewed probe artifact and signer, complete B1 packet, independent review and explicit owner authorization.

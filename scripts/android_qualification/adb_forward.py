@@ -476,12 +476,15 @@ class _AdbCommandRunner:
 
 
 class AdbForwardAdapter:
-    """Implement ForwardAdapter with one target/build and owned tuple at a time.
+    """Read one target identity or operate on a session-owned forward.
 
-    Callers must use this adapter through ``ForwardSession``. Its most recent
-    exact lookup under the current phase deadline authorizes removal; a failed
-    or late operation leaves the corresponding local ownership state unresolved.
-    The trusted-host policy assumes no concurrent external forward mutator.
+    ``identity`` is the sole standalone, read-only preflight operation. Use it
+    only after the matching authorization packet has been independently
+    reviewed and explicitly approved; this adapter does not validate that
+    packet. Drive forward creation, lookup, removal, and transport through
+    ``ForwardSession``. Its exact phase lookup and durable obligation govern
+    cleanup. The trusted-host policy assumes no concurrent external forward
+    mutator.
     """
 
     def __init__(self, *, runner=None, clock=time.monotonic, socket_factory=None):

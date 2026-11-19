@@ -54,7 +54,9 @@ The host artifact checker and injected workflow do not authorize device access. 
 
 ## 8. Host ADB adapter boundary
 
-The host adapter is available only through the injected `ForwardAdapter` and `Transport` interfaces. Importing it does not run ADB, connect to a socket, or start a qualification session. It accepts these command forms only:
+Importing the host adapter does not run ADB, connect to a socket, or start a qualification session. `AdbForwardAdapter.identity()` is the sole standalone operation: it reads the selected target's state and build fingerprint for the separately authorized identity-only preflight in section 10. Its authorization packet is reviewed outside the adapter, which does not validate packet approval. All forward lifecycle and transport operations must use `ForwardSession` through the injected `ForwardAdapter` and `Transport` interfaces.
+
+The adapter accepts these command forms only:
 
 1. `adb -s <serial> get-state`
 2. `adb -s <serial> shell getprop ro.build.fingerprint`
@@ -62,11 +64,13 @@ The host adapter is available only through the injected `ForwardAdapter` and `Tr
 4. `adb -s <serial> forward --no-rebind tcp:<port> localabstract:<name>`
 5. `adb -s <serial> forward --remove tcp:<port>`
 
-There is no shell, generic command, device-discovery command, install, pull or diagnostic command interface. The Q7 `dumpsys` candidate in section 4 remains a separate, future procedure requiring its own build-specific review and authority.
+There is no generic shell, `adb devices` enumeration, install, pull or diagnostic command interface. The Q7 `dumpsys` candidate in section 4 remains a separate, future procedure requiring its own build-specific review and authority.
+
+For the identity-only preflight, complete and review the attempt-specific packet before calling `AdbForwardAdapter.identity()` with the private serial and one host-monotonic deadline set to `monotonic() + 5.0`. The method issues `get-state` once and runs `getprop ro.build.fingerprint` once only when the first result is exactly `device`. Both calls use that same deadline. Do not create a `ForwardSession` with an invented fingerprint. Keep the returned serial and fingerprint in the owner-private outcome record; retain no raw output or stderr and publish only an opaque target reference and sanitized status. A failed, malformed, late or inconsistent result is BLOCKED. No retry or extra command is permitted.
 
 The session binds one explicit serial and build fingerprint. Each ADB argument vector includes that serial. `ForwardSession` rereads identity at each phase and rejects a changed target or build. Creation requires an absent mapping observed in the same phase, records the creation obligation before mutation, issues one `--no-rebind` request and records ownership only after an exact target/local/remote readback. A failed, late, missing or mismatched first readback leaves creation uncertain; a later matching listing cannot adopt it. A pre-existing, duplicate or uncertain mapping is never adopted. Removal requires the verified owned tuple and an exact same-phase readback. The first post-remove listing must prove absence; any remaining mapping, failed read or ambiguous result leaves removal terminally uncertain. Later listings cannot authorize another removal. The durable session obligation remains authoritative; uncertain creation or cleanup remains unresolved. The host model assumes no concurrent external forward mutator.
 
-Discovery uses one deny-only connection through `ForwardSession.open_discovery_transport()` while the session is `Armed`. That transport does not allow protocol writes. Its deadline ends at the earlier of five seconds after arming or the session deadline. The host must close this connection within the separate one-second release allowance before correlating discovery. After owner confirmation of the observation and approval of the exact UID, the session enters `Enforcing`; only then may `ForwardSession.open_readiness_transport()` open one distinct Readiness connection. Both session methods recheck the bound identity and exact forward. The adapter repeats those checks immediately before connecting and accepts only the one-shot authorization supplied by the session. Pre-arm discovery, discovery after its admission window, Readiness before UID approval, direct adapter calls and repeated opens fail closed. The readiness connection has a close deadline one second after its phase deadline.
+Discovery uses one deny-only connection through `ForwardSession.open_discovery_transport()` while the session is `Armed`. That transport does not allow protocol writes. Its deadline ends at the earlier of five seconds after arming or the session deadline. The host must close this connection within the separate one-second release allowance before correlating discovery. After owner confirmation of the observation and approval of the exact UID, the session enters `Enforcing`; only then may `ForwardSession.open_readiness_transport()` open one distinct Readiness connection. Both session methods recheck the bound identity and exact forward. The adapter repeats those checks immediately before connecting and accepts only the one-shot authorization supplied by the session. Pre-arm discovery, discovery after its admission window, Readiness before UID approval, and repeated opens are rejected. The readiness connection has a close deadline one second after its phase deadline.
 
 The session records whether discovery connected and closed successfully. Correlation requires both records. The adapter caps discovery release at six seconds after arming even when a caller supplies a later deadline. A late release still closes the local socket when possible, but it cannot authorize correlation. Cleanup remains blocked until every opened transport has a confirmed close within its release deadline.
 
@@ -133,15 +137,17 @@ Before proposing an acquisition or parser change, resolve each of these gaps aga
 
 If any required fact, filter or completion rule cannot be qualified, keep the OS assertion BLOCKED and dependent physical work NOT_RUN. Do not collect a broad dump to discover its format.
 
-### Historical target and future identity-only preflight
+### Historical target and identity-only preflight
 
 Issue [#28](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/28) records the AYANEO Pocket Air Mini as a previously owner-selected candidate for that issue. That historical selection and its bounded preflight authority do not select a target or authorize any operation for Issue #74. The Issue #74 target and build remain unselected.
 
-To make later source review target-specific, the minimum proposed identity-only preflight is a separate, explicitly authorized operation using the same exact owner-selected serial for these read-only commands:
+The identity-only preflight is a separate, explicitly authorized observation using the same exact owner-selected serial for the two read-only commands listed in section 8:
 
 ```text
 adb -s <owner-approved-target> get-state
 adb -s <owner-approved-target> shell getprop ro.build.fingerprint
 ```
 
-The proposal is limited to one invocation of each command with the existing five-second host phase bound, no retries, no device enumeration, and private handling of the serial and fingerprint. It does not include `dumpsys`, UID discovery, forwarding, probe execution or any application action. This preflight is not approved by this documentation change and must not be started until the owner separately selects the Issue #74 target and authorizes the exact operation. The existing authorization packet remains unchanged.
+The attempt-specific packet must name the private serial, procedure revision and digest, adapter source revision and state digest, maximum command counts, conditional second command, shared five-second deadline, no-retry rule, private evidence handling, retention, deletion owner, publication limits and no-mutation declaration. The packet's fingerprint input is `UNOBSERVED OUTPUT AT AUTHORIZATION`; the command result is recorded later in a separate private outcome record. Mark APK, package, Android user, UID, forward, Readiness and Q7 fields inapplicable to this attempt, with the reason that no application state or diagnostics are read. Require independent review of the completed packet digest and explicit owner approval before any invocation.
+
+No target is selected for Issue #74 yet. This preflight does not include `dumpsys`, UID discovery, forwarding, probe execution or any application action. A successful result establishes only target/build identity; physical B1 remains NOT_RUN. The authorization packet template does not grant authority by itself.

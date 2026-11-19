@@ -75,11 +75,23 @@ For an identity-only preliminary attempt, mark items 1–4 not applicable becaus
 1. Owner-private evidence location: `OWNER ENTRY REQUIRED`
 2. Retention end date and deletion owner: `OWNER ENTRY REQUIRED`
 3. Publication destination and approved sanitized fields: `OWNER ENTRY REQUIRED`
-4. Evidence integrity references: `OWNER ENTRY REQUIRED`
+4. Integrity receipt retention mechanism, custody responsibility and verification procedure: `OWNER ENTRY REQUIRED`
+5. Evidence integrity references: `OWNER ENTRY REQUIRED`
 
 Do not publish serials, build fingerprints, raw command output, stderr, screenshots, unrelated application names or local paths.
 
-For an identity-only preliminary attempt, bind the private outcome record to the approved packet digest and the reviewed adapter-source and procedure digests. Record the attempt's host-monotonic start and finish readings, command counts, final classification, and whether the conditional fingerprint command was not run. Keep the target serial and any observed fingerprint in that private record. Retain its digest as the evidence integrity reference; do not retain or hash raw command output or stderr. Shared records may contain only an opaque target reference and sanitized status.
+Before owner authorization, complete item 4 with the separate controlled retention mechanism for the receipt, its custody responsibility, and the steps for retrieving and verifying it. The receipt must be retained under independent custody or in a tamper-evident history. Identify its custodian or reviewer by a private reference.
+
+Apply this integrity procedure to preliminary identity observations and to later B1 evidence whenever acceptance relies on a private outcome digest:
+
+1. Finalize the exact private outcome record before calculating its digest. Do not edit the record after finalization.
+2. Calculate SHA-256 over the complete finalized record. Do not retain or hash raw command output or stderr.
+3. Immediately after calculating the digest, create and retain a separate private receipt. Record its actual recording time; do not backdate or replace it. The receipt binds the opaque attempt identifier, approved authorization-packet digest, outcome-record digest and algorithm, recording time, and custodian or reviewer reference. Retain it through the mechanism named in item 4. The receipt must not contain serial numbers, build fingerprints, raw outputs, stderr or private paths.
+4. Before accepting the evidence, retrieve the receipt through the mechanism named in item 4 and verify its independent custody or tamper-evident history, including the recording time and custodian or reviewer reference. Recalculate SHA-256 from the exact finalized outcome record and compare the digest, algorithm, attempt identifier and approved packet digest with the receipt.
+
+A digest alone does not establish authenticity or tamper resistance. The separate custody or tamper-evident history and its verification procedure provide the integrity anchor. A missing, mismatched, unverifiable or retrospectively substituted receipt or anchor makes the evidence `BLOCKED`.
+
+For an identity-only preliminary attempt, bind the private outcome record to the approved packet digest and the reviewed adapter-source and procedure digests. Record the attempt's host-monotonic start and finish readings, command counts, final classification, and whether the conditional fingerprint command was not run. Keep the target serial and any observed fingerprint in that private record. Shared records may contain only an opaque target reference and sanitized status.
 
 ## 7. Restoration plan
 

@@ -1,137 +1,128 @@
-# Issue #74 B1 authorization packet proposal
+# Issue #74 B1 session record
 
-**Status: unpopulated proposal. This file is not an authorization. Physical B1 remains NOT_RUN.**
+**Template only. Physical B1 remains NOT_RUN.**
 
-Prepare a separate copy for each preliminary target-observation attempt or physical B1 attempt. Keep serials, owner identity, signatures and permitted identifying evidence in owner-private storage. Raw diagnostic output and stderr must never be retained, including privately. Complete every required field and obtain independent pre-device review before the owner authorizes any operation. This template grants no device access or command authority.
+Use the [proportionate session workflow](device-authorization.md#proportionate-session-workflow).
+The owner approved removal of the former packet-review and external-custody
+requirements on 2026-11-20. The existing filename is retained for links and
+task history. This record collects the facts needed to authorize and review a
+bounded B1 session; it is not itself execution authority.
 
-## 1. Candidate source and artifact
+## 1. Identity preflight
 
-1. Host adapter repository and exact source commit: `OWNER ENTRY REQUIRED`
-2. Adapter source tree state and digest: `OWNER ENTRY REQUIRED`
-3. B1 procedure path, revision and digest: `OWNER ENTRY REQUIRED`
-4. APK source checkout commit: `OWNER ENTRY REQUIRED`
-5. Embedded `probeSourceCommit`: `OWNER ENTRY REQUIRED`
-6. APK SHA-256 and signer certificate SHA-256: `OWNER ENTRY REQUIRED`
-7. Build workflow, run identifier and provenance record: `OWNER ENTRY REQUIRED`
+An identity-only attempt does not need a B1 packet. An ordinary owner
+instruction authorizing the selected target and the following procedure is
+sufficient. Reuse that instruction rather than asking for duplicate approval.
+Target selection or approval of this process change alone does not run it.
 
-The APK source checkout commit must identify the exact source used to build the APK and match its embedded `probeSourceCommit`. Record the adapter, procedure and APK source revisions separately. Do not copy the planning baseline into an artifact built from a later checkout.
+1. Use the selected private serial with the reviewed host adapter. Record the
+   owner instruction and source/procedure reference.
+2. Run one `get-state`, followed by one `getprop ro.build.fingerprint` only if
+   the validated state is exactly `device`. Both share one five-second
+   host-monotonic deadline. No enumeration, retry, fallback or other operation
+   is included. The current attended session can be the execution window.
+3. Save a small private outcome: target serial, observed fingerprint if
+   available, acquisition time, monotonic start/finish, command counts and
+   classification. Record an unrun conditional command as `NOT_RUN`.
+   Missing, malformed, late or inconsistent identity is `BLOCKED`.
+4. Share only an opaque target reference and sanitized status. Retain no raw
+   output or stderr. No packet digest, independent identity reviewer, separate
+   receipt, custodian, fixed retention period or unrelated B1 fields are needed.
 
-For an identity-only preliminary attempt, complete items 1–3 for the exact adapter and procedure. Mark items 4–7 not applicable because the attempt builds, signs and uses no APK.
+The selected target is KONKR Pocket Advance; its exact build fingerprint is
+still unverified. The serial stays private. Identity success establishes no
+artifact, OS-parser, transport or B1 qualification. This attempt has no device
+mutation or cleanup action.
 
-## 2. Target identity
+## 2. Before the B1 session
 
-1. Private target serial or owner-controlled alias: `OWNER ENTRY REQUIRED`
-2. Android build fingerprint, API level, ABI and OEM identity: `OWNER ENTRY REQUIRED` for physical B1. For an identity-only preliminary attempt, record the fingerprint as `UNOBSERVED OUTPUT AT AUTHORIZATION`; no expected value is supplied. Mark API level, ABI and OEM identity out of scope because the approved commands do not read them.
-3. Method and evidence reference used to confirm the target: `OWNER ENTRY REQUIRED`. For a preliminary attempt, reference its approved command procedure and record the observed fingerprint later in a separate private outcome record.
+The executor fills known values from source, artifacts and existing records.
+The owner decides the intended effects and approves the complete bounded
+session. Use references to existing reviewed information instead of copying
+it into multiple forms. The following facts must be concrete before execution:
 
-Store the serial and any identifying evidence privately. Shared records should use an opaque reference.
-
-## 3. Command and effect allowlist
-
-Copy each approved command and effect into the final procedure. Mark each row approved or excluded; an unmarked row grants no authority.
-
-| Candidate operation | Owner decision and exact bound values |
+| Fact | Record or reference |
 |---|---|
-| `adb -s <serial> get-state` | `OWNER ENTRY REQUIRED` |
-| `adb -s <serial> shell getprop ro.build.fingerprint` | `OWNER ENTRY REQUIRED` |
-| `adb -s <serial> forward --list` | `OWNER ENTRY REQUIRED` |
-| `adb -s <serial> forward --no-rebind tcp:<port> localabstract:<name>` | `OWNER ENTRY REQUIRED` |
-| `adb -s <serial> forward --remove tcp:<port>` | `OWNER ENTRY REQUIRED` |
-| Loopback connection and exact Readiness request sequence | `OWNER ENTRY REQUIRED` |
-| Build-specific OS command and reviewed Q7 parser profile, if required | `OWNER ENTRY REQUIRED` |
+| Session | Opaque session identifier, purpose, owner approval reference and agreed start/expiry. |
+| Source and procedure | Reviewed host-adapter revision and source state, procedure revision, APK source revision and embedded `probeSourceCommit`. Record those identities separately. |
+| Artifact | Exact final signed APK SHA-256, signer certificate SHA-256, package/version/variant and build/provenance reference. The embedded source commit must match the source used to build the APK. |
+| Target | Opaque shared reference; private serial, exact observed build fingerprint and relevant API/ABI/OEM facts with their evidence references. The two-command identity preflight does not establish API or ABI. |
+| Operations and bounds | Exact command vectors/effects, permitted counts/order, fixed requests, private owner controls, socket endpoint and forward tuple, OS observations and cleanup. Use the fixed limits below. Unlisted effects are excluded. |
+| Baseline and restoration | Observations allowed before mutation; expected package/task/process state; absent-before-creation forward check; exact restoration actions and confirming readbacks. Acquire device baselines after session approval and before mutation. |
+| OS evidence | Required facts/checkpoints, exact commands, reviewed build-specific parser/profile, completeness/error rules and independent acquisition times. Exploratory notes do not fill this field as qualified evidence. |
+| Evidence | Existing owner-private location, sanitized shared report destination and relevant evidence/digest references. No serial, fingerprint, private path, raw dump, stderr, screenshot or unrelated app state in shared evidence. |
+| Review | Independent code/procedure review reference and findings disposition. Review the source, artifact provenance, access rules, observations and cleanup; a separate approval of this record's digest is unnecessary. |
 
-The command forms above describe the host adapter boundary; listing them does not approve execution. The final packet must name every permitted command, argument, effect, expected observation and restoration step. The adapter exposes no generic shell, automatic retry, alternate target, dynamic port or package-management command. Any additional operation requires separate owner approval and independent review.
+An unsigned or CI-signed test artifact is not automatically approved for
+physical use. Keep the host, procedure and APK source identities distinct.
+A changed target/build, artifact/signer, operation or material procedure
+requires reassessment and approval of the affected scope, not repetition of
+unaffected checks.
 
-For an identity-only preliminary attempt, approve only these two rows and exclude every other command or effect with a reason. Permit at most one invocation of each command. Run the fingerprint command only if `get-state` returns exactly `device`; otherwise mark it `NOT_RUN`. Both commands share one five-second host-monotonic deadline. Do not enumerate devices, retry, use a fallback, or add another shell operation.
+## 3. Session controls
 
-## 4. Session and UID controls
+1. Keep the 600-second session maximum, five-second phase/Readiness maximum,
+   five-second discovery admission, one-second socket release and separate
+   60-second forward-cleanup reserve. Specify host and Android clock readings
+   in their own domains. No timeout extends operation authority.
+2. Permit only the approved probe install/start, one exact session-owned
+   forward, deny-only discovery, fixed Readiness requests, specified OS
+   observations and exact cleanup/restoration. Listing a candidate operation
+   here does not authorize it. Data reset is not implicit cleanup.
+3. Retain direct owner controls and observation/confirmation of the exact peer
+   UID before enforcement. Never trust the first UID automatically, adopt a
+   pre-existing forward or substitute a target. No automatic retry or fallback.
+4. Record restoration obligations before mutation. Verify the exact owned
+   tuple before removal and the required state after cleanup. Exit code zero
+   alone is insufficient. Uncertain creation, ownership or restoration remains
+   blocked; additional recovery effects need owner authority.
 
-1. Owner-approved start and expiry: `OWNER ENTRY REQUIRED`
-2. Session maximum: 600 seconds
-3. Maximum phase and Readiness request: five seconds each
-4. Discovery admission window: five seconds
-5. Socket release allowance: one second
-6. Separate forward-cleanup reserve: 60 seconds after session expiry; it grants cleanup only
-7. Exact discovery attempt, endpoint and connection-count evidence: `OWNER ENTRY REQUIRED`
-8. Independently observed peer UID and owner confirmation record: `OWNER ENTRY REQUIRED`
+One approval covers the listed session operations. It does not authorize B2,
+production activation, pin changes, later qualification or destructive
+effects outside that scope.
 
-Specify the host and Android clocks separately. Do not derive one clock from the other. No deadline may extend session, connection, observation or UID-approval authority. Automatic retry is prohibited.
+## 4. Exploratory OS observations
 
-For an identity-only preliminary attempt, item 1 must still state the approved execution window. Mark items 2–8 not applicable because the attempt creates no qualification session, phase, discovery connection, Readiness request, forward or UID observation.
+Use [runbook section 9](android-readiness-probe.md#9-os-evidence-readiness-and-observation-prerequisites)
+for a separately scoped exploratory observation when the build's grammar or
+observable facts are unknown. A fully qualified semantic parser is not an
+entry requirement for exploration. The acquisition/privacy path still needs
+review and the owner must authorize the exact bounded observation scope.
 
-## 5. OS evidence and Q7 profile
+Preserve the Q7 command restriction, 1 MiB total and 16 KiB line caps,
+three-second device timeout and five-second host deadline. Keep raw output
+only in local bounded memory; exclude it from logs, terminal transcripts,
+tool responses and chat, and immediately discard unrelated records. Retain
+only sanitized exploratory target notes. No raw dumps, stderr or raw-dump
+hashes, automatic retries or partial facts presented as complete evidence.
+If privacy or acquisition bounds cannot be enforced, stop.
 
-1. Exact target build and evidence source: `OWNER ENTRY REQUIRED`
-2. Reviewed parser profile name, revision and digest: `OWNER ENTRY REQUIRED`
-3. Exact command, output bounds, timeout and completion marker: `OWNER ENTRY REQUIRED`
-4. Sanitized evidence reference and acquisition intervals: `OWNER ENTRY REQUIRED`
+Exploration grants no install, launch, forwarding, UID enrollment or B1/B2
+authority. Before formal assertions use the result, independently review the
+exact-build semantics, completeness/error handling and acquisition/parser
+implementation, then collect fresh complete observations under the approved
+qualification procedure. Synthetic fixtures and exploratory notes cannot
+establish a physical PASS.
 
-If Q7 evidence is needed, bind its parser to the exact Android/OEM build and review the complete output contract before use. A `dumpsys` command is not authorized by this template.
+## 5. Outcome and retention
 
-For an identity-only preliminary attempt, mark items 1–4 not applicable because it collects no OS diagnostics or Q7 evidence. Record the observed target/build identity under section 2 in the separate private outcome record.
+Record what actually ran, relevant timings and command counts, exact
+artifact/target/session identities, sanitized observations, evidence digests,
+stop events and verified cleanup or outstanding obligations. Keep P/U/O/H
+evidence independent. Verified incorrect behavior is `FAILED/NO-GO`; missing
+or uncertain evidence is `BLOCKED`; dependent unattempted checks are `NOT_RUN`.
+Independently review the B1 report before treating it as B1 PASS. B2 requires
+a separate approved session and independently reviewed report.
 
-## 6. Evidence handling
+Keep evidence needed to support a result while that result is relied upon.
+Daniel controls retention and deletion; a 180-day period or calendar deletion
+date is optional, not an admission prerequisite. Reuse the approved private
+storage arrangement unless its access or backup/sync exposure changes. Do not
+delete or rewrite earlier private records as part of adopting this template.
 
-1. Owner-private evidence location: `OWNER ENTRY REQUIRED`
-2. Retention end date and deletion owner: `OWNER ENTRY REQUIRED`
-3. Publication destination and approved sanitized fields: `OWNER ENTRY REQUIRED`
-4. Integrity receipt retention mechanism, custody responsibility and verification procedure: `OWNER ENTRY REQUIRED`
-5. Evidence integrity references: `OWNER ENTRY REQUIRED`
-
-Do not publish serials, build fingerprints, raw command output, stderr, screenshots, unrelated application names or local paths.
-
-Before owner authorization, complete item 4 with the separate controlled retention mechanism for the receipt, its custody responsibility, and the steps for retrieving and verifying it. The receipt must be retained under independent custody or in a tamper-evident history. Identify its custodian or reviewer by a private reference.
-
-Apply this integrity procedure to preliminary identity observations and to later B1 evidence whenever acceptance relies on a private outcome digest:
-
-1. Finalize the exact private outcome record before calculating its digest. Do not edit the record after finalization.
-2. Calculate SHA-256 over the complete finalized record. Do not retain or hash raw command output or stderr.
-3. Immediately after calculating the digest, create and retain a separate private receipt. Record its actual recording time; do not backdate or replace it. The receipt binds the opaque attempt identifier, approved authorization-packet digest, outcome-record digest and algorithm, recording time, and custodian or reviewer reference. Retain it through the mechanism named in item 4. The receipt must not contain serial numbers, build fingerprints, raw outputs, stderr or private paths.
-4. Before accepting the evidence, retrieve the receipt through the mechanism named in item 4 and verify its independent custody or tamper-evident history, including the recording time and custodian or reviewer reference. Recalculate SHA-256 from the exact finalized outcome record and compare the digest, algorithm, attempt identifier and approved packet digest with the receipt.
-
-A digest alone does not establish authenticity or tamper resistance. The separate custody or tamper-evident history and its verification procedure provide the integrity anchor. A missing, mismatched, unverifiable or retrospectively substituted receipt or anchor makes the evidence `BLOCKED`.
-
-For an identity-only preliminary attempt, bind the private outcome record to the approved packet digest and the reviewed adapter-source and procedure digests. Record the attempt's host-monotonic start and finish readings, command counts, final classification, and whether the conditional fingerprint command was not run. Keep the target serial and any observed fingerprint in that private record. Shared records may contain only an opaque target reference and sanitized status.
-
-## 7. Restoration plan
-
-1. Package, task and process state to record before the attempt: `OWNER ENTRY REQUIRED`
-2. Forward tuple and proof of absence before creation: `OWNER ENTRY REQUIRED`
-3. Exact package, task and forward restoration actions: `OWNER ENTRY REQUIRED`
-4. Readback required to confirm each restoration: `OWNER ENTRY REQUIRED`
-5. Recovery owner and escalation route for unresolved obligations: `OWNER ENTRY REQUIRED`
-
-Record each restoration obligation before mutation. Never adopt a pre-existing forward. An uncertain create, ownership check or removal leaves the attempt blocked until separately authorized recovery proves the exact state.
-
-For an identity-only preliminary attempt, mark package, task and process baselines as not observed and out of scope. Mark restoration as not applicable because both approved commands are read-only and this attempt makes no device-state change. Do not authorize cleanup as part of this attempt.
-
-## 8. Independent review and owner authorization
-
-1. Independent pre-device reviewer and review date: `OWNER ENTRY REQUIRED`
-2. Reviewed packet digest and applicable source, adapter, procedure and (for physical B1) APK identities: `OWNER ENTRY REQUIRED`
-3. Review findings and disposition: `OWNER ENTRY REQUIRED`
-4. Owner identity and explicit approved operations: `OWNER ENTRY REQUIRED`
-5. Authorization time window and approval reference: `OWNER ENTRY REQUIRED`
-
-Proceed only after every required field is complete. Mark inapplicable items as not used and record the reason. The reviewer must approve the exact packet digest, and the owner must authorize each listed operation. Any changed source, target, command or procedure requires a new review and approval. For physical B1, a changed APK or signer also requires new review and approval. Until then, B1 stays NOT_RUN and Issue #74 stays open.
-
-For an identity-only preliminary attempt, mark the APK identity in item 2 not applicable because no APK is used. Complete the packet digest and applicable source/adapter/procedure identity review before owner approval.
-
-## 9. Attempt scope and preliminary observation admission
-
-1. Attempt kind: `OWNER ENTRY REQUIRED`. Use the packet label `PRELIMINARY_IDENTITY_ONLY` only for this attempt record; do not add it as a runtime or persisted protocol value.
-2. Exact purpose and facts: identify the owner-selected target and read its build fingerprint; maximum command count is two, with the second command conditional on the first.
-3. Private target reference and serial: `OWNER ENTRY REQUIRED`. The build fingerprint is an unobserved command output at authorization time, not an approved input value.
-4. Adapter source commit and state digest: `OWNER ENTRY REQUIRED`. Procedure revision and digest: `OWNER ENTRY REQUIRED`.
-5. Exact command vectors, start/expiry, one shared five-second host-monotonic deadline and no-retry rule: `OWNER ENTRY REQUIRED`.
-6. Evidence storage, retained private fields, publication restrictions, retention end date and deletion owner: `OWNER ENTRY REQUIRED`.
-7. Baseline declaration: read-only observation with no device mutation; restoration is not applicable for this attempt, with this reason recorded.
-8. Mark the following fields not applicable, each with the reason that this attempt does not read or change application state: APK and signer; Android user, package, component, task and process state; UID; forwarding and Readiness; OS diagnostics and Q7 profile.
-9. Independent review of the completed packet digest, reviewer and date: `OWNER ENTRY REQUIRED`.
-10. Explicit owner approval of this exact attempt, target and two-command conditional allowlist, including the approved execution window: `OWNER ENTRY REQUIRED`.
-
-A preliminary observation authorizes only its enumerated scope. It grants no physical B1 authority or implicit install, launch, forwarding, UID discovery/enrollment, reset or cleanup permission. Mark unused B1 fields and command rows explicitly excluded with reasons. If an observation needs setup or restoration effects, name and approve each effect before execution. Historical Issue #28 target authorization does not authorize either attempt kind.
-
-For Q7 evidence collection, review a safe filter and reliable completion contract before collection. Preserve the runbook's exact Q7 command restriction, 1 MiB total and 16 KiB line limits, three-second device timeout and five-second host deadline. These Q7 controls do not apply to an identity-only preliminary attempt, which is limited to the two commands in sections 3 and 9 and collects no diagnostics. For either attempt, do not retain raw command output or stderr, use fallback commands, retry automatically, or publish partial facts. Missing, inconsistent, ambiguous, truncated, stale or unsupported evidence blocks the applicable observation.
-
-The existing parser cannot establish the complete physical OS fact set. Its fixtures are not target evidence. Target selection, a completed preliminary packet or a successful preliminary observation does not qualify that parser or satisfy B1. Any later parser/acquisition implementation requires a separately approved concrete plan. Physical B1 additionally requires the exact reviewed probe artifact and signer, complete B1 packet, independent review and explicit owner authorization.
+Digests identify exact retained bytes and permit later comparison. Preserve
+the existing runtime failure receipts, evidence capacity and integrity checks.
+External custody, email delivery and a separate tamper-evident receipt are not
+required; do not claim local hashes prove authenticity against a malicious
+storage owner. Corrections to completed qualification evidence remain new,
+linked records rather than silent rewrites.

@@ -6,6 +6,57 @@ command or a live device transport. The public `--dry-run` and `--preflight`
 commands remain host-only, and an unflagged live request remains blocked with
 `LIVE_ADMISSION_NOT_IMPLEMENTED`.
 
+## Proportionate session workflow
+
+The owner approved a simpler workflow on 2026-11-20 for internal physical
+qualification, beginning with Issue #74. Apply controls to the actual effects
+and evidence needed. An identity read does not need the admission paperwork
+for installing and exercising an application.
+
+1. **Identify the target.** An explicit owner instruction to run the documented
+   identity preflight on the selected target authorizes that bounded attempt.
+   Record the instruction and a small private outcome. Independent review of an
+   identity packet, a packet digest, a separate calendar appointment and a
+   receipt custodian are unnecessary. Reuse an existing instruction that
+   already covers the attempt; target selection alone is not an instruction
+   to execute it.
+2. **Explore missing observations.** The owner may authorize a bounded set of
+   read-only observations to learn the selected build's available OS facts.
+   Review the acquisition and privacy controls before collection. A fully
+   qualified parser is not a prerequisite for exploration; exploratory notes
+   cannot satisfy a qualification assertion. The readiness-probe runbook
+   defines the narrow Q7 path and its unchanged size/time/privacy limits.
+3. **Authorize one qualification session.** Present the reviewed procedure,
+   exact target/build and artifact/signer, allowed operations, bounds, evidence
+   and cleanup together. One owner approval covers that scope; do not seek
+   separate approval for each already-listed command. Preserve meaningful
+   in-session controls such as confirming an observed peer UID before use.
+   B1 and B2 still need separate session approvals. Data reset and other
+   destructive effects require explicit approval of those effects.
+4. **Record and review the result.** Preserve actual observations, source and
+   artifact identities, timings, failures and restoration. Independently
+   review qualification code and B1/B2 reports. Ordinary evidence digests bind
+   exact bytes and help detect changes; do not claim that they authenticate a
+   record against a malicious storage owner. External receipt custody,
+   separate email receipts and third-party retention are not default gates.
+
+Use owner-private storage for identifying values and sanitized durable reports
+for shared results. Reuse the already verified private storage arrangement
+unless its location, access or backup/sync exposure changes. There is no
+mandatory 180-day retention period, calendar deletion date or storage quota
+for admission. Retain evidence while a result relies on it; Daniel owns the
+retention/deletion decision. Do not delete, relocate or rewrite prior private
+records as a side effect of this simplification. Raw diagnostic output,
+stderr and unrelated application data remain excluded from retained evidence.
+
+This workflow removes extra administrative preconditions. It does not change
+the versioned authorization/approval schemas below, runtime evidence and
+failure receipts, qualification criteria, or independent source/report review.
+Where an executor consumes structured authorization, populate it from the
+same approved session scope without asking for duplicate consent. The
+[B1 session record](issue-74-b1-authorization-packet.md) is separate from that
+machine contract. This documentation approval runs no device operation.
+
 ## Current evidence boundary
 
 The qualification package provides an injected interface for read-only fresh

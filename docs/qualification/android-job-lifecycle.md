@@ -943,8 +943,11 @@ B1 is a separately reviewed, non-production, `Readiness`-only probe. Its
 fixed request cannot invoke GetJob, retained history, or membership. A B1
 review package must pin the probe source and artifact hash, target and build,
 framing/schema and calculated frame caps, peer-identity rule, session,
-commands, effects, evidence, and cleanup. The owner separately authorizes any
-device use. B1 tests target-specific transport, forwarded peer UID/access,
+commands, effects, evidence, and cleanup. One owner approval authorizes the
+bounded B1 session's listed operations; a separate identity preflight follows
+the [proportionate session workflow](device-authorization.md#proportionate-session-workflow).
+Neither preliminary identity nor exploratory OS observations satisfy B1.
+B1 tests target-specific transport, forwarded peer UID/access,
 and permitted OS process/foreground/task evidence. It does not measure
 production history or membership budgets and does not qualify G3, G4, or G5.
 

@@ -51,6 +51,8 @@ Rationale: Strong cryptographic authentication and key lifecycle would solve an 
 
 Rejected: device-side PKI, signed credentials, elaborate revocation/replay protections as default; unaudited unrestricted product access. Invariant: enforce least privilege, size bounds, no unauthorized operations, clear wrong-target failures, and no deliberate lifecycle effects. ADB trust alone does not prove which installed APK is running; preserve independent package/signer/digest proof.
 
+Owner-approved workflow clarification (2026-11-20): use one bounded owner approval for each session's listed operations. A preliminary identity read needs no independently reviewed packet, external receipt custodian or fixed retention period. Keep independent code and qualification-report review, exact artifact/build binding and truthful evidence. This applies the existing trusted-host model; it does not add device authority. See the [proportionate session workflow](../qualification/device-authorization.md#proportionate-session-workflow).
+
 ### Q5 - Product Library membership evidence (approved: A)
 
 Decision: An observer may initiate a distinct, read-only RevisionFenced backend enumeration while the app is already running, independently of the visible Flutter controller. Prove the authorized All-active query shape, every page/cursor linkage, unique complete GameId set, terminal page, and direct same-token `GetGame` redirect results. Treat this as backend-state evidence and cross-check visible UI behavior separately.
@@ -74,6 +76,8 @@ Decision: Permit specifically authorized, read-only Android diagnostics when a n
 Rationale: OS task-continuity proof may not be feasible using a strictly package-only diagnostic. A bounded and transient local filter balances feasibility with privacy.
 
 Rejected: only inherently package-scoped OS APIs (could leave otherwise observable facts blocked), unrestricted diagnostics and raw retention (unnecessary exposure). Invariant: per-command allowlist and session authorization, no effects, sensitive-output handling, and fail-closed absence/ambiguity. This relaxes previous exclusion of broad activity/stack dumps only for a narrowly reviewed ephemeral parsing path; current contract cannot be silently broadened.
+
+Owner-approved workflow clarification (2026-11-20): a bounded, explicitly authorized exploratory observation may investigate an unknown build format before its semantic parser and completeness rules are qualified. Review the acquisition/privacy path first, retain only sanitized target notes, and keep the runbook's command, size and time bounds. Exploration is not qualified OS evidence. A formal B1/B2 assertion still requires a reviewed exact-build interpretation, reliable completeness/error handling and actual complete target observations. This removes the discovery deadlock without allowing raw-dump retention or weakening the acceptance rule.
 
 ### Q8 - Android host-to-product transport (approved: A)
 

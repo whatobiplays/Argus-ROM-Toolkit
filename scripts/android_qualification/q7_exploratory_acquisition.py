@@ -26,6 +26,8 @@ from .adb_forward import (
     _Q7_HOST_DEADLINE_SECONDS,
 )
 from .readiness_probe import ProbeError
+from .packaging import QUALIFICATION_APPLICATION_ID as _TARGET_PACKAGE
+from .readiness_probe_artifact import PACKAGE as _READINESS_PROBE_PACKAGE
 
 
 TARGET_REFERENCE = "i74-tgt-7f6cd8181514b822"
@@ -33,9 +35,62 @@ APPROVED_BASELINE_COMMIT = "ff9ce374b50b360195026404270025dfe54edd5a"
 _TARGET_REFERENCE_PATTERN = re.compile(r"i74-tgt-[a-f0-9]{16}\Z")
 _HEX_COMMIT_PATTERN = re.compile(r"[a-f0-9]{40}\Z")
 _HEX_SHA256_PATTERN = re.compile(r"[a-f0-9]{64}\Z")
+_Q7_SUBJECT_PACKAGES = frozenset({_TARGET_PACKAGE, _READINESS_PROBE_PACKAGE})
 _MAX_Q7_STRUCTURAL_RECORDS = 4096
 _MAX_Q7_STRUCTURAL_FIELDS = 16384
 _MAX_Q7_STRUCTURAL_RELATIONSHIPS = 16384
+_Q7_PARSER_ERROR_SUBTYPES = frozenset(
+    {
+        "alias_limit_exceeded",
+        "empty_normalized_alias_value",
+        "field_limit_exceeded",
+        "forbidden_control_character",
+        "invalid_utf8",
+        "line_length_exceeded",
+        "parser_rejection",
+        "record_limit_exceeded",
+        "relationship_limit_exceeded",
+    }
+)
+_Q7_PARSER_ERROR_STAGES = frozenset(
+    {
+        "control_validation",
+        "field_scan",
+        "finish",
+        "input_validation",
+        "line_accumulation",
+        "record_scan",
+        "target_projection",
+        "utf8_decode",
+    }
+)
+_Q7_PARSER_ERROR_CODES = frozenset(
+    {"IncompleteEvidence", "MalformedRequest", "ResourceLimitExceeded"}
+)
+_Q7_PROCESS_CLASSIFICATIONS = frozenset(
+    {
+        "cleanup_unverified",
+        "exit_zero",
+        "host_timeout",
+        "incomplete",
+        "launch_failed",
+        "process_nonzero",
+        "resource_limit",
+    }
+)
+_Q7_PARSER_STATE_FIELDS = frozenset(
+    {
+        "completed_lines",
+        "empty_field_values",
+        "fields_seen",
+        "record_stack_depth",
+        "records_seen",
+        "relationships_seen",
+        "sensitive_tails_truncated",
+        "unclassified_lines",
+        "unrecognized_fields",
+    }
+)
 _Q7_DEVICE_TIMEOUT_SECONDS = 3
 _RECORDED_LIMITS = {
     "device_timeout_seconds": _Q7_DEVICE_TIMEOUT_SECONDS,
@@ -43,7 +98,6 @@ _RECORDED_LIMITS = {
     "maximum_output_bytes": _MAX_Q7_OUTPUT_BYTES,
     "maximum_line_bytes": _MAX_Q7_LINE_LENGTH,
 }
-_TARGET_PACKAGE = "com.argusromtoolkit.argus.qualification"
 _COMPONENT_FIELD_NAMES = {
     "component",
     "mactivitycomponent",
@@ -136,6 +190,10 @@ _COMPONENT_PATTERN = re.compile(
     r"(?P<package>[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)/"
     r"(?P<class>[A-Za-z0-9_.$]+)\Z"
 )
+_EMPTY_STRUCTURED_VALUE_PATTERN = re.compile(
+    r"[A-Za-z][A-Za-z0-9_]*\{\}?\Z",
+    re.I,
+)
 _PACKAGE_PATTERN = re.compile(
     r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+(?:\:[A-Za-z0-9_]+)?\Z"
 )
@@ -181,7 +239,7 @@ def _available_field_categories(record_types, field_names):
 
 
 class Q7StructuralFilter:
-    """Summarize only the qualification app's structure from a bounded dump.
+    """Summarize one fixed qualification package from a bounded activity dump.
 
     Identifier references use a random per-capture key. The saved result keeps
     target-related field associations and hierarchy while hiding the values
@@ -193,15 +251,19 @@ class Q7StructuralFilter:
     def __init__(
         self,
         *,
+        target_package=_TARGET_PACKAGE,
         maximum_line_bytes=_MAX_Q7_LINE_LENGTH,
         maximum_records=_MAX_Q7_STRUCTURAL_RECORDS,
         maximum_fields=_MAX_Q7_STRUCTURAL_FIELDS,
         maximum_relationships=_MAX_Q7_STRUCTURAL_RELATIONSHIPS,
     ):
+        if type(target_package) is not str or target_package not in _Q7_SUBJECT_PACKAGES:
+            raise ProbeError("MalformedRequest", "Transport")
         limits = (maximum_line_bytes, maximum_records, maximum_fields, maximum_relationships)
         if any(type(value) is not int or value <= 0 for value in limits):
             raise ProbeError("MalformedRequest", "Transport")
         self._maximum_line_bytes = maximum_line_bytes
+        self._target_package = target_package
         self._maximum_records = maximum_records
         self._maximum_fields = maximum_fields
         self._maximum_relationships = maximum_relationships
@@ -228,19 +290,107 @@ class Q7StructuralFilter:
         self._line_target_relevant = False
         self._unclassified_line_count = 0
         self._unrecognized_field_count = 0
+        self._empty_field_value_count = 0
         self._sensitive_tail_truncated_count = 0
         self._alias_key = secrets.token_bytes(32)
         self._aliases = {}
         self._alias_counts = {}
         self._line_sequence = 0
+        self._total_bytes_fed = 0
+        self._line_start_byte_offset = 0
+        self._active_line_number = None
+        self._active_line_byte_offset = None
+        self._parser_stage = "input_validation"
+        self._failure_diagnostic = None
         self._finished = False
 
     @property
     def retained_bytes(self):
         return len(self._line)
 
+    @property
+    def failure_diagnostic(self):
+        """Return error labels, byte positions, and counts without captured input."""
+        if self._failure_diagnostic is None:
+            return None
+        return {
+            **self._failure_diagnostic,
+            "parser_state": dict(self._failure_diagnostic["parser_state"]),
+        }
+
+    def _record_failure(
+        self,
+        subtype,
+        stage,
+        error_code,
+        *,
+        line_number=None,
+        line_byte_offset=None,
+        absolute_byte_offset=None,
+    ):
+        """Snapshot the first failure before cleanup clears transient parser state."""
+        if self._failure_diagnostic is not None:
+            return
+        if subtype not in _Q7_PARSER_ERROR_SUBTYPES:
+            subtype = "parser_rejection"
+        if stage not in _Q7_PARSER_ERROR_STAGES:
+            stage = "finish"
+        if error_code not in _Q7_PARSER_ERROR_CODES:
+            error_code = "IncompleteEvidence"
+        if line_number is None:
+            line_number = self._active_line_number
+        if line_byte_offset is None:
+            line_byte_offset = self._active_line_byte_offset
+        if (
+            absolute_byte_offset is None
+            and line_number is not None
+            and line_byte_offset is not None
+        ):
+            absolute_byte_offset = self._line_start_byte_offset + line_byte_offset
+        self._failure_diagnostic = {
+            "subtype": subtype,
+            "stage": stage,
+            "error_code": error_code,
+            "line_number": line_number,
+            "line_byte_offset": line_byte_offset,
+            "absolute_byte_offset": absolute_byte_offset,
+            "parser_state": {
+                "completed_lines": self._lines_observed,
+                "records_seen": len(self._records),
+                "fields_seen": len(self._fields),
+                "relationships_seen": len(self._relationships),
+                "record_stack_depth": len(self._record_stack),
+                "empty_field_values": self._empty_field_value_count,
+                "unrecognized_fields": self._unrecognized_field_count,
+                "unclassified_lines": self._unclassified_line_count,
+                "sensitive_tails_truncated": self._sensitive_tail_truncated_count,
+            },
+        }
+
+    @staticmethod
+    def _line_byte_offset(line, character_offset):
+        return len(line[:character_offset].encode("utf-8"))
+
+    @staticmethod
+    def _sensitive_value_present(line, match):
+        """Tell redacted content from an empty value followed by another field."""
+        tail = line[match.end() :].lstrip(" \t,;")
+        empty_wrapper = re.match(
+            r"(?:[A-Za-z][A-Za-z0-9_.$]*[ \t\r]*)?\{[ \t\r]*\}", tail
+        )
+        if empty_wrapper is not None:
+            tail = tail[empty_wrapper.end() :].lstrip(" \t,;")
+        if not tail or not tail.strip("{}(),; \t\r"):
+            return False
+        return _FIELD_PATTERN.match(tail) is None
+
     def _alias(self, prefix, value, *, namespace=None):
         if not value:
+            self._record_failure(
+                "empty_normalized_alias_value",
+                self._parser_stage,
+                "IncompleteEvidence",
+            )
             raise ProbeError("IncompleteEvidence", "Transport")
         domain = prefix if namespace is None else namespace
         digest = hmac.new(
@@ -253,9 +403,15 @@ class Q7StructuralFilter:
         if reference is not None:
             return reference
         if len(self._aliases) >= self._maximum_fields:
+            self._record_failure(
+                "alias_limit_exceeded", self._parser_stage, "ResourceLimitExceeded"
+            )
             raise ProbeError("ResourceLimitExceeded", "Transport")
         sequence = self._alias_counts.get(prefix, 0) + 1
         if sequence > self._maximum_fields:
+            self._record_failure(
+                "alias_limit_exceeded", self._parser_stage, "ResourceLimitExceeded"
+            )
             raise ProbeError("ResourceLimitExceeded", "Transport")
         self._alias_counts[prefix] = sequence
         reference = f"{prefix}-{sequence:04d}"
@@ -270,6 +426,11 @@ class Q7StructuralFilter:
             source_ref,
             target_ref,
         ) not in self._relationships:
+            self._record_failure(
+                "relationship_limit_exceeded",
+                self._parser_stage,
+                "ResourceLimitExceeded",
+            )
             raise ProbeError("ResourceLimitExceeded", "Transport")
         self._relationships[(kind, source_ref, target_ref)] = {
             "kind": kind,
@@ -281,6 +442,11 @@ class Q7StructuralFilter:
         record = self._records_by_ref.get(record_ref)
         if record is None:
             if len(self._records) >= self._maximum_records:
+                self._record_failure(
+                    "record_limit_exceeded",
+                    self._parser_stage,
+                    "ResourceLimitExceeded",
+                )
                 raise ProbeError("ResourceLimitExceeded", "Transport")
             record = {
                 "record_ref": record_ref,
@@ -353,20 +519,20 @@ class Q7StructuralFilter:
             if field_match.group("name").casefold() not in _COMPONENT_FIELD_NAMES:
                 continue
             component = self._component_parts(field_match.group("value"))
-            if component is not None and component[0] == _TARGET_PACKAGE:
+            if component is not None and component[0] == self._target_package:
                 return True
 
         for header in headers:
             for token in header.group("body").split():
                 component = self._component_parts(token.strip(",;{}"))
-                if component is not None and component[0] == _TARGET_PACKAGE:
+                if component is not None and component[0] == self._target_package:
                     return True
 
         activity_prefix = line.lstrip().upper().startswith("ACTIVITY ")
         if activity_prefix:
             for token in line.lstrip().split()[1:]:
                 component = self._component_parts(token.strip(",;{}"))
-                if component is not None and component[0] == _TARGET_PACKAGE:
+                if component is not None and component[0] == self._target_package:
                     return True
         return False
 
@@ -389,13 +555,19 @@ class Q7StructuralFilter:
             normalized = normalized.split("/", 1)[0]
         return normalized
 
-    def _add_field(self, record_ref, name, raw_value, *, association):
+    def _add_field(self, record_ref, name, raw_value, *, association, value_present=None):
         if not _SAFE_FIELD_NAME_PATTERN.fullmatch(name):
             self._unrecognized_field_count += 1
             return
-        if len(self._fields) >= self._maximum_fields:
-            raise ProbeError("ResourceLimitExceeded", "Transport")
-        self._field_names.add(name)
+        if value_present is False or (
+            value_present is None
+            and (
+                not raw_value.strip("{}(),;")
+                or _EMPTY_STRUCTURED_VALUE_PATTERN.fullmatch(raw_value)
+            )
+        ):
+            self._empty_field_value_count += 1
+            return
         lower_name = name.casefold()
         field = {
             "record_ref": record_ref,
@@ -435,23 +607,25 @@ class Q7StructuralFilter:
             elif lower_name in {"userid", "muserid", "user", "u", "userhandle", "muser"}:
                 identity_kind = "user"
             elif lower_name in {"taskid", "mtaskid", "task", "taskref"}:
+                self._ensure_field_capacity()
                 task_target = self._record_reference_from_value(raw_value)
                 if task_target is not None:
                     field["value_kind"] = "record_ref"
                     field["value_ref"] = task_target
                     if record_ref is not None:
                         self._add_relationship("activity_task", record_ref, task_target)
-                    self._fields.append(field)
+                    self._retain_field(field)
                     return
                 identity_kind = "task"
             elif lower_name in {"displayid", "mdisplayid", "display"}:
+                self._ensure_field_capacity()
                 display_target = self._record_reference_from_value(raw_value)
                 if display_target is not None:
                     field["value_kind"] = "record_ref"
                     field["value_ref"] = display_target
                     if record_ref is not None:
                         self._add_relationship("record_display", record_ref, display_target)
-                    self._fields.append(field)
+                    self._retain_field(field)
                     return
                 identity_kind = "display"
             elif lower_name in {"windowingmode", "mwindowingmode", "windowmode", "mode"}:
@@ -463,16 +637,18 @@ class Q7StructuralFilter:
             elif lower_name in {"uid", "launchedfromuid"}:
                 identity_kind = "uid"
             elif lower_name in {"app", "processrecord"}:
+                self._ensure_field_capacity()
                 process_target = self._record_reference_from_value(raw_value)
                 if process_target is not None:
                     field["value_kind"] = "record_ref"
                     field["value_ref"] = process_target
                     if record_ref is not None:
                         self._add_relationship("record_process", record_ref, process_target)
-                    self._fields.append(field)
+                    self._retain_field(field)
                     return
                 identity_kind = "process"
             elif lower_name in {"mresumedactivity", "resumedactivity", "topresumedactivity", "mtopresumedactivity"}:
+                self._ensure_field_capacity()
                 record_target = self._record_reference_from_value(raw_value)
                 if record_target is not None:
                     field["value_kind"] = "record_ref"
@@ -484,20 +660,24 @@ class Q7StructuralFilter:
                             else "resumed_activity"
                         )
                         self._add_relationship(relation, record_ref, record_target)
-                    self._fields.append(field)
+                    self._retain_field(field)
                     return
                 identity_kind = "component"
 
             if identity_kind == "component":
                 component = self._component_parts(raw_value)
                 component_value = raw_value.strip("{}(),;")
+                if not component_value:
+                    self._empty_field_value_count += 1
+                    return
+                self._ensure_field_capacity()
                 component_ref = self._alias("component", component_value)
                 field["value_kind"] = "component_ref"
                 field["value_ref"] = component_ref
                 if component is not None:
                     package_ref = self._alias("package", component[0])
                     self._add_relationship("component_package", component_ref, package_ref)
-                    if component[0] == _TARGET_PACKAGE:
+                    if component[0] == self._target_package:
                         self._target_component_refs.add(component_ref)
                         self._target_package_refs.add(package_ref)
                         if record_ref is not None:
@@ -509,7 +689,7 @@ class Q7StructuralFilter:
                 if identity_kind == "mode" and raw_value.casefold() in _SAFE_ENUMS:
                     field["value_kind"] = "enum"
                     field["value"] = raw_value.casefold()
-                    self._fields.append(field)
+                    self._retain_field(field)
                     return
                 normalized_value = self._identity_value(identity_kind, raw_value)
                 prefix = {
@@ -522,6 +702,10 @@ class Q7StructuralFilter:
                     "pid": "pid",
                     "uid": "uid",
                 }[identity_kind]
+                if not normalized_value:
+                    self._empty_field_value_count += 1
+                    return
+                self._ensure_field_capacity()
                 value_ref = self._alias(prefix, normalized_value)
                 field["value_kind"] = f"{prefix}_ref"
                 field["value_ref"] = value_ref
@@ -556,20 +740,49 @@ class Q7StructuralFilter:
                 field["value"] = raw_value.casefold()
             else:
                 # Keep equality only; arbitrary text values never enter evidence.
-                value_ref = self._alias("value", raw_value.strip("{}(),;"))
+                normalized_value = raw_value.strip("{}(),;")
+                if not normalized_value:
+                    self._empty_field_value_count += 1
+                    return
+                self._ensure_field_capacity()
+                value_ref = self._alias("value", normalized_value)
                 field["value_kind"] = "value_ref"
                 field["value_ref"] = value_ref
 
+        self._retain_field(field)
+
+    def _ensure_field_capacity(self):
+        """Reject fields that would exceed the retained-field limit."""
+        if len(self._fields) >= self._maximum_fields:
+            self._record_failure(
+                "field_limit_exceeded", self._parser_stage, "ResourceLimitExceeded"
+            )
+            raise ProbeError("ResourceLimitExceeded", "Transport")
+
+    def _retain_field(self, field):
+        """Keep a field label only when its value can be represented safely."""
+        self._ensure_field_capacity()
+        self._field_names.add(field["name"])
         self._fields.append(field)
 
-    def _capture_shorthand_tokens(self, body, record_ref, record_type):
-        tokens = body.strip().split()
+    def _capture_shorthand_tokens(
+        self, body, record_ref, record_type, *, body_line_byte_offset
+    ):
+        tokens = list(re.finditer(r"\S+", body))
         shorthand = tokens and re.fullmatch(
-            r"(?:#[0-9]+|t[0-9]+|u[0-9]+(?:a[0-9]+)?)", tokens[0], re.I
+            r"(?:#[0-9]+|t[0-9]+|u[0-9]+(?:a[0-9]+)?)",
+            tokens[0].group(),
+            re.I,
         )
-        if tokens and "=" not in tokens[0] and shorthand is None:
+        if tokens and "=" not in tokens[0].group() and shorthand is None:
             tokens = tokens[1:]
-        for token in tokens:
+        self._parser_stage = "field_scan"
+        for token_match in tokens:
+            self._active_line_byte_offset = (
+                body_line_byte_offset
+                + self._line_byte_offset(body, token_match.start())
+            )
+            token = token_match.group()
             token = token.strip(",;{}")
             if not token or "=" in token:
                 continue
@@ -585,20 +798,34 @@ class Q7StructuralFilter:
                     self._add_field(record_ref, "pid", process_match.group(1), association="attached")
                     self._add_field(record_ref, "processName", process_match.group(2), association="attached")
 
-    def _consume_line(self, raw_line):
+    def _consume_line(self, raw_line, *, line_start_byte_offset):
+        self._active_line_number = self._lines_observed + 1
+        self._line_start_byte_offset = line_start_byte_offset
+        self._active_line_byte_offset = 0
         line_length = len(raw_line)
         self._max_line_bytes = max(self._max_line_bytes, line_length)
+        self._parser_stage = "utf8_decode"
         try:
             line = raw_line.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as exc:
+            self._record_failure(
+                "invalid_utf8",
+                "utf8_decode",
+                "IncompleteEvidence",
+                line_byte_offset=exc.start,
+            )
             raise ProbeError("IncompleteEvidence", "Transport") from None
-        if any(
-            (ord(character) < 32 and character not in "\t\r")
-            or ord(character) == 127
-            for character in line
-        ):
-            raise ProbeError("IncompleteEvidence", "Transport")
-        self._lines_observed += 1
+        self._parser_stage = "control_validation"
+        for character_offset, character in enumerate(line):
+            if (ord(character) < 32 and character not in "\t\r") or ord(character) == 127:
+                self._record_failure(
+                    "forbidden_control_character",
+                    "control_validation",
+                    "IncompleteEvidence",
+                    line_byte_offset=self._line_byte_offset(line, character_offset),
+                )
+                raise ProbeError("IncompleteEvidence", "Transport")
+        self._parser_stage = "record_scan"
         for category, pattern in _FIELD_PATTERNS.items():
             if pattern.search(line):
                 self._categories.add(category)
@@ -613,11 +840,16 @@ class Q7StructuralFilter:
         sensitive = _SENSITIVE_FIELD_PATTERN.search(line)
         structure_line = line if sensitive is None else line[: sensitive.start()]
         self._line_target_relevant = False
+        sensitive_value_present = False
         if sensitive is not None:
             field_name = sensitive.group("name")
-            self._intent_content_observed |= field_name.casefold() in {"intent", "mintent"}
-            self._redacted_field_names.add(field_name)
-            self._sensitive_tail_truncated_count += 1
+            sensitive_value_present = self._sensitive_value_present(line, sensitive)
+            self._intent_content_observed |= (
+                field_name.casefold() in {"intent", "mintent"}
+                and sensitive_value_present
+            )
+            if sensitive_value_present:
+                self._sensitive_tail_truncated_count += 1
 
         indentation = len(structure_line) - len(structure_line.lstrip(" \t"))
         headers = list(_RECORD_PATTERN.finditer(structure_line))
@@ -626,6 +858,10 @@ class Q7StructuralFilter:
         )
         record_refs = []
         for header in headers:
+            self._parser_stage = "record_scan"
+            self._active_line_byte_offset = self._line_byte_offset(
+                structure_line, header.start()
+            )
             before_header = structure_line[: header.start()]
             if re.search(
                 r"(?:mResumedActivity|resumedActivity|topResumedActivity|"
@@ -646,12 +882,24 @@ class Q7StructuralFilter:
             self._ensure_record(record_ref, record_type, indentation, defined=True)
             self._record_stack.append((indentation, record_ref))
             record_refs.append((record_ref, record_type))
-            self._capture_shorthand_tokens(header.group("body"), record_ref, record_type)
+            self._capture_shorthand_tokens(
+                header.group("body"),
+                record_ref,
+                record_type,
+                body_line_byte_offset=self._line_byte_offset(
+                    structure_line, header.start("body")
+                ),
+            )
 
         if not record_refs:
-            for token in structure_line.split():
+            self._parser_stage = "field_scan"
+            for token_match in re.finditer(r"\S+", structure_line):
+                self._active_line_byte_offset = self._line_byte_offset(
+                    structure_line, token_match.start()
+                )
+                token = token_match.group()
                 component = self._component_parts(token.strip(",;{}"))
-                if component is not None and component[0] == _TARGET_PACKAGE:
+                if component is not None and component[0] == self._target_package:
                     self._add_field(
                         None,
                         "component",
@@ -661,10 +909,14 @@ class Q7StructuralFilter:
                     break
 
         field_matches = list(_FIELD_PATTERN.finditer(structure_line))
+        self._parser_stage = "field_scan"
         parsed_field_spans = {
             (item.start("name"), item.end("name")) for item in field_matches
         }
         for candidate in _FIELD_CANDIDATE_PATTERN.finditer(structure_line):
+            self._active_line_byte_offset = self._line_byte_offset(
+                structure_line, candidate.start()
+            )
             span = (candidate.start("name"), candidate.end("name"))
             if (
                 span not in parsed_field_spans
@@ -680,6 +932,9 @@ class Q7StructuralFilter:
         else:
             associated_record, association = None, "unscoped"
         for field_match in field_matches:
+            self._active_line_byte_offset = self._line_byte_offset(
+                structure_line, field_match.start()
+            )
             self._add_field(
                 associated_record,
                 field_match.group("name"),
@@ -687,16 +942,21 @@ class Q7StructuralFilter:
                 association=association,
             )
         if sensitive is not None:
+            self._active_line_byte_offset = self._line_byte_offset(
+                structure_line, sensitive.start()
+            )
             self._add_field(
                 associated_record,
                 sensitive.group("name"),
                 "",
                 association=association,
+                value_present=sensitive_value_present,
             )
         if not headers and not field_matches and sensitive is None and not (
             _TIMEOUT_PATTERN.search(line) or _COMPLETION_PATTERN.search(line)
         ):
             self._unclassified_line_count += 1
+        self._lines_observed += 1
 
     def _target_structure(self):
         records_by_ref = {item["record_ref"]: item for item in self._records}
@@ -890,6 +1150,8 @@ class Q7StructuralFilter:
             "relationships": relationships,
             "unclassified_line_count": self._unclassified_line_count,
             "unrecognized_field_count": self._unrecognized_field_count,
+            # Count empty values without retaining their names or contents.
+            "empty_field_value_count": self._empty_field_value_count,
             "sensitive_tail_truncated_count": self._sensitive_tail_truncated_count,
         }
         intent_observed = any(
@@ -920,54 +1182,102 @@ class Q7StructuralFilter:
         self._line_target_relevant = False
         self._clear_aliases()
 
+    def _consume_buffered_line(self):
+        """Parse one buffered line and clear parser state if it fails."""
+        raw_line = bytes(self._line)
+        self._line.clear()
+        if raw_line.endswith(b"\r"):
+            raw_line = raw_line[:-1]
+        try:
+            self._consume_line(
+                raw_line,
+                line_start_byte_offset=self._line_start_byte_offset,
+            )
+        except ProbeError as exc:
+            self._record_failure("parser_rejection", self._parser_stage, exc.code)
+            self.discard()
+            raise
+
     def feed(self, chunk):
         if self._finished or type(chunk) is not bytes:
+            self._parser_stage = "input_validation"
+            self._active_line_number = None
+            self._active_line_byte_offset = None
+            self._record_failure(
+                "parser_rejection",
+                "input_validation",
+                "IncompleteEvidence",
+            )
+            self.discard()
             raise ProbeError("IncompleteEvidence", "Transport")
+        chunk_start_byte_offset = self._total_bytes_fed
+        self._total_bytes_fed += len(chunk)
         offset = 0
         while offset < len(chunk):
             newline = chunk.find(b"\n", offset)
             end = len(chunk) if newline < 0 else newline
             piece = chunk[offset:end]
             if len(self._line) + len(piece) > self._maximum_line_bytes:
+                self._parser_stage = "line_accumulation"
+                self._active_line_number = self._lines_observed + 1
+                self._active_line_byte_offset = self._maximum_line_bytes
+                self._record_failure(
+                    "line_length_exceeded",
+                    "line_accumulation",
+                    "ResourceLimitExceeded",
+                    line_byte_offset=self._maximum_line_bytes,
+                    absolute_byte_offset=(
+                        self._line_start_byte_offset + self._maximum_line_bytes
+                    ),
+                )
                 self.discard()
                 raise ProbeError("ResourceLimitExceeded", "Transport")
             self._line.extend(piece)
             if newline < 0:
                 return
-            raw_line = bytes(self._line)
-            self._line.clear()
-            if raw_line.endswith(b"\r"):
-                raw_line = raw_line[:-1]
-            try:
-                self._consume_line(raw_line)
-            except ProbeError:
-                self.discard()
-                raise
+            self._consume_buffered_line()
             offset = newline + 1
+            self._line_start_byte_offset = chunk_start_byte_offset + offset
 
     def finish(self):
         if self._finished:
+            self._parser_stage = "finish"
+            self._active_line_number = None
+            self._active_line_byte_offset = None
+            self._record_failure("parser_rejection", "finish", "IncompleteEvidence")
             raise ProbeError("IncompleteEvidence", "Transport")
         if len(self._line) > self._maximum_line_bytes:
+            self._parser_stage = "line_accumulation"
+            self._active_line_number = self._lines_observed + 1
+            self._active_line_byte_offset = self._maximum_line_bytes
+            self._record_failure(
+                "line_length_exceeded",
+                "line_accumulation",
+                "ResourceLimitExceeded",
+                line_byte_offset=self._maximum_line_bytes,
+                absolute_byte_offset=self._line_start_byte_offset + self._maximum_line_bytes,
+            )
             self.discard()
             raise ProbeError("ResourceLimitExceeded", "Transport")
         if self._line:
-            raw_line = bytes(self._line)
-            self._line.clear()
-            if raw_line.endswith(b"\r"):
-                raw_line = raw_line[:-1]
-            try:
-                self._consume_line(raw_line)
-            except ProbeError:
-                self.discard()
-                raise
-        (
-            structure,
-            categories,
-            redacted_names,
-            intent_observed,
-            target_component_observed,
-        ) = self._target_structure()
+            self._consume_buffered_line()
+        self._parser_stage = "target_projection"
+        self._active_line_number = None
+        self._active_line_byte_offset = None
+        try:
+            (
+                structure,
+                categories,
+                redacted_names,
+                intent_observed,
+                target_component_observed,
+            ) = self._target_structure()
+        except ProbeError as exc:
+            self._record_failure(
+                "parser_rejection", "target_projection", exc.code
+            )
+            self.discard()
+            raise
         self._finished = True
         result = {
             "lines_observed": self._lines_observed,
@@ -1005,8 +1315,14 @@ class Q7StructuralFilter:
         self._intent_content_observed = False
         self._unclassified_line_count = 0
         self._unrecognized_field_count = 0
+        self._empty_field_value_count = 0
         self._sensitive_tail_truncated_count = 0
         self._clear_structure_state()
+        self._total_bytes_fed = 0
+        self._line_start_byte_offset = 0
+        self._active_line_number = None
+        self._active_line_byte_offset = None
+        self._parser_stage = "input_validation"
         self._finished = True
         return None
 
@@ -1021,6 +1337,8 @@ def _source_file_hashes():
     source_paths = (
         Path(__file__).with_name("adb_forward.py"),
         Path(__file__).with_name("readiness_probe_session.py"),
+        Path(__file__).with_name("readiness_probe_artifact.py"),
+        Path(__file__).with_name("packaging.py"),
         Path(__file__),
     )
     hashes = {}
@@ -1094,11 +1412,18 @@ def _valid_recorded_source_identity(source_identity):
     ):
         return False
     hashes = source_identity.get("source_file_sha256")
-    if not isinstance(hashes, Mapping) or set(hashes) != {
+    previous_source_files = {
         "adb_forward.py",
         "readiness_probe_session.py",
         "q7_exploratory_acquisition.py",
-    }:
+    }
+    intermediate_source_files = previous_source_files | {"packaging.py"}
+    current_source_files = intermediate_source_files | {"readiness_probe_artifact.py"}
+    if not isinstance(hashes, Mapping) or set(hashes) not in (
+        previous_source_files,
+        intermediate_source_files,
+        current_source_files,
+    ):
         return False
     return all(
         type(name) is str
@@ -1115,9 +1440,12 @@ def _run_q7_observation_for_serial(
     source_identity=None,
     runner=None,
     utc_clock=None,
+    subject_package=_TARGET_PACKAGE,
 ):
-    """Run the fixed acquisition once and return metadata with no raw output."""
+    """Run once and return sanitized metadata; parser rejection leaves the input source unresolved."""
     if type(target_ref) is not str or _TARGET_REFERENCE_PATTERN.fullmatch(target_ref) is None:
+        raise ProbeError("MalformedRequest", "Transport")
+    if type(subject_package) is not str or subject_package not in _Q7_SUBJECT_PACKAGES:
         raise ProbeError("MalformedRequest", "Transport")
     source_identity = _source_identity() if source_identity is None else source_identity
     if not _valid_source_identity(source_identity):
@@ -1131,7 +1459,7 @@ def _run_q7_observation_for_serial(
     except Exception:
         raise ProbeError("IncompleteEvidence", "Transport") from None
 
-    parser = Q7StructuralFilter()
+    parser = Q7StructuralFilter(target_package=subject_package)
     filter_error_code = None
 
     def consume_output(chunk):
@@ -1159,6 +1487,7 @@ def _run_q7_observation_for_serial(
     record = {
             "schema": "argus-q7-exploratory-v2",
         "target_ref": target_ref,
+        "subject_package": subject_package,
         "acquisition_started_at_utc": acquired_at,
         "acquisition_finished_at_utc": finished_at,
             "duration_seconds": execution.finished_monotonic - execution.started_monotonic,
@@ -1170,6 +1499,7 @@ def _run_q7_observation_for_serial(
         "total_output_bytes": execution.total_output_bytes,
         "exit_code": execution.exit_code,
         "cleanup_complete": execution.cleanup_complete,
+        "process_classification": execution.classification,
         "qualification_assertions_passed": False,
         "source_identity": {
             "approved_baseline_commit": source_identity["approved_baseline_commit"],
@@ -1179,6 +1509,9 @@ def _run_q7_observation_for_serial(
         },
         "limitations": list(_LIMITATIONS),
     }
+    parser_error = parser.failure_diagnostic
+    if parser_error is not None:
+        record["parser_error"] = parser_error
     if not execution.cleanup_complete:
         record["classification"] = "cleanup_unverified"
         record["usable_exploratory_observation"] = False
@@ -1188,7 +1521,7 @@ def _run_q7_observation_for_serial(
         record["classification"] = (
             "resource_limit"
             if filter_error_code == "ResourceLimitExceeded"
-            else "malformed_output"
+            else "parser_rejection"
         )
         record["usable_exploratory_observation"] = False
         parser.discard()
@@ -1202,9 +1535,12 @@ def _run_q7_observation_for_serial(
     try:
         observation = parser.finish()
     except ProbeError as exc:
+        parser_error = parser.failure_diagnostic
+        if parser_error is not None:
+            record["parser_error"] = parser_error
         parser.discard()
         record["classification"] = (
-            "resource_limit" if exc.code == "ResourceLimitExceeded" else "malformed_output"
+            "resource_limit" if exc.code == "ResourceLimitExceeded" else "parser_rejection"
         )
         record["usable_exploratory_observation"] = False
         return record
@@ -1386,6 +1722,7 @@ def _run_q7_from_identity_outcome(
     source_identity,
     runner,
     utc_clock,
+    subject_package=_TARGET_PACKAGE,
 ):
     """Run one observation using values validated by the public entry point."""
     serial = _private_identity_serial(outcomes_directory)
@@ -1395,6 +1732,7 @@ def _run_q7_from_identity_outcome(
         source_identity=source_identity,
         runner=runner,
         utc_clock=utc_clock,
+        subject_package=subject_package,
     )
     record["identity_preflight_record_bound"] = True
     _write_sanitized_outcome(outcomes_directory, record)
@@ -1414,6 +1752,17 @@ def run_q7_from_identity_outcome(outcomes_directory):
     )
 
 
+def run_readiness_activity_snapshot_from_identity_outcome(outcomes_directory):
+    """Capture a private exploratory snapshot for the installed Readiness app."""
+    return _run_q7_from_identity_outcome(
+        outcomes_directory,
+        source_identity=_source_identity(),
+        runner=_AdbCommandRunner(),
+        utc_clock=_utc_now,
+        subject_package=_READINESS_PROBE_PACKAGE,
+    )
+
+
 def _valid_reference(value):
     return type(value) is str and re.fullmatch(
         r"(?:record|package|component|task|user|display|process|pid|uid|value|mode)-[0-9]{4,5}",
@@ -1430,6 +1779,7 @@ def _validate_structure(structure):
         "relationships",
         "unclassified_line_count",
         "unrecognized_field_count",
+        "empty_field_value_count",
         "sensitive_tail_truncated_count",
     }
     if not isinstance(structure, Mapping) or set(structure) != expected:
@@ -1572,6 +1922,7 @@ def _validate_structure(structure):
     for key in (
         "unclassified_line_count",
         "unrecognized_field_count",
+        "empty_field_value_count",
         "sensitive_tail_truncated_count",
     ):
         if (
@@ -1807,12 +2158,22 @@ def _validate_record(record):
         "classification",
         "usable_exploratory_observation",
     }
-    allowed = required | {"observation"}
+    allowed = required | {
+        "observation", "parser_error", "process_classification", "subject_package"
+    }
     if not isinstance(record, Mapping) or not required.issubset(record) or set(record) - allowed:
         raise ProbeError("MalformedRequest", "Transport")
     if record.get("schema") != "argus-q7-exploratory-v2":
         raise ProbeError("MalformedRequest", "Transport")
     if record.get("target_ref") != TARGET_REFERENCE:
+        raise ProbeError("MalformedRequest", "Transport")
+    if (
+        "subject_package" in record
+        and (
+            type(record["subject_package"]) is not str
+            or record["subject_package"] not in _Q7_SUBJECT_PACKAGES
+        )
+    ):
         raise ProbeError("MalformedRequest", "Transport")
     if record.get("identity_preflight_record_bound") is not True:
         raise ProbeError("MalformedRequest", "Transport")
@@ -1848,6 +2209,11 @@ def _validate_record(record):
         raise ProbeError("MalformedRequest", "Transport")
     if record.get("exit_code") is not None and type(record["exit_code"]) is not int:
         raise ProbeError("MalformedRequest", "Transport")
+    if "process_classification" in record and (
+        type(record["process_classification"]) is not str
+        or record["process_classification"] not in _Q7_PROCESS_CLASSIFICATIONS
+    ):
+        raise ProbeError("MalformedRequest", "Transport")
     if record["classification"] not in {
         "exploratory_only",
         "device_timeout_indicator",
@@ -1858,9 +2224,90 @@ def _validate_record(record):
         "launch_failed",
         "cleanup_unverified",
         "malformed_output",
+        "parser_rejection",
         "time_record_unavailable",
     }:
         raise ProbeError("MalformedRequest", "Transport")
+    if "parser_error" in record and record["parser_error"] is None:
+        raise ProbeError("MalformedRequest", "Transport")
+    parser_error = record.get("parser_error")
+    if parser_error is not None:
+        expected_parser_error_fields = {
+            "subtype",
+            "stage",
+            "error_code",
+            "line_number",
+            "line_byte_offset",
+            "absolute_byte_offset",
+            "parser_state",
+        }
+        if (
+            not isinstance(parser_error, Mapping)
+            or set(parser_error) != expected_parser_error_fields
+            or type(parser_error["subtype"]) is not str
+            or parser_error["subtype"] not in _Q7_PARSER_ERROR_SUBTYPES
+            or type(parser_error["stage"]) is not str
+            or parser_error["stage"] not in _Q7_PARSER_ERROR_STAGES
+            or type(parser_error["error_code"]) is not str
+            or parser_error["error_code"] not in _Q7_PARSER_ERROR_CODES
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        line_number = parser_error["line_number"]
+        line_byte_offset = parser_error["line_byte_offset"]
+        absolute_byte_offset = parser_error["absolute_byte_offset"]
+        if (
+            line_number is not None
+            and (
+                type(line_number) is not int
+                or not 1 <= line_number <= record["stdout_bytes"] + 1
+            )
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        if (
+            line_byte_offset is not None
+            and (
+                type(line_byte_offset) is not int
+                or not 0 <= line_byte_offset <= _MAX_Q7_LINE_LENGTH
+            )
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        if (
+            absolute_byte_offset is not None
+            and (
+                type(absolute_byte_offset) is not int
+                or not 0 <= absolute_byte_offset <= record["stdout_bytes"]
+            )
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        parser_state = parser_error["parser_state"]
+        if (
+            not isinstance(parser_state, Mapping)
+            or set(parser_state) != _Q7_PARSER_STATE_FIELDS
+            or any(
+                type(parser_state[field]) is not int or parser_state[field] < 0
+                for field in _Q7_PARSER_STATE_FIELDS
+            )
+            or parser_state["completed_lines"] > record["stdout_bytes"]
+            or parser_state["records_seen"] > _MAX_Q7_STRUCTURAL_RECORDS
+            or parser_state["fields_seen"] > _MAX_Q7_STRUCTURAL_FIELDS
+            or parser_state["relationships_seen"] > _MAX_Q7_STRUCTURAL_RELATIONSHIPS
+            or parser_state["record_stack_depth"] > _MAX_Q7_STRUCTURAL_RECORDS
+            or parser_state["empty_field_values"] > record["stdout_bytes"]
+            or parser_state["sensitive_tails_truncated"] > record["stdout_bytes"]
+            or parser_state["unclassified_lines"] > record["stdout_bytes"]
+            or parser_state["unrecognized_fields"] > _MAX_Q7_OUTPUT_BYTES
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        if (
+            "process_classification" not in record
+            or record["usable_exploratory_observation"]
+            or record.get("observation") is not None
+            or record["classification"]
+            not in {"malformed_output", "parser_rejection", "resource_limit", "cleanup_unverified"}
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        if record["classification"] == "parser_rejection" and parser_error is None:
+            raise ProbeError("MalformedRequest", "Transport")
     for key in ("acquisition_started_at_utc", "acquisition_finished_at_utc"):
         value = record[key]
         if value is not None and (

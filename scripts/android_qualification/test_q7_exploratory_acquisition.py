@@ -584,6 +584,12 @@ class Q7AcquisitionTests(unittest.TestCase):
     def test_unapproved_source_identity_blocks_before_runner_call(self):
         invalid_identities = [
             {**SOURCE_IDENTITY, "approved_baseline_commit": "f" * 40},
+            {**SOURCE_IDENTITY, "source_commit": "f" * 40},
+            {
+                key: value
+                for key, value in SOURCE_IDENTITY.items()
+                if key != "source_commit"
+            },
             {
                 **SOURCE_IDENTITY,
                 "source_file_sha256": {
@@ -604,6 +610,32 @@ class Q7AcquisitionTests(unittest.TestCase):
                         utc_clock=lambda: "2026-11-20T12:00:00.000Z",
                     )
                 self.assertEqual(runner.targets, [])
+
+    def test_legacy_source_identity_is_rejected_when_repository_head_is_unavailable(self):
+        legacy_identity = {
+            key: value
+            for key, value in SOURCE_IDENTITY.items()
+            if key != "source_commit"
+        }
+        with patch.object(q7_module, "_repository_head_commit", return_value=None):
+            self.assertFalse(q7_module._valid_source_identity(SOURCE_IDENTITY))
+            self.assertFalse(q7_module._valid_source_identity(legacy_identity))
+
+    def test_legacy_recorded_source_identity_remains_valid_for_saved_outcomes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            outcomes = Path(temporary).resolve() / "outcomes"
+            outcomes.mkdir(mode=0o700)
+            os.chmod(outcomes, 0o700)
+            write_identity_fixture(outcomes)
+            record = call_public_q7(
+                outcomes,
+                FakeQ7Runner(chunks=(b"",)),
+                lambda: "2026-11-20T12:00:00.000Z",
+            )
+            legacy_record = json.loads(json.dumps(record))
+            del legacy_record["source_identity"]["source_commit"]
+
+            q7_module._validate_record(legacy_record)
 
     def test_failed_or_timed_out_run_exposes_no_observation_categories(self):
         runner = FakeQ7Runner(
@@ -840,6 +872,10 @@ class IdentityBindingTests(unittest.TestCase):
 
         self.assertEqual(
             source_identity["approved_baseline_commit"], APPROVED_BASELINE_COMMIT
+        )
+        self.assertEqual(
+            source_identity["source_commit"],
+            q7_module._repository_head_commit(),
         )
         self.assertEqual(source_identity["source_snapshot"], "working_tree")
         self.assertEqual(

@@ -1032,7 +1032,7 @@ def _source_file_hashes():
     return hashes
 
 
-def _source_identity():
+def _repository_head_commit():
     repository_root = Path(__file__).resolve().parents[2]
     try:
         completed = subprocess.run(
@@ -1050,26 +1050,48 @@ def _source_identity():
             commit = None
     except Exception:
         commit = None
+    return commit
+
+
+def _source_identity():
     return {
-        "approved_baseline_commit": commit,
+        "approved_baseline_commit": APPROVED_BASELINE_COMMIT,
+        "source_commit": _repository_head_commit(),
         "source_snapshot": "working_tree",
         "source_file_sha256": _source_file_hashes(),
     }
 
 
 def _valid_source_identity(source_identity):
+    if not _valid_recorded_source_identity(source_identity):
+        return False
+    source_commit = source_identity.get("source_commit")
+    current_commit = _repository_head_commit()
+    return (
+        type(source_commit) is str
+        and _HEX_COMMIT_PATTERN.fullmatch(source_commit) is not None
+        and current_commit is not None
+        and source_commit == current_commit
+        and dict(source_identity["source_file_sha256"]) == _source_file_hashes()
+    )
+
+
+def _valid_recorded_source_identity(source_identity):
     if not isinstance(source_identity, Mapping):
         return False
-    if set(source_identity) != {
-        "approved_baseline_commit",
-        "source_snapshot",
-        "source_file_sha256",
-    }:
+    common = {"approved_baseline_commit", "source_snapshot", "source_file_sha256"}
+    allowed = common | {"source_commit"}
+    if set(source_identity) not in (common, allowed):
         return False
-    commit = source_identity.get("approved_baseline_commit")
-    if type(commit) is not str or commit != APPROVED_BASELINE_COMMIT:
+    if (
+        source_identity.get("approved_baseline_commit") != APPROVED_BASELINE_COMMIT
+        or source_identity.get("source_snapshot") != "working_tree"
+    ):
         return False
-    if source_identity.get("source_snapshot") != "working_tree":
+    if "source_commit" in source_identity and (
+        type(source_identity["source_commit"]) is not str
+        or _HEX_COMMIT_PATTERN.fullmatch(source_identity["source_commit"]) is None
+    ):
         return False
     hashes = source_identity.get("source_file_sha256")
     if not isinstance(hashes, Mapping) or set(hashes) != {
@@ -1078,23 +1100,12 @@ def _valid_source_identity(source_identity):
         "q7_exploratory_acquisition.py",
     }:
         return False
-    if not all(
+    return all(
         type(name) is str
-        and name
-        in {
-            "adb_forward.py",
-            "readiness_probe_session.py",
-            "q7_exploratory_acquisition.py",
-        }
         and type(digest) is str
         and _HEX_SHA256_PATTERN.fullmatch(digest) is not None
         for name, digest in hashes.items()
-    ):
-        return False
-    try:
-        return dict(hashes) == _source_file_hashes()
-    except Exception:
-        return False
+    )
 
 
 def _run_q7_observation_for_serial(
@@ -1162,6 +1173,7 @@ def _run_q7_observation_for_serial(
         "qualification_assertions_passed": False,
         "source_identity": {
             "approved_baseline_commit": source_identity["approved_baseline_commit"],
+            "source_commit": source_identity["source_commit"],
             "source_snapshot": source_identity["source_snapshot"],
             "source_file_sha256": dict(source_identity["source_file_sha256"]),
         },
@@ -1857,13 +1869,7 @@ def _validate_record(record):
         ):
             raise ProbeError("MalformedRequest", "Transport")
     identity = record.get("source_identity")
-    if not _valid_source_identity(identity):
-        raise ProbeError("MalformedRequest", "Transport")
-    if set(identity) != {
-        "approved_baseline_commit",
-        "source_snapshot",
-        "source_file_sha256",
-    }:
+    if not _valid_recorded_source_identity(identity):
         raise ProbeError("MalformedRequest", "Transport")
     if list(record.get("limitations", ())) != list(_LIMITATIONS):
         raise ProbeError("MalformedRequest", "Transport")

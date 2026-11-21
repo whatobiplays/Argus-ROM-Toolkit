@@ -333,6 +333,27 @@ class AdbForwardAdapterTests(unittest.TestCase):
             ],
         )
 
+    def test_primary_abi_is_parsed_from_one_bound_fixed_query(self):
+        adapter, runner, _ = self.adapter(self.identity_replies(b"arm64-v8a\n"))
+        adapter.identity(TARGET, deadline=20)
+
+        self.assertEqual(adapter.platform_primary_abi(TARGET, deadline=20), "arm64-v8a")
+        self.assertEqual(
+            runner.calls[-1][0],
+            ("adb", "-s", TARGET, "shell", "getprop", "ro.product.cpu.abi"),
+        )
+
+    def test_primary_abi_rejects_empty_multiline_and_non_ascii_values(self):
+        for value in (b"\n", b"arm64-v8a\narm\n", b"\xff\n"):
+            with self.subTest(output_size=len(value)):
+                adapter, runner, _ = self.adapter(self.identity_replies(value))
+                adapter.identity(TARGET, deadline=20)
+                with self.assertRaises(probe.ProbeError) as raised:
+                    adapter.platform_primary_abi(TARGET, deadline=20)
+                self.assertEqual(raised.exception.code, "IncompleteEvidence")
+                self.assertNotIn("arm64-v8a", str(raised.exception))
+                self.assertEqual(len(runner.calls), 3)
+
     def test_build_api_and_current_user_reject_malformed_values(self):
         for value, operation in (
             (b"34\nextra\n", "platform_api_level"),
@@ -530,6 +551,34 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, expected_code)
                 self.assertNotIn(package, str(raised.exception))
             self.assertEqual(len(runner.calls), 4)
+
+    def test_package_process_state_discards_unrelated_uid_values_before_parsing(self):
+        package = readiness_probe_artifact.PACKAGE
+        process_output = (
+            "UID PID NAME\n"
+            "u0_a123 123 unrelated.application\n"
+            "shell 1 init\n"
+        ).encode("ascii")
+        adapter, _, _ = self.adapter(
+            self.identity_replies(b"10\n", process_output)
+        )
+        adapter.identity(TARGET, deadline=20)
+
+        result = adapter.package_process_state(
+            TARGET, package, expected_uid=10123, deadline=20
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "state": "absent",
+                "process_count": 0,
+                "uid_matches_package": False,
+                "roles": [],
+            },
+        )
+        self.assertNotIn("unrelated.application", repr(result))
+        self.assertNotIn("u0_a123", repr(result))
 
     def test_package_process_state_bounds_rows_before_projection(self):
         package = readiness_probe_artifact.PACKAGE
@@ -2433,6 +2482,7 @@ class AdbCommandRunnerTests(unittest.TestCase):
         vectors = (
             ("adb", "-s", TARGET, "get-state"),
             ("adb", "-s", TARGET, "shell", "getprop", "ro.build.fingerprint"),
+            ("adb", "-s", TARGET, "shell", "getprop", "ro.product.cpu.abi"),
             (
                 "adb", "-s", TARGET, "shell", "pm", "list", "packages",
                 "--show-versioncode", "-U", "--user", "10",
@@ -2460,6 +2510,7 @@ class AdbCommandRunnerTests(unittest.TestCase):
             ["adb", "-s", TARGET, "get-state"],
             ("adb", "-s", "bad target", "get-state"),
             ("adb", "-s", TARGET),
+            ("adb", "-s", TARGET, "shell", "getprop", "ro.product.model"),
             ("adb", "-s", TARGET, "forward", "--remove", "tcp:0"),
         ):
             with self.subTest(vector=vector):

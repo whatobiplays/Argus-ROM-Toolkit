@@ -536,6 +536,7 @@ class _AdbCommandRunner:
             ("get-state",),
             ("shell", "getprop", "ro.build.fingerprint"),
             ("shell", "getprop", "ro.build.version.sdk"),
+            ("shell", "getprop", "ro.product.cpu.abi"),
             ("shell", "am", "get-current-user"),
             ("shell", "ps", "-A", "-n", "-w", "-o", "UID,PID,NAME"),
             ("forward", "--list"),
@@ -946,6 +947,16 @@ class AdbForwardAdapter:
             raise ProbeError("IncompleteEvidence", "Transport")
         return api_level
 
+    def platform_primary_abi(self, target, *, deadline):
+        """Read the primary Android ABI through one fixed property query."""
+        self._require_bound_target(target)
+        value = self._single_line(
+            self._run(target, ("shell", "getprop", "ro.product.cpu.abi"), deadline)
+        )
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value) is None:
+            raise ProbeError("IncompleteEvidence", "Transport")
+        return value
+
     def current_android_user_id(self, target, *, deadline):
         """Read the numeric Android user selected for package operations."""
         self._require_bound_target(target)
@@ -1052,7 +1063,11 @@ class AdbForwardAdapter:
         return result
 
     def package_process_state(self, target, package, *, expected_uid, deadline):
-        """Keep only target process roles; parser failures expose closed labels."""
+        """Return only target-package process roles from the system process list.
+
+        Rows for other processes are ignored before their UID or PID values are
+        checked. Malformed row structure still fails the observation closed.
+        """
         if type(package) is not str or package not in _PACKAGE_QUERY_PACKAGES:
             raise ProbeError("MalformedRequest", "Transport")
         if type(expected_uid) is not int or not 0 <= expected_uid <= (1 << 31) - 1:
@@ -1088,6 +1103,8 @@ class AdbForwardAdapter:
             if len(fields) != 3:
                 raise _PackageProcessObservationError("wrong_column_count")
             uid_text, pid_text, process_name = fields
+            if process_name != package and not process_name.startswith(package + ":"):
+                continue
             if re.fullmatch(r"[0-9]+", uid_text) is None:
                 raise _PackageProcessObservationError("uid_not_decimal")
             if re.fullmatch(r"[1-9][0-9]{0,9}", pid_text) is None:
@@ -1104,7 +1121,7 @@ class AdbForwardAdapter:
                     raise _PackageProcessObservationError(
                         "uid_mismatch", "IntegrityConflict"
                     )
-                roles.append("main" if process_name == package else "secondary")
+            roles.append("main" if process_name == package else "secondary")
         return {
             "state": "running" if roles else "absent",
             "process_count": len(roles),

@@ -21,12 +21,19 @@ from enum import Enum
 from typing import Optional
 
 from .readiness_probe import ProbeError, REQUEST_CAP, RESPONSE_CAP, require
-from .readiness_probe_session import ForwardSession, _TRANSPORT_POLICIES
+from .readiness_probe_session import (
+    DIAGNOSTIC_COMMAND,
+    ForwardSession,
+    _TRANSPORT_POLICIES,
+)
 
 
 _MAX_COMMAND_OUTPUT_BYTES = 64 * 1024
 _MAX_COMMAND_READ_BYTES = 4096
 _MAX_FORWARD_LINE_LENGTH = 1024
+_MAX_Q7_OUTPUT_BYTES = 1024 * 1024
+_MAX_Q7_LINE_LENGTH = 16 * 1024
+_Q7_HOST_DEADLINE_SECONDS = 5.0
 _PROCESS_POLL_INTERVAL_SECONDS = 0.05
 _PROCESS_CLEANUP_TIMEOUT_SECONDS = 1.0
 _PROCESS_GROUP_QUERY_TIMEOUT_SECONDS = 0.25
@@ -53,6 +60,59 @@ class _ForwardPhase(Enum):
     REMOVE_READBACK_PENDING = "remove_readback_pending"
     REMOVE_UNCERTAIN = "remove_uncertain"
     REMOVED = "removed"
+
+
+@dataclass(frozen=True)
+class Q7CommandResult:
+    """Sanitized process facts for the one fixed Q7 exploratory command."""
+
+    command_count: int
+    started_monotonic: float
+    finished_monotonic: float
+    stdout_bytes: int
+    total_output_bytes: int
+    exit_code: Optional[int]
+    classification: str
+    cleanup_complete: bool
+
+    @property
+    def succeeded(self):
+        return self.classification == "exit_zero" and self.cleanup_complete
+
+
+@dataclass
+class _CommandRunState:
+    """Keep process bookkeeping without retaining diagnostic output."""
+
+    started_monotonic: float
+    spawned: bool = False
+    stdout_bytes: int = 0
+    total_output_bytes: int = 0
+    exit_code: Optional[int] = None
+    error_code: Optional[str] = None
+    cleanup_complete: bool = True
+    finished_monotonic: Optional[float] = None
+
+
+class _DiscardLineLengthGuard:
+    """Enforce a line bound without retaining the bytes being checked."""
+
+    def __init__(self, maximum):
+        self._maximum = maximum
+        self._current = 0
+
+    def feed(self, chunk):
+        for value in chunk:
+            if value == 10:
+                self._current = 0
+            else:
+                self._current += 1
+                if self._current > self._maximum:
+                    raise ProbeError("ResourceLimitExceeded", "Transport")
+
+    def finish(self):
+        if self._current > self._maximum:
+            raise ProbeError("ResourceLimitExceeded", "Transport")
 
 
 @dataclass
@@ -376,13 +436,13 @@ class _AdbCommandRunner:
                 return_code = None
         return group_stopped and return_code is not None
 
-    def run(self, argv, deadline):
-        """Return stdout bytes only, or a closed error without process text."""
-        if not self._allowed_vector(argv):
-            raise ProbeError("MalformedRequest", "Transport")
-        _deadline_remaining(self._clock, deadline)
-        self._waitid_flags()
+    def _execute(self, argv, deadline, *, started_monotonic, output_limit,
+                 stdout_consumer, enforce_q7_line_limit=False):
+        """Drain one child process while retaining only caller-selected output."""
+        state = _CommandRunState(started_monotonic=started_monotonic)
         try:
+            _deadline_remaining(self._clock, deadline)
+            self._waitid_flags()
             process = self._popen(
                 argv,
                 stdin=subprocess.DEVNULL,
@@ -392,14 +452,30 @@ class _AdbCommandRunner:
                 close_fds=True,
                 start_new_session=True,
             )
+            state.spawned = True
+        except ProbeError as exc:
+            state.error_code = exc.code
+            try:
+                state.finished_monotonic = self._clock()
+            except Exception:
+                state.finished_monotonic = started_monotonic
+                state.error_code = "IncompleteEvidence"
+            return state
         except Exception:
-            raise ProbeError("Disconnected", "Transport") from None
+            state.error_code = "Disconnected"
+            try:
+                state.finished_monotonic = self._clock()
+            except Exception:
+                state.finished_monotonic = started_monotonic
+            return state
 
         selector = None
-        stdout = bytearray()
-        total_bytes = 0
-        completed = False
         process_reaped = False
+        stderr_line_guard = (
+            _DiscardLineLengthGuard(_MAX_Q7_LINE_LENGTH)
+            if enforce_q7_line_limit
+            else None
+        )
         try:
             _deadline_remaining(self._clock, deadline)
             selector = self._selector_factory()
@@ -419,7 +495,7 @@ class _AdbCommandRunner:
                 for key, _mask in events:
                     allowance = min(
                         _MAX_COMMAND_READ_BYTES,
-                        _MAX_COMMAND_OUTPUT_BYTES - total_bytes + 1,
+                        output_limit - state.total_output_bytes + 1,
                     )
                     chunk = self._reader(key.fd, allowance)
                     if type(chunk) is not bytes:
@@ -427,12 +503,19 @@ class _AdbCommandRunner:
                     if not chunk:
                         selector.unregister(key.fileobj)
                         continue
-                    total_bytes += len(chunk)
-                    if total_bytes > _MAX_COMMAND_OUTPUT_BYTES:
+                    observed_total = state.total_output_bytes + len(chunk)
+                    if observed_total > output_limit:
+                        state.total_output_bytes = output_limit
                         raise ProbeError("ResourceLimitExceeded", "Transport")
+                    state.total_output_bytes = observed_total
                     if key.fileobj is process.stdout:
-                        stdout.extend(chunk)
+                        state.stdout_bytes += len(chunk)
+                        stdout_consumer(chunk)
+                    elif stderr_line_guard is not None:
+                        stderr_line_guard.feed(chunk)
 
+            if stderr_line_guard is not None:
+                stderr_line_guard.finish()
             self._wait_for_process_exit(process, deadline)
             if not self._signal_process_group(
                 process, missing_is_success=True, deadline=deadline
@@ -446,17 +529,16 @@ class _AdbCommandRunner:
             if type(return_code) is not int:
                 raise ProbeError("IncompleteEvidence", "Transport")
             process_reaped = True
+            state.exit_code = return_code
             _deadline_remaining(self._clock, deadline)
             if return_code != 0:
                 raise ProbeError("IncompleteEvidence", "Transport")
-            completed = True
-            return bytes(stdout)
-        except ProbeError:
-            raise
+        except ProbeError as exc:
+            state.error_code = exc.code
         except subprocess.TimeoutExpired:
-            raise ProbeError("TimedOut", "Transport") from None
+            state.error_code = "TimedOut"
         except Exception:
-            raise ProbeError("IncompleteEvidence", "Transport") from None
+            state.error_code = "IncompleteEvidence"
         finally:
             cleanup_complete = True
             if not process_reaped:
@@ -471,8 +553,115 @@ class _AdbCommandRunner:
                     stream.close()
                 except Exception:
                     pass
+            state.cleanup_complete = cleanup_complete
             if not cleanup_complete:
-                raise ProbeError("IncompleteEvidence", "Transport")
+                state.error_code = "IncompleteEvidence"
+            try:
+                state.finished_monotonic = self._clock()
+            except Exception:
+                state.finished_monotonic = started_monotonic
+                state.error_code = "IncompleteEvidence"
+        return state
+
+    @staticmethod
+    def _result_classification(state):
+        if not state.cleanup_complete:
+            return "cleanup_unverified"
+        if state.error_code is None and state.exit_code == 0:
+            return "exit_zero"
+        if state.error_code == "TimedOut":
+            return "host_timeout"
+        if not state.spawned:
+            return "launch_failed"
+        if state.error_code == "ResourceLimitExceeded":
+            return "resource_limit"
+        if state.exit_code is not None and state.exit_code != 0:
+            return "process_nonzero"
+        return "incomplete"
+
+    def run(self, argv, deadline):
+        """Return stdout bytes only, or a closed error without process text."""
+        if not self._allowed_vector(argv):
+            raise ProbeError("MalformedRequest", "Transport")
+        _deadline_remaining(self._clock, deadline)
+        self._waitid_flags()
+        started = self._clock()
+        output = bytearray()
+        state = self._execute(
+            argv,
+            deadline,
+            started_monotonic=started,
+            output_limit=_MAX_COMMAND_OUTPUT_BYTES,
+            stdout_consumer=output.extend,
+        )
+        if self._result_classification(state) != "exit_zero":
+            raise ProbeError(state.error_code or "IncompleteEvidence", "Transport")
+        return bytes(output)
+
+    def run_q7(self, target, stdout_consumer):
+        """Run the one fixed Q7 diagnostic with bounded, streaming output."""
+        started = self._clock()
+        try:
+            if not _valid_target(target) or not callable(stdout_consumer):
+                raise ProbeError("MalformedRequest", "Transport")
+            deadline = started + _Q7_HOST_DEADLINE_SECONDS
+            _deadline_remaining(self._clock, deadline)
+        except ProbeError as exc:
+            try:
+                finished = self._clock()
+            except Exception:
+                finished = started
+            return Q7CommandResult(
+                command_count=0,
+                started_monotonic=started,
+                finished_monotonic=finished,
+                stdout_bytes=0,
+                total_output_bytes=0,
+                exit_code=None,
+                classification=(
+                    "host_timeout" if exc.code == "TimedOut" else "launch_failed"
+                ),
+                cleanup_complete=True,
+            )
+        except Exception:
+            try:
+                finished = self._clock()
+            except Exception:
+                finished = started
+            return Q7CommandResult(
+                command_count=0,
+                started_monotonic=started,
+                finished_monotonic=finished,
+                stdout_bytes=0,
+                total_output_bytes=0,
+                exit_code=None,
+                classification="launch_failed",
+                cleanup_complete=True,
+            )
+
+        argv = ("adb", "-s", target, *DIAGNOSTIC_COMMAND)
+        state = self._execute(
+            argv,
+            deadline,
+            started_monotonic=started,
+            output_limit=_MAX_Q7_OUTPUT_BYTES,
+            stdout_consumer=stdout_consumer,
+            enforce_q7_line_limit=True,
+        )
+        return Q7CommandResult(
+            command_count=1 if state.spawned else 0,
+            started_monotonic=started,
+            finished_monotonic=(
+                state.finished_monotonic
+                if state.finished_monotonic is not None
+                else started
+            ),
+            stdout_bytes=state.stdout_bytes,
+            total_output_bytes=state.total_output_bytes,
+            exit_code=state.exit_code,
+            classification=self._result_classification(state),
+            cleanup_complete=state.cleanup_complete,
+        )
 
 
 class AdbForwardAdapter:

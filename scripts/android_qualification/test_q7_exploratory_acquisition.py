@@ -425,6 +425,69 @@ class Q7StructuralFilterTests(unittest.TestCase):
         self.assertFalse(result["target_binding_established"])
         self.assertFalse(result["completion_verified"])
 
+    def test_projection_drops_package_links_for_unretained_components(self):
+        parser = Q7StructuralFilter(target_package=TARGET_PACKAGE)
+        parser._records.append(
+            {
+                "record_ref": "record-0001",
+                "record_type": "activity_record",
+                "indentation_depth": 0,
+                "occurrences": 1,
+                "definition_observed": True,
+            }
+        )
+        parser._target_record_refs.update({"record-0001", "record-missing"})
+        parser._target_component_refs.update({"component-0001", "component-0002"})
+        parser._target_package_refs.add("package-0001")
+        parser._fields.extend(
+            [
+                {
+                    "record_ref": "record-0001",
+                    "association": "attached",
+                    "name": "component",
+                    "value_kind": "component_ref",
+                    "value_ref": "component-0001",
+                    "_target_line_relevant": True,
+                },
+                {
+                    "record_ref": "record-missing",
+                    "association": "attached",
+                    "name": "component",
+                    "value_kind": "component_ref",
+                    "value_ref": "component-0002",
+                    "_target_line_relevant": True,
+                },
+            ]
+        )
+        parser._add_relationship(
+            "component_package", "component-0001", "package-0001"
+        )
+        parser._add_relationship(
+            "component_package", "component-0002", "package-0001"
+        )
+        parser._add_relationship("record_component", "record-0001", "component-0001")
+
+        structure, categories, redacted_names, intent_observed, target_observed = (
+            parser._target_structure()
+        )
+
+        q7_module._validate_structure(structure)
+        q7_module._validate_target_projection(
+            structure,
+            target_component_observed=target_observed,
+            available_field_categories=categories,
+            redacted_field_names=redacted_names,
+            intent_content_observed=intent_observed,
+        )
+        component_links = [
+            item
+            for item in structure["relationships"]
+            if item["kind"] == "component_package"
+        ]
+        self.assertEqual(len(component_links), 1)
+        self.assertEqual(len(structure["fields"]), 1)
+        self.assertNotIn("component-0002", json.dumps(structure))
+
     def test_preserves_structural_associations_with_anonymized_identifiers(self):
         raw = (
             b"RootWindowContainer{root-object}\n"
@@ -528,6 +591,43 @@ class Q7StructuralFilterTests(unittest.TestCase):
             "do-not-retain",
         ):
             self.assertNotIn(private_value, rendered)
+
+    def test_display_header_is_retained_as_an_anonymized_layout_parent(self):
+        raw = (
+            b"Display #17 (activities from top to bottom):\n"
+            b"  RootTask{root-task #42}\n"
+            + f"    ActivityRecord{{target-activity u0 {TARGET_PACKAGE}/.Main t42}}\n".encode()
+        )
+        parser = Q7StructuralFilter()
+        parser.feed(raw)
+
+        result = parser.finish()
+        structure = result["structure"]
+        display_records = [
+            item for item in structure["records"] if item["record_type"] == "display_content"
+        ]
+        root_record = next(
+            item for item in structure["records"] if item["record_type"] == "root_task"
+        )
+        display_field = next(
+            item for item in structure["fields"] if item["name"] == "displayId"
+        )
+        rendered = json.dumps(result, sort_keys=True)
+
+        self.assertEqual(len(display_records), 1)
+        self.assertEqual(display_field["record_ref"], display_records[0]["record_ref"])
+        self.assertEqual(display_field["value_kind"], "display_ref")
+        self.assertIn("display_fields", result["available_field_categories"])
+        self.assertIn(
+            {
+                "kind": "layout_parent",
+                "source_ref": display_records[0]["record_ref"],
+                "target_ref": root_record["record_ref"],
+            },
+            structure["relationships"],
+        )
+        self.assertNotIn("Display #17", rendered)
+        self.assertNotIn("17", rendered)
 
     def test_duplicate_component_records_remain_distinct_and_ambiguous(self):
         parser = Q7StructuralFilter()

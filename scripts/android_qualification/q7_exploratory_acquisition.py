@@ -174,6 +174,10 @@ _RECORD_PATTERN = re.compile(
     r"RootTask|RootWindowContainer|TaskFragment|TaskRecord|Task|WindowToken)\s*"
     r"\{(?P<body>[^}\r\n]*)",
 )
+# Retain each display section as a parent record while aliasing its numeric ID.
+_DISPLAY_HEADER_PATTERN = re.compile(
+    r"Display[ \t]+#(?P<display_id>[0-9]+)[ \t]+\([^\r\n)]*\):[ \t]*\Z"
+)
 _FIELD_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_.])(?P<name>[A-Za-z][A-Za-z0-9_]{0,63})\s*[=:]\s*"
     r"(?P<value>[^,\s}]+)"
@@ -853,10 +857,41 @@ class Q7StructuralFilter:
 
         indentation = len(structure_line) - len(structure_line.lstrip(" \t"))
         headers = list(_RECORD_PATTERN.finditer(structure_line))
+        display_header = _DISPLAY_HEADER_PATTERN.fullmatch(
+            structure_line[indentation:]
+        )
         self._line_target_relevant = self._line_has_target_component(
             structure_line, headers
         )
         record_refs = []
+        if display_header is not None:
+            self._parser_stage = "record_scan"
+            self._active_line_byte_offset = self._line_byte_offset(
+                structure_line, indentation
+            )
+            while self._record_stack and self._record_stack[-1][0] >= indentation:
+                self._record_stack.pop()
+            display_id = display_header.group("display_id")
+            record_ref = self._alias(
+                "record",
+                display_id,
+                namespace="record:display_content",
+            )
+            if self._record_stack:
+                self._add_relationship(
+                    "layout_parent", self._record_stack[-1][1], record_ref
+                )
+            self._ensure_record(
+                record_ref, "display_content", indentation, defined=True
+            )
+            self._record_stack.append((indentation, record_ref))
+            record_refs.append((record_ref, "display_content"))
+            self._add_field(
+                record_ref,
+                "displayId",
+                display_id,
+                association="attached",
+            )
         for header in headers:
             self._parser_stage = "record_scan"
             self._active_line_byte_offset = self._line_byte_offset(
@@ -1060,6 +1095,11 @@ class Q7StructuralFilter:
                 {key: value for key, value in item.items() if key != "_target_line_relevant"}
             )
 
+        retained_component_refs = {
+            item["value_ref"]
+            for item in fields
+            if item["value_kind"] == "component_ref"
+        }
         used_references = set(related_records)
         for item in fields:
             if item.get("record_ref") is not None:
@@ -1071,13 +1111,13 @@ class Q7StructuralFilter:
         for item in self._relationships.values():
             if item["kind"] == "component_package":
                 allowed = (
-                    item["source_ref"] in self._target_component_refs
+                    item["source_ref"] in retained_component_refs
                     and item["target_ref"] in self._target_package_refs
                 )
             elif item["kind"] == "record_component":
                 allowed = (
                     item["source_ref"] in related_records
-                    and item["target_ref"] in self._target_component_refs
+                    and item["target_ref"] in retained_component_refs
                 )
             elif item["kind"] == "record_package":
                 allowed = (

@@ -49,6 +49,7 @@ _PACKAGE_PROCESS_DIAGNOSTIC_SUBTYPES = frozenset(
         "numeric_value_out_of_range",
         "pid_not_decimal",
         "row_limit_exceeded",
+        "target_name_not_exact",
         "uid_mismatch",
         "uid_not_decimal",
         "unexpected_header",
@@ -80,10 +81,29 @@ _PACKAGE_QUERY_PACKAGES = frozenset(
 class _PackageProcessObservationError(ProbeError):
     """Carry one closed parser label without retaining a process row."""
 
-    def __init__(self, diagnostic_subtype, code="IncompleteEvidence"):
+    def __init__(
+        self,
+        diagnostic_subtype,
+        code="IncompleteEvidence",
+        *,
+        line_number=None,
+        token_count=None,
+        parser_state="unknown",
+    ):
         if diagnostic_subtype not in _PACKAGE_PROCESS_DIAGNOSTIC_SUBTYPES:
             diagnostic_subtype = "unexpected_header"
         self.diagnostic_subtype = diagnostic_subtype
+        self.line_number = (
+            line_number if type(line_number) is int and line_number > 0 else None
+        )
+        self.token_count = (
+            token_count if type(token_count) is int and token_count >= 0 else None
+        )
+        self.parser_state = (
+            parser_state
+            if parser_state in {"unknown", "row_shape", "target_name"}
+            else "unknown"
+        )
         super().__init__(code, "Transport")
 
 
@@ -975,7 +995,11 @@ class AdbForwardAdapter:
         return user_id
 
     def launch_readiness_probe(self, target, *, deadline):
-        """Open the reviewed probe launcher and retain only its completion facts."""
+        """Launch the probe entrypoint and retain only its completion facts.
+
+        The entrypoint opens the passive owner-control screen. Discovery starts
+        only after an owner action, so Android may report either activity.
+        """
         self._require_bound_target(target)
         user_id = self.current_android_user_id(target, deadline=deadline)
         output = self._run(
@@ -1001,6 +1025,11 @@ class AdbForwardAdapter:
         full_component = (
             f"{_READINESS_PROBE_PACKAGE}/"
             "com.argusromtoolkit.argus.readinessprobe.LauncherActivity"
+        )
+        control_component = f"{_READINESS_PROBE_PACKAGE}/.ProbeControlActivity"
+        full_control_component = (
+            f"{_READINESS_PROBE_PACKAGE}/"
+            "com.argusromtoolkit.argus.readinessprobe.ProbeControlActivity"
         )
         starts = [line for line in lines if line.startswith("Starting: Intent {")]
         if starts not in (
@@ -1028,7 +1057,12 @@ class AdbForwardAdapter:
                 timing_fields[name] = int(values[0])
         if (
             statuses != ["ok"]
-            or components not in ([short_component], [full_component])
+            or components not in (
+                [short_component],
+                [full_component],
+                [control_component],
+                [full_control_component],
+            )
             or lines[-1] != "Complete"
             or lines.count("Complete") != 1
             or len(launch_states) > 1
@@ -1054,7 +1088,11 @@ class AdbForwardAdapter:
             raise ProbeError("IncompleteEvidence", "Transport")
         result = {
             "state": "launched",
-            "component": short_component,
+            "component": (
+                short_component
+                if components[0] in (short_component, full_component)
+                else control_component
+            ),
             "launch_state": launch_states[0] if launch_states else None,
             "this_time_ms": timing_fields.get("ThisTime"),
             "total_time_ms": timing_fields.get("TotalTime"),
@@ -1098,13 +1136,34 @@ class AdbForwardAdapter:
             )
         roles = []
         seen_pids = set()
-        for line in lines[1:]:
-            fields = line.split()
+        for line_number, line in enumerate(lines[1:], start=2):
+            fields = line.split(None, 2)
             if len(fields) != 3:
-                raise _PackageProcessObservationError("wrong_column_count")
+                raise _PackageProcessObservationError(
+                    "wrong_column_count",
+                    line_number=line_number,
+                    token_count=len(fields),
+                    parser_state="row_shape",
+                )
             uid_text, pid_text, process_name = fields
-            if process_name != package and not process_name.startswith(package + ":"):
+            target_name = (
+                process_name == package
+                or process_name.startswith(package + ":")
+                or (
+                    len(process_name) > len(package)
+                    and process_name.startswith(package)
+                    and process_name[len(package)].isspace()
+                )
+            )
+            if not target_name:
                 continue
+            if any(character.isspace() for character in process_name):
+                raise _PackageProcessObservationError(
+                    "target_name_not_exact",
+                    line_number=line_number,
+                    token_count=len(fields),
+                    parser_state="target_name",
+                )
             if re.fullmatch(r"[0-9]+", uid_text) is None:
                 raise _PackageProcessObservationError("uid_not_decimal")
             if re.fullmatch(r"[1-9][0-9]{0,9}", pid_text) is None:
@@ -1173,6 +1232,64 @@ class AdbForwardAdapter:
         self._readiness_install_attempted = False
         self._readiness_installed_uid = None
         return {"state": "uninstalled"}
+
+    def recover_readiness_cleanup(self, target, install_record, *, deadline):
+        """Recover cleanup ownership from the verified private install record.
+
+        The current device, Android user, package version, and UID are checked
+        before the existing uninstall path is allowed to remove the package.
+        """
+        self._require_bound_target(target)
+        if type(install_record) is not dict:
+            raise ProbeError("IntegrityConflict", "Transport")
+        identity = install_record.get("identity_private")
+        artifact = install_record.get("artifact")
+        binding = self._identity_binding
+        if (
+            install_record.get("schema")
+            != "argus-issue-74-b1-preparation-observation-v1"
+            or install_record.get("identity_preflight_record_bound") is not True
+            or install_record.get("identity_match") is not True
+            or install_record.get("qualification_assertions_passed") is not False
+            or install_record.get("package_baseline_absent") is not True
+            or install_record.get("install_status") != "installed"
+            or not isinstance(identity, dict)
+            or identity.get("serial") != target
+            or binding is None
+            or identity.get("build_fingerprint") != binding[1]
+            or not isinstance(artifact, dict)
+            or artifact.get("package") != _READINESS_PROBE_PACKAGE
+            or artifact.get("sha256") != _READINESS_PROBE_APK_SHA256
+            or type(artifact.get("version_code")) is not int
+            or artifact.get("version_code") != _READINESS_PROBE_VERSION_CODE
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        user_id = install_record.get("android_user_private")
+        installed_uid = install_record.get("package_uid_private")
+        if (
+            type(user_id) is not int
+            or not 0 <= user_id <= (1 << 31) - 1
+            or type(installed_uid) is not int
+            or not 0 < installed_uid <= (1 << 31) - 1
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        if self.current_android_user_id(target, deadline=deadline) != user_id:
+            self._readiness_android_user_id = None
+            raise ProbeError("IntegrityConflict", "Transport")
+
+        self._readiness_baseline_absent = True
+        self._readiness_install_attempted = True
+        self._readiness_installed_uid = installed_uid
+        cleanup = self.uninstall_readiness_probe(target, deadline=deadline)
+        readback = self.package_install_state(
+            target,
+            _READINESS_PROBE_PACKAGE,
+            deadline=deadline,
+            user_id=user_id,
+        )
+        if readback["state"] != "absent":
+            raise ProbeError("IncompleteEvidence", "Transport")
+        return {"state": cleanup["state"], "readback": "absent"}
 
     def package_install_state(self, target, package, *, deadline, user_id=None):
         """Return package state after a complete, clean package-list query.

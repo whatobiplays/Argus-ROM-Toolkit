@@ -18,6 +18,7 @@ from . import readiness_probe as probe
 from . import readiness_probe_artifact
 from . import packaging
 from . import q7_exploratory_acquisition as q7_module
+from . import q7_window_display_projection as q7_window_module
 from .q7_exploratory_acquisition import (
     APPROVED_BASELINE_COMMIT,
     Q7CommandResult,
@@ -90,6 +91,21 @@ def call_public_readiness_snapshot(outcomes, runner, utc_clock):
     with patch.object(q7_module, "_AdbCommandRunner", return_value=runner):
         with patch.object(q7_module, "_utc_now", side_effect=utc_clock):
             return run_readiness_activity_snapshot_from_identity_outcome(outcomes)
+
+
+def call_public_window_display_snapshot(outcomes, runner, utc_clock):
+    with patch.object(q7_module, "_AdbCommandRunner", return_value=runner):
+        with patch.object(q7_module, "_utc_now", side_effect=utc_clock):
+            return q7_module.run_readiness_window_display_snapshot_from_identity_outcome(
+                outcomes
+            )
+
+
+def make_window_display_filter(target_package):
+    return q7_window_module.Q7WindowDisplayStructuralFilter(
+        parser=Q7StructuralFilter(target_package=target_package),
+        category_deriver=q7_module.derive_available_field_categories,
+    )
 
 
 class FakeClock:
@@ -222,6 +238,7 @@ class FakeQ7Runner:
         self.result = result
         self.chunks = tuple(chunks)
         self.targets = []
+        self.window_targets = []
 
     def run_q7(self, target, stdout_consumer):
         self.targets.append(target)
@@ -241,8 +258,276 @@ class FakeQ7Runner:
             cleanup_complete=True,
         )
 
+    def run_window_displays(self, target, stdout_consumer):
+        self.window_targets.append(target)
+        return self.run_q7(target, stdout_consumer)
+
 
 class Q7StructuralFilterTests(unittest.TestCase):
+    def test_activity_filter_has_no_window_display_projection_switch(self):
+        with self.assertRaises(TypeError):
+            Q7StructuralFilter(retain_unowned_display_context=True)
+
+    def test_window_display_filter_does_not_inherit_activity_projection(self):
+        self.assertFalse(
+            issubclass(
+                q7_window_module.Q7WindowDisplayStructuralFilter,
+                Q7StructuralFilter,
+            )
+        )
+
+    def test_display_sanitizer_reuses_anonymized_display_references(self):
+        records = [
+            {"record_ref": "record-1", "record_type": "display_content"},
+            {"record_ref": "record-2", "record_type": "root_task"},
+        ]
+        fields = [
+            {
+                "record_ref": "record-1",
+                "association": "attached",
+                "name": "displayId",
+                "value_kind": "display_ref",
+                "value_ref": "display-10007",
+            },
+            {
+                "record_ref": "record-1",
+                "association": "attached",
+                "name": "rootTaskCount",
+                "value_kind": "value_ref",
+                "value": "2",
+            },
+        ]
+        relationships = [
+            {
+                "kind": "layout_parent",
+                "source_ref": "record-1",
+                "target_ref": "display-10007",
+            }
+        ]
+
+        with patch.object(q7_window_module.secrets, "randbelow", side_effect=(7, 8)):
+            _records, fields, relationships = (
+                q7_window_module._sanitize_display_structure(
+                    records,
+                    fields,
+                    relationships,
+                    randomize_record_refs=False,
+                    redact_all_field_values=False,
+                )
+            )
+
+        display_field = next(item for item in fields if item["name"] == "displayId")
+        root_count_field = next(
+            item for item in fields if item["name"] == "rootTaskCount"
+        )
+        self.assertEqual(display_field["value_ref"], "display-10008")
+        self.assertEqual(display_field["value_ref"], relationships[0]["target_ref"])
+        self.assertEqual(root_count_field["value_kind"], "redacted")
+        self.assertNotIn("value", root_count_field)
+
+    def test_target_bound_window_snapshot_skips_unowned_display_projection(self):
+        raw = (
+            "Display: mDisplayId=17 rootTasks=1\n"
+            " RootTask{root-task #42}\n"
+            f"  ActivityRecord{{target-activity u0 {TARGET_PACKAGE}/.Main t42}}\n"
+        ).encode("ascii")
+        projection = make_window_display_filter(TARGET_PACKAGE)
+        projection.feed(raw)
+
+        with patch.object(
+            projection,
+            "_project_unowned_display_headers",
+            side_effect=AssertionError("unowned projection ran for a bound target"),
+        ):
+            result = projection.finish()
+
+        self.assertTrue(result["target_component_observed"])
+
+    def test_repeated_display_sections_keep_separate_record_identity(self):
+        raw = (
+            "Display: mDisplayId=17 rootTasks=1\n"
+            " RootTask{foreign-task #41}\n"
+            "  ActivityRecord{foreign-activity u0 unrelated.app/.Home t41}\n"
+            "Display: mDisplayId=17 rootTasks=2\n"
+            " RootTask{target-task #42}\n"
+            f"  ActivityRecord{{target-activity u0 {TARGET_PACKAGE}/.Main t42}}\n"
+        ).encode("ascii")
+        projection = make_window_display_filter(TARGET_PACKAGE)
+        projection.feed(raw)
+
+        result = projection.finish()
+        display_records = [
+            item
+            for item in result["structure"]["records"]
+            if item["record_type"] == "display_content"
+        ]
+        root_task_counts = [
+            item
+            for item in result["structure"]["fields"]
+            if item["name"] == "rootTaskCount"
+        ]
+
+        self.assertEqual(len(display_records), 1)
+        self.assertEqual(len(root_task_counts), 1)
+
+    def test_target_bound_projection_keeps_only_nearest_display_ancestor(self):
+        raw = (
+            "Display: mDisplayId=17 rootTasks=1\n"
+            " Display: mDisplayId=18 rootTasks=1\n"
+            "  RootTask{root-task #42}\n"
+            f"   ActivityRecord{{target-activity u0 {TARGET_PACKAGE}/.Main t42}}\n"
+        ).encode("ascii")
+        projection = make_window_display_filter(TARGET_PACKAGE)
+        projection.feed(raw)
+
+        result = projection.finish()
+        display_records = [
+            item
+            for item in result["structure"]["records"]
+            if item["record_type"] == "display_content"
+        ]
+
+        self.assertTrue(result["target_component_observed"])
+        self.assertEqual(len(display_records), 1)
+
+    def test_projection_candidate_accessor_applies_record_and_field_allowlists(self):
+        parser = Q7StructuralFilter()
+        parser.feed(
+            b"WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)\n"
+            b" Display: mDisplayId=17 rootTasks=1\n"
+            b" RootTask{unrelated-task #42}\n"
+            b" ActivityRecord{foreign-activity u0 unrelated.private/.Home t42}\n"
+        )
+
+        records, fields, relationships = parser.projection_candidates(
+            record_types={"display_content"},
+            field_names={"displayId", "rootTaskCount"},
+            relationship_kinds={"layout_parent"},
+        )
+
+        rendered = json.dumps([records, fields, relationships], sort_keys=True)
+        self.assertEqual([item["record_type"] for item in records], ["display_content"])
+        self.assertEqual(
+            {item["name"] for item in fields},
+            {"displayId", "rootTaskCount"},
+        )
+        self.assertNotIn("unrelated.private", rendered)
+        self.assertNotIn("foreign-activity", rendered)
+
+    def test_window_projection_drops_relationships_to_unretained_records(self):
+        parser = SimpleNamespace(
+            projection_candidates=lambda **_: (
+                [
+                    {
+                        "record_ref": "record-0001",
+                        "record_type": "display_content",
+                        "indentation_depth": 0,
+                        "occurrences": 1,
+                        "definition_observed": True,
+                    }
+                ],
+                [
+                    {
+                        "record_ref": "record-0001",
+                        "association": "attached",
+                        "name": "displayId",
+                        "value_kind": "display_ref",
+                        "value_ref": "display-0001",
+                    }
+                ],
+                [
+                    {
+                        "kind": "layout_parent",
+                        "source_ref": "record-0001",
+                        "target_ref": "record-9999",
+                    }
+                ],
+            )
+        )
+        projection = make_window_display_filter(TARGET_PACKAGE)
+        projection._parser = parser
+
+        structure = projection._project_unowned_display_headers()
+
+        retained_refs = {item["record_ref"] for item in structure["records"]}
+        for relation in structure["relationships"]:
+            self.assertIn(relation["source_ref"], retained_refs)
+            self.assertIn(relation["target_ref"], retained_refs)
+
+    def test_window_projection_discards_parser_structure_without_target_binding(self):
+        empty_structure = {
+            "record_type_names": [],
+            "field_names": [],
+            "records": [],
+            "fields": [],
+            "relationships": [],
+            "unclassified_line_count": 0,
+            "unrecognized_field_count": 0,
+            "empty_field_value_count": 0,
+            "sensitive_tail_truncated_count": 0,
+        }
+        target_derived_structure = {
+            **empty_structure,
+            "record_type_names": ["task"],
+            "field_names": ["taskId"],
+            "unclassified_line_count": 6,
+            "unrecognized_field_count": 5,
+            "empty_field_value_count": 4,
+            "sensitive_tail_truncated_count": 3,
+            "records": [
+                {
+                    "record_ref": "record-0001",
+                    "record_type": "task",
+                    "indentation_depth": 0,
+                    "occurrences": 1,
+                    "definition_observed": True,
+                }
+            ],
+        }
+        parser = SimpleNamespace(
+            projection_candidates=lambda **_: ([], [], []),
+            finish=lambda **_: {
+                "lines_observed": 1,
+                "max_line_bytes": 1,
+                "available_field_categories": ["activity_records"],
+                "timeout_indicator_observed": False,
+                "timeout_indicator_count": 0,
+                "completion_indicator_observed": False,
+                "completion_indicator_count": 0,
+                "intent_content_observed": True,
+                "redacted_field_names": ["intent"],
+                "target_component_observed": False,
+                "eof_observed": True,
+                "completion_verified": False,
+                "target_binding_established": False,
+                "task_continuity_established": False,
+                "structure": target_derived_structure,
+            },
+            discard=lambda: None,
+        )
+        projection = make_window_display_filter(TARGET_PACKAGE)
+        projection._parser = parser
+
+        observation = projection.finish()
+
+        self.assertEqual(observation["structure"]["records"], [])
+        self.assertEqual(observation["structure"]["fields"], [])
+        self.assertEqual(
+            [
+                observation["structure"][key]
+                for key in (
+                    "unclassified_line_count",
+                    "unrecognized_field_count",
+                    "empty_field_value_count",
+                    "sensitive_tail_truncated_count",
+                )
+            ],
+            [0, 0, 0, 0],
+        )
+        self.assertEqual(observation["redacted_field_names"], [])
+        self.assertFalse(observation["intent_content_observed"])
+        self.assertFalse(observation["target_component_observed"])
+
     def test_q7_target_package_matches_qualification_artifact_identity(self):
         self.assertEqual(
             q7_module._TARGET_PACKAGE, packaging.QUALIFICATION_APPLICATION_ID
@@ -310,6 +595,105 @@ class Q7StructuralFilterTests(unittest.TestCase):
         self.assertNotIn(TARGET_PACKAGE, rendered)
         self.assertNotIn("unrelated.app", rendered)
 
+    def test_window_display_snapshot_persists_only_anonymized_target_relationships(self):
+        package = readiness_probe_artifact.PACKAGE
+        raw = (
+            b"WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)\n"
+            b" Display: mDisplayId=17 rootTasks=1\n"
+            b"  RootTask{root-task #42}\n"
+            + f"    ActivityRecord{{target-activity u0 {package}/.LauncherActivity t42}}\n".encode()
+            + b"  RootTask{unrelated-task #99}\n"
+            + b"    ActivityRecord{unrelated-activity u0 unrelated.app/.Other t99}\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            outcomes = Path(temporary).resolve() / "outcomes"
+            outcomes.mkdir(mode=0o700)
+            os.chmod(outcomes, 0o700)
+            write_identity_fixture(outcomes)
+            runner = FakeQ7Runner(chunks=(raw,))
+            record = call_public_window_display_snapshot(
+                outcomes,
+                runner,
+                lambda: "2026-11-21T12:00:00.000Z",
+            )
+            stored = json.loads(next(outcomes.glob("q7-exploratory-*.json")).read_text())
+
+        structure = stored["observation"]["structure"]
+        display_fields = [
+            item for item in structure["fields"] if item["name"] == "displayId"
+        ]
+        root_task_count_fields = [
+            item for item in structure["fields"] if item["name"] == "rootTaskCount"
+        ]
+        display = next(
+            item for item in structure["records"] if item["record_type"] == "display_content"
+        )
+        root_task = next(
+            item for item in structure["records"] if item["record_type"] == "root_task"
+        )
+        rendered = json.dumps(stored, sort_keys=True)
+        self.assertEqual(runner.window_targets, [TARGET])
+        self.assertEqual(
+            record["schema"], "argus-q7-window-displays-exploratory-v1"
+        )
+        self.assertEqual(stored["schema"], record["schema"])
+        self.assertFalse(record["qualification_assertions_passed"])
+        self.assertFalse(record["observation"]["completion_verified"])
+        self.assertTrue(display_fields)
+        self.assertTrue(
+            all(
+                item["value_kind"] == "display_ref"
+                and len(item["value_ref"].split("-", 1)[1]) == 5
+                for item in display_fields
+            )
+        )
+        self.assertTrue(root_task_count_fields)
+        self.assertTrue(
+            all(item["value_kind"] == "redacted" for item in root_task_count_fields)
+        )
+        self.assertIn("display_fields", record["observation"]["available_field_categories"])
+        self.assertIn(
+            {
+                "kind": "layout_parent",
+                "source_ref": display["record_ref"],
+                "target_ref": root_task["record_ref"],
+            },
+            structure["relationships"],
+        )
+        self.assertNotIn(TARGET_PACKAGE, rendered)
+        self.assertNotIn("unrelated.app", rendered)
+        self.assertNotIn(TARGET, rendered)
+        self.assertNotIn("mDisplayId=17", rendered)
+
+        invalid = json.loads(json.dumps(record))
+        observation = invalid["observation"]
+        structure = observation["structure"]
+        display_field = next(item for item in structure["fields"] if item["name"] == "displayId")
+        root_task_count = next(
+            item for item in structure["fields"] if item["name"] == "rootTaskCount"
+        )
+        root_task_count["value_kind"] = "display_ref"
+        root_task_count["value_ref"] = display_field["value_ref"]
+        observation["redacted_field_names"] = sorted(
+            {
+                item["name"]
+                for item in structure["fields"]
+                if item["value_kind"] == "redacted"
+            }
+        )
+        with self.assertRaises(probe.ProbeError):
+            q7_module._validate_record(invalid)
+
+        invalid = json.loads(json.dumps(record))
+        display_field = next(
+            item
+            for item in invalid["observation"]["structure"]["fields"]
+            if item["name"] == "displayId"
+        )
+        display_field["value_ref"] = "display-0017"
+        with self.assertRaises(probe.ProbeError):
+            q7_module._validate_record(invalid)
+
     def test_record_validator_rejects_unapproved_subject_package(self):
         raw = f"ActivityRecord{{target-object u0 {TARGET_PACKAGE}/.Main}}\n".encode()
         record = run_q7_observation(TARGET, runner=FakeQ7Runner(chunks=(raw,)))
@@ -319,6 +703,23 @@ class Q7StructuralFilterTests(unittest.TestCase):
             q7_module._validate_record(record)
 
         self.assertEqual(raised.exception.code, "MalformedRequest")
+
+    def test_non_string_source_command_is_rejected_before_runner(self):
+        class InvalidSourceCommand:
+            def __eq__(self, other):
+                raise TypeError("source command comparison must not be reached")
+
+        runner = FakeQ7Runner()
+        with self.assertRaises(probe.ProbeError) as raised:
+            run_q7_observation(
+                TARGET,
+                runner=runner,
+                source_command=InvalidSourceCommand(),
+            )
+
+        self.assertEqual(raised.exception.code, "MalformedRequest")
+        self.assertEqual(runner.targets, [])
+        self.assertEqual(runner.window_targets, [])
 
     def test_affinity_values_cannot_select_a_record_as_the_target_app(self):
         for raw in (
@@ -628,6 +1029,128 @@ class Q7StructuralFilterTests(unittest.TestCase):
         )
         self.assertNotIn("Display #17", rendered)
         self.assertNotIn("17", rendered)
+
+    def test_window_manager_display_header_uses_display_id_as_parent(self):
+        raw = (
+            b"WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)\n"
+            b" Display: mDisplayId=17 rootTasks=1\n"
+            b"  RootTask{root-task #42}\n"
+            + f"    ActivityRecord{{target-activity u0 {TARGET_PACKAGE}/.Main t42}}\n".encode()
+        )
+        parser = Q7StructuralFilter()
+        parser.feed(raw)
+
+        result = parser.finish()
+        structure = result["structure"]
+        display = next(
+            item for item in structure["records"] if item["record_type"] == "display_content"
+        )
+        root_task = next(
+            item for item in structure["records"] if item["record_type"] == "root_task"
+        )
+        display_field = next(
+            item for item in structure["fields"] if item["name"] == "displayId"
+        )
+        rendered = json.dumps(result, sort_keys=True)
+
+        self.assertEqual(display_field["record_ref"], display["record_ref"])
+        self.assertEqual(display_field["value_kind"], "display_ref")
+        self.assertIn(
+            {
+                "kind": "layout_parent",
+                "source_ref": display["record_ref"],
+                "target_ref": root_task["record_ref"],
+            },
+            structure["relationships"],
+        )
+        self.assertNotIn("mDisplayId=17", rendered)
+        self.assertNotIn(TARGET_PACKAGE, rendered)
+
+    def test_unowned_window_display_context_keeps_only_display_header_fields(self):
+        raw = (
+            b"WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)\n"
+            b" Display: mDisplayId=17 rootTasks=2\n"
+            b"  RootTask{root-task #42}\n"
+            b"    ActivityRecord{foreign-activity u0 unrelated.private/.Home t42}\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            outcomes = Path(temporary).resolve() / "outcomes"
+            outcomes.mkdir(mode=0o700)
+            os.chmod(outcomes, 0o700)
+            write_identity_fixture(outcomes)
+            record = call_public_window_display_snapshot(
+                outcomes,
+                FakeQ7Runner(chunks=(raw,)),
+                lambda: "2026-11-21T12:00:00.000Z",
+            )
+            stored = json.loads(next(outcomes.glob("q7-exploratory-*.json")).read_text())
+            self.assertEqual(stored, record)
+        missing_display_id = json.loads(json.dumps(record))
+        observation = missing_display_id["observation"]
+        structure = observation["structure"]
+        structure["fields"] = [
+            item for item in structure["fields"] if item["name"] != "displayId"
+        ]
+        structure["field_names"] = sorted(
+            {item["name"] for item in structure["fields"]}
+        )
+        observation["available_field_categories"] = (
+            q7_module.derive_available_field_categories(
+                structure["record_type_names"], structure["field_names"]
+            )
+        )
+        observation["redacted_field_names"] = sorted(
+            {
+                item["name"]
+                for item in structure["fields"]
+                if item["value_kind"] == "redacted"
+            }
+        )
+        with self.assertRaises(probe.ProbeError):
+            q7_module._validate_record(missing_display_id)
+
+        structure = record["observation"]["structure"]
+        rendered = json.dumps(record, sort_keys=True)
+
+        observation = record["observation"]
+        q7_module._validate_window_display_projection(
+            structure,
+            target_component_observed=observation["target_component_observed"],
+            available_field_categories=observation["available_field_categories"],
+            redacted_field_names=observation["redacted_field_names"],
+            intent_content_observed=observation["intent_content_observed"],
+        )
+
+        self.assertEqual(
+            record["schema"],
+            "argus-q7-window-displays-exploratory-v1",
+        )
+        self.assertEqual(
+            [item["record_type"] for item in structure["records"]],
+            ["display_content"],
+        )
+        self.assertEqual(set(structure["field_names"]), {"displayId", "rootTaskCount"})
+        record_refs = [item["record_ref"] for item in structure["records"]]
+        self.assertEqual(len(record_refs), len(set(record_refs)))
+        self.assertTrue(
+            all(
+                reference.startswith("record-")
+                and len(reference.split("-", 1)[1]) == 5
+                for reference in record_refs
+            )
+        )
+        self.assertTrue(
+            all(item["value_kind"] == "redacted" for item in structure["fields"])
+        )
+        self.assertIn(
+            "display_fields",
+            record["observation"]["available_field_categories"],
+        )
+        self.assertFalse(record["qualification_assertions_passed"])
+        self.assertNotIn("unrelated.private", rendered)
+        self.assertNotIn("foreign-activity", rendered)
+        self.assertNotIn("mDisplayId=17", rendered)
+        self.assertNotIn('"value": "17"', rendered)
 
     def test_duplicate_component_records_remain_distinct_and_ambiguous(self):
         parser = Q7StructuralFilter()
@@ -1306,13 +1829,33 @@ class Q7ProcessRunnerTests(unittest.TestCase):
     def test_q7_vector_is_not_admitted_by_the_general_runner(self):
         harness = RealQ7RunnerHarness((b"", b""))
 
-        with self.assertRaises(probe.ProbeError):
-            harness.runner.run(
-                ("adb", "-s", TARGET, "shell", "dumpsys", "-t", "3", "activity", "activities"),
-                deadline=105.0,
-            )
+        for vector in (
+            ("adb", "-s", TARGET, "shell", "dumpsys", "-t", "3", "activity", "activities"),
+            ("adb", "-s", TARGET, "shell", "dumpsys", "-t", "3", "window", "displays"),
+        ):
+            with self.subTest(vector=vector), self.assertRaises(probe.ProbeError):
+                harness.runner.run(vector, deadline=105.0)
 
         self.assertEqual(harness.popen_calls, [])
+
+    def test_window_display_runner_uses_one_bounded_fixed_vector(self):
+        harness = RealQ7RunnerHarness((b"display snapshot\n", b""))
+        chunks = []
+
+        result = harness.runner.run_window_displays(TARGET, chunks.append)
+
+        argv, options = harness.popen_calls[0]
+        self.assertEqual(
+            argv,
+            ("adb", "-s", TARGET, "shell", "dumpsys", "-t", "3", "window", "displays"),
+        )
+        self.assertEqual(result.command_count, 1)
+        self.assertEqual(result.stdout_bytes, len(b"display snapshot\n"))
+        self.assertEqual(result.total_output_bytes, len(b"display snapshot\n"))
+        self.assertEqual(result.classification, "exit_zero")
+        self.assertTrue(result.cleanup_complete)
+        self.assertEqual(chunks, [b"display snapshot\n"])
+        self.assertEqual(options["stdin"], subprocess.DEVNULL)
 
     def test_host_deadline_kills_and_reaps_the_child(self):
         harness = RealQ7RunnerHarness((b"", b""), expire=True, returncode=None)
@@ -1497,6 +2040,7 @@ class IdentityBindingTests(unittest.TestCase):
                 "readiness_probe_artifact.py",
                 "readiness_probe_session.py",
                 "q7_exploratory_acquisition.py",
+                "q7_window_display_projection.py",
             },
         )
         self.assertTrue(q7_module._valid_source_identity(source_identity))
@@ -1511,6 +2055,7 @@ class IdentityBindingTests(unittest.TestCase):
         legacy_identity = q7_module._source_identity()
         legacy_identity["source_file_sha256"].pop("packaging.py")
         legacy_identity["source_file_sha256"].pop("readiness_probe_artifact.py")
+        legacy_identity["source_file_sha256"].pop("q7_window_display_projection.py")
 
         self.assertTrue(q7_module._valid_recorded_source_identity(legacy_identity))
         self.assertFalse(q7_module._valid_source_identity(legacy_identity))
@@ -1527,12 +2072,36 @@ class IdentityBindingTests(unittest.TestCase):
         record["source_identity"]["source_file_sha256"].pop(
             "readiness_probe_artifact.py"
         )
+        record["source_identity"]["source_file_sha256"].pop(
+            "q7_window_display_projection.py"
+        )
         q7_module._validate_record(record)
 
         intermediate_identity = q7_module._source_identity()
         intermediate_identity["source_file_sha256"].pop("readiness_probe_artifact.py")
+        intermediate_identity["source_file_sha256"].pop(
+            "q7_window_display_projection.py"
+        )
         self.assertTrue(q7_module._valid_recorded_source_identity(intermediate_identity))
         self.assertFalse(q7_module._valid_source_identity(intermediate_identity))
+
+    def test_window_record_requires_projection_source_hash(self):
+        record = q7_module._run_q7_observation_for_serial(
+            TARGET,
+            target_ref=TARGET_REF,
+            source_identity=q7_module._source_identity(),
+            runner=FakeQ7Runner(),
+            utc_clock=lambda: "2026-11-20T12:00:00.000Z",
+            subject_package=readiness_probe_artifact.PACKAGE,
+            source_command="window_displays",
+        )
+        record["identity_preflight_record_bound"] = True
+        record["source_identity"]["source_file_sha256"].pop(
+            "q7_window_display_projection.py"
+        )
+
+        with self.assertRaises(probe.ProbeError):
+            q7_module._validate_record(record)
 
     def test_mismatched_or_failed_preflight_blocks_before_runner_call(self):
         mismatched = identity_preflight_record(

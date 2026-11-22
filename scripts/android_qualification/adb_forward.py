@@ -27,6 +27,7 @@ from .readiness_probe import ProbeError, REQUEST_CAP, RESPONSE_CAP, require
 from .readiness_probe_session import (
     DIAGNOSTIC_COMMAND,
     ForwardSession,
+    WINDOW_DISPLAY_COMMAND,
     _TRANSPORT_POLICIES,
 )
 from .packaging import QUALIFICATION_APPLICATION_ID
@@ -804,10 +805,25 @@ class _AdbCommandRunner:
         return bytes(output)
 
     def run_q7(self, target, stdout_consumer):
-        """Run the one fixed Q7 diagnostic with bounded, streaming output."""
+        """Run the fixed activity diagnostic with bounded, streaming output."""
+        return self._run_bounded_diagnostic(
+            target, DIAGNOSTIC_COMMAND, stdout_consumer
+        )
+
+    def run_window_displays(self, target, stdout_consumer):
+        """Run the fixed WindowManager display diagnostic."""
+        return self._run_bounded_diagnostic(
+            target, WINDOW_DISPLAY_COMMAND, stdout_consumer
+        )
+
+    def _run_bounded_diagnostic(self, target, command, stdout_consumer):
         started = self._clock()
         try:
-            if not _valid_target(target) or not callable(stdout_consumer):
+            if (
+                not _valid_target(target)
+                or not callable(stdout_consumer)
+                or command not in (DIAGNOSTIC_COMMAND, WINDOW_DISPLAY_COMMAND)
+            ):
                 raise ProbeError("MalformedRequest", "Transport")
             deadline = started + _Q7_HOST_DEADLINE_SECONDS
             _deadline_remaining(self._clock, deadline)
@@ -844,7 +860,7 @@ class _AdbCommandRunner:
                 cleanup_complete=True,
             )
 
-        argv = ("adb", "-s", target, *DIAGNOSTIC_COMMAND)
+        argv = ("adb", "-s", target, *command)
         state = self._execute(
             argv,
             deadline,

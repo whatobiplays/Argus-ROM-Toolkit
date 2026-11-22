@@ -36,6 +36,16 @@ _TARGET_REFERENCE_PATTERN = re.compile(r"i74-tgt-[a-f0-9]{16}\Z")
 _HEX_COMMIT_PATTERN = re.compile(r"[a-f0-9]{40}\Z")
 _HEX_SHA256_PATTERN = re.compile(r"[a-f0-9]{64}\Z")
 _Q7_SUBJECT_PACKAGES = frozenset({_TARGET_PACKAGE, _READINESS_PROBE_PACKAGE})
+_Q7_EXPLORATORY_SCHEMA = "argus-q7-exploratory-v2"
+_WINDOW_DISPLAY_EXPLORATORY_SCHEMA = "argus-q7-window-displays-exploratory-v1"
+_SOURCE_FILE_NAMES = (
+    "adb_forward.py",
+    "readiness_probe_session.py",
+    "readiness_probe_artifact.py",
+    "packaging.py",
+    "q7_window_display_projection.py",
+    "q7_exploratory_acquisition.py",
+)
 _MAX_Q7_STRUCTURAL_RECORDS = 4096
 _MAX_Q7_STRUCTURAL_FIELDS = 16384
 _MAX_Q7_STRUCTURAL_RELATIONSHIPS = 16384
@@ -126,7 +136,9 @@ _FIELD_PATTERNS = {
     "top_resumed_fields": re.compile(
         r"\b(?:topResumedActivity|mTopResumedActivity|top-resumed)\b", re.I
     ),
-    "display_fields": re.compile(r"\b(?:displayId|mDisplayId|DisplayContent|display=)", re.I),
+    "display_fields": re.compile(
+        r"\b(?:displayId|mDisplayId|rootTaskCount|DisplayContent|display=)", re.I
+    ),
     "windowing_fields": re.compile(
         r"\b(?:windowingMode|mWindowingMode|windowing|window mode)\b", re.I
     ),
@@ -174,9 +186,12 @@ _RECORD_PATTERN = re.compile(
     r"RootTask|RootWindowContainer|TaskFragment|TaskRecord|Task|WindowToken)\s*"
     r"\{(?P<body>[^}\r\n]*)",
 )
-# Retain each display section as a parent record while aliasing its numeric ID.
+# Keep repeated display sections separate while linking their display ID.
 _DISPLAY_HEADER_PATTERN = re.compile(
-    r"Display[ \t]+#(?P<display_id>[0-9]+)[ \t]+\([^\r\n)]*\):[ \t]*\Z"
+    r"(?:(?:Display[ \t]+#(?P<activity_display_id>[0-9]+)[ \t]+"
+    r"\([^\r\n)]*\):)|(?:Display:[ \t]+mDisplayId="
+    r"(?P<window_display_id>[0-9]+)[ \t]+rootTasks="
+    r"(?P<root_task_count>[0-9]+)))[ \t]*\Z"
 )
 _FIELD_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_.])(?P<name>[A-Za-z][A-Za-z0-9_]{0,63})\s*[=:]\s*"
@@ -228,7 +243,7 @@ _LIMITATIONS = (
     "absent_fields_are_not_evidence_of_unsupported_semantics",
     "anonymized_references_preserve_only_within_capture_equality",
 )
-def _available_field_categories(record_types, field_names):
+def derive_available_field_categories(record_types, field_names):
     categories = set()
     if "activity_record" in record_types:
         categories.add("activity_records")
@@ -871,10 +886,13 @@ class Q7StructuralFilter:
             )
             while self._record_stack and self._record_stack[-1][0] >= indentation:
                 self._record_stack.pop()
-            display_id = display_header.group("display_id")
+            display_id = (
+                display_header.group("activity_display_id")
+                or display_header.group("window_display_id")
+            )
             record_ref = self._alias(
                 "record",
-                display_id,
+                f"{display_id}:{self._line_sequence}",
                 namespace="record:display_content",
             )
             if self._record_stack:
@@ -892,6 +910,14 @@ class Q7StructuralFilter:
                 display_id,
                 association="attached",
             )
+            root_task_count = display_header.group("root_task_count")
+            if root_task_count is not None:
+                self._add_field(
+                    record_ref,
+                    "rootTaskCount",
+                    root_task_count,
+                    association="attached",
+                )
         for header in headers:
             self._parser_stage = "record_scan"
             self._active_line_byte_offset = self._line_byte_offset(
@@ -992,6 +1018,36 @@ class Q7StructuralFilter:
         ):
             self._unclassified_line_count += 1
         self._lines_observed += 1
+
+    def projection_candidates(self, *, record_types, field_names, relationship_kinds):
+        """Return copied parser records that match a projection's allowlists."""
+        record_types = set(record_types)
+        field_names = set(field_names)
+        relationship_kinds = set(relationship_kinds)
+        records = [
+            dict(item)
+            for item in self._records
+            if item["record_type"] in record_types
+        ]
+        record_refs = {item["record_ref"] for item in records}
+        fields = [
+            {
+                key: value
+                for key, value in item.items()
+                if key != "_target_line_relevant"
+            }
+            for item in self._fields
+            if item.get("record_ref") in record_refs
+            and item.get("name") in field_names
+        ]
+        relationships = [
+            dict(item)
+            for item in self._relationships.values()
+            if item["kind"] in relationship_kinds
+            and item["source_ref"] in record_refs
+            and item["target_ref"] in record_refs
+        ]
+        return records, fields, relationships
 
     def _target_structure(self):
         records_by_ref = {item["record_ref"]: item for item in self._records}
@@ -1181,7 +1237,7 @@ class Q7StructuralFilter:
         redacted_names = sorted(
             {item["name"] for item in fields if item["value_kind"] == "redacted"}
         )
-        categories = _available_field_categories(record_types, field_names)
+        categories = derive_available_field_categories(record_types, field_names)
         structure = {
             "record_type_names": record_types,
             "field_names": field_names,
@@ -1279,7 +1335,8 @@ class Q7StructuralFilter:
             offset = newline + 1
             self._line_start_byte_offset = chunk_start_byte_offset + offset
 
-    def finish(self):
+    def finish(self, *, preserve_structure=False):
+        """Finish parsing and retain fields only while a caller builds a projection."""
         if self._finished:
             self._parser_stage = "finish"
             self._active_line_number = None
@@ -1336,7 +1393,8 @@ class Q7StructuralFilter:
             "task_continuity_established": False,
             "structure": structure,
         }
-        self._clear_structure_state()
+        if not preserve_structure:
+            self._clear_structure_state()
         return result
 
     def _clear_aliases(self):
@@ -1374,19 +1432,13 @@ def _utc_now():
 
 
 def _source_file_hashes():
-    source_paths = (
-        Path(__file__).with_name("adb_forward.py"),
-        Path(__file__).with_name("readiness_probe_session.py"),
-        Path(__file__).with_name("readiness_probe_artifact.py"),
-        Path(__file__).with_name("packaging.py"),
-        Path(__file__),
-    )
     hashes = {}
-    for path in source_paths:
+    for name in _SOURCE_FILE_NAMES:
+        path = Path(__file__).with_name(name)
         try:
-            hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError:
-            hashes[path.name] = None
+            hashes[name] = None
     return hashes
 
 
@@ -1458,10 +1510,12 @@ def _valid_recorded_source_identity(source_identity):
         "q7_exploratory_acquisition.py",
     }
     intermediate_source_files = previous_source_files | {"packaging.py"}
-    current_source_files = intermediate_source_files | {"readiness_probe_artifact.py"}
+    pre_window_source_files = intermediate_source_files | {"readiness_probe_artifact.py"}
+    current_source_files = set(_SOURCE_FILE_NAMES)
     if not isinstance(hashes, Mapping) or set(hashes) not in (
         previous_source_files,
         intermediate_source_files,
+        pre_window_source_files,
         current_source_files,
     ):
         return False
@@ -1481,11 +1535,17 @@ def _run_q7_observation_for_serial(
     runner=None,
     utc_clock=None,
     subject_package=_TARGET_PACKAGE,
+    source_command="activity_activities",
 ):
     """Run once and return sanitized metadata; parser rejection leaves the input source unresolved."""
     if type(target_ref) is not str or _TARGET_REFERENCE_PATTERN.fullmatch(target_ref) is None:
         raise ProbeError("MalformedRequest", "Transport")
     if type(subject_package) is not str or subject_package not in _Q7_SUBJECT_PACKAGES:
+        raise ProbeError("MalformedRequest", "Transport")
+    if type(source_command) is not str or source_command not in (
+        "activity_activities",
+        "window_displays",
+    ):
         raise ProbeError("MalformedRequest", "Transport")
     source_identity = _source_identity() if source_identity is None else source_identity
     if not _valid_source_identity(source_identity):
@@ -1499,7 +1559,19 @@ def _run_q7_observation_for_serial(
     except Exception:
         raise ProbeError("IncompleteEvidence", "Transport") from None
 
-    parser = Q7StructuralFilter(target_package=subject_package)
+    if source_command == "window_displays":
+        from .q7_window_display_projection import Q7WindowDisplayStructuralFilter
+
+        parser = Q7WindowDisplayStructuralFilter(
+            parser=Q7StructuralFilter(target_package=subject_package),
+            category_deriver=derive_available_field_categories,
+        )
+        run_command = runner.run_window_displays
+        schema = _WINDOW_DISPLAY_EXPLORATORY_SCHEMA
+    else:
+        parser = Q7StructuralFilter(target_package=subject_package)
+        run_command = runner.run_q7
+        schema = _Q7_EXPLORATORY_SCHEMA
     filter_error_code = None
 
     def consume_output(chunk):
@@ -1512,7 +1584,7 @@ def _run_q7_observation_for_serial(
             raise
 
     try:
-        execution = runner.run_q7(target, consume_output)
+        execution = run_command(target, consume_output)
     except Exception:
         parser.discard()
         raise ProbeError("IncompleteEvidence", "Transport") from None
@@ -1525,7 +1597,7 @@ def _run_q7_observation_for_serial(
         finished_at = None
 
     record = {
-            "schema": "argus-q7-exploratory-v2",
+        "schema": schema,
         "target_ref": target_ref,
         "subject_package": subject_package,
         "acquisition_started_at_utc": acquired_at,
@@ -1763,6 +1835,7 @@ def _run_q7_from_identity_outcome(
     runner,
     utc_clock,
     subject_package=_TARGET_PACKAGE,
+    source_command="activity_activities",
 ):
     """Run one observation using values validated by the public entry point."""
     serial = _private_identity_serial(outcomes_directory)
@@ -1773,6 +1846,7 @@ def _run_q7_from_identity_outcome(
         runner=runner,
         utc_clock=utc_clock,
         subject_package=subject_package,
+        source_command=source_command,
     )
     record["identity_preflight_record_bound"] = True
     _write_sanitized_outcome(outcomes_directory, record)
@@ -1800,6 +1874,18 @@ def run_readiness_activity_snapshot_from_identity_outcome(outcomes_directory):
         runner=_AdbCommandRunner(),
         utc_clock=_utc_now,
         subject_package=_READINESS_PROBE_PACKAGE,
+    )
+
+
+def run_readiness_window_display_snapshot_from_identity_outcome(outcomes_directory):
+    """Capture only the Readiness package's display and task structure."""
+    return _run_q7_from_identity_outcome(
+        outcomes_directory,
+        source_identity=_source_identity(),
+        runner=_AdbCommandRunner(),
+        utc_clock=_utc_now,
+        subject_package=_READINESS_PROBE_PACKAGE,
+        source_command="window_displays",
     )
 
 
@@ -1972,10 +2058,9 @@ def _validate_structure(structure):
             raise ProbeError("MalformedRequest", "Transport")
 
 
-def _validate_target_projection(
+def _validate_projection_metadata(
     structure,
     *,
-    target_component_observed,
     available_field_categories,
     redacted_field_names,
     intent_content_observed,
@@ -1994,7 +2079,7 @@ def _validate_target_projection(
         {item["record_type"] for item in records_by_ref.values()}
     ):
         raise ProbeError("MalformedRequest", "Transport")
-    if available_field_categories != _available_field_categories(
+    if available_field_categories != derive_available_field_categories(
         structure["record_type_names"], structure["field_names"]
     ):
         raise ProbeError("MalformedRequest", "Transport")
@@ -2007,6 +2092,25 @@ def _validate_target_projection(
         name.casefold() in {"intent", "mintent"} for name in expected_redacted_names
     ):
         raise ProbeError("MalformedRequest", "Transport")
+    return records_by_ref, fields, relationships, target_component_refs
+
+
+def _validate_target_projection(
+    structure,
+    *,
+    target_component_observed,
+    available_field_categories,
+    redacted_field_names,
+    intent_content_observed,
+):
+    records_by_ref, fields, relationships, target_component_refs = (
+        _validate_projection_metadata(
+            structure,
+            available_field_categories=available_field_categories,
+            redacted_field_names=redacted_field_names,
+            intent_content_observed=intent_content_observed,
+        )
+    )
     if not target_component_observed:
         if (
             target_component_refs
@@ -2176,6 +2280,91 @@ def _validate_target_projection(
             raise ProbeError("MalformedRequest", "Transport")
 
 
+def _validate_window_display_projection(
+    structure,
+    *,
+    target_component_observed,
+    available_field_categories,
+    redacted_field_names,
+    intent_content_observed,
+):
+    if target_component_observed:
+        _validate_target_projection(
+            structure,
+            target_component_observed=True,
+            available_field_categories=available_field_categories,
+            redacted_field_names=redacted_field_names,
+            intent_content_observed=intent_content_observed,
+        )
+        for item in structure["fields"]:
+            if item["name"] == "displayId" and item["value_kind"] != "display_ref":
+                raise ProbeError("MalformedRequest", "Transport")
+            if item["name"] == "rootTaskCount" and item["value_kind"] != "redacted":
+                raise ProbeError("MalformedRequest", "Transport")
+            if item["value_kind"] == "display_ref" and re.fullmatch(
+                r"display-[0-9]{5}", item["value_ref"]
+            ) is None:
+                raise ProbeError("MalformedRequest", "Transport")
+        for item in structure["relationships"]:
+            for reference in (item["source_ref"], item["target_ref"]):
+                if reference.startswith("display-") and re.fullmatch(
+                    r"display-[0-9]{5}", reference
+                ) is None:
+                    raise ProbeError("MalformedRequest", "Transport")
+        return
+
+    records_by_ref, fields, relationships, target_component_refs = (
+        _validate_projection_metadata(
+            structure,
+            available_field_categories=available_field_categories,
+            redacted_field_names=redacted_field_names,
+            intent_content_observed=intent_content_observed,
+        )
+    )
+    if target_component_refs or intent_content_observed:
+        raise ProbeError("MalformedRequest", "Transport")
+    if not records_by_ref:
+        if (
+            fields
+            or relationships
+            or structure["record_type_names"]
+            or structure["field_names"]
+            or available_field_categories
+            or redacted_field_names
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        return
+
+    display_refs = set(records_by_ref)
+    if structure["record_type_names"] != ["display_content"] or any(
+        item["record_type"] != "display_content" for item in records_by_ref.values()
+    ):
+        raise ProbeError("MalformedRequest", "Transport")
+    display_id_record_refs = {
+        item["record_ref"] for item in fields if item["name"] == "displayId"
+    }
+    if display_id_record_refs != display_refs:
+        raise ProbeError("MalformedRequest", "Transport")
+    allowed_field_names = {"displayId", "rootTaskCount"}
+    if any(
+        item["record_ref"] not in display_refs
+        or item["association"] != "attached"
+        or item["name"] not in allowed_field_names
+        or item["value_kind"] != "redacted"
+        for item in fields
+    ):
+        raise ProbeError("MalformedRequest", "Transport")
+    if any(
+        item["kind"] != "layout_parent"
+        or item["source_ref"] not in display_refs
+        or item["target_ref"] not in display_refs
+        for item in relationships
+    ):
+        raise ProbeError("MalformedRequest", "Transport")
+    if not set(redacted_field_names).issubset(allowed_field_names):
+        raise ProbeError("MalformedRequest", "Transport")
+
+
 def _validate_record(record):
     required = {
         "schema",
@@ -2203,7 +2392,10 @@ def _validate_record(record):
     }
     if not isinstance(record, Mapping) or not required.issubset(record) or set(record) - allowed:
         raise ProbeError("MalformedRequest", "Transport")
-    if record.get("schema") != "argus-q7-exploratory-v2":
+    if record.get("schema") not in (
+        _Q7_EXPLORATORY_SCHEMA,
+        _WINDOW_DISPLAY_EXPLORATORY_SCHEMA,
+    ):
         raise ProbeError("MalformedRequest", "Transport")
     if record.get("target_ref") != TARGET_REFERENCE:
         raise ProbeError("MalformedRequest", "Transport")
@@ -2213,6 +2405,11 @@ def _validate_record(record):
             type(record["subject_package"]) is not str
             or record["subject_package"] not in _Q7_SUBJECT_PACKAGES
         )
+    ):
+        raise ProbeError("MalformedRequest", "Transport")
+    if (
+        record["schema"] == _WINDOW_DISPLAY_EXPLORATORY_SCHEMA
+        and record.get("subject_package") != _READINESS_PROBE_PACKAGE
     ):
         raise ProbeError("MalformedRequest", "Transport")
     if record.get("identity_preflight_record_bound") is not True:
@@ -2358,6 +2555,11 @@ def _validate_record(record):
     identity = record.get("source_identity")
     if not _valid_recorded_source_identity(identity):
         raise ProbeError("MalformedRequest", "Transport")
+    if (
+        record["schema"] == _WINDOW_DISPLAY_EXPLORATORY_SCHEMA
+        and set(identity["source_file_sha256"]) != set(_SOURCE_FILE_NAMES)
+    ):
+        raise ProbeError("MalformedRequest", "Transport")
     if list(record.get("limitations", ())) != list(_LIMITATIONS):
         raise ProbeError("MalformedRequest", "Transport")
     observation = record.get("observation")
@@ -2437,13 +2639,22 @@ def _validate_record(record):
         ):
             raise ProbeError("MalformedRequest", "Transport")
         _validate_structure(observation["structure"])
-        _validate_target_projection(
-            observation["structure"],
-            target_component_observed=observation["target_component_observed"],
-            available_field_categories=categories,
-            redacted_field_names=redacted_names,
-            intent_content_observed=observation["intent_content_observed"],
-        )
+        if record["schema"] == _WINDOW_DISPLAY_EXPLORATORY_SCHEMA:
+            _validate_window_display_projection(
+                observation["structure"],
+                target_component_observed=observation["target_component_observed"],
+                available_field_categories=categories,
+                redacted_field_names=redacted_names,
+                intent_content_observed=observation["intent_content_observed"],
+            )
+        else:
+            _validate_target_projection(
+                observation["structure"],
+                target_component_observed=observation["target_component_observed"],
+                available_field_categories=categories,
+                redacted_field_names=redacted_names,
+                intent_content_observed=observation["intent_content_observed"],
+            )
     if record["usable_exploratory_observation"]:
         if (
             record["classification"] != "exploratory_only"

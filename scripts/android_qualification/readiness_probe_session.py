@@ -551,6 +551,7 @@ class ForwardSession:
         self.owned=False; self.state='Closed'
 
 DIAGNOSTIC_COMMAND=('shell','dumpsys','-t','3','activity','activities')
+WINDOW_DISPLAY_COMMAND=('shell','dumpsys','-t','3','window','displays')
 
 @dataclass(frozen=True)
 class DiagnosticProfile:

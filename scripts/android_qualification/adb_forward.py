@@ -8,8 +8,8 @@ It is an injected host adapter; importing this module never invokes ADB.
 
 from __future__ import annotations
 
-import math
 import hashlib
+import math
 import os
 import re
 import selectors
@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Optional
 
 from .readiness_probe import ProbeError, REQUEST_CAP, RESPONSE_CAP, require
+from . import readiness_probe_install_journal
 from .readiness_probe_session import (
     DIAGNOSTIC_COMMAND,
     ForwardSession,
@@ -74,6 +75,22 @@ _FORWARD_SPEC_PATTERN = re.compile(r"[a-z][a-z0-9]*:[A-Za-z0-9._:/+\-]{1,256}\Z"
 _READINESS_PROBE_PACKAGE = "com.argusromtoolkit.argus.readinessprobe"
 _READINESS_PROBE_VERSION_CODE = 1
 _READINESS_PROBE_LAUNCH_COMPONENT = f"{_READINESS_PROBE_PACKAGE}/.LauncherActivity"
+_READINESS_INSTALL_RECORD_V1_SCHEMA = (
+    "argus-issue-74-b1-preparation-observation-v1"
+)
+_READINESS_INSTALL_RECORD_V2_SCHEMA = (
+    "argus-issue-74-b1-preparation-observation-v2"
+)
+_INSTALL_ATTEMPT_ID_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
+_PACKAGE_INSTALLER_SHELL = "com.android.shell"
+_PACKAGE_INSTALLER_SHELL_UID = 2000
+_INSTALL_SESSION_SUCCESS_STATUS = 1
+_MAX_ANDROID_SESSION_ID = (1 << 31) - 1
+_MAX_ANDROID_USER_IDS = 128
+_ANDROID_USER_ROW_RE = re.compile(
+    rb"[ \t]*UserInfo\{([0-9]{1,10}):[^\x00-\x1f\x7f{}]*\}(?: running)?[ \t]*"
+)
+_INSTALL_SESSIONS_COMMAND = ("shell", "dumpsys", "-t", "3", "package", "installs")
 _PACKAGE_QUERY_PACKAGES = frozenset(
     {QUALIFICATION_APPLICATION_ID, _READINESS_PROBE_PACKAGE}
 )
@@ -147,6 +164,7 @@ class Q7CommandResult:
     exit_code: Optional[int]
     classification: str
     cleanup_complete: bool
+    stderr_empty: bool = True
 
     @property
     def succeeded(self):
@@ -481,72 +499,6 @@ class _AdbCommandRunner:
         return True
 
     @staticmethod
-    def _pinned_readiness_fd(path):
-        """Return the descriptor for the pinned APK in a private temp directory."""
-        if (
-            type(path) is not str
-            or not os.path.isabs(path)
-            or not path.lower().endswith(".apk")
-            or len(path) > 4096
-            or any(character in path for character in "\x00\r\n")
-        ):
-            return None
-        try:
-            link_target = os.readlink(path)
-            match = re.fullmatch(r"/dev/fd/([0-9]+)", link_target)
-            if match is None:
-                return None
-            descriptor = int(match.group(1))
-            parent = os.lstat(os.path.dirname(path))
-            if (
-                stat.S_ISLNK(parent.st_mode)
-                or not stat.S_ISDIR(parent.st_mode)
-                or parent.st_uid != os.getuid()
-                or stat.S_IMODE(parent.st_mode) != 0o700
-            ):
-                return None
-            before = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(before.st_mode)
-                or before.st_uid != os.getuid()
-                or stat.S_IMODE(before.st_mode) != 0o400
-                or before.st_size <= 0
-            ):
-                return None
-            if before.st_size > _MAX_READINESS_PROBE_APK_BYTES:
-                return None
-            path_stat = os.stat(path, follow_symlinks=True)
-            file_identity = lambda value: (
-                value.st_ino,
-                value.st_size,
-                value.st_mtime_ns,
-                value.st_ctime_ns,
-            )
-            if file_identity(before) != file_identity(path_stat):
-                return None
-            digest = hashlib.sha256()
-            total_bytes = 0
-            while True:
-                chunk = os.pread(descriptor, 64 * 1024, total_bytes)
-                if not chunk:
-                    break
-                total_bytes += len(chunk)
-                if total_bytes > _MAX_READINESS_PROBE_APK_BYTES:
-                    return None
-                digest.update(chunk)
-            after = os.fstat(descriptor)
-            current_path = os.stat(path, follow_symlinks=True)
-            if (
-                file_identity(before) != file_identity(after)
-                or file_identity(after) != file_identity(current_path)
-                or digest.hexdigest() != _READINESS_PROBE_APK_SHA256
-            ):
-                return None
-            return descriptor
-        except (OSError, OverflowError, ValueError):
-            return None
-
-    @staticmethod
     def _allowed_vector(argv):
         if type(argv) is not tuple or len(argv) < 4:
             return False
@@ -561,6 +513,47 @@ class _AdbCommandRunner:
             ("shell", "am", "get-current-user"),
             ("shell", "ps", "-A", "-n", "-w", "-o", "UID,PID,NAME"),
             ("forward", "--list"),
+            _INSTALL_SESSIONS_COMMAND,
+        ):
+            return True
+        if (
+            len(command) == 9
+            and command[:3] == ("shell", "pm", "install-create")
+            and command[3] == "-S"
+            and re.fullmatch(r"[1-9][0-9]{0,8}", command[4]) is not None
+            and command[5] == "--user"
+            and _valid_android_user_id_text(command[6])
+            and command[7] == "--pkg"
+            and command[8] == _READINESS_PROBE_PACKAGE
+        ):
+            return True
+        if (
+            len(command) == 8
+            and command[:4] == ("shell", "pm", "install-write", "-S")
+            and re.fullmatch(r"[1-9][0-9]{0,8}", command[4]) is not None
+            and re.fullmatch(r"[1-9][0-9]{0,9}", command[5]) is not None
+            and int(command[5]) <= _MAX_ANDROID_SESSION_ID
+            and command[6:] == ("base", "-")
+        ):
+            return True
+        if (
+            len(command) == 4
+            and command[:2] == ("shell", "pm")
+            and command[2] in ("install-commit", "install-abandon")
+            and re.fullmatch(r"[1-9][0-9]{0,9}", command[3]) is not None
+            and int(command[3]) <= _MAX_ANDROID_SESSION_ID
+        ):
+            return True
+        if command == ("shell", "pm", "path", _READINESS_PROBE_PACKAGE):
+            return True
+        if (
+            len(command) == 3
+            and command[:2] == ("exec-out", "cat")
+            and re.fullmatch(
+                r"/data/app/(?:[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+/base[.]apk",
+                command[2],
+            )
+            is not None
         ):
             return True
         if (
@@ -568,13 +561,6 @@ class _AdbCommandRunner:
             and command[:4] == ("shell", "am", "start", "--user")
             and _valid_android_user_id_text(command[4])
             and command[5:] == ("-W", "-n", _READINESS_PROBE_LAUNCH_COMPONENT)
-        ):
-            return True
-        if (
-            len(command) == 6
-            and command[:4] == ("shell", "pm", "uninstall", "--user")
-            and _valid_android_user_id_text(command[4])
-            and command[5] == _READINESS_PROBE_PACKAGE
         ):
             return True
         if (
@@ -586,12 +572,7 @@ class _AdbCommandRunner:
             and command[8] in _PACKAGE_QUERY_PACKAGES
         ):
             return True
-        if (
-            len(command) == 5
-            and command[:3] == ("install", "--no-streaming", "--user")
-            and _valid_android_user_id_text(command[3])
-            and _AdbCommandRunner._pinned_readiness_fd(command[4]) is not None
-        ):
+        if command == ("shell", "pm", "list", "users"):
             return True
         if len(command) == 4 and command[:2] == ("forward", "--no-rebind"):
             return _valid_local(command[2]) and _valid_remote(command[3])
@@ -619,29 +600,53 @@ class _AdbCommandRunner:
                 return_code = None
         return group_stopped and return_code is not None
 
-    def _execute(self, argv, deadline, *, started_monotonic, output_limit,
-                 stdout_consumer, enforce_q7_line_limit=False):
+    def _execute(
+        self,
+        argv,
+        deadline,
+        *,
+        started_monotonic,
+        output_limit,
+        stdout_consumer,
+        enforce_q7_line_limit=False,
+        input_fd=None,
+        input_size=None,
+    ):
         """Drain one child process while retaining only caller-selected output."""
         state = _CommandRunState(started_monotonic=started_monotonic)
         try:
             _deadline_remaining(self._clock, deadline)
             self._waitid_flags()
-            inherited_fds = ()
-            if len(argv) > 3 and argv[3] == "install":
-                descriptor = self._pinned_readiness_fd(argv[-1])
-                if descriptor is None:
-                    raise ProbeError("MalformedRequest", "Transport")
-                inherited_fds = (descriptor,)
+            if input_fd is not None and (
+                type(input_fd) is not int
+                or type(input_size) is not int
+                or not 0 < input_size <= _MAX_READINESS_PROBE_APK_BYTES
+                or not self._allowed_vector(argv)
+                or argv[3:7] != ("shell", "pm", "install-write", "-S")
+            ):
+                raise ProbeError("MalformedRequest", "Transport")
+            if input_fd is None and input_size is not None:
+                raise ProbeError("MalformedRequest", "Transport")
+            if input_fd is not None:
+                source_stat = os.fstat(input_fd)
+                if (
+                    not stat.S_ISREG(source_stat.st_mode)
+                    or source_stat.st_size != input_size
+                    or source_stat.st_uid != os.getuid()
+                    or stat.S_IMODE(source_stat.st_mode) != 0o400
+                ):
+                    raise ProbeError("IntegrityConflict", "Transport")
             _deadline_remaining(self._clock, deadline)
             process = self._popen(
                 argv,
-                stdin=subprocess.DEVNULL,
+                stdin=(subprocess.PIPE if input_fd is not None else subprocess.DEVNULL),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=False,
                 close_fds=True,
                 start_new_session=True,
-                pass_fds=inherited_fds,
+                pass_fds=(),
+                bufsize=0,
             )
             state.spawned = True
         except ProbeError as exc:
@@ -662,6 +667,8 @@ class _AdbCommandRunner:
 
         selector = None
         process_reaped = False
+        source_offset = 0
+        pending_input = bytearray()
         stderr_line_guard = (
             _DiscardLineLengthGuard(_MAX_Q7_LINE_LENGTH)
             if enforce_q7_line_limit
@@ -672,6 +679,9 @@ class _AdbCommandRunner:
             selector = self._selector_factory()
             selector.register(process.stdout, selectors.EVENT_READ)
             selector.register(process.stderr, selectors.EVENT_READ)
+            if input_fd is not None:
+                os.set_blocking(process.stdin.fileno(), False)
+                selector.register(process.stdin, selectors.EVENT_WRITE)
             while selector.get_map():
                 timeout = min(
                     _deadline_remaining(self._clock, deadline),
@@ -684,6 +694,29 @@ class _AdbCommandRunner:
                     _deadline_remaining(self._clock, deadline)
                     continue
                 for key, _mask in events:
+                    if input_fd is not None and key.fileobj is process.stdin:
+                        if not pending_input and source_offset < input_size:
+                            chunk = os.pread(
+                                input_fd,
+                                min(64 * 1024, input_size - source_offset),
+                                source_offset,
+                            )
+                            if not chunk:
+                                raise ProbeError("IncompleteEvidence", "Transport")
+                            source_offset += len(chunk)
+                            pending_input.extend(chunk)
+                        if pending_input:
+                            try:
+                                written = os.write(key.fd, pending_input)
+                            except BlockingIOError:
+                                continue
+                            if type(written) is not int or written <= 0:
+                                raise ProbeError("IncompleteEvidence", "Transport")
+                            del pending_input[:written]
+                        if source_offset == input_size and not pending_input:
+                            selector.unregister(key.fileobj)
+                            process.stdin.close()
+                        continue
                     allowance = min(
                         _MAX_COMMAND_READ_BYTES,
                         output_limit - state.total_output_bytes + 1,
@@ -709,6 +742,10 @@ class _AdbCommandRunner:
 
             if stderr_line_guard is not None:
                 stderr_line_guard.finish()
+            if input_fd is not None and (
+                source_offset != input_size or pending_input
+            ):
+                raise ProbeError("IncompleteEvidence", "Transport")
             self._wait_for_process_exit(process, deadline)
             if not self._signal_process_group(
                 process, missing_is_success=True, deadline=deadline
@@ -741,7 +778,13 @@ class _AdbCommandRunner:
                     selector.close()
                 except Exception:
                     pass
-            for stream in (process.stdout, process.stderr):
+            for stream in (
+                getattr(process, "stdin", None),
+                process.stdout,
+                process.stderr,
+            ):
+                if stream is None:
+                    continue
                 try:
                     stream.close()
                 except Exception:
@@ -775,15 +818,18 @@ class _AdbCommandRunner:
     @staticmethod
     def _is_package_list_query(argv):
         return (
-            len(argv) == 12
-            and argv[3:7] == ("shell", "pm", "list", "packages")
-            and argv[7:10]
-            == ("--show-versioncode", "-U", "--user")
-            and _valid_android_user_id_text(argv[10])
-            and argv[11] in _PACKAGE_QUERY_PACKAGES
+            (len(argv) == 7 and argv[3:] == ("shell", "pm", "list", "users"))
+            or (
+                len(argv) == 12
+                and argv[3:7] == ("shell", "pm", "list", "packages")
+                and argv[7:10]
+                == ("--show-versioncode", "-U", "--user")
+                and _valid_android_user_id_text(argv[10])
+                and argv[11] in _PACKAGE_QUERY_PACKAGES
+            )
         )
 
-    def run(self, argv, deadline):
+    def run(self, argv, deadline, *, input_fd=None, input_size=None):
         """Return stdout bytes only, or a closed error without process text."""
         if not self._allowed_vector(argv):
             raise ProbeError("MalformedRequest", "Transport")
@@ -797,12 +843,62 @@ class _AdbCommandRunner:
             started_monotonic=started,
             output_limit=_MAX_COMMAND_OUTPUT_BYTES,
             stdout_consumer=output.extend,
+            input_fd=input_fd,
+            input_size=input_size,
         )
         if self._result_classification(state) != "exit_zero":
             raise ProbeError(state.error_code or "IncompleteEvidence", "Transport")
         if self._is_package_list_query(argv) and not state.stderr_empty:
             raise _PackageQueryObservationError("stderr_nonempty")
         return bytes(output)
+
+    def run_bounded_stream(
+        self,
+        argv,
+        deadline,
+        *,
+        output_limit,
+        stdout_consumer,
+        line_limit=None,
+        input_fd=None,
+        input_size=None,
+    ):
+        """Run one allowlisted command while a caller consumes stdout in memory."""
+        if (
+            not self._allowed_vector(argv)
+            or type(output_limit) is not int
+            or output_limit <= 0
+            or not callable(stdout_consumer)
+            or (line_limit is not None and (
+                type(line_limit) is not int or line_limit <= 0
+            ))
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        _deadline_remaining(self._clock, deadline)
+        self._waitid_flags()
+        state = self._execute(
+            argv,
+            deadline,
+            started_monotonic=self._clock(),
+            output_limit=output_limit,
+            stdout_consumer=stdout_consumer,
+            enforce_q7_line_limit=line_limit is not None,
+            input_fd=input_fd,
+            input_size=input_size,
+        )
+        if self._result_classification(state) != "exit_zero":
+            raise ProbeError(state.error_code or "IncompleteEvidence", "Transport")
+        return {
+            "stdout_bytes": state.stdout_bytes,
+            "total_output_bytes": state.total_output_bytes,
+            "exit_code": state.exit_code,
+        }
+
+    def run_install_sessions(self, target, stdout_consumer):
+        """Capture only bounded package-session output for immediate parsing."""
+        return self._run_bounded_diagnostic(
+            target, _INSTALL_SESSIONS_COMMAND, stdout_consumer
+        )
 
     def run_q7(self, target, stdout_consumer):
         """Run the fixed activity diagnostic with bounded, streaming output."""
@@ -822,7 +918,11 @@ class _AdbCommandRunner:
             if (
                 not _valid_target(target)
                 or not callable(stdout_consumer)
-                or command not in (DIAGNOSTIC_COMMAND, WINDOW_DISPLAY_COMMAND)
+                or command not in (
+                    DIAGNOSTIC_COMMAND,
+                    WINDOW_DISPLAY_COMMAND,
+                    _INSTALL_SESSIONS_COMMAND,
+                )
             ):
                 raise ProbeError("MalformedRequest", "Transport")
             deadline = started + _Q7_HOST_DEADLINE_SECONDS
@@ -882,6 +982,7 @@ class _AdbCommandRunner:
             exit_code=state.exit_code,
             classification=self._result_classification(state),
             cleanup_complete=state.cleanup_complete,
+            stderr_empty=state.stderr_empty,
         )
 
 
@@ -909,13 +1010,18 @@ class AdbForwardAdapter:
         self._readiness_installed_uid = None
         self._forwards = {}
 
-    def _run(self, target, command, deadline):
+    def _run(self, target, command, deadline, *, input_fd=None, input_size=None):
         if not _valid_target(target):
             raise ProbeError("MalformedRequest", "Transport")
         _deadline_remaining(self._clock, deadline)
         argv = ("adb", "-s", target, *command)
         try:
-            result = self._runner.run(argv, deadline)
+            if input_fd is None:
+                result = self._runner.run(argv, deadline)
+            else:
+                result = self._runner.run(
+                    argv, deadline, input_fd=input_fd, input_size=input_size
+                )
         except ProbeError:
             raise
         except TimeoutError:
@@ -930,6 +1036,156 @@ class AdbForwardAdapter:
         if len(result) > _MAX_COMMAND_OUTPUT_BYTES:
             raise ProbeError("ResourceLimitExceeded", "Transport")
         return result
+
+    def _install_session_snapshot(self, target, deadline, *, expected_session_id=None):
+        """Read target package sessions while discarding unrelated identities."""
+        parser = readiness_probe_install_journal.InstallSessionParser(
+            _READINESS_PROBE_PACKAGE,
+            expected_session_id=expected_session_id,
+        )
+        observe = getattr(self._runner, "run_install_sessions", None)
+        if callable(observe):
+            result = observe(target, parser.feed)
+            if (
+                getattr(result, "classification", None) != "exit_zero"
+                or getattr(result, "cleanup_complete", None) is not True
+                or getattr(result, "exit_code", None) != 0
+                or getattr(result, "stderr_empty", None) is not True
+                or getattr(result, "total_output_bytes", 0)
+                > readiness_probe_install_journal._MAX_INSTALL_SESSIONS_OUTPUT_BYTES
+                or getattr(result, "stdout_bytes", 0)
+                > readiness_probe_install_journal._MAX_INSTALL_SESSIONS_OUTPUT_BYTES
+            ):
+                raise ProbeError("IncompleteEvidence", "Transport")
+        else:
+            parser.feed(
+                self._run(target, _INSTALL_SESSIONS_COMMAND, deadline)
+            )
+        return parser.finish()
+
+    def _readiness_android_user_ids(self, target, deadline):
+        """List Android user IDs and discard names and other labels."""
+        output = self._run(target, ("shell", "pm", "list", "users"), deadline)
+        lines = output.splitlines()
+        if (
+            not lines
+            or lines[0] != b"Users:"
+            or len(lines) > _MAX_ANDROID_USER_IDS + 1
+            or any(len(line) > _MAX_FORWARD_LINE_LENGTH for line in lines)
+        ):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        user_ids = []
+        for line in lines[1:]:
+            match = _ANDROID_USER_ROW_RE.fullmatch(line)
+            if match is None:
+                raise ProbeError("IncompleteEvidence", "Transport")
+            user_id = int(match.group(1))
+            if user_id > (1 << 31) - 1:
+                raise ProbeError("IncompleteEvidence", "Transport")
+            if user_id in user_ids:
+                raise ProbeError("IntegrityConflict", "Transport")
+            user_ids.append(user_id)
+        if not user_ids:
+            raise ProbeError("IncompleteEvidence", "Transport")
+        return tuple(sorted(user_ids))
+
+    def _readiness_package_instances_all_users(
+        self, target, user_id, user_state, deadline
+    ):
+        """Inspect the pinned package for each Android user without keeping labels."""
+        self._require_bound_target(target)
+        user_ids = self._readiness_android_user_ids(target, deadline)
+        selected_user_id = self._readiness_android_user_id
+        if user_id != selected_user_id or selected_user_id not in user_ids:
+            raise ProbeError("IncompleteEvidence", "Transport")
+        instances = []
+        for candidate_user_id in user_ids:
+            state = (
+                user_state
+                if candidate_user_id == selected_user_id
+                else self._query_package_install_state_for_user(
+                    target, _READINESS_PROBE_PACKAGE, candidate_user_id, deadline
+                )
+            )
+            if state["state"] == "present":
+                instances.append(
+                    (candidate_user_id, state["version_code"], state["uid"])
+                )
+        return tuple(sorted(instances))
+
+    def _require_readiness_package_absent_all_users(
+        self, target, user_id, user_state, deadline
+    ):
+        if user_state["state"] != "absent":
+            raise ProbeError("IntegrityConflict", "Transport")
+        if self._readiness_package_instances_all_users(
+            target, user_id, user_state, deadline
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+
+    def _require_readiness_package_only_for_bound_user(
+        self, target, user_id, user_state, deadline
+    ):
+        if (
+            user_id != self._readiness_android_user_id
+            or user_state.get("state") != "present"
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        expected = ((user_id, user_state["version_code"], user_state["uid"]),)
+        if self._readiness_package_instances_all_users(
+            target, user_id, user_state, deadline
+        ) != expected:
+            raise ProbeError("IntegrityConflict", "Transport")
+
+    def _installed_apk_sha256(self, target, deadline):
+        """Hash the selected package's installed base APK without retaining it."""
+        output = self._run(
+            target,
+            ("shell", "pm", "path", _READINESS_PROBE_PACKAGE),
+            deadline,
+        )
+        try:
+            lines = output.decode("ascii").splitlines()
+        except UnicodeDecodeError:
+            raise ProbeError("IncompleteEvidence", "Transport") from None
+        if len(lines) != 1 or not lines[0].startswith("package:"):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        device_path = lines[0][len("package:") :]
+        if re.fullmatch(
+            r"/data/app/(?:[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+/base[.]apk",
+            device_path,
+        ) is None:
+            raise ProbeError("IncompleteEvidence", "Transport")
+        digest = hashlib.sha256()
+        total = 0
+
+        def consume(chunk):
+            nonlocal total
+            total += len(chunk)
+            if total > _MAX_READINESS_PROBE_APK_BYTES:
+                raise ProbeError("ResourceLimitExceeded", "Transport")
+            digest.update(chunk)
+
+        argv = ("adb", "-s", target, "exec-out", "cat", device_path)
+        stream = getattr(self._runner, "run_bounded_stream", None)
+        if callable(stream):
+            result = stream(
+                argv,
+                deadline,
+                output_limit=_MAX_READINESS_PROBE_APK_BYTES,
+                stdout_consumer=consume,
+            )
+            if (
+                result.get("exit_code") != 0
+                or result.get("stdout_bytes") != total
+                or result.get("total_output_bytes") != total
+            ):
+                raise ProbeError("IncompleteEvidence", "Transport")
+        else:
+            consume(self._run(target, ("exec-out", "cat", device_path), deadline))
+        if total <= 0:
+            raise ProbeError("IncompleteEvidence", "Transport")
+        return digest.hexdigest()
 
     @staticmethod
     def _single_line(output):
@@ -1205,70 +1461,120 @@ class AdbForwardAdapter:
         }
 
     def uninstall_readiness_probe(self, target, *, deadline):
-        """Remove only the pinned package installed by this adapter instance.
-
-        The first package observation must have shown absence. Before cleanup,
-        recheck the package version for the user observed at baseline. Cleanup
-        remains pinned to that user even if the device's active user changed.
-        An absent package needs no uninstall command.
-        """
-        self._require_bound_target(target)
-        if (
-            self._readiness_baseline_absent is not True
-            or not self._readiness_install_attempted
+        """Resolve this attempt through its durable install journal."""
+        journal = getattr(self, "_readiness_install_journal", None)
+        if not isinstance(
+            journal, readiness_probe_install_journal.ReadinessInstallJournal
         ):
             raise ProbeError("IntegrityConflict", "Transport")
-        package_state = self.package_install_state(
-            target,
-            _READINESS_PROBE_PACKAGE,
-            deadline=deadline,
-            user_id=self._readiness_android_user_id,
-        )
-        if package_state["state"] == "absent":
-            self._readiness_install_attempted = False
-            self._readiness_installed_uid = None
+        if journal.latest.get("state") == "cleaned_up":
             return {"state": "already_absent"}
+        if journal.latest.get("state") not in {"pending", "attempted", "completed"}:
+            raise ProbeError("IntegrityConflict", "Transport")
+        return self.recover_readiness_cleanup(
+            target, journal.latest, deadline=deadline, install_journal=journal
+        )
+
+    def _require_install_session(
+        self, install_record, sessions, *, success_required, active_required=None
+    ):
+        baseline_ids = set(install_record.get("baseline_package_session_ids", ()))
+        session_id = install_record.get("remote_session_id")
+        if type(session_id) is not int or not 0 < session_id <= _MAX_ANDROID_SESSION_ID:
+            raise ProbeError("IntegrityConflict", "Transport")
+        if session_id in baseline_ids:
+            raise ProbeError("IntegrityConflict", "Transport")
+        session = next(
+            (item for item in sessions if item.get("session_id") == session_id),
+            None,
+        )
+        if session is None or session.get("package") != _READINESS_PROBE_PACKAGE:
+            raise ProbeError("IntegrityConflict", "Transport")
+        new_sessions = [
+            item for item in sessions if item.get("session_id") not in baseline_ids
+        ]
         if (
-            self._readiness_installed_uid is None
-            or package_state["version_code"] != _READINESS_PROBE_VERSION_CODE
-            or package_state["uid"] != self._readiness_installed_uid
+            len(new_sessions) != 1
+            or new_sessions[0].get("session_id") != session_id
+            or session.get("user_id") != install_record.get("android_user_private")
+            or session.get("installer_package") != _PACKAGE_INSTALLER_SHELL
+            or session.get("installer_uid") != _PACKAGE_INSTALLER_SHELL_UID
         ):
             raise ProbeError("IntegrityConflict", "Transport")
-        result = self._single_line(
-            self._run(
-                target,
-                ("shell", "pm", "uninstall", "--user",
-                 str(self._readiness_android_user_id),
-                 _READINESS_PROBE_PACKAGE),
-                deadline,
-            )
+        if success_required and (
+            session.get("committed") is not True
+            or session.get("final_status") != _INSTALL_SESSION_SUCCESS_STATUS
+            or session.get("section") != "historical"
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        if active_required is not None and session.get("section") != (
+            "active" if active_required else "historical"
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        return session
+
+    def _verify_installed_readiness_artifact(
+        self, target, install_record, package_state, sessions, deadline
+    ):
+        if package_state["state"] != "present" or (
+            package_state["version_code"] != _READINESS_PROBE_VERSION_CODE
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        self._require_readiness_package_only_for_bound_user(
+            target,
+            install_record["android_user_private"],
+            package_state,
+            deadline,
         )
-        if result != "Success":
-            raise ProbeError("IncompleteEvidence", "Transport")
-        self._readiness_install_attempted = False
-        self._readiness_installed_uid = None
-        return {"state": "uninstalled"}
+        session = self._require_install_session(
+            install_record, sessions, success_required=True
+        )
+        if session["user_id"] != install_record["android_user_private"]:
+            raise ProbeError("IntegrityConflict", "Transport")
+        observed_sha256 = self._installed_apk_sha256(target, deadline)
+        if observed_sha256 != _READINESS_PROBE_APK_SHA256:
+            raise ProbeError("IntegrityConflict", "Transport")
+        recorded_uid = install_record.get("package_uid_private")
+        if recorded_uid is not None and package_state["uid"] != recorded_uid:
+            raise ProbeError("IntegrityConflict", "Transport")
+        recorded_sha256 = install_record.get("installed_apk_sha256")
+        if recorded_sha256 is not None and recorded_sha256 != observed_sha256:
+            raise ProbeError("IntegrityConflict", "Transport")
+        return package_state, observed_sha256
 
-    def recover_readiness_cleanup(self, target, install_record, *, deadline):
-        """Recover cleanup ownership from the verified private install record.
-
-        The current device, Android user, package version, and UID are checked
-        before the existing uninstall path is allowed to remove the package.
-        """
+    def recover_readiness_cleanup(
+        self, target, install_record, *, deadline, install_journal=None
+    ):
+        """Rebind and prove the exact install session before package cleanup."""
         self._require_bound_target(target)
         if type(install_record) is not dict:
             raise ProbeError("IntegrityConflict", "Transport")
         identity = install_record.get("identity_private")
         artifact = install_record.get("artifact")
         binding = self._identity_binding
+        install_schema = install_record.get("schema")
+        install_attempt_id = install_record.get("install_attempt_id")
+        legacy_install_identity = (
+            install_schema == _READINESS_INSTALL_RECORD_V1_SCHEMA
+            and "install_attempt_id" not in install_record
+        ) or (
+            install_schema == _READINESS_INSTALL_RECORD_V2_SCHEMA
+            and isinstance(install_attempt_id, str)
+            and _INSTALL_ATTEMPT_ID_PATTERN.fullmatch(install_attempt_id) is not None
+        )
+        journal_install_identity = (
+            install_schema == readiness_probe_install_journal.INSTALL_JOURNAL_SCHEMA
+            and isinstance(install_attempt_id, str)
+            and _INSTALL_ATTEMPT_ID_PATTERN.fullmatch(install_attempt_id) is not None
+            and install_record.get("state") in {"pending", "attempted", "completed"}
+            and install_record.get("package_baseline_absent") is True
+        )
         if (
-            install_record.get("schema")
-            != "argus-issue-74-b1-preparation-observation-v1"
+            not (legacy_install_identity or journal_install_identity)
             or install_record.get("identity_preflight_record_bound") is not True
             or install_record.get("identity_match") is not True
             or install_record.get("qualification_assertions_passed") is not False
             or install_record.get("package_baseline_absent") is not True
-            or install_record.get("install_status") != "installed"
             or not isinstance(identity, dict)
             or identity.get("serial") != target
             or binding is None
@@ -1280,58 +1586,245 @@ class AdbForwardAdapter:
             or artifact.get("version_code") != _READINESS_PROBE_VERSION_CODE
         ):
             raise ProbeError("IntegrityConflict", "Transport")
+        if legacy_install_identity:
+            user_id = install_record.get("android_user_private")
+            if (
+                type(user_id) is not int
+                or self.current_android_user_id(target, deadline=deadline) != user_id
+            ):
+                raise ProbeError("IntegrityConflict", "Transport")
+            package_state = self.package_install_state(
+                target,
+                _READINESS_PROBE_PACKAGE,
+                deadline=deadline,
+                user_id=user_id,
+            )
+            if package_state["state"] == "absent":
+                self._require_readiness_package_absent_all_users(
+                    target, user_id, package_state, deadline
+                )
+                return {"state": "already_absent", "readback": "absent"}
+            raise ProbeError("IntegrityConflict", "Transport")
+        if not isinstance(
+            install_journal, readiness_probe_install_journal.ReadinessInstallJournal
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        if (
+            install_journal.attempt_id != install_attempt_id
+            or install_journal.latest != install_record
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
         user_id = install_record.get("android_user_private")
-        installed_uid = install_record.get("package_uid_private")
         if (
             type(user_id) is not int
             or not 0 <= user_id <= (1 << 31) - 1
-            or type(installed_uid) is not int
-            or not 0 < installed_uid <= (1 << 31) - 1
         ):
             raise ProbeError("IntegrityConflict", "Transport")
         if self.current_android_user_id(target, deadline=deadline) != user_id:
             self._readiness_android_user_id = None
             raise ProbeError("IntegrityConflict", "Transport")
-
-        self._readiness_baseline_absent = True
-        self._readiness_install_attempted = True
-        self._readiness_installed_uid = installed_uid
-        cleanup = self.uninstall_readiness_probe(target, deadline=deadline)
-        readback = self.package_install_state(
+        package_state = self.package_install_state(
             target,
             _READINESS_PROBE_PACKAGE,
             deadline=deadline,
             user_id=user_id,
         )
-        if readback["state"] != "absent":
-            raise ProbeError("IncompleteEvidence", "Transport")
-        return {"state": cleanup["state"], "readback": "absent"}
+        verified_install = None
+        if package_state["state"] == "absent":
+            self._require_readiness_package_absent_all_users(
+                target, user_id, package_state, deadline
+            )
+        sessions = self._install_session_snapshot(target, deadline)
+        baseline_ids = set(install_record.get("baseline_package_session_ids", ()))
+        remote_session_id = install_record.get("remote_session_id")
+        if package_state["state"] == "absent":
+            if remote_session_id is not None:
+                if not any(
+                    item.get("session_id") == remote_session_id for item in sessions
+                ):
+                    if any(
+                        item.get("session_id") not in baseline_ids
+                        for item in sessions
+                    ):
+                        raise ProbeError("IntegrityConflict", "Transport")
+                    install_journal.checkpoint(
+                        "cleaned_up", "verified_absent",
+                        remote_session_id=remote_session_id,
+                    )
+                    return {"state": "already_absent", "readback": "absent"}
+                active_session = self._require_install_session(
+                    install_record, sessions, success_required=False
+                )
+                if active_session["section"] == "historical":
+                    install_journal.checkpoint(
+                        "cleaned_up", "verified_absent",
+                        remote_session_id=remote_session_id,
+                    )
+                    return {"state": "already_absent", "readback": "absent"}
+                if active_session["section"] != "active":
+                    raise ProbeError("IntegrityConflict", "Transport")
+                install_journal.checkpoint(
+                    "attempted", "abandon_started",
+                    remote_session_id=remote_session_id,
+                )
+                response = self._single_line(
+                    self._run(
+                        target,
+                        ("shell", "pm", "install-abandon", str(remote_session_id)),
+                        deadline,
+                    )
+                )
+                if response != "Success":
+                    raise ProbeError("IncompleteEvidence", "Transport")
+                after_abandon = self._install_session_snapshot(
+                    target, deadline, expected_session_id=remote_session_id
+                )
+                if any(
+                    item.get("session_id") not in baseline_ids
+                    and item.get("session_id") != remote_session_id
+                    for item in after_abandon
+                ):
+                    raise ProbeError("IntegrityConflict", "Transport")
+                still_unresolved = next(
+                    (item for item in after_abandon
+                     if item.get("session_id") == remote_session_id
+                     and item.get("section") != "historical"),
+                    None,
+                )
+                if still_unresolved is not None:
+                    raise ProbeError("IncompleteEvidence", "Transport")
+                package_state = self.package_install_state(
+                    target,
+                    _READINESS_PROBE_PACKAGE,
+                    deadline=deadline,
+                    user_id=user_id,
+                )
+                if package_state["state"] == "absent":
+                    self._require_readiness_package_absent_all_users(
+                        target, user_id, package_state, deadline
+                    )
+                    install_journal.checkpoint(
+                        "cleaned_up", "verified_absent",
+                        remote_session_id=remote_session_id,
+                    )
+                    return {"state": "already_absent", "readback": "absent"}
+                package_state, installed_sha256 = (
+                    self._verify_installed_readiness_artifact(
+                        target, install_record, package_state, after_abandon, deadline
+                    )
+                )
+                install_journal.checkpoint(
+                    "completed", "installed",
+                    remote_session_id=remote_session_id,
+                    package_uid_private=package_state["uid"],
+                    installed_apk_sha256=installed_sha256,
+                )
+                install_record = install_journal.latest
+                sessions = after_abandon
+                verified_install = (package_state, installed_sha256)
+            else:
+                new_sessions = [
+                    item for item in sessions
+                    if item.get("session_id") not in baseline_ids
+                ]
+                if new_sessions:
+                    raise ProbeError("IntegrityConflict", "Transport")
+                install_journal.checkpoint("cleaned_up", "verified_absent")
+                return {"state": "already_absent", "readback": "absent"}
 
-    def package_install_state(self, target, package, *, deadline, user_id=None):
-        """Return package state after a complete, clean package-list query.
-
-        The runner accepts an empty result as no match only after a bounded
-        successful exit and empty stderr. Diagnostic bytes are never retained.
-        """
-        if type(package) is not str or package not in _PACKAGE_QUERY_PACKAGES:
-            raise ProbeError("MalformedRequest", "Transport")
-        self._require_bound_target(target)
-        if user_id is None:
-            user_id = self.current_android_user_id(target, deadline=deadline)
-        elif (
-            type(user_id) is not int
-            or not 0 <= user_id <= (1 << 31) - 1
-            or user_id != self._readiness_android_user_id
+        if (
+            remote_session_id is None
+            or install_record.get("phase")
+            not in {
+                "commit_started", "installed", "abandon_started", "cleanup_started"
+            }
         ):
             raise ProbeError("IntegrityConflict", "Transport")
-
-        def remember_baseline(state):
-            if (
-                package == _READINESS_PROBE_PACKAGE
-                and self._readiness_baseline_absent is None
+        if verified_install is None:
+            package_state, installed_sha256 = self._verify_installed_readiness_artifact(
+                target, install_record, package_state, sessions, deadline
+            )
+        else:
+            package_state, installed_sha256 = verified_install
+        if (
+            install_record.get("state") == "attempted"
+            and install_record.get("phase") in {"commit_started", "abandon_started"}
+        ):
+            install_journal.checkpoint(
+                "completed", "installed",
+                remote_session_id=remote_session_id,
+                package_uid_private=package_state["uid"],
+                installed_apk_sha256=installed_sha256,
+            )
+        final_package_state = self.package_install_state(
+            target,
+            _READINESS_PROBE_PACKAGE,
+            deadline=deadline,
+            user_id=user_id,
+        )
+        if final_package_state["state"] == "absent":
+            self._require_readiness_package_absent_all_users(
+                target, user_id, final_package_state, deadline
+            )
+            final_sessions = self._install_session_snapshot(target, deadline)
+            unrelated_sessions = [
+                item for item in final_sessions
+                if item.get("session_id") not in baseline_ids
+                and item.get("session_id") != remote_session_id
+            ]
+            if unrelated_sessions:
+                raise ProbeError("IntegrityConflict", "Transport")
+            if any(
+                item.get("session_id") == remote_session_id
+                for item in final_sessions
             ):
-                self._readiness_baseline_absent = state == "absent"
+                self._require_install_session(
+                    install_record, final_sessions, success_required=True
+                )
+            install_journal.checkpoint(
+                "cleaned_up", "verified_absent",
+                remote_session_id=remote_session_id,
+            )
+            self._readiness_install_attempted = False
+            self._readiness_installed_uid = None
+            return {"state": "already_absent", "readback": "absent"}
 
+        pre_verify_sessions = self._install_session_snapshot(target, deadline)
+        final_package_state, final_installed_sha256 = (
+            self._verify_installed_readiness_artifact(
+                target,
+                install_record,
+                final_package_state,
+                pre_verify_sessions,
+                deadline,
+            )
+        )
+        if (
+            final_package_state != package_state
+            or final_installed_sha256 != installed_sha256
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        final_sessions = self._install_session_snapshot(target, deadline)
+        self._require_install_session(
+            install_record, final_sessions, success_required=True
+        )
+        # Package Manager cannot bind deletion to this attempt's session, UID,
+        # or APK digest. Leave a present package installed while the threat
+        # model cannot rule out a concurrent installation after this snapshot.
+        raise ProbeError("IntegrityConflict", "Transport")
+
+    def _query_package_install_state_for_user(
+        self, target, package, user_id, deadline
+    ):
+        """Read one package state while retaining only its version and UID."""
+        if (
+            type(package) is not str
+            or package not in _PACKAGE_QUERY_PACKAGES
+            or type(user_id) is not int
+            or not 0 <= user_id <= (1 << 31) - 1
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
+        self._require_bound_target(target)
         output = self._run(
             target,
             (
@@ -1348,9 +1841,7 @@ class AdbForwardAdapter:
             deadline,
         )
         if output == b"":
-            result = {"state": "absent", "version_code": None, "uid": None}
-            remember_baseline(result["state"])
-            return result
+            return {"state": "absent", "version_code": None, "uid": None}
         package_prefix = b"package:"
         expected_package = package.encode("ascii")
         exact_rows = []
@@ -1377,23 +1868,66 @@ class AdbForwardAdapter:
                 raise ProbeError("IncompleteEvidence", "Transport")
             exact_rows.append((version_code, uid))
         if not exact_rows:
-            result = {"state": "absent", "version_code": None, "uid": None}
-            remember_baseline(result["state"])
-            return result
+            return {"state": "absent", "version_code": None, "uid": None}
         if len(exact_rows) != 1:
             raise ProbeError("IncompleteEvidence", "Transport")
         version_code, uid = exact_rows[0]
-        result = {"state": "present", "version_code": version_code, "uid": uid}
-        remember_baseline(result["state"])
+        return {"state": "present", "version_code": version_code, "uid": uid}
+
+    def package_install_state(self, target, package, *, deadline, user_id=None):
+        """Return package state after a complete, clean package-list query.
+
+        The runner accepts an empty result as no match only after a bounded
+        successful exit and empty stderr. Diagnostic bytes are never retained.
+        """
+        if type(package) is not str or package not in _PACKAGE_QUERY_PACKAGES:
+            raise ProbeError("MalformedRequest", "Transport")
+        self._require_bound_target(target)
+        if user_id is None:
+            user_id = self.current_android_user_id(target, deadline=deadline)
+        elif (
+            type(user_id) is not int
+            or not 0 <= user_id <= (1 << 31) - 1
+            or user_id != self._readiness_android_user_id
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
+        result = self._query_package_install_state_for_user(
+            target, package, user_id, deadline
+        )
+        if (
+            package == _READINESS_PROBE_PACKAGE
+            and self._readiness_baseline_absent is None
+        ):
+            self._readiness_baseline_absent = result["state"] == "absent"
         return result
 
-    def install_readiness_probe(self, target, artifact_path, *, deadline):
-        """Install the pinned Readiness APK for the baseline Android user.
+    def install_readiness_probe(
+        self, target, artifact_path, *, deadline, outcomes_directory,
+        target_reference, install_attempt_id=None
+    ):
+        """Install one pinned Readiness APK through a durable attempt journal.
 
-        The source is copied into a private read-only file and checked before
-        the ADB child receives its descriptor. The bounded command omits the
-        replacement flag and returns only a success classification.
+        The journal binds the target, build, Android user, artifact and
+        Package Manager session. Each state is synced before the next
+        installation command. Recovery uses those records to verify ownership
+        before cleanup and blocks when the package state is ambiguous.
         """
+        if (
+            type(target_reference) is not str
+            or readiness_probe_install_journal.TARGET_REFERENCE_PATTERN.fullmatch(
+                target_reference
+            ) is None
+            or (
+                install_attempt_id is not None
+                and (
+                    type(install_attempt_id) is not str
+                    or readiness_probe_install_journal.INSTALL_ATTEMPT_ID_PATTERN.fullmatch(
+                        install_attempt_id
+                    ) is None
+                )
+            )
+        ):
+            raise ProbeError("MalformedRequest", "Transport")
         self._require_bound_target(target)
         if self._readiness_baseline_absent is not True:
             raise ProbeError("IntegrityConflict", "Transport")
@@ -1508,30 +2042,126 @@ class AdbForwardAdapter:
                 )
                 if package_state["state"] != "absent":
                     raise ProbeError("IntegrityConflict", "Transport")
+                self._require_readiness_package_absent_all_users(
+                    target, user_id, package_state, deadline
+                )
+                existing_sessions = self._install_session_snapshot(target, deadline)
+                if any(
+                    session["section"] != "historical"
+                    for session in existing_sessions
+                ):
+                    raise ProbeError("IntegrityConflict", "Transport")
+                journal = readiness_probe_install_journal.ReadinessInstallJournal(
+                    outcomes_directory,
+                    target_reference=target_reference,
+                    serial=self._identity_binding[0],
+                    build_fingerprint=self._identity_binding[1],
+                    android_user_id=user_id,
+                    package=_READINESS_PROBE_PACKAGE,
+                    artifact_sha256=_READINESS_PROBE_APK_SHA256,
+                    version_code=_READINESS_PROBE_VERSION_CODE,
+                    artifact_size=total_bytes,
+                    baseline_session_ids=tuple(sorted(
+                        session["session_id"] for session in existing_sessions
+                    )),
+                    attempt_id=install_attempt_id,
+                )
+                self._readiness_install_journal = journal
                 _deadline_remaining(self._clock, deadline)
-                install_path = os.path.join(directory, "readiness.apk")
-                os.symlink(f"/dev/fd/{install_fd}", install_path)
-                self._readiness_installed_uid = None
                 self._readiness_install_attempted = True
-                output = self._run(
+                package_state = self.package_install_state(
+                    target,
+                    _READINESS_PROBE_PACKAGE,
+                    deadline=deadline,
+                    user_id=user_id,
+                )
+                self._require_readiness_package_absent_all_users(
+                    target, user_id, package_state, deadline
+                )
+                journal.checkpoint("attempted", "create_started")
+                create_output = self._run(
                     target,
                     (
-                        "install",
-                        "--no-streaming",
-                        "--user",
+                        "shell", "pm", "install-create", "-S",
+                        str(total_bytes), "--user",
                         str(user_id),
-                        install_path,
+                        "--pkg", _READINESS_PROBE_PACKAGE,
                     ),
                     deadline,
                 )
-                try:
-                    lines = output.decode("ascii").splitlines()
-                except UnicodeDecodeError:
-                    raise ProbeError("IncompleteEvidence", "Transport") from None
-                if lines not in (
-                    ["Success"],
-                    ["Performing Push Install", "Success"],
+                session_match = re.fullmatch(
+                    r"Success: created install session \[([1-9][0-9]{0,9})\]",
+                    self._single_line(create_output),
+                )
+                if session_match is None:
+                    raise ProbeError("IncompleteEvidence", "Transport")
+                session_id = int(session_match.group(1))
+                if session_id > _MAX_ANDROID_SESSION_ID:
+                    raise ProbeError("IncompleteEvidence", "Transport")
+                journal.checkpoint(
+                    "attempted", "session_created", remote_session_id=session_id
+                )
+                created_sessions = self._install_session_snapshot(target, deadline)
+                self._require_install_session(
+                    journal.latest,
+                    created_sessions,
+                    success_required=False,
+                    active_required=True,
+                )
+                package_state = self.package_install_state(
+                    target,
+                    _READINESS_PROBE_PACKAGE,
+                    deadline=deadline,
+                    user_id=user_id,
+                )
+                self._require_readiness_package_absent_all_users(
+                    target, user_id, package_state, deadline
+                )
+                journal.checkpoint(
+                    "attempted", "write_started", remote_session_id=session_id
+                )
+                write_output = self._run(
+                    target,
+                    (
+                        "shell", "pm", "install-write", "-S",
+                        str(total_bytes), str(session_id), "base", "-",
+                    ),
+                    deadline,
+                    input_fd=install_fd,
+                    input_size=total_bytes,
+                )
+                if self._single_line(write_output) != (
+                    f"Success: streamed {total_bytes} bytes"
                 ):
+                    raise ProbeError("IncompleteEvidence", "Transport")
+                journal.checkpoint(
+                    "attempted", "payload_written", remote_session_id=session_id
+                )
+                commit_sessions = self._install_session_snapshot(target, deadline)
+                self._require_install_session(
+                    journal.latest,
+                    commit_sessions,
+                    success_required=False,
+                    active_required=True,
+                )
+                package_state = self.package_install_state(
+                    target,
+                    _READINESS_PROBE_PACKAGE,
+                    deadline=deadline,
+                    user_id=user_id,
+                )
+                self._require_readiness_package_absent_all_users(
+                    target, user_id, package_state, deadline
+                )
+                journal.checkpoint(
+                    "attempted", "commit_started", remote_session_id=session_id
+                )
+                commit_output = self._run(
+                    target,
+                    ("shell", "pm", "install-commit", str(session_id)),
+                    deadline,
+                )
+                if self._single_line(commit_output) != "Success":
                     raise ProbeError("IncompleteEvidence", "Transport")
                 installed_state = self.package_install_state(
                     target,
@@ -1545,8 +2175,38 @@ class AdbForwardAdapter:
                     != _READINESS_PROBE_VERSION_CODE
                 ):
                     raise ProbeError("IntegrityConflict", "Transport")
+                self._require_readiness_package_only_for_bound_user(
+                    target, user_id, installed_state, deadline
+                )
+                sessions = self._install_session_snapshot(
+                    target, deadline, expected_session_id=session_id
+                )
+                self._require_install_session(
+                    journal.latest, sessions, success_required=True
+                )
+                if any(
+                    item["session_id"]
+                    not in set(journal.latest["baseline_package_session_ids"])
+                    and item["session_id"] != session_id
+                    for item in sessions
+                ):
+                    raise ProbeError("IntegrityConflict", "Transport")
+                installed_sha256 = self._installed_apk_sha256(target, deadline)
+                if installed_sha256 != _READINESS_PROBE_APK_SHA256:
+                    raise ProbeError("IntegrityConflict", "Transport")
+                journal.checkpoint(
+                    "completed",
+                    "installed",
+                    remote_session_id=session_id,
+                    package_uid_private=installed_state["uid"],
+                    installed_apk_sha256=installed_sha256,
+                )
                 self._readiness_installed_uid = installed_state["uid"]
-                return {"state": "installed"}
+                return {
+                    "state": "installed",
+                    "install_attempt_id": journal.attempt_id,
+                    "remote_session_id": session_id,
+                }
             except ProbeError:
                 raise
             except OSError:

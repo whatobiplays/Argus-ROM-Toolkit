@@ -54,21 +54,39 @@ The host artifact checker and injected workflow do not authorize device access. 
 
 ## 8. Host ADB adapter boundary
 
-Importing the host adapter does not run ADB, connect a socket, or start a qualification session. Its fixed operations bind the selected target and build, read the API level and numeric Android user ID, check package state, launch the Readiness activity, and project matching process rows. The first current-user query binds the numeric user ID. Default package-state queries, process observations, and launcher operations check the active user before relying on it. Install and cleanup readbacks pass the bound numeric ID explicitly, so a user switch cannot redirect them to another account. Package queries accept only the qualification and Readiness package IDs; process output is reduced to matching package roles and UID consistency, and unrelated rows are discarded.
+Importing the host adapter does not run ADB, connect a socket, or start a qualification session. Its fixed operations bind the selected target and build, read the API level and numeric Android user ID, inspect the two approved packages, launch Readiness, project matching process rows, and manage one Package Manager install session. The first current-user query binds the numeric user ID. Package, process and launcher operations use that bound user. Package queries retain only version and UID; process output is reduced to matching package roles and UID consistency, and unrelated rows are discarded.
 
-The install method verifies the pinned Readiness APK SHA-256 and installs without the replacement option. It copies and checks the artifact in a mode-0400 file inside a mode-0700 temporary directory, then gives ADB that file's descriptor. Installation requires a recorded absent baseline and a final absence check immediately before install. After ADB reports success, the adapter reads the package version and UID for the bound user. Cleanup removes the package only when the version and UID still match that post-install readback; if ownership cannot be established, cleanup fails closed. The launch method accepts only the reviewed launcher component and retains bounded completion fields. Adapter methods return sanitized results but do not validate external authorization. All forward lifecycle and transport operations use `ForwardSession` through the injected `ForwardAdapter` and `Transport` interfaces.
+Before its first mutating install command, the adapter durably writes an owner-private journal for a unique attempt. The record binds the target, build, Android user, Readiness package, pinned artifact digest and version, and the baseline package and install-session state. It records pending, attempted, completed and cleaned-up states with explicit lineage. Install and abandon intent are durable before their commands. Recovery reloads the exact latest event, rebinds the target, build and user, and inspects the package and Package Manager sessions. Verified absence is recorded without uninstall. A present package remains installed and recovery blocks, even when its session, user, version, UID and installed APK digest match the journal. The Package Manager uninstall interface cannot bind deletion to one install attempt or exclude a replacement after the final readback.
+
+The adapter rejects `pm uninstall`. The Android command identifies a user, package and version code; it carries no attempt session ID, UID or APK digest. In pinned AOSP, the shell passes a `VersionedPackage` ([uninstall command](https://android.googlesource.com/platform/frameworks/base/%2B/cc9db1f660ccb23e3413eb559854d6f3534321f6/services/core/java/com/android/server/pm/PackageManagerShellCommand.java#L831)); `DeletePackageHelper` checks its version ([version check](https://android.googlesource.com/platform/frameworks/base/%2B/91bc8f93953311be13b9c56ee768e139b74af084/services/core/java/com/android/server/pm/DeletePackageHelper.java#L149)) and takes the install lock later ([lock acquisition](https://android.googlesource.com/platform/frameworks/base/%2B/91bc8f93953311be13b9c56ee768e139b74af084/services/core/java/com/android/server/pm/DeletePackageHelper.java#L248)). These sources do not prove the selected OEM build behaves the same way.
+
+The accepted v1 architecture requires stopping on observable interference and does not require a session lock. It cannot rule out an install that starts after the final check. This path therefore leaves every present package installed and blocks cleanup, including when the current adapter still holds the journal in memory. This is a conservative application of the [owner-approved Issue #74 recovery rule](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/74#issuecomment-7090741075), which requires blocking when concurrent mutation cannot be ruled out under the reviewed threat model. B1 admission stays BLOCKED until that threat-model question is resolved or a platform mechanism can bind deletion to this attempt.
+
+The adapter stages the pinned APK in a mode-0400 file inside a mode-0700 temporary directory and streams it through a Package Manager install session. It checks the digest before and after staging, verifies the installed base APK, and never uses a replacement install option. The launcher accepts only the reviewed component and retains bounded completion fields. Adapter methods return sanitized results but do not validate external authorization. All forward lifecycle and transport operations use `ForwardSession` through the injected `ForwardAdapter` and `Transport` interfaces.
 
 The adapter accepts these command forms only:
 
 1. `adb -s <serial> get-state`
 2. `adb -s <serial> shell getprop ro.build.fingerprint`
-3. `adb -s <serial> forward --list`
-4. `adb -s <serial> forward --no-rebind tcp:<port> localabstract:<name>`
-5. `adb -s <serial> forward --remove tcp:<port>`
-6. `adb -s <serial> shell pm list packages --show-versioncode -U --user <bound-user-id> <approved-package>`
-7. `adb -s <serial> install --no-streaming --user <bound-user-id> <pinned-readiness.apk>`
+3. `adb -s <serial> shell getprop ro.build.version.sdk`
+4. `adb -s <serial> shell getprop ro.product.cpu.abi`
+5. `adb -s <serial> shell am get-current-user`
+6. `adb -s <serial> shell pm list users`
+7. `adb -s <serial> shell pm list packages --show-versioncode -U --user <bound-user-id> <approved-package>`
+8. `adb -s <serial> shell dumpsys -t 3 package installs`
+9. `adb -s <serial> shell pm install-create -S <size> --user <bound-user-id> --pkg <readiness-package>`
+10. `adb -s <serial> shell pm install-write -S <size> <session-id> base -`
+11. `adb -s <serial> shell pm install-commit <session-id>`
+12. `adb -s <serial> shell pm install-abandon <session-id>`
+13. `adb -s <serial> shell pm path <readiness-package>`
+14. `adb -s <serial> exec-out cat <validated-installed-base-apk-path>`
+15. `adb -s <serial> shell am start --user <bound-user-id> -W -n <readiness-component>`
+16. `adb -s <serial> shell ps -A -n -w -o UID,PID,NAME`
+17. `adb -s <serial> forward --list`
+18. `adb -s <serial> forward --no-rebind tcp:<port> localabstract:<name>`
+19. `adb -s <serial> forward --remove tcp:<port>`
 
-The runner rejects generic shell, install, pull, or diagnostic command interfaces, as well as `adb devices` enumeration. It accepts only fixed identity, API-level, current-user, package-state, launcher, process-list, package-cleanup, and forward command vectors. Package-state and process checks accept only the two approved package IDs. Process rows are filtered in bounded memory and never returned verbatim. A package-list result counts as absence only after the bounded command exits successfully with empty stderr; nonempty stderr on an otherwise successful package query produces only the sanitized `stderr_nonempty` classification, and timeout, nonzero exit, truncation, or parse failures do not become absence. The runner never retains stderr bytes. The install path accepts only the pinned Readiness APK digest, verifies the staged copy, and checks the digest again before passing its read-only descriptor to ADB. Q7 `dumpsys` acquisition remains a separate fixed command with its own privacy limits; its activity filter accepts only the qualification and Readiness packages. A successful exploratory parse does not establish semantic completeness or qualify an OS assertion.
+The runner rejects other command vectors, including `adb devices`. Package and process checks accept only the two approved package IDs. Process rows and install-session output are filtered in bounded memory; unrelated package identities and raw rows are discarded. A package-list result counts as absence only after the bounded command exits successfully with empty stderr. Nonempty stderr, timeout, nonzero exit, truncation or parse failure never counts as absence. The runner does not retain stderr. Install input is limited to the pinned APK digest and streamed from a read-only descriptor. Q7 activity-dump acquisition remains a separate fixed command with its own privacy limits. A successful exploratory parse does not establish semantic completeness or qualify an OS assertion.
 
 For the identity-only preflight, record the owner's instruction and call `AdbForwardAdapter.identity()` with the selected private serial and one host-monotonic deadline set to `monotonic() + 5.0`. The method issues `get-state` once and runs `getprop ro.build.fingerprint` once only when the first result is exactly `device`. Both calls use that same deadline. Do not create a `ForwardSession` with an invented fingerprint. Keep the returned serial and fingerprint in a small owner-private outcome record with the source/procedure reference, acquisition time, command counts and classification. Retain no raw output or stderr and publish only an opaque target reference and sanitized status. A failed, malformed, late or inconsistent result is BLOCKED. No retry or extra command is permitted. No independent identity-packet review or separate integrity receipt is required.
 
@@ -147,7 +165,7 @@ If any required fact, filter or completion rule cannot be qualified, keep the OS
 
 ### Historical target and identity-only preflight
 
-Issue [#28](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/28) records the AYANEO Pocket Air Mini as a previously owner-selected candidate for that issue. Its authority does not carry into Issue #74. The owner has selected the KONKR Pocket Advance for Issue #74; its private serial stays outside tracked/shared records and its exact build fingerprint remains unverified.
+Issue [#28](https://github.com/whatobiplays/Argus-ROM-Toolkit/issues/28) records the AYANEO Pocket Air Mini as a previously owner-selected candidate for that issue. Its authority does not carry into Issue #74. The owner selected the KONKR Pocket Advance for Issue #74. Its identity preflight established the exact build fingerprint, which remains in owner-private evidence; do not copy it into tracked or shared records.
 
 The identity-only preflight is a separate, explicitly authorized observation using the same exact owner-selected serial for the two read-only commands listed in section 8:
 

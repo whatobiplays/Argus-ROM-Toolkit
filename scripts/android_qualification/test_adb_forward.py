@@ -1,6 +1,7 @@
 """Host-only tests for the bounded ADB forward and loopback adapters."""
 
 import hashlib
+import json
 import os
 import pathlib
 import socket
@@ -12,6 +13,7 @@ from unittest import mock
 
 from . import readiness_probe as probe
 from . import readiness_probe_artifact
+from . import readiness_probe_install_journal
 from . import adb_forward
 from . import packaging
 from . import readiness_probe_session as session_module
@@ -45,9 +47,113 @@ class FakeRunner:
     def __init__(self, replies=()):
         self.replies = list(replies)
         self.calls = []
+        self.stdin_summaries = []
+        self.last_install_payload = b""
+        self.session_id = None
+        self.session_user_id = None
+        self.session_committed = False
+        self.session_dump_replies = []
+        self.outcomes_directory = None
+        self.persisted_state_at_install = None
+        self.last_package_state = b""
 
-    def run(self, argv, deadline):
+    def run(self, argv, deadline, *, input_fd=None, input_size=None):
         self.calls.append((tuple(argv), deadline))
+        if input_fd is not None:
+            digest = hashlib.sha256()
+            offset = 0
+            payload = bytearray()
+            while offset < input_size:
+                chunk = os.pread(input_fd, min(65536, input_size - offset), offset)
+                if not chunk:
+                    raise AssertionError("short install input")
+                digest.update(chunk)
+                payload.extend(chunk)
+                offset += len(chunk)
+            self.stdin_summaries.append((input_size, digest.hexdigest()))
+            self.last_install_payload = bytes(payload)
+        command = tuple(argv[3:])
+        if command == adb_forward._INSTALL_SESSIONS_COMMAND:
+            if self.session_dump_replies:
+                return self.session_dump_replies.pop(0)
+            if self.session_id is None:
+                return b"Active install sessions:\n"
+            section = "Historical" if self.session_committed else "Active"
+            final_status = 1 if self.session_committed else 0
+            return (
+                f"{section} install sessions:\n"
+                f"  Session {self.session_id}:\n"
+                f"    userId={self.session_user_id}\n"
+                "    installerPackageName=com.android.shell\n"
+                "    mInstallerUid=2000\n"
+                f"    appPackageName={readiness_probe_artifact.PACKAGE}\n"
+                f"    mCommitted={'true' if self.session_committed else 'false'}\n"
+                f"    mFinalStatus={final_status}\n"
+            ).encode("ascii")
+        if command == ("shell", "pm", "list", "users"):
+            return b"Users:\n  UserInfo{10:Owner:13} running\n"
+        if command[:4] == ("shell", "pm", "list", "packages"):
+            user_id = int(command[-2])
+            if user_id != 10:
+                return b""
+            if self.replies:
+                candidate = self.replies[0]
+                if isinstance(candidate, BaseException):
+                    self.replies.pop(0)
+                    raise candidate
+                if (
+                    self.session_id is not None
+                    and not self.session_committed
+                    and candidate.startswith(b"package:")
+                ):
+                    return self.last_package_state
+                if not (
+                    candidate.startswith((
+                        b"Success",
+                        b"Failure",
+                        b"Active install sessions:",
+                        b"Historical install sessions:",
+                        b"package:/data/app/",
+                    ))
+                    or (candidate and candidate == b"x" * 28)
+                ):
+                    self.last_package_state = self.replies.pop(0)
+            return self.last_package_state
+        if command[:3] == ("shell", "pm", "install-create"):
+            if self.outcomes_directory is not None:
+                records = [
+                    json.loads(path.read_text())
+                    for path in self.outcomes_directory.glob(
+                        "readiness-install-attempt-*.json"
+                    )
+                ]
+                records.sort(key=lambda record: record["event_sequence"])
+                self.persisted_state_at_install = (
+                    records[-1]["state"], records[-1]["phase"]
+                ) if records else None
+            if self.replies:
+                queued = self.replies.pop(0)
+                if queued not in (
+                    b"Success\n",
+                    b"Performing Push Install\nSuccess\n",
+                ):
+                    return queued
+            self.session_id = 17
+            self.session_user_id = int(command[6])
+            self.session_committed = False
+            return b"Success: created install session [17]\n"
+        if command[:3] == ("shell", "pm", "install-write"):
+            return f"Success: streamed {command[4]} bytes\n".encode("ascii")
+        if command[:3] == ("shell", "pm", "install-commit"):
+            self.session_committed = True
+            return b"Success\n"
+        if command[:3] == ("shell", "pm", "install-abandon"):
+            self.session_committed = False
+            return b"Success\n"
+        if command == ("shell", "pm", "path", readiness_probe_artifact.PACKAGE):
+            return b"package:/data/app/argus-readiness/base.apk\n"
+        if command[:2] == ("exec-out", "cat"):
+            return self.last_install_payload
         if not self.replies:
             raise AssertionError("unexpected ADB command")
         reply = self.replies.pop(0)
@@ -107,6 +213,33 @@ class AdbForwardAdapterTests(unittest.TestCase):
         if socket_factory is not None:
             options["socket_factory"] = socket_factory
         return AdbForwardAdapter(**options), runner, clock
+
+    def install_probe(
+        self,
+        adapter,
+        target,
+        artifact_path,
+        *,
+        deadline,
+        install_attempt_id="d" * 32,
+    ):
+        private_outcomes = tempfile.TemporaryDirectory()
+        self.addCleanup(private_outcomes.cleanup)
+        outcomes_directory = pathlib.Path(private_outcomes.name)
+        self.install_outcomes_directories = getattr(
+            self, "install_outcomes_directories", []
+        )
+        self.install_outcomes_directories.append(outcomes_directory)
+        if isinstance(adapter._runner, FakeRunner):
+            adapter._runner.outcomes_directory = outcomes_directory
+        return adapter.install_readiness_probe(
+            target,
+            artifact_path,
+            deadline=deadline,
+            outcomes_directory=outcomes_directory,
+            target_reference="i74-tgt-7f6cd8181514b822",
+            install_attempt_id=install_attempt_id,
+        )
 
     def identity_replies(self, *tail):
         return [b"device\n", (BUILD + "\n").encode("ascii"), *tail]
@@ -712,9 +845,6 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 f"{package}/.LauncherActivity",
             ),
             ("shell", "ps", "-A", "-n", "-w", "-o", "UID,PID,NAME"),
-            (
-                "shell", "pm", "uninstall", "--user", "10", package,
-            ),
         )
         for command in approved:
             self.assertTrue(
@@ -738,15 +868,25 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 ("adb", "-s", TARGET, "shell", "ps", "-A", "-o", "CMDLINE")
             )
         )
+        self.assertFalse(
+            _AdbCommandRunner._allowed_vector(
+                (
+                    "adb", "-s", TARGET, "shell", "pm", "uninstall", "--user",
+                    "10", "--versionCode",
+                    str(adb_forward._READINESS_PROBE_VERSION_CODE), package,
+                )
+            )
+        )
 
-    def test_readiness_cleanup_uninstalls_only_the_baseline_user_package(self):
+    def test_readiness_cleanup_blocks_present_package(self):
         package = readiness_probe_artifact.PACKAGE
         present = f"package:{package} versionCode:1 uid:10123\n".encode("ascii")
         adapter, runner, _ = self.adapter(
             self.identity_replies(
                 b"10\n", b"", b"10\n", b"",
-                b"Performing Push Install\nSuccess\n", present, present,
+                b"Success\n", present, b"10\n", present,
                 b"Success\n",
+                b"",
             )
         )
         apk_bytes = b"reviewed readiness apk bytes"
@@ -761,24 +901,23 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 hashlib.sha256(apk_bytes).hexdigest(),
                 create=True,
             ):
-                self.assertEqual(
-                    adapter.install_readiness_probe(TARGET, apk, deadline=20),
-                    {"state": "installed"},
+                install_result = self.install_probe(adapter,
+                    TARGET, apk, deadline=20
+                )
+                self.assertEqual(install_result["state"], "installed")
+                self.assertRegex(
+                    install_result["install_attempt_id"], r"^[0-9a-f]{32}$"
                 )
 
-        self.assertEqual(
-            adapter.uninstall_readiness_probe(TARGET, deadline=20),
-            {"state": "uninstalled"},
-        )
-        self.assertEqual(
-            runner.calls[-1][0],
-            (
-                "adb", "-s", TARGET, "shell", "pm", "uninstall", "--user",
-                "10", package,
-            ),
-        )
+        with self.assertRaises(probe.ProbeError) as cleanup_error:
+            adapter.uninstall_readiness_probe(TARGET, deadline=20)
+        self.assertEqual(cleanup_error.exception.code, "IntegrityConflict")
+        self.assertFalse(any(
+            call[0][3:6] == ("shell", "pm", "uninstall")
+            for call in runner.calls
+        ))
 
-    def test_recovery_cleans_only_the_recorded_pinned_readiness_install(self):
+    def test_recovery_blocks_present_pinned_readiness_install(self):
         package = readiness_probe_artifact.PACKAGE
         present = f"package:{package} versionCode:1 uid:10123\n".encode("ascii")
         adapter, runner, _ = self.adapter(
@@ -808,29 +947,80 @@ class AdbForwardAdapterTests(unittest.TestCase):
 
         adapter.identity(TARGET, deadline=20)
         self.assertTrue(callable(getattr(adapter, "recover_readiness_cleanup", None)))
-        result = adapter.recover_readiness_cleanup(
-            TARGET, install_record, deadline=20
-        )
+        with self.assertRaises(probe.ProbeError) as caught:
+            adapter.recover_readiness_cleanup(
+                TARGET, install_record, deadline=20
+            )
 
-        self.assertEqual(
-            result,
-            {"state": "uninstalled", "readback": "absent"},
+        self.assertEqual(caught.exception.code, "IntegrityConflict")
+        self.assertEqual(len(runner.calls), 4)
+        self.assertFalse(any(
+            call[0][3:6] == ("shell", "pm", "uninstall")
+            for call in runner.calls
+        ))
+
+    def test_recovery_blocks_present_v2_install_with_its_attempt_identity(self):
+        package = readiness_probe_artifact.PACKAGE
+        present = f"package:{package} versionCode:1 uid:10123\n".encode("ascii")
+        adapter, runner, _ = self.adapter(
+            self.identity_replies(b"10\n", present, b"Success\n", b"")
         )
-        self.assertEqual(len(runner.calls), 6)
-        self.assertEqual(
-            runner.calls[-2][0],
-            (
-                "adb", "-s", TARGET, "shell", "pm", "uninstall", "--user",
-                "10", package,
-            ),
-        )
-        self.assertEqual(
-            runner.calls[-1][0],
-            (
-                "adb", "-s", TARGET, "shell", "pm", "list", "packages",
-                "--show-versioncode", "-U", "--user", "10", package,
-            ),
-        )
+        install_record = {
+            "schema": "argus-issue-74-b1-preparation-observation-v2",
+            "install_attempt_id": "a" * 32,
+            "identity_preflight_record_bound": True,
+            "identity_match": True,
+            "qualification_assertions_passed": False,
+            "identity_private": {"serial": TARGET, "build_fingerprint": BUILD},
+            "artifact": {
+                "package": package,
+                "sha256": adb_forward._READINESS_PROBE_APK_SHA256,
+                "version_code": 1,
+            },
+            "install_status": "installed",
+            "package_baseline_absent": True,
+            "android_user_private": 10,
+            "package_uid_private": 10123,
+        }
+
+        adapter.identity(TARGET, deadline=20)
+        with self.assertRaises(probe.ProbeError) as caught:
+            adapter.recover_readiness_cleanup(
+                TARGET, install_record, deadline=20
+            )
+
+        self.assertEqual(caught.exception.code, "IntegrityConflict")
+        self.assertEqual(len(runner.calls), 4)
+        self.assertFalse(any(
+            call[0][3:6] == ("shell", "pm", "uninstall")
+            for call in runner.calls
+        ))
+
+    def test_recovery_rejects_a_malformed_v2_install_attempt_identity(self):
+        adapter, runner, _ = self.adapter(self.identity_replies(b"10\n"))
+        install_record = {
+            "schema": "argus-issue-74-b1-preparation-observation-v2",
+            "install_attempt_id": "not-an-attempt-id",
+            "identity_preflight_record_bound": True,
+            "identity_match": True,
+            "qualification_assertions_passed": False,
+            "identity_private": {"serial": TARGET, "build_fingerprint": BUILD},
+            "artifact": {
+                "package": readiness_probe_artifact.PACKAGE,
+                "sha256": adb_forward._READINESS_PROBE_APK_SHA256,
+                "version_code": 1,
+            },
+            "install_status": "installed",
+            "package_baseline_absent": True,
+            "android_user_private": 10,
+            "package_uid_private": 10123,
+        }
+
+        adapter.identity(TARGET, deadline=20)
+        with self.assertRaises(probe.ProbeError):
+            adapter.recover_readiness_cleanup(TARGET, install_record, deadline=20)
+
+        self.assertEqual(len(runner.calls), 2)
 
     def test_recovery_rejects_mismatched_identity_before_package_operations(self):
         adapter, runner, _ = self.adapter(self.identity_replies(b"10\n"))
@@ -870,8 +1060,8 @@ class AdbForwardAdapterTests(unittest.TestCase):
         adapter, runner, _ = self.adapter(
             self.identity_replies(
                 b"10\n", b"", b"10\n", b"",
-                b"Performing Push Install\nSuccess\n", present, b"11\n",
-                present, b"Success\n",
+                b"Success\n", present, b"11\n",
+                b"11\n",
             )
         )
         apk_bytes = b"reviewed readiness apk bytes"
@@ -886,22 +1076,24 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 hashlib.sha256(apk_bytes).hexdigest(),
                 create=True,
             ):
-                adapter.install_readiness_probe(TARGET, apk, deadline=20)
+                self.install_probe(adapter, TARGET, apk, deadline=20)
 
         with self.assertRaises(probe.ProbeError) as raised:
             adapter.current_android_user_id(TARGET, deadline=20)
         self.assertEqual(raised.exception.code, "IntegrityConflict")
-        self.assertEqual(
-            adapter.uninstall_readiness_probe(TARGET, deadline=20),
-            {"state": "uninstalled"},
-        )
-        self.assertEqual(
-            runner.calls[-1][0],
-            (
-                "adb", "-s", TARGET, "shell", "pm", "uninstall", "--user",
-                "10", package,
-            ),
-        )
+        with mock.patch.object(
+            adb_forward,
+            "_READINESS_PROBE_APK_SHA256",
+            hashlib.sha256(apk_bytes).hexdigest(),
+            create=True,
+        ):
+            with self.assertRaises(probe.ProbeError) as cleanup_error:
+                adapter.uninstall_readiness_probe(TARGET, deadline=20)
+        self.assertEqual(cleanup_error.exception.code, "IntegrityConflict")
+        self.assertFalse(any(
+            call[0][3:6] == ("shell", "pm", "uninstall")
+            for call in runner.calls
+        ))
 
     def test_readiness_cleanup_rejects_unexpected_package_version(self):
         package = readiness_probe_artifact.PACKAGE
@@ -912,7 +1104,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
         adapter, runner, _ = self.adapter(
             self.identity_replies(
                 b"10\n", b"", b"10\n", b"", b"Success\n", present,
-                other_version,
+                b"10\n", other_version,
             )
         )
         apk_bytes = b"reviewed readiness apk bytes"
@@ -927,14 +1119,23 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 hashlib.sha256(apk_bytes).hexdigest(),
                 create=True,
             ):
-                adapter.install_readiness_probe(TARGET, apk, deadline=20)
+                self.install_probe(adapter, TARGET, apk, deadline=20)
 
-        with self.assertRaises(probe.ProbeError) as raised:
-            adapter.uninstall_readiness_probe(TARGET, deadline=20)
+        with mock.patch.object(
+            adb_forward,
+            "_READINESS_PROBE_APK_SHA256",
+            hashlib.sha256(apk_bytes).hexdigest(),
+            create=True,
+        ):
+            with self.assertRaises(probe.ProbeError) as raised:
+                adapter.uninstall_readiness_probe(TARGET, deadline=20)
 
         self.assertEqual(raised.exception.code, "IntegrityConflict")
-        self.assertEqual(len(runner.calls), 9)
-        self.assertNotIn("uninstall", [call[0][3] for call in runner.calls])
+        self.assertGreater(len(runner.calls), 0)
+        self.assertFalse(any(
+            call[0][3:6] == ("shell", "pm", "uninstall")
+            for call in runner.calls
+        ))
 
     def test_readiness_cleanup_requires_the_uid_verified_after_install(self):
         package = readiness_probe_artifact.PACKAGE
@@ -958,7 +1159,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 hashlib.sha256(apk_bytes).hexdigest(),
                 create=True,
             ):
-                adapter.install_readiness_probe(TARGET, apk, deadline=20)
+                self.install_probe(adapter, TARGET, apk, deadline=20)
 
         with self.assertRaises(probe.ProbeError) as raised:
             adapter.uninstall_readiness_probe(TARGET, deadline=20)
@@ -988,7 +1189,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 create=True,
             ):
                 with self.assertRaises(probe.ProbeError) as install_error:
-                    adapter.install_readiness_probe(TARGET, apk, deadline=20)
+                    self.install_probe(adapter, TARGET, apk, deadline=20)
 
         self.assertEqual(install_error.exception.code, "IncompleteEvidence")
         self.assertNotIn("INSTALL_FAILED_SECRET_VALUE", str(install_error.exception))
@@ -1034,7 +1235,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
         package = readiness_probe_artifact.PACKAGE
         adapter, runner, _ = self.adapter(
             self.identity_replies(
-                b"10\n", b"", b"10\n", b"", b"Failure\n", b""
+                b"10\n", b"", b"10\n", b"", b"Failure\n", b"10\n", b""
             )
         )
         apk_bytes = b"reviewed readiness apk bytes"
@@ -1050,13 +1251,19 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 create=True,
             ):
                 with self.assertRaises(probe.ProbeError):
-                    adapter.install_readiness_probe(TARGET, apk, deadline=20)
-
+                    self.install_probe(adapter, TARGET, apk, deadline=20)
+                self.assertEqual(
+                    adapter.uninstall_readiness_probe(TARGET, deadline=20),
+                    {"state": "already_absent", "readback": "absent"},
+                )
+        self.assertEqual(len(runner.calls), 15)
         self.assertEqual(
-            adapter.uninstall_readiness_probe(TARGET, deadline=20),
-            {"state": "already_absent"},
+            sum(
+                call[0][3:] == ("shell", "pm", "list", "users")
+                for call in runner.calls
+            ),
+            3,
         )
-        self.assertEqual(len(runner.calls), 8)
 
     def test_readiness_install_verifies_pinned_apk_and_never_replaces(self):
         apk_bytes = b"reviewed readiness apk bytes"
@@ -1067,7 +1274,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
             adapter, runner, _ = self.adapter(
                 self.identity_replies(
                     b"10\n", b"", b"10\n", b"",
-                    b"Performing Push Install\nSuccess\n",
+                b"Success\n",
                     f"package:{readiness_probe_artifact.PACKAGE} versionCode:1 uid:10123\n".encode("ascii"),
                 )
             )
@@ -1082,22 +1289,71 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 digest,
                 create=True,
             ):
-                result = adapter.install_readiness_probe(
-                    TARGET, apk, deadline=time.monotonic() + 20
+                install_attempt_id = "c" * 32
+                result = self.install_probe(adapter,
+                    TARGET,
+                    apk,
+                    deadline=time.monotonic() + 20,
+                    install_attempt_id=install_attempt_id,
                 )
 
-        self.assertEqual(result, {"state": "installed"})
-        install_vector = next(
-            call[0] for call in runner.calls if call[0][3] == "install"
+        self.assertEqual(result["state"], "installed")
+        self.assertEqual(result["install_attempt_id"], install_attempt_id)
+        install_vectors = [
+            call[0] for call in runner.calls
+            if call[0][3:6] == ("shell", "pm", "install-create")
+        ]
+        self.assertEqual(len(install_vectors), 1)
+        self.assertEqual(runner.persisted_state_at_install, ("attempted", "create_started"))
+        install_events = readiness_probe_install_journal.read_install_journal_events(
+            self.install_outcomes_directories[-1],
+            target_reference="i74-tgt-7f6cd8181514b822",
+        )[install_attempt_id]
+        self.assertEqual(
+            [(event["state"], event["phase"]) for event in install_events],
+            [
+                ("pending", "before_install"),
+                ("attempted", "create_started"),
+                ("attempted", "session_created"),
+                ("attempted", "write_started"),
+                ("attempted", "payload_written"),
+                ("attempted", "commit_started"),
+                ("completed", "installed"),
+            ],
         )
         self.assertEqual(
-            install_vector[0:7],
-            ("adb", "-s", TARGET, "install", "--no-streaming", "--user", "10"),
+            [call[0][5] for call in runner.calls if call[0][0:5] == (
+                "adb", "-s", TARGET, "shell", "pm"
+            ) and call[0][5:6] in (("install-create",), ("install-write",), ("install-commit",))],
+            ["install-create", "install-write", "install-commit"],
         )
-        self.assertTrue(install_vector[-1].endswith("readiness.apk"))
-        self.assertNotEqual(install_vector[-1], str(apk))
-        self.assertFalse(pathlib.Path(install_vector[-1]).exists())
-        self.assertNotIn("-r", install_vector)
+        self.assertFalse(any(call[0][3] == "install" for call in runner.calls))
+
+    def test_readiness_install_requires_a_valid_attempt_id_before_install(self):
+        adapter, runner, _ = self.adapter(
+            self.identity_replies(b"10\n", b"")
+        )
+        adapter.identity(TARGET, deadline=20)
+        adapter.package_install_state(
+            TARGET, readiness_probe_artifact.PACKAGE, deadline=20
+        )
+        calls_before_install = tuple(runner.calls)
+
+        with tempfile.TemporaryDirectory() as directory:
+            for install_attempt_id in ("not-an-attempt-id",):
+                with self.subTest(install_attempt_id=install_attempt_id):
+                    with self.assertRaises(probe.ProbeError) as raised:
+                        adapter.install_readiness_probe(
+                            TARGET,
+                            "/unused/readiness.apk",
+                            deadline=20,
+                            outcomes_directory=directory,
+                            target_reference="i74-tgt-7f6cd8181514b822",
+                            install_attempt_id=install_attempt_id,
+                        )
+
+                self.assertEqual(raised.exception.code, "MalformedRequest")
+                self.assertEqual(tuple(runner.calls), calls_before_install)
 
     def test_readiness_install_uses_verified_copy_if_source_inode_is_modified(self):
         apk_bytes = b"reviewed readiness apk bytes"
@@ -1105,23 +1361,27 @@ class AdbForwardAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             apk = pathlib.Path(directory) / "readiness.apk"
             apk.write_bytes(apk_bytes)
+            source_inode = apk.stat().st_ino
 
             class ReplacingRunner(FakeRunner):
                 def __init__(self, replies):
                     super().__init__(replies)
-                    self.installed_path = None
                     self.installed_digest = None
+                    self.installed_inode = None
 
-                def run(self, argv, deadline):
-                    if len(argv) > 3 and argv[3] == "install":
-                        self.calls.append((tuple(argv), deadline))
+                def run(self, argv, deadline, *, input_fd=None, input_size=None):
+                    command = tuple(argv[3:])
+                    if command[:3] == ("shell", "pm", "install-create"):
                         apk.write_bytes(b"modified after verification")
-                        self.installed_path = pathlib.Path(argv[-1])
+                    result = super().run(
+                        argv, deadline, input_fd=input_fd, input_size=input_size
+                    )
+                    if command[:3] == ("shell", "pm", "install-write"):
                         self.installed_digest = hashlib.sha256(
-                            self.installed_path.read_bytes()
+                            self.last_install_payload
                         ).hexdigest()
-                        return b"Performing Push Install\nSuccess\n"
-                    return super().run(argv, deadline)
+                        self.installed_inode = os.fstat(input_fd).st_ino
+                    return result
 
             runner = ReplacingRunner(
                 self.identity_replies(
@@ -1129,6 +1389,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                     b"",
                     b"10\n",
                     b"",
+                    b"Success\n",
                     f"package:{readiness_probe_artifact.PACKAGE} versionCode:1 uid:10123\n".encode("ascii"),
                 )
             )
@@ -1144,14 +1405,14 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 digest,
                 create=True,
             ):
-                result = adapter.install_readiness_probe(
+                result = self.install_probe(adapter,
                     TARGET, apk, deadline=time.monotonic() + 20
                 )
 
-        self.assertEqual(result, {"state": "installed"})
+        self.assertEqual(result["state"], "installed")
+        self.assertRegex(result["install_attempt_id"], r"^[0-9a-f]{32}$")
         self.assertEqual(runner.installed_digest, digest)
-        self.assertNotEqual(runner.installed_path, apk)
-        self.assertFalse(runner.installed_path.exists())
+        self.assertNotEqual(runner.installed_inode, source_inode)
 
     def test_readiness_install_rejects_wrong_artifact_hash_before_install(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1172,7 +1433,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 create=True,
             ):
                 with self.assertRaises(probe.ProbeError) as raised:
-                    adapter.install_readiness_probe(
+                    self.install_probe(adapter,
                         TARGET, apk, deadline=20
                     )
 
@@ -1182,7 +1443,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
     def test_readiness_install_requires_bound_target_before_file_access(self):
         adapter, runner, _ = self.adapter()
         with self.assertRaises(probe.ProbeError) as raised:
-            adapter.install_readiness_probe(
+            self.install_probe(adapter,
                 TARGET, "/not-a-real-private-path.apk", deadline=20
             )
 
@@ -1194,7 +1455,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
         adapter.identity(TARGET, deadline=20)
 
         with self.assertRaises(probe.ProbeError) as raised:
-            adapter.install_readiness_probe(
+            self.install_probe(adapter,
                 TARGET, "/not-a-real-private-path.apk", deadline=20
             )
 
@@ -1221,7 +1482,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 create=True,
             ):
                 with self.assertRaises(probe.ProbeError) as raised:
-                    adapter.install_readiness_probe(TARGET, apk, deadline=20)
+                    self.install_probe(adapter, TARGET, apk, deadline=20)
 
         self.assertEqual(raised.exception.code, "IntegrityConflict")
         self.assertEqual(len(runner.calls), 6)
@@ -1248,13 +1509,20 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 create=True,
             ):
                 with self.assertRaises(probe.ProbeError) as raised:
-                    adapter.install_readiness_probe(
+                    self.install_probe(adapter,
                         TARGET, apk, deadline=20
                     )
 
         self.assertEqual(raised.exception.code, "IncompleteEvidence")
         self.assertNotIn("INSTALL_FAILED_SECRET_VALUE", str(raised.exception))
-        self.assertEqual(len(runner.calls), 7)
+        self.assertEqual(len(runner.calls), 11)
+        self.assertEqual(
+            sum(
+                call[0][3:] == ("shell", "pm", "list", "users")
+                for call in runner.calls
+            ),
+            2,
+        )
 
     def test_adb_install_allowlist_excludes_replacement_and_other_users(self):
         apk_bytes = b"reviewed readiness apk bytes"
@@ -1277,7 +1545,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                     digest,
                     create=True,
                 ):
-                    self.assertTrue(_AdbCommandRunner._allowed_vector(approved))
+                    self.assertFalse(_AdbCommandRunner._allowed_vector(approved))
                     self.assertFalse(
                         _AdbCommandRunner._allowed_vector(
                             approved[:4] + ("-r",) + approved[4:]
@@ -2310,68 +2578,29 @@ class AdbCommandRunnerTests(unittest.TestCase):
         self.assertTrue(process.stdout.closed)
         self.assertTrue(process.stderr.closed)
 
-    def test_runner_inherits_only_the_hash_pinned_install_descriptor(self):
-        apk_bytes = b"reviewed readiness apk bytes"
-        digest = hashlib.sha256(apk_bytes).hexdigest()
-        with tempfile.TemporaryDirectory() as directory:
-            source = pathlib.Path(directory) / "source.apk"
-            source.write_bytes(apk_bytes)
-            source.chmod(0o400)
-            descriptor = os.open(source, os.O_RDONLY)
-            try:
-                link = pathlib.Path(directory) / "readiness.apk"
-                link.symlink_to(f"/dev/fd/{descriptor}")
-                argv = (
-                    "adb", "-s", TARGET, "install", "--no-streaming",
-                    "--user", "10", str(link),
-                )
-                runner, _, _, _, calls = self.build_runner(
-                    chunks=(b"Performing Push Install\nSuccess\n", b"")
-                )
-                with mock.patch.object(
-                    adb_forward,
-                    "_READINESS_PROBE_APK_SHA256",
-                    digest,
-                    create=True,
-                ):
-                    result = runner.run(argv, deadline=20)
-            finally:
-                os.close(descriptor)
-
-        self.assertEqual(result, b"Performing Push Install\nSuccess\n")
-        self.assertEqual(calls[0][1]["pass_fds"], (descriptor,))
-
-    def test_runner_checks_deadline_after_install_descriptor_validation(self):
-        clock = FakeClock()
-        calls = []
-        popen_calls = []
-
-        def pinned_fd(_path):
-            calls.append(True)
-            if len(calls) == 2:
-                clock.value = 11
-            return 19
-
-        def popen(*args, **kwargs):
-            popen_calls.append((args, kwargs))
-            return FakeProcess(returncode=0)
-
-        runner = _AdbCommandRunner(clock=clock, popen=popen)
+    def test_runner_rejects_unjournaled_direct_install(self):
+        runner, _, _, _, popen_calls = self.build_runner(chunks=(b"", b""))
         argv = (
             "adb", "-s", TARGET, "install", "--no-streaming",
-            "--user", "10", "/private/readiness.apk",
+            "--user", "10", "/unused/readiness.apk",
         )
-        with mock.patch.object(
-            _AdbCommandRunner,
-            "_pinned_readiness_fd",
-            side_effect=pinned_fd,
-        ):
-            with self.assertRaises(probe.ProbeError) as raised:
-                runner.run(argv, deadline=11)
 
-        self.assertEqual(raised.exception.code, "TimedOut")
-        self.assertEqual(calls, [True, True])
+        with self.assertRaises(probe.ProbeError) as raised:
+            runner.run(argv, deadline=20)
+
+        self.assertEqual(raised.exception.code, "MalformedRequest")
         self.assertEqual(popen_calls, [])
+        self.assertTrue(_AdbCommandRunner._allowed_vector((
+            "adb", "-s", TARGET, "shell", "pm", "install-create", "-S",
+            "28", "--user", "10", "--pkg", readiness_probe_artifact.PACKAGE,
+        )))
+        self.assertTrue(_AdbCommandRunner._allowed_vector((
+            "adb", "-s", TARGET, "shell", "pm", "install-write", "-S",
+            "28", "17", "base", "-",
+        )))
+        self.assertTrue(_AdbCommandRunner._allowed_vector((
+            "adb", "-s", TARGET, "shell", "pm", "install-commit", "17",
+        )))
 
     def test_runner_accepts_eperm_for_zombie_only_group_after_exit(self):
         def zombie_only_group(_pid, _signum):

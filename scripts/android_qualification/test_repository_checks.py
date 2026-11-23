@@ -517,6 +517,8 @@ class CurrentNamingInventoryTests(unittest.TestCase):
                 "scripts/android_qualification/test_adb_forward.py",
                 "scripts/android_qualification/readiness_probe_recovery.py",
                 "scripts/android_qualification/test_readiness_probe_recovery.py",
+                "scripts/android_qualification/readiness_probe_install_journal.py",
+                "scripts/android_qualification/test_readiness_probe_install_journal.py",
                 "scripts/android_qualification/q7_exploratory_acquisition.py",
                 "scripts/android_qualification/q7_window_display_projection.py",
                 "scripts/android_qualification/test_q7_exploratory_acquisition.py",

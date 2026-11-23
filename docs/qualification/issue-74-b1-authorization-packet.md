@@ -29,10 +29,11 @@ Target selection or approval of this process change alone does not run it.
    output or stderr. No packet digest, independent identity reviewer, separate
    receipt, custodian, fixed retention period or unrelated B1 fields are needed.
 
-The selected target is KONKR Pocket Advance; its exact build fingerprint is
-still unverified. The serial stays private. Identity success establishes no
-artifact, OS-parser, transport or B1 qualification. This attempt has no device
-mutation or cleanup action.
+The selected target is KONKR Pocket Advance. Its identity preflight established
+the exact build fingerprint, which remains in the private outcome record. Keep
+the serial private. Identity success establishes no artifact, OS-parser,
+transport or B1 qualification. The identity attempt had no device mutation or
+cleanup action.
 
 ## 2. Before the B1 session
 

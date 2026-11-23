@@ -993,6 +993,91 @@ class Q7StructuralFilterTests(unittest.TestCase):
         ):
             self.assertNotIn(private_value, rendered)
 
+    def test_target_linked_non_display_values_are_opaque_references(self):
+        private_task_value = "1728394050"
+        raw = (
+            f"Task{{task-object #42 type=standard A={TARGET_PACKAGE} "
+            f"lastActiveTime={private_task_value}}}\n"
+            + f"  ActivityRecord{{activity-object u0 {TARGET_PACKAGE}/.Main t42}}\n"
+        ).encode()
+        parser = Q7StructuralFilter()
+        parser.feed(raw)
+
+        result = parser.finish()
+        structure = result["structure"]
+        task_record = next(
+            item for item in structure["records"] if item["record_type"] == "task"
+        )
+        continuity_field = next(
+            item
+            for item in structure["fields"]
+            if item["record_ref"] == task_record["record_ref"]
+            and item["name"] == "lastActiveTime"
+        )
+        rendered = json.dumps(result, sort_keys=True)
+
+        self.assertEqual(continuity_field["value_kind"], "value_ref")
+        self.assertRegex(continuity_field["value_ref"], r"^value-[0-9]{4,5}$")
+        self.assertNotIn(private_task_value, rendered)
+        q7_module._validate_structure(structure)
+        q7_module._validate_target_projection(
+            structure,
+            target_component_observed=result["target_component_observed"],
+            available_field_categories=result["available_field_categories"],
+            redacted_field_names=result["redacted_field_names"],
+            intent_content_observed=result["intent_content_observed"],
+        )
+
+    def test_window_snapshot_keeps_target_non_display_values_opaque(self):
+        package = readiness_probe_artifact.PACKAGE
+        private_task_value = "1728394050"
+        raw = (
+            b"WINDOW MANAGER DISPLAY CONTENTS (dumpsys window displays)\n"
+            b" Display: mDisplayId=17 rootTasks=1\n"
+            b"  RootTask{root-task #42}\n"
+            + f"    Task{{task-object #42 type=standard A={package} lastActiveTime={private_task_value}}}\n".encode()
+            + f"      ActivityRecord{{activity-object u0 {package}/.LauncherActivity t42}}\n".encode()
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            outcomes = Path(temporary).resolve() / "outcomes"
+            outcomes.mkdir(mode=0o700)
+            os.chmod(outcomes, 0o700)
+            write_identity_fixture(outcomes)
+            runner = FakeQ7Runner(chunks=(raw,))
+            call_public_window_display_snapshot(
+                outcomes,
+                runner,
+                lambda: "2026-11-21T12:00:00.000Z",
+            )
+            stored = json.loads(
+                next(outcomes.glob("q7-exploratory-*.json")).read_text()
+            )
+
+        observation = stored["observation"]
+        structure = observation["structure"]
+        task_record = next(
+            item for item in structure["records"] if item["record_type"] == "task"
+        )
+        continuity_field = next(
+            item
+            for item in structure["fields"]
+            if item["record_ref"] == task_record["record_ref"]
+            and item["name"] == "lastActiveTime"
+        )
+        rendered = json.dumps(stored, sort_keys=True)
+
+        self.assertEqual(continuity_field["value_kind"], "value_ref")
+        self.assertRegex(continuity_field["value_ref"], r"^value-[0-9]{4,5}$")
+        self.assertNotIn(private_task_value, rendered)
+        q7_module._validate_structure(structure)
+        q7_module._validate_target_projection(
+            structure,
+            target_component_observed=observation["target_component_observed"],
+            available_field_categories=observation["available_field_categories"],
+            redacted_field_names=observation["redacted_field_names"],
+            intent_content_observed=observation["intent_content_observed"],
+        )
+
     def test_display_header_is_retained_as_an_anonymized_layout_parent(self):
         raw = (
             b"Display #17 (activities from top to bottom):\n"

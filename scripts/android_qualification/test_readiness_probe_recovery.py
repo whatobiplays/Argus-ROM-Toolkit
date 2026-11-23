@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
 
-from .test_readiness_probe_install_journal import complete_session_dump
+from .test_readiness_probe_install_journal import (
+    complete_session_dump, session_dump, wrapped_historical_session,
+)
 
 from . import adb_forward
 from . import readiness_probe as probe
@@ -327,7 +329,9 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
             ]
         )
 
-    def journal_for_attempt(self, directory, *, attempt_id="c" * 32, digest=None):
+    def journal_for_attempt(
+        self, directory, *, attempt_id="c" * 32, digest=None, fresh_baseline_admission=False,
+    ):
         digest = digest or adb_forward._READINESS_PROBE_APK_SHA256
         payload_size = 28
         journal = readiness_probe_install_journal.ReadinessInstallJournal(
@@ -342,6 +346,7 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
             artifact_size=payload_size,
             baseline_session_ids=(),
             attempt_id=attempt_id,
+            fresh_baseline_admission=fresh_baseline_admission,
         )
         return journal
 
@@ -1013,6 +1018,123 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
             ),
             {},
         )
+
+    def test_fresh_attempt_with_opaque_history_and_conflicting_legacy_can_restore(self):
+        class HistoricalRunner(LifecycleRunner):
+            def _session_dump(self):
+                return super()._session_dump() + wrapped_historical_session(
+                    session_id=31, package="null",
+                )
+
+        digest = hashlib.sha256(b"reviewed readiness apk bytes").hexdigest()
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted), mock.patch.object(
+                adb_forward, "_READINESS_PROBE_APK_SHA256", digest,
+            ):
+                directory = self.private_directory()
+                first = legacy_install_record()
+                second = dict(first, package_uid_private=first["package_uid_private"] + 1)
+                records = [
+                    write_record(directory, first, name="legacy-1.json"),
+                    write_record(directory, second, name="legacy-2.json"),
+                ]
+                original_digests = [record_digest(path) for path in records]
+                runner = HistoricalRunner(
+                    fail_command="install-write" if interrupted else None,
+                    failure_point="after",
+                )
+                runner.android_user_ids = (0, 10, 11)
+                if interrupted:
+                    with self.assertRaises(probe.ProbeError):
+                        self.install_with_lifecycle_runner(runner, directory)
+                else:
+                    _, installed, _ = self.install_with_lifecycle_runner(runner, directory)
+                    self.assertEqual(installed["install_attempt_id"], "d" * 32)
+                result = recovery.recover_installed_readiness_probe(
+                    directory, target_reference=q7.TARGET_REFERENCE, runner=runner,
+                )
+                self.assertEqual(result["classification"], "cleanup_complete")
+                self.assertEqual(result["adb_command_counts"]["install_abandon"], int(interrupted))
+                self.assertEqual(result["adb_command_counts"]["package_uninstall"], int(not interrupted))
+                self.assertFalse(runner.package_present)
+                outcome = next(directory.glob("readiness-cleanup-recovery-*.json"))
+                self.assertEqual(json.loads(outcome.read_text())["install_attempt_id"], "d" * 32)
+                events = readiness_probe_install_journal.read_install_journal_events(
+                    directory, target_reference=q7.TARGET_REFERENCE,
+                )["d" * 32]
+                self.assertEqual(events[0]["baseline_package_session_ids"], [31])
+                self.assertTrue(all(event["fresh_baseline_admission"] for event in events))
+                self.assertEqual(events[-1]["state"], "cleaned_up")
+                self.assertEqual([record_digest(path) for path in records], original_digests)
+                with self.assertRaises(probe.ProbeError) as raised:
+                    recovery._read_install_record(directory, q7.TARGET_REFERENCE)
+                self.assertEqual(raised.exception.code, "IntegrityConflict")
+
+    def test_fresh_attempt_blocks_changed_live_baseline_before_install_create(self):
+        class ChangingRunner(LifecycleRunner):
+            def _session_dump(self):
+                if self.install_session_snapshot_count == 2:
+                    return session_dump(session_id=31, package="com.example.unrelated")
+                return wrapped_historical_session(session_id=31, package="null")
+
+        directory = self.private_directory()
+        runner = ChangingRunner()
+        digest = hashlib.sha256(b"reviewed readiness apk bytes").hexdigest()
+        with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", digest):
+            with self.assertRaises(probe.ProbeError) as raised:
+                self.install_with_lifecycle_runner(runner, directory)
+        self.assertEqual(raised.exception.code, "IntegrityConflict")
+        self.assertFalse(any(call[3:6] == ("shell", "pm", "install-create") for call in runner.calls))
+        events = readiness_probe_install_journal.read_install_journal_events(
+            directory, target_reference=q7.TARGET_REFERENCE,
+        )["d" * 32]
+        self.assertEqual([event["phase"] for event in events], ["before_install"])
+
+    def test_fresh_attempt_keeps_current_conflicts_and_cannot_be_closed_by_outcome(self):
+        directory = self.private_directory()
+        first = legacy_install_record()
+        write_record(directory, first, name="legacy-1.json")
+        write_record(directory, dict(first, package_uid_private=UID + 1), name="legacy-2.json")
+        binding = (TARGET, BUILD, 10)
+        self.assertIsNone(recovery._read_install_record(
+            directory, q7.TARGET_REFERENCE, allow_no_active=True, fresh_binding=binding,
+        ))
+        with self.assertRaises(probe.ProbeError):
+            recovery._read_install_record(
+                directory, q7.TARGET_REFERENCE, allow_no_active=True,
+                fresh_binding=(TARGET, BUILD, 11),
+            )
+        current = self.journal_for_attempt(directory)
+        with self.assertRaises(probe.ProbeError):
+            # A journal from before the decision cannot inherit the exception.
+            recovery._read_install_record(directory, q7.TARGET_REFERENCE)
+        self.assertEqual(recovery._read_install_record(
+            directory, q7.TARGET_REFERENCE, allow_no_active=True, fresh_binding=binding,
+        )[0], current.latest)
+        self.journal_for_attempt(directory, attempt_id="e" * 32)
+        with self.assertRaises(probe.ProbeError):
+            recovery._read_install_record(
+                directory, q7.TARGET_REFERENCE, allow_no_active=True, fresh_binding=binding,
+            )
+    def test_cleanup_outcome_cannot_replace_durable_current_cleanup(self):
+        directory = self.private_directory()
+        first = legacy_install_record()
+        write_record(directory, first, name="legacy-1.json")
+        write_record(directory, dict(first, package_uid_private=UID + 1), name="legacy-2.json")
+        current = self.journal_for_attempt(directory, fresh_baseline_admission=True)
+        self.assertEqual(recovery._read_install_record(directory, q7.TARGET_REFERENCE)[0], current.latest)
+        write_record(
+            directory, cleanup_outcome(
+                record_digest(directory / current.latest_filename),
+                install_attempt_id=current.attempt_id, cleanup_attempt_id="f" * 32,
+            ), name="untrusted-current-cleanup.json",
+        )
+        runner = LifecycleRunner()
+        result = recovery.recover_installed_readiness_probe(
+            directory, target_reference=q7.TARGET_REFERENCE, runner=runner,
+        )
+        self.assertEqual(result["failure_code"], "IntegrityConflict")
+        self.assertEqual(runner.calls, [])
 
     def test_install_stops_before_payload_write_when_a_competing_session_appears(self):
         directory = self.private_directory()

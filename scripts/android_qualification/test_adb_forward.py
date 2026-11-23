@@ -57,6 +57,11 @@ class FakeRunner:
         self.session_dump_replies = []
         self.outcomes_directory = None
         self.persisted_state_at_install = None
+        self.pre_create_binding = {
+            ("get-state",): b"device\n",
+            ("shell", "getprop", "ro.build.fingerprint"): (BUILD + "\n").encode("ascii"),
+            ("shell", "am", "get-current-user"): b"10\n",
+        }
         self.last_package_state = b""
 
     def run_install_sessions(self, target, stdout_consumer, *, deadline):
@@ -85,6 +90,13 @@ class FakeRunner:
             self.stdin_summaries.append((input_size, digest.hexdigest()))
             self.last_install_payload = bytes(payload)
         command = tuple(argv[3:])
+        if (
+            command in self.pre_create_binding
+            and self.outcomes_directory is not None
+            and self.persisted_state_at_install is None
+            and any(self.outcomes_directory.glob("readiness-install-attempt-*.json"))
+        ):
+            return self.pre_create_binding[command]
         if command == adb_forward._INSTALL_SESSIONS_COMMAND:
             if self.session_dump_replies:
                 return self.session_dump_replies.pop(0)
@@ -1314,7 +1326,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                     adapter.uninstall_readiness_probe(TARGET, deadline=20),
                     {"state": "already_absent", "readback": "absent"},
                 )
-        self.assertEqual(len(runner.calls), 15)
+        self.assertEqual(len(runner.calls), 19)
         self.assertEqual(
             sum(
                 call[0][3:] == ("shell", "pm", "list", "users")
@@ -1573,7 +1585,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "IncompleteEvidence")
         self.assertNotIn("INSTALL_FAILED_SECRET_VALUE", str(raised.exception))
-        self.assertEqual(len(runner.calls), 11)
+        self.assertEqual(len(runner.calls), 15)
         self.assertEqual(
             sum(
                 call[0][3:] == ("shell", "pm", "list", "users")
@@ -1581,6 +1593,29 @@ class AdbForwardAdapterTests(unittest.TestCase):
             ),
             2,
         )
+
+    def test_readiness_install_refuses_binding_changes_before_create(self):
+        for command, output in (
+            (("shell", "getprop", "ro.build.fingerprint"),
+             b"other/device:version/id/incremental:user/release-keys\n"),
+            (("shell", "am", "get-current-user"), b"11\n"),
+        ):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as directory:
+                adapter, runner, _ = self.adapter(self.identity_replies(b"10\n", b"", b"10\n", b""))
+                runner.pre_create_binding[command] = output
+                adapter.identity(TARGET, deadline=20)
+                adapter.package_install_state(TARGET, readiness_probe_artifact.PACKAGE, deadline=20)
+                apk = pathlib.Path(directory) / "readiness.apk"
+                payload = b"reviewed readiness apk bytes"
+                apk.write_bytes(payload)
+                with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256",
+                                       hashlib.sha256(payload).hexdigest()):
+                    with self.assertRaises(probe.ProbeError) as raised:
+                        self.install_probe(adapter, TARGET, apk, deadline=20)
+                self.assertEqual(raised.exception.code, "IntegrityConflict")
+                self.assertFalse(any(
+                    call[0][3:6] == ("shell", "pm", "install-create") for call in runner.calls
+                ))
 
     def test_adb_install_allowlist_excludes_replacement_and_other_users(self):
         apk_bytes = b"reviewed readiness apk bytes"

@@ -34,6 +34,7 @@ _IMMUTABLE_BINDING_FIELDS = (
     "android_user_private",
     "package_baseline_absent",
     "baseline_package_session_ids",
+    "fresh_baseline_admission",
     "qualification_assertions_passed",
 )
 
@@ -178,6 +179,8 @@ def validate_event_chain(events):
 
 def _validate_identity_fields(event):
     """Require install identities only after their durable observation point."""
+    if "fresh_baseline_admission" in event and event["fresh_baseline_admission"] is not True:
+        raise ProbeError("IntegrityConflict", "Transport")
     if any(
         field in event and event[field] is None
         for field in (
@@ -348,6 +351,7 @@ class ReadinessInstallJournal:
         artifact_size,
         baseline_session_ids,
         attempt_id=None,
+        fresh_baseline_admission=False,
         utc_clock=lambda: datetime.now(timezone.utc),
     ):
         if attempt_id is None:
@@ -373,6 +377,7 @@ class ReadinessInstallJournal:
             or version_code <= 0
             or type(artifact_size) is not int
             or not 0 < artifact_size <= 32 * 1024 * 1024
+            or type(fresh_baseline_admission) is not bool
             or not _valid_baseline_ids(baseline_session_ids)
         ):
             raise ProbeError("MalformedRequest", "Transport")
@@ -402,6 +407,7 @@ class ReadinessInstallJournal:
                 "android_user_private": android_user_id,
                 "package_baseline_absent": True,
                 "baseline_package_session_ids": list(baseline_session_ids),
+                **({"fresh_baseline_admission": True} if fresh_baseline_admission else {}),
                 "qualification_assertions_passed": False,
                 "install_status": "pending",
                 "state": "pending",
@@ -719,16 +725,17 @@ class InstallSessionParser:
         if mapped is None:
             return
         if mapped == "package":
+            if mapped in self._current:
+                raise ProbeError("IntegrityConflict", "Transport")
+            if value == b"null" and self._section == "historical":
+                self._current[mapped] = None
+                return
             try:
                 decoded = value.decode("ascii")
             except UnicodeDecodeError:
                 raise ProbeError("IncompleteEvidence", "Transport") from None
             if re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", decoded) is None:
                 raise ProbeError("IncompleteEvidence", "Transport")
-            if (
-                "package" in self._current
-            ):
-                raise ProbeError("IntegrityConflict", "Transport")
             self._current["package"] = decoded
             return
         if mapped in self._current:
@@ -761,19 +768,15 @@ class InstallSessionParser:
         self._wrapped_rows_seen = 0
         expected = current["session_id"] == self._expected_session_id
         package = current.get("package")
-        if package is None:
+        if "package" not in current or (expected and package is None):
             raise ProbeError("IncompleteEvidence", "Transport")
         if expected and package != self._package:
             raise ProbeError("IntegrityConflict", "Transport")
         selected = package == self._package
-        if not selected and not expected:
-            current.clear()
-            return
         required = (
             "user_id",
             "installer_package",
             "installer_uid",
-            "package",
             "committed",
             "final_status",
         )
@@ -782,18 +785,25 @@ class InstallSessionParser:
         if current.get("section") not in {"active", "finalized", "historical"}:
             raise ProbeError("IncompleteEvidence", "Transport")
         if (
-            current["user_id"] < 0
-            or current["installer_uid"] < 0
-            or current["final_status"] < -10000
+            not 0 <= current["user_id"] <= _MAX_SESSION_ID
+            or not 0 <= current["installer_uid"] <= _MAX_SESSION_ID
+            or not -10000 <= current["final_status"] <= _MAX_SESSION_ID
             or not re.fullmatch(r"[A-Za-z0-9_.]+", current["installer_package"])
         ):
             raise ProbeError("IncompleteEvidence", "Transport")
-        self._records.append(dict(current))
+        if selected:
+            self._records.append(dict(current))
+        else:
+            self._records.append({
+                "session_id": current["session_id"],
+                "section": current["section"],
+                "package_binding": "unattributed" if package is None else "unrelated",
+            })
         current.clear()
 
 
 def parse_install_sessions(data, package, *, expected_session_id=None):
-    """Parse one bounded dump, returning only selected package session fields."""
+    """Parse a bounded dump and keep competing or unattributed sessions opaque."""
     parser = InstallSessionParser(package, expected_session_id=expected_session_id)
     parser.feed(data)
     return parser.finish()

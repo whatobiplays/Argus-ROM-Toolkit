@@ -248,7 +248,9 @@ def _legacy_install_identity(record, target_reference):
     )
 
 
-def _read_install_record(outcomes_directory, target_reference, *, allow_no_active=False):
+def _read_install_record(
+    outcomes_directory, target_reference, *, allow_no_active=False, fresh_binding=None,
+):
     """Select one active install through explicit attempt and cleanup lineage.
 
     V2 install records carry a unique attempt ID, and v2 cleanup outcomes bind
@@ -467,22 +469,51 @@ def _read_install_record(outcomes_directory, target_reference, *, allow_no_activ
         ):
             raise ProbeError("IntegrityConflict", "Transport")
 
-    unresolved_candidates = []
-    unresolved_identities = []
+    unresolved = []
     for record, record_digest, install_attempt_id in candidates:
         if (record_digest, install_attempt_id) in successful_cleanups:
+            if record.get("schema") == _INSTALL_JOURNAL_SCHEMA:
+                # A cleanup outcome cannot close an open journal.
+                raise ProbeError("IntegrityConflict", "Transport")
             continue
         if "acquired_at_utc" in record and not _valid_install_timestamp(record):
             raise ProbeError("IncompleteEvidence", "Transport")
-        unresolved_candidates.append(record)
-        unresolved_identities.append((record_digest, install_attempt_id))
-    if not unresolved_candidates and allow_no_active:
+        unresolved.append((record, record_digest, install_attempt_id))
+
+    if target_reference == q7.TARGET_REFERENCE:
+        current = [
+            (record, digest, attempt_id)
+            for record, digest, attempt_id in unresolved
+            if record.get("schema") != _LEGACY_INSTALL_RECORD_SCHEMA
+        ]
+        binding = fresh_binding
+        if binding is None and len(current) == 1:
+            record = current[0][0]
+            if (
+                record.get("schema") == _INSTALL_JOURNAL_SCHEMA
+                and record.get("fresh_baseline_admission") is True
+            ):
+                private = record["identity_private"]
+                binding = private["serial"], private["build_fingerprint"], record["android_user_private"]
+        legacy = [
+            _legacy_install_identity(record, target_reference)
+            for record, _, _ in unresolved
+            if record.get("schema") == _LEGACY_INSTALL_RECORD_SCHEMA
+        ]
+        # The approved exception covers two valid v1 records for this binding,
+        # with different UIDs. It never grants either record cleanup authority.
+        if (
+            binding is not None and len(legacy) == 2
+            and all(identity is not None and identity[1:4] == binding for identity in legacy)
+            and legacy[0][4] != legacy[1][4]
+        ):
+            unresolved = current
+
+    if not unresolved and allow_no_active:
         return None
-    if len(unresolved_candidates) != 1 or not _valid_install_record(
-        unresolved_candidates[0], target_reference
-    ):
+    if len(unresolved) != 1 or not _valid_install_record(unresolved[0][0], target_reference):
         raise ProbeError("IntegrityConflict", "Transport")
-    return unresolved_candidates[0], *unresolved_identities[0]
+    return unresolved[0]
 
 
 class _CommandCounter:

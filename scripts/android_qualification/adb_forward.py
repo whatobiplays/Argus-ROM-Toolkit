@@ -1075,6 +1075,11 @@ class AdbForwardAdapter:
             raise ProbeError("IncompleteEvidence", "Transport")
         sessions = parser.finish()
         _deadline_remaining(self._clock, deadline)
+        if any(
+            session["section"] != "historical" and session["session_id"] != expected_session_id
+            for session in sessions
+        ):
+            raise ProbeError("IntegrityConflict", "Transport")
         return sessions
 
     def _readiness_android_user_ids(self, target, deadline):
@@ -1993,10 +1998,6 @@ class AdbForwardAdapter:
             raise ProbeError("IntegrityConflict", "Transport")
         from .readiness_probe_recovery import _read_install_record
 
-        if _read_install_record(
-            outcomes_directory, target_reference, allow_no_active=True
-        ) is not None:
-            raise ProbeError("IntegrityConflict", "Transport")
         user_id = self.current_android_user_id(target, deadline=deadline)
         try:
             path = os.fspath(artifact_path)
@@ -2112,10 +2113,10 @@ class AdbForwardAdapter:
                     target, user_id, package_state, deadline
                 )
                 existing_sessions = self._install_session_snapshot(target, deadline)
-                if any(
-                    session["section"] != "historical"
-                    for session in existing_sessions
-                ):
+                if _read_install_record(
+                    outcomes_directory, target_reference, allow_no_active=True,
+                    fresh_binding=(*self._identity_binding, user_id),
+                ) is not None:
                     raise ProbeError("IntegrityConflict", "Transport")
                 journal = readiness_probe_install_journal.ReadinessInstallJournal(
                     outcomes_directory,
@@ -2131,6 +2132,7 @@ class AdbForwardAdapter:
                         session["session_id"] for session in existing_sessions
                     )),
                     attempt_id=install_attempt_id,
+                    fresh_baseline_admission=True,
                 )
                 self._readiness_install_journal = journal
                 _deadline_remaining(self._clock, deadline)
@@ -2144,6 +2146,10 @@ class AdbForwardAdapter:
                 self._require_readiness_package_absent_all_users(
                     target, user_id, package_state, deadline
                 )
+                self.identity(target, deadline=deadline)
+                self.current_android_user_id(target, deadline=deadline)
+                if self._install_session_snapshot(target, deadline) != existing_sessions:
+                    raise ProbeError("IntegrityConflict", "Transport")
                 journal.checkpoint("attempted", "create_started")
                 create_output = self._run(
                     target,

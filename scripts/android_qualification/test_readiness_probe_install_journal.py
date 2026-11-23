@@ -250,7 +250,7 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
 
         self.assertEqual(attempt.latest["event_sequence"], original_sequence)
 
-    def test_parser_retains_only_selected_package_session_fields(self):
+    def test_parser_hides_unrelated_live_session_bindings(self):
         output = session_dump() + session_dump(
             session_id=18,
             package="com.example.unrelated",
@@ -270,7 +270,7 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             "section": "active",
             "committed": True,
             "final_status": 1,
-        },))
+        }, {"session_id": 18, "section": "active", "package_binding": "unrelated"}))
         self.assertNotIn("com.example.unrelated", repr(observed))
 
     def test_parser_preserves_active_and_historical_section_for_target_session(self):
@@ -382,7 +382,7 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             "installer_uid": 2000,
             "committed": True,
             "final_status": 1,
-        },))
+        }, {"session_id": 18, "section": "historical", "package_binding": "unrelated"}))
 
     def test_wrapped_historical_rows_reject_ambiguous_or_incomplete_bindings(self):
         for original, replacement in (
@@ -399,10 +399,27 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             )
             with self.subTest(original=original, replacement=replacement), self.assertRaises(ProbeError):
                 journal.parse_install_sessions(complete_session_dump(record), PACKAGE)
-        with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(
-                complete_session_dump(wrapped_historical_session(package="null")), PACKAGE,
-            )
+
+    def test_only_complete_unattributed_history_is_opaque(self):
+        historical = complete_session_dump(wrapped_historical_session(package="null"))
+        self.assertEqual(
+            journal.parse_install_sessions(historical, PACKAGE),
+            ({"session_id": 17, "section": "historical", "package_binding": "unattributed"},),
+        )
+        for output, expected in (
+            (historical, 17),
+            (historical[:-1], None),
+            (complete_session_dump(session_dump(section="Active", package="null")), None),
+            (complete_session_dump(session_dump(section="Finalized", package="null")), None),
+            (complete_session_dump(session_dump(
+                section="Historical", package="null", committed="unknown",
+            )), None),
+            (complete_session_dump(session_dump(
+                section="Active", package="com.example.unrelated", committed="unknown",
+            )), None),
+        ):
+            with self.subTest(expected=expected, output=output), self.assertRaises(ProbeError):
+                journal.parse_install_sessions(output, PACKAGE, expected_session_id=expected)
 
     def test_wrapped_historical_rows_reject_truncation_and_internal_timeout(self):
         record = wrapped_historical_session()

@@ -110,9 +110,21 @@ class ReadinessActivityReaderTests(unittest.TestCase):
             (b"      * Hist", b"    * Task{aded #14 type=standard A=unrelated U=10 rootTaskId=13 "
                              b"visible=true mode=fullscreen translucent=false sz=1}\n"),
             (b"      * Hist", b"    mResumedActivity: " + TARGET + b"\n"),
+            (b"  ResumedActivity:", b"Display #1 (activities from top to bottom):\n"
+                                    b"  RootTask #14: type=standard mode=fullscreen\n"),
+            (b"  ResumedActivity:", b"Display #1 (activities from top to bottom):\n"
+                                    b"  RootTask #15: type=standard mode=fullscreen\n"
+                                    b"    * Task{aded #13 type=standard A=unrelated U=10 rootTaskId=15 "
+                                    b"visible=true mode=fullscreen translucent=false sz=1}\n"),
         ):
             with self.subTest(before=before), self.assertRaises(ProbeError):
                 self.parse(SNAPSHOT.replace(before, injected + before, 1))
+
+    def test_root_task_may_also_be_its_own_leaf(self):
+        result = self.parse(SNAPSHOT.replace(b"RootTask #13:", b"RootTask #14:").replace(
+            b" rootTaskId=13", b"",
+        ))
+        self.assertEqual(result.root_task_id, result.task_id)
 
     def test_limits_apply_even_to_dropped_data(self):
         reader = ReadinessActivityReader("ProbeControlActivity", 10)

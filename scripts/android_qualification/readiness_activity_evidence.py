@@ -146,7 +146,7 @@ class ReadinessActivityReader:
             match = _ROOT.fullmatch(line)
             _check(match is not None and self._display is not None and self._top is None)
             self._root = int(match[1])
-            _check(self._root not in self._root_ids)
+            _check(self._root not in self._root_ids and self._root not in self._task_ids)
             self._root_ids.add(self._root)
             self._task = None
             self._in_target = False
@@ -155,9 +155,11 @@ class ReadinessActivityReader:
             match = _TASK.fullmatch(line)
             _check(match is not None and self._root is not None and self._top is None)
             instance, task, user, root, mode = match.groups()
-            _check(int(root or task) == self._root and int(task) not in self._task_ids)
-            self._task_ids.add(int(task))
-            self._task = int(task), instance, int(user), mode
+            task_id = int(task)
+            _check(int(root or task) == self._root and task_id not in self._task_ids
+                   and (task_id not in self._root_ids or task_id == self._root))
+            self._task_ids.add(task_id)
+            self._task = task_id, instance, int(user), mode
             self._in_target = False
         elif stripped.startswith(b"* Hist"):
             match = _MEMBER.fullmatch(line)

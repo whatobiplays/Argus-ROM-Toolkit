@@ -85,6 +85,7 @@ _INSTALL_ATTEMPT_ID_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
 _PACKAGE_INSTALLER_SHELL = "com.android.shell"
 _PACKAGE_INSTALLER_SHELL_UID = 2000
 _INSTALL_SESSION_SUCCESS_STATUS = 1
+_INSTALL_SESSION_ABORTED_STATUS = -115
 _MAX_ANDROID_SESSION_ID = (1 << 31) - 1
 _MAX_ANDROID_USER_IDS = 128
 _ANDROID_USER_ROW_RE = re.compile(
@@ -1936,6 +1937,9 @@ class AdbForwardAdapter:
         if session and (
             session["section"] != "historical" or session.get("committed") is not False
             or session.get("user_id") != user_id
+            or session.get("installer_package") != _PACKAGE_INSTALLER_SHELL
+            or session.get("installer_uid") != _PACKAGE_INSTALLER_SHELL_UID
+            or session.get("final_status") != _INSTALL_SESSION_ABORTED_STATUS
         ):
             raise ProbeError("IncompleteEvidence", "Transport")
         self.identity(target, deadline=deadline)

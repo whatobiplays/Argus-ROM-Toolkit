@@ -579,6 +579,7 @@ class InstallSessionParser:
         b"params.isStaged": b"false",
         b"mSealed": b"false",
     }
+    _LIVE_PARAMS_FLAGS = {b"isMultiPackage": b"false", b"isStaged": b"false"}
 
     def __init__(self, package, *, expected_session_id=None, rollback_user_id=None):
         if type(package) is not str or not re.fullmatch(
@@ -601,6 +602,7 @@ class InstallSessionParser:
         self._wrapped_rows_seen = 0
         self.active_layout = None
         self._rollback_seen = set()
+        self._rollback_grouped = False
 
     def feed(self, chunk):
         if self._finished or type(chunk) is not bytes:
@@ -738,6 +740,12 @@ class InstallSessionParser:
                 or self._wrapped_row[bindings[-1].end():] != b" "
             ):
                 raise ProbeError("IncompleteEvidence", "Transport")
+            if not historical and index in (1, 2):
+                fixed = self._LIVE_PARAMS_FLAGS if index == 1 else self._ROLLBACK_FIXED_FIELDS
+                pairs = tuple(self._ROW_PAIR.finditer(self._wrapped_row))
+                if any([pair[2] for pair in pairs if pair[1] == key] != [value]
+                       for key, value in fixed.items()):
+                    raise ProbeError("IntegrityConflict", "Transport")
             for match in bindings:
                 # The Params row repeats the requested installer. The actual
                 # installer belongs to the session row alongside the UID.
@@ -768,12 +776,20 @@ class InstallSessionParser:
         ):
             raise ProbeError("IncompleteEvidence", "Transport")
         stripped = line.lstrip(b" ")
+        scalar_field = SESSION_FIELD_PATTERN.fullmatch(line)
+        self._rollback_grouped |= (
+            (scalar_field is None and line.endswith(b" ")) or len(line) == self._WRAPPED_WIDTH
+        )
         if re.search(rb"(?:^| )mStagedSessionErrorMessage=[^ ]* $", stripped):
             self._current["rollback_terminal"] = True
         for match in self._ROW_PAIR.finditer(stripped):
             key, value = match.groups()
             if key in self._ROLLBACK_FIXED_FIELDS:
                 if value != self._ROLLBACK_FIXED_FIELDS[key]:
+                    raise ProbeError("IntegrityConflict", "Transport")
+                self._remember_rollback_field(key)
+            if key in self._LIVE_PARAMS_FLAGS:
+                if value != self._LIVE_PARAMS_FLAGS[key]:
                     raise ProbeError("IntegrityConflict", "Transport")
                 self._remember_rollback_field(key)
             if key == b"mode":
@@ -795,7 +811,10 @@ class InstallSessionParser:
                 self._remember_rollback_field(key)
             if key in {b"userId", b"appPackageName", b"mInstallerUid", b"mCommitted", b"mFinalStatus"}:
                 self._record_field(key, value)
-                if key == b"mFinalStatus" and SESSION_FIELD_PATTERN.fullmatch(line):
+                if (
+                    key == b"mFinalStatus" and not self._rollback_grouped
+                    and scalar_field is not None
+                ):
                     self._current["rollback_terminal"] = True
 
     def _remember_rollback_field(self, key):
@@ -850,6 +869,7 @@ class InstallSessionParser:
             if (
                 not current.get("rollback_terminal")
                 or not self._ROLLBACK_FIXED_FIELDS.keys() <= self._rollback_seen
+                or (self._rollback_grouped and not self._LIVE_PARAMS_FLAGS.keys() <= self._rollback_seen)
                 or current.get("user_id") != self._rollback_user_id
                 or current.get("package") != self._package
                 or current.get("installer_package") != "com.android.shell"

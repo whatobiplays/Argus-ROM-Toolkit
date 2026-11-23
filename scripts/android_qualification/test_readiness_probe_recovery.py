@@ -772,6 +772,39 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                 self.assertEqual(events[-1]["phase"],
                                  "precommit_abandon_started" if expected_abandon else "session_created")
 
+    def test_precommit_rollback_checks_exact_aborted_history(self):
+        for overrides in ({}, {"wrapped": True}, {"installer": "com.example.other"},
+                          {"installer_uid": 10000}, {"final_status": 1}):
+            class HistoricalRunner(LifecycleRunner):
+                def _session_dump(self):
+                    if self.session is not None:
+                        return super()._session_dump()
+                    if overrides.get("wrapped"):
+                        return wrapped_historical_session(replace=lambda row: row.replace(
+                            b"mCommitted=true", b"mCommitted=false",
+                        ).replace(b"mFinalStatus=1 ", b"mFinalStatus=-115 "))
+                    fields = {"section": "Historical", "committed": "false", "final_status": -115}
+                    return session_dump(**(fields | overrides))
+            with self.subTest(overrides=overrides):
+                directory = self.private_directory()
+                journal = self.journal_for_attempt(directory)
+                journal.checkpoint("attempted", "create_started")
+                journal.checkpoint("attempted", "session_created", remote_session_id=17)
+                runner = HistoricalRunner()
+                runner.session = {"committed": False, "payload": b""}
+                runner.session_active = True
+                result = recovery.recover_installed_readiness_probe(
+                    directory, target_reference=q7.TARGET_REFERENCE, runner=runner,
+                )
+                blocked = bool(overrides) and not overrides.get("wrapped")
+                self.assertEqual(result["classification"], "blocked" if blocked else "cleanup_complete")
+                self.assertEqual(result["adb_command_counts"]["install_abandon"], 1)
+                self.assertEqual(result["adb_command_counts"]["package_uninstall"], 0)
+                events = readiness_probe_install_journal.read_install_journal_events(
+                    directory, target_reference=q7.TARGET_REFERENCE,
+                )[journal.attempt_id]
+                self.assertEqual(events[-1]["state"], "attempted" if blocked else "cleaned_up")
+
     def test_recovery_outcome_write_failure_is_reported_after_absence_readback(self):
         directory = self.private_directory()
         journal = self.journal_for_attempt(directory)

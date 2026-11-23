@@ -78,7 +78,7 @@ def wrapped_active_session(*, session_id=17, package=PACKAGE):
         "    userId=10 mOriginalInstallerUid=2000 installerPackageName=com.android.shell \n"
         "    installInitiatingPackageName=com.android.shell mInstallerUid=2000 createdMillis=0 stageCid=null \n"
         f"    mode=1 sizeBytes=28 appPackageName={package} appIcon=false \n"
-        "    installerPackageName=null rollbackDataPolicy=0 \n"
+        "    installerPackageName=null isMultiPackage=false isStaged=false rollbackDataPolicy=0 \n"
         "    mClientProgress=0.0 mCommitted=false mSealed=false \n"
         "    mFinalStatus=0 mFinalMessage=null params.isMultiPackage=false params.isStaged=false \n"
         "    mParentSessionId=-1 mChildSessionIds=[] mStagedSessionErrorMessage= \n"
@@ -460,6 +460,11 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             "installer_package": "com.android.shell", "installer_uid": 2000,
             "committed": False, "final_status": 0,
         },))
+        with self.assertRaises(ProbeError):
+            journal.parse_install_sessions(
+                dump.replace(b" isStaged=false ", b" isStaged=true "),
+                PACKAGE, expected_session_id=17,
+            )
 
     def test_known_id_rollback_needs_a_complete_unconflicted_frame(self):
         opaque = wrapped_active_session().replace(b"mOriginalInstallerUid=2000 ", b"")
@@ -481,6 +486,11 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             dump.replace(b"sizeBytes=28", b"mParentSessionId=-1 mParentSessionId=-1"),
             dump.replace(b"mSealed=false", b"mSealed=false mSealed=false"),
             dump.replace(b"mChildSessionIds=[] ", b""),
+            dump.replace(b" isStaged=false ", b" isStaged=true "),
+            dump.replace(b" isMultiPackage=false ", b" isMultiPackage=true "),
+            dump.replace(b"mFinalStatus=0 ", b"").replace(
+                b"mStagedSessionErrorMessage= \n", b"\n    mFinalStatus=0\n",
+            ),
             dump.replace(b"mCommitted=false", b"mCommitted=false mCommitted=false"),
             dump.replace(PACKAGE.encode("ascii"), b"com.example.other"),
             dump.replace(b"Finalized install sessions:", b"Orphaned install sessions:"),

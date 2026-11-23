@@ -1,4 +1,4 @@
-"""Injected forward ownership and ephemeral Q7 diagnostic filtering.
+"""Injected forward ownership and discovery correlation.
 
 No implementation here invokes ADB. The caller supplies a reviewed adapter and
 exact target/build identity. Discovery correlation is operational evidence under
@@ -7,9 +7,8 @@ the trusted-host model, not cryptographic proof of the connecting host.
 from dataclasses import dataclass
 from enum import Enum
 import re
-import hashlib
 from typing import Optional, Protocol
-from .readiness_probe import require, ProbeError, HEX, Transport, compact, uint
+from .readiness_probe import require, ProbeError, HEX, Transport, uint
 
 @dataclass(frozen=True)
 class Discovery:
@@ -552,107 +551,3 @@ class ForwardSession:
 
 DIAGNOSTIC_COMMAND=('shell','dumpsys','-t','3','activity','activities')
 WINDOW_DISPLAY_COMMAND=('shell','dumpsys','-t','3','window','displays')
-
-@dataclass(frozen=True)
-class DiagnosticProfile:
-    """Reviewed target/build-specific grammar, never an automatic fallback.
-
-    The selected OS command must supply complete output with a known terminator.
-    No profile is shipped as qualified; fixtures establish parser behavior only.
-    """
-    name: str
-    build: str
-    package: str
-    target_line_pattern: str
-    completion_line: str
-    source: tuple[str, ...] = DIAGNOSTIC_COMMAND
-
-@dataclass(frozen=True)
-class DiagnosticBinding:
-    """Expected identities and profile digest from the reviewed approval record.
-
-    This record is supplied independently of diagnostic output. A digest binds
-    reviewed configuration; it does not authenticate a host or qualify a source.
-    """
-    build: str
-    package: str
-    source: tuple[str, ...]
-    profile_sha256: str
-
-def validate_profile(profile):
-    require(isinstance(profile,DiagnosticProfile),'IncompleteEvidence')
-    def matches(value, pattern):
-        return type(value) is str and re.fullmatch(pattern,value) is not None
-    require(matches(profile.name,r'[a-z][a-z0-9_-]{0,63}'),'IncompleteEvidence')
-    require(matches(profile.build,r'[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,255}'),'IncompleteEvidence')
-    require(matches(profile.package,r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+')
-            and len(profile.package)<=255,'IncompleteEvidence')
-    require(type(profile.source) is tuple and profile.source==DIAGNOSTIC_COMMAND,'IncompleteEvidence')
-    for value,limit in ((profile.target_line_pattern,2048),(profile.completion_line,256)):
-        require(type(value) is str and 0<len(value)<=limit and value.isascii()
-                and all(32<=ord(c)<127 for c in value) and value==value.strip(),'IncompleteEvidence')
-    require(profile.target_line_pattern.startswith('^') and profile.target_line_pattern.endswith('$'),'IncompleteEvidence')
-    try:
-        pattern=re.compile(profile.target_line_pattern)
-    except re.error:
-        raise ProbeError('IncompleteEvidence') from None
-    require(set(pattern.groupindex)=={'package','task','resumed'}
-            and pattern.fullmatch(profile.completion_line) is None,'IncompleteEvidence')
-    return pattern
-
-def profile_digest(profile):
-    """Hash validated, reviewed grammar; no raw diagnostic bytes enter this hash."""
-    validate_profile(profile)
-    return hashlib.sha256(compact(vars(profile))).hexdigest()
-
-def parse_diagnostic(chunks,profile,clock,deadline,*,exit_code=None,binding=None):
-    """Filter streaming bytes immediately; return only one unambiguous target.
-
-    Adapters must bound each read by the deadline. No raw stdout or stderr may
-    be retained by the adapter. After exhausting stdout, exit_code must confirm
-    successful command exit within the same deadline. A marker alone is not
-    proof of completion. This function never returns raw diagnostic text.
-    The binding must come from the reviewed owner record, not from these bytes.
-    Regex grammar is trusted reviewed configuration, not untrusted input; no
-    shipped profile is physically qualified. The source/build match is required.
-    """
-    pattern=validate_profile(profile)
-    require(isinstance(binding,DiagnosticBinding),'IncompleteEvidence')
-    require((binding.build,binding.package,binding.source)==(profile.build,profile.package,profile.source)
-            and binding.profile_sha256==profile_digest(profile),'IntegrityConflict')
-    total=0; pending=bytearray(); found=[]; complete=False
-    def line(raw):
-        nonlocal complete
-        require(not complete,'IncompleteEvidence')
-        try: text=raw.decode('utf-8',errors='strict')
-        except UnicodeError: raise ProbeError('IncompleteEvidence') from None
-        if text==profile.completion_line: complete=True; return
-        match=pattern.fullmatch(text)
-        if match:
-            fields=match.groupdict()
-            require(set(fields)=={'package','task','resumed'} and fields['package']==profile.package,'IncompleteEvidence')
-            require(fields['resumed'] in ('true','false') and re.fullmatch(r'[0-9]{1,10}',fields['task']) is not None,'IncompleteEvidence')
-            require(0<=int(fields['task'])<=2147483647,'IncompleteEvidence')
-            found.append((int(fields['task']),fields['resumed']=='true'))
-            require(len(found)==1,'IncompleteEvidence')
-    for chunk in chunks:
-        require(clock()<deadline,'TimedOut')
-        require(type(chunk) is bytes and len(chunk)<=16384,'ResourceLimitExceeded')
-        total+=len(chunk)
-        require(total<=1048576,'ResourceLimitExceeded')
-        for byte in chunk:
-            require(not complete,'IncompleteEvidence')
-            if byte==10: line(bytes(pending)); pending.clear()
-            else:
-                pending.append(byte)
-                require(len(pending)<=16384,'ResourceLimitExceeded')
-    require(clock()<deadline,'TimedOut')
-    require(not pending and complete and len(found)==1,'IncompleteEvidence')
-    require(callable(exit_code),'IncompleteEvidence')
-    try:
-        status=exit_code()
-    except Exception:
-        raise ProbeError('IncompleteEvidence') from None
-    require(clock()<deadline,'TimedOut')
-    require(type(status) is int and status==0,'IncompleteEvidence')
-    return dict(profile=profile.name,build=profile.build,package=profile.package,task_id=found[0][0],resumed=found[0][1])

@@ -86,6 +86,7 @@ class ReadinessActivityReaderTests(unittest.TestCase):
             SNAPSHOT.replace(b"u10 ", b"u11 "),
             SNAPSHOT.replace(b"U=10 ", b"U=11 "),
             SNAPSHOT.replace(b"rootTaskId=13", b"rootTaskId=99"),
+            SNAPSHOT.replace(b"#14 ", b"#9999999999 ").replace(b"t14}", b"t9999999999}"),
             SNAPSHOT.replace(b"* Hist  #0:", b"* Hist  #0: corrupt"),
             SNAPSHOT.replace(b"state=RESUMED ", b"state=PAUSED "),
             SNAPSHOT.replace(b"t14}", b"t15}", 1),
@@ -108,11 +109,13 @@ class ReadinessActivityReaderTests(unittest.TestCase):
             SNAPSHOT + b"*** SERVICE 'activity' DUMP TIMEOUT (3000ms) EXPIRED ***\n",
             SNAPSHOT + b"Exception occurred while dumping:\n",
             SNAPSHOT + b"\xff\n",
+            SNAPSHOT + b"unrelated trailing data\n",
         ):
             with self.subTest(), self.assertRaises(ProbeError):
                 self.parse(data)
         for override in (
-            {"exit_code": 1}, {"cleanup_complete": False}, {"stderr_empty": False},
+            {"exit_code": 1}, {"exit_code": False}, {"exit_code": None},
+            {"cleanup_complete": False}, {"stderr_empty": False},
             {"stdout_bytes": 0}, {"command_count": 0}, {"classification": "host_timeout"},
         ):
             with self.subTest(override=override), self.assertRaises(ProbeError):
@@ -142,11 +145,36 @@ class ReadinessActivityReaderTests(unittest.TestCase):
         self.assertEqual(result.root_task_id, result.task_id)
 
     def test_limits_apply_even_to_dropped_data(self):
-        reader = ReadinessActivityReader("ProbeControlActivity", 10)
-        for chunk in (b"x" * (16 * 1024 + 1), b"\n" * (1024 * 1024 + 1)):
+        for chunk in (bytearray(b"data"), b"x" * (16 * 1024 + 1)):
             with self.subTest(size=len(chunk)), self.assertRaises(ProbeError) as error:
-                reader.feed(chunk)
+                ReadinessActivityReader("ProbeControlActivity", 10).feed(chunk)
             self.assertEqual(error.exception.code, "ResourceLimitExceeded")
+        reader = ReadinessActivityReader("ProbeControlActivity", 10)
+        reader.feed(SNAPSHOT)
+        with self.assertRaises(ProbeError) as error:
+            for _ in range(64):
+                reader.feed(b"\n" * (16 * 1024))
+        self.assertEqual(error.exception.code, "ResourceLimitExceeded")
+
+    def test_adapter_rejects_complete_result_received_after_deadline(self):
+        target = "SERIAL-1"
+        build = "brand/device:version/id/user/release-keys"
+        now = [0]
+        runner = Mock()
+        runner.run.side_effect = (b"device\n", build.encode() + b"\n",
+                                  b"device\n", build.encode() + b"\n", b"10\n")
+
+        def run_q7(target, consumer, *, deadline):
+            consumer(SNAPSHOT)
+            now[0] = deadline
+            return acquisition(SNAPSHOT)
+
+        runner.run_q7.side_effect = run_q7
+        adapter = AdbForwardAdapter(runner=runner, clock=lambda: now[0])
+        adapter.identity(target, deadline=5)
+        with self.assertRaises(ProbeError) as error:
+            adapter.read_readiness_activity(target, build=build, component="ProbeControlActivity", deadline=5)
+        self.assertEqual(error.exception.code, "TimedOut")
 
     def test_adapter_rebinds_build_user_and_passes_the_deadline(self):
         serial = "SERIAL-1"

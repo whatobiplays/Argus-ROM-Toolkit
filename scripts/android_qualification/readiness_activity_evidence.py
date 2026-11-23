@@ -51,6 +51,12 @@ def _check(condition):
         raise ProbeError("IncompleteEvidence", "Transport")
 
 
+def _android_id(value):
+    number = int(value)
+    _check(0 <= number <= 2147483647)
+    return number
+
+
 @dataclass(frozen=True)
 class ReadinessActivityFacts:
     """One snapshot. The private IDs are meaningful only within a bound session."""
@@ -86,6 +92,8 @@ class ReadinessActivityReader:
         self._root_has_resumed = False
 
     def feed(self, chunk):
+        if type(chunk) is not bytes or len(chunk) > _MAX_LINE:
+            raise ProbeError("ResourceLimitExceeded", "Transport")
         self._bytes += len(chunk)
         if self._bytes > _MAX_OUTPUT:
             raise ProbeError("ResourceLimitExceeded", "Transport")
@@ -105,11 +113,11 @@ class ReadinessActivityReader:
         token, user, component, task, finishing, exiting = match.groups()
         name = _COMPONENTS.get(component)
         if component.startswith(PACKAGE.encode() + b"/"):
-            _check(name is not None and int(user) == self._user)
+            _check(name is not None and _android_id(user) == self._user)
         if name != self._component:
             return False
         _check(finishing is None and exiting is None)
-        return token, int(task)
+        return token, _android_id(task)
 
     def _line(self, line):
         stripped = line.lstrip(b" ")
@@ -143,7 +151,7 @@ class ReadinessActivityReader:
         if stripped.startswith(b"Display #"):
             match = _DISPLAY.fullmatch(line)
             _check(match is not None and self._top is None)
-            self._display = int(match[1])
+            self._display = _android_id(match[1])
             _check(self._display not in self._display_ids)
             self._display_ids.add(self._display)
             self._root = self._task = None
@@ -152,7 +160,7 @@ class ReadinessActivityReader:
         elif stripped.startswith(b"RootTask #"):
             match = _ROOT.fullmatch(line)
             _check(match is not None and self._display is not None and self._top is None)
-            self._root = int(match[1])
+            self._root = _android_id(match[1])
             _check(self._root not in self._root_ids and self._root not in self._task_ids)
             self._root_ids.add(self._root)
             self._task = None
@@ -162,11 +170,11 @@ class ReadinessActivityReader:
             match = _TASK.fullmatch(line)
             _check(match is not None and self._root is not None and self._top is None)
             instance, task, user, root, mode = match.groups()
-            task_id = int(task)
-            _check(int(root or task) == self._root and task_id not in self._task_ids
+            task_id = _android_id(task)
+            _check(_android_id(root or task) == self._root and task_id not in self._task_ids
                    and (task_id not in self._root_ids or task_id == self._root))
             self._task_ids.add(task_id)
-            self._task = task_id, instance, int(user), mode
+            self._task = task_id, instance, _android_id(user), mode
             self._in_target = False
         elif stripped.startswith(b"* Hist"):
             match = _MEMBER.fullmatch(line)
@@ -203,7 +211,7 @@ class ReadinessActivityReader:
 
     def finish(self, acquisition):
         """Accept only a clean, bounded acquisition through the activity boundary."""
-        _check(acquisition.command_count == 1 and acquisition.exit_code == 0
+        _check(acquisition.command_count == 1 and type(acquisition.exit_code) is int and acquisition.exit_code == 0
                and acquisition.classification == "exit_zero" and acquisition.stderr_empty
                and acquisition.cleanup_complete and acquisition.stdout_bytes == self._bytes
                and acquisition.total_output_bytes == self._bytes)

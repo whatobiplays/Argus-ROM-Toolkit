@@ -66,6 +66,21 @@ class ReadinessActivityReaderTests(unittest.TestCase):
         result = self.parse(paused)
         self.assertFalse(result.resumed or result.top_resumed)
 
+    def test_finishing_sibling_does_not_supply_selected_activity_evidence(self):
+        launcher = TARGET.replace(b"deadbeef", b"bada55").replace(
+            b".ProbeControlActivity", b".LauncherActivity",
+        )
+        for suffix in (b" f}", b" isExiting", b" f} isExiting"):
+            with self.subTest(suffix=suffix):
+                sibling = b"      * Hist  #1: " + launcher[:-1] + suffix + b"}\n"
+                data = SNAPSHOT.replace(b"  ResumedActivity:", sibling + b"  ResumedActivity:", 1)
+                result = self.parse(data)
+                self.assertTrue(result.top_resumed)
+                self.assertNotIn("bada55", repr(result))
+                with self.assertRaises(ProbeError):
+                    self.parse(SNAPSHOT.replace(b"* Hist  #0: " + TARGET,
+                        b"* Hist  #0: " + TARGET[:-1] + suffix + b"}"))
+
     def test_rejects_conflicting_bindings_and_missing_membership(self):
         for data in (
             SNAPSHOT.replace(b"u10 ", b"u11 "),

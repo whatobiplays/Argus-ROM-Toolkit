@@ -18,7 +18,11 @@ _TASK = re.compile(
     rb"(?: rootTaskId=([0-9]{1,10}))? visible=(?:true|false)"
     rb" mode=([\w-]+) translucent=(?:true|false) sz=[0-9]{1,10}\}"
 )
-_RECORD = rb"ActivityRecord\{([a-f0-9]{1,8}) u([0-9]{1,10}) (\S+) t([0-9]{1,10})\}"
+# Android 12 appends a brace with the finishing flag before the closing brace.
+_RECORD = (
+    rb"ActivityRecord\{([a-f0-9]{1,8}) u([0-9]{1,10}) (\S+) t([0-9]{1,10})"
+    rb"( f\})?( isExiting)?\}"
+)
 _MEMBER = re.compile(rb"      \* Hist\s*#[0-9]{1,10}: " + _RECORD)
 _ROOT_RESUMED = re.compile(rb"    mResumedActivity: " + _RECORD)
 _TOP = re.compile(rb"  ResumedActivity: " + _RECORD)
@@ -98,11 +102,14 @@ class ReadinessActivityReader:
             self._line(line)
 
     def _record(self, match):
-        token, user, component, task = match.groups()
+        token, user, component, task, finishing, exiting = match.groups()
         name = _COMPONENTS.get(component)
         if component.startswith(PACKAGE.encode() + b"/"):
             _check(name is not None and int(user) == self._user)
-        return (token, int(task)) if name == self._component else False
+        if name != self._component:
+            return False
+        _check(finishing is None and exiting is None)
+        return token, int(task)
 
     def _line(self, line):
         stripped = line.lstrip(b" ")

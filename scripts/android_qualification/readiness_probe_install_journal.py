@@ -18,7 +18,7 @@ from .readiness_probe import ProbeError
 INSTALL_JOURNAL_SCHEMA = "argus-issue-74-readiness-install-lifecycle-v1"
 INSTALL_ATTEMPT_ID_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
 TARGET_REFERENCE_PATTERN = re.compile(r"i74-tgt-[0-9a-f]{16}\Z")
-SESSION_HEADER_PATTERN = re.compile(rb"\s*Session ([0-9]+):\s*\Z")
+SESSION_HEADER_PATTERN = re.compile(rb"\s*(?:(Active|Finalized) )?Session ([0-9]+):\s*\Z")
 SESSION_FIELD_PATTERN = re.compile(rb"\s*([A-Za-z0-9_.]+)=([^\s]*)\s*\Z")
 _MAX_INSTALL_SESSIONS_OUTPUT_BYTES = 1024 * 1024
 _MAX_INSTALL_SESSIONS_LINE_BYTES = 16 * 1024
@@ -409,6 +409,10 @@ class ReadinessInstallJournal:
             },
         )
 
+    @property
+    def outcomes_directory(self):
+        return self._directory
+
     @classmethod
     def resume(cls, outcomes_directory, events, *, utc_clock=lambda: datetime.now(timezone.utc)):
         """Continue one already validated event chain without replacing it."""
@@ -501,40 +505,22 @@ class ReadinessInstallJournal:
             directory_fd = _evidence_storage._directory_descriptor(self._directory)
         except Exception:
             raise ProbeError("UnauthorizedPeer", "Transport") from None
-        descriptor = -1
+        temporary_name = f".readiness-event-{secrets.token_hex(16)}.tmp"
         previous_umask = os.umask(0o077)
         try:
-            descriptor = os.open(
-                name,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-                0o600,
-                dir_fd=directory_fd,
+            _evidence_storage._publish_no_replace(
+                self._directory, temporary_name, name, payload
             )
-            metadata = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_uid != os.geteuid()
-                or stat.S_IMODE(metadata.st_mode) != 0o600
-                or metadata.st_nlink != 1
-            ):
-                raise ProbeError("UnauthorizedPeer", "Transport")
-            view = memoryview(payload)
-            while view:
-                written = os.write(descriptor, view)
-                if type(written) is not int or written <= 0:
-                    raise ProbeError("IncompleteEvidence", "Transport")
-                view = view[written:]
-            os.fsync(descriptor)
-            os.fsync(directory_fd)
-        except ProbeError:
-            raise
-        except OSError:
+        except Exception:
             raise ProbeError("IncompleteEvidence", "Transport") from None
         finally:
-            if descriptor >= 0:
-                os.close(descriptor)
-            os.umask(previous_umask)
-            os.close(directory_fd)
+            try:
+                os.unlink(temporary_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+            finally:
+                os.umask(previous_umask)
+                os.close(directory_fd)
         self.latest = record
         self.latest_filename = name
         self.latest_sha256 = digest
@@ -555,6 +541,7 @@ class InstallSessionParser:
         b"Active install sessions:": "active",
         b"Finalized install sessions:": "finalized",
         b"Historical install sessions:": "historical",
+        b"Legacy install sessions:": "legacy",
     }
 
     def __init__(self, package, *, expected_session_id=None):
@@ -566,7 +553,8 @@ class InstallSessionParser:
         self._expected_session_id = expected_session_id
         self._buffer = bytearray()
         self._total = 0
-        self._line_number = 0
+        self._sections = []
+        self._legacy_terminator = False
         self._current = None
         self._section = None
         self._records = []
@@ -596,43 +584,63 @@ class InstallSessionParser:
         if self._finished:
             raise ProbeError("IncompleteEvidence", "Transport")
         self._finished = True
-        if self._buffer:
-            if len(self._buffer) > _MAX_INSTALL_SESSIONS_LINE_BYTES:
-                raise ProbeError("ResourceLimitExceeded", "Transport")
-            self._consume_line(bytes(self._buffer), complete=False)
-            self._buffer.clear()
-        self._finish_session()
+        if (
+            self._buffer
+            or tuple(self._sections) != tuple(self._SECTION_NAMES.values())
+            or not self._legacy_terminator
+        ):
+            raise ProbeError("IncompleteEvidence", "Transport")
         return tuple(self._records)
 
-    def _consume_line(self, line, *, complete=True):
-        self._line_number += 1
-        if line.endswith(b"\r"):
-            line = line[:-1]
+    def _consume_line(self, line):
         stripped = line.strip()
+        upper = stripped.upper()
+        if b"DUMP TIMEOUT" in upper or upper.startswith(
+            (b"ERROR", b"FAILURE", b"PERMISSION DENIAL", b"CAN'T FIND SERVICE")
+        ):
+            raise ProbeError("IncompleteEvidence", "Transport")
         if stripped.endswith(b"install sessions:"):
             self._finish_session()
-            self._section = self._SECTION_NAMES.get(stripped, "unknown")
+            section = self._SECTION_NAMES.get(stripped)
+            expected = tuple(self._SECTION_NAMES.values())
+            index = len(self._sections)
+            if index >= len(expected) or section != expected[index]:
+                raise ProbeError("IncompleteEvidence", "Transport")
+            self._sections.append(section)
+            self._section = section
+            return
+        if self._section == "legacy":
+            # The observed legacy map is empty. Unrecognized trailing content
+            # may describe additional sessions, so it cannot prove absence.
+            if not stripped:
+                return
+            if stripped != b"{}" or self._legacy_terminator:
+                raise ProbeError("IncompleteEvidence", "Transport")
+            self._legacy_terminator = True
             return
         header = SESSION_HEADER_PATTERN.fullmatch(line)
         if header is not None:
             self._finish_session()
-            session_id = int(header.group(1))
+            prefix, session_id_text = header.groups()
+            if prefix and prefix.decode("ascii").lower() != self._section:
+                raise ProbeError("IncompleteEvidence", "Transport")
+            session_id = int(session_id_text)
             if not 0 < session_id <= _MAX_SESSION_ID or session_id in self._seen_ids:
                 raise ProbeError("IntegrityConflict", "Transport")
             self._seen_ids.add(session_id)
             self._current = {"session_id": session_id, "section": self._section}
             return
-        if line.startswith(b"Session"):
+        if re.match(rb"(?:[A-Za-z]+ )?(?:Child )?Session(?:\b|[0-9])", stripped, re.I):
             raise ProbeError("IncompleteEvidence", "Transport")
         if self._current is None:
+            if stripped:
+                raise ProbeError("IncompleteEvidence", "Transport")
             return
         field = SESSION_FIELD_PATTERN.fullmatch(line)
         if field is None:
             malformed_package = re.fullmatch(rb"\s*appPackageName=(.*)\s*", line)
             if malformed_package is not None:
-                self._mark_malformed_package(
-                    malformed_package.group(1), complete=complete
-                )
+                raise ProbeError("IncompleteEvidence", "Transport")
             return
         key, value = field.groups()
         mapped = self._FIELD_NAMES.get(key)
@@ -642,15 +650,11 @@ class InstallSessionParser:
             try:
                 decoded = value.decode("ascii")
             except UnicodeDecodeError:
-                self._mark_malformed_package(value, complete=complete)
-                return
+                raise ProbeError("IncompleteEvidence", "Transport") from None
             if re.fullmatch(r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", decoded) is None:
-                self._mark_malformed_package(value, complete=complete)
-                return
+                raise ProbeError("IncompleteEvidence", "Transport")
             if (
                 "package" in self._current
-                or "_package_identity_unrelated" in self._current
-                or "_package_identity_ambiguous" in self._current
             ):
                 raise ProbeError("IntegrityConflict", "Transport")
             self._current["package"] = decoded
@@ -675,51 +679,17 @@ class InstallSessionParser:
             else:
                 self._current[mapped] = int(value)
 
-    def _mark_malformed_package(self, value, *, complete):
-        if (
-            "package" in self._current
-            or "_package_identity_unrelated" in self._current
-            or "_package_identity_ambiguous" in self._current
-        ):
-            raise ProbeError("IntegrityConflict", "Transport")
-        target = self._package.encode("ascii")
-        unrelated = complete and bool(value) and target not in value
-        self._current[
-            "_package_identity_unrelated"
-            if unrelated
-            else "_package_identity_ambiguous"
-        ] = True
-
     def _finish_session(self):
         current = self._current
         self._current = None
         if current is None:
             return
-        malformed_unrelated = current.pop("_package_identity_unrelated", False)
-        malformed_ambiguous = current.pop("_package_identity_ambiguous", False)
         expected = current["session_id"] == self._expected_session_id
-        if malformed_ambiguous or (malformed_unrelated and expected):
-            raise ProbeError("IncompleteEvidence", "Transport")
-        if malformed_unrelated:
-            # A present, nonmatching value proves this record is unrelated;
-            # a missing value or expected session ID remains ambiguous.
-            current.clear()
-            return
         package = current.get("package")
-        if type(package) is not str or re.fullmatch(
-            r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package
-        ) is None:
-            # A present, nonmatching value proves this record is unrelated;
-            # a missing value or expected session ID remains ambiguous.
-            if (
-                isinstance(package, str)
-                and package != self._package
-                and self._package not in package
-                and not expected
-            ):
-                current.clear()
-                return
+        if package is None:
             raise ProbeError("IncompleteEvidence", "Transport")
+        if expected and package != self._package:
+            raise ProbeError("IntegrityConflict", "Transport")
         selected = package == self._package
         if not selected and not expected:
             current.clear()
@@ -743,11 +713,7 @@ class InstallSessionParser:
             or not re.fullmatch(r"[A-Za-z0-9_.]+", current["installer_package"])
         ):
             raise ProbeError("IncompleteEvidence", "Transport")
-        if selected:
-            self._records.append(dict(current))
-        else:
-            # Preserve only the requested ID and the fact that its package binding failed.
-            self._records.append({"session_id": current["session_id"], "package": current["package"]})
+        self._records.append(dict(current))
         current.clear()
 
 

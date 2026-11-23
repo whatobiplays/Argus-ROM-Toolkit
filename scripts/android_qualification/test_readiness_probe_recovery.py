@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
 
+from .test_readiness_probe_install_journal import complete_session_dump
+
 from . import adb_forward
 from . import readiness_probe as probe
 from . import readiness_probe_artifact
@@ -28,6 +30,16 @@ class FakeRunner:
     def __init__(self, replies):
         self.replies = list(replies)
         self.calls = []
+
+    def run_install_sessions(self, target, stdout_consumer, *, deadline):
+        output = self.run(("adb", "-s", target, *adb_forward._INSTALL_SESSIONS_COMMAND), deadline)
+        output = complete_session_dump(output)
+        stdout_consumer(output)
+        return adb_forward.Q7CommandResult(
+            command_count=1, started_monotonic=0.0, finished_monotonic=0.0,
+            stdout_bytes=len(output), total_output_bytes=len(output), exit_code=0,
+            classification="exit_zero", cleanup_complete=True, stderr_empty=True,
+        )
 
     def run(self, argv, deadline):
         self.calls.append(tuple(argv))
@@ -105,6 +117,16 @@ class LifecycleRunner:
                 "    mFinalStatus=0\n"
             )
         return output.encode("ascii")
+
+    def run_install_sessions(self, target, stdout_consumer, *, deadline):
+        output = self.run(("adb", "-s", target, *adb_forward._INSTALL_SESSIONS_COMMAND), deadline)
+        output = complete_session_dump(output)
+        stdout_consumer(output)
+        return adb_forward.Q7CommandResult(
+            command_count=1, started_monotonic=0.0, finished_monotonic=0.0,
+            stdout_bytes=len(output), total_output_bytes=len(output), exit_code=0,
+            classification="exit_zero", cleanup_complete=True, stderr_empty=True,
+        )
 
     def run(self, argv, deadline, *, input_fd=None, input_size=None):
         self.calls.append(tuple(argv))
@@ -399,7 +421,7 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
         )
         return adapter, result, digest
 
-    def test_recovery_blocks_present_package_after_host_interruption(self):
+    def test_recovery_uninstalls_owned_package_after_host_interruption(self):
         directory = self.private_directory()
         payload = b"x" * 28
         digest = hashlib.sha256(payload).hexdigest()
@@ -420,11 +442,11 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                 utc_clock=lambda: datetime(2026, 11, 22, tzinfo=timezone.utc),
             )
 
-        self.assertEqual(result["classification"], "blocked")
-        self.assertEqual(result["failure_code"], "IntegrityConflict")
-        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 0)
-        self.assertTrue(runner.package_present)
-        self.assertFalse(any(
+        self.assertEqual(result["classification"], "cleanup_complete")
+        self.assertEqual(result["failure_code"], None)
+        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 1)
+        self.assertFalse(runner.package_present)
+        self.assertTrue(any(
             call[3:6] == ("shell", "pm", "uninstall")
             for call in runner.calls
         ))
@@ -434,9 +456,9 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
             directory, target_reference=q7.TARGET_REFERENCE
         )[journal.attempt_id]
         self.assertEqual((events[-1]["state"], events[-1]["phase"]),
-                         ("completed", "installed"))
+                         ("cleaned_up", "package_uninstalled"))
 
-    def test_recovery_blocks_after_durable_cleanup_intent_before_uninstall(self):
+    def test_recovery_rechecks_ownership_after_durable_cleanup_intent(self):
         directory = self.private_directory()
         payload = b"x" * 28
         digest = hashlib.sha256(payload).hexdigest()
@@ -458,15 +480,15 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                 utc_clock=lambda: datetime(2026, 11, 22, tzinfo=timezone.utc),
             )
 
-        self.assertEqual(result["classification"], "blocked")
-        self.assertEqual(result["failure_code"], "IntegrityConflict")
-        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 0)
-        self.assertTrue(runner.package_present)
+        self.assertEqual(result["classification"], "cleanup_complete")
+        self.assertEqual(result["failure_code"], None)
+        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 1)
+        self.assertFalse(runner.package_present)
         events = readiness_probe_install_journal.read_install_journal_events(
             directory, target_reference=q7.TARGET_REFERENCE
         )[journal.attempt_id]
         self.assertEqual((events[-1]["state"], events[-1]["phase"]),
-                         ("attempted", "cleanup_started"))
+                         ("cleaned_up", "package_uninstalled"))
 
     def test_recovery_rejects_record_paired_with_another_install_journal(self):
         directory = self.private_directory()
@@ -783,17 +805,17 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                 utc_clock=lambda: datetime(2026, 11, 22, tzinfo=timezone.utc),
             )
 
-        self.assertEqual(result["classification"], "blocked")
-        self.assertEqual(result["failure_code"], "IntegrityConflict")
-        self.assertIsNone(result["cleanup_state"])
+        self.assertEqual(result["classification"], "cleanup_complete")
+        self.assertEqual(result["failure_code"], None)
+        self.assertEqual(result["cleanup_state"], "uninstalled")
         self.assertEqual(result["adb_command_counts"]["install_abandon"], 1)
-        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 0)
-        self.assertTrue(runner.package_present)
+        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 1)
+        self.assertFalse(runner.package_present)
         events = readiness_probe_install_journal.read_install_journal_events(
             directory, target_reference=q7.TARGET_REFERENCE
         )["6" * 32]
         self.assertEqual((events[-1]["state"], events[-1]["phase"]),
-                         ("completed", "installed"))
+                         ("cleaned_up", "package_uninstalled"))
 
     def test_abandon_intent_persistence_faults_prevent_the_command(self):
         for index, failure_point in enumerate(("before", "after"), start=1):
@@ -1142,7 +1164,7 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
             ("install-write", "before", "cleanup_complete", "already_absent", 1, 0),
             ("install-write", "after", "cleanup_complete", "already_absent", 1, 0),
             ("install-commit", "before", "cleanup_complete", "already_absent", 1, 0),
-            ("install-commit", "after", "blocked", None, 0, 0),
+            ("install-commit", "after", "cleanup_complete", "uninstalled", 0, 1),
         )
         payload = b"reviewed readiness apk bytes"
         digest = hashlib.sha256(payload).hexdigest()
@@ -1257,39 +1279,57 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                 utc_clock=lambda: datetime(2026, 11, 22, tzinfo=timezone.utc),
             )
 
-        self.assertEqual(result["classification"], "blocked")
-        self.assertEqual(result["failure_code"], "IntegrityConflict")
-        self.assertIsNone(result["cleanup_state"])
-        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 0)
-        self.assertTrue(runner.package_present)
+        self.assertEqual(result["classification"], "cleanup_complete")
+        self.assertEqual(result["failure_code"], None)
+        self.assertEqual(result["cleanup_state"], "uninstalled")
+        self.assertEqual(result["adb_command_counts"]["package_uninstall"], 1)
+        self.assertFalse(runner.package_present)
 
-    def test_present_package_cleanup_blocks_before_uninstall_intent(self):
+    def test_failed_cleanup_intent_prevents_uninstall(self):
         directory = self.private_directory()
         runner = LifecycleRunner()
         payload = b"reviewed readiness apk bytes"
         digest = hashlib.sha256(payload).hexdigest()
 
         with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", digest):
-            adapter, installed, _digest = self.install_with_lifecycle_runner(
-                runner, directory, payload=payload, attempt_id="2" * 32
+            adapter, _, _ = self.install_with_lifecycle_runner(
+                runner, directory, payload=payload
             )
-            self.assertEqual(installed["state"], "installed")
-            with self.assertRaises(probe.ProbeError) as raised:
-                adapter.uninstall_readiness_probe(
-                    TARGET, deadline=time.monotonic() + 60
-                )
-
-        self.assertEqual(raised.exception.code, "IntegrityConflict")
+            with mock.patch.object(
+                readiness_probe_install_journal._evidence_storage,
+                "_publish_no_replace",
+                side_effect=OSError,
+            ):
+                with self.assertRaises(probe.ProbeError):
+                    adapter.uninstall_readiness_probe(TARGET, deadline=time.monotonic() + 60)
         self.assertTrue(runner.package_present)
-        self.assertEqual(
-            sum(call[3:6] == ("shell", "pm", "uninstall") for call in runner.calls),
-            0,
-        )
-        events = readiness_probe_install_journal.read_install_journal_events(
-            directory, target_reference=q7.TARGET_REFERENCE
-        )["2" * 32]
-        self.assertEqual((events[-1]["state"], events[-1]["phase"]),
-                         ("completed", "installed"))
+        self.assertFalse(any(call[3:6] == ("shell", "pm", "uninstall") for call in runner.calls))
+
+    def test_present_package_uninstall_interruptions_leave_durable_intent(self):
+        payload = b"reviewed readiness apk bytes"
+        digest = hashlib.sha256(payload).hexdigest()
+        for point in ("before", "after"):
+            with self.subTest(point=point):
+                directory = self.private_directory()
+                runner = LifecycleRunner(fail_command="uninstall", failure_point=point)
+                with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", digest):
+                    adapter, _, _ = self.install_with_lifecycle_runner(
+                        runner, directory, payload=payload, attempt_id="2" * 32
+                    )
+                    with self.assertRaises(probe.ProbeError):
+                        adapter.uninstall_readiness_probe(TARGET, deadline=time.monotonic() + 60)
+                    events = readiness_probe_install_journal.read_install_journal_events(
+                        directory, target_reference=q7.TARGET_REFERENCE
+                    )["2" * 32]
+                    self.assertEqual(events[-1]["phase"], "cleanup_started")
+                    self.assertEqual(runner.package_present, point == "before")
+                    recovered = recovery.recover_installed_readiness_probe(
+                        directory, target_reference=q7.TARGET_REFERENCE, runner=runner
+                    )
+                    self.assertEqual(recovered["classification"], "cleanup_complete")
+                    self.assertEqual(recovered["adb_command_counts"]["package_uninstall"],
+                                     int(point == "before"))
+                    self.assertFalse(runner.package_present)
 
     def test_recovery_stops_when_recorded_android_user_is_not_active(self):
         directory = self.private_directory()

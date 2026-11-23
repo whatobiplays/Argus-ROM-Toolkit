@@ -11,6 +11,8 @@ import time
 import unittest
 from unittest import mock
 
+from .test_readiness_probe_install_journal import complete_session_dump
+
 from . import readiness_probe as probe
 from . import readiness_probe_artifact
 from . import readiness_probe_install_journal
@@ -56,6 +58,16 @@ class FakeRunner:
         self.outcomes_directory = None
         self.persisted_state_at_install = None
         self.last_package_state = b""
+
+    def run_install_sessions(self, target, stdout_consumer, *, deadline):
+        output = self.run(("adb", "-s", target, *adb_forward._INSTALL_SESSIONS_COMMAND), deadline)
+        output = complete_session_dump(output)
+        stdout_consumer(output)
+        return adb_forward.Q7CommandResult(
+            command_count=1, started_monotonic=0.0, finished_monotonic=0.0,
+            stdout_bytes=len(output), total_output_bytes=len(output), exit_code=0,
+            classification="exit_zero", cleanup_complete=True, stderr_empty=True,
+        )
 
     def run(self, argv, deadline, *, input_fd=None, input_size=None):
         self.calls.append((tuple(argv), deadline))
@@ -868,7 +880,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 ("adb", "-s", TARGET, "shell", "ps", "-A", "-o", "CMDLINE")
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             _AdbCommandRunner._allowed_vector(
                 (
                     "adb", "-s", TARGET, "shell", "pm", "uninstall", "--user",
@@ -878,7 +890,44 @@ class AdbForwardAdapterTests(unittest.TestCase):
             )
         )
 
-    def test_readiness_cleanup_blocks_present_package(self):
+    def test_uninstall_allowlist_rejects_unbound_forms(self):
+        command = (
+            "adb", "-s", TARGET, "shell", "pm", "uninstall", "--user", "10",
+            "--versionCode", "1", readiness_probe_artifact.PACKAGE,
+        )
+        self.assertTrue(_AdbCommandRunner._allowed_vector(command))
+        for rejected in (
+            command[:7] + ("all",) + command[8:],
+            command[:9] + ("2", command[-1]),
+            command[:-1] + ("other.app",),
+            command[:6] + ("-k",) + command[6:],
+            command[:8] + command[-1:],
+        ):
+            self.assertFalse(_AdbCommandRunner._allowed_vector(rejected))
+
+    def test_install_snapshot_rejects_expired_and_late_parser_result(self):
+        adapter, runner, _ = self.adapter(self.identity_replies())
+        adapter.identity(TARGET, deadline=20)
+        adapter._clock = lambda: 1.0
+        with mock.patch.object(runner, "run_install_sessions", wraps=runner.run_install_sessions) as call:
+            with self.assertRaises(probe.ProbeError):
+                adapter._install_session_snapshot(TARGET, 1.0)
+            call.assert_not_called()
+
+            parser = readiness_probe_install_journal.InstallSessionParser
+            finish = parser.finish
+            def finish_late(instance):
+                result = finish(instance)
+                adapter._clock = lambda: 2.0
+                return result
+
+            with mock.patch.object(parser, "finish", finish_late):
+                with self.assertRaises(probe.ProbeError) as error:
+                    adapter._install_session_snapshot(TARGET, 2.0)
+            self.assertEqual(error.exception.code, "TimedOut")
+            self.assertEqual(call.call_args.kwargs["deadline"], 2.0)
+
+    def test_readiness_cleanup_refuses_failed_final_identity_read(self):
         package = readiness_probe_artifact.PACKAGE
         present = f"package:{package} versionCode:1 uid:10123\n".encode("ascii")
         adapter, runner, _ = self.adapter(
@@ -909,8 +958,11 @@ class AdbForwardAdapterTests(unittest.TestCase):
                     install_result["install_attempt_id"], r"^[0-9a-f]{32}$"
                 )
 
-        with self.assertRaises(probe.ProbeError) as cleanup_error:
-            adapter.uninstall_readiness_probe(TARGET, deadline=20)
+        with mock.patch.object(
+            adb_forward, "_READINESS_PROBE_APK_SHA256", hashlib.sha256(apk_bytes).hexdigest()
+        ), mock.patch.object(adapter, "identity", side_effect=probe.ProbeError("IntegrityConflict")):
+            with self.assertRaises(probe.ProbeError) as cleanup_error:
+                adapter.uninstall_readiness_probe(TARGET, deadline=20)
         self.assertEqual(cleanup_error.exception.code, "IntegrityConflict")
         self.assertFalse(any(
             call[0][3:6] == ("shell", "pm", "uninstall")
@@ -1144,7 +1196,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
         adapter, runner, _ = self.adapter(
             self.identity_replies(
                 b"10\n", b"", b"10\n", b"", b"Success\n",
-                installed, replacement,
+                installed, b"10\n", replacement,
             )
         )
         apk_bytes = b"reviewed readiness apk bytes"
@@ -1161,8 +1213,11 @@ class AdbForwardAdapterTests(unittest.TestCase):
             ):
                 self.install_probe(adapter, TARGET, apk, deadline=20)
 
-        with self.assertRaises(probe.ProbeError) as raised:
-            adapter.uninstall_readiness_probe(TARGET, deadline=20)
+        with mock.patch.object(
+            adb_forward, "_READINESS_PROBE_APK_SHA256", hashlib.sha256(apk_bytes).hexdigest()
+        ):
+            with self.assertRaises(probe.ProbeError) as raised:
+                adapter.uninstall_readiness_probe(TARGET, deadline=20)
 
         self.assertEqual(raised.exception.code, "IntegrityConflict")
         self.assertNotIn("uninstall", [call[0][3] for call in runner.calls])
@@ -1173,7 +1228,7 @@ class AdbForwardAdapterTests(unittest.TestCase):
         adapter, runner, _ = self.adapter(
             self.identity_replies(
                 b"10\n", b"", b"10\n", b"",
-                b"Failure [INSTALL_FAILED_SECRET_VALUE]\n", present,
+                b"Failure [INSTALL_FAILED_SECRET_VALUE]\n", b"10\n", present,
             )
         )
         apk_bytes = b"reviewed readiness apk bytes"
@@ -1193,8 +1248,11 @@ class AdbForwardAdapterTests(unittest.TestCase):
 
         self.assertEqual(install_error.exception.code, "IncompleteEvidence")
         self.assertNotIn("INSTALL_FAILED_SECRET_VALUE", str(install_error.exception))
-        with self.assertRaises(probe.ProbeError) as cleanup_error:
-            adapter.uninstall_readiness_probe(TARGET, deadline=20)
+        with mock.patch.object(
+            adb_forward, "_READINESS_PROBE_APK_SHA256", hashlib.sha256(apk_bytes).hexdigest()
+        ):
+            with self.assertRaises(probe.ProbeError) as cleanup_error:
+                adapter.uninstall_readiness_probe(TARGET, deadline=20)
 
         self.assertEqual(cleanup_error.exception.code, "IntegrityConflict")
         self.assertNotIn("uninstall", [call[0][3] for call in runner.calls])

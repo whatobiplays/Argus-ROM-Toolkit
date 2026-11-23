@@ -234,7 +234,7 @@ def _legacy_install_identity(record, target_reference):
     )
 
 
-def _read_install_record(outcomes_directory, target_reference):
+def _read_install_record(outcomes_directory, target_reference, *, allow_no_active=False):
     """Select one active install through explicit attempt and cleanup lineage.
 
     V2 install records carry a unique attempt ID, and v2 cleanup outcomes bind
@@ -464,6 +464,8 @@ def _read_install_record(outcomes_directory, target_reference):
             raise ProbeError("IncompleteEvidence", "Transport")
         unresolved_candidates.append(record)
         unresolved_identities.append((record_digest, install_attempt_id))
+    if not unresolved_candidates and allow_no_active:
+        return None
     if len(unresolved_candidates) != 1 or not _valid_install_record(
         unresolved_candidates[0], target_reference
     ):
@@ -518,27 +520,9 @@ class _CommandCounter:
             argv, deadline, input_fd=input_fd, input_size=input_size
         )
 
-    def run_install_sessions(self, target, stdout_consumer):
+    def run_install_sessions(self, target, stdout_consumer, *, deadline):
         self.counts["install_sessions"] += 1
-        observe = getattr(self._runner, "run_install_sessions", None)
-        if callable(observe):
-            return observe(target, stdout_consumer)
-        output = self._runner.run(
-            ("adb", "-s", target, *adb_forward._INSTALL_SESSIONS_COMMAND),
-            time.monotonic() + adb_forward._Q7_HOST_DEADLINE_SECONDS,
-        )
-        stdout_consumer(output)
-        return adb_forward.Q7CommandResult(
-            command_count=1,
-            started_monotonic=0.0,
-            finished_monotonic=0.0,
-            stdout_bytes=len(output),
-            total_output_bytes=len(output),
-            exit_code=0,
-            classification="exit_zero",
-            cleanup_complete=True,
-            stderr_empty=True,
-        )
+        return self._runner.run_install_sessions(target, stdout_consumer, deadline=deadline)
 
     def run_bounded_stream(
         self, argv, deadline, *, output_limit, stdout_consumer, line_limit=None

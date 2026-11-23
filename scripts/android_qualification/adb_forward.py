@@ -544,6 +544,15 @@ class _AdbCommandRunner:
             and int(command[3]) <= _MAX_ANDROID_SESSION_ID
         ):
             return True
+        if (
+            len(command) == 8
+            and command[:4] == ("shell", "pm", "uninstall", "--user")
+            and _valid_android_user_id_text(command[4])
+            and command[5:] == (
+                "--versionCode", str(_READINESS_PROBE_VERSION_CODE), _READINESS_PROBE_PACKAGE
+            )
+        ):
+            return True
         if command == ("shell", "pm", "path", _READINESS_PROBE_PACKAGE):
             return True
         if (
@@ -848,8 +857,11 @@ class _AdbCommandRunner:
         )
         if self._result_classification(state) != "exit_zero":
             raise ProbeError(state.error_code or "IncompleteEvidence", "Transport")
-        if self._is_package_list_query(argv) and not state.stderr_empty:
-            raise _PackageQueryObservationError("stderr_nonempty")
+        if not state.stderr_empty:
+            if self._is_package_list_query(argv):
+                raise _PackageQueryObservationError("stderr_nonempty")
+            if argv[3:6] == ("shell", "pm", "uninstall"):
+                raise ProbeError("IncompleteEvidence", "Transport")
         return bytes(output)
 
     def run_bounded_stream(
@@ -894,10 +906,11 @@ class _AdbCommandRunner:
             "exit_code": state.exit_code,
         }
 
-    def run_install_sessions(self, target, stdout_consumer):
-        """Capture only bounded package-session output for immediate parsing."""
+    def run_install_sessions(self, target, stdout_consumer, *, deadline):
+        """Capture package-session output within the caller's deadline."""
+        _deadline_remaining(self._clock, deadline)
         return self._run_bounded_diagnostic(
-            target, _INSTALL_SESSIONS_COMMAND, stdout_consumer
+            target, _INSTALL_SESSIONS_COMMAND, stdout_consumer, caller_deadline=deadline
         )
 
     def run_q7(self, target, stdout_consumer):
@@ -912,7 +925,7 @@ class _AdbCommandRunner:
             target, WINDOW_DISPLAY_COMMAND, stdout_consumer
         )
 
-    def _run_bounded_diagnostic(self, target, command, stdout_consumer):
+    def _run_bounded_diagnostic(self, target, command, stdout_consumer, *, caller_deadline=None):
         started = self._clock()
         try:
             if (
@@ -926,6 +939,9 @@ class _AdbCommandRunner:
             ):
                 raise ProbeError("MalformedRequest", "Transport")
             deadline = started + _Q7_HOST_DEADLINE_SECONDS
+            if caller_deadline is not None:
+                _deadline_remaining(self._clock, caller_deadline)
+                deadline = min(deadline, caller_deadline)
             _deadline_remaining(self._clock, deadline)
         except ProbeError as exc:
             try:
@@ -1043,25 +1059,23 @@ class AdbForwardAdapter:
             _READINESS_PROBE_PACKAGE,
             expected_session_id=expected_session_id,
         )
-        observe = getattr(self._runner, "run_install_sessions", None)
-        if callable(observe):
-            result = observe(target, parser.feed)
-            if (
-                getattr(result, "classification", None) != "exit_zero"
-                or getattr(result, "cleanup_complete", None) is not True
-                or getattr(result, "exit_code", None) != 0
-                or getattr(result, "stderr_empty", None) is not True
-                or getattr(result, "total_output_bytes", 0)
-                > readiness_probe_install_journal._MAX_INSTALL_SESSIONS_OUTPUT_BYTES
-                or getattr(result, "stdout_bytes", 0)
-                > readiness_probe_install_journal._MAX_INSTALL_SESSIONS_OUTPUT_BYTES
-            ):
-                raise ProbeError("IncompleteEvidence", "Transport")
-        else:
-            parser.feed(
-                self._run(target, _INSTALL_SESSIONS_COMMAND, deadline)
-            )
-        return parser.finish()
+        self._require_bound_target(target)
+        _deadline_remaining(self._clock, deadline)
+        deadline = min(deadline, self._clock() + _Q7_HOST_DEADLINE_SECONDS)
+        result = self._runner.run_install_sessions(target, parser.feed, deadline=deadline)
+        _deadline_remaining(self._clock, deadline)
+        if (
+            result.classification != "exit_zero"
+            or result.cleanup_complete is not True
+            or result.exit_code != 0
+            or result.stderr_empty is not True
+            or not 0 <= result.stdout_bytes <= result.total_output_bytes
+            <= readiness_probe_install_journal._MAX_INSTALL_SESSIONS_OUTPUT_BYTES
+        ):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        sessions = parser.finish()
+        _deadline_remaining(self._clock, deadline)
+        return sessions
 
     def _readiness_android_user_ids(self, target, deadline):
         """List Android user IDs and discard names and other labels."""
@@ -1471,6 +1485,13 @@ class AdbForwardAdapter:
             return {"state": "already_absent"}
         if journal.latest.get("state") not in {"pending", "attempted", "completed"}:
             raise ProbeError("IntegrityConflict", "Transport")
+        from .readiness_probe_recovery import _read_install_record
+
+        selected, _, _ = _read_install_record(
+            journal.outcomes_directory, journal.latest["target_reference"]
+        )
+        if selected != journal.latest:
+            raise ProbeError("IntegrityConflict", "Transport")
         return self.recover_readiness_cleanup(
             target, journal.latest, deadline=deadline, install_journal=journal
         )
@@ -1634,9 +1655,11 @@ class AdbForwardAdapter:
             self._require_readiness_package_absent_all_users(
                 target, user_id, package_state, deadline
             )
-        sessions = self._install_session_snapshot(target, deadline)
-        baseline_ids = set(install_record.get("baseline_package_session_ids", ()))
+        baseline_ids = set(install_record["baseline_package_session_ids"])
         remote_session_id = install_record.get("remote_session_id")
+        sessions = self._install_session_snapshot(
+            target, deadline, expected_session_id=remote_session_id
+        )
         if package_state["state"] == "absent":
             if remote_session_id is not None:
                 if not any(
@@ -1766,7 +1789,9 @@ class AdbForwardAdapter:
             self._require_readiness_package_absent_all_users(
                 target, user_id, final_package_state, deadline
             )
-            final_sessions = self._install_session_snapshot(target, deadline)
+            final_sessions = self._install_session_snapshot(
+                target, deadline, expected_session_id=remote_session_id
+            )
             unrelated_sessions = [
                 item for item in final_sessions
                 if item.get("session_id") not in baseline_ids
@@ -1789,7 +1814,9 @@ class AdbForwardAdapter:
             self._readiness_installed_uid = None
             return {"state": "already_absent", "readback": "absent"}
 
-        pre_verify_sessions = self._install_session_snapshot(target, deadline)
+        pre_verify_sessions = self._install_session_snapshot(
+            target, deadline, expected_session_id=remote_session_id
+        )
         final_package_state, final_installed_sha256 = (
             self._verify_installed_readiness_artifact(
                 target,
@@ -1804,14 +1831,47 @@ class AdbForwardAdapter:
             or final_installed_sha256 != installed_sha256
         ):
             raise ProbeError("IntegrityConflict", "Transport")
-        final_sessions = self._install_session_snapshot(target, deadline)
+        final_sessions = self._install_session_snapshot(
+            target, deadline, expected_session_id=remote_session_id
+        )
         self._require_install_session(
             install_record, final_sessions, success_required=True
         )
-        # Package Manager cannot bind deletion to this attempt's session, UID,
-        # or APK digest. Leave a present package installed while the threat
-        # model cannot rule out a concurrent installation after this snapshot.
-        raise ProbeError("IntegrityConflict", "Transport")
+        self.identity(target, deadline=deadline)
+        self.current_android_user_id(target, deadline=deadline)
+        _deadline_remaining(self._clock, deadline)
+        install_journal.checkpoint(
+            "attempted", "cleanup_started", remote_session_id=remote_session_id
+        )
+        response = self._single_line(self._run(
+            target,
+            ("shell", "pm", "uninstall", "--user", str(user_id),
+             "--versionCode", str(_READINESS_PROBE_VERSION_CODE), _READINESS_PROBE_PACKAGE),
+            deadline,
+        ))
+        if response != "Success":
+            raise ProbeError("IncompleteEvidence", "Transport")
+
+        self.identity(target, deadline=deadline)
+        restored = self.package_install_state(
+            target, _READINESS_PROBE_PACKAGE, deadline=deadline, user_id=user_id
+        )
+        self._require_readiness_package_absent_all_users(target, user_id, restored, deadline)
+        restored_sessions = self._install_session_snapshot(
+            target, deadline, expected_session_id=remote_session_id
+        )
+        if any(item["session_id"] not in baseline_ids
+               and item["session_id"] != remote_session_id for item in restored_sessions):
+            raise ProbeError("IntegrityConflict", "Transport")
+        if any(item["session_id"] == remote_session_id for item in restored_sessions):
+            self._require_install_session(install_record, restored_sessions, success_required=True)
+        _deadline_remaining(self._clock, deadline)
+        install_journal.checkpoint(
+            "cleaned_up", "package_uninstalled", remote_session_id=remote_session_id
+        )
+        self._readiness_install_attempted = False
+        self._readiness_installed_uid = None
+        return {"state": "uninstalled", "readback": "absent"}
 
     def _query_package_install_state_for_user(
         self, target, package, user_id, deadline
@@ -1930,6 +1990,12 @@ class AdbForwardAdapter:
             raise ProbeError("MalformedRequest", "Transport")
         self._require_bound_target(target)
         if self._readiness_baseline_absent is not True:
+            raise ProbeError("IntegrityConflict", "Transport")
+        from .readiness_probe_recovery import _read_install_record
+
+        if _read_install_record(
+            outcomes_directory, target_reference, allow_no_active=True
+        ) is not None:
             raise ProbeError("IntegrityConflict", "Transport")
         user_id = self.current_android_user_id(target, deadline=deadline)
         try:
@@ -2101,7 +2167,9 @@ class AdbForwardAdapter:
                 journal.checkpoint(
                     "attempted", "session_created", remote_session_id=session_id
                 )
-                created_sessions = self._install_session_snapshot(target, deadline)
+                created_sessions = self._install_session_snapshot(
+                    target, deadline, expected_session_id=session_id
+                )
                 self._require_install_session(
                     journal.latest,
                     created_sessions,
@@ -2137,7 +2205,9 @@ class AdbForwardAdapter:
                 journal.checkpoint(
                     "attempted", "payload_written", remote_session_id=session_id
                 )
-                commit_sessions = self._install_session_snapshot(target, deadline)
+                commit_sessions = self._install_session_snapshot(
+                    target, deadline, expected_session_id=session_id
+                )
                 self._require_install_session(
                     journal.latest,
                     commit_sessions,

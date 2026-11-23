@@ -32,6 +32,21 @@ def session_dump(*, session_id=17, package=PACKAGE, user_id=10,
     ).encode("ascii")
 
 
+def complete_session_dump(*records):
+    """Wrap synthetic session records in the observed section envelope."""
+    sections = {name: [] for name in (b"Active", b"Finalized", b"Historical")}
+    for record in records:
+        for line in record.splitlines(keepends=True):
+            if line.strip().endswith(b" install sessions:"):
+                section = sections[line.strip().split(b" ", 1)[0]]
+            else:
+                section.append(line)
+    return b"".join(
+        name + b" install sessions:\n" + b"".join(lines)
+        for name, lines in sections.items()
+    ) + b"Legacy install sessions:\n{}\n"
+
+
 class ReadinessProbeInstallJournalTests(unittest.TestCase):
     def private_directory(self):
         temporary = tempfile.TemporaryDirectory()
@@ -219,7 +234,7 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             installer_uid=10000,
         )
 
-        observed = journal.parse_install_sessions(output, PACKAGE)
+        observed = journal.parse_install_sessions(complete_session_dump(output), PACKAGE)
 
         self.assertEqual(observed, ({
             "session_id": 17,
@@ -235,8 +250,8 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
 
     def test_parser_preserves_active_and_historical_section_for_target_session(self):
         observed = journal.parse_install_sessions(
-            session_dump(section="Active")
-            + session_dump(session_id=18, section="Historical"),
+            complete_session_dump(session_dump(section="Active"),
+                                  session_dump(session_id=18, section="Historical")),
             PACKAGE,
         )
 
@@ -249,13 +264,13 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
         output = session_dump(session_id=17) + session_dump(session_id=17)
 
         with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(output, PACKAGE)
+            journal.parse_install_sessions(complete_session_dump(output), PACKAGE)
 
     def test_parser_rejects_incomplete_target_session_instead_of_guessing(self):
         output = session_dump().replace(b"mFinalStatus=1\n", b"")
 
         with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(output, PACKAGE)
+            journal.parse_install_sessions(complete_session_dump(output), PACKAGE)
 
     def test_parser_rejects_target_session_without_package_identity(self):
         output = session_dump().replace(
@@ -263,9 +278,9 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
         )
 
         with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(output, PACKAGE)
+            journal.parse_install_sessions(complete_session_dump(output), PACKAGE)
 
-    def test_parser_discards_an_explicit_malformed_unrelated_package(self):
+    def test_parser_blocks_a_malformed_package_binding(self):
         output = session_dump() + session_dump(
             session_id=18,
             package="not a package",
@@ -274,15 +289,14 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             installer_uid=10000,
         )
 
-        observed = journal.parse_install_sessions(output, PACKAGE)
-
-        self.assertEqual([record["session_id"] for record in observed], [17])
+        with self.assertRaises(ProbeError):
+            journal.parse_install_sessions(complete_session_dump(output), PACKAGE)
 
     def test_parser_rejects_malformed_package_for_the_expected_session(self):
         output = session_dump(package="not a package")
 
         with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(output, PACKAGE, expected_session_id=17)
+            journal.parse_install_sessions(complete_session_dump(output), PACKAGE, expected_session_id=17)
 
     def test_parser_rejects_unrelated_session_without_package_as_ambiguous(self):
         unrelated = session_dump(session_id=18).replace(
@@ -290,7 +304,7 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
         )
 
         with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(session_dump() + unrelated, PACKAGE)
+            journal.parse_install_sessions(complete_session_dump(session_dump() + unrelated), PACKAGE)
 
     def test_parser_keeps_a_truncated_unrelated_package_ambiguous(self):
         unrelated = session_dump(session_id=18, package="not a package")
@@ -298,13 +312,31 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
         unrelated = unrelated[:package_line_start] + b"    appPackageName=not a package"
 
         with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(session_dump() + unrelated, PACKAGE)
+            journal.parse_install_sessions(complete_session_dump(session_dump() + unrelated), PACKAGE)
 
     def test_parser_rejects_malformed_session_header(self):
-        output = session_dump() + b"Session unknown:\n"
+        for header in (b"Session unknown:", b"  Session 17", b"  Active Child Session 17:"):
+            output = session_dump().replace(b"  Session 17:", header)
+            with self.subTest(header=header), self.assertRaises(ProbeError):
+                journal.parse_install_sessions(complete_session_dump(output), PACKAGE)
 
-        with self.assertRaises(ProbeError):
-            journal.parse_install_sessions(output, PACKAGE)
+    def test_parser_accepts_a_matching_active_session_prefix(self):
+        output = session_dump().replace(b"Session 17:", b"Active Session 17:")
+        observed = journal.parse_install_sessions(complete_session_dump(output), PACKAGE)
+        self.assertEqual(observed[0]["section"], "active")
+
+    def test_empty_snapshot_requires_complete_section_envelope(self):
+        complete = complete_session_dump()
+        self.assertEqual(journal.parse_install_sessions(complete, PACKAGE), ())
+        for output in (
+            b"", b"Active install sessions:\n", complete[:-1],
+            complete.replace(b"Finalized install sessions:\n", b""),
+            complete.replace(b"Legacy install sessions:", b"Unknown install sessions:"),
+            complete + b"*** SERVICE DUMP TIMEOUT ***\n",
+            complete + b"Error: incomplete\n", complete + b"{}\n",
+        ):
+            with self.subTest(output=output), self.assertRaises(ProbeError):
+                journal.parse_install_sessions(output, PACKAGE)
 
     def test_reader_rejects_malformed_journal_prefixed_filename(self):
         directory = self.private_directory()

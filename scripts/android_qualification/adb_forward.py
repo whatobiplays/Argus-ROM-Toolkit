@@ -918,10 +918,10 @@ class _AdbCommandRunner:
             target, _INSTALL_SESSIONS_COMMAND, stdout_consumer, caller_deadline=deadline
         )
 
-    def run_q7(self, target, stdout_consumer):
+    def run_q7(self, target, stdout_consumer, *, deadline=None):
         """Run the fixed activity diagnostic with bounded, streaming output."""
         return self._run_bounded_diagnostic(
-            target, DIAGNOSTIC_COMMAND, stdout_consumer
+            target, DIAGNOSTIC_COMMAND, stdout_consumer, caller_deadline=deadline
         )
 
     def run_window_displays(self, target, stdout_consumer):
@@ -1396,6 +1396,21 @@ class AdbForwardAdapter:
             "wait_time_ms": timing_fields.get("WaitTime"),
         }
         return result
+
+    def read_readiness_activity(self, target, *, build, component, deadline):
+        """Read one private Activity Manager snapshot under the bound build and user."""
+        from .readiness_activity_evidence import ReadinessActivityReader
+
+        if self._identity_binding != (target, build):
+            raise ProbeError("IntegrityConflict", "Transport")
+        self.identity(target, deadline=deadline)
+        user = self.current_android_user_id(target, deadline=deadline)
+        reader = ReadinessActivityReader(component, user)
+        acquisition = self._runner.run_q7(target, reader.feed, deadline=deadline)
+        _deadline_remaining(self._clock, deadline)
+        facts = reader.finish(acquisition)
+        _deadline_remaining(self._clock, deadline)
+        return facts
 
     def package_process_state(self, target, package, *, expected_uid, deadline):
         """Return only target-package process roles from the system process list.

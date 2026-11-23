@@ -509,6 +509,8 @@ class CurrentNamingInventoryTests(unittest.TestCase):
             for relative in (
                 "scripts/android_qualification/readiness_probe_artifact.py",
                 "scripts/android_qualification/readiness_probe_session.py",
+                "scripts/android_qualification/readiness_activity_evidence.py",
+                "scripts/android_qualification/test_readiness_activity_evidence.py",
                 "scripts/android_qualification/test_readiness_probe_artifact.py",
                 "scripts/android_qualification/test_readiness_probe_session.py",
                 "scripts/android_qualification/readiness_probe.py",

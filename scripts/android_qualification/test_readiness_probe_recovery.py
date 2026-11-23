@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from .test_readiness_probe_install_journal import (
-    complete_session_dump, session_dump, wrapped_historical_session,
+    complete_session_dump, session_dump, wrapped_active_session, wrapped_historical_session,
 )
 
 from . import adb_forward
@@ -106,6 +106,11 @@ class LifecycleRunner:
             "    mInstallerUid=2000\n"
             f"    appPackageName={package}\n"
             f"    mCommitted={'true' if committed else 'false'}\n"
+            "    mSealed=false\n"
+            "    params.isMultiPackage=false\n"
+            "    params.isStaged=false\n"
+            "    mParentSessionId=-1\n"
+            "    mChildSessionIds=[]\n"
             f"    mFinalStatus={final_status}\n"
         )
         if self.competing_session_active:
@@ -403,7 +408,7 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
 
     def install_with_lifecycle_runner(
         self, runner, outcomes_directory, *, payload=b"reviewed readiness apk bytes",
-        attempt_id="d" * 32,
+        attempt_id="d" * 32, session_only=False,
     ):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -423,6 +428,7 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
             outcomes_directory=outcomes_directory,
             target_reference=q7.TARGET_REFERENCE,
             install_attempt_id=attempt_id,
+            session_only=session_only,
         )
         return adapter, result, digest
 
@@ -668,6 +674,10 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
             b"10\n",
             b"",
             b"Active install sessions:\n",
+            b"device\n",
+            (BUILD + "\n").encode("ascii"),
+            b"10\n",
+            b"",
         ])
 
         result = recovery.recover_installed_readiness_probe(
@@ -686,6 +696,81 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
         )[journal.attempt_id]
         self.assertEqual((events[-1]["state"], events[-1]["phase"]),
                          ("cleaned_up", "verified_absent"))
+
+    def test_session_only_calibration_restores_even_when_rich_projection_fails(self):
+        digest = hashlib.sha256(b"reviewed readiness apk bytes").hexdigest()
+        for opaque in (False, True):
+            class ActiveRunner(LifecycleRunner):
+                def _session_dump(self):
+                    if not self.session_active:
+                        return super()._session_dump()
+                    output = wrapped_active_session()
+                    return output.replace(b"mOriginalInstallerUid=2000 ", b"") if opaque else output
+            with self.subTest(opaque=opaque), mock.patch.object(
+                adb_forward, "_READINESS_PROBE_APK_SHA256", digest,
+            ):
+                directory = self.private_directory()
+                runner = ActiveRunner()
+                if opaque:
+                    with self.assertRaises(probe.ProbeError):
+                        self.install_with_lifecycle_runner(runner, directory, session_only=True)
+                else:
+                    _, result, _ = self.install_with_lifecycle_runner(runner, directory, session_only=True)
+                    self.assertEqual(result["active_layout"], "grouped_print_pairs")
+                result = recovery.recover_installed_readiness_probe(
+                    directory, target_reference=q7.TARGET_REFERENCE, runner=runner,
+                )
+                self.assertEqual(result["classification"], "cleanup_complete")
+                self.assertFalse(runner.session_active)
+                self.assertFalse(runner.package_present)
+                commands = [call[5] for call in runner.calls if call[3:5] == ("shell", "pm")]
+                self.assertEqual(
+                    [command for command in commands if command.startswith("install-")],
+                    ["install-create", "install-abandon"],
+                )
+                self.assertNotIn("uninstall", commands)
+
+    def test_precommit_rollback_requires_durable_intent_and_complete_restoration(self):
+        for failure in ("persistence", "late_commit", "remain_active", "corrupt_readback", "deadline"):
+            with self.subTest(failure=failure):
+                directory = self.private_directory()
+                journal = self.journal_for_attempt(directory)
+                journal.checkpoint("attempted", "create_started")
+                journal.checkpoint("attempted", "session_created", remote_session_id=17)
+                class RestoreRunner(LifecycleRunner):
+                    def _session_dump(self):
+                        if failure == "corrupt_readback" and self.session is None:
+                            return b"*** SERVICE DUMP TIMEOUT ***\n"
+                        return super()._session_dump()
+                runner = RestoreRunner()
+                runner.session = {"committed": False, "payload": b""}
+                runner.session_active = True
+                if failure in {"late_commit", "remain_active"}:
+                    runner.abandon_behavior = failure
+                checkpoint = readiness_probe_install_journal.ReadinessInstallJournal.checkpoint
+                def checkpoint_guard(instance, state, phase, **kwargs):
+                    if failure == "persistence" and phase == "precommit_abandon_started":
+                        raise probe.ProbeError("IncompleteEvidence", "Transport")
+                    return checkpoint(instance, state, phase, **kwargs)
+                times = iter((0.0, 2.0))
+                clock = (lambda: next(times, 2.0)) if failure == "deadline" else time.monotonic
+                with mock.patch.object(
+                    readiness_probe_install_journal.ReadinessInstallJournal,
+                    "checkpoint", checkpoint_guard,
+                ):
+                    result = recovery.recover_installed_readiness_probe(
+                        directory, target_reference=q7.TARGET_REFERENCE, runner=runner,
+                        clock=clock, deadline_seconds=1 if failure == "deadline" else 30,
+                    )
+                self.assertEqual(result["classification"], "blocked")
+                self.assertEqual(result["adb_command_counts"]["package_uninstall"], 0)
+                expected_abandon = int(failure in {"late_commit", "remain_active", "corrupt_readback"})
+                self.assertEqual(result["adb_command_counts"]["install_abandon"], expected_abandon)
+                events = readiness_probe_install_journal.read_install_journal_events(
+                    directory, target_reference=q7.TARGET_REFERENCE,
+                )[journal.attempt_id]
+                self.assertEqual(events[-1]["phase"],
+                                 "precommit_abandon_started" if expected_abandon else "session_created")
 
     def test_recovery_outcome_write_failure_is_reported_after_absence_readback(self):
         directory = self.private_directory()

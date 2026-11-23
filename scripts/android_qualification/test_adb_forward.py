@@ -112,6 +112,11 @@ class FakeRunner:
                 "    mInstallerUid=2000\n"
                 f"    appPackageName={readiness_probe_artifact.PACKAGE}\n"
                 f"    mCommitted={'true' if self.session_committed else 'false'}\n"
+                "    mSealed=false\n"
+                "    params.isMultiPackage=false\n"
+                "    params.isStaged=false\n"
+                "    mParentSessionId=-1\n"
+                "    mChildSessionIds=[]\n"
                 f"    mFinalStatus={final_status}\n"
             ).encode("ascii")
         if command == ("shell", "pm", "list", "users"):

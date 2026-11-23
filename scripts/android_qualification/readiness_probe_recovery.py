@@ -191,7 +191,7 @@ def _valid_install_record(record, target_reference):
                 or (state == "attempted" and phase in {
                     "create_started", "session_created", "write_started",
                     "payload_written", "commit_started", "abandon_started",
-                    "cleanup_started",
+                    "precommit_abandon_started", "cleanup_started",
                 })
                 or (state == "completed" and phase == "installed")
                 or (state == "cleaned_up" and phase in {

@@ -72,6 +72,19 @@ def wrapped_historical_session(*, session_id=17, package=PACKAGE, replace=lambda
     return bytes(result)
 
 
+def wrapped_active_session(*, session_id=17, package=PACKAGE):
+    return (
+        f"Active install sessions:\n  Session {session_id}:\n"
+        "    userId=10 mOriginalInstallerUid=2000 installerPackageName=com.android.shell \n"
+        "    installInitiatingPackageName=com.android.shell mInstallerUid=2000 createdMillis=0 stageCid=null \n"
+        f"    mode=1 sizeBytes=28 appPackageName={package} appIcon=false \n"
+        "    installerPackageName=null rollbackDataPolicy=0 \n"
+        "    mClientProgress=0.0 mCommitted=false mSealed=false \n"
+        "    mFinalStatus=0 mFinalMessage=null params.isMultiPackage=false params.isStaged=false \n"
+        "    mParentSessionId=-1 mChildSessionIds=[] mStagedSessionErrorMessage= \n"
+    ).encode("ascii")
+
+
 class ReadinessProbeInstallJournalTests(unittest.TestCase):
     def private_directory(self):
         temporary = tempfile.TemporaryDirectory()
@@ -432,6 +445,52 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
                 journal.parse_install_sessions(complete_session_dump(broken), PACKAGE)
         with self.assertRaises(ProbeError):
             journal.parse_install_sessions(envelope[:-1], PACKAGE)
+
+    def test_android12_print_pair_wrap_at_short_line(self):
+        raw = wrapped_active_session().replace(
+            b"    installerPackageName=null",
+            b"    appLabel=" + b"x" * 107 + b"\n    tail \n    installerPackageName=null",
+        )
+        dump = complete_session_dump(raw)
+        parser = journal.InstallSessionParser(PACKAGE, expected_session_id=17)
+        for byte in dump:
+            parser.feed(bytes([byte]))
+        self.assertEqual(parser.finish(), ({
+            "session_id": 17, "section": "active", "package": PACKAGE, "user_id": 10,
+            "installer_package": "com.android.shell", "installer_uid": 2000,
+            "committed": False, "final_status": 0,
+        },))
+
+    def test_known_id_rollback_needs_a_complete_unconflicted_frame(self):
+        opaque = wrapped_active_session().replace(b"mOriginalInstallerUid=2000 ", b"")
+        dump = complete_session_dump(opaque)
+        with self.assertRaises(ProbeError):
+            journal.parse_install_sessions(dump, PACKAGE, expected_session_id=17)
+        parser = journal.InstallSessionParser(PACKAGE, expected_session_id=17, rollback_user_id=10)
+        parser.feed(dump)
+        self.assertEqual(parser.finish(), ({"session_id": 17, "section": "active", "rollback_only": True},))
+        for invalid in (
+            dump[:-1], dump.replace(b"mStagedSessionErrorMessage= ", b""),
+            dump.split(b"Finalized install sessions:")[0],
+            dump.replace(b"userId=10", b"userId=11"),
+            dump.replace(b"mInstallerUid=2000 ", b""),
+            dump.replace(b"installerPackageName=com.android.shell ", b""),
+            dump.replace(b"mCommitted=false", b"mCommitted=true"),
+            dump.replace(b"sizeBytes=28", b"mSessionId=18"),
+            dump.replace(b"sizeBytes=28", b"mParentSessionId=19"),
+            dump.replace(b"sizeBytes=28", b"mParentSessionId=-1 mParentSessionId=-1"),
+            dump.replace(b"mSealed=false", b"mSealed=false mSealed=false"),
+            dump.replace(b"mChildSessionIds=[] ", b""),
+            dump.replace(b"mCommitted=false", b"mCommitted=false mCommitted=false"),
+            dump.replace(PACKAGE.encode("ascii"), b"com.example.other"),
+            dump.replace(b"Finalized install sessions:", b"Orphaned install sessions:"),
+            dump.replace(b"Finalized install sessions:", b"Finalized install sessions:\n  Session 17:"),
+            dump.replace(b"Finalized install sessions:", b"*** SERVICE DUMP TIMEOUT ***\nFinalized install sessions:"),
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ProbeError):
+                parser = journal.InstallSessionParser(PACKAGE, expected_session_id=17, rollback_user_id=10)
+                parser.feed(invalid)
+                parser.finish()
 
     def test_reader_rejects_malformed_journal_prefixed_filename(self):
         directory = self.private_directory()

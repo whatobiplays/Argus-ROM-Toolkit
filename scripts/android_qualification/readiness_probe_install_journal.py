@@ -46,16 +46,19 @@ _ALLOWED_TRANSITIONS = {
     },
     ("attempted", "session_created"): {
         ("attempted", "write_started"),
+        ("attempted", "precommit_abandon_started"),
         ("attempted", "abandon_started"),
         ("cleaned_up", "verified_absent"),
     },
     ("attempted", "write_started"): {
         ("attempted", "payload_written"),
+        ("attempted", "precommit_abandon_started"),
         ("attempted", "abandon_started"),
         ("cleaned_up", "verified_absent"),
     },
     ("attempted", "payload_written"): {
         ("attempted", "commit_started"),
+        ("attempted", "precommit_abandon_started"),
         ("attempted", "abandon_started"),
         ("cleaned_up", "verified_absent"),
     },
@@ -74,6 +77,10 @@ _ALLOWED_TRANSITIONS = {
         ("attempted", "abandon_started"),
         ("completed", "installed"),
         ("cleaned_up", "session_abandoned"),
+        ("cleaned_up", "verified_absent"),
+    },
+    ("attempted", "precommit_abandon_started"): {
+        ("attempted", "precommit_abandon_started"),
         ("cleaned_up", "verified_absent"),
     },
     ("attempted", "cleanup_started"): {
@@ -218,6 +225,7 @@ def _validate_identity_fields(event):
             ("attempted", "payload_written"),
             ("attempted", "commit_started"),
             ("attempted", "abandon_started"),
+            ("attempted", "precommit_abandon_started"),
             ("attempted", "cleanup_started"),
             ("completed", "installed"),
             ("cleaned_up", "session_abandoned"),
@@ -564,14 +572,22 @@ class InstallSessionParser:
         b"mCommitted": b" mSealed=",
         b"mFinalStatus": b" mFinalMessage=",
     }
+    _ROLLBACK_FIXED_FIELDS = {
+        b"mParentSessionId": b"-1",
+        b"mChildSessionIds": b"[]",
+        b"params.isMultiPackage": b"false",
+        b"params.isStaged": b"false",
+        b"mSealed": b"false",
+    }
 
-    def __init__(self, package, *, expected_session_id=None):
+    def __init__(self, package, *, expected_session_id=None, rollback_user_id=None):
         if type(package) is not str or not re.fullmatch(
             r"[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+", package
         ):
             raise ProbeError("MalformedRequest", "Transport")
         self._package = package
         self._expected_session_id = expected_session_id
+        self._rollback_user_id = rollback_user_id
         self._buffer = bytearray()
         self._total = 0
         self._sections = []
@@ -583,6 +599,8 @@ class InstallSessionParser:
         self._finished = False
         self._wrapped_row = bytearray()
         self._wrapped_rows_seen = 0
+        self.active_layout = None
+        self._rollback_seen = set()
 
     def feed(self, chunk):
         if self._finished or type(chunk) is not bytes:
@@ -609,6 +627,7 @@ class InstallSessionParser:
         self._finished = True
         if (
             self._buffer
+            or self._current is not None
             or tuple(self._sections) != tuple(self._SECTION_NAMES.values())
             or not self._legacy_terminator
         ):
@@ -659,9 +678,16 @@ class InstallSessionParser:
             if stripped:
                 raise ProbeError("IncompleteEvidence", "Transport")
             return
-        if self._section == "historical" and (
-            self._wrapped_rows_seen or self._wrapped_row or line.startswith(
-                tuple(b"      " + row[0] + b"=" for row in self._WRAPPED_ROWS)
+        if self._is_rollback_candidate(self._current):
+            if stripped:
+                self._consume_rollback_line(line)
+            return
+        historical = self._section == "historical"
+        prefix = b"      " if historical else b"    "
+        starts_row = any(line.startswith(prefix + row[0] + b"=") for row in self._WRAPPED_ROWS)
+        if self._wrapped_rows_seen or self._wrapped_row or (
+            starts_row and (
+                historical or line.endswith(b" ") or SESSION_FIELD_PATTERN.fullmatch(line) is None
             )
         ):
             if stripped or self._wrapped_row:
@@ -671,19 +697,19 @@ class InstallSessionParser:
             return
         field = SESSION_FIELD_PATTERN.fullmatch(line)
         if field is None:
-            malformed_package = re.fullmatch(rb"\s*appPackageName=(.*)\s*", line)
-            if malformed_package is not None:
+            if stripped.startswith(tuple(key + b"=" for key in self._FIELD_NAMES)):
                 raise ProbeError("IncompleteEvidence", "Transport")
             return
         self._record_field(*field.groups())
 
     def _consume_wrapped_row(self, line):
-        """Reassemble one observed historical row and project its bindings."""
+        """Reassemble one Android 12 field row and project its bindings."""
         index = self._wrapped_rows_seen
         if index >= len(self._WRAPPED_ROWS) or len(line) > self._WRAPPED_WIDTH:
             raise ProbeError("IncompleteEvidence", "Transport")
         expected = self._WRAPPED_ROWS[index]
-        prefix = b"  " if self._wrapped_row else b"      "
+        historical = self._section == "historical"
+        prefix = (b"  " if self._wrapped_row else b"      ") if historical else b"    "
         if (
             not line.startswith(prefix)
             or (not self._wrapped_row and not line.startswith(prefix + expected[0] + b"="))
@@ -693,14 +719,19 @@ class InstallSessionParser:
         self._wrapped_row.extend(line[len(prefix):])
         if len(self._wrapped_row) > _MAX_INSTALL_SESSIONS_LINE_BYTES:
             raise ProbeError("ResourceLimitExceeded", "Transport")
-        if len(line) == self._WRAPPED_WIDTH:
+        bindings = [
+            match for match in self._ROW_PAIR.finditer(self._wrapped_row)
+            if match[1] in self._FIELD_NAMES or match[1] in expected
+        ]
+        if historical:
+            if len(line) == self._WRAPPED_WIDTH:
+                return
+        elif not bindings or bindings[-1][1] != expected[-1] or not line.endswith(b" "):
+            # The live writer can move a whole printPair call to a new line.
+            if len(line) < self._WRAPPED_WIDTH and not line.endswith(b" "):
+                raise ProbeError("IncompleteEvidence", "Transport")
             return
-
         try:
-            bindings = [
-                match for match in self._ROW_PAIR.finditer(self._wrapped_row)
-                if match[1] in self._FIELD_NAMES or match[1] in expected
-            ]
             if (
                 tuple(match[1] for match in bindings) != expected
                 or bindings[0].start() != 0
@@ -719,6 +750,58 @@ class InstallSessionParser:
         finally:
             self._wrapped_row.clear()
         self._wrapped_rows_seen += 1
+
+    def _is_rollback_candidate(self, record):
+        return (
+            self._rollback_user_id is not None
+            and record["section"] == "active"
+            and record["session_id"] == self._expected_session_id
+        )
+
+    def _consume_rollback_line(self, line):
+        """Check the exact live record without deriving install authority."""
+        if (
+            self._current.get("rollback_terminal")
+            or not line.startswith(b"    ")
+            or len(line) > self._WRAPPED_WIDTH
+            or any(byte < 32 or byte > 126 for byte in line)
+        ):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        stripped = line.lstrip(b" ")
+        if re.search(rb"(?:^| )mStagedSessionErrorMessage=[^ ]* $", stripped):
+            self._current["rollback_terminal"] = True
+        for match in self._ROW_PAIR.finditer(stripped):
+            key, value = match.groups()
+            if key in self._ROLLBACK_FIXED_FIELDS:
+                if value != self._ROLLBACK_FIXED_FIELDS[key]:
+                    raise ProbeError("IntegrityConflict", "Transport")
+                self._remember_rollback_field(key)
+            if key == b"mode":
+                self._remember_rollback_field(key)
+                self._current["rollback_params"] = True
+            if key == b"installerPackageName":
+                if self._current.get("rollback_params"):
+                    self._remember_rollback_field(b"params.installerPackageName")
+                else:
+                    self._remember_rollback_field(key)
+                    if value != b"com.android.shell":
+                        raise ProbeError("IntegrityConflict", "Transport")
+                    self._record_field(key, value)
+            if key in {b"sessionId", b"mSessionId"}:
+                self._remember_rollback_field(b"sessionId")
+                if value != str(self._expected_session_id).encode("ascii"):
+                    raise ProbeError("IntegrityConflict", "Transport")
+            if key == b"mStagedSessionErrorMessage":
+                self._remember_rollback_field(key)
+            if key in {b"userId", b"appPackageName", b"mInstallerUid", b"mCommitted", b"mFinalStatus"}:
+                self._record_field(key, value)
+                if key == b"mFinalStatus" and SESSION_FIELD_PATTERN.fullmatch(line):
+                    self._current["rollback_terminal"] = True
+
+    def _remember_rollback_field(self, key):
+        if key in self._rollback_seen:
+            raise ProbeError("IntegrityConflict", "Transport")
+        self._rollback_seen.add(key)
 
     def _record_field(self, key, value):
         mapped = self._FIELD_NAMES.get(key)
@@ -763,8 +846,25 @@ class InstallSessionParser:
         self._current = None
         if current is None:
             return
+        if self._is_rollback_candidate(current):
+            if (
+                not current.get("rollback_terminal")
+                or not self._ROLLBACK_FIXED_FIELDS.keys() <= self._rollback_seen
+                or current.get("user_id") != self._rollback_user_id
+                or current.get("package") != self._package
+                or current.get("installer_package") != "com.android.shell"
+                or current.get("installer_uid") != 2000
+                or current.get("committed") is not False
+                or current.get("final_status") != 0
+            ):
+                raise ProbeError("IntegrityConflict", "Transport")
+            self._records.append({
+                "session_id": current["session_id"], "section": "active", "rollback_only": True,
+            })
+            return
         if self._wrapped_row or self._wrapped_rows_seen not in (0, len(self._WRAPPED_ROWS)):
             raise ProbeError("IncompleteEvidence", "Transport")
+        wrapped = self._wrapped_rows_seen != 0
         self._wrapped_rows_seen = 0
         expected = current["session_id"] == self._expected_session_id
         package = current.get("package")
@@ -793,6 +893,8 @@ class InstallSessionParser:
             raise ProbeError("IncompleteEvidence", "Transport")
         if selected:
             self._records.append(dict(current))
+            if expected and current["section"] == "active":
+                self.active_layout = "grouped_print_pairs" if wrapped else "scalar_fields"
         else:
             self._records.append({
                 "session_id": current["session_id"],

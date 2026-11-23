@@ -73,6 +73,13 @@ _LOCAL_PATTERN = re.compile(r"tcp:([1-9][0-9]{0,4})\Z")
 _REMOTE_PATTERN = re.compile(r"localabstract:[A-Za-z0-9_-]{1,100}\Z")
 _FORWARD_SPEC_PATTERN = re.compile(r"[a-z][a-z0-9]*:[A-Za-z0-9._:/+\-]{1,256}\Z")
 _READINESS_PROBE_PACKAGE = "com.argusromtoolkit.argus.readinessprobe"
+# Android 12 uses URL-safe Base64 with padding for both randomized directory names.
+_INSTALLED_BASE_APK_PATH = re.compile(
+    r"/data/app/(?:(?:(?!\.{1,2}/)[A-Za-z0-9._~-]+/)?"
+    r"(?!\.{1,2}/)[A-Za-z0-9._~-]+"
+    rf"|~~[A-Za-z0-9_-]{{22}}==/{re.escape(_READINESS_PROBE_PACKAGE)}-[A-Za-z0-9_-]{{22}}==)"
+    r"/base[.]apk"
+)
 _READINESS_PROBE_VERSION_CODE = 1
 _READINESS_PROBE_LAUNCH_COMPONENT = f"{_READINESS_PROBE_PACKAGE}/.LauncherActivity"
 _READINESS_INSTALL_RECORD_V1_SCHEMA = (
@@ -557,11 +564,7 @@ class _AdbCommandRunner:
         if (
             len(command) == 3
             and command[:2] == ("exec-out", "cat")
-            and re.fullmatch(
-                r"/data/app/(?:[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+/base[.]apk",
-                command[2],
-            )
-            is not None
+            and _INSTALLED_BASE_APK_PATH.fullmatch(command[2]) is not None
         ):
             return True
         if (
@@ -1176,10 +1179,7 @@ class AdbForwardAdapter:
         if len(lines) != 1 or not lines[0].startswith("package:"):
             raise ProbeError("IncompleteEvidence", "Transport")
         device_path = lines[0][len("package:") :]
-        if re.fullmatch(
-            r"/data/app/(?:[A-Za-z0-9._~-]+/)?[A-Za-z0-9._~-]+/base[.]apk",
-            device_path,
-        ) is None:
+        if _INSTALLED_BASE_APK_PATH.fullmatch(device_path) is None:
             raise ProbeError("IncompleteEvidence", "Transport")
         digest = hashlib.sha256()
         total = 0

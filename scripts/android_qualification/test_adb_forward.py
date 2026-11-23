@@ -864,6 +864,41 @@ class AdbForwardAdapterTests(unittest.TestCase):
         self.assertNotIn(package, str(raised.exception))
         self.assertEqual(len(runner.calls), 4)
 
+    def test_installed_apk_readback_accepts_padded_android12_directories(self):
+        package = readiness_probe_artifact.PACKAGE
+        parent = "~~" + "A" * 22 + "=="
+        leaf = package + "-" + "B" * 22 + "=="
+        path = f"/data/app/{parent}/{leaf}/base.apk"
+        self.assertTrue(adb_forward._AdbCommandRunner._allowed_vector(
+            ("adb", "-s", TARGET, "exec-out", "cat", path),
+        ))
+        adapter, runner, _ = self.adapter(self.identity_replies())
+        runner.last_install_payload = b"verified APK fixture"
+        adapter.identity(TARGET, deadline=20)
+        original_run = runner.run
+
+        def run(argv, deadline, **kwargs):
+            if argv[3:] == ("shell", "pm", "path", package):
+                return f"package:{path}\n".encode("ascii")
+            return original_run(argv, deadline, **kwargs)
+
+        with mock.patch.object(runner, "run", side_effect=run):
+            self.assertEqual(adapter._installed_apk_sha256(TARGET, 20),
+                             hashlib.sha256(runner.last_install_payload).hexdigest())
+        for invalid in (
+            path.replace(package, "com.example.other"),
+            path.replace("==/", "=/", 1),
+            path.replace("/base.apk", "/split.apk"),
+            "/data/app/../base.apk",
+            "/data/app/./example/base.apk",
+            "/data/app/example/../../base.apk",
+            path + ";id",
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(adb_forward._AdbCommandRunner._allowed_vector(
+                    ("adb", "-s", TARGET, "exec-out", "cat", invalid),
+                ))
+
     def test_new_package_commands_are_closed_allowlist_entries(self):
         package = readiness_probe_artifact.PACKAGE
         approved = (

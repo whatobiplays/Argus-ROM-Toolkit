@@ -543,6 +543,21 @@ class InstallSessionParser:
         b"Historical install sessions:": "historical",
         b"Legacy install sessions:": "legacy",
     }
+    _WRAPPED_WIDTH = 120
+    _WRAPPED_ROWS = (
+        (b"userId", b"installerPackageName", b"mInstallerUid", b"stageCid"),
+        (b"mode", b"appPackageName", b"installerPackageName", b"rollbackDataPolicy"),
+        (b"mClientProgress", b"mCommitted", b"mFinalStatus", b"mStagedSessionErrorMessage"),
+    )
+    _ROW_PAIR = re.compile(rb"(?:^| )([A-Za-z][A-Za-z0-9_.]*)=([^ ]*)")
+    _WRAPPED_BINDING_SUFFIXES = {
+        b"userId": b" mOriginalInstallerUid=",
+        b"installerPackageName": b" installInitiatingPackageName=",
+        b"mInstallerUid": b" createdMillis=",
+        b"appPackageName": b" appIcon=",
+        b"mCommitted": b" mSealed=",
+        b"mFinalStatus": b" mFinalMessage=",
+    }
 
     def __init__(self, package, *, expected_session_id=None):
         if type(package) is not str or not re.fullmatch(
@@ -560,6 +575,8 @@ class InstallSessionParser:
         self._records = []
         self._seen_ids = set()
         self._finished = False
+        self._wrapped_row = bytearray()
+        self._wrapped_rows_seen = 0
 
     def feed(self, chunk):
         if self._finished or type(chunk) is not bytes:
@@ -636,13 +653,68 @@ class InstallSessionParser:
             if stripped:
                 raise ProbeError("IncompleteEvidence", "Transport")
             return
+        if self._section == "historical" and (
+            self._wrapped_rows_seen or self._wrapped_row or line.startswith(
+                tuple(b"      " + row[0] + b"=" for row in self._WRAPPED_ROWS)
+            )
+        ):
+            if stripped or self._wrapped_row:
+                self._consume_wrapped_row(line)
+            elif self._wrapped_rows_seen != len(self._WRAPPED_ROWS):
+                raise ProbeError("IncompleteEvidence", "Transport")
+            return
         field = SESSION_FIELD_PATTERN.fullmatch(line)
         if field is None:
             malformed_package = re.fullmatch(rb"\s*appPackageName=(.*)\s*", line)
             if malformed_package is not None:
                 raise ProbeError("IncompleteEvidence", "Transport")
             return
-        key, value = field.groups()
+        self._record_field(*field.groups())
+
+    def _consume_wrapped_row(self, line):
+        """Reassemble one observed historical row and project its bindings."""
+        index = self._wrapped_rows_seen
+        if index >= len(self._WRAPPED_ROWS) or len(line) > self._WRAPPED_WIDTH:
+            raise ProbeError("IncompleteEvidence", "Transport")
+        expected = self._WRAPPED_ROWS[index]
+        prefix = b"  " if self._wrapped_row else b"      "
+        if (
+            not line.startswith(prefix)
+            or (not self._wrapped_row and not line.startswith(prefix + expected[0] + b"="))
+            or any(byte < 32 or byte > 126 for byte in line)
+        ):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        self._wrapped_row.extend(line[len(prefix):])
+        if len(self._wrapped_row) > _MAX_INSTALL_SESSIONS_LINE_BYTES:
+            raise ProbeError("ResourceLimitExceeded", "Transport")
+        if len(line) == self._WRAPPED_WIDTH:
+            return
+
+        try:
+            bindings = [
+                match for match in self._ROW_PAIR.finditer(self._wrapped_row)
+                if match[1] in self._FIELD_NAMES or match[1] in expected
+            ]
+            if (
+                tuple(match[1] for match in bindings) != expected
+                or bindings[0].start() != 0
+                or self._wrapped_row[bindings[-1].end():] != b" "
+            ):
+                raise ProbeError("IncompleteEvidence", "Transport")
+            for match in bindings:
+                # The Params row repeats the requested installer. The actual
+                # installer belongs to the session row alongside the UID.
+                if index == 1 and match[1] == b"installerPackageName":
+                    continue
+                suffix = self._WRAPPED_BINDING_SUFFIXES.get(match[1])
+                if suffix is not None and not self._wrapped_row.startswith(suffix, match.end()):
+                    raise ProbeError("IncompleteEvidence", "Transport")
+                self._record_field(*match.groups())
+        finally:
+            self._wrapped_row.clear()
+        self._wrapped_rows_seen += 1
+
+    def _record_field(self, key, value):
         mapped = self._FIELD_NAMES.get(key)
         if mapped is None:
             return
@@ -684,6 +756,9 @@ class InstallSessionParser:
         self._current = None
         if current is None:
             return
+        if self._wrapped_row or self._wrapped_rows_seen not in (0, len(self._WRAPPED_ROWS)):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        self._wrapped_rows_seen = 0
         expected = current["session_id"] == self._expected_session_id
         package = current.get("package")
         if package is None:

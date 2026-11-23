@@ -82,6 +82,20 @@ def _parse_utc_timestamp(value):
     return parsed.replace(tzinfo=timezone.utc)
 
 
+def _valid_install_timestamp(record):
+    """Accept the millisecond UTC format emitted by the original v1 producer."""
+    value = record.get("acquired_at_utc")
+    if _parse_utc_timestamp(value) is not None:
+        return True
+    return (
+        record.get("schema") == _LEGACY_INSTALL_RECORD_SCHEMA
+        and type(value) is str
+        and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z", value)
+        is not None
+        and _parse_utc_timestamp(value[:-5] + "Z") is not None
+    )
+
+
 def _valid_source_identity(value):
     if not isinstance(value, Mapping):
         return False
@@ -200,7 +214,7 @@ def _valid_install_record(record, target_reference):
         and record.get("identity_match") is True
         and record.get("qualification_assertions_passed") is False
         and record.get("install_status") == "installed"
-        and _parse_utc_timestamp(record.get("acquired_at_utc")) is not None
+        and _valid_install_timestamp(record)
         and record.get("package_baseline_absent") is True
         and adb_forward._valid_target(serial)
         and type(fingerprint) is str
@@ -458,9 +472,7 @@ def _read_install_record(outcomes_directory, target_reference, *, allow_no_activ
     for record, record_digest, install_attempt_id in candidates:
         if (record_digest, install_attempt_id) in successful_cleanups:
             continue
-        if "acquired_at_utc" in record and _parse_utc_timestamp(
-            record.get("acquired_at_utc")
-        ) is None:
+        if "acquired_at_utc" in record and not _valid_install_timestamp(record):
             raise ProbeError("IncompleteEvidence", "Transport")
         unresolved_candidates.append(record)
         unresolved_identities.append((record_digest, install_attempt_id))

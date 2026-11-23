@@ -47,6 +47,31 @@ def complete_session_dump(*records):
     ) + b"Legacy install sessions:\n{}\n"
 
 
+def wrapped_historical_session(*, session_id=17, package=PACKAGE, replace=lambda row: row):
+    rows = (
+        b"userId=10 mOriginalInstallerUid=2000 mOriginalInstallerPackageName="
+        b"com.example.synthetic.installer installerPackageName=com.android.shell "
+        b"installInitiatingPackageName=com.android.shell mInstallerUid=2000 "
+        b"createdMillis=0 stageCid=null ",
+        b"mode=1 installFlags=0 installLocation=0 installReason=0 "
+        b"installScenario=0 sizeBytes=123 appPackageName=" + package.encode("ascii")
+        + b" appIcon=false appLabel=synthetic label installerPackageName=com.example.requested "
+        b"rollbackDataPolicy=0 ",
+        b"mClientProgress=1.0 mProgress=1.0 mCommitted=true mSealed=true "
+        b"mFinalStatus=1 mFinalMessage=synthetic result mStagedSessionErrorMessage= ",
+    )
+    result = bytearray(f"Historical install sessions:\n  Session {session_id}:\n".encode("ascii"))
+    for row in rows:
+        row = replace(row)
+        prefix = b"      "
+        while row:
+            width = 120 - len(prefix)
+            result.extend(prefix + row[:width] + b"\n")
+            row = row[width:]
+            prefix = b"  "
+    return bytes(result)
+
+
 class ReadinessProbeInstallJournalTests(unittest.TestCase):
     def private_directory(self):
         temporary = tempfile.TemporaryDirectory()
@@ -337,6 +362,59 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
         ):
             with self.subTest(output=output), self.assertRaises(ProbeError):
                 journal.parse_install_sessions(output, PACKAGE)
+
+    def test_wrapped_historical_rows_preserve_binding_across_chunks(self):
+        dump = complete_session_dump(
+            wrapped_historical_session(),
+            wrapped_historical_session(session_id=18, package="com.example.unrelated"),
+        )
+        self.assertIn(b"installerPackag\n  eName=", dump)
+        self.assertIn(b"appPackageName=com.argusro\n  mtoolkit", dump)
+        parser = journal.InstallSessionParser(PACKAGE, expected_session_id=17)
+        for byte in dump:
+            parser.feed(bytes([byte]))
+        self.assertEqual(parser.finish(), ({
+            "session_id": 17,
+            "section": "historical",
+            "package": PACKAGE,
+            "user_id": 10,
+            "installer_package": "com.android.shell",
+            "installer_uid": 2000,
+            "committed": True,
+            "final_status": 1,
+        },))
+
+    def test_wrapped_historical_rows_reject_ambiguous_or_incomplete_bindings(self):
+        for original, replacement in (
+            (b"mInstallerUid=2000 ", b"mInstallerUid=2000 mInstallerUid=2000 "),
+            (b"mInstallerUid=2000 ", b"mInstallerUid=2000 mInstallerUid=10000 "),
+            (b"appPackageName=", b"noPackageName="),
+            (PACKAGE.encode("ascii"), PACKAGE.encode("ascii") + b" extra"),
+            (b"userId=10 ", b"userId=10 userId=0 "),
+            (b"rollbackDataPolicy=0 ", b""),
+            (b"mStagedSessionErrorMessage= ", b""),
+        ):
+            record = wrapped_historical_session(
+                replace=lambda row: row.replace(original, replacement),
+            )
+            with self.subTest(original=original, replacement=replacement), self.assertRaises(ProbeError):
+                journal.parse_install_sessions(complete_session_dump(record), PACKAGE)
+        with self.assertRaises(ProbeError):
+            journal.parse_install_sessions(
+                complete_session_dump(wrapped_historical_session(package="null")), PACKAGE,
+            )
+
+    def test_wrapped_historical_rows_reject_truncation_and_internal_timeout(self):
+        record = wrapped_historical_session()
+        envelope = complete_session_dump(record)
+        for broken in (
+            record[:record.index(b"\n", record.index(b"userId=")) + 1],
+            record.replace(b"\n  ", b"\n*** SERVICE DUMP TIMEOUT ***\n  ", 2),
+        ):
+            with self.assertRaises(ProbeError):
+                journal.parse_install_sessions(complete_session_dump(broken), PACKAGE)
+        with self.assertRaises(ProbeError):
+            journal.parse_install_sessions(envelope[:-1], PACKAGE)
 
     def test_reader_rejects_malformed_journal_prefixed_filename(self):
         directory = self.private_directory()

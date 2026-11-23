@@ -2042,6 +2042,38 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
         self.assertEqual(result["failure_code"], "IncompleteEvidence")
         self.assertEqual(runner.calls, [])
 
+    def test_v1_millisecond_timestamp_preserves_record_bytes_and_ownership(self):
+        directory = self.private_directory()
+        old = legacy_install_record()
+        old["acquired_at_utc"] = "2026-11-22T12:47:30.123Z"
+        original = write_record(directory, old, name="legacy-install.json")
+        expected_digest = record_digest(original)
+        record, digest, attempt = recovery._read_install_record(directory, q7.TARGET_REFERENCE)
+        self.assertEqual((record, digest, attempt), (old, expected_digest, None))
+
+        current = legacy_install_record()
+        current["acquired_at_utc"] = "2026-11-22T12:47:34Z"
+        write_record(directory, current, name="second-install.json")
+        with self.assertRaises(recovery.ProbeError) as error:
+            recovery._read_install_record(directory, q7.TARGET_REFERENCE, allow_no_active=True)
+        self.assertEqual(error.exception.code, "IntegrityConflict")
+        self.assertEqual(record_digest(original), expected_digest)
+
+    def test_v1_timestamp_compatibility_is_limited_to_three_utc_fraction_digits(self):
+        for value in (
+            "2026-02-30T12:47:30.123Z",
+            "2026-11-22T12:47:30.12Z",
+            "2026-11-22T12:47:30.1234Z",
+            "2026-11-22T12:47:30.123+00:00",
+        ):
+            with self.subTest(value=value):
+                record = legacy_install_record()
+                record["acquired_at_utc"] = value
+                self.assertFalse(recovery._valid_install_record(record, q7.TARGET_REFERENCE))
+        record = install_record()
+        record["acquired_at_utc"] = "2026-11-22T12:47:30.123Z"
+        self.assertFalse(recovery._valid_install_record(record, q7.TARGET_REFERENCE))
+
     def test_recovery_rejects_incomplete_success_outcome_before_adb(self):
         directory = self.private_directory()
         write_record(directory, install_record())

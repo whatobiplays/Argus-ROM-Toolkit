@@ -798,8 +798,6 @@ class InstallSessionParser:
                     self._remember_rollback_field(b"params.installerPackageName")
                 else:
                     self._remember_rollback_field(key)
-                    if value != b"com.android.shell":
-                        raise ProbeError("IntegrityConflict", "Transport")
                     self._record_field(key, value)
             if key in {b"sessionId", b"mSessionId"}:
                 self._remember_rollback_field(b"sessionId")
@@ -870,8 +868,7 @@ class InstallSessionParser:
                 or (self._rollback_grouped and not self._LIVE_PARAMS_FLAGS.keys() <= self._rollback_seen)
                 or current.get("user_id") != self._rollback_user_id
                 or current.get("package") != self._package
-                or current.get("installer_package") != "com.android.shell"
-                or current.get("installer_uid") != 2000
+                or not is_adb_shell_installer(current)
                 or current.get("committed") is not False
                 or current.get("final_status") != 0
             ):
@@ -920,6 +917,14 @@ class InstallSessionParser:
                 "package_binding": "unattributed" if package is None else "unrelated",
             })
         current.clear()
+
+
+def is_adb_shell_installer(session):
+    """Recognize the Android 12 shell UID with its named or explicit null installer."""
+    return (
+        session.get("installer_uid") == 2000
+        and session.get("installer_package") in ("com.android.shell", "null")
+    )
 
 
 def parse_install_sessions(data, package, *, expected_session_id=None):

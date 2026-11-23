@@ -72,10 +72,10 @@ def wrapped_historical_session(*, session_id=17, package=PACKAGE, replace=lambda
     return bytes(result)
 
 
-def wrapped_active_session(*, session_id=17, package=PACKAGE):
+def wrapped_active_session(*, session_id=17, package=PACKAGE, installer="com.android.shell"):
     return (
         f"Active install sessions:\n  Session {session_id}:\n"
-        "    userId=10 mOriginalInstallerUid=2000 installerPackageName=com.android.shell \n"
+        f"    userId=10 mOriginalInstallerUid=2000 installerPackageName={installer} \n"
         "    installInitiatingPackageName=com.android.shell mInstallerUid=2000 createdMillis=0 stageCid=null \n"
         f"    mode=1 sizeBytes=28 appPackageName={package} appIcon=false \n"
         "    installerPackageName=null isMultiPackage=false isStaged=false rollbackDataPolicy=0 \n"
@@ -467,7 +467,7 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             )
 
     def test_known_id_rollback_needs_a_complete_unconflicted_frame(self):
-        opaque = wrapped_active_session().replace(b"mOriginalInstallerUid=2000 ", b"")
+        opaque = wrapped_active_session(installer="null").replace(b"mOriginalInstallerUid=2000 ", b"")
         dump = complete_session_dump(opaque)
         with self.assertRaises(ProbeError):
             journal.parse_install_sessions(dump, PACKAGE, expected_session_id=17)
@@ -482,7 +482,9 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             dump.split(b"Finalized install sessions:")[0],
             dump.replace(b"userId=10", b"userId=11"),
             dump.replace(b"mInstallerUid=2000 ", b""),
-            dump.replace(b"installerPackageName=com.android.shell ", b""),
+            dump.replace(b"mInstallerUid=2000 ", b"mInstallerUid=1000 "),
+            dump.replace(b"installerPackageName=null ", b"", 1),
+            dump.replace(b"installerPackageName=null ", b"installerPackageName=com.example.other ", 1),
             dump.replace(b"mCommitted=false", b"mCommitted=true"),
             dump.replace(b"sizeBytes=28", b"mSessionId=18"),
             dump.replace(b"sizeBytes=28", b"mParentSessionId=19"),

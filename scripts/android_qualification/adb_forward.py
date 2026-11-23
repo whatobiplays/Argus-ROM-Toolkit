@@ -82,8 +82,6 @@ _READINESS_INSTALL_RECORD_V2_SCHEMA = (
     "argus-issue-74-b1-preparation-observation-v2"
 )
 _INSTALL_ATTEMPT_ID_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
-_PACKAGE_INSTALLER_SHELL = "com.android.shell"
-_PACKAGE_INSTALLER_SHELL_UID = 2000
 _INSTALL_SESSION_SUCCESS_STATUS = 1
 _INSTALL_SESSION_ABORTED_STATUS = -115
 _MAX_ANDROID_SESSION_ID = (1 << 31) - 1
@@ -1531,8 +1529,7 @@ class AdbForwardAdapter:
             len(new_sessions) != 1
             or new_sessions[0].get("session_id") != session_id
             or session.get("user_id") != install_record.get("android_user_private")
-            or session.get("installer_package") != _PACKAGE_INSTALLER_SHELL
-            or session.get("installer_uid") != _PACKAGE_INSTALLER_SHELL_UID
+            or not readiness_probe_install_journal.is_adb_shell_installer(session)
         ):
             raise ProbeError("IntegrityConflict", "Transport")
         if success_required and (
@@ -1937,8 +1934,7 @@ class AdbForwardAdapter:
         if session and (
             session["section"] != "historical" or session.get("committed") is not False
             or session.get("user_id") != user_id
-            or session.get("installer_package") != _PACKAGE_INSTALLER_SHELL
-            or session.get("installer_uid") != _PACKAGE_INSTALLER_SHELL_UID
+            or not readiness_probe_install_journal.is_adb_shell_installer(session)
             or session.get("final_status") != _INSTALL_SESSION_ABORTED_STATUS
         ):
             raise ProbeError("IncompleteEvidence", "Transport")

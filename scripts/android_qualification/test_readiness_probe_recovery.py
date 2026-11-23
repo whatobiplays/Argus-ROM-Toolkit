@@ -704,7 +704,7 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                 def _session_dump(self):
                     if not self.session_active:
                         return super()._session_dump()
-                    output = wrapped_active_session()
+                    output = wrapped_active_session(installer="null")
                     return output.replace(b"mOriginalInstallerUid=2000 ", b"") if opaque else output
             with self.subTest(opaque=opaque), mock.patch.object(
                 adb_forward, "_READINESS_PROBE_APK_SHA256", digest,
@@ -782,7 +782,9 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                     if overrides.get("wrapped"):
                         return wrapped_historical_session(replace=lambda row: row.replace(
                             b"mCommitted=true", b"mCommitted=false",
-                        ).replace(b"mFinalStatus=1 ", b"mFinalStatus=-115 "))
+                        ).replace(b"mFinalStatus=1 ", b"mFinalStatus=-115 ").replace(
+                            b"installerPackageName=com.android.shell", b"installerPackageName=null",
+                        ))
                     fields = {"section": "Historical", "committed": "false", "final_status": -115}
                     return session_dump(**(fields | overrides))
             with self.subTest(overrides=overrides):
@@ -1140,7 +1142,9 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
     def test_fresh_attempt_with_opaque_history_and_conflicting_legacy_can_restore(self):
         class HistoricalRunner(LifecycleRunner):
             def _session_dump(self):
-                return super()._session_dump() + wrapped_historical_session(
+                return super()._session_dump().replace(
+                    b"installerPackageName=com.android.shell", b"installerPackageName=null",
+                ) + wrapped_historical_session(
                     session_id=31, package="null",
                 )
 

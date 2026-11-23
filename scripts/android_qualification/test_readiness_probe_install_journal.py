@@ -474,6 +474,9 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
         parser = journal.InstallSessionParser(PACKAGE, expected_session_id=17, rollback_user_id=10)
         parser.feed(dump)
         self.assertEqual(parser.finish(), ({"session_id": 17, "section": "active", "rollback_only": True},))
+        substituted_terminator = dump.replace(b"mFinalStatus=0 ", b"").replace(
+            b"mStagedSessionErrorMessage= \n", b"\n    mFinalStatus=0\n",
+        )
         for invalid in (
             dump[:-1], dump.replace(b"mStagedSessionErrorMessage= ", b""),
             dump.split(b"Finalized install sessions:")[0],
@@ -488,9 +491,8 @@ class ReadinessProbeInstallJournalTests(unittest.TestCase):
             dump.replace(b"mChildSessionIds=[] ", b""),
             dump.replace(b" isStaged=false ", b" isStaged=true "),
             dump.replace(b" isMultiPackage=false ", b" isMultiPackage=true "),
-            dump.replace(b"mFinalStatus=0 ", b"").replace(
-                b"mStagedSessionErrorMessage= \n", b"\n    mFinalStatus=0\n",
-            ),
+            substituted_terminator,
+            b"\n".join(line.rstrip(b" ") for line in substituted_terminator.split(b"\n")),
             dump.replace(b"mCommitted=false", b"mCommitted=false mCommitted=false"),
             dump.replace(PACKAGE.encode("ascii"), b"com.example.other"),
             dump.replace(b"Finalized install sessions:", b"Orphaned install sessions:"),

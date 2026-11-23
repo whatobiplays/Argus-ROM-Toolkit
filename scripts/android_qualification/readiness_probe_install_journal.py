@@ -777,9 +777,7 @@ class InstallSessionParser:
             raise ProbeError("IncompleteEvidence", "Transport")
         stripped = line.lstrip(b" ")
         scalar_field = SESSION_FIELD_PATTERN.fullmatch(line)
-        self._rollback_grouped |= (
-            (scalar_field is None and line.endswith(b" ")) or len(line) == self._WRAPPED_WIDTH
-        )
+        self._rollback_grouped |= scalar_field is None or len(line) == self._WRAPPED_WIDTH
         if re.search(rb"(?:^| )mStagedSessionErrorMessage=[^ ]* $", stripped):
             self._current["rollback_terminal"] = True
         for match in self._ROW_PAIR.finditer(stripped):

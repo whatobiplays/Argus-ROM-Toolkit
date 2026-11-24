@@ -1,4 +1,4 @@
-"""Fixed Activity Manager evidence reader for the Issue #74 Readiness probe."""
+"""Read Activity Manager evidence for the standalone Readiness probe."""
 
 import re
 from dataclasses import dataclass, field

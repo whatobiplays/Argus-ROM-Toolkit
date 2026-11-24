@@ -1855,6 +1855,80 @@ class AdbForwardAdapterTests(unittest.TestCase):
             adapter.create_no_rebind(TARGET, LOCAL, REMOTE, deadline=20)
         self.assertEqual(len(runner.calls), 4)
 
+    def test_readiness_identifier_entry_uses_bound_foreground_display(self):
+        from .readiness_activity_evidence import ReadinessActivityFacts
+
+        adapter, runner, _ = self.adapter(self.identity_replies(*([b""] * 5)))
+        adapter.identity(TARGET, deadline=20)
+        activity = ReadinessActivityFacts("ProbeControlActivity", 10, b"a", 2, b"b", 2, 0,
+                                          "fullscreen", True, True)
+        values = ("a" * 32, "b1-" + "c" * 12, "b" * 32)
+        for field, expected in (("session", values[0]), ("socket", values[1]),
+                                ("attempt", values[2]), ("confirm_session", values[0]),
+                                ("confirm_attempt", values[2])):
+            with mock.patch.object(adapter, "read_readiness_activity", return_value=activity) as read:
+                adapter.enter_readiness_identifier(
+                    TARGET, build=BUILD, activity=activity, field=field,
+                    session=values[0], endpoint=values[1], attempt=values[2],
+                    owner_focused=True, deadline=20,
+                )
+            self.assertEqual(read.call_args_list, [
+                mock.call(TARGET, build=BUILD, component="ProbeControlActivity", deadline=15),
+                mock.call(TARGET, build=BUILD, component="ProbeControlActivity", deadline=15),
+            ])
+            self.assertEqual(runner.calls[-1][0],
+                             ("adb", "-s", TARGET, "shell", "input", "-d", "0", "text", expected))
+
+    def test_identifier_entry_blocks_unconfirmed_malformed_stale_or_expired_entry(self):
+        from dataclasses import replace
+        from .readiness_activity_evidence import ReadinessActivityFacts
+
+        adapter, runner, _ = self.adapter(self.identity_replies())
+        adapter.identity(TARGET, deadline=20)
+        activity = ReadinessActivityFacts("ProbeControlActivity", 10, b"a", 2, b"b", 2, 0,
+                                          "fullscreen", True, True)
+        params = dict(build=BUILD, activity=activity, field="session", session="a" * 32,
+                      endpoint="b1-" + "c" * 12, attempt="b" * 32, owner_focused=True, deadline=20)
+        for changes in ({"owner_focused": False}, {"field": "uid"}, {"endpoint": "x;id"},
+                        {"session": "b" * 32}, {"activity": replace(activity, top_resumed=False)},
+                        {"build": "wrong"}, {"deadline": 0}):
+            with self.subTest(changes=changes), self.assertRaises(probe.ProbeError):
+                adapter.enter_readiness_identifier(TARGET, **(params | changes))
+        with (mock.patch.object(adapter, "read_readiness_activity",
+                                return_value=replace(activity, activity_id=b"c")),
+              self.assertRaises(probe.ProbeError)):
+            adapter.enter_readiness_identifier(TARGET, **params)
+        self.assertFalse(any("input" in argv for argv, *_ in runner.calls))
+
+    def test_identifier_entry_rejects_foreground_change_after_input(self):
+        from dataclasses import replace
+        from .readiness_activity_evidence import ReadinessActivityFacts
+
+        adapter, runner, _ = self.adapter(self.identity_replies(b""))
+        adapter.identity(TARGET, deadline=20)
+        activity = ReadinessActivityFacts("ProbeControlActivity", 10, b"a", 2, b"b", 2, 0,
+                                          "fullscreen", True, True)
+        with (mock.patch.object(adapter, "read_readiness_activity",
+                                side_effect=(activity, replace(activity, top_resumed=False))),
+              self.assertRaises(probe.ProbeError) as failure):
+            adapter.enter_readiness_identifier(
+                TARGET, build=BUILD, activity=activity, field="session",
+                session="a" * 32, endpoint="b1-" + "c" * 12, attempt="b" * 32,
+                owner_focused=True, deadline=20,
+            )
+        self.assertEqual(failure.exception.code, "IntegrityConflict")
+        self.assertEqual(sum("input" in argv for argv, *_ in runner.calls), 1)
+
+    def test_input_allowlist_admits_only_display_scoped_identifier_text(self):
+        prefix = ("adb", "-s", TARGET, "shell", "input")
+        self.assertTrue(_AdbCommandRunner._allowed_vector(prefix + ("-d", "0", "text", "a" * 32)))
+        for suffix in (("text", "a" * 32), ("-d", "-1", "text", "a" * 32),
+                       ("-d", "0", "keyevent", "4"), ("-d", "0", "tap", "20"),
+                       ("-d", "0", "text", "2000"), ("-d", "0", "text", "a;id"),
+                       ("-d", "0", "text", "a" * 32, "extra")):
+            with self.subTest(suffix=suffix):
+                self.assertFalse(_AdbCommandRunner._allowed_vector(prefix + suffix))
+
     def test_create_refuses_a_preexisting_mapping_without_running_no_rebind(self):
         existing = f"{TARGET} {LOCAL} {REMOTE}\n".encode("ascii")
         adapter, runner, _ = self.adapter(self.identity_replies(existing))

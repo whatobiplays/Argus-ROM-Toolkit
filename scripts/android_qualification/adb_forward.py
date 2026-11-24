@@ -82,6 +82,8 @@ _INSTALLED_BASE_APK_PATH = re.compile(
 )
 _READINESS_PROBE_VERSION_CODE = 1
 _READINESS_PROBE_LAUNCH_COMPONENT = f"{_READINESS_PROBE_PACKAGE}/.LauncherActivity"
+_READINESS_IDENTIFIER = re.compile(r"[a-f0-9]{32}\Z")
+_READINESS_INPUT_SOCKET = re.compile(r"b1-[a-f0-9]{12}\Z")
 _READINESS_INSTALL_RECORD_V1_SCHEMA = (
     "argus-issue-74-b1-preparation-observation-v1"
 )
@@ -585,6 +587,14 @@ class _AdbCommandRunner:
             return True
         if command == ("shell", "pm", "list", "users"):
             return True
+        if len(command) == 6 and command[:3] == ("shell", "input", "-d"):
+            return (
+                _valid_android_user_id_text(command[3])
+                and command[4] == "text"
+                and type(command[5]) is str
+                and bool(_READINESS_IDENTIFIER.fullmatch(command[5])
+                         or _READINESS_INPUT_SOCKET.fullmatch(command[5]))
+            )
         if len(command) == 4 and command[:2] == ("forward", "--no-rebind"):
             return _valid_local(command[2]) and _valid_remote(command[3])
         if len(command) == 3 and command[:2] == ("forward", "--remove"):
@@ -865,6 +875,7 @@ class _AdbCommandRunner:
             if argv[3:6] in {
                 ("shell", "pm", "install-create"), ("shell", "pm", "install-abandon"),
                 ("shell", "pm", "uninstall"),
+                ("shell", "input", "-d"),
             }:
                 raise ProbeError("IncompleteEvidence", "Transport")
         return bytes(output)
@@ -1411,6 +1422,43 @@ class AdbForwardAdapter:
         facts = reader.finish(acquisition)
         _deadline_remaining(self._clock, deadline)
         return facts
+
+    def enter_readiness_identifier(
+        self, target, *, build, activity, field, session, endpoint, attempt,
+        owner_focused, deadline,
+    ):
+        """Enter one session identifier into an empty, owner-focused probe field."""
+        from .readiness_activity_evidence import ReadinessActivityFacts
+
+        values = {
+            "session": session, "socket": endpoint, "attempt": attempt,
+            "confirm_session": session, "confirm_attempt": attempt,
+        }
+        if (type(field) is not str or field not in values
+                or any(type(value) is not str for value in (session, endpoint, attempt))
+                or not _READINESS_IDENTIFIER.fullmatch(session)
+                or not _READINESS_IDENTIFIER.fullmatch(attempt) or session == attempt
+                or not _READINESS_INPUT_SOCKET.fullmatch(endpoint)):
+            raise ProbeError("MalformedRequest", "Transport")
+        if owner_focused is not True:
+            raise ProbeError("UnauthorizedPeer", "Transport")
+        if (not isinstance(activity, ReadinessActivityFacts)
+                or activity.component != "ProbeControlActivity"
+                or not activity.resumed or not activity.top_resumed):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        deadline = min(deadline, self._clock() + 5)
+        current = self.read_readiness_activity(
+            target, build=build, component="ProbeControlActivity", deadline=deadline,
+        )
+        if current != activity:
+            raise ProbeError("IntegrityConflict", "Transport")
+        if self._run(target, ("shell", "input", "-d", str(current.display_id),
+                              "text", values[field]), deadline) != b"":
+            raise ProbeError("IncompleteEvidence", "Transport")
+        if self.read_readiness_activity(
+            target, build=build, component="ProbeControlActivity", deadline=deadline,
+        ) != activity:
+            raise ProbeError("IntegrityConflict", "Transport")
 
     def package_process_state(self, target, package, *, expected_uid, deadline):
         """Return the shareable process roles and UID consistency."""

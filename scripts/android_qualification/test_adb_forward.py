@@ -1913,6 +1913,29 @@ class AdbForwardAdapterTests(unittest.TestCase):
                 action()
         self.assertEqual(len(runner.calls), 5)
 
+    def test_create_accepts_fixed_port_echo_and_requires_exact_readback(self):
+        row = f"{TARGET} {LOCAL} {REMOTE}\n".encode("ascii")
+        adapter, runner, _ = self.adapter(self.identity_replies(b"", b"12345\n", row, b"", b""))
+        adapter.identity(TARGET, deadline=20)
+        self.assertIsNone(adapter.lookup(TARGET, LOCAL, deadline=20))
+        adapter.create_no_rebind(TARGET, LOCAL, REMOTE, deadline=20)
+        with self.assertRaises(probe.ProbeError):
+            adapter.remove(TARGET, LOCAL, deadline=20)
+        self.assertEqual(adapter.lookup(TARGET, LOCAL, deadline=20), REMOTE)
+        adapter.remove(TARGET, LOCAL, deadline=20)
+        self.assertIsNone(adapter.lookup(TARGET, LOCAL, deadline=20))
+        self.assertEqual(len(runner.calls), 7)
+
+    def test_create_rejects_wrong_port_or_malformed_port_echo(self):
+        for output in (b"12346\n", b"012345\n", b"12345", b"12345\n\n", b" 12345\n"):
+            with self.subTest(output=output):
+                adapter, _, _ = self.adapter(self.identity_replies(b"", output))
+                adapter.identity(TARGET, deadline=20)
+                adapter.lookup(TARGET, LOCAL, deadline=20)
+                with self.assertRaises(probe.ProbeError) as failure:
+                    adapter.create_no_rebind(TARGET, LOCAL, REMOTE, deadline=20)
+                self.assertEqual(failure.exception.code, "IncompleteEvidence")
+
     def test_create_rejects_unexpected_command_output_and_never_later_adopts(self):
         row = f"{TARGET} {LOCAL} {REMOTE}\n".encode("ascii")
         adapter, runner, _ = self.adapter(self.identity_replies(b"", b"unexpected", row))

@@ -2510,7 +2510,9 @@ class AdbForwardAdapter:
         record.expected_remote = remote
         try:
             output = self._run(target, ("forward", "--no-rebind", local, remote), deadline)
-            if output != b"":
+            # The ADB server may report the bound port even for a fixed TCP listener.
+            port_echo = local.removeprefix("tcp:").encode("ascii") + b"\n"
+            if output not in (b"", port_echo):
                 raise ProbeError("IncompleteEvidence", "Transport")
         except Exception:
             record.phase = _ForwardPhase.CREATE_UNCERTAIN

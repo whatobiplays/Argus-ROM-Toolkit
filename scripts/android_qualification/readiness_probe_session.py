@@ -240,13 +240,16 @@ class ForwardSession:
     Obligation callbacks must durably finish within that same phase deadline.
     Failed or late readback never clears the outstanding ownership obligation.
     """
-    def __init__(self,adb: ForwardAdapter,target,build,session,local,remote,started,deadline,*,clock,obligation):
+    def __init__(self,adb: ForwardAdapter,target,build,session,local,remote,started,deadline,*,clock,obligation,
+                 operation_deadline=None):
         require(HEX.fullmatch(session) is not None)
         require(0<deadline-started<=600)
         require(re.fullmatch(r'tcp:[1-9][0-9]{0,4}',local) is not None and int(local[4:])<=65535)
         require(re.fullmatch(r'localabstract:[A-Za-z0-9_-]{1,100}',remote) is not None)
         self.adb,self.target,self.build,self.session=adb,target,build,session
         self.local,self.remote,self.started,self.deadline=local,remote,started,deadline
+        self.operation_deadline = deadline if operation_deadline is None else operation_deadline
+        require(started < self.operation_deadline <= deadline)
         self.cleanup_deadline=deadline+60
         self.state='New'; self.owned=False; self.uid=None
         self._transport_lifecycles={
@@ -286,7 +289,7 @@ class ForwardSession:
 
     def phase_deadline(self, *, cleanup=False, limit=None):
         now=self.clock()
-        authority=self.cleanup_deadline if cleanup else self.deadline
+        authority=self.cleanup_deadline if cleanup else self.operation_deadline
         if limit is not None: authority=min(authority,limit)
         require(self.started<=now<authority,'TimedOut')
         return min(now+5,authority)

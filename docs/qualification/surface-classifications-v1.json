@@ -137,6 +137,8 @@
     {"path": "scripts/android_qualification/test_job_lifecycle.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/readiness_probe_artifact.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/readiness_probe_session.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/readiness_b1_transport.py", "classification": "active", "region": {"kind": "file"}},
+    {"path": "scripts/android_qualification/test_readiness_b1_transport.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/readiness_activity_evidence.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_readiness_activity_evidence.py", "classification": "active", "region": {"kind": "file"}},
     {"path": "scripts/android_qualification/test_readiness_probe_artifact.py", "classification": "active", "region": {"kind": "file"}},

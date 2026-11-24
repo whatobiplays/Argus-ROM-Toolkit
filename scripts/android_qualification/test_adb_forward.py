@@ -704,6 +704,27 @@ class AdbForwardAdapterTests(unittest.TestCase):
             },
         )
 
+    def test_package_process_state_projects_only_one_requested_main_pid(self):
+        package = readiness_probe_artifact.PACKAGE
+        rows = f"UID PID NAME\n10123 321 {package}\n10123 322 {package}:worker\n"
+        adapter, _, _ = self.adapter(self.identity_replies(b"10\n", rows.encode("ascii")))
+        adapter.identity(TARGET, deadline=20)
+        result = adapter.read_readiness_process(
+            TARGET, expected_uid=10123, deadline=20,
+        )
+        self.assertEqual(result["main_pid_private"], 321)
+        self.assertNotIn("322", repr(result))
+
+    def test_private_process_projection_rejects_duplicate_main_processes(self):
+        package = readiness_probe_artifact.PACKAGE
+        rows = f"UID PID NAME\n10123 321 {package}\n10123 322 {package}\n"
+        adapter, _, _ = self.adapter(self.identity_replies(b"10\n", rows.encode("ascii")))
+        adapter.identity(TARGET, deadline=20)
+        with self.assertRaises(probe.ProbeError):
+            adapter.read_readiness_process(
+                TARGET, expected_uid=10123, deadline=20,
+            )
+
     def test_package_process_state_rejects_extra_tokens_on_target_name(self):
         package = readiness_probe_artifact.PACKAGE
         process_output = (

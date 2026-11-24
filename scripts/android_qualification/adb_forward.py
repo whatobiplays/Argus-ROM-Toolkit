@@ -1413,10 +1413,24 @@ class AdbForwardAdapter:
         return facts
 
     def package_process_state(self, target, package, *, expected_uid, deadline):
+        """Return the shareable process roles and UID consistency."""
+        return self._package_process_state(
+            target, package, expected_uid=expected_uid, deadline=deadline, include_private_pid=False,
+        )
+
+    def read_readiness_process(self, target, *, expected_uid, deadline):
+        """Read the exact main Readiness PID for an owner-private checkpoint."""
+        return self._package_process_state(
+            target, _READINESS_PROBE_PACKAGE, expected_uid=expected_uid,
+            deadline=deadline, include_private_pid=True,
+        )
+
+    def _package_process_state(self, target, package, *, expected_uid, deadline, include_private_pid):
         """Return only target-package process roles from the system process list.
 
         Rows for other processes are ignored before their UID or PID values are
         checked. Malformed row structure still fails the observation closed.
+        Private checkpoints can request the PID of the unique main process.
         """
         if type(package) is not str or package not in _PACKAGE_QUERY_PACKAGES:
             raise ProbeError("MalformedRequest", "Transport")
@@ -1447,6 +1461,7 @@ class AdbForwardAdapter:
                 "row_limit_exceeded", "ResourceLimitExceeded"
             )
         roles = []
+        main_pid = None
         seen_pids = set()
         for line_number, line in enumerate(lines[1:], start=2):
             fields = line.split(None, 2)
@@ -1492,13 +1507,22 @@ class AdbForwardAdapter:
                     raise _PackageProcessObservationError(
                         "uid_mismatch", "IntegrityConflict"
                     )
-            roles.append("main" if process_name == package else "secondary")
-        return {
+            if process_name == package:
+                if include_private_pid and main_pid is not None:
+                    raise _PackageProcessObservationError("duplicate_main_process")
+                main_pid = pid
+                roles.append("main")
+            else:
+                roles.append("secondary")
+        result = {
             "state": "running" if roles else "absent",
             "process_count": len(roles),
             "uid_matches_package": bool(roles),
             "roles": roles,
         }
+        if include_private_pid:
+            result["main_pid_private"] = main_pid
+        return result
 
     def uninstall_readiness_probe(self, target, *, deadline):
         """Resolve this attempt through its durable install journal."""

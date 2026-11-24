@@ -13,6 +13,7 @@ from .readiness_probe_artifact import PACKAGE
 COMPONENT = f"{PACKAGE}/.ProbeControlActivity".encode()
 TARGET = b"ActivityRecord{deadbeef u10 " + COMPONENT + b" t14}"
 OTHER = b"ActivityRecord{abad1dea u10 com.example.private/.HiddenActivity t15}"
+HOME = b"ActivityRecord{bada55 u10 com.example.home/.Launcher t20}"
 SNAPSHOT = (
     b"ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)\n"
     b"Display #0 (activities from top to bottom):\n"
@@ -26,6 +27,19 @@ SNAPSHOT = (
     b"ActivityTaskSupervisor state:\n"
     b"  private tail data\n"
     b"  NumNonAppVisibleWindowByUid:[]\n"
+)
+BACKGROUND = SNAPSHOT.replace(
+    b"    mResumedActivity: " + TARGET + b"\n", b"",
+).replace(
+    b"state=RESUMED ", b"state=STOPPED ",
+).replace(
+    b"  ResumedActivity: " + TARGET,
+    b"  RootTask #20: type=home mode=fullscreen\n"
+    b"    mResumedActivity: " + HOME + b"\n"
+    b"    * Task{abaddeed #20 type=home A=home-affinity U=10 "
+    b"visible=true mode=fullscreen translucent=false sz=1}\n"
+    b"      * Hist  #0: " + HOME + b"\n"
+    b"  ResumedActivity: " + HOME,
 )
 
 
@@ -41,6 +55,45 @@ class ReadinessActivityReaderTests(unittest.TestCase):
         for i in range(0, len(data), 13):
             reader.feed(data[i:i + 13])
         return reader.finish(acquisition(data, **overrides))
+
+    def test_complete_background_can_omit_scoped_resumed_row(self):
+        result = self.parse(BACKGROUND)
+        self.assertFalse(result.resumed or result.top_resumed)
+        self.assertTrue(result.home_top_resumed)
+        self.assertEqual((result.task_id, result.root_task_id, result.user_id), (14, 13, 10))
+        self.assertNotIn("com.example.home", repr(result))
+
+    def test_missing_scoped_row_requires_complete_same_display_home(self):
+        for data in (
+            BACKGROUND.replace(b"type=home", b"type=standard"),
+            BACKGROUND.replace(b"  ResumedActivity: " + HOME, b"  ResumedActivity: " + OTHER),
+            BACKGROUND.replace(HOME, HOME.replace(b"u10", b"u11")),
+            BACKGROUND.replace(b"com.example.home/.Launcher", b"no_component"),
+            BACKGROUND.replace(HOME, HOME.replace(b"t20}", b"t14}")),
+            BACKGROUND.replace(HOME, HOME.replace(b"t20}", b"t999}")),
+            BACKGROUND.replace(b"      * Hist  #0: " + HOME + b"\n", b""),
+            BACKGROUND.replace(HOME, HOME[:-1] + b" f}}"),
+            BACKGROUND.replace(b"  RootTask #20:", b"Display #1 (activities from top to bottom):\n  RootTask #20:"),
+            BACKGROUND.replace(
+                b"  ResumedActivity: " + HOME,
+                b"Display #1 (activities from top to bottom):\n"
+                b"  RootTask #21: type=home mode=fullscreen\n"
+                b"    mResumedActivity: " + HOME + b"\n  ResumedActivity: " + HOME,
+            ),
+            BACKGROUND.replace(
+                b"  ResumedActivity: " + HOME,
+                b"  RootTask #21: type=standard mode=fullscreen\n"
+                b"    mResumedActivity: " + HOME + b"\n  ResumedActivity: " + HOME,
+            ),
+            BACKGROUND.replace(b"state=STOPPED", b"state=RESUMED"),
+            BACKGROUND.replace(b"    * Task{", b"    mResumedActivity: " + TARGET + b"\n    * Task{", 1),
+            BACKGROUND.replace(b"    mResumedActivity: " + HOME, b"    mResumedActivity: invalid"),
+            BACKGROUND.replace(b"    * Task{", b"    mResumedActivity=corrupt\n    * Task{", 1),
+            BACKGROUND.split(b"  NumNonAppVisibleWindowByUid:")[0],
+            BACKGROUND + b"*** SERVICE 'activity' DUMP TIMEOUT (3000ms) EXPIRED ***\n",
+        ):
+            with self.subTest(), self.assertRaises(ProbeError):
+                self.parse(data)
 
     def test_reads_only_selected_member_and_explicit_relations(self):
         result = self.parse()

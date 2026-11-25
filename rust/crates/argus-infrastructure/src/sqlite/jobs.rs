@@ -32,6 +32,8 @@ use rusqlite::OptionalExtension;
 use super::appearance::map_executor_error;
 use super::connection::SqliteConnection;
 use super::errors::SqliteOperationError;
+#[cfg(feature = "test-support")]
+use super::executor::ObserverCancellationHandle;
 use super::executor::SqliteDatabaseExecutor;
 use super::logical::finalize_sources;
 use super::unit_of_work::SqliteUnitOfWork;
@@ -1633,6 +1635,8 @@ pub struct SqliteJobsQueries {
     executor: SqliteDatabaseExecutor,
     #[cfg(feature = "test-support")]
     get_job_after_parent_read_hook: Option<Arc<dyn Fn() + Send + Sync>>,
+    #[cfg(feature = "test-support")]
+    history_after_detail_read_hook: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl SqliteJobsQueries {
@@ -1642,6 +1646,8 @@ impl SqliteJobsQueries {
             executor,
             #[cfg(feature = "test-support")]
             get_job_after_parent_read_hook: None,
+            #[cfg(feature = "test-support")]
+            history_after_detail_read_hook: None,
         }
     }
 
@@ -1654,6 +1660,51 @@ impl SqliteJobsQueries {
     ) -> Self {
         self.get_job_after_parent_read_hook = Some(Arc::new(hook));
         self
+    }
+
+    /// Installs a hook after one retained history detail has been assembled.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn with_history_after_detail_read_hook_for_tests(
+        mut self,
+        hook: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        self.history_after_detail_read_hook = Some(Arc::new(hook));
+        self
+    }
+
+    /// Reads complete retained history through observer-scoped cancellation.
+    ///
+    /// This method shares the deferred snapshot and detail projection used by
+    /// the application query; its cancellation seam is available to tests.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn list_retained_library_refresh_history_for_observer_tests(
+        &self,
+        context: &OperationContext,
+        cancellation: ObserverCancellationHandle,
+    ) -> Result<Vec<JobDetail>, super::errors::SqliteExecutorError> {
+        let callback_cancellation = cancellation.clone();
+        let after_detail_read = self.history_after_detail_read_hook.clone();
+        self.executor.with_observer_connection_for_tests(
+            context.clone(),
+            cancellation,
+            move |connection| {
+                let details = read_retained_history_snapshot(
+                    connection,
+                    || callback_cancellation.is_cancelled_for_tests(),
+                    || {
+                        if let Some(hook) = &after_detail_read {
+                            hook();
+                        }
+                    },
+                )?;
+                if retained_history_has_unavailable_facts(&details) {
+                    return Err(SqliteOperationError::Failed);
+                }
+                Ok(details)
+            },
+        )
     }
 }
 
@@ -1692,55 +1743,12 @@ impl JobsQueries for SqliteJobsQueries {
         let details = self
             .executor
             .with_connection(context.clone(), |connection| {
-                with_deferred_read_snapshot(connection, |snapshot_connection| {
-                    let job_run_ids = {
-                        let mut statement = snapshot_connection
-                            .connection
-                            .prepare(
-                                "SELECT job_run_id FROM job_run
-                                 WHERE operation_type = 'library_refresh'
-                                 ORDER BY created_at ASC, job_run_id ASC",
-                            )
-                            .map_err(|error| {
-                                corrupt_sqlite(map_persistence_operation_error(error))
-                            })?;
-                        let rows = statement
-                            .query_map([], |row| row.get::<_, String>(0))
-                            .map_err(|error| {
-                                corrupt_sqlite(map_persistence_operation_error(error))
-                            })?;
-                        rows.collect::<Result<Vec<_>, _>>().map_err(|error| {
-                            corrupt_sqlite(map_persistence_operation_error(error))
-                        })?
-                    };
-                    let mut details = Vec::with_capacity(job_run_ids.len());
-                    for job_run_id in job_run_ids {
-                        let detail = read_job_detail(snapshot_connection, &job_run_id, || {})?
-                            .ok_or_else(|| {
-                                corrupt_sqlite(PersistenceError::CorruptOrIncompatible)
-                            })?;
-                        if !matches!(
-                            detail.operation_detail(),
-                            argus_application::OperationDetail::LibraryRefresh(_)
-                        ) {
-                            return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
-                        }
-                        details.push(detail);
-                    }
-                    Ok(details)
-                })
+                read_retained_history_snapshot(connection, || false, || {})
             })
             .map_err(map_executor_error)
             .map_err(map_library_refresh_history_error)?;
 
-        if details.iter().any(|detail| {
-            matches!(
-                detail.operation_detail(),
-                argus_application::OperationDetail::LibraryRefresh(refresh)
-                    if refresh.root_outcome_coverage()
-                        == argus_application::LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable
-            )
-        }) {
+        if retained_history_has_unavailable_facts(&details) {
             return Err(LibraryRefreshHistoryError::HistoricalUnavailable);
         }
         Ok(details)
@@ -2716,6 +2724,64 @@ fn read_job_detail(
         )
     };
     Ok(Some(JobDetail::new(job_projection, detail)))
+}
+
+fn retained_history_has_unavailable_facts(details: &[JobDetail]) -> bool {
+    details.iter().any(|detail| {
+        matches!(
+            detail.operation_detail(),
+            argus_application::OperationDetail::LibraryRefresh(refresh)
+                if refresh.root_outcome_coverage()
+                    == argus_application::LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable
+        )
+    })
+}
+
+fn read_retained_history_snapshot<'connection>(
+    connection: &mut SqliteConnection<'connection>,
+    is_cancelled: impl Fn() -> bool,
+    after_detail_read: impl Fn(),
+) -> Result<Vec<JobDetail>, SqliteOperationError> {
+    with_deferred_read_snapshot(connection, |snapshot_connection| {
+        if is_cancelled() {
+            return Err(SqliteOperationError::Failed);
+        }
+        let job_run_ids = {
+            let mut statement = snapshot_connection
+                .connection
+                .prepare(
+                    "SELECT job_run_id FROM job_run
+                     WHERE operation_type = 'library_refresh'
+                     ORDER BY created_at ASC, job_run_id ASC",
+                )
+                .map_err(|error| corrupt_sqlite(map_persistence_operation_error(error)))?;
+            let rows = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| corrupt_sqlite(map_persistence_operation_error(error)))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|error| corrupt_sqlite(map_persistence_operation_error(error)))?
+        };
+        let mut details = Vec::with_capacity(job_run_ids.len());
+        for job_run_id in job_run_ids {
+            if is_cancelled() {
+                return Err(SqliteOperationError::Failed);
+            }
+            let detail = read_job_detail(snapshot_connection, &job_run_id, || {})?
+                .ok_or_else(|| corrupt_sqlite(PersistenceError::CorruptOrIncompatible))?;
+            if !matches!(
+                detail.operation_detail(),
+                argus_application::OperationDetail::LibraryRefresh(_)
+            ) {
+                return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+            }
+            details.push(detail);
+            after_detail_read();
+            if is_cancelled() {
+                return Err(SqliteOperationError::Failed);
+            }
+        }
+        Ok(details)
+    })
 }
 
 fn with_deferred_read_snapshot<'connection, T>(

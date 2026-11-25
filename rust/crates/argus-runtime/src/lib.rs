@@ -6121,6 +6121,9 @@ fn error_class(error: &SqliteExecutorError) -> (ErrorCode, TechnicalClass) {
         | SqliteExecutorError::ApplicationCallback(_) => {
             (ErrorCode::InternalUnexpected, TechnicalClass::Internal)
         }
+        // A downstream test-support feature can unify observer-only variants
+        // into argus-infrastructure without enabling argus-runtime/test-support.
+        _ => (ErrorCode::InternalUnexpected, TechnicalClass::Internal),
     }
 }
 

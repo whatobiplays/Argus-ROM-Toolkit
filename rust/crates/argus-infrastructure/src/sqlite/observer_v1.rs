@@ -26,6 +26,8 @@ pub enum ObserverV1SerializationError {
     DuplicateJobRunId,
     /// A detail is outside the LibraryRefresh result contract.
     InvalidJobDetail,
+    /// A framed response body exceeds the protocol's unsigned 32-bit length.
+    FrameTooLarge,
     /// JSON encoding failed.
     Json(serde_json::Error),
 }
@@ -39,6 +41,19 @@ pub fn serialize_retained_library_refresh_history_v1(
     snapshot_started_elapsed_realtime_ms: u64,
     snapshot_finished_elapsed_realtime_ms: u64,
 ) -> Result<Vec<u8>, ObserverV1SerializationError> {
+    let result = retained_library_refresh_history_dto(
+        details,
+        snapshot_started_elapsed_realtime_ms,
+        snapshot_finished_elapsed_realtime_ms,
+    )?;
+    serde_json::to_vec(&result).map_err(ObserverV1SerializationError::Json)
+}
+
+fn retained_library_refresh_history_dto(
+    details: &[JobDetail],
+    snapshot_started_elapsed_realtime_ms: u64,
+    snapshot_finished_elapsed_realtime_ms: u64,
+) -> Result<RetainedLibraryRefreshHistoryDto<'_>, ObserverV1SerializationError> {
     if snapshot_finished_elapsed_realtime_ms < snapshot_started_elapsed_realtime_ms {
         return Err(ObserverV1SerializationError::InvalidSnapshotInterval);
     }
@@ -60,7 +75,95 @@ pub fn serialize_retained_library_refresh_history_v1(
         retained_job_count,
         jobs,
     };
-    serde_json::to_vec(&result).map_err(ObserverV1SerializationError::Json)
+    Ok(result)
+}
+
+/// Encodes the reviewed success envelope around one ObserverV1 result.
+///
+/// This helper exists only in the host measurement build and does not add a
+/// transport or accept caller-controlled operation data.
+#[doc(hidden)]
+pub fn serialize_observer_success_response_v1_for_tests<T: Serialize>(
+    result: &T,
+    request_id: &str,
+    connection_id: &str,
+    attempt_id: &str,
+    observer_started_elapsed_realtime_ms: u64,
+    observer_finished_elapsed_realtime_ms: u64,
+) -> Result<Vec<u8>, ObserverV1SerializationError> {
+    if observer_finished_elapsed_realtime_ms < observer_started_elapsed_realtime_ms {
+        return Err(ObserverV1SerializationError::InvalidSnapshotInterval);
+    }
+    let response = ObserverSuccessResponseDto {
+        protocol_id: "argus.product-observer",
+        protocol_version: 1,
+        request_id,
+        connection_id,
+        attempt_id,
+        outcome: ObserverSuccessOutcomeDto {
+            kind: "CompleteSuccess",
+            result,
+        },
+        observer_started_elapsed_realtime_ms,
+        observer_finished_elapsed_realtime_ms,
+    };
+    serde_json::to_vec(&response).map_err(ObserverV1SerializationError::Json)
+}
+
+/// Encodes a complete retained-history result inside its ObserverV1 envelope.
+#[doc(hidden)]
+pub fn serialize_retained_library_refresh_history_response_v1_for_tests(
+    details: &[JobDetail],
+    request_id: &str,
+    connection_id: &str,
+    attempt_id: &str,
+    observer_started_elapsed_realtime_ms: u64,
+    observer_finished_elapsed_realtime_ms: u64,
+) -> Result<Vec<u8>, ObserverV1SerializationError> {
+    let result = retained_library_refresh_history_dto(
+        details,
+        observer_started_elapsed_realtime_ms,
+        observer_finished_elapsed_realtime_ms,
+    )?;
+    serialize_observer_success_response_v1_for_tests(
+        &result,
+        request_id,
+        connection_id,
+        attempt_id,
+        observer_started_elapsed_realtime_ms,
+        observer_finished_elapsed_realtime_ms,
+    )
+}
+
+/// Adds the four-byte big-endian length prefix used by ObserverV1 framing.
+#[doc(hidden)]
+pub fn frame_observer_response_v1_for_tests(
+    body: &[u8],
+) -> Result<Vec<u8>, ObserverV1SerializationError> {
+    let body_length =
+        u32::try_from(body.len()).map_err(|_| ObserverV1SerializationError::FrameTooLarge)?;
+    let mut framed = Vec::with_capacity(body.len() + 4);
+    framed.extend_from_slice(&body_length.to_be_bytes());
+    framed.extend_from_slice(body);
+    Ok(framed)
+}
+
+#[derive(Serialize)]
+struct ObserverSuccessResponseDto<'a, T> {
+    protocol_id: &'static str,
+    protocol_version: u8,
+    request_id: &'a str,
+    connection_id: &'a str,
+    attempt_id: &'a str,
+    outcome: ObserverSuccessOutcomeDto<'a, T>,
+    observer_started_elapsed_realtime_ms: u64,
+    observer_finished_elapsed_realtime_ms: u64,
+}
+
+#[derive(Serialize)]
+struct ObserverSuccessOutcomeDto<'a, T> {
+    kind: &'static str,
+    result: &'a T,
 }
 
 fn job_detail_dto(detail: &JobDetail) -> Result<JobDetailDto<'_>, ObserverV1SerializationError> {

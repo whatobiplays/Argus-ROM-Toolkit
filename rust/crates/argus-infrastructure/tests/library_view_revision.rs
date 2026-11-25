@@ -8,9 +8,82 @@ use argus_application::{
 };
 use argus_domain::HydrationState;
 use argus_infrastructure::sqlite::{
-    DEFAULT_QUEUE_CAPACITY, MigrationRegistry, SqliteDatabaseExecutor,
+    DEFAULT_QUEUE_CAPACITY, MigrationRegistry, ObserverCancellationHandle, SqliteDatabaseExecutor,
+    SqliteExecutorError, observer_v1,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Barrier, Mutex, mpsc};
+use std::thread;
+use std::time::Duration;
 use tempfile::tempdir;
+
+/// Mirrors the reviewed closed membership result for host size measurements.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasuredMembershipResult {
+    query: &'static str,
+    page_size: u32,
+    page_count: u64,
+    identity_membership_revision: i64,
+    identity_view_contract_version: u32,
+    query_contract_version: i64,
+    game_ids: Vec<String>,
+    member_identity_bindings: Vec<MeasuredMemberBinding>,
+    prior_lookups: Vec<MeasuredPriorLookup>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasuredMemberBinding {
+    requested_game_id: String,
+    result: MeasuredFoundMember,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasuredFoundMember {
+    kind: &'static str,
+    game_id: String,
+    lifecycle: &'static str,
+    content_identities: Vec<MeasuredContentIdentity>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasuredContentIdentity {
+    platform_id: String,
+    content_type: String,
+    scheme_id: String,
+    revision: u32,
+    digest: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasuredPriorLookup {
+    requested_game_id: String,
+    result: MeasuredGameNotFound,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasuredGameNotFound {
+    kind: &'static str,
+    application_error: MeasuredApplicationError,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasuredApplicationError {
+    code: &'static str,
+    category: &'static str,
+    severity: &'static str,
+    recoverability: &'static str,
+    retry_policy: &'static str,
+    message_key: &'static str,
+    trace_id: &'static str,
+    safe_context: Vec<String>,
+}
 
 struct TestDatabase {
     _directory: tempfile::TempDir,
@@ -100,6 +173,44 @@ fn fenced_identity_game(
         work.commit()?;
         Ok(game)
     })
+}
+
+fn observer_identity_list(
+    executor: &SqliteDatabaseExecutor,
+    query: ListGamesQuery,
+    token: Option<LibraryIdentityViewTokenV2>,
+    cancellation: ObserverCancellationHandle,
+) -> Result<IdentityRevisionFencedGameLibraryPage, SqliteExecutorError> {
+    executor.with_observer_unit_of_work_for_tests(
+        context("observer_identity_list"),
+        cancellation,
+        move |mut work| {
+            let page = {
+                let mut logical = work.logical_content();
+                logical.list_games_identity_revision_fenced(&query, token.as_ref())?
+            };
+            Ok(page)
+        },
+    )
+}
+
+fn observer_identity_game(
+    executor: &SqliteDatabaseExecutor,
+    game_id: argus_domain::GameId,
+    token: LibraryIdentityViewTokenV2,
+    cancellation: ObserverCancellationHandle,
+) -> Result<GetGameResult, SqliteExecutorError> {
+    executor.with_observer_unit_of_work_for_tests(
+        context("observer_identity_game"),
+        cancellation,
+        move |mut work| {
+            let game = {
+                let mut logical = work.logical_content();
+                logical.get_game_identity_revision_fenced(game_id, &token)?
+            };
+            Ok(game)
+        },
+    )
 }
 
 fn fenced_game(
@@ -220,6 +331,70 @@ fn insert_two_games_with_roots(executor: &SqliteDatabaseExecutor) {
             ('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'Alpha Two', 'local_fallback', 'nintendo.gb',
              NULL, NULL, NULL, 'alpha two', 'partially_hydrated', 'available', 1, 1, '1');",
     );
+}
+
+fn seed_identity_membership_fixture(executor: &SqliteDatabaseExecutor) {
+    insert_two_games_with_roots(executor);
+    write(
+        executor,
+        "UPDATE game_content SET identification_state = 'identified'
+         WHERE game_content_id IN (
+             'ffffffffffffffffffffffffffffffff',
+             '99999999999999999999999999999999'
+         );
+         INSERT INTO content_identity (
+             content_identity_id, game_content_id, scheme_id, identity_revision,
+             identity_value, is_current, created_at, updated_at
+         ) VALUES
+         ('15151515151515151515151515151515',
+          'ffffffffffffffffffffffffffffffff',
+          'argus.content.identity.nintendo-gb.cartridge.v1', 1,
+          '0909090909090909090909090909090909090909090909090909090909090909',
+          1, '1', '1'),
+         ('16161616161616161616161616161616',
+          '99999999999999999999999999999999',
+          'argus.content.identity.nintendo-gb.cartridge.v1', 1,
+          '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a',
+          1, '1', '1');",
+    );
+}
+
+fn measured_member_binding(
+    requested_game_id: String,
+    result: GetGameResult,
+) -> MeasuredMemberBinding {
+    let GetGameResult::Found(detail) = result else {
+        panic!("listed GameId must have a complete same-view detail");
+    };
+    let content_identities = detail
+        .content()
+        .iter()
+        .map(|content| {
+            let identity = content.identity().expect("current identity is complete");
+            let digest = identity
+                .digest()
+                .as_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            MeasuredContentIdentity {
+                platform_id: content.platform_id().as_str().to_owned(),
+                content_type: content.content_type().as_str().to_owned(),
+                scheme_id: identity.scheme_id().to_owned(),
+                revision: identity.revision(),
+                digest,
+            }
+        })
+        .collect();
+    MeasuredMemberBinding {
+        requested_game_id,
+        result: MeasuredFoundMember {
+            kind: "Found",
+            game_id: detail.game_id().to_string(),
+            lifecycle: "Active",
+            content_identities,
+        },
+    }
 }
 
 fn hydration_facets(executor: &SqliteDatabaseExecutor) -> Vec<(HydrationState, u32)> {
@@ -535,6 +710,408 @@ fn identity_only_change_advances_v2_without_staling_v1_views() {
         fenced_identity_game(&database.executor, game_id, v2_token),
         Err(ApplicationPortError::LibraryViewStale)
     ));
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn observer_v2_membership_cancellation_interrupts_an_actual_read() {
+    let database = open();
+    seed_identity_membership_fixture(&database.executor);
+
+    let cancellation = ObserverCancellationHandle::new();
+    let hook_fired = Arc::new(AtomicBool::new(false));
+    let (entered_sender, entered_receiver) = mpsc::sync_channel(1);
+    let entered_sender = Arc::new(Mutex::new(Some(entered_sender)));
+    let release = Arc::new(Barrier::new(2));
+    let hook_fired_once = Arc::clone(&hook_fired);
+    let hook_sender = Arc::clone(&entered_sender);
+    let hook_release = Arc::clone(&release);
+    cancellation.with_progress_hook_for_tests(move || {
+        if !hook_fired_once.swap(true, Ordering::AcqRel) {
+            if let Ok(mut sender) = hook_sender.lock()
+                && let Some(sender) = sender.take()
+            {
+                let _ = sender.send(());
+            }
+            hook_release.wait();
+        }
+    });
+
+    let worker_executor = database.executor.clone();
+    let worker_cancellation = cancellation.clone();
+    let worker = thread::spawn(move || {
+        observer_identity_list(
+            &worker_executor,
+            list_query(None, 1, None),
+            None,
+            worker_cancellation,
+        )
+    });
+    entered_receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("SQLite progress hook runs during the V2 membership read");
+    assert!(cancellation.cancel().expect("cancel active V2 read"));
+    release.wait();
+    assert!(matches!(
+        worker.join().expect("V2 membership reader thread"),
+        Err(SqliteExecutorError::ObserverCancelled)
+    ));
+
+    let value = database
+        .executor
+        .with_connection_for_tests(context("ordinary_after_v2_cancel"), |connection| {
+            connection.scalar_i64("SELECT 44")
+        })
+        .expect("ordinary query after V2 interrupt retirement");
+    assert_eq!(value, 44);
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn observer_v2_membership_cancellation_discards_partial_result_assembly() {
+    let database = open();
+    seed_identity_membership_fixture(&database.executor);
+
+    let cancellation = ObserverCancellationHandle::new();
+    let (entered_sender, entered_receiver) = mpsc::sync_channel(1);
+    let (release_sender, release_receiver) = mpsc::sync_channel(1);
+    let worker_executor = database.executor.clone();
+    let worker_cancellation = cancellation.clone();
+    let callback_cancellation = worker_cancellation.clone();
+    let worker = thread::spawn(move || {
+        worker_executor.with_observer_unit_of_work_for_tests(
+            context("observer_v2_membership_assembly"),
+            worker_cancellation,
+            move |mut work| {
+                let mut logical = work.logical_content();
+                let first = logical
+                    .list_games_identity_revision_fenced(&list_query(None, 1, None), None)?;
+                let token = first.view_token().clone();
+                let mut pages = vec![first];
+                while let Some(cursor) = pages
+                    .last()
+                    .expect("first V2 page exists")
+                    .page()
+                    .next_cursor()
+                    .cloned()
+                {
+                    pages.push(logical.list_games_identity_revision_fenced(
+                        &list_query(Some(cursor), 1, None),
+                        Some(&token),
+                    )?);
+                }
+                assert_eq!(pages.len(), 2, "fixture has a complete two-page chain");
+
+                let game_ids = pages
+                    .iter()
+                    .flat_map(|page| page.page().items())
+                    .map(|game| game.game_id())
+                    .collect::<Vec<_>>();
+                let mut member_bindings = Vec::with_capacity(game_ids.len());
+                for game_id in game_ids {
+                    let requested_game_id = game_id.to_string();
+                    let result = logical.get_game_identity_revision_fenced(game_id, &token)?;
+                    member_bindings.push(measured_member_binding(requested_game_id, result));
+                    if member_bindings.len() == 1 {
+                        entered_sender
+                            .send(())
+                            .expect("test is waiting for partial membership assembly");
+                        let _ = release_receiver.recv_timeout(Duration::from_secs(5));
+                    }
+                    if callback_cancellation.is_cancelled_for_tests() {
+                        return Ok(member_bindings);
+                    }
+                }
+                Ok(member_bindings)
+            },
+        )
+    });
+
+    entered_receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("first same-token member is assembled inside observer scope");
+    assert!(cancellation.cancel().expect("cancel member assembly"));
+    release_sender.send(()).expect("release observer callback");
+    assert!(matches!(
+        worker.join().expect("V2 membership assembler thread"),
+        Err(SqliteExecutorError::ObserverCancelled)
+    ));
+
+    let value = database
+        .executor
+        .with_connection_for_tests(context("ordinary_after_v2_assembly_cancel"), |connection| {
+            connection.scalar_i64("SELECT 45")
+        })
+        .expect("ordinary query after assembly cancellation");
+    assert_eq!(value, 45);
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn observer_scoped_v2_reads_complete_page_chain_and_same_view_lookups() {
+    let database = open();
+    seed_identity_membership_fixture(&database.executor);
+
+    let first = observer_identity_list(
+        &database.executor,
+        list_query(None, 1, None),
+        None,
+        ObserverCancellationHandle::new(),
+    )
+    .expect("first observer V2 page");
+    let token = first.view_token().clone();
+    let identity_revision = first.identity_membership_revision();
+    let query_contract_version = first.query_contract_version();
+    let mut pages = vec![first];
+    while let Some(cursor) = pages
+        .last()
+        .expect("at least one page")
+        .page()
+        .next_cursor()
+        .cloned()
+    {
+        let page = observer_identity_list(
+            &database.executor,
+            list_query(Some(cursor), 1, None),
+            Some(token.clone()),
+            ObserverCancellationHandle::new(),
+        )
+        .expect("continue the same observer V2 view");
+        assert_eq!(page.view_token(), &token);
+        assert_eq!(page.identity_membership_revision(), identity_revision);
+        assert_eq!(page.query_contract_version(), query_contract_version);
+        pages.push(page);
+    }
+
+    let game_ids = pages
+        .iter()
+        .flat_map(|page| page.page().items())
+        .map(|game| game.game_id().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pages.len(),
+        2,
+        "the fixture forms a complete two-page chain"
+    );
+    assert_eq!(
+        game_ids,
+        [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+        ]
+    );
+
+    let mut member_identity_bindings = Vec::with_capacity(game_ids.len());
+    for game_id in &game_ids {
+        let requested_game_id = game_id.clone();
+        let game_id = argus_domain::GameId::try_from(game_id.as_str()).expect("GameId");
+        let result = observer_identity_game(
+            &database.executor,
+            game_id,
+            token.clone(),
+            ObserverCancellationHandle::new(),
+        )
+        .expect("same-token member lookup");
+        let binding = measured_member_binding(requested_game_id, result);
+        assert_eq!(binding.result.content_identities.len(), 1);
+        member_identity_bindings.push(binding);
+    }
+
+    let absent_prior_game_id = "cccccccccccccccccccccccccccccccc";
+    let absent_prior_id = argus_domain::GameId::try_from(absent_prior_game_id).expect("GameId");
+    assert_eq!(
+        observer_identity_game(
+            &database.executor,
+            absent_prior_id,
+            token.clone(),
+            ObserverCancellationHandle::new(),
+        )
+        .expect("complete same-view absent prior-ID lookup"),
+        GetGameResult::NotFound,
+        "GameNotFound is a complete lookup result, not missing evidence"
+    );
+
+    let membership_result = MeasuredMembershipResult {
+        query: "AllActiveDisplayTitleAscendingV1",
+        page_size: 1,
+        page_count: pages.len() as u64,
+        identity_membership_revision: identity_revision,
+        identity_view_contract_version: 2,
+        query_contract_version,
+        game_ids: game_ids.clone(),
+        member_identity_bindings,
+        prior_lookups: vec![MeasuredPriorLookup {
+            requested_game_id: absent_prior_game_id.to_owned(),
+            result: MeasuredGameNotFound {
+                kind: "GameNotFound",
+                application_error: MeasuredApplicationError {
+                    code: "ARGUS.V1.CONFIGURATION.GAME_NOT_FOUND",
+                    category: "configuration",
+                    severity: "Warning",
+                    recoverability: "UserAction",
+                    retry_policy: "Never",
+                    message_key: "errors.library.game_not_found",
+                    trace_id: "0000000000000000000000000000001c",
+                    safe_context: Vec::new(),
+                },
+            },
+        }],
+    };
+    let response_body = observer_v1::serialize_observer_success_response_v1_for_tests(
+        &membership_result,
+        "00000000000000000000000000000004",
+        "00000000000000000000000000000005",
+        "00000000000000000000000000000006",
+        500,
+        520,
+    )
+    .expect("serialize complete observer membership response");
+    let framed_response = observer_v1::frame_observer_response_v1_for_tests(&response_body)
+        .expect("frame complete observer membership response");
+    assert_eq!(framed_response.len(), response_body.len() + 4);
+    assert_eq!(
+        u32::from_be_bytes(
+            framed_response[..4]
+                .try_into()
+                .expect("four-byte response prefix")
+        ) as usize,
+        response_body.len()
+    );
+    let response_text = std::str::from_utf8(&response_body).expect("UTF-8 response body");
+    assert!(response_text.starts_with(
+        r#"{"protocol_id":"argus.product-observer","protocol_version":1,"request_id":"00000000000000000000000000000004","connection_id":"00000000000000000000000000000005","attempt_id":"00000000000000000000000000000006","outcome":{"kind":"CompleteSuccess","result":{"query":"AllActiveDisplayTitleAscendingV1","pageSize":1"#
+    ));
+    let response_json: serde_json::Value =
+        serde_json::from_slice(&response_body).expect("valid measured response");
+    let object_keys = |value: &serde_json::Value| {
+        value
+            .as_object()
+            .expect("JSON object")
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(
+        object_keys(&response_json),
+        std::collections::BTreeSet::from([
+            "protocol_id".to_owned(),
+            "protocol_version".to_owned(),
+            "request_id".to_owned(),
+            "connection_id".to_owned(),
+            "attempt_id".to_owned(),
+            "outcome".to_owned(),
+            "observer_started_elapsed_realtime_ms".to_owned(),
+            "observer_finished_elapsed_realtime_ms".to_owned(),
+        ])
+    );
+    assert_eq!(
+        object_keys(&response_json["outcome"]),
+        std::collections::BTreeSet::from(["kind".to_owned(), "result".to_owned()])
+    );
+    assert_eq!(
+        object_keys(&response_json["outcome"]["result"]),
+        std::collections::BTreeSet::from([
+            "query".to_owned(),
+            "pageSize".to_owned(),
+            "pageCount".to_owned(),
+            "identityMembershipRevision".to_owned(),
+            "identityViewContractVersion".to_owned(),
+            "queryContractVersion".to_owned(),
+            "gameIds".to_owned(),
+            "memberIdentityBindings".to_owned(),
+            "priorLookups".to_owned(),
+        ])
+    );
+    assert_eq!(
+        response_json["outcome"]["result"]["gameIds"]
+            .as_array()
+            .expect("complete GameId set")
+            .len(),
+        game_ids.len()
+    );
+    assert_eq!(
+        response_json["outcome"]["result"]["priorLookups"][0]["result"]["kind"],
+        "GameNotFound"
+    );
+    assert_eq!(
+        object_keys(&response_json["outcome"]["result"]["memberIdentityBindings"][0]),
+        std::collections::BTreeSet::from(["requestedGameId".to_owned(), "result".to_owned(),])
+    );
+    assert_eq!(
+        object_keys(&response_json["outcome"]["result"]["memberIdentityBindings"][0]["result"]),
+        std::collections::BTreeSet::from([
+            "kind".to_owned(),
+            "gameId".to_owned(),
+            "lifecycle".to_owned(),
+            "contentIdentities".to_owned(),
+        ])
+    );
+    assert_eq!(
+        object_keys(
+            &response_json["outcome"]["result"]["memberIdentityBindings"][0]["result"]["contentIdentities"]
+                [0]
+        ),
+        std::collections::BTreeSet::from([
+            "platformId".to_owned(),
+            "contentType".to_owned(),
+            "schemeId".to_owned(),
+            "revision".to_owned(),
+            "digest".to_owned(),
+        ])
+    );
+    assert_eq!(
+        object_keys(&response_json["outcome"]["result"]["priorLookups"][0]),
+        std::collections::BTreeSet::from(["requestedGameId".to_owned(), "result".to_owned(),])
+    );
+    assert_eq!(
+        object_keys(&response_json["outcome"]["result"]["priorLookups"][0]["result"]),
+        std::collections::BTreeSet::from(["kind".to_owned(), "applicationError".to_owned(),])
+    );
+    assert_eq!(
+        object_keys(
+            &response_json["outcome"]["result"]["priorLookups"][0]["result"]["applicationError"]
+        ),
+        std::collections::BTreeSet::from([
+            "code".to_owned(),
+            "category".to_owned(),
+            "severity".to_owned(),
+            "recoverability".to_owned(),
+            "retryPolicy".to_owned(),
+            "messageKey".to_owned(),
+            "traceId".to_owned(),
+            "safeContext".to_owned(),
+        ])
+    );
+    eprintln!(
+        "host_membership_games={} host_membership_pages={} host_page_size=1 host_prior_lookups=1 host_response_json_bytes={} host_framed_bytes={}",
+        game_ids.len(),
+        pages.len(),
+        response_body.len(),
+        framed_response.len()
+    );
+
+    write(
+        &database.executor,
+        "UPDATE content_identity
+         SET identity_value = '0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b'
+         WHERE content_identity_id = '15151515151515151515151515151515';",
+    );
+    let stale_member_id = argus_domain::GameId::try_from(game_ids[0].as_str()).expect("GameId");
+    assert!(
+        matches!(
+            observer_identity_game(
+                &database.executor,
+                stale_member_id,
+                token,
+                ObserverCancellationHandle::new(),
+            ),
+            Err(SqliteExecutorError::ApplicationCallback(
+                ApplicationPortError::LibraryViewStale
+            ))
+        ),
+        "a stale token is incomplete evidence and must not become a lookup result"
+    );
+
     database.executor.shutdown().expect("close database");
 }
 

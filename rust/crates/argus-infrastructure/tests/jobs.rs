@@ -5,7 +5,8 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -29,7 +30,8 @@ use argus_application::{JobsQueries, LibraryRootQueries};
 use argus_application::{ObservedEntryKind, SourceAccessError};
 use argus_infrastructure::local_filesystem::LocalFilesystemSourceAccess;
 use argus_infrastructure::sqlite::{
-    SqliteDatabaseExecutor, SqliteJobsQueries, SqliteLibraryRootQueries, SqliteValue,
+    ObserverCancellationHandle, SqliteDatabaseExecutor, SqliteExecutorError, SqliteJobsQueries,
+    SqliteLibraryRootQueries, SqliteOperationError, SqliteValue, observer_v1,
 };
 use rusqlite::Connection;
 
@@ -246,6 +248,72 @@ fn seed_refresh_with_admitted_and_excluded_roots(
             })
         })
         .expect("seed Library refresh")
+}
+
+fn finish_refresh(
+    executor: &SqliteDatabaseExecutor,
+    fixture: RefreshFixture,
+    state: JobRunState,
+    scan_status: ScanRunStatus,
+    terminal_at_ms: i64,
+) {
+    executor
+        .execute(&context(), move |mut scope| {
+            scope.scan_runs().set_status(
+                fixture.scan_run_id,
+                scan_status,
+                Some(terminal_at_ms),
+                None,
+            )?;
+            if state == JobRunState::Failed {
+                scope.job_runs().set_terminal_failure(
+                    fixture.job_run_id,
+                    state,
+                    Some("ARGUS.V1.RUNTIME.STALE_INSTANCE".to_owned()),
+                    Some("refresh failed".to_owned()),
+                    terminal_at_ms + 1,
+                )?;
+            } else {
+                scope
+                    .job_runs()
+                    .set_state(fixture.job_run_id, state, terminal_at_ms + 1)?;
+            }
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>(())
+        })
+        .expect("finish refresh fixture");
+}
+
+fn link_refresh_retry(
+    executor: &SqliteDatabaseExecutor,
+    source: RefreshFixture,
+    successor: RefreshFixture,
+) {
+    let source_id = source.job_run_id.to_string();
+    let successor_id = successor.job_run_id.to_string();
+    executor
+        .with_connection_for_tests(context(), move |connection| {
+            connection.execute_with_values(
+                "INSERT INTO job_retry_link (source_job_run_id, successor_job_run_id)
+                 VALUES (?1, ?2)",
+                &[
+                    SqliteValue::Text(source_id.clone()),
+                    SqliteValue::Text(successor_id.clone()),
+                ],
+            )?;
+            connection.execute_with_values(
+                "UPDATE library_scan_admission_context
+                 SET invocation_kind = ?1, retry_source_job_run_id = ?2
+                 WHERE job_run_id = ?3",
+                &[
+                    SqliteValue::Text("retry_library_refresh".to_owned()),
+                    SqliteValue::Text(source_id),
+                    SqliteValue::Text(successor_id),
+                ],
+            )?;
+            Ok::<_, SqliteOperationError>(())
+        })
+        .expect("persist direct retry relationship fixture");
 }
 
 fn delete_refresh_target(
@@ -920,6 +988,254 @@ fn retained_library_refresh_history_returns_all_runs_from_one_snapshot() {
             LibraryRefreshRootOutcomeCoverage::Complete
         );
     }
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn observer_retained_history_measurements_scale_with_runs_roots_and_scan_runs() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let database = directory.path().join("argus.sqlite3");
+    let executor = SqliteDatabaseExecutor::open(&database).expect("database");
+    let first = seed_refresh_with_admitted_and_excluded_roots(&executor, 10_000);
+    finish_refresh(
+        &executor,
+        first,
+        JobRunState::Failed,
+        ScanRunStatus::Failed,
+        10_002,
+    );
+
+    let measure = |expected_runs: usize| {
+        let started = Instant::now();
+        let details = SqliteJobsQueries::new(executor.clone())
+            .list_retained_library_refresh_history_for_observer_tests(
+                &context(),
+                ObserverCancellationHandle::new(),
+            )
+            .expect("read complete observer history");
+        let elapsed = started.elapsed();
+        assert_eq!(details.len(), expected_runs);
+        let body = observer_v1::serialize_retained_library_refresh_history_response_v1_for_tests(
+            &details,
+            "00000000000000000000000000000001",
+            "00000000000000000000000000000002",
+            "00000000000000000000000000000003",
+            100,
+            120,
+        )
+        .expect("serialize complete ObserverV1 response");
+        let framed = observer_v1::frame_observer_response_v1_for_tests(&body)
+            .expect("frame ObserverV1 response");
+        assert_eq!(
+            u32::from_be_bytes(framed[..4].try_into().expect("four-byte prefix")) as usize,
+            body.len()
+        );
+        assert_eq!(framed.len(), body.len() + 4);
+        let json = std::str::from_utf8(&body).expect("compact response is UTF-8");
+        assert!(json.starts_with(
+            r#"{"protocol_id":"argus.product-observer","protocol_version":1,"request_id":"00000000000000000000000000000001","connection_id":"00000000000000000000000000000002","attempt_id":"00000000000000000000000000000003","outcome":{"kind":"CompleteSuccess","result":{"retentionScope":"AllRetainedLibraryRefreshRunsAtSnapshot""#
+        ));
+        let response_json: serde_json::Value =
+            serde_json::from_slice(&body).expect("valid ObserverV1 success response");
+        let object_keys = |value: &serde_json::Value| {
+            value
+                .as_object()
+                .expect("JSON object")
+                .keys()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        assert_eq!(
+            object_keys(&response_json),
+            std::collections::BTreeSet::from([
+                "protocol_id".to_owned(),
+                "protocol_version".to_owned(),
+                "request_id".to_owned(),
+                "connection_id".to_owned(),
+                "attempt_id".to_owned(),
+                "outcome".to_owned(),
+                "observer_started_elapsed_realtime_ms".to_owned(),
+                "observer_finished_elapsed_realtime_ms".to_owned(),
+            ])
+        );
+        assert_eq!(
+            object_keys(&response_json["outcome"]),
+            std::collections::BTreeSet::from(["kind".to_owned(), "result".to_owned()])
+        );
+        assert!(json.ends_with(
+            r#""observer_started_elapsed_realtime_ms":100,"observer_finished_elapsed_realtime_ms":120}"#
+        ));
+        eprintln!(
+            "host_history_runs={} host_requested_roots={} host_scan_runs={} host_response_json_bytes={} host_framed_bytes={} host_observer_history_elapsed_us={}",
+            details.len(),
+            details.len() * 2,
+            details.len(),
+            body.len(),
+            framed.len(),
+            elapsed.as_micros()
+        );
+        details
+    };
+
+    let one_run = measure(1);
+    let second = seed_refresh_with_admitted_and_excluded_roots(&executor, 20_000);
+    link_refresh_retry(&executor, first, second);
+    let two_runs = measure(2);
+    let argus_application::OperationDetail::LibraryRefresh(source) = two_runs[0].operation_detail()
+    else {
+        panic!("first history entry must be a LibraryRefresh");
+    };
+    let argus_application::OperationDetail::LibraryRefresh(successor) =
+        two_runs[1].operation_detail()
+    else {
+        panic!("second history entry must be a LibraryRefresh");
+    };
+    assert_eq!(source.retry_successor_job_run_id(), Some(second.job_run_id));
+    assert_eq!(successor.retry_source_job_run_id(), Some(first.job_run_id));
+
+    let third = seed_refresh_with_admitted_and_excluded_roots(&executor, 30_000);
+    finish_refresh(
+        &executor,
+        third,
+        JobRunState::Completed,
+        ScanRunStatus::Complete,
+        30_002,
+    );
+    let fourth = seed_refresh_with_admitted_and_excluded_roots(&executor, 40_000);
+    finish_refresh(
+        &executor,
+        fourth,
+        JobRunState::Completed,
+        ScanRunStatus::Complete,
+        40_002,
+    );
+    let four_runs = measure(4);
+    assert_eq!(
+        four_runs
+            .iter()
+            .map(|detail| detail.job().state())
+            .collect::<Vec<_>>(),
+        [
+            JobRunState::Failed,
+            JobRunState::Running,
+            JobRunState::Completed,
+            JobRunState::Completed,
+        ]
+    );
+    assert_eq!(one_run.len() * 2, 2, "each run requests two roots");
+    assert_eq!(two_runs.len(), 2, "each run contributes one ScanRun");
+    assert_eq!(four_runs.len(), 4, "history includes every retained run");
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn observer_history_cancellation_interrupts_an_actual_read() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let database = directory.path().join("argus.sqlite3");
+    let executor = SqliteDatabaseExecutor::open(&database).expect("database");
+    let _fixture = seed_refresh_with_admitted_and_excluded_roots(&executor, 10_000);
+
+    let cancellation = ObserverCancellationHandle::new();
+    let fired = Arc::new(AtomicBool::new(false));
+    let (entered_sender, entered_receiver) = mpsc::sync_channel(1);
+    let entered_sender = Arc::new(Mutex::new(Some(entered_sender)));
+    let release = Arc::new(Barrier::new(2));
+    let hook_fired = Arc::clone(&fired);
+    let hook_sender = Arc::clone(&entered_sender);
+    let hook_release = Arc::clone(&release);
+    cancellation.with_progress_hook_for_tests(move || {
+        if !hook_fired.swap(true, Ordering::AcqRel) {
+            if let Ok(mut sender) = hook_sender.lock()
+                && let Some(sender) = sender.take()
+            {
+                let _ = sender.send(());
+            }
+            hook_release.wait();
+        }
+    });
+
+    let queries = SqliteJobsQueries::new(executor.clone());
+    let worker_cancellation = cancellation.clone();
+    let worker = thread::spawn(move || {
+        queries.list_retained_library_refresh_history_for_observer_tests(
+            &context(),
+            worker_cancellation,
+        )
+    });
+    entered_receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("SQLite progress hook runs during the history read");
+    let cancelled_at = Instant::now();
+    assert!(cancellation.cancel().expect("cancel active history read"));
+    release.wait();
+    assert!(matches!(
+        worker.join().expect("history reader thread"),
+        Err(SqliteExecutorError::ObserverCancelled)
+    ));
+    eprintln!(
+        "host_history_sql_read_cancel_to_completion_us={}",
+        cancelled_at.elapsed().as_micros()
+    );
+
+    let value = executor
+        .with_connection_for_tests(context(), |connection| connection.scalar_i64("SELECT 42"))
+        .expect("ordinary query after interrupt retirement");
+    assert_eq!(value, 42);
+    executor.shutdown().expect("shutdown");
+}
+
+#[test]
+fn observer_history_cancellation_stops_during_detail_assembly() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let database = directory.path().join("argus.sqlite3");
+    let executor = SqliteDatabaseExecutor::open(&database).expect("database");
+    let _first = seed_refresh_with_admitted_and_excluded_roots(&executor, 10_000);
+    let _second = seed_refresh_with_admitted_and_excluded_roots(&executor, 20_000);
+
+    let cancellation = ObserverCancellationHandle::new();
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let hook_count = Arc::new(AtomicUsize::new(0));
+    let hook_entered = Arc::clone(&entered);
+    let hook_release = Arc::clone(&release);
+    let hook_count_for_worker = Arc::clone(&hook_count);
+    let queries = SqliteJobsQueries::new(executor.clone())
+        .with_history_after_detail_read_hook_for_tests(move || {
+            if hook_count_for_worker.fetch_add(1, Ordering::AcqRel) == 0 {
+                hook_entered.wait();
+                hook_release.wait();
+            }
+        });
+    let worker_cancellation = cancellation.clone();
+    let worker = thread::spawn(move || {
+        queries.list_retained_library_refresh_history_for_observer_tests(
+            &context(),
+            worker_cancellation,
+        )
+    });
+
+    entered.wait();
+    let cancelled_at = Instant::now();
+    assert!(
+        cancellation
+            .cancel()
+            .expect("cancel during detail assembly")
+    );
+    release.wait();
+    assert!(matches!(
+        worker.join().expect("history assembler thread"),
+        Err(SqliteExecutorError::ObserverCancelled)
+    ));
+    eprintln!(
+        "host_history_assembly_cancel_to_completion_us={}",
+        cancelled_at.elapsed().as_micros()
+    );
+    assert_eq!(hook_count.load(Ordering::Acquire), 1);
+
+    let value = executor
+        .with_connection_for_tests(context(), |connection| connection.scalar_i64("SELECT 43"))
+        .expect("ordinary query after assembly cancellation");
+    assert_eq!(value, 43);
     executor.shutdown().expect("shutdown");
 }
 

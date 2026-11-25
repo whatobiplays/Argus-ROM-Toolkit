@@ -529,6 +529,18 @@ fn observer_cancellation_interrupts_only_its_query() {
     let path = directory.path().join("observer-cancellation.sqlite3");
     let executor = SqliteDatabaseExecutor::open(&path).expect("open database");
     let cancellation = ObserverCancellationHandle::new();
+    let progress_entered = Arc::new(Barrier::new(2));
+    let release_progress = Arc::new(Barrier::new(2));
+    let progress_hook_once = Arc::new(AtomicBool::new(false));
+    let hook_entered = progress_entered.clone();
+    let hook_release = release_progress.clone();
+    let hook_once = progress_hook_once.clone();
+    cancellation.with_progress_hook_for_tests(move || {
+        if !hook_once.swap(true, Ordering::AcqRel) {
+            hook_entered.wait();
+            hook_release.wait();
+        }
+    });
     let query_executor = executor.clone();
     let query_cancellation = cancellation.clone();
     let (started_sender, started_receiver) = mpsc::channel();
@@ -555,9 +567,10 @@ fn observer_cancellation_interrupts_only_its_query() {
     started_receiver
         .recv_timeout(TEST_WAIT_TIMEOUT)
         .expect("observer query started");
-    thread::sleep(Duration::from_millis(10));
+    progress_entered.wait();
     let cancel_started = Instant::now();
     assert!(cancellation.cancel().expect("cancel running query"));
+    release_progress.wait();
     assert_eq!(
         result_receiver
             .recv_timeout(TEST_WAIT_TIMEOUT)
@@ -584,52 +597,22 @@ fn observer_cancellation_interrupts_only_its_query() {
             .expect("completed observer query"),
         42
     );
+    assert!(!cancellation.cancel().expect("retired cancellation handle"));
 
-    let normal_executor = executor.clone();
-    let normal_cancellation = completed_cancellation.clone();
-    let (normal_started_sender, normal_started_receiver) = mpsc::channel();
-    let (normal_result_sender, normal_result_receiver) = mpsc::channel();
-    let normal_thread = thread::spawn(move || {
-        let result = normal_executor.with_connection_for_tests(context(), move |connection| {
-            normal_started_sender
-                .send(())
-                .expect("normal query start receiver");
-            connection.scalar_i64(
-                "WITH RECURSIVE numbers(value) AS (
-                     VALUES(0)
-                     UNION ALL
-                     SELECT value + 1 FROM numbers WHERE value < 1000000
-                 )
-                 SELECT sum(value) FROM numbers",
-            )
-        });
-        normal_result_sender
-            .send(result)
-            .expect("normal query result receiver");
-    });
-    normal_started_receiver
-        .recv_timeout(TEST_WAIT_TIMEOUT)
-        .expect("normal query started");
-    thread::sleep(Duration::from_millis(10));
-    assert!(
-        !normal_cancellation
-            .cancel()
-            .expect("cancel retired observer request")
-    );
     assert_eq!(
-        normal_result_receiver
-            .recv_timeout(TEST_WAIT_TIMEOUT)
-            .expect("ordinary query completed")
-            .expect("ordinary query succeeds"),
-        500_000_500_000
+        executor
+            .with_connection_for_tests(context(), |connection| {
+                connection.scalar_i64("SELECT 43")
+            })
+            .expect("ordinary operation after observer cancellation"),
+        43
     );
-    normal_thread.join().expect("ordinary query thread");
     executor.shutdown().expect("shutdown");
 }
 
 #[cfg(feature = "test-support")]
 #[test]
-fn observer_cancellation_before_first_statement_stops_queued_sql() {
+fn observer_cancellation_before_first_statement_stops_active_callback() {
     let directory = tempdir().expect("temporary directory");
     let path = directory.path().join("observer-pre-query-cancel.sqlite3");
     let executor = SqliteDatabaseExecutor::open(&path).expect("open database");
@@ -686,10 +669,10 @@ fn observer_cancellation_before_first_statement_stops_queued_sql() {
 
 #[cfg(feature = "test-support")]
 #[test]
-fn observer_queue_rejects_full_and_skips_cancelled_queued_work() {
+fn observer_admission_returns_busy_while_ordinary_work_runs_with_capacity_remaining() {
     let directory = tempdir().expect("temporary directory");
     let path = directory.path().join("observer-queue.sqlite3");
-    let executor = SqliteDatabaseExecutor::open_with_capacity(&path, 1).expect("open database");
+    let executor = SqliteDatabaseExecutor::open_with_capacity(&path, 2).expect("open database");
     let release_first = Arc::new(Barrier::new(2));
     let (first_started_sender, first_started_receiver) = mpsc::channel();
     let first_executor = executor.clone();
@@ -708,16 +691,16 @@ fn observer_queue_rejects_full_and_skips_cancelled_queued_work() {
         .expect("first operation started");
     wait_for_admitted(&executor, 1);
 
-    let queued_cancellation = ObserverCancellationHandle::new();
+    let observer_cancellation = ObserverCancellationHandle::default();
     let observer_executed = Arc::new(AtomicBool::new(false));
     let observer_executor = executor.clone();
-    let observer_cancellation = queued_cancellation.clone();
+    let observer_cancellation_for_thread = observer_cancellation.clone();
     let observer_executed_flag = observer_executed.clone();
     let (observer_result_sender, observer_result_receiver) = mpsc::channel();
     let observer_thread = thread::spawn(move || {
         let result = observer_executor.with_observer_connection_for_tests(
             context(),
-            observer_cancellation,
+            observer_cancellation_for_thread,
             move |_connection| {
                 observer_executed_flag.store(true, Ordering::Release);
                 Ok::<_, _>(())
@@ -727,37 +710,120 @@ fn observer_queue_rejects_full_and_skips_cancelled_queued_work() {
             .send(result)
             .expect("observer result receiver");
     });
-    wait_for_admitted(&executor, 2);
-
-    let full_queue_cancellation = ObserverCancellationHandle::new();
-    assert_eq!(
-        executor.with_observer_connection_for_tests(
-            context(),
-            full_queue_cancellation.clone(),
-            |_connection| Ok::<_, _>(()),
-        ),
-        Err(SqliteExecutorError::ObserverBusy)
-    );
-    assert!(
-        !full_queue_cancellation
-            .cancel()
-            .expect("cancel rejected request")
-    );
-
-    assert!(queued_cancellation.cancel().expect("cancel queued request"));
+    let immediate_result = observer_result_receiver.recv_timeout(TEST_WAIT_TIMEOUT);
+    let returned_before_release = immediate_result.is_ok();
     release_first.wait();
     first_thread
         .join()
         .expect("first worker thread")
         .expect("first operation");
+    let result = immediate_result.unwrap_or_else(|_| {
+        observer_result_receiver
+            .recv_timeout(TEST_WAIT_TIMEOUT)
+            .expect("observer result after releasing ordinary work")
+    });
+    observer_thread.join().expect("observer worker thread");
+    assert!(
+        returned_before_release,
+        "observer admission waited for ordinary work to finish"
+    );
+    assert_eq!(result, Err(SqliteExecutorError::ObserverBusy));
+    assert!(!observer_executed.load(Ordering::Acquire));
+    assert!(
+        !observer_cancellation
+            .cancel()
+            .expect("cancel rejected observer request")
+    );
+    assert_eq!(
+        executor
+            .with_connection_for_tests(context(), |connection| {
+                connection.scalar_i64("SELECT 42")
+            })
+            .expect("ordinary operation after Busy observer"),
+        42
+    );
+    executor.shutdown().expect("shutdown");
+}
+
+#[cfg(feature = "test-support")]
+#[test]
+fn observer_admission_race_rejects_work_behind_ordinary_queue_and_preserves_order() {
+    let directory = tempdir().expect("temporary directory");
+    let path = directory.path().join("observer-admission-race.sqlite3");
+    let executor = SqliteDatabaseExecutor::open_with_capacity(&path, 3).expect("open database");
+    let release_first = Arc::new(Barrier::new(2));
+    let (first_started_sender, first_started_receiver) = mpsc::channel();
+    let first_executor = executor.clone();
+    let first_release = release_first.clone();
+    let first_thread = thread::spawn(move || {
+        first_executor.with_connection_for_tests(context(), move |_connection| {
+            first_started_sender
+                .send(())
+                .expect("first operation started");
+            first_release.wait();
+            Ok::<_, _>(1_u8)
+        })
+    });
+    first_started_receiver
+        .recv_timeout(TEST_WAIT_TIMEOUT)
+        .expect("first operation started");
+
+    let admission_race = Arc::new(Barrier::new(3));
+    let second_executor = executor.clone();
+    let second_race = admission_race.clone();
+    let second_thread = thread::spawn(move || {
+        second_race.wait();
+        second_executor.with_connection_for_tests(context(), |_connection| Ok::<_, _>(2_u8))
+    });
+    let observer_executor = executor.clone();
+    let observer_race = admission_race.clone();
+    let (observer_result_sender, observer_result_receiver) = mpsc::channel();
+    let observer_thread = thread::spawn(move || {
+        observer_race.wait();
+        let result = observer_executor.with_observer_connection_for_tests(
+            context(),
+            ObserverCancellationHandle::new(),
+            |_connection| Ok::<_, _>(()),
+        );
+        observer_result_sender
+            .send(result)
+            .expect("observer result receiver");
+    });
+    admission_race.wait();
+
+    wait_for_admitted(&executor, 2);
     assert_eq!(
         observer_result_receiver
             .recv_timeout(TEST_WAIT_TIMEOUT)
-            .expect("cancelled queued request completed"),
-        Err(SqliteExecutorError::ObserverCancelled)
+            .expect("observer rejected during ordinary admission race"),
+        Err(SqliteExecutorError::ObserverBusy)
+    );
+    assert!(!second_thread.is_finished());
+
+    release_first.wait();
+    assert_eq!(
+        first_thread
+            .join()
+            .expect("first worker thread")
+            .expect("first operation"),
+        1
+    );
+    assert_eq!(
+        second_thread
+            .join()
+            .expect("second worker thread")
+            .expect("second operation"),
+        2
     );
     observer_thread.join().expect("observer worker thread");
-    assert!(!observer_executed.load(Ordering::Acquire));
+    assert_eq!(
+        executor
+            .with_connection_for_tests(context(), |connection| {
+                connection.scalar_i64("SELECT 42")
+            })
+            .expect("ordinary operation after admission race"),
+        42
+    );
     executor.shutdown().expect("shutdown");
 }
 

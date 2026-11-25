@@ -3,10 +3,14 @@ package com.argusromtoolkit.argus.readinessprobe
 import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.os.SystemClock
+import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
 import android.system.StructPollfd
 import java.io.Closeable
+import java.io.IOException
+import java.io.InputStream
+import java.net.SocketTimeoutException
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -91,7 +95,7 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
             if (SystemClock.elapsedRealtime() >= deadline) throw ProtocolFailure("TimedOut", "Read")
             requestExpiry = timer.schedule({ release(socket) }, (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
             val bytes = ActiveRead(
-                socket.inputStream, r, { socket.soTimeout = it }, { socket.shutdownInput() },
+                ControlInput(socket), r, { socket.soTimeout = it }, { socket.shutdownInput() },
                 { minOf(deadline - SystemClock.elapsedRealtime(), session.remaining()) },
             ).run {
                 ReadinessProtocol.response(r, null, "Read", start, SystemClock.elapsedRealtime())
@@ -105,6 +109,34 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
         } catch (_: Exception) { /* Transport failure exposes no raw diagnostic data. */ }
         finally { requestExpiry?.cancel(false); expiry.cancel(false); if (ownsRead) active.set(false); release(socket) }
     }
+
+    /** LocalSocket's stream loses the errno that distinguishes idle reads from I/O errors. */
+    private class ControlInput(socket: LocalSocket) : InputStream() {
+        private val descriptor = socket.fileDescriptor
+        private val singleByte = ByteArray(1)
+
+        init {
+            // EAGAIN only means a receive timeout on a blocking socket.
+            if (Os.fcntlInt(descriptor, OsConstants.F_GETFL, 0) and OsConstants.O_NONBLOCK != 0)
+                throw IOException("Control socket must be blocking")
+        }
+
+        override fun read(): Int =
+            if (read(singleByte, 0, 1) < 0) -1 else singleByte[0].toInt() and 0xff
+
+        override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+            if (length == 0) return 0
+            return try {
+                val count = Os.read(descriptor, bytes, offset, length)
+                if (count == 0) -1 else count
+            } catch (failure: ErrnoException) {
+                if (failure.errno == OsConstants.EAGAIN)
+                    throw SocketTimeoutException().apply { initCause(failure) }
+                throw IOException(failure)
+            }
+        }
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         session.close()

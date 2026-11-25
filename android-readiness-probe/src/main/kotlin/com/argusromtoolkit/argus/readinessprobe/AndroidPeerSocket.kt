@@ -53,10 +53,7 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
                     val socket = server.accept()
                     val uid = try { socket.peerCredentials.uid } catch (_: Exception) { socket.close(); continue }
                     if (uid != session.pinnedUid) { socket.close(); continue }
-                    synchronized(sockets) {
-                        if (sockets.size < 2) sockets.add(socket) else socket.close()
-                    }
-                    if (socket.isClosed) continue
+                    if (!registerSocket(socket)) continue
                     val ownsRead = active.compareAndSet(false, true)
                     try { workers.execute { handle(socket, ownsRead) } }
                     catch (_: RejectedExecutionException) { if (ownsRead) active.set(false); release(socket) }
@@ -66,6 +63,13 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
                 if (session.phase == ProbeSession.Phase.CLOSED) close()
             }
         }, "probe-accept").also { it.start() }
+    }
+    internal fun registerSocket(socket: LocalSocket): Boolean {
+        val registered = synchronized(sockets) {
+            !closed.get() && sockets.size < 2 && sockets.add(socket)
+        }
+        if (!registered) socket.close()
+        return registered
     }
     private fun release(socket: LocalSocket) { synchronized(sockets) { sockets.remove(socket) }; try { socket.close() } catch (_: Exception) {} }
     private fun handle(socket: LocalSocket, ownsRead: Boolean) {

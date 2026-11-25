@@ -122,7 +122,15 @@ def _stat_private_entry(directory_fd, name):
     return os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
 
 
-def _valid_install_record(record, target_reference):
+_PREVIOUS_READINESS_APK_SHA256 = (
+    "1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a"
+)
+
+
+def _valid_install_record(record, target_reference, *, historical=False):
+    artifact_digests = (adb_forward._READINESS_PROBE_APK_SHA256,)
+    if historical:
+        artifact_digests += (_PREVIOUS_READINESS_APK_SHA256,)
     if not isinstance(record, Mapping):
         return False
     identity = record.get("identity_private")
@@ -161,7 +169,7 @@ def _valid_install_record(record, target_reference):
             and type(fingerprint) is str
             and adb_forward._BUILD_PATTERN.fullmatch(fingerprint) is not None
             and artifact.get("package") == adb_forward._READINESS_PROBE_PACKAGE
-            and artifact.get("sha256") == adb_forward._READINESS_PROBE_APK_SHA256
+            and artifact.get("sha256") in artifact_digests
             and type(artifact.get("version_code")) is int
             and artifact.get("version_code") == adb_forward._READINESS_PROBE_VERSION_CODE
             and type(artifact.get("size_bytes")) is int
@@ -220,7 +228,7 @@ def _valid_install_record(record, target_reference):
         and type(fingerprint) is str
         and adb_forward._BUILD_PATTERN.fullmatch(fingerprint) is not None
         and artifact.get("package") == adb_forward._READINESS_PROBE_PACKAGE
-        and artifact.get("sha256") == adb_forward._READINESS_PROBE_APK_SHA256
+        and artifact.get("sha256") in artifact_digests
         and type(artifact.get("version_code")) is int
         and artifact.get("version_code") == adb_forward._READINESS_PROBE_VERSION_CODE
         and type(user_id) is int
@@ -232,7 +240,7 @@ def _valid_install_record(record, target_reference):
 
 def _legacy_install_identity(record, target_reference):
     """Return stable ownership facts used to detect duplicate legacy records."""
-    if not _valid_install_record(record, target_reference):
+    if not _valid_install_record(record, target_reference, historical=True):
         return None
     identity = record["identity_private"]
     artifact = record["artifact"]
@@ -347,10 +355,12 @@ def _read_install_record(
         directory, target_reference=target_reference
     )
     for attempt_id, events in journal_attempts.items():
-        if any(not _valid_install_record(event, target_reference) for event in events):
-            raise ProbeError("IncompleteEvidence", "Transport")
         latest = events[-1]
-        if latest.get("state") == "cleaned_up":
+        closed = latest.get("state") == "cleaned_up"
+        # The complete chain is validated before a retired digest can be read as history.
+        if any(not _valid_install_record(event, target_reference, historical=closed) for event in events):
+            raise ProbeError("IncompleteEvidence", "Transport")
+        if closed:
             continue
         latest_name = (
             f"readiness-install-attempt-{attempt_id}-"
@@ -506,6 +516,7 @@ def _read_install_record(
             binding is not None and len(legacy) == 2
             and all(identity is not None and identity[1:4] == binding for identity in legacy)
             and legacy[0][4] != legacy[1][4]
+            and legacy[0][6] == legacy[1][6]
         ):
             unresolved = current
 

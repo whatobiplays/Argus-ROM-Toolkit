@@ -66,7 +66,7 @@ _MAX_PROCESS_GROUP_OUTPUT_BYTES = 64 * 1024
 _TARGET_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _BUILD_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/+\-]{0,255}\Z")
 _READINESS_PROBE_APK_SHA256 = (
-    "1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a"
+    "e33ac48d86a24de54db75dd79545debfdb620fce684d336bce56e96c52b06c93"
 )
 _MAX_READINESS_PROBE_APK_BYTES = 32 * 1024 * 1024
 _LOCAL_PATTERN = re.compile(r"tcp:([1-9][0-9]{0,4})\Z")

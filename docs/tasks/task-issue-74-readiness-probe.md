@@ -160,3 +160,9 @@ The exact candidate changed-file inventory follows; build outputs and disposable
 3. Approved APK SHA-256: `1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a`.
 4. Offline verification confirmed the signer certificate SHA-256 `67d99b89d98c9f0876dd772ee2a26da90e45719cb3a716ca8a785b82f2b10c21`, package `com.argusromtoolkit.argus.readinessprobe`, version `1.0` (version code `1`), and embedded source revision `ff9ce374b50b360195026404270025dfe54edd5a` with the `probe` variant. SHA-256 was recomputed; `apksigner` checked the signature and certificate, `aapt2` read package/version, and the APK metadata was checked directly.
 5. Independent source review confirmed the pin commit changed only the APK digest constant. This artifact check is offline host evidence. No device command or B1 operation was part of this checkpoint; physical B1 remains NOT_RUN.
+
+## Corrected signed Readiness APK
+
+1. The [owner approved the replacement](https://github.com/whatobiplays/Argus-ROM-Toolkit/pull/91#issuecomment-7152229293) after the socket registration fix. The approved APK SHA-256 is `e33ac48d86a24de54db75dd79545debfdb620fce684d336bce56e96c52b06c93`. Its build and embedded source revision is `63c6a1885c05da540c478ec954808308ea26f5ce`.
+2. The signer, package, version, and variant match Checkpoint H. The replacement passed offline signature, archive, manifest, and alignment checks. The previous APK and records remain available for historical verification.
+3. Closed install chains for the previous APK still count as history after the pin changes. The existing exception for the two conflicting legacy records still requires the same verified clean baseline. Only the current digest can authorize an installation or cleanup.

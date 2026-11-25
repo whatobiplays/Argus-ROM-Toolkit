@@ -159,3 +159,7 @@ External custody, email delivery and a separate tamper-evident receipt are not
 required; do not claim local hashes prove authenticity against a malicious
 storage owner. Corrections to completed qualification evidence remain new,
 linked records rather than silent rewrites.
+
+### Private outcome capacity
+
+The shared private outcomes directory has a 1,024-entry limit. Check capacity before asking the owner to attend and again before installation. Allow 18 entries for a full attempt, including nine install journal events, six forward events, the forward lock, the receipt directory, and the formal outcome. The second check counts the receipt directory if it already exists. Atomic publication renames a temporary entry into its final name. The check also requires free space for the evidence writes and available inodes where the filesystem reports them.

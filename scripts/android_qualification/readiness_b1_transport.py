@@ -14,13 +14,38 @@ from .readiness_probe_session import ForwardSession
 _FORWARD_RECORD = re.compile(r"readiness-b1-forward-([a-f0-9]{32})-([a-z-]+)\.json")
 
 
+# Nine install events include uninstall intent and verified absence. Six forward
+# events include cleanup intent and closure. The lock, receipt directory and
+# formal outcome each use one entry. Publication renames a temporary entry.
+B1_OUTCOME_ENTRY_BUDGET = 9 + 6 + 1 + 1 + 1
+# Allow space for the 64 KiB journal records, forward and receipt records,
+# formal outcome and filesystem overhead.
+_B1_MIN_FREE_BYTES = 1024 * 1024
+
+
+def require_b1_capacity(directory, *, receipts_created=False):
+    """Check room for one attended attempt and its cleanup before mutation."""
+    fd = _evidence_storage._directory_descriptor(directory)
+    try:
+        remaining = B1_OUTCOME_ENTRY_BUDGET - int(receipts_created)
+        require(len(os.listdir(fd)) + remaining <= _evidence_storage.MAX_OUTCOMES_ENTRIES,
+                "ResourceLimitExceeded", "Transport")
+        space = os.fstatvfs(fd)
+        require(space.f_bavail * space.f_frsize >= _B1_MIN_FREE_BYTES
+                # One Readiness exchange can write one file inside the receipt directory.
+                and (space.f_files == 0 or space.f_favail >= remaining + 1),
+                "ResourceLimitExceeded", "Transport")
+    finally:
+        os.close(fd)
+
+
 def _require_closed_forward_obligations(directory):
     fd = _evidence_storage._directory_descriptor(directory)
     try:
         names = os.listdir(fd)
     finally:
         os.close(fd)
-    require(len(names) <= 256, "ResourceLimitExceeded", "Transport")
+    require(len(names) <= _evidence_storage.MAX_OUTCOMES_ENTRIES, "ResourceLimitExceeded", "Transport")
     attempts = {}
     for name in names:
         if not name.startswith("readiness-b1-forward-"):

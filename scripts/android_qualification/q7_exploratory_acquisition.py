@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Optional
 
+from . import _evidence_storage
 from .adb_forward import (
     _BUILD_PATTERN,
     Q7CommandResult,
@@ -1763,7 +1764,7 @@ def _private_identity_serial(outcomes_directory):
     candidates = []
     try:
         names = os.listdir(directory_fd)
-        if len(names) > 256:
+        if len(names) > _evidence_storage.MAX_OUTCOMES_ENTRIES:
             raise ProbeError("ResourceLimitExceeded", "Transport")
         for name in names:
             try:

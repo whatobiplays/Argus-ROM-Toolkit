@@ -5,9 +5,14 @@ import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from .readiness_b1_transport import _require_closed_forward_obligations, run_readiness_exchange
+from . import _evidence_storage
+from .readiness_b1_transport import (
+    B1_OUTCOME_ENTRY_BUDGET, _require_closed_forward_obligations,
+    require_b1_capacity, run_readiness_exchange,
+)
 from .readiness_probe import AttemptRunner, EvidenceStore, Identity, ProbeError, RESPONSE_CAP, frame, success
 from .readiness_probe_session import Discovery
 from .test_readiness_probe_session import FakeADB
@@ -17,9 +22,15 @@ class ReadinessExchangeTests(unittest.TestCase):
     def run_case(
         self, *, approved=True, failing_read=False, response=b"", interrupted=False,
         release_failed=False, persistence_failed=False, readback_failed=False, late_open=False,
+        near_capacity=False,
     ):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
+            if near_capacity:
+                # Other phases leave one entry for the outcome and six for
+                # the forward events, plus the forward lock and receipt directory.
+                for index in range(_evidence_storage.MAX_OUTCOMES_ENTRIES - 9):
+                    (path / f"history-{index}").touch()
             adapter = FakeADB()
             now = [1]
             discovery = Discovery("a" * 32, "b" * 32, "localabstract:probe", 1, 2000, 100, 5100)
@@ -120,12 +131,39 @@ class ReadinessExchangeTests(unittest.TestCase):
                     _require_closed_forward_obligations(path)
                 self.assertEqual(len(adapter.removed), int(readback_failed))
                 return
+            if near_capacity:
+                (path / "formal-outcome").touch()
+                self.assertEqual(len(list(path.iterdir())), _evidence_storage.MAX_OUTCOMES_ENTRIES)
+            _require_closed_forward_obligations(path)
             self.assertEqual(len(adapter.removed), 1)
             self.assertFalse(adapter.forwards)
             self.assertTrue(any(json.loads(f.read_bytes())["state"] == "closed" for f in path.glob("*.json")))
 
     def test_ready_releases_both_connections_and_removes_owned_forward(self):
         self.run_case()
+
+    def test_capacity_counts_inode_for_nested_failure_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for receipts_created in (False, True):
+                remaining = B1_OUTCOME_ENTRY_BUDGET - int(receipts_created)
+                space = SimpleNamespace(f_bavail=256, f_frsize=4096, f_files=8192, f_favail=remaining)
+                with patch("scripts.android_qualification.readiness_b1_transport.os.fstatvfs",
+                           return_value=space):
+                    with self.assertRaises(ProbeError) as failure:
+                        require_b1_capacity(Path(directory), receipts_created=receipts_created)
+                    self.assertEqual(failure.exception.code, "ResourceLimitExceeded")
+                    space.f_favail += 1
+                    require_b1_capacity(Path(directory), receipts_created=receipts_created)
+                    space.f_bavail -= 1
+                    with self.assertRaises(ProbeError) as failure:
+                        require_b1_capacity(Path(directory), receipts_created=receipts_created)
+                    self.assertEqual(failure.exception.code, "ResourceLimitExceeded")
+
+    def test_forward_restores_at_the_outcomes_limit(self):
+        self.run_case(near_capacity=True)
+
+    def test_forward_obligation_remains_open_near_the_outcomes_limit(self):
+        self.run_case(near_capacity=True, readback_failed=True)
 
     def test_refused_uid_prevents_readiness_and_removes_owned_forward(self):
         self.run_case(approved=False)

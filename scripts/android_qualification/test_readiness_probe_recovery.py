@@ -1192,6 +1192,55 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
                     recovery._read_install_record(directory, q7.TARGET_REFERENCE)
                 self.assertEqual(raised.exception.code, "IntegrityConflict")
 
+    def test_admitted_capacity_preserves_history_and_restores_at_limit(self):
+        from . import _evidence_storage, readiness_b1_transport
+
+        directory = self.private_directory()
+        payload = b"reviewed readiness apk bytes"
+        digest = hashlib.sha256(payload).hexdigest()
+        old = self.journal_for_attempt(directory, digest=digest)
+        old.checkpoint("cleaned_up", "verified_absent")
+        history = {path: record_digest(path) for path in directory.iterdir()}
+        limit = _evidence_storage.MAX_OUTCOMES_ENTRIES
+        threshold = limit - readiness_b1_transport.B1_OUTCOME_ENTRY_BUDGET
+        for index in range(threshold - len(history)):
+            (directory / f"historical-{index}").touch()
+        excess = directory / "excess"
+        excess.touch()
+        with self.assertRaises(probe.ProbeError) as failure:
+            readiness_b1_transport.require_b1_capacity(directory)
+        self.assertEqual(failure.exception.code, "ResourceLimitExceeded")
+        excess.unlink()
+        readiness_b1_transport.require_b1_capacity(directory)
+        (directory / "receipts").mkdir()
+        readiness_b1_transport.require_b1_capacity(directory, receipts_created=True)
+
+        runner = LifecycleRunner()
+        with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", digest):
+            adapter, _, _ = self.install_with_lifecycle_runner(runner, directory, payload=payload)
+            for index in range(7):
+                (directory / f"forward-phase-{index}").touch()
+            self.assertLess(len(list(directory.iterdir())), limit)
+            active, _, _ = recovery._read_install_record(directory, q7.TARGET_REFERENCE)
+            self.assertEqual(active["state"], "completed")
+            adapter.uninstall_readiness_probe(TARGET, deadline=time.monotonic() + 30)
+        (directory / "formal-outcome").touch()
+        self.assertEqual(len(list(directory.iterdir())), limit)
+        self.assertFalse(runner.package_present)
+        readiness_b1_transport._require_closed_forward_obligations(directory)
+        events = readiness_probe_install_journal.read_install_journal_events(
+            directory, target_reference=q7.TARGET_REFERENCE,
+        )
+        self.assertTrue(all(events_for_attempt[-1]["state"] == "cleaned_up"
+                            for events_for_attempt in events.values()))
+        self.assertEqual({path: record_digest(path) for path in history}, history)
+        excess.touch()
+        with self.assertRaises(probe.ProbeError) as failure:
+            readiness_probe_install_journal.read_install_journal_events(
+                directory, target_reference=q7.TARGET_REFERENCE,
+            )
+        self.assertEqual(failure.exception.code, "ResourceLimitExceeded")
+
     def test_fresh_attempt_blocks_changed_live_baseline_before_install_create(self):
         class ChangingRunner(LifecycleRunner):
             def _session_dump(self):

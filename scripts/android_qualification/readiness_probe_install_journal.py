@@ -281,7 +281,7 @@ def read_install_journal_events(
     grouped = {}
     try:
         names = os.listdir(directory_fd)
-        if len(names) > 256:
+        if len(names) > _evidence_storage.MAX_OUTCOMES_ENTRIES:
             raise ProbeError("ResourceLimitExceeded", "Transport")
         for name in names:
             if not name.startswith("readiness-install-attempt-"):

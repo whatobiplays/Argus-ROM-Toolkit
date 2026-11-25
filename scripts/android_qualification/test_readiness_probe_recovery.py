@@ -1213,36 +1213,43 @@ class ReadinessProbeRecoveryTests(unittest.TestCase):
         self.assertEqual([event["phase"] for event in events], ["before_install"])
 
     def test_replacement_pin_preserves_closed_and_legacy_history_without_granting_ownership(self):
-        directory = self.private_directory()
-        previous = "1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a"
-        replacement = "e33ac48d86a24de54db75dd79545debfdb620fce684d336bce56e96c52b06c93"
-        with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", previous):
-            first = legacy_install_record()
-        write_record(directory, first, name="legacy-1.json")
-        write_record(directory, dict(first, package_uid_private=UID + 1), name="legacy-2.json")
-        closed = self.journal_for_attempt(directory, digest=previous)
-        closed.checkpoint("cleaned_up", "verified_absent")
-        binding = (TARGET, BUILD, 10)
-        with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", replacement):
-            self.assertIsNone(recovery._read_install_record(
-                directory, q7.TARGET_REFERENCE, allow_no_active=True, fresh_binding=binding,
-            ))
-            self.assertFalse(recovery._valid_install_record(first, q7.TARGET_REFERENCE))
-            with self.assertRaises(probe.ProbeError):
-                recovery._read_install_record(directory, q7.TARGET_REFERENCE)
-            active = self.journal_for_attempt(directory, attempt_id="e" * 32, digest=previous)
-            self.assertFalse(recovery._valid_install_record(active.latest, q7.TARGET_REFERENCE))
-            with self.assertRaises(probe.ProbeError):
-                recovery._read_install_record(
-                    directory, q7.TARGET_REFERENCE, allow_no_active=True, fresh_binding=binding,
-                )
+        retired = (
+            "1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a",
+            "e33ac48d86a24de54db75dd79545debfdb620fce684d336bce56e96c52b06c93",
+        )
+        replacement = "b93ed0225f43df04e831149053e36b897dbcfe8f428d3a61c0502210eee79a77"
+        for prior in retired:
+            with self.subTest(prior=prior):
+                directory = self.private_directory()
+                with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", prior):
+                    first = legacy_install_record()
+                write_record(directory, first, name="legacy-1.json")
+                write_record(directory, dict(first, package_uid_private=UID + 1), name="legacy-2.json")
+                for attempt, digest in zip(("a" * 32, "b" * 32), retired, strict=True):
+                    closed = self.journal_for_attempt(directory, attempt_id=attempt, digest=digest)
+                    closed.checkpoint("cleaned_up", "verified_absent")
+                with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", replacement):
+                    self.assertIsNone(recovery._read_install_record(
+                        directory, q7.TARGET_REFERENCE, allow_no_active=True, fresh_binding=(TARGET, BUILD, 10),
+                    ))
+                    self.assertFalse(recovery._valid_install_record(first, q7.TARGET_REFERENCE))
+                    with self.assertRaises(probe.ProbeError):
+                        recovery._read_install_record(directory, q7.TARGET_REFERENCE)
+                    active = self.journal_for_attempt(directory, attempt_id="e" * 32, digest=prior)
+                    self.assertFalse(recovery._valid_install_record(active.latest, q7.TARGET_REFERENCE))
+                    with self.assertRaises(probe.ProbeError):
+                        recovery._read_install_record(
+                            directory, q7.TARGET_REFERENCE, allow_no_active=True, fresh_binding=(TARGET, BUILD, 10),
+                        )
 
     def test_replacement_pin_does_not_make_a_mixed_digest_legacy_pair_eligible(self):
+        older = "1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a"
+        newer = "e33ac48d86a24de54db75dd79545debfdb620fce684d336bce56e96c52b06c93"
         directory = self.private_directory()
-        prior = recovery._PREVIOUS_READINESS_APK_SHA256
-        first = legacy_install_record()
+        with mock.patch.object(adb_forward, "_READINESS_PROBE_APK_SHA256", newer):
+            first = legacy_install_record()
         previous = dict(first, package_uid_private=UID + 1,
-                        artifact=dict(first["artifact"], sha256=prior))
+                        artifact=dict(first["artifact"], sha256=older))
         write_record(directory, first, name="legacy-1.json")
         write_record(directory, previous, name="legacy-2.json")
         with self.assertRaises(probe.ProbeError):

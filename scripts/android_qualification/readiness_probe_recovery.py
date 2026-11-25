@@ -122,15 +122,16 @@ def _stat_private_entry(directory_fd, name):
     return os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
 
 
-_PREVIOUS_READINESS_APK_SHA256 = (
-    "1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a"
+_RETIRED_READINESS_APK_SHA256 = (
+    "1cdac21e45275ccc0c4e55aa4cdde320549a07807e7b664cfb573ff7310be37a",
+    "e33ac48d86a24de54db75dd79545debfdb620fce684d336bce56e96c52b06c93",
 )
 
 
 def _valid_install_record(record, target_reference, *, historical=False):
     artifact_digests = (adb_forward._READINESS_PROBE_APK_SHA256,)
     if historical:
-        artifact_digests += (_PREVIOUS_READINESS_APK_SHA256,)
+        artifact_digests += _RETIRED_READINESS_APK_SHA256
     if not isinstance(record, Mapping):
         return False
     identity = record.get("identity_private")

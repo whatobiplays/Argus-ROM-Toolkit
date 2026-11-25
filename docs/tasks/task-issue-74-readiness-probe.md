@@ -173,3 +173,8 @@ The exact candidate changed-file inventory follows; build outputs and disposable
 2. At `762286bbb0ed157d5df2eac198e1f7f1b1fc3bbe`, Stop and activity backgrounding left the accept thread alive at the one-second release bound. An accepted worker blocked on a partial request also remained alive. Intentional discovery shutdown released promptly, but still displayed a transport-failure message.
 3. The correction shuts down the listening and accepted descriptors before closing them, so pending native calls can return. In eight API 31 Stop and backgrounding cases, the accept thread, connection workers, and timer terminated in 1–6 ms. The endpoint refused new connections, accepted peers received EOF, and returning to the activity left the session closed. Intentional shutdown emitted no failure message. The existing one-second release bound still applies.
 4. This is emulator evidence. The signed replacement requires owner approval before any pin update or physical use. Formal B1 remains `BLOCKED` and B2 remains `NOT_RUN`.
+
+## Approved API 31 Readiness and shutdown replacement
+
+1. The [owner approved this exact replacement](https://github.com/whatobiplays/Argus-ROM-Toolkit/pull/91#issuecomment-7155480128). The APK SHA-256 is `b93ed0225f43df04e831149053e36b897dbcfe8f428d3a61c0502210eee79a77`. The build and embedded source revision is `2c1a4fa41b76f4aad06134dcdc38ec84ad07c0e3`. The signer, package, version, and variant match Checkpoint H.
+2. The two previously approved digests remain eligible for validated closed histories and the existing same-digest legacy exception. Current installation and cleanup authority require the replacement digest. The intermediate emulator candidate grants no authority.

@@ -8,22 +8,24 @@ import android.system.Os
 import android.system.OsConstants
 import android.system.StructPollfd
 import java.io.Closeable
+import java.io.FileDescriptor
 import java.io.IOException
 import java.io.InputStream
 import java.net.SocketTimeoutException
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Owns a fixed worker set. Closing sockets interrupts blocked native I/O. */
+/** Owns the listener and a fixed set of connection workers. */
 class AndroidPeerSocket(private val session: ProbeSession, private val report: (String) -> Unit) : Closeable {
     private val workers = ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS, SynchronousQueue())
     private val timer = ScheduledThreadPoolExecutor(1)
     private val closed = AtomicBoolean(false)
     private val active = AtomicBoolean(false)
     private val sockets = mutableSetOf<LocalSocket>()
+    private val listenerLock = Any()
     private var listener: LocalServerSocket? = null
     private var acceptThread: Thread? = null
-    fun start(discovery: Boolean) {
+    fun start(discovery: Boolean) = synchronized(listenerLock) {
         check(listener == null && !closed.get())
         check(session.phase == if (discovery) ProbeSession.Phase.DISCOVERY else ProbeSession.Phase.ENFORCING)
         val server = LocalServerSocket(session.endpoint)
@@ -47,8 +49,7 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
                         { NativePeerConnection(server.accept()) },
                         { !closed.get() && session.remaining() > 0 },
                     ).observe()
-                    server.close()
-                    listener = null
+                    closeListener(server)
                     session.observed(observation.uid)
                     report("Discovery denied one peer. UID: ${observation.uid}. Session: ${session.identity}; attempt: ${session.attempt}; endpoint: ${session.endpoint}; Android elapsed interval: ${observation.started}..${observation.finished}. Confirm host correlation separately; clocks are independent.")
                     return@Thread
@@ -62,12 +63,27 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
                     try { workers.execute { handle(socket, ownsRead) } }
                     catch (_: RejectedExecutionException) { if (ownsRead) active.set(false); release(socket) }
                 }
-            } catch (_: Exception) { session.close(); report("Transport failed; session closed") }
-            finally { try { server.close() } catch (_: Exception) {}
+            } catch (_: Exception) {
+                if (!closed.get()) {
+                    session.close()
+                    report("Transport failed; session closed")
+                }
+            }
+            finally { try { closeListener(server) } catch (_: Exception) {}
                 if (session.phase == ProbeSession.Phase.CLOSED) close()
             }
         }, "probe-accept").also { it.start() }
     }
+
+    private fun closeListener(server: LocalServerSocket, interrupt: Boolean = false) {
+        synchronized(listenerLock) {
+            if (listener !== server) return
+            if (interrupt) shutdown(server.fileDescriptor)
+            server.close()
+            listener = null
+        }
+    }
+
     internal fun registerSocket(socket: LocalSocket): Boolean {
         val registered = synchronized(sockets) {
             !closed.get() && sockets.size < 2 && sockets.add(socket)
@@ -75,7 +91,23 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
         if (!registered) socket.close()
         return registered
     }
-    private fun release(socket: LocalSocket) { synchronized(sockets) { sockets.remove(socket) }; try { socket.close() } catch (_: Exception) {} }
+    private fun release(socket: LocalSocket) {
+        synchronized(sockets) {
+            if (sockets.remove(socket)) disconnect(socket)
+        }
+    }
+
+    private fun disconnect(socket: LocalSocket) {
+        shutdown(socket.fileDescriptor)
+        try { socket.close() } catch (_: Exception) {}
+    }
+
+    private fun shutdown(descriptor: FileDescriptor?) {
+        // Shutdown wakes native accept and receive calls that can outlive close.
+        if (descriptor != null) {
+            try { Os.shutdown(descriptor, OsConstants.SHUT_RDWR) } catch (_: ErrnoException) {}
+        }
+    }
     private fun handle(socket: LocalSocket, ownsRead: Boolean) {
         val start = SystemClock.elapsedRealtime()
         val expiry = timer.schedule({ release(socket) }, minOf(5000, session.remaining()), TimeUnit.MILLISECONDS)
@@ -140,8 +172,14 @@ class AndroidPeerSocket(private val session: ProbeSession, private val report: (
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         session.close()
-        try { listener?.close() } catch (_: Exception) {}
-        synchronized(sockets) { sockets.toList().forEach { try { it.close() } catch (_: Exception) {} }; sockets.clear() }
+        val server = synchronized(listenerLock) { listener }
+        if (server != null) {
+            try { closeListener(server, interrupt = true) } catch (_: Exception) {}
+        }
+        synchronized(sockets) {
+            sockets.forEach(::disconnect)
+            sockets.clear()
+        }
         workers.shutdownNow(); timer.shutdownNow()
         // A separate bounded join avoids blocking the owner UI on native teardown.
         Thread({

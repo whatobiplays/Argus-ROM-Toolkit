@@ -22,6 +22,7 @@ from scripts.android_qualification import evidence
 
 SCHEMA_VERSION = 1
 MAX_RECORD_BYTES = 64 * 1024
+MAX_OUTCOMES_ENTRIES = 1024
 _SESSION_ID = re.compile(r"[0-9a-f]{32}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _OPAQUE_ALIAS_SUFFIX = re.compile(r"[0-9a-f]{32}\Z")

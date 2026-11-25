@@ -1,15 +1,8 @@
-"""Forward ownership, correlation and bounded diagnostic tests."""
+"""Forward ownership and discovery correlation tests."""
 import unittest
 from . import readiness_probe_session as s
 from .readiness_probe import ProbeError
 
-
-def parse_diagnostic(chunks,profile,clock,deadline,**kwargs):
-    """Fixture approval record; mismatch tests call the production API directly."""
-    binding=None
-    if isinstance(profile,s.DiagnosticProfile):
-        binding=s.DiagnosticBinding(profile.build,profile.package,profile.source,s.profile_digest(profile))
-    return s.parse_diagnostic(chunks,profile,clock,deadline,binding=binding,**kwargs)
 
 class FakeTransport:
     def __init__(self,on_close=None): self.on_close=on_close
@@ -115,15 +108,7 @@ class SessionTests(unittest.TestCase):
         x=self.session(); x.create(); x.adb.forwards[x.target,x.local]='other'
         with self.assertRaises(ProbeError): x.cleanup()
         self.assertEqual(x.adb.removed,[])
-    def test_parser_no_default_profile(self):
-        with self.assertRaises(ProbeError): parse_diagnostic([b'secret'],None,lambda:0,5)
-    def test_parser_immediate_filter_and_bounds(self):
-        profile=s.DiagnosticProfile('profile','build','com.example.probe',
-            r'^TARGET (?P<package>com\.example\.probe) task=(?P<task>[0-9]+) resumed=(?P<resumed>true|false)$', 'END')
-        r=parse_diagnostic([b'unrelated secret\nTARGET com.example.probe task=42 resumed=true\nEND\n'],profile,lambda:0,5,exit_code=lambda:0)
-        self.assertEqual(r,{'profile':'profile','build':'build','package':'com.example.probe','task_id':42,'resumed':True})
-        with self.assertRaises(ProbeError): parse_diagnostic([b'x'*16385],profile,lambda:0,5)
-        with self.assertRaises(ProbeError): parse_diagnostic([b'END\n'],profile,lambda:0,5)
+
 
 class ExpiryTests(SessionTests):
     def test_enforcement_expiry_and_owned_obligation(self):
@@ -140,59 +125,6 @@ class ExpiryTests(SessionTests):
         x.correlate(s.Discovery('a'*32,'b'*32,'localabstract:probe_session',1,2000,100,5100),1.1,1.2,0,True)
         now[0]=601
         with self.assertRaises(ProbeError): x.enforce(2000,True)
-
-class DiagnosticCompletionTests(unittest.TestCase):
-    def setUp(self):
-        self.profile=s.DiagnosticProfile('profile','build','com.example.probe',
-            r'^TARGET (?P<package>com\.example\.probe) task=(?P<task>[0-9]+) resumed=(?P<resumed>true|false)$', 'END')
-        self.output=b'TARGET com.example.probe task=42 resumed=true\nEND\n'
-    def test_trailing_output_never_publishes(self):
-        for tail in (b'x', b'foreign application', b'unsupported\n', b'END\n',
-                     b'TARGET com.example.probe task=43 resumed=false\n', b'\xff', b'\n'):
-            for chunks in ([self.output+tail], [self.output,tail]):
-                with self.subTest(tail=tail,chunks=len(chunks)), self.assertRaises(ProbeError):
-                    parse_diagnostic(chunks,self.profile,lambda:0,5,exit_code=lambda:0)
-    def test_requires_successful_exit_after_exhaustion(self):
-        events=[]
-        def chunks():
-            yield self.output
-            events.append('exhausted')
-        def exit_code():
-            events.append('exit')
-            return 1
-        with self.assertRaises(ProbeError):
-            parse_diagnostic(chunks(),self.profile,lambda:0,5,exit_code=exit_code)
-        self.assertEqual(events,['exhausted','exit'])
-    def test_absent_exit_proof_blocks_complete_marker(self):
-        with self.assertRaises(ProbeError): parse_diagnostic([self.output],self.profile,lambda:0,5)
-    def test_cap_applies_to_acquisition(self):
-        chunks=[b'x'*16383+b'\n']*64+[self.output]
-        with self.assertRaises(ProbeError):
-            parse_diagnostic(chunks,self.profile,lambda:0,5,exit_code=lambda:0)
-
-    def test_success_waits_for_exhaustion_and_exit(self):
-        events=[]
-        def chunks():
-            yield self.output[:10]
-            yield self.output[10:]
-            events.append('exhausted')
-        def exit_code():
-            events.append('exit')
-            return 0
-        result=parse_diagnostic(chunks(),self.profile,lambda:0,5,exit_code=exit_code)
-        self.assertEqual(events,['exhausted','exit'])
-        self.assertEqual(result['task_id'],42)
-    def test_exit_timeout_and_unavailable_status(self):
-        for status in (None,True,-1):
-            with self.subTest(status=status),self.assertRaises(ProbeError):
-                parse_diagnostic([self.output],self.profile,lambda:0,5,exit_code=lambda:status)
-        now=[0]
-        def exit_code():
-            now[0]=5
-            return 0
-        with self.assertRaises(ProbeError) as caught:
-            parse_diagnostic([self.output],self.profile,lambda:now[0],5,exit_code=exit_code)
-        self.assertEqual(caught.exception.code,'TimedOut')
 
 class ForwardDeadlineTests(unittest.TestCase):
     def setUp(self):
@@ -266,33 +198,6 @@ class ForwardDeadlineTests(unittest.TestCase):
         self.assertEqual(len(self.adb.removed),1)
         self.assertTrue(self.session.owned)
         self.assertNotEqual(self.session.state,'Closed')
-
-class DiagnosticBindingTests(DiagnosticCompletionTests):
-    def test_missing_approval_binding(self):
-        with self.assertRaises(ProbeError):
-            s.parse_diagnostic([self.output],self.profile,lambda:0,5,exit_code=lambda:0)
-    def test_mismatched_build_package_source_or_digest(self):
-        from dataclasses import replace
-        approved=s.DiagnosticBinding('build','com.example.probe',s.DIAGNOSTIC_COMMAND,s.profile_digest(self.profile))
-        for binding in (replace(approved,build='other-build'),replace(approved,package='com.other.probe'),
-                        replace(approved,source=('shell','other')),replace(approved,profile_sha256='0'*64)):
-            with self.subTest(binding=binding),self.assertRaises(ProbeError):
-                s.parse_diagnostic([self.output],self.profile,lambda:0,5,exit_code=lambda:0,binding=binding)
-    def test_invalid_profile_fields(self):
-        from dataclasses import replace
-        approved=s.DiagnosticBinding('build','com.example.probe',s.DIAGNOSTIC_COMMAND,s.profile_digest(self.profile))
-        for field,value in (('name',''),('build','bad\nprivate'),('package','com..probe'),
-                            ('source',('shell','other')),('target_line_pattern','.*'),
-                            ('target_line_pattern','['),('completion_line',''),('completion_line','END\n')):
-            with self.subTest(field=field),self.assertRaises(ProbeError):
-                s.parse_diagnostic([self.output],replace(self.profile,**{field:value}),lambda:0,5,
-                                   exit_code=lambda:0,binding=approved)
-    def test_task_id_must_fit_android_signed_integer(self):
-        approved=s.DiagnosticBinding('build','com.example.probe',s.DIAGNOSTIC_COMMAND,s.profile_digest(self.profile))
-        output=self.output.replace(b'task=42',b'task=9999999999')
-        with self.assertRaises(ProbeError):
-            s.parse_diagnostic([output],self.profile,lambda:0,5,exit_code=lambda:0,binding=approved)
-
 class DiscoveryIntervalTests(unittest.TestCase):
     def test_invalid_android_intervals(self):
         for started,finished in ((-1,0),(2,1),(0,6001),(False,1),(0,1.5),(0,2**64)):

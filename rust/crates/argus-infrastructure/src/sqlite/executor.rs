@@ -15,6 +15,8 @@ use argus_application::{
     ApplicationPortError, OperationContext, PersistenceError, UnitOfWorkFactory,
 };
 #[cfg(feature = "test-support")]
+use rusqlite::InterruptHandle;
+#[cfg(feature = "test-support")]
 use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use rusqlite::{Connection, OpenFlags};
 
@@ -25,6 +27,9 @@ use super::unit_of_work::SqliteUnitOfWork;
 
 /// Default bounded queue capacity for the database worker.
 pub const DEFAULT_QUEUE_CAPACITY: usize = 32;
+
+#[cfg(feature = "test-support")]
+const NORMAL_BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 
 type JobResult = Result<Box<dyn Any + Send>, SqliteExecutorError>;
 type Job = Box<dyn FnOnce(&mut Connection, OperationContext) -> JobResult + Send + 'static>;
@@ -62,6 +67,156 @@ struct SharedExecutor {
     test_progress: Mutex<()>,
     #[cfg(feature = "test-support")]
     test_progress_notify: Condvar,
+}
+
+#[cfg(feature = "test-support")]
+enum ObserverCancellationState {
+    Queued,
+    Running(InterruptHandle),
+    Retiring,
+    Cancelled,
+    Finished,
+}
+
+/// Controls cancellation for one host-side observer database operation.
+///
+/// The handle is available only with `test-support`. Cancellation affects the
+/// operation while it is queued or running and cannot interrupt later work.
+/// A SQLite progress check also catches cancellation just before the first
+/// statement starts, when there is no active statement for `interrupt` to stop.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ObserverCancellationHandle {
+    state: Arc<Mutex<ObserverCancellationState>>,
+    cancelled: Arc<AtomicBool>,
+}
+
+#[cfg(feature = "test-support")]
+impl ObserverCancellationHandle {
+    /// Creates a cancellation handle for one observer operation.
+    pub fn new() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(ObserverCancellationState::Queued)),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Cancels the operation if it has not finished.
+    ///
+    /// Returns `true` when cancellation was recorded and `false` after the
+    /// operation has already been cancelled or retired.
+    pub fn cancel(&self) -> Result<bool, SqliteExecutorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SqliteExecutorError::Internal)?;
+        match &*state {
+            ObserverCancellationState::Queued => {
+                self.cancelled.store(true, Ordering::Release);
+                *state = ObserverCancellationState::Cancelled;
+                Ok(true)
+            }
+            ObserverCancellationState::Running(interrupt) => {
+                // Keep this lock until the interrupt call completes. The
+                // worker cannot retire this handle or start the next item
+                // while cancellation targets the current connection.
+                self.cancelled.store(true, Ordering::Release);
+                interrupt.interrupt();
+                *state = ObserverCancellationState::Cancelled;
+                Ok(true)
+            }
+            ObserverCancellationState::Retiring
+            | ObserverCancellationState::Cancelled
+            | ObserverCancellationState::Finished => Ok(false),
+        }
+    }
+
+    fn activate(
+        &self,
+        interrupt: InterruptHandle,
+    ) -> Result<ObserverOperationGuard, SqliteExecutorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SqliteExecutorError::Internal)?;
+        match &*state {
+            ObserverCancellationState::Queued => {
+                *state = ObserverCancellationState::Running(interrupt);
+                Ok(ObserverOperationGuard {
+                    cancellation: self.clone(),
+                })
+            }
+            ObserverCancellationState::Cancelled => Err(SqliteExecutorError::ObserverCancelled),
+            ObserverCancellationState::Running(_)
+            | ObserverCancellationState::Retiring
+            | ObserverCancellationState::Finished => Err(SqliteExecutorError::Internal),
+        }
+    }
+
+    fn retire(&self) -> Result<bool, SqliteExecutorError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SqliteExecutorError::Internal)?;
+        match &*state {
+            ObserverCancellationState::Running(_) => {
+                *state = ObserverCancellationState::Retiring;
+                Ok(false)
+            }
+            ObserverCancellationState::Cancelled => Ok(true),
+            ObserverCancellationState::Queued
+            | ObserverCancellationState::Retiring
+            | ObserverCancellationState::Finished => Err(SqliteExecutorError::Internal),
+        }
+    }
+
+    fn finish(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            if matches!(
+                &*state,
+                ObserverCancellationState::Queued
+                    | ObserverCancellationState::Running(_)
+                    | ObserverCancellationState::Retiring
+            ) {
+                *state = ObserverCancellationState::Finished;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+struct ObserverOperationGuard {
+    cancellation: ObserverCancellationHandle,
+}
+
+#[cfg(feature = "test-support")]
+impl ObserverOperationGuard {
+    fn retire(&self) -> Result<bool, SqliteExecutorError> {
+        self.cancellation.retire()
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl Drop for ObserverOperationGuard {
+    fn drop(&mut self) {
+        self.cancellation.finish();
+    }
+}
+
+#[cfg(feature = "test-support")]
+struct ObserverSubmissionGuard {
+    cancellation: ObserverCancellationHandle,
+    accepted: bool,
+}
+
+#[cfg(feature = "test-support")]
+impl Drop for ObserverSubmissionGuard {
+    fn drop(&mut self) {
+        if !self.accepted {
+            self.cancellation.finish();
+        }
+    }
 }
 
 /// The owned, cloneable handle for one dedicated SQLite worker thread.
@@ -311,6 +466,87 @@ impl SqliteDatabaseExecutor {
         F: FnOnce(&mut SqliteConnection<'_>) -> Result<T, SqliteOperationError> + Send + 'static,
     {
         self.with_connection(context, callback)
+    }
+
+    /// Runs a host-side observer callback with bounded queueing and cancellation.
+    ///
+    /// The observer operation uses a zero-millisecond SQLite busy timeout and
+    /// restores the normal five-second timeout before returning. This method
+    /// and its cancellation handle are compiled only with `test-support`. A
+    /// progress check covers cancellation that races with the first statement.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn with_observer_connection_for_tests<T, F>(
+        &self,
+        context: OperationContext,
+        cancellation: ObserverCancellationHandle,
+        callback: F,
+    ) -> Result<T, SqliteExecutorError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut SqliteConnection<'_>) -> Result<T, SqliteOperationError> + Send + 'static,
+    {
+        let worker_cancellation = cancellation.clone();
+        let job: Job = Box::new(move |connection, operation_context| {
+            let operation = worker_cancellation.activate(connection.get_interrupt_handle())?;
+            if connection.busy_timeout(Duration::ZERO).is_err() {
+                let cancelled = operation.retire();
+                let restored = connection.busy_timeout(NORMAL_BUSY_TIMEOUT);
+                if restored.is_err() {
+                    return Err(SqliteExecutorError::Internal);
+                }
+                if cancelled? {
+                    return Err(SqliteExecutorError::ObserverCancelled);
+                }
+                return Err(SqliteExecutorError::Internal);
+            }
+
+            let progress_cancelled = Arc::clone(&worker_cancellation.cancelled);
+            if connection
+                .progress_handler(
+                    1_000,
+                    Some(move || progress_cancelled.load(Ordering::Acquire)),
+                )
+                .is_err()
+            {
+                let cancelled = operation.retire();
+                let handler_cleared = connection.progress_handler(0, None::<fn() -> bool>);
+                let restored = connection.busy_timeout(NORMAL_BUSY_TIMEOUT);
+                if handler_cleared.is_err() || restored.is_err() {
+                    return Err(SqliteExecutorError::Internal);
+                }
+                if cancelled? {
+                    return Err(SqliteExecutorError::ObserverCancelled);
+                }
+                return Err(SqliteExecutorError::Internal);
+            }
+
+            let operation_result = {
+                let mut scoped_connection = SqliteConnection::new(connection, operation_context);
+                callback(&mut scoped_connection)
+            };
+            let cancelled = operation.retire();
+            let handler_cleared = connection.progress_handler(0, None::<fn() -> bool>);
+            let restored = connection.busy_timeout(NORMAL_BUSY_TIMEOUT);
+            if handler_cleared.is_err() || restored.is_err() {
+                return Err(SqliteExecutorError::Internal);
+            }
+            if cancelled? {
+                return Err(SqliteExecutorError::ObserverCancelled);
+            }
+            operation_result
+                .map(|value| Box::new(value) as Box<dyn Any + Send>)
+                .map_err(|error| match error {
+                    SqliteOperationError::Locked => SqliteExecutorError::ObserverBusy,
+                    SqliteOperationError::Constraint | SqliteOperationError::Failed => {
+                        SqliteExecutorError::Internal
+                    }
+                    SqliteOperationError::Application(error) => {
+                        SqliteExecutorError::ApplicationCallback(error)
+                    }
+                })
+        });
+        self.submit_observer_inner(context, cancellation, job)
     }
 
     /// Executes one transaction-scoped callback on the database worker.
@@ -590,6 +826,114 @@ impl SqliteDatabaseExecutor {
     }
 
     #[cfg(feature = "test-support")]
+    fn submit_observer_inner<T>(
+        &self,
+        context: OperationContext,
+        cancellation: ObserverCancellationHandle,
+        job: Job,
+    ) -> Result<T, SqliteExecutorError>
+    where
+        T: Send + 'static,
+    {
+        let mut submission = ObserverSubmissionGuard {
+            cancellation,
+            accepted: false,
+        };
+        if IN_DATABASE_WORKER.with(std::cell::Cell::get) {
+            return Err(SqliteExecutorError::ReentrantSubmission);
+        }
+        if self.shared.poisoned.load(Ordering::Acquire) {
+            return Err(SqliteExecutorError::Poisoned);
+        }
+        if self.shared.closed.load(Ordering::Acquire) {
+            return Err(SqliteExecutorError::Shutdown);
+        }
+        if self.shared.disconnected.load(Ordering::Acquire) {
+            return Err(SqliteExecutorError::Disconnected);
+        }
+
+        let _admission = match self.shared.admission.try_lock() {
+            Ok(admission) => admission,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return Err(SqliteExecutorError::ObserverBusy);
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err(SqliteExecutorError::Internal);
+            }
+        };
+        if self.shared.poisoned.load(Ordering::Acquire) {
+            return Err(SqliteExecutorError::Poisoned);
+        }
+        if self.shared.closed.load(Ordering::Acquire) {
+            return Err(SqliteExecutorError::Shutdown);
+        }
+        if self.shared.disconnected.load(Ordering::Acquire) {
+            return Err(SqliteExecutorError::Disconnected);
+        }
+        let sender = {
+            let state = self
+                .shared
+                .state
+                .lock()
+                .map_err(|_| SqliteExecutorError::Internal)?;
+            state.sender.as_ref().cloned().ok_or_else(|| {
+                if self.shared.poisoned.load(Ordering::Acquire) {
+                    SqliteExecutorError::Poisoned
+                } else if self.shared.closed.load(Ordering::Acquire) {
+                    SqliteExecutorError::Shutdown
+                } else {
+                    SqliteExecutorError::Disconnected
+                }
+            })?
+        };
+        #[cfg(feature = "test-support")]
+        {
+            self.shared.attempted.fetch_add(1, Ordering::AcqRel);
+            self.notify_test_progress();
+        }
+        let (response_sender, response_receiver) = mpsc::channel();
+        let item = WorkItem {
+            context,
+            job,
+            response: response_sender,
+        };
+        match sender.try_send(Command::Work(item)) {
+            Ok(()) => submission.accepted = true,
+            Err(mpsc::TrySendError::Full(_)) => {
+                return Err(SqliteExecutorError::ObserverBusy);
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                return if self.shared.poisoned.load(Ordering::Acquire) {
+                    Err(SqliteExecutorError::Poisoned)
+                } else if self.shared.closed.load(Ordering::Acquire) {
+                    Err(SqliteExecutorError::Shutdown)
+                } else {
+                    Err(SqliteExecutorError::Disconnected)
+                };
+            }
+        }
+        self.shared.accepted.fetch_add(1, Ordering::AcqRel);
+        self.notify_test_progress();
+        drop(_admission);
+
+        let response = response_receiver.recv();
+        submission.cancellation.finish();
+        let result = response.map_err(|_| {
+            if self.shared.poisoned.load(Ordering::Acquire) {
+                SqliteExecutorError::Poisoned
+            } else if self.shared.closed.load(Ordering::Acquire) {
+                SqliteExecutorError::Shutdown
+            } else {
+                SqliteExecutorError::Disconnected
+            }
+        })??;
+        result
+            .downcast::<T>()
+            .map(|value| *value)
+            .map_err(|_| SqliteExecutorError::Internal)
+    }
+
+    #[cfg(feature = "test-support")]
     fn notify_test_progress(&self) {
         notify_test_progress_shared(&self.shared);
     }
@@ -680,6 +1024,10 @@ impl UnitOfWorkFactory for SqliteDatabaseExecutor {
                 }
                 SqliteExecutorError::IncompatibleSchema => {
                     ApplicationPortError::Persistence(PersistenceError::CorruptOrIncompatible)
+                }
+                #[cfg(feature = "test-support")]
+                SqliteExecutorError::ObserverBusy | SqliteExecutorError::ObserverCancelled => {
+                    ApplicationPortError::Persistence(PersistenceError::Internal)
                 }
                 SqliteExecutorError::ReentrantSubmission | SqliteExecutorError::Internal => {
                     ApplicationPortError::Persistence(PersistenceError::Internal)

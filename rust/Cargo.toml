@@ -41,6 +41,7 @@ oxiarc-core = { version = "0.4.1", default-features = false }
 oxiarc-lzma = { version = "0.4.1", default-features = false }
 ruzstd = { version = "0.9.0", default-features = false, features = ["std"] }
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "trace"] }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.145"
 sha1 = { version = "0.10.7", default-features = false }
 sha2 = { version = "0.11.0", default-features = false }

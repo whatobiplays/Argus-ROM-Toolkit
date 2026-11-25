@@ -205,6 +205,11 @@ impl MigrationRegistry {
                 "0020_library_view_state",
                 include_bytes!("sql/0020_library_view_state.sql"),
             ),
+            Migration::sql(
+                21,
+                "0021_library_identity_view_state",
+                include_bytes!("sql/0021_library_identity_view_state.sql"),
+            ),
         ])
         .expect("embedded migration registry is valid")
     }

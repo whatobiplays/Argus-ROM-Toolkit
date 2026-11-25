@@ -7,7 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-test-support = []
+test-support = ["dep:serde", "rusqlite/hooks"]
 
 [lints]
 workspace = true
@@ -29,6 +29,7 @@ oxiarc-core.workspace = true
 oxiarc-lzma.workspace = true
 ruzstd.workspace = true
 rusqlite.workspace = true
+serde = { workspace = true, optional = true }
 serde_json.workspace = true
 sha1.workspace = true
 sha2.workspace = true

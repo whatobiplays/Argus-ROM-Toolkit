@@ -3283,6 +3283,17 @@ pub trait JobsQueries {
         job_run_id: JobRunId,
     ) -> Result<Option<JobDetail>, PersistenceError>;
 
+    /// Reads every retained LibraryRefresh detail from one coherent snapshot.
+    /// The result contains no partial history when coverage is missing or records conflict.
+    fn list_retained_library_refresh_history(
+        &self,
+        _context: &OperationContext,
+    ) -> Result<Vec<JobDetail>, LibraryRefreshHistoryError> {
+        Err(LibraryRefreshHistoryError::Persistence(
+            PersistenceError::Unavailable,
+        ))
+    }
+
     /// Lists the bounded active job set.
     fn list_active(&self, context: &OperationContext) -> Result<Vec<JobSummary>, PersistenceError>;
 
@@ -3325,6 +3336,17 @@ pub trait JobsQueries {
         context: &OperationContext,
         library_root_id: LibraryRootId,
     ) -> Result<Option<ScanAdmissionReference>, PersistenceError>;
+}
+
+/// Failure categories for the all-retained LibraryRefresh history read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibraryRefreshHistoryError {
+    /// Retained records lack historical evidence needed to prove complete scope.
+    HistoricalUnavailable,
+    /// Persisted records contradict the requested scope or each other.
+    IntegrityConflict,
+    /// The snapshot could not be read because persistence failed.
+    Persistence(PersistenceError),
 }
 
 /// One child scan-run record needed by persistence-only startup recovery.

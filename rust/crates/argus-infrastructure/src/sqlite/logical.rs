@@ -14,12 +14,13 @@ use argus_application::{
     GameContentSummary, GameDetail, GameId, GameLibraryPage, GameLibraryRow, GameLifecycle,
     GameListCursor, GameMembershipSummary, GetGameResult, GroupingBasis, HydrationState,
     HydrationStateFacetBucket, IdentificationState, IdentityConvergenceStore, IdentityDigest,
-    LibraryFacetQuery, LibraryFacets, LibraryFilter, LibraryRootId, LibraryScope, LibrarySort,
-    LibrarySortDirection, LibrarySortField, LibraryViewToken, ListGamesQuery,
-    LogicalContentRepository, LogicalLibraryQueries, MembershipRelationship, PersistenceError,
-    PlatformFacetBucket, PlatformId, RegionFacetBucket, RevisionFencedGameLibraryPage, ScanRunId,
-    SourceEntryId, SourceVersionEvidence, SourceVersionKind, ValidatedContentDerivation,
-    ValidatedM3uGrouping, bounded_library_display_title, bounded_library_release_date,
+    IdentityRevisionFencedGameLibraryPage, LibraryFacetQuery, LibraryFacets, LibraryFilter,
+    LibraryIdentityViewTokenV2, LibraryRootId, LibraryScope, LibrarySort, LibrarySortDirection,
+    LibrarySortField, LibraryViewToken, ListGamesQuery, LogicalContentRepository,
+    LogicalLibraryQueries, MembershipRelationship, PersistenceError, PlatformFacetBucket,
+    PlatformId, RegionFacetBucket, RevisionFencedGameLibraryPage, ScanRunId, SourceEntryId,
+    SourceVersionEvidence, SourceVersionKind, ValidatedContentDerivation, ValidatedM3uGrouping,
+    bounded_library_display_title, bounded_library_release_date,
 };
 use rusqlite::{OptionalExtension, Row, params_from_iter, types::Value};
 
@@ -645,6 +646,70 @@ impl LogicalLibraryQueries for SqliteLogicalContentRepository<'_, '_> {
             .copied()
             .ok_or(ApplicationPortError::LibraryViewTokenInvalid)?;
         super::library_view::validate_game_token(
+            self.transaction()
+                .map_err(ApplicationPortError::Persistence)?,
+            &key,
+            token,
+        )?;
+        self.get_game(game_id)
+            .map_err(ApplicationPortError::Persistence)
+    }
+
+    fn list_games_identity_revision_fenced(
+        &mut self,
+        query: &ListGamesQuery,
+        token: Option<&LibraryIdentityViewTokenV2>,
+    ) -> Result<IdentityRevisionFencedGameLibraryPage, ApplicationPortError> {
+        if query.cursor().is_some() != token.is_some() {
+            return Err(ApplicationPortError::LibraryViewTokenInvalid);
+        }
+        let key = match self.work.library_view_key().copied() {
+            Some(key) => key,
+            None if token.is_some() => {
+                return Err(ApplicationPortError::LibraryViewTokenInvalid);
+            }
+            None => return Err(ApplicationPortError::LibraryViewUnavailable),
+        };
+        let (view_token, identity_revision, query_contract_version) = {
+            let transaction = self
+                .transaction()
+                .map_err(ApplicationPortError::Persistence)?;
+            match token {
+                Some(token) => {
+                    let (revision, query_version) =
+                        super::library_view::validate_identity_list_token(
+                            transaction,
+                            &key,
+                            query,
+                            token,
+                        )?;
+                    (token.clone(), revision, query_version)
+                }
+                None => super::library_view::create_identity_token(transaction, &key, query)?,
+            }
+        };
+        let page = self
+            .list_games(query)
+            .map_err(ApplicationPortError::Persistence)?;
+        IdentityRevisionFencedGameLibraryPage::new(
+            page,
+            view_token,
+            identity_revision,
+            query_contract_version,
+        )
+    }
+
+    fn get_game_identity_revision_fenced(
+        &mut self,
+        game_id: GameId,
+        token: &LibraryIdentityViewTokenV2,
+    ) -> Result<GetGameResult, ApplicationPortError> {
+        let key = self
+            .work
+            .library_view_key()
+            .copied()
+            .ok_or(ApplicationPortError::LibraryViewTokenInvalid)?;
+        super::library_view::validate_identity_game_token(
             self.transaction()
                 .map_err(ApplicationPortError::Persistence)?,
             &key,

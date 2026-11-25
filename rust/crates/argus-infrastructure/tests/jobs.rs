@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use argus_application::LibrarySourceAccess;
 use argus_application::{
     ActiveScanOwnership, ApplicationEvent, EventRecorder, EventRecordingError, JobProgress,
-    JobRunRepository, JobRunState, LibraryRefreshAdmissionOutcome,
+    JobRunRepository, JobRunState, LibraryRefreshAdmissionOutcome, LibraryRefreshHistoryError,
     LibraryRefreshRootOutcomeCoverage, LibraryRefreshTrigger, LibraryRootAvailability,
     LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryRootRepository,
     LibraryScanAdmissionContextRepository, LibraryScanAdmissionExclusion,
@@ -719,11 +719,208 @@ fn historical_library_refresh_does_not_advertise_retry() {
         LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable
     );
     assert_eq!(refresh.requested_root_ids(), &[root_id]);
+    assert_eq!(
+        SqliteJobsQueries::new(upgraded.clone()).list_retained_library_refresh_history(&context()),
+        Err(LibraryRefreshHistoryError::HistoricalUnavailable)
+    );
     assert!(
         !detail.job().controls().can_retry(),
         "legacy refresh with surviving eligible targets cannot advertise Retry"
     );
     upgraded.shutdown().expect("shutdown");
+}
+
+#[test]
+fn retained_library_refresh_history_returns_all_runs_from_one_snapshot() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let database = directory.path().join("argus.sqlite3");
+    let executor = SqliteDatabaseExecutor::open(&database).expect("database");
+    let first = seed_refresh_with_admitted_and_excluded_roots(&executor, 10_000);
+    let second = seed_refresh_with_admitted_and_excluded_roots(&executor, 20_000);
+    let unrelated_root = insert_available_roots(&executor, &[("Scan", "/library/Scan")])[0];
+    start_active_scan(&executor, unrelated_root, "Scan", "/library/Scan");
+
+    executor
+        .execute(&context(), move |mut scope| {
+            scope.scan_runs().set_status(
+                first.scan_run_id,
+                ScanRunStatus::Complete,
+                Some(10_002),
+                None,
+            )?;
+            scope
+                .job_runs()
+                .set_state(first.job_run_id, JobRunState::Completed, 10_002)?;
+            scope.commit()?;
+            Ok::<_, argus_application::ApplicationPortError>(())
+        })
+        .expect("complete first refresh");
+
+    let history_started = std::time::Instant::now();
+    let details = SqliteJobsQueries::new(executor.clone())
+        .list_retained_library_refresh_history(&context())
+        .expect("read complete retained history");
+    let history_elapsed = history_started.elapsed();
+    assert_eq!(details.len(), 2);
+    let encoded =
+        argus_infrastructure::sqlite::observer_v1::serialize_retained_library_refresh_history_v1(
+            &details, 100, 120,
+        )
+        .expect("serialize complete retained history");
+    let encoded_text = std::str::from_utf8(&encoded).expect("UTF-8 observer JSON");
+    eprintln!(
+        "host_retained_history_runs={} host_requested_roots=4 host_scan_runs=2 host_exclusions=2 host_observer_json_bytes={} host_history_read_elapsed_us={}",
+        details.len(),
+        encoded.len(),
+        history_elapsed.as_micros()
+    );
+    assert!(encoded_text.starts_with(
+        r#"{"retentionScope":"AllRetainedLibraryRefreshRunsAtSnapshot","snapshotStartedElapsedRealtimeMs":100,"snapshotFinishedElapsedRealtimeMs":120,"retainedJobCount":2,"jobs":[{"job":{"jobRunId":""#
+    ));
+    assert!(encoded_text.contains(
+        r#""operationDetail":{"kind":"LibraryRefresh","detail":{"trigger":"manual","triggerRootId":null,"mode":"eligible_only""#
+    ));
+    let json: serde_json::Value =
+        serde_json::from_slice(&encoded).expect("valid ObserverV1 history JSON");
+    let members = |value: &serde_json::Value| {
+        value
+            .as_object()
+            .expect("JSON object")
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let assert_members = |value: &serde_json::Value, expected: &[&str]| {
+        assert_eq!(
+            members(value),
+            expected.iter().map(|member| (*member).to_owned()).collect()
+        );
+    };
+    assert_eq!(
+        json["retentionScope"],
+        "AllRetainedLibraryRefreshRunsAtSnapshot"
+    );
+    assert_eq!(json["snapshotStartedElapsedRealtimeMs"], 100);
+    assert_eq!(json["snapshotFinishedElapsedRealtimeMs"], 120);
+    assert_eq!(json["retainedJobCount"], 2);
+    assert_eq!(json["jobs"].as_array().expect("job array").len(), 2);
+    assert_members(
+        &json,
+        &[
+            "retentionScope",
+            "snapshotStartedElapsedRealtimeMs",
+            "snapshotFinishedElapsedRealtimeMs",
+            "retainedJobCount",
+            "jobs",
+        ],
+    );
+    assert_members(
+        &json["jobs"][0]["job"],
+        &[
+            "jobRunId",
+            "operationType",
+            "state",
+            "phase",
+            "completedUnits",
+            "totalUnits",
+            "statusKey",
+            "createdAtMs",
+            "queuedAtMs",
+            "startedAtMs",
+            "terminalAtMs",
+            "cancellationRequested",
+            "controls",
+            "boundedTerminalFailure",
+        ],
+    );
+    assert_members(
+        &json["jobs"][0]["job"]["controls"],
+        &["canCancel", "canRetry"],
+    );
+    assert_members(&json["jobs"][0]["operationDetail"], &["kind", "detail"]);
+    assert_eq!(json["jobs"][0]["operationDetail"]["kind"], "LibraryRefresh");
+    assert_members(
+        &json["jobs"][0]["operationDetail"]["detail"],
+        &[
+            "trigger",
+            "triggerRootId",
+            "mode",
+            "requestedRootIds",
+            "scanRuns",
+            "progress",
+            "retrySourceJobRunId",
+            "retrySuccessorJobRunId",
+            "exclusions",
+            "rootOutcomeCoverage",
+        ],
+    );
+    assert_eq!(
+        json["jobs"][0]["operationDetail"]["detail"]["rootOutcomeCoverage"],
+        "Complete"
+    );
+    assert_members(
+        &json["jobs"][0]["operationDetail"]["detail"]["progress"],
+        &[
+            "phase",
+            "completedUnits",
+            "totalUnits",
+            "statusKey",
+            "issueCount",
+            "issues",
+        ],
+    );
+    assert_members(
+        &json["jobs"][0]["operationDetail"]["detail"]["scanRuns"][0],
+        &[
+            "scanRunId",
+            "jobRunId",
+            "libraryRootId",
+            "displayName",
+            "safeLocationDisplay",
+            "status",
+            "startedAtMs",
+            "completedAtMs",
+            "failureReason",
+        ],
+    );
+    assert_members(
+        &json["jobs"][0]["operationDetail"]["detail"]["exclusions"][0],
+        &[
+            "libraryRootId",
+            "reason",
+            "activeJobRunId",
+            "activeScanRunId",
+            "applicationError",
+        ],
+    );
+    let ids = details
+        .iter()
+        .map(|detail| detail.job().job_run_id())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids,
+        [first.job_run_id, second.job_run_id].into_iter().collect()
+    );
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.job().state() == JobRunState::Completed)
+    );
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.job().state() == JobRunState::Running)
+    );
+    for detail in &details {
+        let OperationDetail::LibraryRefresh(refresh) = detail.operation_detail() else {
+            panic!("history contains a non-LibraryRefresh detail");
+        };
+        assert_eq!(
+            refresh.root_outcome_coverage(),
+            LibraryRefreshRootOutcomeCoverage::Complete
+        );
+    }
+    executor.shutdown().expect("shutdown");
 }
 
 #[test]
@@ -856,6 +1053,10 @@ fn library_refresh_manifest_rejects_a_root_missing_both_requested_and_excluded_r
         result,
         Err(PersistenceError::CorruptOrIncompatible)
     ));
+    assert_eq!(
+        SqliteJobsQueries::new(executor.clone()).list_retained_library_refresh_history(&context()),
+        Err(LibraryRefreshHistoryError::IntegrityConflict)
+    );
     executor.shutdown().expect("shutdown");
 }
 

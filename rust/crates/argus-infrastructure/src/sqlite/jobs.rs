@@ -5,24 +5,24 @@ use argus_application::{
     ActiveScanOwnership, ApplicationError, ApplicationPortError, ArchitectureClass,
     DiagnosticStage, ErrorCode, FailureRole, GameId, JobControlAvailability, JobDetail,
     JobProgress, JobRunId, JobRunProjection, JobRunRepository, JobRunState, JobSummary,
-    JobSummaryPage, JobsQueries, LibraryRefreshJobDetail, LibraryRefreshTrigger, LibraryRootId,
-    LibraryRootLastScanStatus, LibraryRootLastScanSummary, LibraryScanAdmissionContext,
-    LibraryScanAdmissionContextRepository, LibraryScanAdmissionExclusion,
-    LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup, LibraryScanInvocationKind,
-    LibraryScanJobDetail, LibraryScanRootSummary, LibraryScanTarget, LibraryScanTargetEligibility,
-    LibraryScanTargetExclusionReason, LibraryScanTargetKind, LibraryScanTargetRepository,
-    MigrationOutcome, NativeIdentityMatch, NewJobRun, NewLibraryScanAdmissionContext,
-    NewLibraryScanTarget, NewScanRun, NewSourceEntry, OPERATION_TYPE_GAME_REFRESH,
-    OPERATION_TYPE_LIBRARY_REFRESH, OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH,
-    OPERATION_TYPE_LIBRARY_SCAN, OperationContext, OperationHandle, PathClass,
-    PersistedSettingsReason, PersistenceError, PlatformClass, RefreshMode, RefreshProgressFacts,
-    RelativeSourceLocator, SafeContext, SafeContextField, SafeContextValue, ScanAdmissionReference,
-    ScanProgressFacts, ScanRunId, ScanRunProjection, ScanRunRepository, ScanRunStatus,
-    SettingsDomain, SourceEntryClassification, SourceEntryCoordinates, SourceEntryId,
-    SourceEntryKind, SourceEntryRecord, SourceEntryRepository, SourceLocatorKey,
-    StaleLibraryScanJob, StaleLibraryScanQueries, StaleLibraryScanRun, StaleOperationJob,
-    StaleOperationQueries, StartLibraryScanAllResult, TechnicalClass, TraceId, Version,
-    evaluate_retry_eligibility,
+    JobSummaryPage, JobsQueries, LibraryRefreshHistoryError, LibraryRefreshJobDetail,
+    LibraryRefreshTrigger, LibraryRootId, LibraryRootLastScanStatus, LibraryRootLastScanSummary,
+    LibraryScanAdmissionContext, LibraryScanAdmissionContextRepository,
+    LibraryScanAdmissionExclusion, LibraryScanAllRequestIdentity, LibraryScanAllRequestLookup,
+    LibraryScanInvocationKind, LibraryScanJobDetail, LibraryScanRootSummary, LibraryScanTarget,
+    LibraryScanTargetEligibility, LibraryScanTargetExclusionReason, LibraryScanTargetKind,
+    LibraryScanTargetRepository, MigrationOutcome, NativeIdentityMatch, NewJobRun,
+    NewLibraryScanAdmissionContext, NewLibraryScanTarget, NewScanRun, NewSourceEntry,
+    OPERATION_TYPE_GAME_REFRESH, OPERATION_TYPE_LIBRARY_REFRESH,
+    OPERATION_TYPE_LIBRARY_RESOLUTION_REFRESH, OPERATION_TYPE_LIBRARY_SCAN, OperationContext,
+    OperationHandle, PathClass, PersistedSettingsReason, PersistenceError, PlatformClass,
+    RefreshMode, RefreshProgressFacts, RelativeSourceLocator, SafeContext, SafeContextField,
+    SafeContextValue, ScanAdmissionReference, ScanProgressFacts, ScanRunId, ScanRunProjection,
+    ScanRunRepository, ScanRunStatus, SettingsDomain, SourceEntryClassification,
+    SourceEntryCoordinates, SourceEntryId, SourceEntryKind, SourceEntryRecord,
+    SourceEntryRepository, SourceLocatorKey, StaleLibraryScanJob, StaleLibraryScanQueries,
+    StaleLibraryScanRun, StaleOperationJob, StaleOperationQueries, StartLibraryScanAllResult,
+    TechnicalClass, TraceId, Version, evaluate_retry_eligibility,
 };
 #[cfg(feature = "test-support")]
 use std::sync::Arc;
@@ -1685,6 +1685,67 @@ impl JobsQueries for SqliteJobsQueries {
             .map_err(map_executor_error)
     }
 
+    fn list_retained_library_refresh_history(
+        &self,
+        context: &OperationContext,
+    ) -> Result<Vec<JobDetail>, LibraryRefreshHistoryError> {
+        let details = self
+            .executor
+            .with_connection(context.clone(), |connection| {
+                with_deferred_read_snapshot(connection, |snapshot_connection| {
+                    let job_run_ids = {
+                        let mut statement = snapshot_connection
+                            .connection
+                            .prepare(
+                                "SELECT job_run_id FROM job_run
+                                 WHERE operation_type = 'library_refresh'
+                                 ORDER BY created_at ASC, job_run_id ASC",
+                            )
+                            .map_err(|error| {
+                                corrupt_sqlite(map_persistence_operation_error(error))
+                            })?;
+                        let rows = statement
+                            .query_map([], |row| row.get::<_, String>(0))
+                            .map_err(|error| {
+                                corrupt_sqlite(map_persistence_operation_error(error))
+                            })?;
+                        rows.collect::<Result<Vec<_>, _>>().map_err(|error| {
+                            corrupt_sqlite(map_persistence_operation_error(error))
+                        })?
+                    };
+                    let mut details = Vec::with_capacity(job_run_ids.len());
+                    for job_run_id in job_run_ids {
+                        let detail = read_job_detail(snapshot_connection, &job_run_id, || {})?
+                            .ok_or_else(|| {
+                                corrupt_sqlite(PersistenceError::CorruptOrIncompatible)
+                            })?;
+                        if !matches!(
+                            detail.operation_detail(),
+                            argus_application::OperationDetail::LibraryRefresh(_)
+                        ) {
+                            return Err(corrupt_sqlite(PersistenceError::CorruptOrIncompatible));
+                        }
+                        details.push(detail);
+                    }
+                    Ok(details)
+                })
+            })
+            .map_err(map_executor_error)
+            .map_err(map_library_refresh_history_error)?;
+
+        if details.iter().any(|detail| {
+            matches!(
+                detail.operation_detail(),
+                argus_application::OperationDetail::LibraryRefresh(refresh)
+                    if refresh.root_outcome_coverage()
+                        == argus_application::LibraryRefreshRootOutcomeCoverage::HistoricalUnavailable
+            )
+        }) {
+            return Err(LibraryRefreshHistoryError::HistoricalUnavailable);
+        }
+        Ok(details)
+    }
+
     fn list_active(&self, context: &OperationContext) -> Result<Vec<JobSummary>, PersistenceError> {
         self.executor
             .with_connection(context.clone(), |connection| {
@@ -3324,6 +3385,14 @@ pub(crate) fn map_persistence_operation_error(error: rusqlite::Error) -> Persist
         SqliteOperationError::Locked => PersistenceError::DatabaseLocked,
         SqliteOperationError::Failed => PersistenceError::Internal,
         SqliteOperationError::Application(_) => PersistenceError::Internal,
+    }
+}
+
+fn map_library_refresh_history_error(error: PersistenceError) -> LibraryRefreshHistoryError {
+    if error == PersistenceError::CorruptOrIncompatible {
+        LibraryRefreshHistoryError::IntegrityConflict
+    } else {
+        LibraryRefreshHistoryError::Persistence(error)
     }
 }
 

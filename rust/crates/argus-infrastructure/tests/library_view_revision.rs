@@ -1,12 +1,15 @@
 use argus_application::{
-    ApplicationPortError, GameListCursor, GetGameResult, LibraryFacetQuery, LibraryFilter,
-    LibraryRootAvailability, LibraryRootId, LibraryRootRepository, LibraryScope, LibrarySort,
-    LibraryViewToken, ListGamesQuery, LogicalContentUnitOfWork, LogicalLibraryQueries,
-    OperationContext, OperationName, RevisionFencedGameLibraryPage, SubsystemName, TraceId,
+    ApplicationPortError, GameListCursor, GetGameResult, IdentityRevisionFencedGameLibraryPage,
+    LibraryFacetQuery, LibraryFilter, LibraryIdentityViewTokenV2, LibraryRootAvailability,
+    LibraryRootId, LibraryRootRepository, LibraryScope, LibrarySort, LibraryViewToken,
+    ListGamesQuery, LogicalContentUnitOfWork, LogicalLibraryQueries, OperationContext,
+    OperationName, PersistenceError, RevisionFencedGameLibraryPage, SubsystemName, TraceId,
     UnitOfWork, UnitOfWorkFactory,
 };
 use argus_domain::HydrationState;
-use argus_infrastructure::sqlite::{DEFAULT_QUEUE_CAPACITY, SqliteDatabaseExecutor};
+use argus_infrastructure::sqlite::{
+    DEFAULT_QUEUE_CAPACITY, MigrationRegistry, SqliteDatabaseExecutor,
+};
 use tempfile::tempdir;
 
 struct TestDatabase {
@@ -66,6 +69,36 @@ fn fenced_list(
         };
         work.commit()?;
         Ok(page)
+    })
+}
+
+fn fenced_identity_list(
+    executor: &SqliteDatabaseExecutor,
+    query: ListGamesQuery,
+    token: Option<LibraryIdentityViewTokenV2>,
+) -> Result<IdentityRevisionFencedGameLibraryPage, ApplicationPortError> {
+    executor.execute(&context("fenced_identity_list"), move |mut work| {
+        let page = {
+            let mut logical = work.logical_content();
+            logical.list_games_identity_revision_fenced(&query, token.as_ref())?
+        };
+        work.commit()?;
+        Ok(page)
+    })
+}
+
+fn fenced_identity_game(
+    executor: &SqliteDatabaseExecutor,
+    game_id: argus_domain::GameId,
+    token: LibraryIdentityViewTokenV2,
+) -> Result<GetGameResult, ApplicationPortError> {
+    executor.execute(&context("fenced_identity_game"), move |mut work| {
+        let game = {
+            let mut logical = work.logical_content();
+            logical.get_game_identity_revision_fenced(game_id, &token)?
+        };
+        work.commit()?;
+        Ok(game)
     })
 }
 
@@ -237,6 +270,17 @@ fn revision(executor: &SqliteDatabaseExecutor) -> i64 {
         .expect("read membership revision")
 }
 
+fn identity_membership_revision(executor: &SqliteDatabaseExecutor) -> i64 {
+    executor
+        .with_connection_for_tests(context("read_identity_membership_revision"), |connection| {
+            connection.scalar_i64(
+                "SELECT identity_membership_revision
+                 FROM library_view_state WHERE singleton_key = 1",
+            )
+        })
+        .expect("read identity membership revision")
+}
+
 fn write(executor: &SqliteDatabaseExecutor, sql: &'static str) {
     write_named(executor, "write", sql);
 }
@@ -274,6 +318,7 @@ fn revision_advances_once_for_final_query_key_changes_and_never_for_noop_or_roll
          );",
     );
     assert_eq!(revision(&database.executor), 2);
+    assert_eq!(identity_membership_revision(&database.executor), 2);
 
     write(
         &database.executor,
@@ -285,6 +330,7 @@ fn revision_advances_once_for_final_query_key_changes_and_never_for_noop_or_roll
         2,
         "same-value writes are semantic no-ops"
     );
+    assert_eq!(identity_membership_revision(&database.executor), 2);
 
     write(
         &database.executor,
@@ -298,6 +344,7 @@ fn revision_advances_once_for_final_query_key_changes_and_never_for_noop_or_roll
         2,
         "restoring the original keys is a no-op"
     );
+    assert_eq!(identity_membership_revision(&database.executor), 2);
 
     write(
         &database.executor,
@@ -312,6 +359,7 @@ fn revision_advances_once_for_final_query_key_changes_and_never_for_noop_or_roll
         3,
         "one transaction advances the revision once"
     );
+    assert_eq!(identity_membership_revision(&database.executor), 3);
 
     write(
         &database.executor,
@@ -325,6 +373,7 @@ fn revision_advances_once_for_final_query_key_changes_and_never_for_noop_or_roll
         4,
         "combined updates still advance only once"
     );
+    assert_eq!(identity_membership_revision(&database.executor), 4);
 
     database
         .executor
@@ -343,7 +392,271 @@ fn revision_advances_once_for_final_query_key_changes_and_never_for_noop_or_roll
         4,
         "rolled-back changes do not advance it"
     );
+    assert_eq!(identity_membership_revision(&database.executor), 4);
 
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn identity_membership_revision_migration_preserves_v1_state() {
+    let directory = tempdir().expect("temporary directory");
+    let path = directory.path().join("library.sqlite3");
+    let legacy_executor = SqliteDatabaseExecutor::open_with_registry(
+        &path,
+        MigrationRegistry::embedded_through_for_tests(20),
+    )
+    .expect("open schema v20 database");
+    write(
+        &legacy_executor,
+        "UPDATE library_view_state SET membership_revision = 17 WHERE singleton_key = 1;",
+    );
+    legacy_executor
+        .shutdown()
+        .expect("close schema v20 database");
+
+    let database = TestDatabase {
+        _directory: directory,
+        executor: SqliteDatabaseExecutor::open_with_capacity_and_view_key(
+            path,
+            DEFAULT_QUEUE_CAPACITY,
+            [0x4d; 32],
+        )
+        .expect("upgrade schema v20 database"),
+    };
+    let revision_columns = database
+        .executor
+        .with_connection_for_tests(context("inspect_identity_revision_schema"), |connection| {
+            connection.scalar_i64(
+                "SELECT count(*) FROM pragma_table_info('library_view_state')
+                 WHERE name = 'identity_membership_revision'",
+            )
+        })
+        .expect("inspect Library view state schema");
+
+    assert_eq!(
+        revision_columns, 1,
+        "the V2 fence needs a distinct persisted revision column"
+    );
+    assert_eq!(revision(&database.executor), 17);
+    assert_eq!(identity_membership_revision(&database.executor), 1);
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn identity_only_change_advances_v2_without_staling_v1_views() {
+    let database = open();
+    insert_two_games_with_roots(&database.executor);
+    let page =
+        fenced_list(&database.executor, list_query(None, 2, None), None).expect("create V1 view");
+    let token = page.view_token().clone();
+    let game_id = page.page().items()[0].game_id();
+    let v2_page = fenced_identity_list(&database.executor, list_query(None, 2, None), None)
+        .expect("create V2 view");
+    let v2_token = v2_page.view_token().clone();
+    let v1_revision_before = revision(&database.executor);
+    let v2_revision_before = identity_membership_revision(&database.executor);
+
+    write(
+        &database.executor,
+        "UPDATE game_content
+         SET identification_state = 'identified'
+         WHERE game_content_id = 'ffffffffffffffffffffffffffffffff';
+         INSERT INTO content_identity (
+             content_identity_id, game_content_id, scheme_id, identity_revision,
+             identity_value, is_current, created_at, updated_at
+         ) VALUES (
+             '15151515151515151515151515151515',
+             'ffffffffffffffffffffffffffffffff',
+             'argus.content.identity.nintendo-gb.cartridge.v1',
+             1,
+             '0909090909090909090909090909090909090909090909090909090909090909',
+             1,
+             '1',
+             '1'
+         );",
+    );
+
+    assert_eq!(
+        identity_membership_revision(&database.executor),
+        v2_revision_before + 1
+    );
+    assert_eq!(revision(&database.executor), v1_revision_before);
+    assert!(matches!(
+        fenced_game(&database.executor, game_id, token.clone()),
+        Ok(GetGameResult::Found(_))
+    ));
+    assert!(matches!(
+        fenced_identity_game(&database.executor, game_id, v2_token),
+        Err(ApplicationPortError::LibraryViewStale)
+    ));
+
+    let v2_page = fenced_identity_list(&database.executor, list_query(None, 2, None), None)
+        .expect("create V2 view after identification");
+    let v2_token = v2_page.view_token().clone();
+    write(
+        &database.executor,
+        "UPDATE content_identity
+         SET identity_value = '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a'
+         WHERE content_identity_id = '15151515151515151515151515151515';",
+    );
+
+    assert_eq!(
+        identity_membership_revision(&database.executor),
+        v2_revision_before + 2
+    );
+    assert_eq!(revision(&database.executor), v1_revision_before);
+    assert!(matches!(
+        fenced_game(&database.executor, game_id, token.clone()),
+        Ok(GetGameResult::Found(_))
+    ));
+    assert!(matches!(
+        fenced_identity_game(&database.executor, game_id, v2_token),
+        Err(ApplicationPortError::LibraryViewStale)
+    ));
+
+    let v2_page = fenced_identity_list(&database.executor, list_query(None, 2, None), None)
+        .expect("create V2 view before currentness change");
+    let v2_token = v2_page.view_token().clone();
+    write(
+        &database.executor,
+        "UPDATE content_identity SET is_current = 0
+         WHERE content_identity_id = '15151515151515151515151515151515';",
+    );
+    assert_eq!(
+        identity_membership_revision(&database.executor),
+        v2_revision_before + 3
+    );
+    assert_eq!(revision(&database.executor), v1_revision_before);
+    assert!(matches!(
+        fenced_game(&database.executor, game_id, token),
+        Ok(GetGameResult::Found(_))
+    ));
+    assert!(matches!(
+        fenced_identity_game(&database.executor, game_id, v2_token),
+        Err(ApplicationPortError::LibraryViewStale)
+    ));
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn identity_revision_overflow_rejects_identity_write_without_staling_v1_view() {
+    let database = open();
+    insert_two_games_with_roots(&database.executor);
+    write(
+        &database.executor,
+        "UPDATE game_content
+         SET identification_state = 'identified'
+         WHERE game_content_id = 'ffffffffffffffffffffffffffffffff';
+         INSERT INTO content_identity (
+             content_identity_id, game_content_id, scheme_id, identity_revision,
+             identity_value, is_current, created_at, updated_at
+         ) VALUES (
+             '15151515151515151515151515151515',
+             'ffffffffffffffffffffffffffffffff',
+             'argus.content.identity.nintendo-gb.cartridge.v1',
+             1,
+             '0909090909090909090909090909090909090909090909090909090909090909',
+             1,
+             '1',
+             '1'
+         );",
+    );
+    let page =
+        fenced_list(&database.executor, list_query(None, 2, None), None).expect("create V1 view");
+    let token = page.view_token().clone();
+    let game_id = page.page().items()[0].game_id();
+    let v1_revision_before = revision(&database.executor);
+
+    write(
+        &database.executor,
+        "UPDATE library_view_state SET identity_membership_revision = 9223372036854775807
+         WHERE singleton_key = 1;",
+    );
+    let result = database
+        .executor
+        .execute(&context("overflow_identity_write"), |mut work| {
+            work.execute_batch_for_tests(
+                "UPDATE content_identity
+             SET identity_value = '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a'
+             WHERE content_identity_id = '15151515151515151515151515151515';",
+            )
+            .map_err(ApplicationPortError::Persistence)?;
+            work.commit()?;
+            Ok(())
+        });
+
+    assert!(matches!(
+        result,
+        Err(ApplicationPortError::Persistence(
+            PersistenceError::Internal
+        ))
+    ));
+    assert_eq!(revision(&database.executor), v1_revision_before);
+    assert_eq!(identity_membership_revision(&database.executor), i64::MAX);
+    assert!(matches!(
+        fenced_game(&database.executor, game_id, token),
+        Ok(GetGameResult::Found(_))
+    ));
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn identity_view_v2_fences_pages_and_details_with_a_distinct_token() {
+    let database = open();
+    insert_two_games_with_roots(&database.executor);
+
+    let first = fenced_identity_list(&database.executor, list_query(None, 1, None), None)
+        .expect("create V2 identity view");
+    let token = first.view_token().clone();
+    assert!(token.as_str().starts_with("lvt2:"));
+    assert_eq!(
+        first.identity_membership_revision(),
+        identity_membership_revision(&database.executor)
+    );
+    let first_game_id = first.page().items()[0].game_id();
+    let cursor = first
+        .page()
+        .next_cursor()
+        .cloned()
+        .expect("first page has a continuation");
+
+    let next = fenced_identity_list(
+        &database.executor,
+        list_query(Some(cursor), 1, None),
+        Some(token.clone()),
+    )
+    .expect("continue the V2 identity view");
+    assert_eq!(next.view_token(), &token);
+    assert_eq!(
+        next.identity_membership_revision(),
+        first.identity_membership_revision()
+    );
+    assert!(matches!(
+        fenced_identity_game(&database.executor, first_game_id, token.clone()),
+        Ok(GetGameResult::Found(_))
+    ));
+
+    let v1 =
+        fenced_list(&database.executor, list_query(None, 1, None), None).expect("create V1 view");
+    let v1_value_as_v2 =
+        LibraryIdentityViewTokenV2::try_from_external(v1.view_token().as_str().to_owned())
+            .expect("token wrapper accepts bounded opaque values");
+    assert!(matches!(
+        fenced_identity_game(&database.executor, first_game_id, v1_value_as_v2),
+        Err(ApplicationPortError::LibraryViewTokenInvalid)
+    ));
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
+fn identity_view_v2_rejects_query_shapes_outside_its_fixed_contract() {
+    let database = open();
+    let query = list_query(None, 10, Some("mario"));
+
+    assert!(matches!(
+        fenced_identity_list(&database.executor, query, None),
+        Err(ApplicationPortError::LibraryViewTokenInvalid)
+    ));
     database.executor.shutdown().expect("close database");
 }
 
@@ -1003,7 +1316,9 @@ fn query_contract_transition_and_generation_rotation_invalidate_tokens() {
 
     write(
         &database.executor,
-        "UPDATE library_view_state SET query_contract_version = 9223372036854775807
+        "UPDATE library_view_state
+         SET query_contract_version = 9223372036854775807,
+             identity_membership_revision = 9
          WHERE singleton_key = 1;",
     );
     let max_version_page = fenced_list(&database.executor, list_query(None, 1, None), None)
@@ -1025,6 +1340,7 @@ fn query_contract_transition_and_generation_rotation_invalidate_tokens() {
         .expect("rotate generation on query-contract overflow");
     assert_ne!(generation(&database.executor), before_version_rotation);
     assert_eq!(revision(&database.executor), 1);
+    assert_eq!(identity_membership_revision(&database.executor), 1);
     assert_eq!(query_contract_version(&database.executor), 1);
     assert!(matches!(
         fenced_list(
@@ -1037,7 +1353,9 @@ fn query_contract_transition_and_generation_rotation_invalidate_tokens() {
 
     write(
         &database.executor,
-        "UPDATE library_view_state SET membership_revision = 9223372036854775807
+        "UPDATE library_view_state
+         SET membership_revision = 9223372036854775807,
+             identity_membership_revision = 9223372036854775807
          WHERE singleton_key = 1;",
     );
     let max_revision_page = fenced_list(&database.executor, list_query(None, 1, None), None)
@@ -1056,6 +1374,7 @@ fn query_contract_transition_and_generation_rotation_invalidate_tokens() {
     );
     assert_ne!(generation(&database.executor), before_revision_rotation);
     assert_eq!(revision(&database.executor), 1);
+    assert_eq!(identity_membership_revision(&database.executor), 1);
     assert!(matches!(
         fenced_list(
             &database.executor,

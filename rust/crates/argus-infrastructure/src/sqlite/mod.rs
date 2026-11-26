@@ -15,6 +15,8 @@ mod library_view;
 mod logical;
 mod metadata;
 mod migrations;
+#[cfg(feature = "test-support")]
+pub mod observer_v1;
 mod source_entries;
 mod sources;
 mod unit_of_work;
@@ -25,6 +27,9 @@ pub use artwork::SqliteArtworkRepository;
 #[doc(hidden)]
 pub use connection::{SqliteConnection, SqliteQueryMetrics, SqliteValue};
 pub use errors::{MigrationError, SqliteExecutorError, SqliteOperationError};
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use executor::ObserverCancellationHandle;
 pub use executor::{DEFAULT_QUEUE_CAPACITY, SqliteDatabaseExecutor};
 pub use jobs::{
     SqliteJobRunRepository, SqliteJobsQueries, SqliteLibraryScanAdmissionContextRepository,

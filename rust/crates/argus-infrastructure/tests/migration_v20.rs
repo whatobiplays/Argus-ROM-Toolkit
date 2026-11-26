@@ -55,12 +55,12 @@ fn v19_upgrade_preserves_data_and_history_and_initializes_one_view_state_row() {
     assert_eq!(prior_history.len(), 19);
     drop(before);
 
-    let upgraded = SqliteDatabaseExecutor::open(&database).expect("upgrade to schema v20");
+    let upgraded = SqliteDatabaseExecutor::open(&database).expect("upgrade through schema v20");
     upgraded.shutdown().expect("close upgraded database");
 
-    let connection = Connection::open(database).expect("inspect schema v20 database");
+    let connection = Connection::open(database).expect("inspect current schema database");
     let history = migration_history(&connection);
-    assert_eq!(history.len(), 20);
+    assert_eq!(history.len(), 21);
     assert_eq!(&history[..19], prior_history.as_slice());
     assert_eq!(history[19].0, 20);
 

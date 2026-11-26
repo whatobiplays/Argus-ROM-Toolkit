@@ -105,6 +105,10 @@ pub(crate) fn map_executor_error(error: SqliteExecutorError) -> PersistenceError
         | SqliteExecutorError::Disconnected => PersistenceError::Unavailable,
         SqliteExecutorError::MigrationFailed { .. } => PersistenceError::MigrationFailed,
         SqliteExecutorError::IncompatibleSchema => PersistenceError::CorruptOrIncompatible,
+        #[cfg(feature = "test-support")]
+        SqliteExecutorError::ObserverBusy | SqliteExecutorError::ObserverCancelled => {
+            PersistenceError::Internal
+        }
         SqliteExecutorError::ReentrantSubmission | SqliteExecutorError::Internal => {
             PersistenceError::Internal
         }

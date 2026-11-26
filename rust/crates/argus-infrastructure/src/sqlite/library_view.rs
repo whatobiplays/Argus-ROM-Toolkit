@@ -11,10 +11,15 @@
 
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
-use argus_application::{ApplicationPortError, LibraryViewToken, ListGamesQuery, PersistenceError};
+use argus_application::{
+    ApplicationPortError, LibraryIdentityViewTokenV2, LibraryScope, LibrarySort, LibraryViewToken,
+    ListGamesQuery, PersistenceError,
+};
 
 const TRACKING_TABLE: &str = "library_view_before";
+const IDENTITY_TRACKING_TABLE: &str = "library_identity_view_before";
 const TOKEN_VERSION: &str = "lvt1";
+const IDENTITY_TOKEN_VERSION: &str = "lvt2";
 const TOKEN_MAC_BYTES: usize = 64;
 
 #[derive(Debug)]
@@ -47,6 +52,24 @@ pub(crate) fn create_token(
     LibraryViewToken::try_from_external(format!("{payload}:{mac}"))
 }
 
+pub(crate) fn create_identity_token(
+    transaction: &Transaction<'_>,
+    key: &[u8; 32],
+    query: &ListGamesQuery,
+) -> Result<(LibraryIdentityViewTokenV2, i64, i64), ApplicationPortError> {
+    validate_identity_query_shape(query)?;
+    let (generation, revision, query_contract_version) =
+        read_identity_state(transaction).map_err(ApplicationPortError::Persistence)?;
+    let page_size = query.page_size();
+    let query_binding = query_binding(query);
+    let payload = format!(
+        "{IDENTITY_TOKEN_VERSION}:{generation}:{revision}:{query_contract_version}:{page_size}:{query_binding}"
+    );
+    let mac = blake3::keyed_hash(key, payload.as_bytes()).to_hex();
+    let token = LibraryIdentityViewTokenV2::try_from_external(format!("{payload}:{mac}"))?;
+    Ok((token, revision, query_contract_version))
+}
+
 pub(crate) fn validate_list_token(
     transaction: &Transaction<'_>,
     key: &[u8; 32],
@@ -69,6 +92,41 @@ pub(crate) fn validate_game_token(
     validate_current_state(transaction, &claims)
 }
 
+pub(crate) fn validate_identity_list_token(
+    transaction: &Transaction<'_>,
+    key: &[u8; 32],
+    query: &ListGamesQuery,
+    token: &LibraryIdentityViewTokenV2,
+) -> Result<(i64, i64), ApplicationPortError> {
+    validate_identity_query_shape(query)?;
+    let claims = authenticate_identity_token(key, token)?;
+    if claims.page_size != query.page_size() || claims.query_binding != query_binding(query) {
+        return Err(ApplicationPortError::LibraryViewTokenInvalid);
+    }
+    validate_identity_current_state(transaction, &claims)?;
+    Ok((claims.revision, claims.query_contract_version))
+}
+
+pub(crate) fn validate_identity_game_token(
+    transaction: &Transaction<'_>,
+    key: &[u8; 32],
+    token: &LibraryIdentityViewTokenV2,
+) -> Result<(), ApplicationPortError> {
+    let claims = authenticate_identity_token(key, token)?;
+    validate_identity_current_state(transaction, &claims)
+}
+
+fn validate_identity_query_shape(query: &ListGamesQuery) -> Result<(), ApplicationPortError> {
+    if query.scope() != LibraryScope::All
+        || query.search().is_some()
+        || !query.filters_empty()
+        || query.sort() != LibrarySort::DisplayTitleAscending
+    {
+        return Err(ApplicationPortError::LibraryViewTokenInvalid);
+    }
+    Ok(())
+}
+
 fn validate_current_state(
     transaction: &Transaction<'_>,
     claims: &TokenClaims,
@@ -84,16 +142,56 @@ fn validate_current_state(
     Ok(())
 }
 
+fn validate_identity_current_state(
+    transaction: &Transaction<'_>,
+    claims: &TokenClaims,
+) -> Result<(), ApplicationPortError> {
+    let (generation, revision, query_contract_version) =
+        read_identity_state(transaction).map_err(ApplicationPortError::Persistence)?;
+    if revision != claims.revision
+        || query_contract_version != claims.query_contract_version
+        || generation != claims.generation
+    {
+        return Err(ApplicationPortError::LibraryViewStale);
+    }
+    Ok(())
+}
+
 fn authenticate_token(
     key: &[u8; 32],
     token: &LibraryViewToken,
 ) -> Result<TokenClaims, ApplicationPortError> {
-    let value = token.as_str();
-    if value.len() > LibraryViewToken::MAX_BYTES {
+    authenticate_token_value(
+        key,
+        token.as_str(),
+        TOKEN_VERSION,
+        LibraryViewToken::MAX_BYTES,
+    )
+}
+
+fn authenticate_identity_token(
+    key: &[u8; 32],
+    token: &LibraryIdentityViewTokenV2,
+) -> Result<TokenClaims, ApplicationPortError> {
+    authenticate_token_value(
+        key,
+        token.as_str(),
+        IDENTITY_TOKEN_VERSION,
+        LibraryIdentityViewTokenV2::MAX_BYTES,
+    )
+}
+
+fn authenticate_token_value(
+    key: &[u8; 32],
+    value: &str,
+    token_version: &str,
+    max_bytes: usize,
+) -> Result<TokenClaims, ApplicationPortError> {
+    if value.len() > max_bytes {
         return Err(ApplicationPortError::LibraryViewTokenInvalid);
     }
     let fields = value.split(':').collect::<Vec<_>>();
-    if fields.len() != 7 || fields[0] != TOKEN_VERSION {
+    if fields.len() != 7 || fields[0] != token_version {
         return Err(ApplicationPortError::LibraryViewTokenInvalid);
     }
     let payload_end = value
@@ -176,6 +274,14 @@ pub(crate) fn install_tracking(connection: &Connection) -> Result<(), rusqlite::
         "SELECT EXISTS(
             SELECT 1 FROM main.sqlite_master
             WHERE type = 'table' AND name = 'library_view_state'
+        )",
+        [],
+        |row| row.get(0),
+    )?;
+    let has_identity_revision: bool = connection.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM pragma_table_info('library_view_state')
+            WHERE name = 'identity_membership_revision'
         )",
         [],
         |row| row.get(0),
@@ -374,8 +480,173 @@ pub(crate) fn install_tracking(connection: &Connection) -> Result<(), rusqlite::
          WHERE root.library_source_id = {value}",
     )?;
     install_refresh_tracking(connection)?;
+    if has_identity_revision {
+        install_identity_view_tracking(connection)?;
+    }
 
     Ok(())
+}
+
+fn install_identity_view_tracking(connection: &Connection) -> Result<(), rusqlite::Error> {
+    connection.execute_batch(
+        "CREATE TEMP VIEW library_identity_view_current AS
+        SELECT game.game_id,
+            json_array(
+                game.game_id,
+                game.lifecycle_state,
+                (SELECT redirect.canonical_game_id
+                 FROM main.game_redirect AS redirect
+                 WHERE redirect.game_id = game.game_id),
+                (SELECT COALESCE(
+                    json_group_array(json_array(
+                        membership.game_content_id,
+                        membership.relationship,
+                        membership.grouping_basis,
+                        membership.grouping_revision,
+                        content.platform_id,
+                        content.content_type,
+                        content.identification_state,
+                        COALESCE((
+                            SELECT json_group_array(json_array(
+                                identity_tuple.scheme_id,
+                                identity_tuple.identity_revision,
+                                identity_tuple.identity_value
+                            ))
+                            FROM (
+                                SELECT scheme_id, identity_revision, identity_value
+                                FROM main.content_identity
+                                WHERE game_content_id = membership.game_content_id
+                                    AND is_current = 1
+                                ORDER BY scheme_id, identity_revision, identity_value
+                            ) AS identity_tuple
+                        ), '[]')
+                    )),
+                    '[]'
+                 )
+                 FROM (
+                    SELECT game_content_id, relationship, grouping_basis, grouping_revision
+                    FROM main.game_membership
+                    WHERE game_id = game.game_id AND is_current = 1
+                    ORDER BY game_content_id, relationship, grouping_basis, grouping_revision
+                 ) AS membership
+                 LEFT JOIN main.game_content AS content
+                   ON content.game_content_id = membership.game_content_id)
+            ) AS key_json
+        FROM main.game AS game;
+
+        CREATE TEMP TABLE library_identity_view_before (
+            game_id TEXT PRIMARY KEY,
+            key_json TEXT
+        ) WITHOUT ROWID;",
+    )?;
+
+    // V1 tracking captures game_library_row changes and advances both revisions.
+    // These triggers cover fields that change only the V2 identity key.
+    install_identity_direct_tracking(connection, "game", "game_id")?;
+    install_identity_direct_tracking(connection, "game_redirect", "game_id")?;
+    install_identity_direct_tracking(connection, "game_membership", "game_id")?;
+    install_identity_related_tracking(
+        connection,
+        "game_content",
+        "game_content_id",
+        "SELECT DISTINCT membership.game_id
+         FROM main.game_membership AS membership
+         WHERE membership.game_content_id = {value}",
+    )?;
+    install_identity_related_tracking(
+        connection,
+        "content_identity",
+        "game_content_id",
+        "SELECT DISTINCT membership.game_id
+         FROM main.game_membership AS membership
+         WHERE membership.game_content_id = {value}",
+    )?;
+    Ok(())
+}
+
+fn install_identity_direct_tracking(
+    connection: &Connection,
+    table: &str,
+    id_column: &str,
+) -> Result<(), rusqlite::Error> {
+    for event in ["INSERT", "UPDATE", "DELETE"] {
+        let trigger_name = format!(
+            "library_identity_view_track_{table}_{}",
+            event.to_lowercase()
+        );
+        let body = match event {
+            "INSERT" => record_identity_game("NEW", id_column),
+            "DELETE" => record_identity_game("OLD", id_column),
+            _ => format!(
+                "{} {}",
+                record_identity_game("OLD", id_column),
+                record_identity_game("NEW", id_column)
+            ),
+        };
+        connection.execute_batch(&format!(
+            "CREATE TEMP TRIGGER {trigger_name}
+             BEFORE {event} ON main.{table}
+             BEGIN {body} END;"
+        ))?;
+    }
+    Ok(())
+}
+
+fn install_identity_related_tracking(
+    connection: &Connection,
+    table: &str,
+    id_column: &str,
+    related_games: &str,
+) -> Result<(), rusqlite::Error> {
+    for event in ["INSERT", "UPDATE", "DELETE"] {
+        let trigger_name = format!(
+            "library_identity_view_track_{table}_{}",
+            event.to_lowercase()
+        );
+        let body = match event {
+            "INSERT" => record_identity_related_games("NEW", id_column, related_games),
+            "DELETE" => record_identity_related_games("OLD", id_column, related_games),
+            _ => format!(
+                "{} {}",
+                record_identity_related_games("OLD", id_column, related_games),
+                record_identity_related_games("NEW", id_column, related_games)
+            ),
+        };
+        connection.execute_batch(&format!(
+            "CREATE TEMP TRIGGER {trigger_name}
+             BEFORE {event} ON main.{table}
+             BEGIN {body} END;"
+        ))?;
+    }
+    Ok(())
+}
+
+fn record_identity_game(row: &str, id_column: &str) -> String {
+    let game_id = format!("{row}.{id_column}");
+    format!(
+        "INSERT INTO {IDENTITY_TRACKING_TABLE} (game_id, key_json)
+         SELECT {game_id},
+             (SELECT key_json FROM library_identity_view_current WHERE game_id = {game_id})
+         WHERE NOT EXISTS (
+             SELECT 1 FROM {IDENTITY_TRACKING_TABLE} WHERE game_id = {game_id}
+         );"
+    )
+}
+
+fn record_identity_related_games(row: &str, id_column: &str, related_games: &str) -> String {
+    let id = format!("{row}.{id_column}");
+    let query = related_games.replace("{value}", &id);
+    format!(
+        "INSERT INTO {IDENTITY_TRACKING_TABLE} (game_id, key_json)
+         SELECT related.game_id, current.key_json
+         FROM ({query}) AS related
+         JOIN library_identity_view_current AS current
+           ON current.game_id = related.game_id
+         WHERE NOT EXISTS (
+             SELECT 1 FROM {IDENTITY_TRACKING_TABLE} AS before
+             WHERE before.game_id = related.game_id
+         );"
+    )
 }
 
 fn install_refresh_tracking(connection: &Connection) -> Result<(), rusqlite::Error> {
@@ -604,12 +875,49 @@ pub(crate) fn prepare_commit(transaction: &Transaction<'_>) -> Result<(), Persis
         )
         .map_err(map_sqlite_error)?;
 
+    let identity_tracking_exists: bool = transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sqlite_temp_master
+                WHERE type = 'table' AND name = ?1
+            )",
+            [IDENTITY_TRACKING_TABLE],
+            |row| row.get(0),
+        )
+        .map_err(map_sqlite_error)?;
+    let identity_keys_changed = if identity_tracking_exists {
+        transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM temp.library_identity_view_before AS before
+                    LEFT JOIN temp.library_identity_view_current AS current
+                      ON current.game_id = before.game_id
+                    WHERE before.key_json IS NOT current.key_json
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(map_sqlite_error)?
+    } else {
+        false
+    };
+
+    // V1 projection changes also advance V2; combined changes take this path
+    // and advance both revisions in one update.
     if keys_changed {
         advance_membership_revision(transaction)?;
+    } else if identity_keys_changed {
+        advance_identity_membership_revision(transaction)?;
     }
     transaction
         .execute("DELETE FROM temp.library_view_before", [])
         .map_err(map_sqlite_error)?;
+    if identity_tracking_exists {
+        transaction
+            .execute("DELETE FROM temp.library_identity_view_before", [])
+            .map_err(map_sqlite_error)?;
+    }
     Ok(())
 }
 
@@ -623,15 +931,28 @@ pub(crate) fn advance_query_contract_version(
 
     if version == i64::MAX {
         let next_generation = fresh_generation(transaction, &generation)?;
-        transaction
-            .execute(
-                "UPDATE library_view_state
-                 SET generation_id = ?1, membership_revision = 1,
-                     query_contract_version = 1
-                 WHERE singleton_key = 1",
-                [next_generation],
-            )
-            .map_err(map_sqlite_error)?;
+        if read_identity_revision(transaction)?.is_some() {
+            transaction
+                .execute(
+                    "UPDATE library_view_state
+                     SET generation_id = ?1, membership_revision = 1,
+                         identity_membership_revision = 1,
+                         query_contract_version = 1
+                     WHERE singleton_key = 1",
+                    [next_generation],
+                )
+                .map_err(map_sqlite_error)?;
+        } else {
+            transaction
+                .execute(
+                    "UPDATE library_view_state
+                     SET generation_id = ?1, membership_revision = 1,
+                         query_contract_version = 1
+                     WHERE singleton_key = 1",
+                    [next_generation],
+                )
+                .map_err(map_sqlite_error)?;
+        }
     } else {
         transaction
             .execute(
@@ -660,20 +981,62 @@ pub(crate) fn read_state(
         .ok_or(PersistenceError::CorruptOrIncompatible)
 }
 
+fn read_identity_state(
+    transaction: &Transaction<'_>,
+) -> Result<(String, i64, i64), PersistenceError> {
+    let state = transaction
+        .query_row(
+            "SELECT generation_id, identity_membership_revision, query_contract_version
+             FROM library_view_state WHERE singleton_key = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(map_sqlite_error)?
+        .ok_or(PersistenceError::CorruptOrIncompatible)?;
+    if state.1 < 1 || state.2 < 1 {
+        return Err(PersistenceError::CorruptOrIncompatible);
+    }
+    Ok(state)
+}
+
 fn advance_membership_revision(transaction: &Transaction<'_>) -> Result<(), PersistenceError> {
     let (generation, revision, version) = read_state(transaction)?;
+    let identity_revision = read_identity_revision(transaction)?;
     if revision < 1 || version < 1 {
         return Err(PersistenceError::CorruptOrIncompatible);
     }
 
-    if revision == i64::MAX {
+    if revision == i64::MAX || identity_revision == Some(i64::MAX) {
         let next_generation = fresh_generation(transaction, &generation)?;
+        if identity_revision.is_some() {
+            transaction
+                .execute(
+                    "UPDATE library_view_state
+                     SET generation_id = ?1, membership_revision = 1,
+                         identity_membership_revision = 1
+                     WHERE singleton_key = 1",
+                    [next_generation],
+                )
+                .map_err(map_sqlite_error)?;
+        } else {
+            transaction
+                .execute(
+                    "UPDATE library_view_state
+                     SET generation_id = ?1, membership_revision = 1
+                     WHERE singleton_key = 1",
+                    [next_generation],
+                )
+                .map_err(map_sqlite_error)?;
+        }
+    } else if let Some(identity_revision) = identity_revision {
         transaction
             .execute(
                 "UPDATE library_view_state
-                 SET generation_id = ?1, membership_revision = 1
+                 SET membership_revision = ?1,
+                     identity_membership_revision = ?2
                  WHERE singleton_key = 1",
-                [next_generation],
+                [revision + 1, identity_revision + 1],
             )
             .map_err(map_sqlite_error)?;
     } else {
@@ -687,6 +1050,58 @@ fn advance_membership_revision(transaction: &Transaction<'_>) -> Result<(), Pers
             .map_err(map_sqlite_error)?;
     }
     Ok(())
+}
+
+fn advance_identity_membership_revision(
+    transaction: &Transaction<'_>,
+) -> Result<(), PersistenceError> {
+    let Some(revision) = read_identity_revision(transaction)? else {
+        return Err(PersistenceError::CorruptOrIncompatible);
+    };
+    if revision == i64::MAX {
+        // An identity-only overflow must not rotate the shared generation and
+        // make otherwise-current V1 tokens stale. Reject the whole write.
+        return Err(PersistenceError::Internal);
+    }
+    transaction
+        .execute(
+            "UPDATE library_view_state
+             SET identity_membership_revision = ?1
+             WHERE singleton_key = 1",
+            [revision + 1],
+        )
+        .map_err(map_sqlite_error)?;
+    Ok(())
+}
+
+fn read_identity_revision(transaction: &Transaction<'_>) -> Result<Option<i64>, PersistenceError> {
+    let has_identity_revision: bool = transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM pragma_table_info('library_view_state')
+                WHERE name = 'identity_membership_revision'
+            )",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(map_sqlite_error)?;
+    if !has_identity_revision {
+        return Ok(None);
+    }
+    let revision: i64 = transaction
+        .query_row(
+            "SELECT identity_membership_revision
+             FROM library_view_state WHERE singleton_key = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(map_sqlite_error)?
+        .ok_or(PersistenceError::CorruptOrIncompatible)?;
+    if revision < 1 {
+        return Err(PersistenceError::CorruptOrIncompatible);
+    }
+    Ok(Some(revision))
 }
 
 fn fresh_generation(

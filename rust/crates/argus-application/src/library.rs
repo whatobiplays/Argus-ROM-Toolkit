@@ -1242,6 +1242,80 @@ impl RevisionFencedGameLibraryPage {
     }
 }
 
+/// Opaque authentication value for one identity-complete Library view.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryIdentityViewTokenV2(String);
+
+impl LibraryIdentityViewTokenV2 {
+    /// Maximum encoded token size accepted by the V2 Library query contract.
+    pub const MAX_BYTES: usize = 4096;
+
+    /// Creates a token from a backend-generated encoding.
+    pub fn try_from_external(value: impl Into<String>) -> Result<Self, ApplicationPortError> {
+        let value = value.into();
+        if value.is_empty() || value.len() > Self::MAX_BYTES {
+            return Err(ApplicationPortError::LibraryViewTokenInvalid);
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the opaque value used by the Rust persistence adapter.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One page and its authenticated V2 identity view.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentityRevisionFencedGameLibraryPage {
+    page: GameLibraryPage,
+    view_token: LibraryIdentityViewTokenV2,
+    identity_membership_revision: i64,
+    query_contract_version: i64,
+}
+
+impl IdentityRevisionFencedGameLibraryPage {
+    /// Creates a page carrying the revision metadata bound by its V2 token.
+    pub fn new(
+        page: GameLibraryPage,
+        view_token: LibraryIdentityViewTokenV2,
+        identity_membership_revision: i64,
+        query_contract_version: i64,
+    ) -> Result<Self, ApplicationPortError> {
+        if identity_membership_revision < 1 || query_contract_version < 1 {
+            return Err(ApplicationPortError::Persistence(
+                PersistenceError::CorruptOrIncompatible,
+            ));
+        }
+        Ok(Self {
+            page,
+            view_token,
+            identity_membership_revision,
+            query_contract_version,
+        })
+    }
+
+    /// Returns the bounded Library page.
+    pub fn page(&self) -> &GameLibraryPage {
+        &self.page
+    }
+
+    /// Returns the token required for every continuation and same-view detail read.
+    pub fn view_token(&self) -> &LibraryIdentityViewTokenV2 {
+        &self.view_token
+    }
+
+    /// Returns the identity revision authenticated by the token.
+    pub const fn identity_membership_revision(&self) -> i64 {
+        self.identity_membership_revision
+    }
+
+    /// Returns the query contract version authenticated by the token.
+    pub const fn query_contract_version(&self) -> i64 {
+        self.query_contract_version
+    }
+}
+
 /// Application-owned read port for logical library projections.
 pub trait LogicalLibraryQueries {
     /// Lists one bounded page using backend-owned query semantics.
@@ -1276,6 +1350,30 @@ pub trait LogicalLibraryQueries {
         &mut self,
         _game_id: GameId,
         _token: &LibraryViewToken,
+    ) -> Result<GetGameResult, ApplicationPortError> {
+        Err(ApplicationPortError::LibraryViewTokenInvalid)
+    }
+
+    /// Lists one page under the identity-complete V2 Library view.
+    ///
+    /// The query must use the fixed All-active, title-ascending shape. Adapters
+    /// that do not support V2 fail closed and do not call the tokenless query.
+    fn list_games_identity_revision_fenced(
+        &mut self,
+        _query: &ListGamesQuery,
+        token: Option<&LibraryIdentityViewTokenV2>,
+    ) -> Result<IdentityRevisionFencedGameLibraryPage, ApplicationPortError> {
+        Err(match token {
+            Some(_) => ApplicationPortError::LibraryViewTokenInvalid,
+            None => ApplicationPortError::LibraryViewUnavailable,
+        })
+    }
+
+    /// Reads one game only while the supplied V2 identity view remains current.
+    fn get_game_identity_revision_fenced(
+        &mut self,
+        _game_id: GameId,
+        _token: &LibraryIdentityViewTokenV2,
     ) -> Result<GetGameResult, ApplicationPortError> {
         Err(ApplicationPortError::LibraryViewTokenInvalid)
     }

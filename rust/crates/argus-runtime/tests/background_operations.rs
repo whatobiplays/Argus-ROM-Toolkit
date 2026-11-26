@@ -750,13 +750,16 @@ fn start_scan(host: &ApplicationHost, root_id: LibraryRootId) -> JobRunId {
 }
 
 fn terminal_state(host: &ApplicationHost, job_run_id: JobRunId) -> JobRunState {
-    wait_until(
-        || {
-            host.get_job(job_run_id)
-                .map(|detail| detail.job().state().is_terminal())
-                .unwrap_or(false)
-        },
-        Duration::from_secs(15),
+    assert!(
+        wait_until(
+            || {
+                host.get_job(job_run_id)
+                    .map(|detail| detail.job().state().is_terminal())
+                    .unwrap_or(false)
+            },
+            Duration::from_secs(60),
+        ),
+        "job {job_run_id} did not reach a terminal state before the test deadline"
     );
     host.get_job(job_run_id).expect("get job").job().state()
 }

@@ -35,6 +35,12 @@ pub enum SqliteExecutorError {
     Shutdown,
     /// A callback attempted to submit work from the database worker.
     ReentrantSubmission,
+    /// The observer queue is full or SQLite cannot acquire its lock immediately.
+    #[cfg(feature = "test-support")]
+    ObserverBusy,
+    /// The observer operation was cancelled before it completed.
+    #[cfg(feature = "test-support")]
+    ObserverCancelled,
     /// The worker unexpectedly disconnected.
     Disconnected,
     /// An unclassified internal failure occurred.
@@ -78,6 +84,10 @@ impl fmt::Display for SqliteExecutorError {
             Self::Poisoned => formatter.write_str("database executor poisoned"),
             Self::Shutdown => formatter.write_str("database executor shut down"),
             Self::ReentrantSubmission => formatter.write_str("re-entrant database submission"),
+            #[cfg(feature = "test-support")]
+            Self::ObserverBusy => formatter.write_str("observer database operation is busy"),
+            #[cfg(feature = "test-support")]
+            Self::ObserverCancelled => formatter.write_str("observer database operation cancelled"),
             Self::Disconnected => formatter.write_str("database worker disconnected"),
             Self::Internal => formatter.write_str("internal database executor failure"),
             Self::ApplicationCallback(_) => formatter.write_str("application callback failed"),

@@ -497,10 +497,6 @@ fn install_identity_view_tracking(connection: &Connection) -> Result<(), rusqlit
                 (SELECT redirect.canonical_game_id
                  FROM main.game_redirect AS redirect
                  WHERE redirect.game_id = game.game_id),
-                EXISTS(
-                    SELECT 1 FROM main.game_library_row AS projection
-                    WHERE projection.game_id = game.game_id
-                ),
                 (SELECT COALESCE(
                     json_group_array(json_array(
                         membership.game_content_id,

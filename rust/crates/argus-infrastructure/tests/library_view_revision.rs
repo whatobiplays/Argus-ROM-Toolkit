@@ -618,6 +618,54 @@ fn identity_membership_revision_migration_preserves_v1_state() {
 }
 
 #[test]
+fn projection_remove_restore_around_identity_noop_preserves_existing_views() {
+    let database = open();
+    insert_two_games_with_roots(&database.executor);
+
+    let v1_page =
+        fenced_list(&database.executor, list_query(None, 2, None), None).expect("create V1 view");
+    let v1_token = v1_page.view_token().clone();
+    let game_id = v1_page.page().items()[0].game_id();
+    let v2_page = fenced_identity_list(&database.executor, list_query(None, 2, None), None)
+        .expect("create V2 view");
+    let v2_token = v2_page.view_token().clone();
+    let v1_revision_before = revision(&database.executor);
+    let v2_revision_before = identity_membership_revision(&database.executor);
+
+    write(
+        &database.executor,
+        "CREATE TEMP TABLE saved_projection_for_identity_noop AS
+             SELECT * FROM main.game_library_row
+             WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+         DELETE FROM main.game_library_row
+         WHERE game_id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+         UPDATE main.game_content
+         SET identification_state = identification_state
+         WHERE game_content_id = 'ffffffffffffffffffffffffffffffff';
+         INSERT INTO main.game_library_row
+         SELECT * FROM temp.saved_projection_for_identity_noop;
+         DROP TABLE temp.saved_projection_for_identity_noop;",
+    );
+
+    assert_eq!(revision(&database.executor), v1_revision_before);
+    assert_eq!(
+        identity_membership_revision(&database.executor),
+        v2_revision_before,
+        "restoring the projection must preserve the V2 semantic view"
+    );
+    assert!(matches!(
+        fenced_game(&database.executor, game_id, v1_token),
+        Ok(GetGameResult::Found(_))
+    ));
+    assert!(matches!(
+        fenced_identity_game(&database.executor, game_id, v2_token),
+        Ok(GetGameResult::Found(_))
+    ));
+
+    database.executor.shutdown().expect("close database");
+}
+
+#[test]
 fn identity_only_change_advances_v2_without_staling_v1_views() {
     let database = open();
     insert_two_games_with_roots(&database.executor);

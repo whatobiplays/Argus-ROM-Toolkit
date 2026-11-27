@@ -196,7 +196,7 @@ class ControlTests(unittest.TestCase):
 
     def test_trusted_seed_record_binds_cache_key_run_and_source(self) -> None:
         source_sha = "a" * 40
-        cache_key = "argus-gradle-issue93-pilot-v1-test-key"
+        cache_key = "argus-gradle-dependency-cache-pilot-v1-test-key"
         manifest_path = control._task_root() / "modules-manifest.json"
         manifest_path.write_text(json.dumps({
             "format": 1,

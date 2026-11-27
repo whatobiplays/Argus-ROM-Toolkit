@@ -711,7 +711,7 @@ def command_cache_key(args: argparse.Namespace) -> None:
         raise SafetyError("runner architecture is not recognized")
     vendor_key = java_identity["java_vendor"].lower().replace(" ", "-")
     key = (
-        f"argus-gradle-issue93-pilot-v1-linux-{architecture}-temurin-{vendor_key}-"
+        f"argus-gradle-dependency-cache-pilot-v1-linux-{architecture}-temurin-{vendor_key}-"
         f"{java_identity['java_runtime_version']}-gradle-9.1.0-"
         f"cmdline-12266719-sdk36r{revisions['platform']}-bt36.0.0r{revisions['build_tools']}-{digest}"
     )

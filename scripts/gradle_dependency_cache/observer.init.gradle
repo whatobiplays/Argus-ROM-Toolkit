@@ -17,6 +17,12 @@ def outputName = System.getenv("GRADLE_OBSERVER_OUTPUT")
 if (!outputName) {
     throw new GradleException("GRADLE_OBSERVER_OUTPUT must point to the isolated evidence file")
 }
+def invocationId = System.getenv("GRADLE_OBSERVER_INVOCATION_ID") ?: ""
+def invocationLabel = System.getenv("GRADLE_OBSERVER_INVOCATION_LABEL") ?: ""
+if (!invocationId) {
+    // Utility wrapper calls such as --stop are outside the measured build sequence.
+    return
+}
 
 def outputFile = new File(outputName)
 outputFile.parentFile.mkdirs()
@@ -36,7 +42,13 @@ def sha256 = { String value ->
 }
 def bodySuffixes = [".aar", ".jar", ".klib", ".so", ".zip", ".tar", ".tgz"] as Set
 
-writeRecord([event: "observer_ready", gradle: gradle.gradleVersion, observer_api: "internal-build-operations-v1"])
+writeRecord([
+    event: "observer_ready",
+    invocation_id: invocationId,
+    invocation_label: invocationLabel,
+    gradle: gradle.gradleVersion,
+    observer_api: "internal-build-operations-v1",
+])
 
 def listener = [
     started: { BuildOperationDescriptor operation, OperationStartEvent event ->
@@ -46,12 +58,19 @@ def listener = [
             if (detailsType.contains("ExternalResource") || operationName.toLowerCase(Locale.ROOT).contains("resource")) {
                 writeRecord([
                     event: "external_resource_start",
+                    invocation_id: invocationId,
+                    invocation_label: invocationLabel,
                     details_type: detailsType.tokenize(".").last(),
                     operation_name_sha256: sha256(operationName),
                 ])
             }
         } catch (Exception ignored) {
-            writeRecord([event: "observer_error", error_kind: "external_resource_start_decode"])
+            writeRecord([
+                event: "observer_error",
+                invocation_id: invocationId,
+                invocation_label: invocationLabel,
+                error_kind: "external_resource_start_decode",
+            ])
         }
     },
     progress: { OperationIdentifier identifier, OperationProgressEvent event -> },
@@ -78,17 +97,46 @@ def listener = [
             }
             String lowerPath = path.toLowerCase(Locale.ROOT)
             boolean artifactBody = bodySuffixes.any { String suffix -> lowerPath.endsWith(suffix) }
+            List<String> segments = path.split("/").findAll { String segment -> !segment.isEmpty() }
+            boolean targetNativeRuntime = false
+            for (int index = 0; index + 4 < segments.size(); index++) {
+                if (segments[index] == "org"
+                        && segments[index + 1] == "robolectric"
+                        && segments[index + 2] == "nativeruntime-dist-compat"
+                        && segments[index + 3] == "1.0.18") {
+                    targetNativeRuntime = true
+                    break
+                }
+            }
+            String artifactSuffix = ""
+            if (artifactBody && segments) {
+                String fileName = segments.last()
+                int dot = fileName.lastIndexOf(".")
+                if (dot >= 0) {
+                    artifactSuffix = fileName.substring(dot).toLowerCase(Locale.ROOT)
+                }
+            }
             writeRecord([
                 event: "external_resource_read",
+                invocation_id: invocationId,
+                invocation_label: invocationLabel,
                 details_type: detailsType.tokenize(".").last(),
                 resource_sha256: sha256(location ?: ""),
                 artifact_body: artifactBody,
+                artifact_suffix: artifactSuffix,
+                artifact_coordinate: targetNativeRuntime ? "org.robolectric:nativeruntime-dist-compat:1.0.18" : null,
+                artifact_filename_sha256: artifactBody && segments ? sha256(segments.last()) : null,
                 result_state: failed ? "error" : (missing ? "missing" : (bytesRead == null ? "incomplete" : "completed")),
                 bytes_read_known: bytesRead != null,
                 bytes_read: bytesRead,
             ])
         } catch (Exception ignored) {
-            writeRecord([event: "observer_error", error_kind: "external_resource_event_decode"])
+            writeRecord([
+                event: "observer_error",
+                invocation_id: invocationId,
+                invocation_label: invocationLabel,
+                error_kind: "external_resource_event_decode",
+            ])
         }
     },
 ] as BuildOperationListener

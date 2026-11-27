@@ -9,7 +9,6 @@ on:
       - main
     types:
       - opened
-      - synchronize
 
 permissions:
   contents: read
@@ -95,13 +94,34 @@ jobs:
       - id: seed_manifest
         name: Create a stable bounded seed manifest
         if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
-        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
-      - name: Save the trusted dependency cache
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+          --output "${{ runner.temp }}/gradle-dependency-cache-experiment/state/modules-manifest.json"
+      - id: seed_record
+        name: Bind the trusted manifest to this seed run
+        if: ${{ success() && steps.probe.outcome == 'success' && steps.seed_manifest.outcome == 'success' }}
+        env:
+          CACHE_KEY: ${{ steps.cache_key.outputs.key }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control write-seed-record
+          --manifest "${{ runner.temp }}/gradle-dependency-cache-experiment/state/modules-manifest.json"
+          --cache-key "$CACHE_KEY"
+          --output "${{ runner.temp }}/gradle-dependency-cache-experiment/state/trusted-seed-manifest.json"
+      - id: cache_save
+        name: Save the trusted dependency cache
         if: ${{ success() && steps.probe.outcome == 'success' && steps.seed_manifest.outcome == 'success' }}
         uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
           key: ${{ steps.cache_key.outputs.key }}
+      - name: Publish the trusted seed manifest for the single PR consumer
+        if: ${{ success() && steps.cache_save.outcome == 'success' && steps.seed_record.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-trusted-seed-manifest
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/trusted-seed-manifest.json
+          retention-days: 14
+          if-no-files-found: error
       - name: Retain redacted trial evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -183,7 +203,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
-          key: ${{ steps.invalidation_key.outputs.key }}-miss-${{ github.run_id }}
+          key: ${{ steps.invalidation_key.outputs.key }}
       - name: Require a clean dependency-input invalidation miss
         env:
           RESTORE_OUTCOME: ${{ steps.changed_input_miss.outcome }}
@@ -242,17 +262,17 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-  service_fault_observation:
-    name: Record whether a safe service fault can be tested
-    needs: cache_miss_invalidation
+  seed_cache_readback:
+    name: Read back and verify the trusted seed before cold trials
+    needs: cache_seed
     if: >-
-      ${{ always() && github.event_name == 'push' &&
+      ${{ github.event_name == 'push' &&
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
       github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
       github.ref_protected == true && github.run_attempt == 1 }}
-    cache-mode: none
+    cache-mode: read
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -261,20 +281,40 @@ jobs:
           persist-credentials: false
       - id: initialize
         run: python3 -m scripts.gradle_dependency_cache.control init-environment
-      - name: Record the unsupported fault case
+      - id: seed_restore
+        name: Restore the exact seed entry
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: ${{ needs.cache_seed.outputs.cache_key }}
+      - name: Require exact seed readback and manifest equality
+        env:
+          RESTORE_OUTCOME: ${{ steps.seed_restore.outcome }}
+          CACHE_HIT: ${{ steps.seed_restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.seed_restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.seed_restore.outputs.cache-primary-key }}
+          EXPECTED_MANIFEST: ${{ needs.cache_seed.outputs.manifest_sha256 }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control restore-check --expected exact
+          --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
+          --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+          --manifest-sha256 "$EXPECTED_MANIFEST"
+      - name: Record the unsupported real service-fault test
+        if: ${{ always() && steps.initialize.outcome == 'success' }}
         run: python3 -m scripts.gradle_dependency_cache.control record-fault-unsupported
       - name: Retain redacted trial evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.run_id }}-service-fault-observation-${{ github.run_attempt }}
+          name: ${{ github.run_id }}-seed-cache-readback-${{ github.run_attempt }}
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
           retention-days: 14
           if-no-files-found: warn
 
   partial_extraction_recovery:
     name: Clean a partial extraction before fallback
-    needs: [cache_miss_invalidation, service_fault_observation]
+    needs: [cache_miss_invalidation, seed_cache_readback]
     if: >-
       ${{ github.event_name == 'push' &&
       github.event.created == true && github.event.deleted == false &&
@@ -293,15 +333,31 @@ jobs:
         run: python3 -m scripts.gradle_dependency_cache.control init-environment
       - name: Create a partial extraction fixture
         run: python3 -m scripts.gradle_dependency_cache.control simulate-partial
-      - id: cleanup
-        name: Remove only the disposable modules-2 path
-        run: python3 -m scripts.gradle_dependency_cache.control clean-modules
-      - name: Verify cleanup completed before any fallback
+      - id: cleanup_fault
+        name: Exercise failed cleanup of the partial extraction
+        continue-on-error: true
+        run: python3 -m scripts.gradle_dependency_cache.control partial-cleanup-failure
+      - id: gradle_sentinel
+        name: Gradle fallback sentinel must remain gated
+        if: ${{ steps.cleanup_fault.outcome == 'success' }}
         env:
-          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          SENTINEL_MARKER: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-sentinel-ran
         run: |
-          test "$CLEANUP_OUTCOME" = success
-          test ! -e "$GRADLE_USER_HOME/caches/modules-2"
+          touch "$SENTINEL_MARKER"
+          android-readiness-probe/gradlew -p android-readiness-probe --no-daemon --no-build-cache --no-configuration-cache help
+      - name: Verify failed cleanup blocked the Gradle sentinel
+        if: ${{ always() }}
+        env:
+          CLEANUP_OUTCOME: ${{ steps.cleanup_fault.outcome }}
+          SENTINEL_OUTCOME: ${{ steps.gradle_sentinel.outcome }}
+          SENTINEL_MARKER: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-sentinel-ran
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control verify-partial-sentinel
+          --cleanup-outcome "$CLEANUP_OUTCOME" --sentinel-outcome "$SENTINEL_OUTCOME"
+          --marker "$SENTINEL_MARKER"
+      - name: Remove the retained partial extraction after the gate check
+        if: ${{ always() && steps.initialize.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control clean-modules
       - name: Retain redacted trial evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -691,7 +747,8 @@ jobs:
     name: Read-only PR restore and probe
     if: >-
       ${{ github.event_name == 'pull_request' &&
-      github.event.action != 'closed' &&
+      github.event.action == 'opened' && github.run_attempt == 1 &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
       github.event.pull_request.head.repo.id == '1311974293' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'codex/issue-93-gradle-cache-pilot' &&
@@ -699,6 +756,9 @@ jobs:
       github.event.pull_request.base.repo.id == '1311974293' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.user.id == '219249021' }}
+    permissions:
+      actions: read
+      contents: read
     cache-mode: read
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -721,6 +781,82 @@ jobs:
         run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
       - id: cache_key
         run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - id: seed_run
+        name: Require one successful first-attempt seed campaign for this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh api --method GET --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/gradle-dependency-cache-experiment.yml/runs" \
+            -f event=pull_request -f per_page=100 \
+            > "$RUNNER_TEMP/issue93-pr-workflow-runs.json"
+          gh api --method GET --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/gradle-dependency-cache-experiment.yml/runs" \
+            -f event=push \
+            -f branch=codex/issue-93-gradle-cache-pilot \
+            -f head_sha="$PR_HEAD_SHA" \
+            -f per_page=100 > "$RUNNER_TEMP/issue93-workflow-runs.json"
+          python3 -m scripts.gradle_dependency_cache.control select-seed-run \
+            --seed-runs "$RUNNER_TEMP/issue93-workflow-runs.json" \
+            --pr-runs "$RUNNER_TEMP/issue93-pr-workflow-runs.json" \
+            --head-sha "$PR_HEAD_SHA" --pr-number "$PR_NUMBER" \
+            --current-run-id "$CURRENT_RUN_ID"
+      - name: Require the trusted seed job to have succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/runs/${{ steps.seed_run.outputs.run_id }}/jobs" \
+            -f per_page=100 > "$RUNNER_TEMP/issue93-seed-jobs.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ["RUNNER_TEMP"], "issue93-seed-jobs.json").read_text())
+          jobs = [
+              job for job in payload.get("jobs", [])
+              if job.get("name") == "Trusted cold seed and save" and job.get("conclusion") == "success"
+          ]
+          if len(jobs) != 1:
+              raise SystemExit("trusted seed job was absent or ambiguous")
+          PY
+      - id: download_seed_manifest
+        name: Download the trusted seed record from its push run
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.seed_run.outputs.run_id }}-trusted-seed-manifest
+          run-id: ${{ steps.seed_run.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/trusted-seed-record
+      - id: verify_seed_manifest
+        name: Verify the seed record and dependency-input key
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CACHE_KEY: ${{ steps.cache_key.outputs.key }}
+          EXPECTED_RUN_ID: ${{ steps.seed_run.outputs.run_id }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control verify-seed-record
+          --path "${{ runner.temp }}/gradle-dependency-cache-experiment/state/trusted-seed-record/trusted-seed-manifest.json"
+          --expected-source-sha "$PR_HEAD_SHA" --expected-cache-key "$CACHE_KEY"
+          --expected-run-id "$EXPECTED_RUN_ID"
+      - name: Record head, base, merge, seed, and checked-out source identities
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha || '' }}
+          SEED_SOURCE_SHA: ${{ steps.verify_seed_manifest.outputs.seed_source_sha }}
+          SEED_RUN_ID: ${{ steps.verify_seed_manifest.outputs.seed_run_id }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control record-pr-identities
+          --head-sha "$PR_HEAD_SHA" --base-sha "$PR_BASE_SHA"
+          --merge-sha "$PR_MERGE_SHA" --github-sha "$GITHUB_SHA"
+          --seed-source-sha "$SEED_SOURCE_SHA" --seed-run-id "$SEED_RUN_ID"
       - id: restore
         uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         continue-on-error: true
@@ -733,10 +869,12 @@ jobs:
           CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
           MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
           PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
+          EXPECTED_MANIFEST: ${{ steps.verify_seed_manifest.outputs.manifest_sha256 }}
         run: >-
           python3 -m scripts.gradle_dependency_cache.control restore-check --expected exact
           --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
           --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+          --manifest-sha256 "$EXPECTED_MANIFEST"
       - name: Install the observer before Gradle starts
         run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
       - id: robolectric_before
@@ -745,6 +883,7 @@ jobs:
         name: Run the production readiness-probe sequence
         env:
           PROBE_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
+          PROBE_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: >-
           python3 -m scripts.gradle_dependency_cache.runner --mode warm --expected-gradle 9.1.0
           --expected-java '${{ steps.cache_key.outputs.java_runtime_version }}'
@@ -826,7 +965,7 @@ jobs:
           if-no-files-found: warn
   trial_a_cold:
     name: Pair A cold
-    needs: cache_seed
+    needs: [cache_seed, seed_cache_readback]
     if: >-
       ${{ github.event_name == 'push' &&
       github.event.created == true && github.event.deleted == false &&

@@ -25,6 +25,10 @@ MODULE_CACHE_LIMIT = 1_073_741_824
 FIXTURE_LIMIT = 1_048_576
 TRANSIENT_NAMES = {"gc.properties"}
 TRANSIENT_SUFFIXES = (".lock", ".lck")
+ROBOLECTRIC_TARGET_COORDINATE = "org.robolectric:nativeruntime-dist-compat:1.0.18"
+ROBOLECTRIC_TARGET_PATH = Path("files-2.1/org.robolectric/nativeruntime-dist-compat/1.0.18")
+ROBOLECTRIC_TARGET_FILENAME = "nativeruntime-dist-compat-1.0.18.jar"
+REQUIRED_GRADLE_TASKS = ("testProbeUnitTest", "lintProbe", "assembleProbe")
 
 
 class SafetyError(RuntimeError):
@@ -157,39 +161,47 @@ def _excluded(relative: Path) -> bool:
 
 
 def canonical_manifest(root: Path, maximum_bytes: int) -> dict[str, Any]:
-    """Hash regular files by relative path and contents, excluding transient metadata."""
+    """Validate the complete archive path while separately selecting digest inputs."""
     if root.is_symlink():
-        raise SafetyError("manifest root is a symbolic link")
-    if not root.exists():
-        entries: list[dict[str, Any]] = []
-    elif not root.is_dir():
-        raise SafetyError("manifest root is not a directory")
-    else:
+        raise SafetyError("archive root is a symbolic link")
+    try:
+        root_metadata = root.lstat()
+    except FileNotFoundError:
+        root_metadata = None
+    if root_metadata is not None and not stat.S_ISDIR(root_metadata.st_mode):
+        raise SafetyError("archive root is not a directory")
+
+    entries: list[dict[str, Any]] = []
+    expanded_bytes = 0
+    if root_metadata is not None:
         resolved_root = root.resolve(strict=True)
-        entries = []
-        total = 0
-        for directory, names, filenames in os.walk(resolved_root, topdown=True, followlinks=False):
+
+        def fail_on_walk_error(error: OSError) -> None:
+            raise SafetyError("cache archive could not be fully inspected") from error
+
+        for directory, names, filenames in os.walk(
+            resolved_root, topdown=True, followlinks=False, onerror=fail_on_walk_error,
+        ):
             current = Path(directory)
             safe_names = []
             for name in sorted(names):
                 child = current / name
-                if child.is_symlink():
-                    raise SafetyError("cache contains a symbolic link")
+                metadata = child.lstat()
+                if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                    raise SafetyError("cache archive contains a symbolic link or non-directory entry")
                 safe_names.append(name)
             names[:] = safe_names
             for name in sorted(filenames):
                 path = current / name
+                metadata = path.lstat()
+                if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                    raise SafetyError("cache archive contains a symbolic link or non-regular file")
+                expanded_bytes += metadata.st_size
+                if expanded_bytes > maximum_bytes:
+                    raise SafetyError("expanded cache archive exceeds its configured byte limit")
                 relative = path.relative_to(resolved_root)
                 if _excluded(relative):
                     continue
-                if path.is_symlink():
-                    raise SafetyError("cache contains a symbolic link")
-                metadata = path.stat(follow_symlinks=False)
-                if not stat.S_ISREG(metadata.st_mode):
-                    raise SafetyError("cache contains a non-regular file")
-                total += metadata.st_size
-                if total > maximum_bytes:
-                    raise SafetyError("expanded cache exceeds its configured byte limit")
                 entries.append({
                     "path": relative.as_posix(),
                     "bytes": metadata.st_size,
@@ -204,6 +216,7 @@ def canonical_manifest(root: Path, maximum_bytes: int) -> dict[str, Any]:
         "sha256": hashlib.sha256(canonical).hexdigest(),
         "files": len(entries),
         "bytes": total_bytes,
+        "expanded_bytes": expanded_bytes,
         "entries": entries,
     }
 
@@ -212,8 +225,8 @@ def _stable_manifest(root: Path, maximum_bytes: int) -> dict[str, Any]:
     first = canonical_manifest(root, maximum_bytes)
     time.sleep(2)
     second = canonical_manifest(root, maximum_bytes)
-    if first["sha256"] != second["sha256"]:
-        raise SafetyError("cache contents changed while the stable manifest was being checked")
+    if first["sha256"] != second["sha256"] or first["expanded_bytes"] != second["expanded_bytes"]:
+        raise SafetyError("cache contents or archive size changed while the stable manifest was being checked")
     return second
 
 
@@ -312,14 +325,16 @@ def command_manifest(args: argparse.Namespace) -> None:
         f"sha256={manifest['sha256']}",
         f"files={manifest['files']}",
         f"bytes={manifest['bytes']}",
+        f"expanded_bytes={manifest['expanded_bytes']}",
     ])
     _write_evidence({
         "modules_manifest_sha256": manifest["sha256"],
         "modules_manifest_files": manifest["files"],
         "modules_manifest_bytes": manifest["bytes"],
+        "modules_archive_expanded_bytes": manifest["expanded_bytes"],
         "modules_manifest_stable": bool(args.stable),
     })
-    print(json.dumps({key: manifest[key] for key in ("sha256", "files", "bytes")}, sort_keys=True))
+    print(json.dumps({key: manifest[key] for key in ("sha256", "files", "bytes", "expanded_bytes")}, sort_keys=True))
 
 
 def _restore_is_exact(args: argparse.Namespace) -> bool:
@@ -396,6 +411,238 @@ def command_compare_manifest(args: argparse.Namespace) -> None:
         raise SafetyError("canonical module-cache comparison did not match the seed")
     _write_evidence({"seed_manifest_match": True, "seed_manifest_sha256": actual["sha256"]})
     print(json.dumps({"seed_manifest_match": True, "sha256": actual["sha256"]}, sort_keys=True))
+
+
+def command_write_seed_record(args: argparse.Namespace) -> None:
+    manifest_path = Path(args.manifest).resolve(strict=True)
+    task_root = _task_root(create=True).resolve(strict=True)
+    if not _inside(manifest_path, task_root) or _inside(manifest_path, _modules_path()):
+        raise SafetyError("trusted seed manifest must remain in isolated evidence storage")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    cache_key = args.cache_key
+    source_sha = os.environ.get("GITHUB_SHA", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
+    branch = os.environ.get("GITHUB_REF", "")
+    campaign_id = os.environ.get("EXPERIMENT_CAMPAIGN_ID", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise SafetyError("trusted seed source commit is invalid")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", run_id) or run_attempt != "1":
+        raise SafetyError("trusted seed run identity is invalid")
+    if branch != "refs/heads/codex/issue-93-gradle-cache-pilot":
+        raise SafetyError("trusted seed must come from the exact pilot branch")
+    if campaign_id != "gradle-dependency-cache-pilot-v1":
+        raise SafetyError("trusted seed campaign identity is invalid")
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]{1,512}", cache_key):
+        raise SafetyError("trusted seed cache key is invalid")
+    files = manifest.get("files")
+    digest_bytes = manifest.get("bytes")
+    expanded_bytes = manifest.get("expanded_bytes")
+    if manifest.get("format") != 1:
+        raise SafetyError("trusted seed manifest format is invalid")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(manifest.get("sha256", ""))):
+        raise SafetyError("trusted seed manifest digest is invalid")
+    if (
+        not isinstance(files, int) or isinstance(files, bool) or files < 0
+        or not isinstance(digest_bytes, int) or isinstance(digest_bytes, bool) or digest_bytes < 0
+        or not isinstance(expanded_bytes, int) or isinstance(expanded_bytes, bool)
+        or expanded_bytes < digest_bytes or expanded_bytes > MODULE_CACHE_LIMIT
+    ):
+        raise SafetyError("trusted seed archive exceeded the expanded-size limit")
+
+    record = {
+        "schema": 1,
+        "campaign_id": campaign_id,
+        "seed_run_id": run_id,
+        "seed_run_attempt": int(run_attempt),
+        "seed_source_sha": source_sha,
+        "seed_branch": branch,
+        "cache_key": cache_key,
+        "manifest_sha256": manifest["sha256"],
+        "manifest_files": files,
+        "manifest_bytes": digest_bytes,
+        "archive_expanded_bytes": expanded_bytes,
+    }
+    destination = Path(args.output).resolve(strict=False)
+    if not _inside(destination, task_root) or _inside(destination, _modules_path()):
+        raise SafetyError("trusted seed record must remain outside the cache archive path")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    _write_evidence({"trusted_seed_record_sha256": hashlib.sha256(destination.read_bytes()).hexdigest()})
+    print(json.dumps({"seed_record_written": True, "manifest_sha256": record["manifest_sha256"]}, sort_keys=True))
+
+
+def command_verify_seed_record(args: argparse.Namespace) -> None:
+    path = Path(args.path).resolve(strict=True)
+    record = json.loads(path.read_text(encoding="utf-8"))
+    expected_source = args.expected_source_sha
+    expected_key = args.expected_cache_key
+    if record.get("schema") != 1 or record.get("campaign_id") != "gradle-dependency-cache-pilot-v1":
+        raise SafetyError("downloaded trusted seed record has an unexpected schema or campaign")
+    if record.get("seed_branch") != "refs/heads/codex/issue-93-gradle-cache-pilot":
+        raise SafetyError("downloaded trusted seed record came from another branch")
+    if record.get("seed_source_sha") != expected_source or not re.fullmatch(r"[0-9a-f]{40}", expected_source):
+        raise SafetyError("downloaded trusted seed record does not match the PR head")
+    if record.get("cache_key") != expected_key:
+        raise SafetyError("PR dependency-input key differs from the trusted seed key")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", str(record.get("seed_run_id", ""))) or record.get("seed_run_attempt") != 1:
+        raise SafetyError("downloaded trusted seed record has an invalid run identity")
+    if record.get("seed_run_id") != args.expected_run_id:
+        raise SafetyError("downloaded trusted seed record does not belong to the resolved seed run")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(record.get("manifest_sha256", ""))):
+        raise SafetyError("downloaded trusted seed record has an invalid manifest digest")
+    expanded_bytes = record.get("archive_expanded_bytes")
+    if (
+        not isinstance(expanded_bytes, int) or isinstance(expanded_bytes, bool)
+        or expanded_bytes < 0 or expanded_bytes > MODULE_CACHE_LIMIT
+    ):
+        raise SafetyError("downloaded trusted seed record exceeds the archive limit")
+    manifest_files = record.get("manifest_files")
+    manifest_bytes = record.get("manifest_bytes")
+    if (
+        not isinstance(manifest_files, int) or isinstance(manifest_files, bool) or manifest_files < 0
+        or not isinstance(manifest_bytes, int) or isinstance(manifest_bytes, bool)
+        or manifest_bytes < 0 or manifest_bytes > expanded_bytes
+    ):
+        raise SafetyError("downloaded trusted seed record has invalid manifest counts")
+    _write_evidence({
+        "trusted_seed_run_id": record["seed_run_id"],
+        "trusted_seed_run_attempt": record["seed_run_attempt"],
+        "trusted_seed_source_sha": record["seed_source_sha"],
+        "trusted_seed_cache_key": record["cache_key"],
+        "trusted_seed_manifest_sha256": record["manifest_sha256"],
+    })
+    _append_github_file(_github_file("GITHUB_OUTPUT"), [
+        f"seed_run_id={record['seed_run_id']}",
+        f"seed_source_sha={record['seed_source_sha']}",
+        f"manifest_sha256={record['manifest_sha256']}",
+    ])
+    print(json.dumps({"trusted_seed_record_verified": True, "manifest_sha256": record["manifest_sha256"]}, sort_keys=True))
+
+
+def _workflow_runs_from_pages(pages: Any) -> list[dict[str, Any]]:
+    if not isinstance(pages, list):
+        raise SafetyError("workflow history pagination has an unexpected shape")
+    runs: list[dict[str, Any]] = []
+    for page in pages:
+        if not isinstance(page, dict) or not isinstance(page.get("workflow_runs"), list):
+            raise SafetyError("workflow history page is missing its workflow runs")
+        if any(not isinstance(run, dict) for run in page["workflow_runs"]):
+            raise SafetyError("workflow history contains a malformed run")
+        runs.extend(page["workflow_runs"])
+    return runs
+
+
+def resolve_seed_campaign(
+    seed_pages: Any,
+    pr_pages: Any,
+    *,
+    head_sha: str,
+    pr_number: str,
+    current_run_id: str,
+) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        raise SafetyError("PR head SHA is invalid for seed-campaign selection")
+    if not re.fullmatch(r"[0-9]+", pr_number):
+        raise SafetyError("PR number is invalid for seed-campaign selection")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", current_run_id):
+        raise SafetyError("current workflow run ID is invalid")
+
+    prior_consumers = []
+    for run in _workflow_runs_from_pages(pr_pages):
+        if run.get("event") != "pull_request" or str(run.get("id", "")) == current_run_id:
+            continue
+        pull_requests = run.get("pull_requests")
+        if not isinstance(pull_requests, list):
+            raise SafetyError("PR workflow history has no pull-request association list")
+        matched = False
+        for pull_request in pull_requests:
+            if not isinstance(pull_request, dict):
+                raise SafetyError("PR workflow history contains a malformed pull-request association")
+            head = pull_request.get("head", {})
+            if not isinstance(head, dict):
+                raise SafetyError("PR workflow history contains a malformed head identity")
+            if (
+                str(pull_request.get("number", "")) == pr_number
+                or head.get("sha") == head_sha
+            ):
+                matched = True
+                break
+        if not pull_requests and run.get("head_branch") == "codex/issue-93-gradle-cache-pilot":
+            matched = True
+        if matched:
+            prior_consumers.append(run)
+    if prior_consumers:
+        raise SafetyError("a PR consumer campaign already exists for this PR or head")
+
+    seed_campaigns = [
+        run for run in _workflow_runs_from_pages(seed_pages)
+        if run.get("event") == "push"
+        and run.get("head_branch") == "codex/issue-93-gradle-cache-pilot"
+        and run.get("head_sha") == head_sha
+    ]
+    if len(seed_campaigns) != 1:
+        raise SafetyError("expected exactly one seed campaign for this PR head")
+    campaign = seed_campaigns[0]
+    if (
+        campaign.get("run_attempt") != 1
+        or campaign.get("status") != "completed"
+        or campaign.get("conclusion") != "success"
+    ):
+        raise SafetyError("the one seed campaign did not succeed on its first attempt")
+    run_id = str(campaign.get("id", ""))
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
+        raise SafetyError("the trusted seed workflow run ID is invalid")
+    return run_id
+
+
+def command_select_seed_run(args: argparse.Namespace) -> None:
+    seed_pages = json.loads(Path(args.seed_runs).read_text(encoding="utf-8"))
+    pr_pages = json.loads(Path(args.pr_runs).read_text(encoding="utf-8"))
+    run_id = resolve_seed_campaign(
+        seed_pages,
+        pr_pages,
+        head_sha=args.head_sha,
+        pr_number=args.pr_number,
+        current_run_id=args.current_run_id,
+    )
+    _append_github_file(_github_file("GITHUB_OUTPUT"), [f"run_id={run_id}"])
+    print(json.dumps({"seed_run_id": run_id, "seed_run_attempt": 1}, sort_keys=True))
+
+
+def command_record_pr_identities(args: argparse.Namespace) -> None:
+    checkout = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=Path(__file__).resolve().parents[2],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    checked_out_sha = checkout.stdout.strip()
+    identities = {
+        "pr_head_sha": args.head_sha,
+        "pr_base_sha": args.base_sha,
+        "pr_merge_sha": args.merge_sha,
+        "pr_github_sha": args.github_sha,
+        "checked_out_source_sha": checked_out_sha,
+        "trusted_seed_source_sha": args.seed_source_sha,
+        "trusted_seed_run_id": args.seed_run_id,
+    }
+    if checkout.returncode or not re.fullmatch(r"[0-9a-f]{40}", checked_out_sha):
+        raise SafetyError("checked-out PR source identity could not be read")
+    if identities["pr_head_sha"] != checked_out_sha or identities["trusted_seed_source_sha"] != args.head_sha:
+        raise SafetyError("PR checkout, head, and trusted seed source do not identify the same commit")
+    for field in ("pr_head_sha", "pr_base_sha", "pr_github_sha"):
+        if not re.fullmatch(r"[0-9a-f]{40}", identities[field]):
+            raise SafetyError(f"{field} is unavailable or malformed")
+    if identities["pr_merge_sha"] and not re.fullmatch(r"[0-9a-f]{40}", identities["pr_merge_sha"]):
+        raise SafetyError("PR merge identity is malformed")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", identities["trusted_seed_run_id"]):
+        raise SafetyError("trusted seed run identity is malformed")
+    identities["pr_merge_sha_available"] = bool(identities["pr_merge_sha"])
+    _write_evidence(identities)
+    print(json.dumps(identities, sort_keys=True))
 
 
 def dependency_input_digest(root: Path, mutation: bool = False) -> str:
@@ -586,26 +833,61 @@ def command_classify_read_only_canary(args: argparse.Namespace) -> None:
     )
     if args.readback_outcome != "success":
         classification = "readback_failed_unclassified"
-        _write_evidence({"read_only_canary_classification": classification, "cache_service_denial_claimed": False})
+        _write_evidence({
+            "read_only_canary_classification": classification,
+            "read_only_canary_save_step_outcome": args.save_outcome,
+            "read_only_canary_readback_outcome": args.readback_outcome,
+            "read_only_canary_cache_hit": args.cache_hit,
+            "read_only_canary_matched_key_present": bool(args.matched_key),
+            "cache_service_denial_claimed": False,
+        })
         raise SafetyError("read-only cache canary readback action failed")
     if exact:
         classification = "unexpected_readable_write"
-        _write_evidence({"read_only_canary_classification": classification, "cache_service_denial_claimed": False})
+        _write_evidence({
+            "read_only_canary_classification": classification,
+            "read_only_canary_save_step_outcome": args.save_outcome,
+            "read_only_canary_readback_outcome": args.readback_outcome,
+            "read_only_canary_cache_hit": args.cache_hit,
+            "read_only_canary_matched_key_present": bool(args.matched_key),
+            "read_only_canary_matched_primary_key": args.matched_key == args.primary_key,
+            "cache_service_denial_claimed": False,
+        })
         raise SafetyError("read-only cache canary became readable after the save attempt")
-    if args.save_outcome == "failure":
-        classification = "save_action_failure_unclassified"
-    elif args.save_outcome in ("success", "skipped"):
-        classification = "action_level_skip_read_mode"
+    if args.cache_hit == "true" or args.matched_key:
+        classification = "readback_non_exact_unclassified"
+        _write_evidence({
+            "read_only_canary_classification": classification,
+            "read_only_canary_save_step_outcome": args.save_outcome,
+            "read_only_canary_readback_outcome": args.readback_outcome,
+            "read_only_canary_cache_hit": args.cache_hit,
+            "read_only_canary_matched_key_present": bool(args.matched_key),
+            "cache_service_denial_claimed": False,
+        })
+        raise SafetyError("read-only canary readback was neither an exact hit nor a confirmed miss")
+    if args.save_outcome == "skipped":
+        classification = "save_step_skipped_readback_miss"
+        outcome_is_resolved = True
+    elif args.save_outcome == "success":
+        classification = "save_succeeded_readback_miss_unresolved"
+        outcome_is_resolved = False
+    elif args.save_outcome == "failure":
+        classification = "save_step_failed_readback_miss"
+        outcome_is_resolved = False
     else:
-        classification = "unclassified"
+        classification = "save_step_outcome_unavailable"
+        outcome_is_resolved = False
     _write_evidence({
         "read_only_canary_classification": classification,
         "read_only_canary_save_step_outcome": args.save_outcome,
-        "read_only_canary_readback": "miss",
+        "read_only_canary_readback_outcome": args.readback_outcome,
+        "read_only_canary_cache_hit": args.cache_hit,
+        "read_only_canary_matched_key_present": bool(args.matched_key),
+        "read_only_canary_readback": "confirmed_miss",
         "cache_service_denial_claimed": False,
     })
-    if classification != "action_level_skip_read_mode":
-        raise SafetyError("read-only canary result did not match the documented action-level skip")
+    if not outcome_is_resolved:
+        raise SafetyError("read-only save behavior is unresolved from the observed step and readback outcomes")
     print(json.dumps({"classification": classification, "cache_service_denial_claimed": False}, sort_keys=True))
 
 
@@ -665,18 +947,225 @@ def command_simulate_partial(_: argparse.Namespace) -> None:
     print(json.dumps({"partial_fixture_created": True}, sort_keys=True))
 
 
-def command_verify_observer(args: argparse.Namespace) -> None:
-    output = Path(os.environ["GRADLE_OBSERVER_OUTPUT"])
+def command_partial_cleanup_failure(_: argparse.Namespace) -> None:
+    modules = _modules_path()
+    protected_directory = modules / "files"
+    if not protected_directory.is_dir() or protected_directory.is_symlink():
+        raise SafetyError("partial cleanup fixture is missing its expected directory")
+    original_mode = stat.S_IMODE(protected_directory.stat(follow_symlinks=False).st_mode)
+    protected_directory.chmod(0o500)
+    failure: OSError | None = None
+    try:
+        _clean_modules()
+    except OSError as error:
+        failure = error
+    finally:
+        protected_directory.chmod(original_mode)
+    if failure is None:
+        raise SafetyError("partial cleanup unexpectedly succeeded; the failure control was not exercised")
+    if not modules.is_dir():
+        raise SafetyError("failed cleanup did not leave the partial cache available for the gate check")
+    _write_evidence({
+        "partial_cleanup_outcome": "expected_failure",
+        "partial_cleanup_error_kind": type(failure).__name__,
+        "partial_cache_retained_after_failure": True,
+    })
+    raise SafetyError("controlled partial-cache cleanup failed; fallback must remain blocked")
+
+
+def command_verify_partial_sentinel(args: argparse.Namespace) -> None:
+    marker = Path(args.marker).resolve(strict=False)
+    task_root = _task_root(create=True).resolve(strict=True)
+    if not _inside(marker, task_root) or marker.is_symlink():
+        raise SafetyError("Gradle sentinel marker escaped isolated evidence storage")
+    prior = json.loads(_evidence_path().read_text(encoding="utf-8"))
+    if (
+        prior.get("partial_cleanup_outcome") != "expected_failure"
+        or prior.get("partial_cache_retained_after_failure") is not True
+        or args.cleanup_outcome != "failure"
+        or args.sentinel_outcome != "skipped"
+        or marker.exists()
+    ):
+        _write_evidence({
+            "partial_cleanup_outcome": args.cleanup_outcome,
+            "gradle_sentinel_outcome": args.sentinel_outcome,
+            "gradle_sentinel_blocked": False,
+        })
+        raise SafetyError("Gradle fallback sentinel was not proven blocked after cleanup failure")
+    _write_evidence({
+        "gradle_sentinel_outcome": args.sentinel_outcome,
+        "gradle_sentinel_marker_absent": True,
+        "gradle_sentinel_blocked": True,
+    })
+    print(json.dumps({"cleanup_failure_gated_gradle_sentinel": True}, sort_keys=True))
+
+
+def read_observer_records(output: Path) -> tuple[list[dict[str, Any]], int]:
     records: list[dict[str, Any]] = []
     parse_errors = 0
     if output.exists():
         for line in output.read_text(encoding="utf-8").splitlines():
             try:
-                records.append(json.loads(line))
+                value = json.loads(line)
+                if not isinstance(value, dict):
+                    parse_errors += 1
+                    continue
+                records.append(value)
             except json.JSONDecodeError:
                 parse_errors += 1
-    ready = sum(record.get("event") == "observer_ready" for record in records)
-    observer_errors = sum(record.get("event") == "observer_error" for record in records) + parse_errors
+    return records, parse_errors
+
+
+def validate_observer_invocation(
+    records: list[dict[str, Any]], invocation_id: str, label: str = "",
+) -> dict[str, Any]:
+    if not invocation_id:
+        raise SafetyError("measured Gradle invocation has no identity")
+    selected = [record for record in records if record.get("invocation_id") == invocation_id]
+    starts = [record for record in selected if record.get("event") == "runner_invocation_start"]
+    finishes = [record for record in selected if record.get("event") == "runner_invocation_finish"]
+    ready = [record for record in selected if record.get("event") == "observer_ready"]
+    errors = [record for record in selected if record.get("event") == "observer_error"]
+    if len(starts) != 1 or len(finishes) != 1 or len(ready) != 1:
+        raise SafetyError("measured Gradle invocation lacks one-to-one start, readiness, or finish evidence")
+    if label and any(
+        record.get("label", record.get("invocation_label", "")) != label
+        for record in (starts[0], finishes[0], ready[0])
+    ):
+        raise SafetyError("observer readiness or runner markers do not match the invocation label")
+    if finishes[0].get("exit_code") != 0:
+        raise SafetyError("measured Gradle invocation did not finish successfully")
+    if errors:
+        raise SafetyError("Gradle observer reported an invocation-scoped error")
+    if label and any(
+        record.get("invocation_label") != label
+        for record in selected
+        if record.get("event") in ("external_resource_start", "external_resource_read", "observer_error")
+    ):
+        raise SafetyError("observer transfer record is bound to the wrong invocation label")
+    if any(record.get("event") == "external_resource_read" and not record.get("invocation_id") for record in records):
+        raise SafetyError("an external-resource transfer is not bound to a Gradle invocation")
+    return {
+        "invocation_id": invocation_id,
+        "observer_ready": True,
+        "external_resource_reads": sum(record.get("event") == "external_resource_read" for record in selected),
+        "observer_errors": len(errors),
+    }
+
+
+def validate_required_task_outcomes(outcomes: list[dict[str, Any]]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for task in REQUIRED_GRADLE_TASKS:
+        matches = [item for item in outcomes if item.get("task") == task]
+        if len(matches) != 1:
+            raise SafetyError(f"required Gradle task {task} did not have exactly one recorded outcome")
+        outcome = matches[0].get("outcome")
+        if outcome != "SUCCESS":
+            raise SafetyError(f"required Gradle task {task} was skipped, reused, or failed ({outcome})")
+        result[task] = str(outcome)
+    return result
+
+
+def correlate_target_artifact(
+    records: list[dict[str, Any]], modules: Path, invocation_id: str,
+) -> dict[str, Any]:
+    filename_hash = hashlib.sha256(ROBOLECTRIC_TARGET_FILENAME.encode("utf-8")).hexdigest()
+    target_events = [
+        record for record in records
+        if record.get("event") == "external_resource_read"
+        and record.get("invocation_id") == invocation_id
+        and record.get("artifact_coordinate") == ROBOLECTRIC_TARGET_COORDINATE
+        and record.get("artifact_body") is True
+    ]
+    completed = [
+        record for record in target_events
+        if record.get("result_state") == "completed"
+        and record.get("bytes_read_known") is True
+        and isinstance(record.get("bytes_read"), int)
+        and record.get("bytes_read", 0) > 0
+        and record.get("artifact_filename_sha256") == filename_hash
+    ]
+    if not target_events or len(completed) != len(target_events):
+        raise SafetyError("target Robolectric artifact lacks complete positive body-transfer evidence")
+
+    target_directory = modules / ROBOLECTRIC_TARGET_PATH
+    if target_directory.is_symlink() or not target_directory.is_dir():
+        raise SafetyError("target Robolectric artifact is absent from the Gradle file cache")
+    matches: list[dict[str, Any]] = []
+    for digest_directory in sorted(target_directory.iterdir()):
+        if digest_directory.is_symlink() or not digest_directory.is_dir():
+            raise SafetyError("target Gradle artifact cache has an invalid digest directory")
+        path = digest_directory / ROBOLECTRIC_TARGET_FILENAME
+        if not path.exists():
+            continue
+        metadata = path.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise SafetyError("target Gradle artifact cache entry is not a regular file")
+        relative = path.relative_to(modules)
+        matches.append({
+            "relative_path_sha256": hashlib.sha256(relative.as_posix().encode("utf-8")).hexdigest(),
+            "filename_sha256": filename_hash,
+            "bytes": metadata.st_size,
+            "sha256": _sha256_file(path),
+        })
+    if not matches:
+        raise SafetyError("target Robolectric artifact has no resulting Gradle-cached file")
+    sizes = {item["bytes"] for item in matches}
+    digests = {item["sha256"] for item in matches}
+    if len(sizes) != 1 or len(digests) != 1:
+        raise SafetyError("target Gradle cache contains conflicting copies of the artifact")
+    cached_size = next(iter(sizes))
+    if any(item["bytes_read"] != cached_size for item in completed):
+        raise SafetyError("completed target transfer byte count did not match the cached artifact size")
+    resource_hashes = sorted({str(item.get("resource_sha256", "")) for item in completed})
+    if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in resource_hashes):
+        raise SafetyError("target artifact transfer evidence is missing its redacted resource digest")
+    return {
+        "coordinate": ROBOLECTRIC_TARGET_COORDINATE,
+        "transfer_count": len(completed),
+        "transfer_bytes": sum(item["bytes_read"] for item in completed),
+        "transfer_resource_sha256": resource_hashes,
+        "correlation_basis": "coordinate-and-hashed-filename; transfer-size-matches-cached-file",
+        "cached_files": matches,
+    }
+
+
+def command_verify_observer(args: argparse.Namespace) -> None:
+    output = Path(os.environ["GRADLE_OBSERVER_OUTPUT"])
+    records, parse_errors = read_observer_records(output)
+    if parse_errors:
+        raise SafetyError("Gradle observer output contains malformed events")
+    evidence_path = _evidence_path()
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8")) if evidence_path.exists() else {}
+    invocations = evidence.get("gradle_invocations")
+    expected_labels = ["task_inventory", "dry_run", "probe_build"]
+    if not isinstance(invocations, list) or [item.get("label") for item in invocations if isinstance(item, dict)] != expected_labels:
+        raise SafetyError("measured Gradle invocation evidence is incomplete or out of order")
+
+    invocation_ids: set[str] = set()
+    coverage: list[dict[str, Any]] = []
+    for item in invocations:
+        if not isinstance(item, dict):
+            raise SafetyError("measured Gradle invocation record is malformed")
+        invocation_id = str(item.get("invocation_id", ""))
+        if invocation_id in invocation_ids:
+            raise SafetyError("measured Gradle invocation identity is duplicated")
+        invocation_ids.add(invocation_id)
+        if item.get("exit_code") != 0:
+            raise SafetyError("a measured Gradle invocation did not complete successfully")
+        coverage.append(validate_observer_invocation(records, invocation_id, str(item.get("label", ""))))
+    unexpected_ids = {
+        str(record.get("invocation_id")) for record in records
+        if record.get("event") in {
+            "runner_invocation_start", "runner_invocation_finish", "observer_ready",
+            "observer_error", "external_resource_start", "external_resource_read",
+        } and str(record.get("invocation_id", "")) not in invocation_ids
+    }
+    if unexpected_ids:
+        raise SafetyError("observer records exist outside the measured Gradle invocation set")
+    task_outcomes = invocations[-1].get("task_outcomes", [])
+    required_tasks = validate_required_task_outcomes(task_outcomes)
+
     reads = [record for record in records if record.get("event") == "external_resource_read"]
     body_reads = [record for record in reads if record.get("artifact_body") is True]
     completed_body_bytes = sum(
@@ -684,31 +1173,41 @@ def command_verify_observer(args: argparse.Namespace) -> None:
         for record in body_reads
         if record.get("bytes_read_known") is True and record.get("result_state") == "completed"
     )
-    unknown_body_reads = sum(record.get("bytes_read_known") is not True for record in body_reads)
-    errored_body_reads = sum(record.get("result_state") in ("error", "incomplete") for record in body_reads)
-    if ready < 1:
-        raise SafetyError("Gradle observer did not report that it was armed")
-    if observer_errors:
-        raise SafetyError("Gradle observer reported malformed or undecodable events")
-    if args.mode in ("cold", "fixture") and completed_body_bytes <= 0:
-        raise SafetyError("cold observation did not prove a completed artifact-body transfer")
-    if args.mode == "warm" and body_reads:
+    target_body_reads = [
+        record for record in body_reads
+        if record.get("artifact_coordinate") == ROBOLECTRIC_TARGET_COORDINATE
+    ]
+    correlation: dict[str, Any] | None = None
+    if args.mode == "cold":
+        probe_id = str(invocations[-1].get("invocation_id", ""))
+        if any(record.get("invocation_id") != probe_id for record in target_body_reads):
+            raise SafetyError("target artifact transfer was not observed during actual probe task execution")
+        correlation = correlate_target_artifact(records, _modules_path(), probe_id)
+    elif args.mode == "warm" and body_reads:
         raise SafetyError("warm observation could not prove the absence of artifact-body transfers")
+    elif args.mode == "fixture":
+        if completed_body_bytes <= 0:
+            raise SafetyError("observer fixture did not prove a completed artifact-body transfer")
+
     summary = {
-        "observer_ready_count": ready,
+        "observer_ready_count": len(coverage),
+        "observer_invocation_coverage": coverage,
         "external_resource_reads": len(reads),
         "artifact_body_events": len(body_reads),
         "artifact_body_bytes": completed_body_bytes,
-        "artifact_body_unknown_events": unknown_body_reads,
-        "artifact_body_error_events": errored_body_reads,
-        "observer_errors": observer_errors,
+        "target_artifact_body_events": len(target_body_reads),
+        "observer_errors": 0,
         "observer_mode": args.mode,
+        "required_task_outcomes": required_tasks,
     }
+    if correlation is not None:
+        summary["target_artifact_correlation"] = correlation
     _write_evidence(summary)
     _append_github_file(_github_file("GITHUB_OUTPUT"), [
         f"artifact_body_bytes={completed_body_bytes}",
         f"artifact_body_events={len(body_reads)}",
-        f"observer_errors={observer_errors}",
+        f"target_artifact_body_events={len(target_body_reads)}",
+        "observer_errors=0",
     ])
     print(json.dumps(summary, sort_keys=True))
 
@@ -813,6 +1312,36 @@ def make_parser() -> argparse.ArgumentParser:
     compare.add_argument("--expected", required=True)
     compare.set_defaults(func=command_compare_manifest)
 
+    seed_record = sub.add_parser("write-seed-record")
+    seed_record.add_argument("--manifest", required=True)
+    seed_record.add_argument("--cache-key", required=True)
+    seed_record.add_argument("--output", required=True)
+    seed_record.set_defaults(func=command_write_seed_record)
+
+    verify_seed = sub.add_parser("verify-seed-record")
+    verify_seed.add_argument("--path", required=True)
+    verify_seed.add_argument("--expected-source-sha", required=True)
+    verify_seed.add_argument("--expected-cache-key", required=True)
+    verify_seed.add_argument("--expected-run-id", required=True)
+    verify_seed.set_defaults(func=command_verify_seed_record)
+
+    select_seed = sub.add_parser("select-seed-run")
+    select_seed.add_argument("--seed-runs", required=True)
+    select_seed.add_argument("--pr-runs", required=True)
+    select_seed.add_argument("--head-sha", required=True)
+    select_seed.add_argument("--pr-number", required=True)
+    select_seed.add_argument("--current-run-id", required=True)
+    select_seed.set_defaults(func=command_select_seed_run)
+
+    pr_identities = sub.add_parser("record-pr-identities")
+    pr_identities.add_argument("--head-sha", required=True)
+    pr_identities.add_argument("--base-sha", required=True)
+    pr_identities.add_argument("--merge-sha", default="")
+    pr_identities.add_argument("--github-sha", required=True)
+    pr_identities.add_argument("--seed-source-sha", required=True)
+    pr_identities.add_argument("--seed-run-id", required=True)
+    pr_identities.set_defaults(func=command_record_pr_identities)
+
     key = sub.add_parser("cache-key")
     key.add_argument("--root", default=str(Path(__file__).resolve().parents[2]))
     key.add_argument("--mutate-dependency-input", action="store_true")
@@ -872,6 +1401,12 @@ def make_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("clean-modules").set_defaults(func=command_clean_modules)
     sub.add_parser("simulate-partial").set_defaults(func=command_simulate_partial)
+    sub.add_parser("partial-cleanup-failure").set_defaults(func=command_partial_cleanup_failure)
+    partial_sentinel = sub.add_parser("verify-partial-sentinel")
+    partial_sentinel.add_argument("--cleanup-outcome", required=True)
+    partial_sentinel.add_argument("--sentinel-outcome", required=True)
+    partial_sentinel.add_argument("--marker", required=True)
+    partial_sentinel.set_defaults(func=command_verify_partial_sentinel)
     observer = sub.add_parser("verify-observer")
     observer.add_argument("--mode", choices=("cold", "warm", "fixture"), required=True)
     observer.set_defaults(func=command_verify_observer)

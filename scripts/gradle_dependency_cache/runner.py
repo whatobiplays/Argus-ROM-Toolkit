@@ -36,6 +36,7 @@ FAILURE_LINE = re.compile(
     r"Could not resolve|Could not download|Could not get resource|BUILD (?:SUCCESSFUL|FAILED))",
     re.IGNORECASE,
 )
+TASK_OUTCOME_LINE = re.compile(r"^\s*> Task (?P<path>:\S+)(?:\s+(?P<outcome>[^\s]+))?\s*$")
 
 
 class RunnerError(RuntimeError):
@@ -135,8 +136,10 @@ def run_command(
     environment: dict[str, str],
     *,
     allow_failure: bool = False,
-) -> tuple[int, float]:
+    capture_output: bool = False,
+) -> tuple[int, float, str]:
     started = time.monotonic()
+    offset = log.stat().st_size if log.exists() else 0
     with log.open("ab") as output:
         output.write((f"\n--- {label} ---\n").encode("utf-8"))
         process = subprocess.run(
@@ -148,9 +151,150 @@ def run_command(
             check=False,
         )
     elapsed = time.monotonic() - started
+    segment = log.read_bytes()[offset:].decode("utf-8", errors="replace") if capture_output else ""
     if process.returncode and not allow_failure:
         raise RunnerError(f"{label} exited with status {process.returncode}")
-    return process.returncode, elapsed
+    return process.returncode, elapsed, segment
+
+
+def append_observer_record(record: dict[str, Any]) -> None:
+    output = Path(os.environ["GRADLE_OBSERVER_OUTPUT"])
+    with output.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def parse_gradle_task_outcomes(output: str) -> list[dict[str, str]]:
+    outcomes = []
+    for line in output.splitlines():
+        match = TASK_OUTCOME_LINE.match(line)
+        if not match:
+            continue
+        task_path = match.group("path")
+        outcomes.append({
+            "task": task_path.rsplit(":", 1)[-1],
+            "task_path": task_path,
+            "outcome": match.group("outcome") or "SUCCESS",
+        })
+    return outcomes
+
+
+def validate_required_task_outcomes(outcomes: list[dict[str, Any]]) -> dict[str, str]:
+    try:
+        return control.validate_required_task_outcomes(outcomes)
+    except control.SafetyError as error:
+        raise RunnerError(str(error)) from error
+
+
+def persist_invocation_result(evidence: dict[str, Any], invocation: dict[str, Any]) -> None:
+    invocations = evidence.setdefault("gradle_invocations", [])
+    if not isinstance(invocations, list):
+        raise RunnerError("incremental Gradle invocation evidence has an invalid shape")
+    invocations.append(invocation)
+    timings = evidence.setdefault("timings_seconds", {})
+    if not isinstance(timings, dict):
+        raise RunnerError("incremental Gradle timing evidence has an invalid shape")
+    timings[invocation["label"]] = invocation["elapsed_seconds"]
+    evidence["observation_started_before_first_gradle_invocation"] = True
+    control._write_evidence(evidence)
+
+
+def run_recorded_command(
+    command: list[str],
+    label: str,
+    timing_key: str,
+    log: Path,
+    environment: dict[str, str],
+    times: dict[str, float],
+    evidence: dict[str, Any],
+) -> tuple[int, float, str]:
+    returncode, elapsed, output = run_command(
+        command, label, log, environment, allow_failure=True, capture_output=True,
+    )
+    times[timing_key] = round(elapsed, 3)
+    evidence["timings_seconds"] = dict(times)
+    command_record = {"label": label, "exit_code": returncode, "elapsed_seconds": round(elapsed, 3)}
+    evidence.setdefault("recorded_commands", []).append(command_record)
+    if returncode == 0:
+        evidence["last_completed_command"] = label
+    control._write_evidence(evidence)
+    if returncode:
+        raise RunnerError(f"{label} exited with status {returncode}")
+    return returncode, elapsed, output
+
+
+def run_gradle_invocation(
+    command: list[str],
+    label: str,
+    log: Path,
+    environment: dict[str, str],
+    times: dict[str, float],
+    evidence: dict[str, Any],
+) -> float:
+    invocation_id = secrets.token_hex(16)
+    child_environment = dict(environment)
+    child_environment["GRADLE_OBSERVER_INVOCATION_ID"] = invocation_id
+    child_environment["GRADLE_OBSERVER_INVOCATION_LABEL"] = label
+    started = time.monotonic()
+    append_observer_record({
+        "event": "runner_invocation_start",
+        "invocation_id": invocation_id,
+        "label": label,
+    })
+    returncode: int | None = None
+    output = ""
+    try:
+        returncode, elapsed, output = run_command(
+            command, label, log, child_environment, allow_failure=True, capture_output=True,
+        )
+    except OSError as error:
+        elapsed = time.monotonic() - started
+        error_kind = type(error).__name__
+    else:
+        error_kind = ""
+    append_observer_record({
+        "event": "runner_invocation_finish",
+        "invocation_id": invocation_id,
+        "label": label,
+        "exit_code": returncode,
+        "elapsed_seconds": round(elapsed, 3),
+        "process_error_kind": error_kind,
+    })
+    task_outcomes = parse_gradle_task_outcomes(output)
+    records, parse_errors = control.read_observer_records(Path(environment["GRADLE_OBSERVER_OUTPUT"]))
+    coverage = "incomplete"
+    coverage_error = ""
+    try:
+        if parse_errors:
+            raise control.SafetyError("observer output contains malformed records")
+        control.validate_observer_invocation(records, invocation_id, label)
+        coverage = "complete"
+    except control.SafetyError as error:
+        coverage_error = str(error)
+    invocation = {
+        "invocation_id": invocation_id,
+        "label": label,
+        "exit_code": returncode,
+        "elapsed_seconds": round(elapsed, 3),
+        "task_outcomes": task_outcomes,
+        "observer_coverage": coverage,
+        "observer_coverage_error": coverage_error,
+        "process_error_kind": error_kind,
+    }
+    persist_invocation_result(evidence, invocation)
+    times[label + "_seconds"] = round(elapsed, 3)
+    if returncode != 0:
+        raise RunnerError(f"{label} exited with status {returncode}")
+    if coverage != "complete":
+        raise RunnerError(f"{label} lacked invocation-scoped observer coverage")
+    if label == "probe_build":
+        validate_required_task_outcomes(task_outcomes)
+        evidence["required_task_outcomes"] = {
+            item["task"]: item["outcome"]
+            for item in task_outcomes
+            if item["task"] in control.REQUIRED_GRADLE_TASKS
+        }
+        control._write_evidence(evidence)
+    return elapsed
 
 
 def control_command(name: str, *args: str, log: Path, environment: dict[str, str]) -> dict[str, Any]:
@@ -202,9 +346,36 @@ def gradle_version(output: str) -> str:
     return match.group(1) if match else ""
 
 
-def run_version(log: Path, environment: dict[str, str]) -> tuple[str, float]:
-    _, elapsed = run_command([str(WRAPPER), "--version"], "Gradle wrapper and version", log, environment)
-    content = log.read_text(encoding="utf-8", errors="replace")
+def run_version(
+    log: Path,
+    environment: dict[str, str],
+    evidence: dict[str, Any],
+    times: dict[str, float],
+) -> tuple[str, float]:
+    wrapper_id = secrets.token_hex(16)
+    append_observer_record({"event": "wrapper_observation_start", "wrapper_observation_id": wrapper_id})
+    returncode, elapsed, content = run_command(
+        [str(WRAPPER), "--version"],
+        "Gradle wrapper and version",
+        log,
+        environment,
+        allow_failure=True,
+        capture_output=True,
+    )
+    append_observer_record({
+        "event": "wrapper_observation_finish",
+        "wrapper_observation_id": wrapper_id,
+        "exit_code": returncode,
+        "elapsed_seconds": round(elapsed, 3),
+    })
+    times["wrapper_version_seconds"] = round(elapsed, 3)
+    evidence["wrapper_version_invocation_id"] = wrapper_id
+    evidence["wrapper_version_exit_code"] = returncode
+    evidence["wrapper_version_seconds"] = round(elapsed, 3)
+    evidence["timings_seconds"] = dict(times)
+    control._write_evidence(evidence)
+    if returncode:
+        raise RunnerError(f"Gradle wrapper and version exited with status {returncode}")
     version = gradle_version(content)
     if not version:
         raise RunnerError("Gradle version could not be identified")
@@ -219,7 +390,14 @@ def apk_path() -> Path:
     return matches[0]
 
 
-def sign_and_inspect(unsigned_apk: Path, commit: str, environment: dict[str, str], log: Path) -> dict[str, str]:
+def sign_and_inspect(
+    unsigned_apk: Path,
+    commit: str,
+    environment: dict[str, str],
+    log: Path,
+    times: dict[str, float],
+    evidence: dict[str, Any],
+) -> dict[str, str]:
     sdk = Path(environment.get("ANDROID_HOME", environment.get("ANDROID_SDK_ROOT", "")))
     tools = sdk / "build-tools" / "36.0.0"
     apksigner = tools / "apksigner"
@@ -242,44 +420,38 @@ def sign_and_inspect(unsigned_apk: Path, commit: str, environment: dict[str, str
             "-alias", "probe", "-keyalg", "RSA", "-keysize", "2048", "-validity", "1",
             "-dname", "CN=Disposable probe CI",
         ]
-        run_command(key_command, "create disposable signing key", log, child_environment)
-        run_command([
+        run_recorded_command(
+            key_command, "create disposable signing key", "signing_key_seconds",
+            log, child_environment, times, evidence,
+        )
+        run_recorded_command([
             str(apksigner), "sign", "--ks", str(keystore), "--ks-pass", "env:PROBE_TEST_PASSWORD",
             "--key-pass", "env:PROBE_TEST_PASSWORD", "--out", str(signed_apk), str(unsigned_apk),
-        ], "sign disposable APK copy", log, child_environment)
-        _, _ = run_command([
+        ], "sign disposable APK copy", "sign_disposable_apk_seconds", log, child_environment, times, evidence)
+        run_recorded_command([
             str(apksigner), "verify", "--verbose", "--print-certs", str(signed_apk),
-        ], "verify disposable APK copy", log, child_environment)
-        cert_output = subprocess.run(
-            [str(apksigner), "verify", "--print-certs", str(signed_apk)],
-            env=child_environment,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-        if cert_output.returncode:
-            raise RunnerError("certificate digest query failed for the signed copy")
-        match = re.search(r"Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F:]+)", cert_output.stdout)
+        ], "verify disposable APK copy", "signed_apk_verify_seconds", log, child_environment, times, evidence)
+        _, _, cert_output = run_recorded_command([
+            str(apksigner), "verify", "--print-certs", str(signed_apk),
+        ], "read disposable APK certificate digest", "signed_apk_certificate_query_seconds", log, child_environment, times, evidence)
+        match = re.search(r"Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F:]+)", cert_output)
         if not match:
             raise RunnerError("signed APK certificate digest was not reported")
         certificate = match.group(1).replace(":", "").lower()
-        inspection = subprocess.run(
+        _, _, inspection = run_recorded_command(
             [
                 sys.executable, "-m", "scripts.android_qualification.readiness_probe_artifact",
                 "--apk", str(signed_apk), "--source-commit", commit,
                 "--certificate-sha256", certificate,
                 "--aapt2", str(aapt2), "--apksigner", str(apksigner),
             ],
-            cwd=ROOT,
-            env=child_environment,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
+            "inspect disposable signed APK",
+            "signed_apk_inspection_seconds",
+            log,
+            child_environment,
+            times,
+            evidence,
         )
-        if inspection.returncode:
-            raise RunnerError("readiness probe artifact inspection rejected the disposable signed copy")
         return {"certificate_sha256": certificate, "artifact_inspection": "passed"}
 
 
@@ -324,6 +496,7 @@ def execute(args: argparse.Namespace) -> int:
         "fresh_build_directory": True,
         "configuration_cache_disabled": True,
         "build_output_cache_disabled": True,
+        "observation_started_before_first_gradle_invocation": True,
     }
     _write = control._write_evidence
     _write(evidence)
@@ -332,46 +505,50 @@ def execute(args: argparse.Namespace) -> int:
     wrapper_after_file = control._task_root() / "wrapper-after.json"
     wrapper_before = control_command("wrapper-snapshot", "--output", str(wrapper_before_file), log=log, environment=environment)
     toolchain = toolchain_identity(environment)
-    version, wrapper_elapsed = run_version(log, environment)
+    times: dict[str, float] = {}
+    version, wrapper_elapsed = run_version(log, environment, evidence, times)
     toolchain["gradle_version"] = version
     if version != args.expected_gradle:
         raise RunnerError("Gradle wrapper version did not match the approved version")
     wrapper_after = control_command("wrapper-snapshot", "--output", str(wrapper_after_file), log=log, environment=environment)
+    toolchain["wrapper_distribution_manifest_before_sha256"] = str(wrapper_before["sha256"])
+    toolchain["wrapper_distribution_manifest_after_sha256"] = str(wrapper_after["sha256"])
     toolchain["wrapper_distribution_files_before"] = str(wrapper_before["files"])
     toolchain["wrapper_distribution_files_after"] = str(wrapper_after["files"])
     toolchain["wrapper_distribution_bytes_before"] = str(wrapper_before["bytes"])
     toolchain["wrapper_distribution_bytes_after"] = str(wrapper_after["bytes"])
     toolchain["wrapper_distribution_new_bytes"] = str(max(0, wrapper_after["bytes"] - wrapper_before["bytes"]))
     check_identity(toolchain, args)
+    evidence.update(toolchain)
+    evidence["wrapper_observation_complete"] = True
+    control._write_evidence(evidence)
 
     common = [
         str(WRAPPER), "-p", "android-readiness-probe",
         "--no-daemon", "--no-build-cache", "--no-configuration-cache", "--console=plain",
         f"-PprobeSourceCommit={commit}",
     ]
-    times: dict[str, float] = {"wrapper_version_seconds": wrapper_elapsed}
     sequence = [
         ("task_inventory", common + ["tasks", "--all"]),
         ("dry_run", common + ["testProbeUnitTest", "lintProbe", "assembleProbe", "--dry-run"]),
         ("probe_build", common + ["testProbeUnitTest", "lintProbe", "assembleProbe"]),
     ]
     for label, command in sequence:
-        _, elapsed = run_command(command, label, log, environment)
+        elapsed = run_gradle_invocation(command, label, log, environment, times, evidence)
         times[f"{label}_seconds"] = round(elapsed, 3)
 
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    _, host_tests_elapsed = run_command([
+    _, host_tests_elapsed, _ = run_recorded_command([
         sys.executable, "-m", "unittest", "discover", "-s", "scripts/android_qualification",
         "-p", "test_*.py", "-t", ".",
-    ], "host-only qualification tests", log, environment)
-    times["host_tests_seconds"] = round(host_tests_elapsed, 3)
+    ], "host-only qualification tests", "host_tests_seconds", log, environment, times, evidence)
 
     unsigned = apk_path()
     unsigned_digest = sha256_file(unsigned)
     unsigned_size = unsigned.stat().st_size
     if args.compare_apk and unsigned_digest != args.compare_apk:
         raise RunnerError("unsigned APK SHA-256 did not match its paired trial")
-    signed = sign_and_inspect(unsigned, commit, environment, log)
+    signed = sign_and_inspect(unsigned, commit, environment, log, times, evidence)
 
     qualification_elapsed = round(time.monotonic() - qualification_started, 3)
     paired_match = True if args.compare_apk else None
@@ -380,6 +557,7 @@ def execute(args: argparse.Namespace) -> int:
         **times,
         "gradle_version": version,
         "probe_wall_seconds": round(sum(times.values()), 3),
+        "timings_seconds": times,
         "qualification_elapsed_seconds": qualification_elapsed,
         "unsigned_apk_sha256": unsigned_digest,
         "unsigned_apk_bytes": unsigned_size,

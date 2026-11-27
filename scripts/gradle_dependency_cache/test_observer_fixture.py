@@ -13,6 +13,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from scripts.gradle_dependency_cache import control
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = ROOT / "android-readiness-probe" / "gradlew"
@@ -35,17 +37,17 @@ class ObserverFixtureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="gradle-observer-fixture-") as temporary:
             temp = Path(temporary)
             repo = temp / "maven"
-            module = repo / "org" / "fixture" / "sample" / "1.0"
+            module = repo / "org" / "robolectric" / "nativeruntime-dist-compat" / "1.0.18"
             module.mkdir(parents=True)
-            (module / "sample-1.0.pom").write_text(
+            (module / "nativeruntime-dist-compat-1.0.18.pom").write_text(
                 """<project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>org.fixture</groupId><artifactId>sample</artifactId><version>1.0</version>
+  <groupId>org.robolectric</groupId><artifactId>nativeruntime-dist-compat</artifactId><version>1.0.18</version>
 </project>
 """,
                 encoding="utf-8",
             )
-            with zipfile.ZipFile(module / "sample-1.0.jar", "w") as archive:
+            with zipfile.ZipFile(module / "nativeruntime-dist-compat-1.0.18.jar", "w") as archive:
                 archive.writestr("fixture.txt", "local cache observer qualification\n")
 
             handler = functools.partial(QuietHandler, directory=str(temp))
@@ -63,7 +65,7 @@ class ObserverFixtureTests(unittest.TestCase):
     maven {{ url = uri('http://127.0.0.1:{port}/maven'); allowInsecureProtocol = true }}
 }}
 configurations {{ probe }}
-dependencies {{ probe 'org.fixture:sample:1.0' }}
+dependencies {{ probe 'org.robolectric:nativeruntime-dist-compat:1.0.18' }}
 tasks.register('resolveFixture') {{
     doLast {{
         def files = configurations.probe.resolve()
@@ -83,6 +85,8 @@ tasks.register('resolveFixture') {{
                     "RUNNER_TEMP": str(temp),
                     "GRADLE_USER_HOME": str(gradle_home),
                     "GRADLE_OBSERVER_OUTPUT": str(observer_output),
+                    "GRADLE_OBSERVER_INVOCATION_ID": "fixture-cold-01",
+                    "GRADLE_OBSERVER_INVOCATION_LABEL": "fixture_cold",
                     "ROBOLECTRIC_MAVEN_REPO_LOCAL": str(temp / "robolectric-m2"),
                     "PYTHONDONTWRITEBYTECODE": "1",
                 })
@@ -126,15 +130,46 @@ tasks.register('resolveFixture') {{
                     body_reads[0].get("details_type"),
                     "ProgressLoggingExternalResourceAccessor$ReadOperationDetails",
                 )
-                self.assertTrue(body_reads, {
-                    "events": [record.get("event") for record in records],
-                    "details_types": [record.get("details_type") for record in records if record.get("event") == "external_resource_start"],
-                    "loopback_get_count": len(QuietHandler.request_paths),
-                })
                 self.assertTrue(any(record.get("bytes_read", 0) > 0 for record in body_reads), body_reads)
                 self.assertTrue(all("resource_sha256" in record for record in body_reads), body_reads)
-                self.assertNotIn("127.0.0.1", observer_output.read_text(encoding="utf-8"))
-                self.assertNotIn("sample-1.0.jar", observer_output.read_text(encoding="utf-8"))
+                self.assertTrue(all(record.get("invocation_id") == "fixture-cold-01" for record in body_reads))
+                self.assertTrue(all(record.get("invocation_label") == "fixture_cold" for record in body_reads))
+                self.assertTrue(all(
+                    record.get("artifact_coordinate") == "org.robolectric:nativeruntime-dist-compat:1.0.18"
+                    for record in body_reads
+                ), body_reads)
+                modules = gradle_home / "caches" / "modules-2"
+                correlation = control.correlate_target_artifact(body_reads, modules, "fixture-cold-01")
+                source_artifact = module / "nativeruntime-dist-compat-1.0.18.jar"
+                self.assertEqual(correlation["transfer_bytes"], source_artifact.stat().st_size)
+                self.assertEqual(correlation["cached_files"][0]["sha256"], control._sha256_file(source_artifact))
+
+                cold_get_count = len(QuietHandler.request_paths)
+                environment["GRADLE_OBSERVER_INVOCATION_ID"] = "fixture-warm-01"
+                environment["GRADLE_OBSERVER_INVOCATION_LABEL"] = "fixture_warm"
+                warm_result = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    env=environment,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    timeout=600,
+                )
+                self.assertEqual(warm_result.returncode, 0, warm_result.stdout[-5000:])
+                records = [json.loads(line) for line in observer_output.read_text(encoding="utf-8").splitlines()]
+                warm_body_reads = [
+                    record for record in records
+                    if record.get("invocation_id") == "fixture-warm-01"
+                    and record.get("event") == "external_resource_read"
+                    and record.get("artifact_body") is True
+                ]
+                self.assertEqual(warm_body_reads, [])
+                self.assertEqual(len(QuietHandler.request_paths), cold_get_count)
+                observed = observer_output.read_text(encoding="utf-8")
+                self.assertNotIn("127.0.0.1", observed)
+                self.assertNotIn("nativeruntime-dist-compat-1.0.18.jar", observed)
             finally:
                 server.shutdown()
                 server.server_close()

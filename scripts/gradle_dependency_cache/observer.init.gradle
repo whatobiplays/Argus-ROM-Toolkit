@@ -1,0 +1,107 @@
+import groovy.json.JsonOutput
+import org.gradle.api.tasks.testing.Test
+import org.gradle.internal.operations.BuildOperationDescriptor
+import org.gradle.internal.operations.BuildOperationListener
+import org.gradle.internal.operations.BuildOperationListenerManager
+import org.gradle.internal.operations.OperationFinishEvent
+import org.gradle.internal.operations.OperationIdentifier
+import org.gradle.internal.operations.OperationProgressEvent
+import org.gradle.internal.operations.OperationStartEvent
+
+import java.net.URI
+import java.security.MessageDigest
+
+// This observer uses Gradle 9.1 internal build-operation APIs. Keep its output
+// redacted because repository URLs can contain private host or credential data.
+def outputName = System.getenv("GRADLE_OBSERVER_OUTPUT")
+if (!outputName) {
+    throw new GradleException("GRADLE_OBSERVER_OUTPUT must point to the isolated evidence file")
+}
+
+def outputFile = new File(outputName)
+outputFile.parentFile.mkdirs()
+def outputLock = new Object()
+def writeRecord = { Map record ->
+    synchronized (outputLock) {
+        outputFile.withWriterAppend("UTF-8") { writer ->
+            writer.write(JsonOutput.toJson(record))
+            writer.write("\n")
+        }
+    }
+}
+def sha256 = { String value ->
+    MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8")).collect { byte item ->
+        String.format("%02x", item & 0xff)
+    }.join()
+}
+def bodySuffixes = [".aar", ".jar", ".klib", ".so", ".zip", ".tar", ".tgz"] as Set
+
+writeRecord([event: "observer_ready", gradle: gradle.gradleVersion, observer_api: "internal-build-operations-v1"])
+
+def listener = [
+    started: { BuildOperationDescriptor operation, OperationStartEvent event ->
+        try {
+            String detailsType = operation.details?.class?.name ?: ""
+            String operationName = operation.name ?: ""
+            if (detailsType.contains("ExternalResource") || operationName.toLowerCase(Locale.ROOT).contains("resource")) {
+                writeRecord([
+                    event: "external_resource_start",
+                    details_type: detailsType.tokenize(".").last(),
+                    operation_name_sha256: sha256(operationName),
+                ])
+            }
+        } catch (Exception ignored) {
+            writeRecord([event: "observer_error", error_kind: "external_resource_start_decode"])
+        }
+    },
+    progress: { OperationIdentifier identifier, OperationProgressEvent event -> },
+    finished: { BuildOperationDescriptor operation, OperationFinishEvent event ->
+        try {
+            def details = operation.details
+            String detailsType = details?.class?.name ?: ""
+            boolean externalResourceRead = detailsType.contains("ExternalResourceReadBuildOperationType")
+                    || detailsType.endsWith('$ReadOperationDetails')
+            if (!externalResourceRead) {
+                return
+            }
+
+            String location = details.location?.toString()
+            def result = event.result
+            Long bytesRead = result?.bytesRead instanceof Number ? result.bytesRead.longValue() : null
+            boolean missing = result?.missing == Boolean.TRUE
+            boolean failed = event.failure != null
+            String path = ""
+            try {
+                path = new URI(location ?: "").path ?: ""
+            } catch (Exception ignored) {
+                path = (location ?: "").split("\\?", 2)[0]
+            }
+            String lowerPath = path.toLowerCase(Locale.ROOT)
+            boolean artifactBody = bodySuffixes.any { String suffix -> lowerPath.endsWith(suffix) }
+            writeRecord([
+                event: "external_resource_read",
+                details_type: detailsType.tokenize(".").last(),
+                resource_sha256: sha256(location ?: ""),
+                artifact_body: artifactBody,
+                result_state: failed ? "error" : (missing ? "missing" : (bytesRead == null ? "incomplete" : "completed")),
+                bytes_read_known: bytesRead != null,
+                bytes_read: bytesRead,
+            ])
+        } catch (Exception ignored) {
+            writeRecord([event: "observer_error", error_kind: "external_resource_event_decode"])
+        }
+    },
+] as BuildOperationListener
+
+gradle.services.get(BuildOperationListenerManager).addListener(listener)
+
+def robolectricRepo = System.getenv("ROBOLECTRIC_MAVEN_REPO_LOCAL")
+if (robolectricRepo) {
+    gradle.projectsEvaluated {
+        gradle.rootProject.allprojects {
+            tasks.withType(Test).configureEach {
+                systemProperty("maven.repo.local", robolectricRepo)
+            }
+        }
+    }
+}

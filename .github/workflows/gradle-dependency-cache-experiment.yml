@@ -1,0 +1,1398 @@
+name: Gradle dependency cache experiment
+
+on:
+  push:
+    branches:
+      - codex/issue-93-gradle-cache-pilot
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+
+permissions:
+  contents: read
+
+cache-mode: none
+
+env:
+  EXPERIMENT_CAMPAIGN_ID: gradle-dependency-cache-pilot-v1
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  cache_seed:
+    name: Trusted cold seed and save
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: write-only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      cache_key: ${{ steps.cache_key.outputs.key }}
+      manifest_sha256: ${{ steps.seed_manifest.outputs.sha256 }}
+      unsigned_apk_sha256: ${{ steps.probe.outputs.unsigned_apk_sha256 }}
+      gradle_version: ${{ steps.probe.outputs.gradle_version }}
+      java_runtime_version: ${{ steps.probe.outputs.java_runtime_version }}
+      image_os: ${{ steps.probe.outputs.image_os }}
+      image_version: ${{ steps.probe.outputs.image_version }}
+      platform_revision: ${{ steps.probe.outputs.platform_revision }}
+      build_tools_revision: ${{ steps.probe.outputs.build_tools_revision }}
+      runner_temp_path_sha256: ${{ steps.probe.outputs.runner_temp_path_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        name: Allocate an isolated job environment
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        name: Compute dependency-input cache key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Verify the cold module cache is empty
+        run: python3 -m scripts.gradle_dependency_cache.control prepare-empty
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        name: Snapshot the separate Robolectric repository
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode cold --expected-gradle 9.1.0
+          --expected-java '${{ steps.cache_key.outputs.java_runtime_version }}'
+      - id: stop
+        name: Stop Gradle daemons before measuring the cache
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate cold Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode cold
+      - id: seed_manifest
+        name: Create a stable bounded seed manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Save the trusted dependency cache
+        if: ${{ success() && steps.probe.outcome == 'success' && steps.seed_manifest.outcome == 'success' }}
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: ${{ steps.cache_key.outputs.key }}
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-cache-seed-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  cache_miss_invalidation:
+    name: Miss, invalidation and cold fallback
+    needs: [cache_seed, trial_c_warm]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Match the trusted cache key
+        env:
+          EXPECTED_KEY: ${{ needs.cache_seed.outputs.cache_key }}
+          ACTUAL_KEY: ${{ steps.cache_key.outputs.key }}
+        run: test "$ACTUAL_KEY" = "$EXPECTED_KEY"
+      - id: invalidation_key
+        name: Derive a key from a changed dependency-input fingerprint
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key --mutate-dependency-input
+      - name: Verify the invalidation key differs
+        env:
+          BASE_INPUT_SHA256: ${{ steps.cache_key.outputs.input_sha256 }}
+          CHANGED_INPUT_SHA256: ${{ steps.invalidation_key.outputs.input_sha256 }}
+        run: test "$BASE_INPUT_SHA256" != "$CHANGED_INPUT_SHA256"
+      - id: empty_miss
+        name: Attempt an isolated normal miss
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: argus-gradle-empty-miss-v1-${{ github.run_id }}
+      - name: Require a clean normal miss
+        env:
+          RESTORE_OUTCOME: ${{ steps.empty_miss.outcome }}
+          CACHE_HIT: ${{ steps.empty_miss.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.empty_miss.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.empty_miss.outputs.cache-primary-key }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control restore-check --expected miss
+          --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
+          --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - id: changed_input_miss
+        name: Attempt a miss after dependency-input invalidation
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: ${{ steps.invalidation_key.outputs.key }}-miss-${{ github.run_id }}
+      - name: Require a clean dependency-input invalidation miss
+        env:
+          RESTORE_OUTCOME: ${{ steps.changed_input_miss.outcome }}
+          CACHE_HIT: ${{ steps.changed_input_miss.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.changed_input_miss.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.changed_input_miss.outputs.cache-primary-key }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control restore-check --expected miss
+          --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
+          --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - name: Verify an empty path before cold fallback
+        run: python3 -m scripts.gradle_dependency_cache.control prepare-empty
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence cold
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode cold --expected-gradle 9.1.0
+          --expected-java '${{ needs.cache_seed.outputs.java_runtime_version }}'
+          --expected-image-os '${{ needs.cache_seed.outputs.image_os }}'
+          --expected-image-version '${{ needs.cache_seed.outputs.image_version }}'
+          --expected-platform-revision '${{ needs.cache_seed.outputs.platform_revision }}'
+          --expected-build-tools-revision '${{ needs.cache_seed.outputs.build_tools_revision }}'
+          --expected-runner-temp-sha256 '${{ needs.cache_seed.outputs.runner_temp_path_sha256 }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate cold Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode cold
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-cache-miss-invalidation-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  service_fault_observation:
+    name: Record whether a safe service fault can be tested
+    needs: cache_miss_invalidation
+    if: >-
+      ${{ always() && github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: none
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - name: Record the unsupported fault case
+        run: python3 -m scripts.gradle_dependency_cache.control record-fault-unsupported
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-service-fault-observation-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  partial_extraction_recovery:
+    name: Clean a partial extraction before fallback
+    needs: [cache_miss_invalidation, service_fault_observation]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: none
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - name: Create a partial extraction fixture
+        run: python3 -m scripts.gradle_dependency_cache.control simulate-partial
+      - id: cleanup
+        name: Remove only the disposable modules-2 path
+        run: python3 -m scripts.gradle_dependency_cache.control clean-modules
+      - name: Verify cleanup completed before any fallback
+        env:
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          test "$CLEANUP_OUTCOME" = success
+          test ! -e "$GRADLE_USER_HOME/caches/modules-2"
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-partial-extraction-recovery-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  bounded_fixture_seed:
+    name: Seed bounded cache-control fixtures
+    needs: partial_extraction_recovery
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: write-only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - name: Create the semantic fixture within its byte ceiling
+        run: python3 -m scripts.gradle_dependency_cache.control create-fixture --name semantic --value A --bytes 65536
+      - name: Create collision fixture A within its byte ceiling
+        run: python3 -m scripts.gradle_dependency_cache.control create-fixture --name collision --value A --bytes 65536
+      - name: Save the semantic fixture
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
+          key: argus-gradle-fixture-semantic-v1-${{ github.run_id }}
+      - name: Save collision fixture A
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/collision
+          key: argus-gradle-fixture-collision-v1-${{ github.run_id }}
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-bounded-fixture-seed-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  semantic_fixture_recovery:
+    name: Recover a damaged local fixture safely
+    needs: bounded_fixture_seed
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - id: semantic_restore
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
+          key: argus-gradle-fixture-semantic-v1-${{ github.run_id }}
+      - name: Require an exact semantic fixture
+        env:
+          RESTORE_OUTCOME: ${{ steps.semantic_restore.outcome }}
+          CACHE_HIT: ${{ steps.semantic_restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.semantic_restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.semantic_restore.outputs.cache-primary-key }}
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control fixture-restore-check
+          --path "$FIXTURE_PATH" --expected exact --action-outcome "$RESTORE_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - name: Verify semantic fixture A
+        env:
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
+        run: python3 -m scripts.gradle_dependency_cache.control verify-fixture --path "$FIXTURE_PATH" --value A --bytes 65536
+      - name: Remove only the unusable local fixture
+        env:
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
+        run: python3 -m scripts.gradle_dependency_cache.control fixture-recovery --path "$FIXTURE_PATH"
+      - id: semantic_readback
+        name: Read the trusted fixture again after local recovery
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
+          key: argus-gradle-fixture-semantic-v1-${{ github.run_id }}
+      - name: Confirm the trusted fixture remained unchanged
+        env:
+          RESTORE_OUTCOME: ${{ steps.semantic_readback.outcome }}
+          CACHE_HIT: ${{ steps.semantic_readback.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.semantic_readback.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.semantic_readback.outputs.cache-primary-key }}
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control fixture-restore-check
+          --path "$FIXTURE_PATH" --expected exact --action-outcome "$RESTORE_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+          && python3 -m scripts.gradle_dependency_cache.control verify-fixture
+          --path "$FIXTURE_PATH" --value A --bytes 65536
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-semantic-fixture-recovery-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  immutable_collision_writer:
+    name: Attempt a bounded immutable-key collision
+    needs: semantic_fixture_recovery
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: write-only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      save_outcome: ${{ steps.collision_save.outcome }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - name: Prepare collision fixture B at the original cache path
+        run: python3 -m scripts.gradle_dependency_cache.control create-fixture --name collision --value B --bytes 65536
+      - id: collision_save
+        name: Try to save B under the immutable A key
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/collision
+          key: argus-gradle-fixture-collision-v1-${{ github.run_id }}
+      - name: Record the collision attempt outcome
+        env:
+          SAVE_OUTCOME: ${{ steps.collision_save.outcome }}
+        run: python3 -m scripts.gradle_dependency_cache.control record-collision --save-outcome "$SAVE_OUTCOME"
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-immutable-collision-writer-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  immutable_collision_readback:
+    name: Verify fixture A survived the collision attempt
+    needs: [bounded_fixture_seed, immutable_collision_writer]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - id: collision_restore
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/collision
+          key: argus-gradle-fixture-collision-v1-${{ github.run_id }}
+      - name: Require the exact immutable fixture
+        env:
+          RESTORE_OUTCOME: ${{ steps.collision_restore.outcome }}
+          CACHE_HIT: ${{ steps.collision_restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.collision_restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.collision_restore.outputs.cache-primary-key }}
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/collision
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control fixture-restore-check
+          --path "$FIXTURE_PATH" --expected exact --action-outcome "$RESTORE_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+          && python3 -m scripts.gradle_dependency_cache.control verify-fixture
+          --path "$FIXTURE_PATH" --value A --bytes 65536
+      - name: Record immutable collision readback evidence
+        env:
+          SAVE_OUTCOME: ${{ needs.immutable_collision_writer.outputs.save_outcome }}
+          RESTORE_OUTCOME: ${{ steps.collision_restore.outcome }}
+        run: python3 -m scripts.gradle_dependency_cache.control record-collision --save-outcome "$SAVE_OUTCOME" --readback-outcome "$RESTORE_OUTCOME"
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-immutable-collision-readback-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  failed_writer_key_absent:
+    name: Verify failed-writer key starts absent
+    needs: immutable_collision_readback
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - id: initial_restore
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
+          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Require the failed-writer key to be absent initially
+        env:
+          RESTORE_OUTCOME: ${{ steps.initial_restore.outcome }}
+          CACHE_HIT: ${{ steps.initial_restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.initial_restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.initial_restore.outputs.cache-primary-key }}
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control fixture-restore-check
+          --path "$FIXTURE_PATH" --expected miss --action-outcome "$RESTORE_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-failed-writer-absent-before-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  expected_failed_writer:
+    name: Skip save after an intentional writer failure
+    needs: failed_writer_key_absent
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      expected_failure: ${{ steps.validate.outputs.expected_failure }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - id: restore
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
+          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: restore_check
+        name: Require the key to remain absent before the failing writer
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control fixture-restore-check
+          --path "$FIXTURE_PATH" --expected miss --action-outcome "$RESTORE_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - id: fixture
+        name: Prepare the isolated failed-writer payload
+        run: python3 -m scripts.gradle_dependency_cache.control create-fixture --name failed-writer --value C --bytes 65536
+      - id: intentional_failure
+        name: Fail the writer before cache save
+        continue-on-error: true
+        run: exit 23
+      - id: save
+        name: Save only after a successful writer
+        if: ${{ steps.intentional_failure.outcome == 'success' }}
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
+          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: validate
+        name: Require the expected failure and skipped save
+        if: ${{ always() }}
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore_check.outcome }}
+          FIXTURE_OUTCOME: ${{ steps.fixture.outcome }}
+          FAILURE_OUTCOME: ${{ steps.intentional_failure.outcome }}
+          SAVE_OUTCOME: ${{ steps.save.outcome }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control validate-failed-writer
+          --restore-outcome "$RESTORE_OUTCOME" --fixture-outcome "$FIXTURE_OUTCOME"
+          --failure-outcome "$FAILURE_OUTCOME" --save-outcome "$SAVE_OUTCOME"
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-expected-failed-writer-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  failed_writer_key_readback:
+    name: Verify failed-writer key remains absent
+    needs: [failed_writer_key_absent, expected_failed_writer]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 &&
+      needs.expected_failed_writer.result == 'success' &&
+      needs.expected_failed_writer.outputs.expected_failure == 'true' }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - id: final_restore
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
+          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Require a clean miss after the intentional failure
+        env:
+          RESTORE_OUTCOME: ${{ steps.final_restore.outcome }}
+          CACHE_HIT: ${{ steps.final_restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.final_restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.final_restore.outputs.cache-primary-key }}
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control fixture-restore-check
+          --path "$FIXTURE_PATH" --expected miss --action-outcome "$RESTORE_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-failed-writer-absent-after-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  pull_request_consumer:
+    name: Read-only PR restore and probe
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.id == '1311974293' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/issue-93-gradle-cache-pilot' &&
+      github.event.pull_request.head.sha != '' &&
+      github.event.pull_request.base.repo.id == '1311974293' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.user.id == '219249021' }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - id: restore
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: ${{ steps.cache_key.outputs.key }}
+      - name: Require an exact read-only restore
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control restore-check --expected exact
+          --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
+          --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        env:
+          PROBE_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode warm --expected-gradle 9.1.0
+          --expected-java '${{ steps.cache_key.outputs.java_runtime_version }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate warm Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode warm
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - id: canary_fixture
+        name: Create a unique read-only save canary
+        run: python3 -m scripts.gradle_dependency_cache.control create-fixture --name pr-canary --value C --bytes 65536
+      - id: canary_save
+        name: Attempt a save under explicit read-only cache access
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/pr-canary
+          key: argus-gradle-pr-read-only-canary-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Clear the local canary payload before readback
+        env:
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/pr-canary
+        run: python3 -m scripts.gradle_dependency_cache.control clean-fixture --path "$FIXTURE_PATH"
+      - id: canary_restore
+        name: Check whether the canary became readable
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/pr-canary
+          key: argus-gradle-pr-read-only-canary-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: canary_check
+        name: Require the read-only canary to remain absent
+        continue-on-error: true
+        env:
+          RESTORE_OUTCOME: ${{ steps.canary_restore.outcome }}
+          CACHE_HIT: ${{ steps.canary_restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.canary_restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.canary_restore.outputs.cache-primary-key }}
+          FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/pr-canary
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control fixture-restore-check
+          --path "$FIXTURE_PATH" --expected miss --action-outcome "$RESTORE_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - name: Classify the read-only canary without claiming service denial
+        env:
+          SAVE_OUTCOME: ${{ steps.canary_save.outcome }}
+          READBACK_OUTCOME: ${{ steps.canary_restore.outcome }}
+          CACHE_HIT: ${{ steps.canary_restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.canary_restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.canary_restore.outputs.cache-primary-key }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control classify-read-only-canary
+          --cache-mode read --save-outcome "$SAVE_OUTCOME" --readback-outcome "$READBACK_OUTCOME"
+          --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-pull-request-consumer-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+  trial_a_cold:
+    name: Pair A cold
+    needs: cache_seed
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: none
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      unsigned_apk_sha256: ${{ steps.probe.outputs.unsigned_apk_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Match the trusted cache key
+        env:
+          EXPECTED_KEY: ${{ needs.cache_seed.outputs.cache_key }}
+          ACTUAL_KEY: ${{ steps.cache_key.outputs.key }}
+        run: test "$ACTUAL_KEY" = "$EXPECTED_KEY"
+      - name: Verify the cold module cache is empty
+        run: python3 -m scripts.gradle_dependency_cache.control prepare-empty
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode cold --expected-gradle 9.1.0
+          --expected-java '${{ needs.cache_seed.outputs.java_runtime_version }}'
+          --expected-image-os '${{ needs.cache_seed.outputs.image_os }}'
+          --expected-image-version '${{ needs.cache_seed.outputs.image_version }}'
+          --expected-platform-revision '${{ needs.cache_seed.outputs.platform_revision }}'
+          --expected-build-tools-revision '${{ needs.cache_seed.outputs.build_tools_revision }}'
+          --expected-runner-temp-sha256 '${{ needs.cache_seed.outputs.runner_temp_path_sha256 }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate cold Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode cold
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-trial-a-cold-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  trial_a_warm:
+    name: Pair A warm
+    needs: [cache_seed, trial_a_cold]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      unsigned_apk_sha256: ${{ steps.probe.outputs.unsigned_apk_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Match the trusted cache key
+        env:
+          EXPECTED_KEY: ${{ needs.cache_seed.outputs.cache_key }}
+          ACTUAL_KEY: ${{ steps.cache_key.outputs.key }}
+        run: test "$ACTUAL_KEY" = "$EXPECTED_KEY"
+      - id: restore
+        name: Restore the exact trusted dependency cache
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: ${{ steps.cache_key.outputs.key }}
+      - name: Require the exact seed and compare canonical contents
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
+          EXPECTED_MANIFEST: ${{ needs.cache_seed.outputs.manifest_sha256 }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control restore-check --expected exact
+          --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
+          --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+          --manifest-sha256 "$EXPECTED_MANIFEST"
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode warm
+          --expected-gradle 9.1.0
+          --expected-java '${{ needs.cache_seed.outputs.java_runtime_version }}'
+          --expected-image-os '${{ needs.cache_seed.outputs.image_os }}'
+          --expected-image-version '${{ needs.cache_seed.outputs.image_version }}'
+          --expected-platform-revision '${{ needs.cache_seed.outputs.platform_revision }}'
+          --expected-build-tools-revision '${{ needs.cache_seed.outputs.build_tools_revision }}'
+          --expected-runner-temp-sha256 '${{ needs.cache_seed.outputs.runner_temp_path_sha256 }}'
+          --compare-apk '${{ needs.trial_a_cold.outputs.unsigned_apk_sha256 }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate warm Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode warm
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-trial-a-warm-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  trial_b_cold:
+    name: Pair B cold
+    needs: [cache_seed, trial_a_warm]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: none
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      unsigned_apk_sha256: ${{ steps.probe.outputs.unsigned_apk_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Match the trusted cache key
+        env:
+          EXPECTED_KEY: ${{ needs.cache_seed.outputs.cache_key }}
+          ACTUAL_KEY: ${{ steps.cache_key.outputs.key }}
+        run: test "$ACTUAL_KEY" = "$EXPECTED_KEY"
+      - name: Verify the cold module cache is empty
+        run: python3 -m scripts.gradle_dependency_cache.control prepare-empty
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode cold --expected-gradle 9.1.0
+          --expected-java '${{ needs.cache_seed.outputs.java_runtime_version }}'
+          --expected-image-os '${{ needs.cache_seed.outputs.image_os }}'
+          --expected-image-version '${{ needs.cache_seed.outputs.image_version }}'
+          --expected-platform-revision '${{ needs.cache_seed.outputs.platform_revision }}'
+          --expected-build-tools-revision '${{ needs.cache_seed.outputs.build_tools_revision }}'
+          --expected-runner-temp-sha256 '${{ needs.cache_seed.outputs.runner_temp_path_sha256 }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate cold Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode cold
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-trial-b-cold-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  trial_b_warm:
+    name: Pair B warm
+    needs: [cache_seed, trial_b_cold]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      unsigned_apk_sha256: ${{ steps.probe.outputs.unsigned_apk_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Match the trusted cache key
+        env:
+          EXPECTED_KEY: ${{ needs.cache_seed.outputs.cache_key }}
+          ACTUAL_KEY: ${{ steps.cache_key.outputs.key }}
+        run: test "$ACTUAL_KEY" = "$EXPECTED_KEY"
+      - id: restore
+        name: Restore the exact trusted dependency cache
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: ${{ steps.cache_key.outputs.key }}
+      - name: Require the exact seed and compare canonical contents
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
+          EXPECTED_MANIFEST: ${{ needs.cache_seed.outputs.manifest_sha256 }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control restore-check --expected exact
+          --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
+          --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+          --manifest-sha256 "$EXPECTED_MANIFEST"
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode warm
+          --expected-gradle 9.1.0
+          --expected-java '${{ needs.cache_seed.outputs.java_runtime_version }}'
+          --expected-image-os '${{ needs.cache_seed.outputs.image_os }}'
+          --expected-image-version '${{ needs.cache_seed.outputs.image_version }}'
+          --expected-platform-revision '${{ needs.cache_seed.outputs.platform_revision }}'
+          --expected-build-tools-revision '${{ needs.cache_seed.outputs.build_tools_revision }}'
+          --expected-runner-temp-sha256 '${{ needs.cache_seed.outputs.runner_temp_path_sha256 }}'
+          --compare-apk '${{ needs.trial_b_cold.outputs.unsigned_apk_sha256 }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate warm Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode warm
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-trial-b-warm-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  trial_c_cold:
+    name: Pair C cold
+    needs: [cache_seed, trial_b_warm]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: none
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      unsigned_apk_sha256: ${{ steps.probe.outputs.unsigned_apk_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Match the trusted cache key
+        env:
+          EXPECTED_KEY: ${{ needs.cache_seed.outputs.cache_key }}
+          ACTUAL_KEY: ${{ steps.cache_key.outputs.key }}
+        run: test "$ACTUAL_KEY" = "$EXPECTED_KEY"
+      - name: Verify the cold module cache is empty
+        run: python3 -m scripts.gradle_dependency_cache.control prepare-empty
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode cold --expected-gradle 9.1.0
+          --expected-java '${{ needs.cache_seed.outputs.java_runtime_version }}'
+          --expected-image-os '${{ needs.cache_seed.outputs.image_os }}'
+          --expected-image-version '${{ needs.cache_seed.outputs.image_version }}'
+          --expected-platform-revision '${{ needs.cache_seed.outputs.platform_revision }}'
+          --expected-build-tools-revision '${{ needs.cache_seed.outputs.build_tools_revision }}'
+          --expected-runner-temp-sha256 '${{ needs.cache_seed.outputs.runner_temp_path_sha256 }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate cold Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode cold
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-trial-c-cold-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  trial_c_warm:
+    name: Pair C warm
+    needs: [cache_seed, trial_c_cold]
+    if: >-
+      ${{ github.event_name == 'push' &&
+      github.event.created == true && github.event.deleted == false &&
+      github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
+      github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref_protected == true && github.run_attempt == 1 }}
+    cache-mode: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      unsigned_apk_sha256: ${{ steps.probe.outputs.unsigned_apk_sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: initialize
+        run: python3 -m scripts.gradle_dependency_cache.control init-environment
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: ''
+      - name: Install the probe SDK packages
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - id: cache_key
+        run: python3 -m scripts.gradle_dependency_cache.control cache-key
+      - name: Match the trusted cache key
+        env:
+          EXPECTED_KEY: ${{ needs.cache_seed.outputs.cache_key }}
+          ACTUAL_KEY: ${{ steps.cache_key.outputs.key }}
+        run: test "$ACTUAL_KEY" = "$EXPECTED_KEY"
+      - id: restore
+        name: Restore the exact trusted dependency cache
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
+          key: ${{ steps.cache_key.outputs.key }}
+      - name: Require the exact seed and compare canonical contents
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+          PRIMARY_KEY: ${{ steps.restore.outputs.cache-primary-key }}
+          EXPECTED_MANIFEST: ${{ needs.cache_seed.outputs.manifest_sha256 }}
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.control restore-check --expected exact
+          --action-outcome "$RESTORE_OUTCOME" --cache-hit "$CACHE_HIT"
+          --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
+          --manifest-sha256 "$EXPECTED_MANIFEST"
+      - name: Install the observer before Gradle starts
+        run: python3 -m scripts.gradle_dependency_cache.control install-observer --script scripts/gradle_dependency_cache/observer.init.gradle
+      - id: robolectric_before
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase before
+      - id: probe
+        name: Run the production readiness-probe sequence
+        run: >-
+          python3 -m scripts.gradle_dependency_cache.runner --mode warm
+          --expected-gradle 9.1.0
+          --expected-java '${{ needs.cache_seed.outputs.java_runtime_version }}'
+          --expected-image-os '${{ needs.cache_seed.outputs.image_os }}'
+          --expected-image-version '${{ needs.cache_seed.outputs.image_version }}'
+          --expected-platform-revision '${{ needs.cache_seed.outputs.platform_revision }}'
+          --expected-build-tools-revision '${{ needs.cache_seed.outputs.build_tools_revision }}'
+          --expected-runner-temp-sha256 '${{ needs.cache_seed.outputs.runner_temp_path_sha256 }}'
+          --compare-apk '${{ needs.trial_c_cold.outputs.unsigned_apk_sha256 }}'
+      - id: stop
+        if: ${{ always() && steps.probe.outcome != 'skipped' }}
+        continue-on-error: true
+        run: android-readiness-probe/gradlew -p android-readiness-probe --stop
+      - name: Verify daemon shutdown
+        if: ${{ always() && steps.probe.outcome != 'skipped' && steps.stop.outcome != 'skipped' }}
+        env:
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+        run: test "$STOP_OUTCOME" = success
+      - name: Snapshot persisted Robolectric artifacts
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.robolectric_before.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control robolectric-snapshot --phase after
+      - name: Validate warm Gradle transfer observations
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' }}
+        run: python3 -m scripts.gradle_dependency_cache.control verify-observer --mode warm
+      - name: Record the final module-cache manifest
+        if: ${{ always() && steps.initialize.outcome == 'success' && steps.probe.outcome != 'skipped' && steps.stop.outcome == 'success' }}
+        run: python3 -m scripts.gradle_dependency_cache.control manifest --stable --maximum-bytes 1073741824
+      - name: Retain redacted trial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}-trial-c-warm-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/evidence.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/runner-log-redacted.txt
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/observer.jsonl
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-artifacts-redacted.json
+            ${{ runner.temp }}/gradle-dependency-cache-experiment/state/robolectric-attempts-redacted.json
+          retention-days: 14
+          if-no-files-found: warn

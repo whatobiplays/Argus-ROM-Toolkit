@@ -30,7 +30,7 @@ class ControlTests(unittest.TestCase):
             "GITHUB_RUN_ATTEMPT": "1",
             "GITHUB_SERVER_URL": "https://github.com",
             "GITHUB_REPOSITORY": "whatobiplays/Argus-ROM-Toolkit",
-            "GITHUB_WORKFLOW_REF": "whatobiplays/Argus-ROM-Toolkit/.github/workflows/gradle-dependency-cache-experiment.yml@refs/heads/codex/issue-93-gradle-cache-pilot",
+            "GITHUB_WORKFLOW_REF": "whatobiplays/Argus-ROM-Toolkit/.github/workflows/gradle-dependency-cache-experiment.yml@refs/heads/codex/issue-93-gradle-cache-observer-repair",
             "GITHUB_WORKFLOW_SHA": "a" * 40,
             "GITHUB_ENV": str(self.github_env),
             "GITHUB_OUTPUT": str(self.github_output),
@@ -43,6 +43,19 @@ class ControlTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.environment.stop()
         self.temp.cleanup()
+
+    def test_environment_defaults_to_second_campaign_identity(self) -> None:
+        with patch.dict(os.environ, {
+            "RUNNER_TEMP": str(self.root),
+            "GITHUB_RUN_ID": "42",
+            "GITHUB_JOB": "cache_seed",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_ENV": str(self.github_env),
+        }, clear=True), contextlib.redirect_stdout(io.StringIO()):
+            control.command_init_environment(Namespace())
+
+        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["campaign_id"], "gradle-dependency-cache-observer-repair-v2")
 
     def test_canonical_manifest_excludes_only_transient_files(self) -> None:
         cache = self.modules / "files" / "fixture"
@@ -200,7 +213,7 @@ class ControlTests(unittest.TestCase):
 
     def test_trusted_seed_record_binds_cache_key_run_and_source(self) -> None:
         source_sha = "a" * 40
-        cache_key = "argus-gradle-dependency-cache-pilot-v1-test-key"
+        cache_key = "argus-gradle-dependency-cache-observer-repair-v2-test-key"
         manifest_path = control._task_root() / "modules-manifest.json"
         manifest_path.write_text(json.dumps({
             "format": 1,
@@ -212,10 +225,10 @@ class ControlTests(unittest.TestCase):
         record_path = control._task_root() / "trusted-seed-manifest.json"
         with patch.dict(os.environ, {
             "GITHUB_SHA": source_sha,
-            "GITHUB_REF": "refs/heads/codex/issue-93-gradle-cache-pilot",
+            "GITHUB_REF": "refs/heads/codex/issue-93-gradle-cache-observer-repair",
             "GITHUB_RUN_ID": "42",
             "GITHUB_RUN_ATTEMPT": "1",
-            "EXPERIMENT_CAMPAIGN_ID": "gradle-dependency-cache-pilot-v1",
+            "EXPERIMENT_CAMPAIGN_ID": "gradle-dependency-cache-observer-repair-v2",
         }), contextlib.redirect_stdout(io.StringIO()):
             control.command_write_seed_record(Namespace(
                 manifest=str(manifest_path), cache_key=cache_key, output=str(record_path),
@@ -227,6 +240,8 @@ class ControlTests(unittest.TestCase):
 
         record = json.loads(record_path.read_text(encoding="utf-8"))
         self.assertEqual(record["seed_source_sha"], source_sha)
+        self.assertEqual(record["campaign_id"], "gradle-dependency-cache-observer-repair-v2")
+        self.assertEqual(record["seed_branch"], "refs/heads/codex/issue-93-gradle-cache-observer-repair")
         self.assertEqual(record["cache_key"], cache_key)
         evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
         self.assertEqual(evidence["trusted_seed_manifest_sha256"], "b" * 64)
@@ -236,7 +251,7 @@ class ControlTests(unittest.TestCase):
         seed = {
             "id": 42,
             "event": "push",
-            "head_branch": "codex/issue-93-gradle-cache-pilot",
+            "head_branch": "codex/issue-93-gradle-cache-observer-repair",
             "head_sha": head_sha,
             "run_attempt": 1,
             "status": "completed",
@@ -263,7 +278,7 @@ class ControlTests(unittest.TestCase):
         seed = {
             "id": 42,
             "event": "push",
-            "head_branch": "codex/issue-93-gradle-cache-pilot",
+            "head_branch": "codex/issue-93-gradle-cache-observer-repair",
             "head_sha": head_sha,
             "run_attempt": 1,
             "status": "completed",
@@ -288,7 +303,7 @@ class ControlTests(unittest.TestCase):
         seed = {
             "id": 42,
             "event": "push",
-            "head_branch": "codex/issue-93-gradle-cache-pilot",
+            "head_branch": "codex/issue-93-gradle-cache-observer-repair",
             "head_sha": head_sha,
             "run_attempt": 1,
             "status": "completed",
@@ -305,15 +320,57 @@ class ControlTests(unittest.TestCase):
                 head_sha=head_sha, pr_number="7", current_run_id="100",
             )
 
+    def test_seed_campaign_selection_uses_new_branch_for_history_fallback(self) -> None:
+        head_sha = "a" * 40
+        seed = {
+            "id": 42,
+            "event": "push",
+            "head_branch": "codex/issue-93-gradle-cache-observer-repair",
+            "head_sha": head_sha,
+            "run_attempt": 1,
+            "status": "completed",
+            "conclusion": "success",
+        }
+        prior_pr = {
+            "id": 99,
+            "event": "pull_request",
+            "head_branch": "codex/issue-93-gradle-cache-observer-repair",
+            "pull_requests": [],
+        }
+
+        with self.assertRaisesRegex(control.SafetyError, "PR consumer"):
+            control.resolve_seed_campaign(
+                [{"workflow_runs": [seed]}], [{"workflow_runs": [prior_pr]}],
+                head_sha=head_sha, pr_number="7", current_run_id="100",
+            )
+
+    def test_seed_campaign_selection_rejects_first_campaign_branch(self) -> None:
+        head_sha = "a" * 40
+        first_campaign_seed = {
+            "id": 42,
+            "event": "push",
+            "head_branch": "codex/issue-93-gradle-cache-pilot",
+            "head_sha": head_sha,
+            "run_attempt": 1,
+            "status": "completed",
+            "conclusion": "success",
+        }
+
+        with self.assertRaises(control.SafetyError):
+            control.resolve_seed_campaign(
+                [{"workflow_runs": [first_campaign_seed]}], [],
+                head_sha=head_sha, pr_number="7", current_run_id="100",
+            )
+
     def test_trusted_seed_record_rejects_another_push_run_id(self) -> None:
         record_path = control._task_root() / "trusted-seed-manifest.json"
         record_path.write_text(json.dumps({
             "schema": 1,
-            "campaign_id": "gradle-dependency-cache-pilot-v1",
+            "campaign_id": "gradle-dependency-cache-observer-repair-v2",
             "seed_run_id": "42",
             "seed_run_attempt": 1,
             "seed_source_sha": "a" * 40,
-            "seed_branch": "refs/heads/codex/issue-93-gradle-cache-pilot",
+            "seed_branch": "refs/heads/codex/issue-93-gradle-cache-observer-repair",
             "cache_key": "expected-key",
             "manifest_sha256": "b" * 64,
             "manifest_files": 1,
@@ -326,6 +383,40 @@ class ControlTests(unittest.TestCase):
                 path=str(record_path), expected_source_sha="a" * 40,
                 expected_cache_key="expected-key", expected_run_id="43",
             ))
+
+    def test_trusted_seed_record_rejects_first_campaign_identity(self) -> None:
+        record_path = control._task_root() / "trusted-seed-manifest.json"
+        base_record = {
+            "schema": 1,
+            "seed_run_id": "42",
+            "seed_run_attempt": 1,
+            "seed_source_sha": "a" * 40,
+            "cache_key": "argus-gradle-dependency-cache-pilot-v1-test-key",
+            "manifest_sha256": "b" * 64,
+            "manifest_files": 1,
+            "manifest_bytes": 10,
+            "archive_expanded_bytes": 10,
+        }
+        legacy_identities = (
+            {
+                "campaign_id": "gradle-dependency-cache-pilot-v1",
+                "seed_branch": "refs/heads/codex/issue-93-gradle-cache-observer-repair",
+            },
+            {
+                "campaign_id": "gradle-dependency-cache-observer-repair-v2",
+                "seed_branch": "refs/heads/codex/issue-93-gradle-cache-pilot",
+            },
+        )
+
+        for identity in legacy_identities:
+            with self.subTest(identity=identity):
+                record_path.write_text(json.dumps({**base_record, **identity}), encoding="utf-8")
+                with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
+                    control.command_verify_seed_record(Namespace(
+                        path=str(record_path), expected_source_sha="a" * 40,
+                        expected_cache_key="argus-gradle-dependency-cache-pilot-v1-test-key",
+                        expected_run_id="42",
+                    ))
 
     def test_trusted_seed_record_rejects_malformed_expanded_byte_count(self) -> None:
         manifest_path = control._task_root() / "modules-manifest.json"
@@ -340,10 +431,10 @@ class ControlTests(unittest.TestCase):
         }
         with patch.dict(os.environ, {
             "GITHUB_SHA": source_sha,
-            "GITHUB_REF": "refs/heads/codex/issue-93-gradle-cache-pilot",
+            "GITHUB_REF": "refs/heads/codex/issue-93-gradle-cache-observer-repair",
             "GITHUB_RUN_ID": "42",
             "GITHUB_RUN_ATTEMPT": "1",
-            "EXPERIMENT_CAMPAIGN_ID": "gradle-dependency-cache-pilot-v1",
+            "EXPERIMENT_CAMPAIGN_ID": "gradle-dependency-cache-observer-repair-v2",
         }), contextlib.redirect_stdout(io.StringIO()):
             for expanded_bytes in (None, "10", True, control.MODULE_CACHE_LIMIT + 1):
                 with self.subTest(expanded_bytes=expanded_bytes):
@@ -437,6 +528,7 @@ class ControlTests(unittest.TestCase):
         output = self.github_output.read_text(encoding="utf-8")
         self.assertIn("temurin-eclipse-adoptium-17.0.21.1+2", output)
         self.assertIn("sdk36r3-bt36.0.0r36.0.0", output)
+        self.assertIn("argus-gradle-dependency-cache-observer-repair-v2-linux-x64-", output)
 
     def test_fixture_restore_error_cleans_only_fixture_namespace(self) -> None:
         fixture_root = Path(os.environ["GRADLE_FIXTURE_ROOT"])
@@ -518,7 +610,7 @@ class ControlTests(unittest.TestCase):
             {
                 "server_url": "https://github.com",
                 "repository": "whatobiplays/Argus-ROM-Toolkit",
-                "workflow_ref": "whatobiplays/Argus-ROM-Toolkit/.github/workflows/gradle-dependency-cache-experiment.yml@refs/heads/codex/issue-93-gradle-cache-pilot",
+                "workflow_ref": "whatobiplays/Argus-ROM-Toolkit/.github/workflows/gradle-dependency-cache-experiment.yml@refs/heads/codex/issue-93-gradle-cache-observer-repair",
                 "workflow_sha": "a" * 40,
                 "run_id": "42",
                 "run_attempt": "1",

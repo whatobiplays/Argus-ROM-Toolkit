@@ -3,7 +3,7 @@ name: Gradle dependency cache experiment
 on:
   push:
     branches:
-      - codex/issue-93-gradle-cache-pilot
+      - codex/issue-93-gradle-cache-observer-repair
   pull_request:
     branches:
       - main
@@ -16,7 +16,7 @@ permissions:
 cache-mode: none
 
 env:
-  EXPERIMENT_CAMPAIGN_ID: gradle-dependency-cache-pilot-v1
+  EXPERIMENT_CAMPAIGN_ID: gradle-dependency-cache-observer-repair-v2
   PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: write-only
     runs-on: ubuntu-24.04
@@ -144,7 +144,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04
@@ -186,7 +186,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/gradle-home/caches/modules-2
-          key: argus-gradle-empty-miss-v1-${{ github.run_id }}
+          key: argus-gradle-observer-repair-v2-empty-miss-${{ github.run_id }}
       - name: Require a clean normal miss
         env:
           RESTORE_OUTCOME: ${{ steps.empty_miss.outcome }}
@@ -270,7 +270,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04
@@ -320,7 +320,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: none
     runs-on: ubuntu-24.04
@@ -375,7 +375,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: write-only
     runs-on: ubuntu-24.04
@@ -394,12 +394,12 @@ jobs:
         uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
-          key: argus-gradle-fixture-semantic-v1-${{ github.run_id }}
+          key: argus-gradle-observer-repair-v2-fixture-semantic-${{ github.run_id }}
       - name: Save collision fixture A
         uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/collision
-          key: argus-gradle-fixture-collision-v1-${{ github.run_id }}
+          key: argus-gradle-observer-repair-v2-fixture-collision-${{ github.run_id }}
       - name: Retain redacted trial evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -417,7 +417,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04
@@ -433,7 +433,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
-          key: argus-gradle-fixture-semantic-v1-${{ github.run_id }}
+          key: argus-gradle-observer-repair-v2-fixture-semantic-${{ github.run_id }}
       - name: Require an exact semantic fixture
         env:
           RESTORE_OUTCOME: ${{ steps.semantic_restore.outcome }}
@@ -459,7 +459,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/semantic
-          key: argus-gradle-fixture-semantic-v1-${{ github.run_id }}
+          key: argus-gradle-observer-repair-v2-fixture-semantic-${{ github.run_id }}
       - name: Confirm the trusted fixture remained unchanged
         env:
           RESTORE_OUTCOME: ${{ steps.semantic_readback.outcome }}
@@ -490,7 +490,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: write-only
     runs-on: ubuntu-24.04
@@ -511,7 +511,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/collision
-          key: argus-gradle-fixture-collision-v1-${{ github.run_id }}
+          key: argus-gradle-observer-repair-v2-fixture-collision-${{ github.run_id }}
       - name: Record the collision attempt outcome
         env:
           SAVE_OUTCOME: ${{ steps.collision_save.outcome }}
@@ -533,7 +533,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04
@@ -549,7 +549,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/collision
-          key: argus-gradle-fixture-collision-v1-${{ github.run_id }}
+          key: argus-gradle-observer-repair-v2-fixture-collision-${{ github.run_id }}
       - name: Require the exact immutable fixture
         env:
           RESTORE_OUTCOME: ${{ steps.collision_restore.outcome }}
@@ -585,7 +585,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04
@@ -601,7 +601,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
-          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          key: argus-gradle-observer-repair-v2-failed-writer-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Require the failed-writer key to be absent initially
         env:
           RESTORE_OUTCOME: ${{ steps.initial_restore.outcome }}
@@ -630,7 +630,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: write
     runs-on: ubuntu-24.04
@@ -648,7 +648,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
-          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          key: argus-gradle-observer-repair-v2-failed-writer-${{ github.run_id }}-${{ github.run_attempt }}
       - id: restore_check
         name: Require the key to remain absent before the failing writer
         env:
@@ -674,7 +674,7 @@ jobs:
         uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
-          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          key: argus-gradle-observer-repair-v2-failed-writer-${{ github.run_id }}-${{ github.run_attempt }}
       - id: validate
         name: Require the expected failure and skipped save
         if: ${{ always() }}
@@ -704,7 +704,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 &&
       needs.expected_failed_writer.result == 'success' &&
       needs.expected_failed_writer.outputs.expected_failure == 'true' }}
@@ -722,7 +722,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/failed-writer
-          key: argus-gradle-failed-writer-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          key: argus-gradle-observer-repair-v2-failed-writer-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Require a clean miss after the intentional failure
         env:
           RESTORE_OUTCOME: ${{ steps.final_restore.outcome }}
@@ -751,7 +751,7 @@ jobs:
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
       github.event.pull_request.head.repo.id == '1311974293' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'codex/issue-93-gradle-cache-pilot' &&
+      github.event.pull_request.head.ref == 'codex/issue-93-gradle-cache-observer-repair' &&
       github.event.pull_request.head.sha != '' &&
       github.event.pull_request.base.repo.id == '1311974293' &&
       github.event.pull_request.base.ref == 'main' &&
@@ -797,7 +797,7 @@ jobs:
           gh api --method GET --paginate --slurp \
             "repos/$GITHUB_REPOSITORY/actions/workflows/gradle-dependency-cache-experiment.yml/runs" \
             -f event=push \
-            -f branch=codex/issue-93-gradle-cache-pilot \
+            -f branch=codex/issue-93-gradle-cache-observer-repair \
             -f head_sha="$PR_HEAD_SHA" \
             -f per_page=100 > "$RUNNER_TEMP/issue93-workflow-runs.json"
           python3 -m scripts.gradle_dependency_cache.control select-seed-run \
@@ -917,7 +917,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/pr-canary
-          key: argus-gradle-pr-read-only-canary-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          key: argus-gradle-observer-repair-v2-pr-read-only-canary-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Clear the local canary payload before readback
         env:
           FIXTURE_PATH: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/pr-canary
@@ -928,7 +928,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/gradle-dependency-cache-experiment/state/fixtures/pr-canary
-          key: argus-gradle-pr-read-only-canary-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          key: argus-gradle-observer-repair-v2-pr-read-only-canary-${{ github.run_id }}-${{ github.run_attempt }}
       - id: canary_check
         name: Require the read-only canary to remain absent
         continue-on-error: true
@@ -980,7 +980,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: none
     runs-on: ubuntu-24.04
@@ -1066,7 +1066,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04
@@ -1171,7 +1171,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: none
     runs-on: ubuntu-24.04
@@ -1257,7 +1257,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04
@@ -1362,7 +1362,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: none
     runs-on: ubuntu-24.04
@@ -1448,7 +1448,7 @@ jobs:
       github.event.created == true && github.event.deleted == false &&
       github.repository_id == '1311974293' && github.repository_owner_id == '219249021' &&
       github.actor_id == '219249021' && github.triggering_actor == 'whatobiplays' &&
-      github.ref == 'refs/heads/codex/issue-93-gradle-cache-pilot' &&
+      github.ref == 'refs/heads/codex/issue-93-gradle-cache-observer-repair' &&
       github.ref_protected == true && github.run_attempt == 1 }}
     cache-mode: read
     runs-on: ubuntu-24.04

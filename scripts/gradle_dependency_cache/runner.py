@@ -490,7 +490,7 @@ def execute(args: argparse.Namespace) -> int:
 
     log = isolated_log_path()
     evidence: dict[str, Any] = {
-        "campaign_id": environment.get("EXPERIMENT_CAMPAIGN_ID", "gradle-dependency-cache-pilot-v1"),
+        "campaign_id": environment.get("EXPERIMENT_CAMPAIGN_ID", control.EXPERIMENT_CAMPAIGN_ID),
         "probe_source_commit": commit,
         "trial_mode": args.mode,
         "fresh_build_directory": True,

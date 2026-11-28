@@ -26,6 +26,10 @@ MODULE_CACHE_LIMIT = 1_073_741_824
 FIXTURE_LIMIT = 1_048_576
 TRANSIENT_NAMES = {"gc.properties"}
 TRANSIENT_SUFFIXES = (".lock", ".lck")
+EXPERIMENT_BRANCH = "codex/issue-93-gradle-cache-observer-repair"
+EXPERIMENT_BRANCH_REF = f"refs/heads/{EXPERIMENT_BRANCH}"
+EXPERIMENT_CAMPAIGN_ID = "gradle-dependency-cache-observer-repair-v2"
+DEPENDENCY_CACHE_NAMESPACE = "argus-gradle-dependency-cache-observer-repair-v2"
 ROBOLECTRIC_TARGET_COORDINATE = "org.robolectric:nativeruntime-dist-compat:1.0.18"
 QUALIFIED_GRADLE_INVOCATION_LABELS = frozenset({"task_inventory", "dry_run", "probe_build"})
 OBSERVER_FIXTURE_INVOCATION_LABELS = frozenset({"fixture_cold"})
@@ -282,7 +286,7 @@ def command_init_environment(_: argparse.Namespace) -> None:
     _append_github_file(_github_file("GITHUB_ENV"), [f"{key}={value}" for key, value in values.items()])
     _write_evidence({
         "schema": 1,
-        "campaign_id": os.environ.get("EXPERIMENT_CAMPAIGN_ID", "gradle-dependency-cache-pilot-v1"),
+        "campaign_id": os.environ.get("EXPERIMENT_CAMPAIGN_ID", EXPERIMENT_CAMPAIGN_ID),
         "run_id": os.environ.get("GITHUB_RUN_ID"),
         "job": os.environ.get("GITHUB_JOB"),
     })
@@ -435,9 +439,9 @@ def command_write_seed_record(args: argparse.Namespace) -> None:
         raise SafetyError("trusted seed source commit is invalid")
     if not re.fullmatch(r"[A-Za-z0-9_-]+", run_id) or run_attempt != "1":
         raise SafetyError("trusted seed run identity is invalid")
-    if branch != "refs/heads/codex/issue-93-gradle-cache-pilot":
-        raise SafetyError("trusted seed must come from the exact pilot branch")
-    if campaign_id != "gradle-dependency-cache-pilot-v1":
+    if branch != EXPERIMENT_BRANCH_REF:
+        raise SafetyError("trusted seed must come from the exact experiment branch")
+    if campaign_id != EXPERIMENT_CAMPAIGN_ID:
         raise SafetyError("trusted seed campaign identity is invalid")
     if not re.fullmatch(r"[A-Za-z0-9_.+-]{1,512}", cache_key):
         raise SafetyError("trusted seed cache key is invalid")
@@ -483,9 +487,9 @@ def command_verify_seed_record(args: argparse.Namespace) -> None:
     record = json.loads(path.read_text(encoding="utf-8"))
     expected_source = args.expected_source_sha
     expected_key = args.expected_cache_key
-    if record.get("schema") != 1 or record.get("campaign_id") != "gradle-dependency-cache-pilot-v1":
+    if record.get("schema") != 1 or record.get("campaign_id") != EXPERIMENT_CAMPAIGN_ID:
         raise SafetyError("downloaded trusted seed record has an unexpected schema or campaign")
-    if record.get("seed_branch") != "refs/heads/codex/issue-93-gradle-cache-pilot":
+    if record.get("seed_branch") != EXPERIMENT_BRANCH_REF:
         raise SafetyError("downloaded trusted seed record came from another branch")
     if record.get("seed_source_sha") != expected_source or not re.fullmatch(r"[0-9a-f]{40}", expected_source):
         raise SafetyError("downloaded trusted seed record does not match the PR head")
@@ -574,7 +578,7 @@ def resolve_seed_campaign(
             ):
                 matched = True
                 break
-        if not pull_requests and run.get("head_branch") == "codex/issue-93-gradle-cache-pilot":
+        if not pull_requests and run.get("head_branch") == EXPERIMENT_BRANCH:
             matched = True
         if matched:
             prior_consumers.append(run)
@@ -584,7 +588,7 @@ def resolve_seed_campaign(
     seed_campaigns = [
         run for run in _workflow_runs_from_pages(seed_pages)
         if run.get("event") == "push"
-        and run.get("head_branch") == "codex/issue-93-gradle-cache-pilot"
+        and run.get("head_branch") == EXPERIMENT_BRANCH
         and run.get("head_sha") == head_sha
     ]
     if len(seed_campaigns) != 1:
@@ -717,7 +721,7 @@ def command_cache_key(args: argparse.Namespace) -> None:
         raise SafetyError("runner architecture is not recognized")
     vendor_key = java_identity["java_vendor"].lower().replace(" ", "-")
     key = (
-        f"argus-gradle-dependency-cache-pilot-v1-linux-{architecture}-temurin-{vendor_key}-"
+        f"{DEPENDENCY_CACHE_NAMESPACE}-linux-{architecture}-temurin-{vendor_key}-"
         f"{java_identity['java_runtime_version']}-gradle-9.1.0-"
         f"cmdline-12266719-sdk36r{revisions['platform']}-bt36.0.0r{revisions['build_tools']}-{digest}"
     )

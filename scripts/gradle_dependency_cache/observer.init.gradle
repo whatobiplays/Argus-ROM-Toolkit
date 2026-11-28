@@ -8,6 +8,7 @@ import org.gradle.internal.operations.OperationIdentifier
 import org.gradle.internal.operations.OperationProgressEvent
 import org.gradle.internal.operations.OperationStartEvent
 
+import org.gradle.internal.resource.ExternalResourceReadBuildOperationType
 import java.net.URI
 import java.security.MessageDigest
 
@@ -41,6 +42,10 @@ def sha256 = { String value ->
     }.join()
 }
 def bodySuffixes = [".aar", ".jar", ".klib", ".so", ".zip", ".tar", ".tgz"] as Set
+// Operation names are display labels; classify reads through their typed details.
+def isExternalResourceReadDetails = { Object details ->
+    details instanceof ExternalResourceReadBuildOperationType.Details
+}
 
 writeRecord([
     event: "observer_ready",
@@ -52,24 +57,37 @@ writeRecord([
 
 def listener = [
     started: { BuildOperationDescriptor operation, OperationStartEvent event ->
+        String decodingStage = "read_details_type"
+        String detailsType = ""
+        String operationName = ""
         try {
-            String detailsType = operation.details?.class?.name ?: ""
-            String operationName = operation.name ?: ""
-            if (detailsType.contains("ExternalResource") || operationName.toLowerCase(Locale.ROOT).contains("resource")) {
-                writeRecord([
-                    event: "external_resource_start",
-                    invocation_id: invocationId,
-                    invocation_label: invocationLabel,
-                    details_type: detailsType.tokenize(".").last(),
-                    operation_name_sha256: sha256(operationName),
-                ])
+            def details = operation.details
+            decodingStage = "classify_operation_details"
+            if (!isExternalResourceReadDetails(details)) {
+                return
             }
-        } catch (Exception ignored) {
+            detailsType = details.class.name
+            decodingStage = "read_operation_name"
+            operationName = operation.name ?: ""
+            decodingStage = "serialize_details_type"
+            writeRecord([
+                event: "external_resource_start",
+                invocation_id: invocationId,
+                invocation_label: invocationLabel,
+                details_type: detailsType.tokenize(".").last(),
+                operation_name_sha256: sha256(operationName),
+            ])
+        } catch (Exception failure) {
+            int separator = Math.max(detailsType.lastIndexOf("."), detailsType.lastIndexOf('$'))
             writeRecord([
                 event: "observer_error",
                 invocation_id: invocationId,
                 invocation_label: invocationLabel,
                 error_kind: "external_resource_start_decode",
+                decoding_stage: decodingStage,
+                exception_type: failure.class.simpleName ?: "UnknownException",
+                details_type: detailsType ? detailsType.substring(separator + 1) : "unavailable",
+                operation_name_sha256: operationName ? sha256(operationName) : null,
             ])
         }
     },
@@ -78,9 +96,7 @@ def listener = [
         try {
             def details = operation.details
             String detailsType = details?.class?.name ?: ""
-            boolean externalResourceRead = detailsType.contains("ExternalResourceReadBuildOperationType")
-                    || detailsType.endsWith('$ReadOperationDetails')
-            if (!externalResourceRead) {
+            if (!isExternalResourceReadDetails(details)) {
                 return
             }
 

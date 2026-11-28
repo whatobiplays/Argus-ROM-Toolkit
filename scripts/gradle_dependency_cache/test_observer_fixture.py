@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import http.server
+import hashlib
 import json
 import os
 import subprocess
@@ -33,7 +34,7 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 class ObserverFixtureTests(unittest.TestCase):
-    def test_observer_reports_local_maven_artifact_body_bytes(self) -> None:
+    def test_observer_tracks_artifact_and_ignores_untyped_resource_operation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="gradle-observer-fixture-") as temporary:
             temp = Path(temporary)
             repo = temp / "maven"
@@ -66,6 +67,19 @@ class ObserverFixtureTests(unittest.TestCase):
 }}
 configurations {{ probe }}
 dependencies {{ probe 'org.robolectric:nativeruntime-dist-compat:1.0.18' }}
+tasks.register('emitNullDetailsResourceOperation') {{
+    doLast {{
+        def operationRunner = gradle.services.get(org.gradle.internal.operations.BuildOperationRunner)
+        operationRunner.run([
+            description: {{
+                org.gradle.internal.operations.BuildOperationDescriptor
+                    .displayName('resource fixture operation without details')
+                    .name('resource fixture operation without details')
+            }},
+            run: {{ context -> }}
+        ] as org.gradle.internal.operations.RunnableBuildOperation)
+    }}
+}}
 tasks.register('resolveFixture') {{
     doLast {{
         def files = configurations.probe.resolve()
@@ -92,7 +106,8 @@ tasks.register('resolveFixture') {{
                 })
                 command = [
                     str(WRAPPER), "-p", str(project), "--no-daemon", "--no-build-cache",
-                    "--no-configuration-cache", "--console=plain", "resolveFixture",
+                    "--no-configuration-cache", "--console=plain",
+                    "emitNullDetailsResourceOperation", "resolveFixture",
                 ]
                 version_command = [str(WRAPPER), "-p", str(project), "--version"]
                 version_result = subprocess.run(
@@ -121,6 +136,17 @@ tasks.register('resolveFixture') {{
                 self.assertEqual(result.returncode, 0, result.stdout[-5000:])
                 records = [json.loads(line) for line in observer_output.read_text(encoding="utf-8").splitlines()]
                 self.assertEqual(sum(record.get("event") == "observer_ready" for record in records), 1)
+                observer_errors = [record for record in records if record.get("event") == "observer_error"]
+                self.assertEqual(observer_errors, [])
+                null_details_name_hash = hashlib.sha256(
+                    b"resource fixture operation without details"
+                ).hexdigest()
+                recorded_start_names = {
+                    record.get("operation_name_sha256")
+                    for record in records
+                    if record.get("event") == "external_resource_start"
+                }
+                self.assertNotIn(null_details_name_hash, recorded_start_names)
                 body_reads = [
                     record for record in records
                     if record.get("event") == "external_resource_read" and record.get("artifact_body") is True
@@ -162,6 +188,18 @@ tasks.register('resolveFixture') {{
                 )
                 self.assertEqual(warm_result.returncode, 0, warm_result.stdout[-5000:])
                 records = [json.loads(line) for line in observer_output.read_text(encoding="utf-8").splitlines()]
+                self.assertEqual(
+                    [record for record in records if record.get("event") == "observer_error"],
+                    [],
+                )
+                self.assertNotIn(
+                    null_details_name_hash,
+                    {
+                        record.get("operation_name_sha256")
+                        for record in records
+                        if record.get("event") == "external_resource_start"
+                    },
+                )
                 warm_body_reads = [
                     record for record in records
                     if record.get("invocation_id") == "fixture-warm-01"

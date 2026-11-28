@@ -28,6 +28,10 @@ class ControlTests(unittest.TestCase):
             "GITHUB_RUN_ID": "42",
             "GITHUB_JOB": "cache_seed",
             "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_SERVER_URL": "https://github.com",
+            "GITHUB_REPOSITORY": "whatobiplays/Argus-ROM-Toolkit",
+            "GITHUB_WORKFLOW_REF": "whatobiplays/Argus-ROM-Toolkit/.github/workflows/gradle-dependency-cache-experiment.yml@refs/heads/codex/issue-93-gradle-cache-pilot",
+            "GITHUB_WORKFLOW_SHA": "a" * 40,
             "GITHUB_ENV": str(self.github_env),
             "GITHUB_OUTPUT": str(self.github_output),
         })
@@ -458,37 +462,125 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(unrelated.read_bytes(), b"keep")
 
     def test_read_only_canary_step_skip_is_reported_without_inference(self) -> None:
-        args = Namespace(
-            cache_mode="read",
+        args = self._read_only_canary_args(
             save_outcome="skipped",
-            readback_outcome="success",
-            cache_hit="",
-            matched_key="",
-            primary_key="canary-key",
+            effective_cache_mode_available="false",
+            effective_cache_mode_value_base64="",
         )
         with contextlib.redirect_stdout(io.StringIO()):
             control.command_classify_read_only_canary(args)
         evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
         self.assertEqual(evidence["read_only_canary_classification"], "save_step_skipped_readback_miss")
+        self.assertFalse(evidence["action_level_skip_claimed"])
+        self.assertFalse(evidence["read_only_canary_effective_actions_cache_mode_available"])
         self.assertFalse(evidence["cache_service_denial_claimed"])
 
     def test_read_only_canary_success_without_readback_is_unresolved(self) -> None:
-        args = Namespace(
-            cache_mode="read",
-            save_outcome="success",
-            readback_outcome="success",
-            cache_hit="",
-            matched_key="",
-            primary_key="canary-key",
-        )
-        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
+        args = self._read_only_canary_args()
+        with patch.dict(os.environ, {"GITHUB_JOB": "pull_request_consumer"}), contextlib.redirect_stdout(io.StringIO()):
             control.command_classify_read_only_canary(args)
         evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
         self.assertEqual(
             evidence["read_only_canary_classification"],
             "save_succeeded_readback_miss_unresolved",
         )
+        self.assertFalse(evidence["read_only_canary_outcome_resolved"])
+        self.assertTrue(evidence["read_only_canary_action_log_inspection_required"])
+        self.assertEqual(evidence["read_only_canary_effective_actions_cache_mode"], "read")
+        self.assertEqual(evidence["read_only_canary_readback_evidence"]["cache_hit"], "false")
+        self.assertEqual(evidence["read_only_canary_run_identity"]["run_id"], "42")
+        self.assertEqual(
+            evidence["read_only_canary_action_log_identity"],
+            {
+                "server_url": "https://github.com",
+                "repository": "whatobiplays/Argus-ROM-Toolkit",
+                "workflow_ref": "whatobiplays/Argus-ROM-Toolkit/.github/workflows/gradle-dependency-cache-experiment.yml@refs/heads/codex/issue-93-gradle-cache-pilot",
+                "workflow_sha": "a" * 40,
+                "run_id": "42",
+                "run_attempt": "1",
+                "job": "pull_request_consumer",
+                "step_id": "canary_save",
+                "step_name": "Attempt a save under explicit read-only cache access",
+                "run_attempt_url": "https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/42/attempts/1",
+            },
+        )
         self.assertFalse(evidence["cache_service_denial_claimed"])
+
+    def test_read_only_canary_success_with_unavailable_effective_mode_stays_unresolved(self) -> None:
+        args = self._read_only_canary_args(
+            effective_cache_mode_available="false",
+            effective_cache_mode_value_base64="",
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            control.command_classify_read_only_canary(args)
+        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["read_only_canary_classification"], "save_succeeded_readback_miss_unresolved")
+        self.assertFalse(evidence["read_only_canary_effective_actions_cache_mode_available"])
+        self.assertIsNone(evidence["read_only_canary_effective_actions_cache_mode"])
+        self.assertTrue(evidence["read_only_canary_action_log_inspection_required"])
+
+    def test_read_only_canary_failed_readback_remains_a_failure(self) -> None:
+        args = self._read_only_canary_args(readback_outcome="failure")
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
+            control.command_classify_read_only_canary(args)
+        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["read_only_canary_classification"], "readback_failed_unclassified")
+        self.assertFalse(evidence["read_only_canary_outcome_resolved"])
+
+    def test_read_only_canary_rejects_unexpected_readable_write(self) -> None:
+        args = self._read_only_canary_args(cache_hit="true", matched_key="canary-key")
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
+            control.command_classify_read_only_canary(args)
+        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["read_only_canary_classification"], "unexpected_readable_write")
+        self.assertFalse(evidence["cache_service_denial_claimed"])
+
+    def test_read_only_canary_rejects_contradictory_readback(self) -> None:
+        args = self._read_only_canary_args(cache_hit="true", matched_key="other-key")
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
+            control.command_classify_read_only_canary(args)
+        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["read_only_canary_classification"], "readback_non_exact_unclassified")
+
+    def test_read_only_canary_rejects_effective_mode_mismatch(self) -> None:
+        args = self._read_only_canary_args(effective_cache_mode_value_base64="d3JpdGU=")
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
+            control.command_classify_read_only_canary(args)
+        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["read_only_canary_classification"], "effective_cache_mode_mismatch")
+
+    def test_cache_mode_action_captures_present_and_unavailable_values(self) -> None:
+        action = Path(control.__file__).parent / "capture_cache_mode" / "index.js"
+        for mode, expected in (("read", ("true", "cmVhZA==")), (None, ("false", ""))):
+            with self.subTest(mode=mode):
+                output = self.root / f"cache-mode-{mode or 'absent'}.out"
+                environment = os.environ.copy()
+                environment["GITHUB_OUTPUT"] = str(output)
+                if mode is None:
+                    environment.pop("ACTIONS_CACHE_MODE", None)
+                else:
+                    environment["ACTIONS_CACHE_MODE"] = mode
+                subprocess.run(
+                    ["node", str(action)], env=environment, check=True,
+                    capture_output=True, text=True, timeout=10,
+                )
+                outputs = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+                self.assertEqual((outputs["available"], outputs["value_base64"]), expected)
+
+    def _read_only_canary_args(self, **overrides: str) -> Namespace:
+        values: dict[str, str] = {
+            "cache_mode": "read",
+            "save_outcome": "success",
+            "readback_outcome": "success",
+            "readback_check_outcome": "success",
+            "effective_cache_mode_available": "true",
+            "effective_cache_mode_value_base64": "cmVhZA==",
+            "cache_hit": "false",
+            "matched_key": "",
+            "primary_key": "canary-key",
+        }
+        values.update(overrides)
+        return Namespace(**values)
 
     def test_partial_cleanup_failure_blocks_gradle_sentinel(self) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
@@ -512,7 +604,7 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(evidence["partial_cleanup_outcome"], "expected_failure")
         self.assertTrue(evidence["gradle_sentinel_blocked"])
 
-    def test_cold_observer_requires_target_transfer_and_cached_digest(self) -> None:
+    def test_cold_observer_accepts_target_transfer_from_each_qualified_invocation(self) -> None:
         target = "nativeruntime-dist-compat-1.0.18.jar"
         target_bytes = b"trusted target artifact bytes"
         filename_hash = hashlib.sha256(target.encode("utf-8")).hexdigest()
@@ -523,29 +615,34 @@ class ControlTests(unittest.TestCase):
         module_file.parent.mkdir(parents=True)
         module_file.write_bytes(target_bytes)
 
-        records, invocations = self._valid_observer_records()
-        records.append({
-            "event": "external_resource_read",
-            "invocation_id": "probe_build-1",
-            "invocation_label": "probe_build",
-            "artifact_body": True,
-            "artifact_coordinate": "org.robolectric:nativeruntime-dist-compat:1.0.18",
-            "artifact_filename_sha256": filename_hash,
-            "resource_sha256": hashlib.sha256(b"redacted-url").hexdigest(),
-            "result_state": "completed",
-            "bytes_read_known": True,
-            "bytes_read": len(target_bytes),
-        })
-        self._write_observer_fixture(records, invocations)
+        for phase in ("task_inventory", "dry_run", "probe_build"):
+            with self.subTest(phase=phase):
+                invocation_id = f"{phase}-1"
+                records, invocations = self._valid_observer_records()
+                records.append({
+                    "event": "external_resource_read",
+                    "invocation_id": invocation_id,
+                    "invocation_label": phase,
+                    "artifact_body": True,
+                    "artifact_coordinate": "org.robolectric:nativeruntime-dist-compat:1.0.18",
+                    "artifact_filename_sha256": filename_hash,
+                    "resource_sha256": hashlib.sha256(b"redacted-url").hexdigest(),
+                    "result_state": "completed",
+                    "bytes_read_known": True,
+                    "bytes_read": len(target_bytes),
+                })
+                self._write_observer_fixture(records, invocations)
 
-        with patch.dict(os.environ, {"GRADLE_OBSERVER_OUTPUT": str(self.root / "observer.jsonl")}), contextlib.redirect_stdout(io.StringIO()):
-            control.command_verify_observer(Namespace(mode="cold"))
+                with patch.dict(os.environ, {"GRADLE_OBSERVER_OUTPUT": str(self.root / "observer.jsonl")}), contextlib.redirect_stdout(io.StringIO()):
+                    control.command_verify_observer(Namespace(mode="cold"))
 
-        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
-        correlation = evidence["target_artifact_correlation"]
-        self.assertEqual(correlation["transfer_bytes"], len(target_bytes))
-        self.assertEqual(correlation["cached_files"][0]["sha256"], hashlib.sha256(target_bytes).hexdigest())
-        self.assertEqual(correlation["coordinate"], "org.robolectric:nativeruntime-dist-compat:1.0.18")
+                evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+                correlation = evidence["target_artifact_correlation"]
+                self.assertEqual(correlation["transfer_bytes"], len(target_bytes))
+                self.assertEqual(correlation["cached_files"][0]["sha256"], hashlib.sha256(target_bytes).hexdigest())
+                self.assertEqual(correlation["coordinate"], "org.robolectric:nativeruntime-dist-compat:1.0.18")
+                self.assertEqual(correlation["transfer_phases"], [phase])
+                self.assertEqual(correlation["transfers"][0]["invocation_id"], invocation_id)
 
     def test_cold_observer_rejects_unrelated_artifact_body_as_target_evidence(self) -> None:
         records, invocations = self._valid_observer_records()

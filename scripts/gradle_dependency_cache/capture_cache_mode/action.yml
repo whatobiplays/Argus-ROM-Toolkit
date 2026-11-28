@@ -1,0 +1,10 @@
+name: Capture effective cache access mode
+description: Capture the runner-provided ACTIONS_CACHE_MODE value for evidence.
+outputs:
+  available:
+    description: Whether ACTIONS_CACHE_MODE was present for this JavaScript action.
+  value_base64:
+    description: Base64 encoded ACTIONS_CACHE_MODE value.
+runs:
+  using: node24
+  main: index.js

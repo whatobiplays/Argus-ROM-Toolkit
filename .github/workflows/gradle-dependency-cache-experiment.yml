@@ -908,6 +908,9 @@ jobs:
       - id: canary_fixture
         name: Create a unique read-only save canary
         run: python3 -m scripts.gradle_dependency_cache.control create-fixture --name pr-canary --value C --bytes 65536
+      - id: capture_cache_mode
+        name: Capture effective cache access mode
+        uses: ./scripts/gradle_dependency_cache/capture_cache_mode
       - id: canary_save
         name: Attempt a save under explicit read-only cache access
         uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
@@ -943,12 +946,18 @@ jobs:
         env:
           SAVE_OUTCOME: ${{ steps.canary_save.outcome }}
           READBACK_OUTCOME: ${{ steps.canary_restore.outcome }}
+          READBACK_CHECK_OUTCOME: ${{ steps.canary_check.outcome }}
           CACHE_HIT: ${{ steps.canary_restore.outputs.cache-hit }}
           MATCHED_KEY: ${{ steps.canary_restore.outputs.cache-matched-key }}
           PRIMARY_KEY: ${{ steps.canary_restore.outputs.cache-primary-key }}
+          EFFECTIVE_CACHE_MODE_AVAILABLE: ${{ steps.capture_cache_mode.outputs.available }}
+          EFFECTIVE_CACHE_MODE_VALUE_BASE64: ${{ steps.capture_cache_mode.outputs.value_base64 }}
         run: >-
           python3 -m scripts.gradle_dependency_cache.control classify-read-only-canary
           --cache-mode read --save-outcome "$SAVE_OUTCOME" --readback-outcome "$READBACK_OUTCOME"
+          --readback-check-outcome "$READBACK_CHECK_OUTCOME"
+          --effective-cache-mode-available "$EFFECTIVE_CACHE_MODE_AVAILABLE"
+          --effective-cache-mode-value-base64 "$EFFECTIVE_CACHE_MODE_VALUE_BASE64"
           --cache-hit "$CACHE_HIT" --matched-key "$MATCHED_KEY" --primary-key "$PRIMARY_KEY"
       - name: Retain redacted trial evidence
         if: ${{ always() }}

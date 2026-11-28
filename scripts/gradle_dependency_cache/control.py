@@ -8,6 +8,7 @@ build outputs, and bounded control fixtures stay in separate paths.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -26,6 +27,11 @@ FIXTURE_LIMIT = 1_048_576
 TRANSIENT_NAMES = {"gc.properties"}
 TRANSIENT_SUFFIXES = (".lock", ".lck")
 ROBOLECTRIC_TARGET_COORDINATE = "org.robolectric:nativeruntime-dist-compat:1.0.18"
+QUALIFIED_GRADLE_INVOCATION_LABELS = frozenset({"task_inventory", "dry_run", "probe_build"})
+OBSERVER_FIXTURE_INVOCATION_LABELS = frozenset({"fixture_cold"})
+CORRELATABLE_GRADLE_INVOCATION_LABELS = (
+    QUALIFIED_GRADLE_INVOCATION_LABELS | OBSERVER_FIXTURE_INVOCATION_LABELS
+)
 ROBOLECTRIC_TARGET_PATH = Path("files-2.1/org.robolectric/nativeruntime-dist-compat/1.0.18")
 ROBOLECTRIC_TARGET_FILENAME = "nativeruntime-dist-compat-1.0.18.jar"
 REQUIRED_GRADLE_TASKS = ("testProbeUnitTest", "lintProbe", "assembleProbe")
@@ -822,73 +828,115 @@ def command_clean_fixture(args: argparse.Namespace) -> None:
     print(json.dumps({"fixture_path_empty": True}, sort_keys=True))
 
 
+def _decode_effective_cache_mode(available: str, value_base64: str) -> tuple[bool, str | None]:
+    if available not in ("true", "false"):
+        raise SafetyError("effective ACTIONS_CACHE_MODE availability flag is invalid")
+    try:
+        value = base64.b64decode(value_base64, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as error:
+        raise SafetyError("effective ACTIONS_CACHE_MODE capture is malformed") from error
+    if available == "false":
+        if value:
+            raise SafetyError("unavailable ACTIONS_CACHE_MODE capture unexpectedly contains a value")
+        return False, None
+    return True, value
+
+
 def command_classify_read_only_canary(args: argparse.Namespace) -> None:
     if args.cache_mode != "read":
         raise SafetyError("read-only canary did not run with cache-mode read")
-    exact = (
-        args.readback_outcome == "success"
-        and args.cache_hit == "true"
-        and bool(args.primary_key)
-        and args.matched_key == args.primary_key
+    mode_available, effective_mode = _decode_effective_cache_mode(
+        args.effective_cache_mode_available,
+        args.effective_cache_mode_value_base64,
     )
-    if args.readback_outcome != "success":
-        classification = "readback_failed_unclassified"
-        _write_evidence({
-            "read_only_canary_classification": classification,
-            "read_only_canary_save_step_outcome": args.save_outcome,
-            "read_only_canary_readback_outcome": args.readback_outcome,
-            "read_only_canary_cache_hit": args.cache_hit,
-            "read_only_canary_matched_key_present": bool(args.matched_key),
-            "cache_service_denial_claimed": False,
-        })
-        raise SafetyError("read-only cache canary readback action failed")
-    if exact:
-        classification = "unexpected_readable_write"
-        _write_evidence({
-            "read_only_canary_classification": classification,
-            "read_only_canary_save_step_outcome": args.save_outcome,
-            "read_only_canary_readback_outcome": args.readback_outcome,
-            "read_only_canary_cache_hit": args.cache_hit,
-            "read_only_canary_matched_key_present": bool(args.matched_key),
-            "read_only_canary_matched_primary_key": args.matched_key == args.primary_key,
-            "cache_service_denial_claimed": False,
-        })
-        raise SafetyError("read-only cache canary became readable after the save attempt")
-    if args.cache_hit == "true" or args.matched_key:
-        classification = "readback_non_exact_unclassified"
-        _write_evidence({
-            "read_only_canary_classification": classification,
-            "read_only_canary_save_step_outcome": args.save_outcome,
-            "read_only_canary_readback_outcome": args.readback_outcome,
-            "read_only_canary_cache_hit": args.cache_hit,
-            "read_only_canary_matched_key_present": bool(args.matched_key),
-            "cache_service_denial_claimed": False,
-        })
-        raise SafetyError("read-only canary readback was neither an exact hit nor a confirmed miss")
-    if args.save_outcome == "skipped":
-        classification = "save_step_skipped_readback_miss"
-        outcome_is_resolved = True
-    elif args.save_outcome == "success":
-        classification = "save_succeeded_readback_miss_unresolved"
-        outcome_is_resolved = False
-    elif args.save_outcome == "failure":
-        classification = "save_step_failed_readback_miss"
-        outcome_is_resolved = False
-    else:
-        classification = "save_step_outcome_unavailable"
-        outcome_is_resolved = False
-    _write_evidence({
-        "read_only_canary_classification": classification,
+    readback = {
+        "restore_step_outcome": args.readback_outcome,
+        "check_step_outcome": args.readback_check_outcome,
+        "cache_hit": args.cache_hit,
+        "matched_key": args.matched_key,
+        "primary_key": args.primary_key,
+        "matched_primary_key": bool(args.matched_key) and args.matched_key == args.primary_key,
+    }
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    server_url = os.environ.get("GITHUB_SERVER_URL")
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    run_attempt_url = None
+    if server_url and repository and run_id and run_attempt:
+        run_attempt_url = (
+            f"{server_url.rstrip('/')}/{repository}/actions/runs/{run_id}/attempts/{run_attempt}"
+        )
+    common_evidence = {
+        "read_only_canary_configured_cache_mode": args.cache_mode,
+        "read_only_canary_effective_actions_cache_mode_available": mode_available,
+        "read_only_canary_effective_actions_cache_mode": effective_mode,
+        "read_only_canary_save_step_id": "canary_save",
         "read_only_canary_save_step_outcome": args.save_outcome,
-        "read_only_canary_readback_outcome": args.readback_outcome,
-        "read_only_canary_cache_hit": args.cache_hit,
-        "read_only_canary_matched_key_present": bool(args.matched_key),
-        "read_only_canary_readback": "confirmed_miss",
+        "read_only_canary_readback_evidence": readback,
+        "read_only_canary_action_log_identity": {
+            "server_url": server_url,
+            "repository": repository,
+            "workflow_ref": os.environ.get("GITHUB_WORKFLOW_REF"),
+            "workflow_sha": os.environ.get("GITHUB_WORKFLOW_SHA"),
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "job": os.environ.get("GITHUB_JOB"),
+            "step_id": "canary_save",
+            "step_name": "Attempt a save under explicit read-only cache access",
+            "run_attempt_url": run_attempt_url,
+        },
+        "read_only_canary_run_identity": {
+            "run_id": run_id,
+            "run_attempt": run_attempt,
+            "job": os.environ.get("GITHUB_JOB"),
+        },
         "cache_service_denial_claimed": False,
-    })
-    if not outcome_is_resolved:
-        raise SafetyError("read-only save behavior is unresolved from the observed step and readback outcomes")
-    print(json.dumps({"classification": classification, "cache_service_denial_claimed": False}, sort_keys=True))
+        "action_level_skip_claimed": False,
+    }
+
+    def record(classification: str, *, resolved: bool, inspect_action_log: bool = False) -> None:
+        _write_evidence({
+            **common_evidence,
+            "read_only_canary_classification": classification,
+            "read_only_canary_outcome_resolved": resolved,
+            "read_only_canary_action_log_inspection_required": inspect_action_log,
+        })
+
+    def fail(classification: str, message: str) -> None:
+        record(classification, resolved=False)
+        raise SafetyError(message)
+
+    if args.readback_outcome != "success":
+        fail("readback_failed_unclassified", "read-only cache canary readback action failed")
+    if args.readback_check_outcome != "success":
+        fail("readback_check_failed", "read-only cache canary readback check failed")
+    if not args.primary_key:
+        fail("readback_non_exact_unclassified", "read-only cache canary readback omitted its primary key")
+    if args.cache_hit == "true":
+        if args.matched_key == args.primary_key:
+            fail("unexpected_readable_write", "read-only cache canary became readable after the save attempt")
+        fail("readback_non_exact_unclassified", "read-only cache canary reported a hit with a contradictory matched key")
+    if args.cache_hit != "false" or args.matched_key:
+        fail("readback_non_exact_unclassified", "read-only cache canary readback was not a confirmed miss")
+    if mode_available and effective_mode != args.cache_mode:
+        fail("effective_cache_mode_mismatch", "effective ACTIONS_CACHE_MODE did not match the configured read mode")
+
+    if args.save_outcome == "success":
+        classification = "save_succeeded_readback_miss_unresolved"
+        record(classification, resolved=False, inspect_action_log=True)
+    elif args.save_outcome == "skipped":
+        classification = "save_step_skipped_readback_miss"
+        record(classification, resolved=True)
+    elif args.save_outcome == "failure":
+        fail("save_step_failed_readback_miss", "read-only canary save step failed")
+    else:
+        fail("save_step_outcome_unavailable", "read-only canary save step outcome was unavailable")
+    print(json.dumps({
+        "classification": classification,
+        "action_log_inspection_required": args.save_outcome == "success",
+        "cache_service_denial_claimed": False,
+        "action_level_skip_claimed": False,
+    }, sort_keys=True))
 
 
 def command_validate_failed_writer(args: argparse.Namespace) -> None:
@@ -1067,21 +1115,27 @@ def validate_required_task_outcomes(outcomes: list[dict[str, Any]]) -> dict[str,
 
 
 def correlate_target_artifact(
-    records: list[dict[str, Any]], modules: Path, invocation_id: str,
+    records: list[dict[str, Any]], modules: Path, invocation_labels: dict[str, str],
 ) -> dict[str, Any]:
     filename_hash = hashlib.sha256(ROBOLECTRIC_TARGET_FILENAME.encode("utf-8")).hexdigest()
     target_events = [
         record for record in records
         if record.get("event") == "external_resource_read"
-        and record.get("invocation_id") == invocation_id
         and record.get("artifact_coordinate") == ROBOLECTRIC_TARGET_COORDINATE
         and record.get("artifact_body") is True
     ]
+    if not target_events:
+        raise SafetyError("target Robolectric artifact was not transferred by a qualified Gradle invocation")
+    for record in target_events:
+        invocation_id = str(record.get("invocation_id", ""))
+        phase = invocation_labels.get(invocation_id)
+        if phase not in CORRELATABLE_GRADLE_INVOCATION_LABELS or record.get("invocation_label") != phase:
+            raise SafetyError("target Robolectric transfer is not bound to a qualified Gradle invocation")
     completed = [
         record for record in target_events
         if record.get("result_state") == "completed"
         and record.get("bytes_read_known") is True
-        and isinstance(record.get("bytes_read"), int)
+        and type(record.get("bytes_read")) is int
         and record.get("bytes_read", 0) > 0
         and record.get("artifact_filename_sha256") == filename_hash
     ]
@@ -1124,6 +1178,16 @@ def correlate_target_artifact(
         "coordinate": ROBOLECTRIC_TARGET_COORDINATE,
         "transfer_count": len(completed),
         "transfer_bytes": sum(item["bytes_read"] for item in completed),
+        "transfer_phases": sorted({invocation_labels[str(item["invocation_id"])] for item in completed}),
+        "transfers": [
+            {
+                "invocation_id": item["invocation_id"],
+                "phase": invocation_labels[str(item["invocation_id"])],
+                "bytes_read": item["bytes_read"],
+                "resource_sha256": item["resource_sha256"],
+            }
+            for item in completed
+        ],
         "transfer_resource_sha256": resource_hashes,
         "correlation_basis": "coordinate-and-hashed-filename; transfer-size-matches-cached-file",
         "cached_files": matches,
@@ -1179,10 +1243,12 @@ def command_verify_observer(args: argparse.Namespace) -> None:
     ]
     correlation: dict[str, Any] | None = None
     if args.mode == "cold":
-        probe_id = str(invocations[-1].get("invocation_id", ""))
-        if any(record.get("invocation_id") != probe_id for record in target_body_reads):
-            raise SafetyError("target artifact transfer was not observed during actual probe task execution")
-        correlation = correlate_target_artifact(records, _modules_path(), probe_id)
+        invocation_labels = {
+            str(item["invocation_id"]): str(item["label"])
+            for item in invocations
+            if item.get("label") in QUALIFIED_GRADLE_INVOCATION_LABELS
+        }
+        correlation = correlate_target_artifact(records, _modules_path(), invocation_labels)
     elif args.mode == "warm" and body_reads:
         raise SafetyError("warm observation could not prove the absence of artifact-body transfers")
     elif args.mode == "fixture":
@@ -1380,6 +1446,9 @@ def make_parser() -> argparse.ArgumentParser:
     canary.add_argument("--cache-mode", required=True)
     canary.add_argument("--save-outcome", required=True)
     canary.add_argument("--readback-outcome", required=True)
+    canary.add_argument("--readback-check-outcome", required=True)
+    canary.add_argument("--effective-cache-mode-available", required=True)
+    canary.add_argument("--effective-cache-mode-value-base64", required=True)
     canary.add_argument("--cache-hit", default="")
     canary.add_argument("--matched-key", default="")
     canary.add_argument("--primary-key", default="")

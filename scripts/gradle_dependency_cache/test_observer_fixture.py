@@ -139,10 +139,13 @@ tasks.register('resolveFixture') {{
                     for record in body_reads
                 ), body_reads)
                 modules = gradle_home / "caches" / "modules-2"
-                correlation = control.correlate_target_artifact(body_reads, modules, "fixture-cold-01")
+                correlation = control.correlate_target_artifact(
+                    body_reads, modules, {"fixture-cold-01": "fixture_cold"},
+                )
                 source_artifact = module / "nativeruntime-dist-compat-1.0.18.jar"
                 self.assertEqual(correlation["transfer_bytes"], source_artifact.stat().st_size)
                 self.assertEqual(correlation["cached_files"][0]["sha256"], control._sha256_file(source_artifact))
+                self.assertEqual(correlation["transfer_phases"], ["fixture_cold"])
 
                 cold_get_count = len(QuietHandler.request_paths)
                 environment["GRADLE_OBSERVER_INVOCATION_ID"] = "fixture-warm-01"

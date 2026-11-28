@@ -2,11 +2,11 @@
 
 ## 1. Decision
 
-Keep the current workflow unchanged. Of the five inspected probe attempts, three returned HTTP 429 from Maven Central while resolving the same Robolectric dependency, and two later attempts passed. These outcomes establish repeated resolution failures in the inspected attempts. They do not establish that caching would prevent them or improve job time.
+The owner-approved disposition is to keep production CI unchanged, enable no permanent Gradle dependency cache, and end hosted campaigns without a third attempt. The isolated local comparison showed that a verified local `modules-2` cache removed the target artifact body transfer in the warm trial. It does not establish GitHub cache-service behavior, PR write restrictions, recovery controls, or a hosted timing benefit.
 
-If a separate experiment is approved, start with manual `actions/cache/restore` and `actions/cache/save` steps in `android-readiness-probe`. Cache only Gradle's `caches/modules-2` directory. Keep the wrapper distribution and Robolectric's separate Android SDK downloads out of that cache and measure them independently.
+Two hosted campaigns were attempted. The first completed the probe build but failed observer coverage, so cache save was skipped. The second failed dependency resolution and also skipped cache save. A concurrent ordinary CI run independently recorded HTTP 429 for `org.robolectric:nativeruntime-dist-compat:1.0.18`; the redacted experimental request evidence does not establish that status for either campaign. Results and identities are in §4.
 
-The manual pilot takes more key and recovery maintenance than the Gradle-specific actions. It gives the clearest first experiment because it names one path, one cache namespace, and an explicit save condition. This report does not authorize workflow edits, cache seeding, hosted runs, or a local Gradle comparison.
+Retain the proposed manual restore/save configuration for `~/.gradle/caches/modules-2` and its validation strategy as historical findings, not as a recommendation to implement. Bounded retries for confirmed dependency-resolution HTTP 429 responses may be considered only through separately approved future work. No retry was configured or tested.
 
 ## 2. Approved scope and provenance
 
@@ -16,6 +16,7 @@ The manual pilot takes more key and recovery maintenance than the Gradle-specifi
 | Repository | `whatobiplays/Argus-ROM-Toolkit` |
 | Owner | `danielbyon`, GitHub user ID `327737` |
 | Approval policy source revision | `8e391636cb50f9bfe6e8def2d0f54eeb65d1d157` |
+| Owner final disposition | The owner explicitly accepted the no-change recommendation and campaign stop in the 2026-11-28 finalization authorization for task pin `2026.11.25`. The disposition is to keep production CI unchanged and enable no permanent Gradle dependency cache. |
 | Approved release workflow run | `45612390118`, attempt 1 successful |
 | Frozen context SHA-256 | `2e8c68b73ad8bc1f78750094dfeb19ab945cbed744012de42725060778f2f7ca` |
 | Manifest SHA-256 | `31d94f3bdc98347268e51e7f726545668c7780aae015a99933df14b94f51bb3a` |
@@ -31,7 +32,7 @@ The manual pilot takes more key and recovery maintenance than the Gradle-specifi
 
 The primary checkout remained on `main` at the recorded baseline. Existing Issue #28 worktrees and MCP registrations were left intact. GitHub evidence came through the `whatobiplays` connection, ID `link_6add2c3a8e9081919f368fc87b22c1e4`. Issue #93 was open with the `needs-triage` label and had no comments at the original inspection. This investigation did not change its state.
 
-This correction is limited to the report. No workflow, dependency, build configuration, Gradle cache, device, release artifact, issue state, or MCP registration was changed. No Gradle task, local comparison, hosted experiment, or experimental workflow was run.
+This finalization changes only this report and the description of PR #94. The local qualification and two hosted campaigns recorded below were conducted earlier under their own approvals; this update does not rerun them. No production workflow, dependency, build configuration, cache content, device, release artifact, issue state, or MCP registration was changed during finalization. No third hosted campaign or cache mutation is performed.
 
 ## 3. Current Android workflow behavior
 
@@ -54,7 +55,7 @@ The reviewed Android Gradle files do not enable the task-output build cache or c
 
 The probe's task inventory and dry run happen before the actual task invocation. Both can configure the build and resolve dependencies. A comparison that starts timing at `testProbeUnitTest` could miss earlier downloads and warm the supposedly cold run first.
 
-## 4. CI failure evidence
+## 4. CI and experimental evidence
 
 All three PR #92 attempts checked out synthetic merge commit `ef7b7282cd066f7eed5fa02dea3ba67687341ca3`. The PR head was `deae51998b54d9049944bab53de8a82bb8406ad9`; the base was `cfb01eef1b20d28ec99c087a8a38f12aaf039d09`.
 
@@ -66,11 +67,25 @@ All three PR #92 attempts checked out synthetic merge commit `ef7b7282cd066f7eed
 | [Post-merge run, attempt 1](https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/45801378699/attempts/1) | `1823686d39f72b6d5701a7f25bdeed83cdcf727b` | — | — | Failed with HTTP 429 for the same artifact at `2026-11-26T10:28:09.7239385Z`. |
 | [Post-merge run, attempt 2](https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/45801378699/attempts/2) | Same main commit | — | — | Passed: `BUILD SUCCESSFUL in 57s`; 58 actionable tasks executed. Other applicable jobs passed on this attempt. |
 
-Each failed attempt remains a failure even though a later attempt passed. Differences in hosted locations and setup details prevent a controlled timing comparison.
+Within PR #92, attempt 3 passed on the same synthetic merge, base, and PR-head identities after attempts 1 and 2 failed. The post-merge retry passed on the same main SHA after its first attempt failed. These were unchanged-source retries; they do not establish a cache effect. Differences in hosted locations and setup details also prevent a controlled timing comparison.
 
-All five logs include the generic runner line `Cache mode: write`. None expose a Gradle cache key, restore, save, hit, miss, or byte count. The GitHub connection did not provide the cache-listing endpoint, so hosted cache entries, keys, and sizes remain unverified. The generic line does not establish that Gradle dependencies were cached.
+All five historical logs include the generic runner line `Cache mode: write`. None exposes a Gradle cache key, restore, save, hit, miss, or byte count. At the original investigation, the GitHub connection did not provide the cache-listing endpoint. The later read-only snapshot in §4.1 found six existing entries and no Issue #93 key, but still does not establish any Gradle cache hit or save. The generic runner line does not establish that Gradle dependencies were cached.
 
-At the original investigation, the local Gradle home contained the named artifact and Gradle 9.1.0 wrapper distributions. The artifact occupied 159,130,191 bytes across two local files. That is local state, not a hosted cache or CI transfer measurement. The Mac used ARM64 and Java 25 by default; the probe runner uses Ubuntu and Temurin 17. No local cold/warm comparison was run.
+At the original investigation, the local Gradle home contained the named artifact and Gradle 9.1.0 wrapper distributions. The artifact occupied 159,130,191 bytes across two local files. That is local state, not a hosted cache or CI transfer measurement. The Mac used ARM64 and Java 25 by default; the probe runner uses Ubuntu and Temurin 17. No controlled comparison had been run at that time. A later isolated qualification used fresh Gradle homes and is summarized below; the original local Gradle home was not used as its seed.
+
+### 4.1 Later qualification and hosted campaigns
+
+**First hosted campaign.** Push run [46138508708](https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/46138508708), attempt 1, used branch `codex/issue-93-gradle-cache-pilot` at `0995bb6d2e37e487f6309f015065cd02e5dfd0e6`. One of 18 jobs started; the other 17 were skipped. Task inventory and dry-run had complete observer coverage. The probe build exited successfully in 57.104 seconds, but its observer coverage had ten `external_resource_start_decode` errors. The observer recorded a 159,128,857-byte body transfer for `org.robolectric:nativeruntime-dist-compat:1.0.18`; the resulting cached file digest was not verified. The run therefore produced no trusted seed. Cache save and seed-manifest publication were skipped. The retained run artifact is [15260885934](https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/46138508708/artifacts/15260885934). The pinned campaign record is also available in the [observer-repair candidate](https://github.com/whatobiplays/Argus-ROM-Toolkit/blob/fb9c662d4416b9eebf2ca5c68cfbb7ad9ab693c7/docs/qualification/gradle-dependency-cache-pilot-candidate.md#L62-L65).
+
+**Isolated local qualification.** The observer repair qualified at candidate HEAD `4e3bbd2de468d3a5975d535465cc986f03cffdc9` on macOS 27.2.1 arm64 with Gradle 9.1.0 and Temurin 17.0.21.1+2. Each cold and warm trial comprised task inventory, dry-run, and actual probe-build invocations. All six invocations had complete observer coverage and no observer errors. In each actual probe build, `testProbeUnitTest`, `lintProbe`, and `assembleProbe` completed successfully. The cold trial recorded one completed target body transfer of 159,128,857 bytes. The resulting cached file had the same size and SHA-256 `a6c34d92c990754e5aee076032a36f8e38fcacb5eb878ebe0a324509f3864eef`. The warm trial recorded no Gradle external-resource body transfers.
+
+The cold and warm `modules-2` manifests matched at SHA-256 `28a7cd1bebdcc5f5040c4fc24a143097f603a5f581ac8849f1c4bc4b8d6459ab`. Each covered 659 files, 507,209,725 manifest bytes, and 507,209,742 expanded bytes. The warm trial copied the verified directory into a fresh Gradle home. Each wrapper directory and Robolectric Maven repository started empty. Each trial downloaded a 721,155,298-byte wrapper distribution, and each isolated Robolectric repository grew by four files and 126,901,498 bytes. Probe-build time was 46.432 seconds cold and 34.990 seconds warm; total probe wall time was 121.994 and 117.763 seconds. This was one local cold/warm pair and does not estimate hosted performance. Both unsigned APKs were 2,148,781 bytes with the same SHA-256, `57f242dd8e333f6c54196193349e42b9270f96c17d93f38ad984bd6d3a1e487c`. Disposable signing and signed-APK inspection passed. The retained qualification summary has SHA-256 `f1bf4b47e903ef217f3c0023f779e59e218b0d8ca3d9061d5b899e98926fbfe9`; its measurements are recorded in the [pinned candidate summary](https://github.com/whatobiplays/Argus-ROM-Toolkit/blob/fb9c662d4416b9eebf2ca5c68cfbb7ad9ab693c7/docs/qualification/gradle-dependency-cache-pilot-candidate.md#L67-L71).
+
+**Second hosted campaign.** Push run [46158618700](https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/46158618700), attempt 1, used branch `codex/issue-93-gradle-cache-observer-repair`, campaign ID `gradle-dependency-cache-observer-repair-v2`, and source HEAD `fb9c662d4416b9eebf2ca5c68cfbb7ad9ab693c7`. The task inventory (40.331 seconds) and dry-run (8.154 seconds) completed. The probe build ran for 35.106 seconds and failed at `:generateProbeUnitTestLintModel` during runtime dependency resolution. The observer recorded four zero-byte error events for the target coordinate, including three identified JAR-body attempts, and one completed 1,334-byte metadata read; that metadata read was not a JAR body transfer. The redacted evidence does not establish an HTTP status for the experimental requests. The `modules-2` directory contained 622 files and 233,329,272 expanded bytes, with manifest SHA-256 `089204ebbd4d1e7034e146f37ba7a15685f8e201eeb3cb197595e54659f78d7f`. The wrapper distribution added 721,155,298 bytes. Cache save was skipped, no trusted seed was published, and the PR consumer and paired hosted warm trials did not run. The retained artifact is [15268772492](https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/46158618700/artifacts/15268772492).
+
+**Concurrent ordinary CI.** Run [46158618947](https://github.com/whatobiplays/Argus-ROM-Toolkit/actions/runs/46158618947), on the same source HEAD and during the second campaign, independently logged HTTP 429 from Maven Central for `org.robolectric:nativeruntime-dist-compat:1.0.18`. It failed at the same dependency-resolution task. This confirms a contemporaneous 429 for the ordinary CI request; it does not supply the missing status for the separate experimental requests.
+
+**Hosted cache inventory.** The read-only inventory on 28 November 2026 showed six active entries totaling 5,941,195,572 bytes, all main-branch Flutter SDK or Pub caches, and no Issue #93 pilot key. The owner approved GitHub's documented 10 GB and seven-day defaults as the planning assumption; configured limits remain independently unverified. The snapshot left 4,058,804,428 bytes below 10 GB before new entries. The preflight and entry breakdown are retained in the [pinned candidate record](https://github.com/whatobiplays/Argus-ROM-Toolkit/blob/fb9c662d4416b9eebf2ca5c68cfbb7ad9ab693c7/docs/qualification/gradle-dependency-cache-pilot-candidate.md#L120-L128). Usage can lag, concurrent cache growth is possible, and GitHub may evict entries. Neither campaign saved an Issue #93 cache entry.
 
 ## 5. Dependency path and existing integrity controls
 
@@ -148,9 +163,9 @@ Do not stack providers over the same Gradle home. `setup-gradle`, `setup-java ca
 
 A bounded retry for a confirmed HTTP 429 during dependency resolution is a separate mitigation from caching. It may recover from a transient Maven Central response without restoring a cache, but it does not reduce downloads and could repeat the full probe task sequence. Any later retry policy should cap attempts, preserve each failure, and apply only to the identified dependency-resolution response. It must not retry or mask test, lint, build, signing, or artifact-verification failures. No retry policy was configured or tested.
 
-## 8. Preferred pilot and illustrative workflow diff
+## 8. Historical pilot proposal and illustrative workflow diff
 
-The preferred future pilot is the manual restore/save pair for the probe's `modules-2` directory. It limits the archive to the cache implicated by the HTTP 429 failure, avoids wrapper and JDK caches added by the Gradle-specific alternatives, and gives the workflow an explicit write gate. It does not cryptographically verify cached dependencies. The repository has no lock or verification metadata, so trusted default-branch seeds and read-only PR access are essential to the trust boundary.
+The investigation's proposed pilot was a manual restore/save pair for the probe's `modules-2` directory. It limits the archive to dependency files, avoids wrapper and JDK caches added by the Gradle-specific alternatives, and gives the workflow an explicit write gate. It does not cryptographically verify cached dependencies. The repository has no lock or verification metadata, so trusted seeds and read-only PR access were essential to the proposed trust boundary. The owner has accepted the no-change recommendation; this design remains historical and is not approved for implementation.
 
 The diff is illustrative only. It is not an executable workflow or authorized change. Restore before the existing `tasks --all` step; save after all existing Gradle commands.
 
@@ -197,26 +212,30 @@ A normal miss proceeds to Gradle's configured repositories. A failed archive res
 
 The wrapper distribution stays outside the cache and downloads on each fresh runner. Measure its download separately from dependency restore and Gradle tasks. Robolectric's `~/.m2` resolver also stays outside the cache because its existing-file path skips the remote checksum comparison.
 
-## 9. Experiment design and authorization boundary
+## 9. Historical experiment design and remaining qualification gaps
 
-An isolated local cold/warm comparison is technically feasible with two fresh checkouts and separate temporary `GRADLE_USER_HOME` directories. The cold run resolves dependencies; the warm directory receives only the measured `caches/modules-2` seed. Keep each wrapper distribution outside that dependency seed and record its download separately. This measures the current Mac's ARM64/Java 25 behavior. It does not measure Ubuntu/Temurin 17, GitHub restore/save latency, cache branch scope, or hosted Maven throttling. The pre-existing local cache is not a valid cold or trusted warm seed. No local comparison was run.
+The isolated local cold/warm comparison was completed as an observer qualification with fresh Gradle homes and a verified local `modules-2` seed. It confirmed local dependency reuse and matching unsigned APK digests; the measured sizes and timings are in §4.1. This demonstrates that the local comparison was feasible. It does not exercise GitHub cache restore/save, hosted runner behavior, cache branch scope, PR write restrictions, or hosted recovery.
 
-The hosted experiment remains unrun. Missing authorization is a process boundary, not evidence of technical infeasibility. Separate authorization must name the workflow change, approved source and triggers, cache reads and writes, seed run, number of pairs, and stop/rollback authority. This report grants none of it.
+The two hosted campaigns did not produce a trusted seed or a successful warm restore. The first probe build succeeded but observer validation failed and save was skipped. The second probe build failed dependency resolution and save was skipped. The PR consumer, failed-job save behavior, eviction and invalidation, archive corruption recovery, and hosted output comparison remain unrun. The redacted experimental records do not establish HTTP 429 for the experimental requests, even though the concurrent ordinary CI run confirmed that status for the exact dependency.
 
-If separately authorized, use this design:
+The cold-seed vulnerability remains unresolved: until a trusted cold run completes dependency resolution, observer validation, manifest verification, and save, later jobs have no usable seed. A transient resolution failure at that first step prevents cache creation and leaves the next attempt exposed to the same cold download. Eviction or dependency-input invalidation can recreate that condition even after a successful seed. Local cache reuse did not test or remove this hosted failure mode.
 
-| Future hosted case | Required evidence |
+The owner-approved stop decision reflects the measured limits and accepted no-change recommendation. It does not recast missing evidence as technical infeasibility or as a pass. No third campaign is planned or authorized.
+
+The table below preserves the original hosted validation cases and their actual status:
+
+| Proposed hosted case | Actual result and remaining evidence |
 | --- | --- |
-| Trusted default-branch push | A successful `push` to `main` writes only the probe dependency path; retain source, input hash, primary key, run, and save outcome. |
-| Subsequent trusted push | Restore a compatible prior key and save under the new commit key only after success; record matched key, restore/save duration, and bytes when available. |
-| Pull request | Restore from its base/default scope when available; verify there is no save from a PR or merge-ref run. |
-| Failed job and rerun | A failed job does not save; record the rerun's matched key and confirm it follows the same trust gate. |
-| Missing or evicted entry | Ordinary repository resolution proceeds; record the miss, downloads, and any upstream failure. |
-| Dependency or toolchain change | Changed Gradle inputs or version namespace produce a miss; record old and new hashes and toolchain identities. |
-| Failed archive or suspect contents | Archive restore failure clears only `modules-2` and proceeds cold; retain semantic-corruption failures and use a reviewed new namespace for recovery. |
-| Artifact verification | Existing checks remain enabled; compare unsigned APK digests and verify any separate disposable signed copy and source provenance. |
+| Cold trusted seed | Attempted twice. The first campaign's build passed but observer validation failed; the second failed dependency resolution. Both saves were skipped, so no trusted seed exists. |
+| Warm restore and subsequent save | No hosted warm restore occurred. No hosted cache hit, matched key, restore/save duration, or cache transfer size was measured. |
+| Pull request | The PR consumer did not run. PR restore scope and write restrictions remain unqualified. |
+| Failed job and rerun | Both campaign saves were skipped after earlier failures. Cache-service write restrictions and retry behavior were not tested by these outcomes. |
+| Missing or evicted entry | The cold attempts demonstrate dependency resolution without a usable seed; a controlled eviction test and successful miss-recovery run were not performed. |
+| Dependency or toolchain change | No hosted invalidation comparison was performed. |
+| Failed archive or suspect contents | Archive corruption, cleanup failure, semantic corruption, and namespace recovery were not tested on GitHub Actions. |
+| Artifact verification | Local unsigned APKs matched by SHA-256, and a separate disposable signed copy passed inspection. Hosted output equivalence was not measured. |
 
-These cases define future validation only. None has been executed.
+The original measurement protocol is retained below as an investigation finding. It is not an active campaign plan. The local cold/warm qualification and two incomplete hosted seed attempts are described above; the remaining hosted cases were not executed.
 
 1. Bind a trusted seed: use a successful trusted `push` run on the default branch at the approved source identity. Record repository, workflow revision, source SHA, event/ref, run ID and attempt, action versions or SHAs, Gradle-input hash, path, primary/matched keys, branch scope, toolchain, and task outcomes. A PR run must not create the seed. If seed SHA differs from the measured SHA, require the complete Gradle-input hash to match and record both identities.
 2. Use fresh trials: each cold/warm run gets a fresh checkout and hosted runner. Hold source SHA, runner image, Java 17 distribution/version, Android SDK/build tools 36, wrapper 9.1.0-all, and task sequence constant. Run at least three matched cold/warm pairs. Use a fresh cache namespace or skip restore for cold runs; do not delete or overwrite shared caches to manufacture a miss.
@@ -228,7 +247,7 @@ These cases define future validation only. None has been executed.
 8. Keep failed pairs: retain every failed cold/warm run, rerun, log, cache summary, task outcome, and artifact digest. Mark incomplete pairs incomplete; do not drop failures from timing or reliability summaries. Preserve run IDs and source identities with the comparison manifest.
 9. Roll back cleanly: if the authorized pilot fails or is no longer needed, stop writes and revert only the pilot workflow commit through a normal forward-moving commit. Leave immutable entries to expire or be evicted. For a suspect cache, bump the namespace, for example `v1` to `v2`, and repeat from a fresh miss while retaining the failed evidence.
 
-The cache-path trust boundary is ordinary public dependency artifacts under `modules-2`. Trusted default-branch pushes are the only writers; PRs restore from base/default scope and have no save step. Credentials, signing inputs, task outputs, APKs, qualification records, wrapper distributions, Android SDK images, and `.m2` files stay outside the cache. GitHub cache content is not signed, and Gradle verification metadata is absent. The proposal relies on trusted writers and ordinary Gradle resolution; it does not claim cryptographic verification of cache contents.
+The proposed cache-path trust boundary was ordinary public dependency artifacts under `modules-2`. It required trusted default-branch pushes as the only writers and PR restore-only behavior, with no PR save step. Credentials, signing inputs, task outputs, APKs, qualification records, wrapper distributions, Android SDK images, and `.m2` files stay outside the proposed cache. GitHub cache content is not signed, and Gradle verification metadata is absent. This proposal relied on trusted writers and ordinary Gradle resolution; it did not claim cryptographic verification of cache contents. Hosted enforcement of those rules remains unqualified.
 
 ## 10. Approved PAC and TAC mapping
 
@@ -237,11 +256,11 @@ The cache-path trust boundary is ordinary public dependency artifacts under `mod
 | ID | Approved criterion | Evidence status | Evidence or remaining limit |
 | --- | --- | --- | --- |
 | PAC-1 | Document current caching behavior across all three Android jobs. | Complete as documentary review | The three jobs and their Gradle, Flutter/Pub, and artifact behavior are recorded above. |
-| PAC-2 | Establish the available evidence for recurring dependency downloads and failures. | Partial | Three of five inspected attempts failed with the same HTTP 429; two later attempts passed. Hosted cache inventory, keys, hits/misses, bytes, and failure-rate data remain unavailable. |
+| PAC-2 | Establish the available evidence for recurring dependency downloads and failures. | Partial; limitation accepted for investigation closeout | Historical attempts include three HTTP 429 failures and two later passes on unchanged source. The local cold/warm evidence is not hosted evidence. The two hosted campaigns did not produce a trusted seed; the concurrent ordinary CI run confirmed HTTP 429 for the exact target, but the experimental request status remains unavailable. The cache snapshot and owner-approved default-limit assumption are recorded above; configured limits remain unverified. |
 | PAC-3 | Compare maintained caching approaches, including their security and operational trade-offs. | Complete as documentary review | Enhanced, Basic, setup-java v6, manual actions/cache, and no change are compared. No provider was configured or run. |
-| PAC-4 | Produce an evidence-based recommendation, including no change if appropriate. | Complete as a report recommendation | Keep current CI unchanged. A manual `modules-2` pilot is preferred only if separately authorized; its benefit remains unmeasured. |
-| PAC-5 | Propose a narrowly scoped configuration and cold/warm validation strategy. | Designed; not run | Path, key, trust gate, measurements, and pair method are specified. No configuration or comparison was run. |
-| PAC-6 | Identify residual risks, measurement limitations and required follow-up authorization. | Complete as documentary review | Hosted inventory and cold/warm comparison remain unverified/unrun. A separate explicit authorization is required before a pilot. |
+| PAC-4 | Produce an evidence-based recommendation, including no change if appropriate. | Complete as owner-approved no-change recommendation | Keep production CI unchanged, do not enable permanent Gradle dependency caching, and do not conduct a third hosted campaign. Any bounded retry for confirmed HTTP 429 responses requires separately approved future work. |
+| PAC-5 | Propose a narrowly scoped configuration and cold/warm validation strategy. | Design retained; hosted validation incomplete | The historical proposal narrows the cache to modules-2. The local cold/warm qualification passed its observer, task, transfer-correlation, and output-digest checks. Hosted seed creation, warm restore, PR consumption, and cache-service behavior were not qualified. |
+| PAC-6 | Identify residual risks, measurement limitations and required follow-up authorization. | Complete as documentary review; hosted risks remain | The cold-seed vulnerability, eviction and invalidation risk, cache trust boundary, local/hosted measurement limits, and unverified configured limits are documented. The owner accepted ending campaigns with these limits outstanding. |
 
 ### TAC criteria
 
@@ -249,12 +268,12 @@ The cache-path trust boundary is ordinary public dependency artifacts under `mod
 | --- | --- | --- | --- |
 | TAC-1 | Bind investigation evidence to exact source, workflow, run and toolchain identities. | Complete as documentary review | PR head, base, synthetic merge SHA, post-merge SHA, workflow runs, wrapper, Java, and Android SDK identities are distinguished. |
 | TAC-2 | Distinguish dependency caching from task-output and Flutter caching. | Complete as documentary review | Gradle `modules-2`, wrapper distributions, build outputs, Flutter/Pub, Android SDK downloads, and workflow artifacts are separated. |
-| TAC-3 | Establish a defensible experimental methodology without conflating cache hits with skipped work. | Designed; not run | Fresh checkouts, first-invocation observations, task outcomes, and output digests are required. |
-| TAC-4 | Preserve all existing CI, security, signing and qualification invariants. | Source/document review complete; runtime validation not performed | Proposed paths exclude signing and qualification data; no workflow was changed or executed. |
-| TAC-5 | Make no unauthorized workflow, dependency, cache-policy or product changes. | Met for this correction | Only this report is changed. No cache was initialized; no workflow or dependency was modified. |
-| TAC-6 | Obtain independent non-authoring review of the final investigation and its conclusions. | Review evidence is recorded with the reviewed PR candidate | Reviewer identity, exact candidate identity, coverage, findings, dispositions, and validation are retained in the draft PR record. |
+| TAC-3 | Establish a defensible experimental methodology without conflating cache hits with skipped work. | Partially qualified; hosted measurement criteria remain unmet | The local observer bound evidence to each invocation, verified the target transfer against the cached-file digest, confirmed warm transfer absence, retained task outcomes, and matched unsigned APK digests. Neither hosted campaign produced a valid seed or warm trial; PR cache behavior remains untested. |
+| TAC-4 | Preserve all existing CI, security, signing and qualification invariants. | Source/document review complete; hosted runtime validation incomplete | Production CI and dependencies remain unchanged. The local disposable signed copy passed inspection. Hosted PR trust and recovery controls remain unqualified. |
+| TAC-5 | Make no unauthorized workflow, dependency, cache-policy or product changes. | Met for finalization | This finalization changes only the report and PR description. Earlier hosted campaigns had separate authorization; no third campaign, cache mutation, workflow change, or dependency change was performed. |
+| TAC-6 | Obtain independent non-authoring review of the final investigation and its conclusions. | Independent review is a commit and publication gate | The final report digest, reviewer identity, coverage, findings, dispositions, and validation results are recorded in the PR description. |
 
-PAC/TAC documentary status does not establish technical readiness, completion of the hosted experiment, acceptance of outstanding criteria, issue closure, or merge authorization.
+Closing this investigation under the owner-approved limitation outcome does not turn failed or unexecuted hosted criteria into passes. It does not establish hosted cache readiness, close Issue #93, or authorize merging PR #94.
 
 ## 11. Sources
 
@@ -268,5 +287,5 @@ PAC/TAC documentary status does not establish technical readiness, completion of
 
 ## 12. Changed-file inventory
 
-1. `docs/qualification/gradle-dependency-caching-investigation.md` — corrected and expanded investigation report.
-2. No workflow, dependency, build configuration, issue, release artifact, device state, or MCP registration was changed.
+1. `docs/qualification/gradle-dependency-caching-investigation.md` — final evidence reconciliation and owner-approved no-change disposition.
+2. The PR description records the same evidence and disposition. No workflow, dependency, build configuration, issue state, release artifact, device state, or MCP registration is changed by this finalization.

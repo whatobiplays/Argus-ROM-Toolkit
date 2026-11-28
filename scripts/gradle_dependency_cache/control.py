@@ -912,12 +912,11 @@ def command_classify_read_only_canary(args: argparse.Namespace) -> None:
         fail("readback_check_failed", "read-only cache canary readback check failed")
     if not args.primary_key:
         fail("readback_non_exact_unclassified", "read-only cache canary readback omitted its primary key")
-    if args.cache_hit == "true":
-        if args.matched_key == args.primary_key:
-            fail("unexpected_readable_write", "read-only cache canary became readable after the save attempt")
-        fail("readback_non_exact_unclassified", "read-only cache canary reported a hit with a contradictory matched key")
-    if args.cache_hit != "false" or args.matched_key:
-        fail("readback_non_exact_unclassified", "read-only cache canary readback was not a confirmed miss")
+    if args.matched_key == args.primary_key:
+        fail("unexpected_readable_write", "read-only cache canary became readable after the save attempt")
+    if args.cache_hit != "" or args.matched_key:
+        fail("readback_non_exact_unclassified", "read-only cache canary readback did not match the pinned action's miss outputs")
+    readback["observed_cache_miss"] = True
     if mode_available and effective_mode != args.cache_mode:
         fail("effective_cache_mode_mismatch", "effective ACTIONS_CACHE_MODE did not match the configured read mode")
 
@@ -1251,10 +1250,6 @@ def command_verify_observer(args: argparse.Namespace) -> None:
         correlation = correlate_target_artifact(records, _modules_path(), invocation_labels)
     elif args.mode == "warm" and body_reads:
         raise SafetyError("warm observation could not prove the absence of artifact-body transfers")
-    elif args.mode == "fixture":
-        if completed_body_bytes <= 0:
-            raise SafetyError("observer fixture did not prove a completed artifact-body transfer")
-
     summary = {
         "observer_ready_count": len(coverage),
         "observer_invocation_coverage": coverage,
@@ -1477,7 +1472,7 @@ def make_parser() -> argparse.ArgumentParser:
     partial_sentinel.add_argument("--marker", required=True)
     partial_sentinel.set_defaults(func=command_verify_partial_sentinel)
     observer = sub.add_parser("verify-observer")
-    observer.add_argument("--mode", choices=("cold", "warm", "fixture"), required=True)
+    observer.add_argument("--mode", choices=("cold", "warm"), required=True)
     observer.set_defaults(func=command_verify_observer)
     robolectric = sub.add_parser("robolectric-snapshot")
     robolectric.add_argument("--phase", choices=("before", "after"), required=True)

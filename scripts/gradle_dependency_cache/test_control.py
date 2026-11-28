@@ -461,6 +461,29 @@ class ControlTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertEqual(unrelated.read_bytes(), b"keep")
 
+    def test_fixture_restore_miss_accepts_unset_cache_hit_output(self) -> None:
+        fixture_root = Path(os.environ["GRADLE_FIXTURE_ROOT"])
+        target = fixture_root / "readback-miss"
+        target.mkdir()
+        (target / "partial.bin").write_bytes(b"partial")
+        args = Namespace(
+            path=str(target),
+            expected="miss",
+            action_outcome="success",
+            cache_hit="",
+            matched_key="",
+            primary_key="canary-key",
+        )
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            control.command_fixture_restore_check(args)
+
+        self.assertFalse(target.exists())
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["fixture_restore_state"], "miss")
+        self.assertTrue(result["fixture_path_empty"])
+
     def test_read_only_canary_step_skip_is_reported_without_inference(self) -> None:
         args = self._read_only_canary_args(
             save_outcome="skipped",
@@ -475,7 +498,7 @@ class ControlTests(unittest.TestCase):
         self.assertFalse(evidence["read_only_canary_effective_actions_cache_mode_available"])
         self.assertFalse(evidence["cache_service_denial_claimed"])
 
-    def test_read_only_canary_success_without_readback_is_unresolved(self) -> None:
+    def test_read_only_canary_success_with_unset_cache_hit_is_unresolved(self) -> None:
         args = self._read_only_canary_args()
         with patch.dict(os.environ, {"GITHUB_JOB": "pull_request_consumer"}), contextlib.redirect_stdout(io.StringIO()):
             control.command_classify_read_only_canary(args)
@@ -487,7 +510,8 @@ class ControlTests(unittest.TestCase):
         self.assertFalse(evidence["read_only_canary_outcome_resolved"])
         self.assertTrue(evidence["read_only_canary_action_log_inspection_required"])
         self.assertEqual(evidence["read_only_canary_effective_actions_cache_mode"], "read")
-        self.assertEqual(evidence["read_only_canary_readback_evidence"]["cache_hit"], "false")
+        self.assertEqual(evidence["read_only_canary_readback_evidence"]["cache_hit"], "")
+        self.assertTrue(evidence["read_only_canary_readback_evidence"]["observed_cache_miss"])
         self.assertEqual(evidence["read_only_canary_run_identity"]["run_id"], "42")
         self.assertEqual(
             evidence["read_only_canary_action_log_identity"],
@@ -542,6 +566,17 @@ class ControlTests(unittest.TestCase):
         evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
         self.assertEqual(evidence["read_only_canary_classification"], "readback_non_exact_unclassified")
 
+    def test_read_only_canary_rejects_false_hit_output_without_matched_key(self) -> None:
+        args = self._read_only_canary_args(cache_hit="false", matched_key="")
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
+            control.command_classify_read_only_canary(args)
+        evidence = json.loads((control._task_root() / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["read_only_canary_classification"], "readback_non_exact_unclassified")
+
+    def test_verify_observer_cli_rejects_unused_fixture_mode(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            control.make_parser().parse_args(["verify-observer", "--mode", "fixture"])
+
     def test_read_only_canary_rejects_effective_mode_mismatch(self) -> None:
         args = self._read_only_canary_args(effective_cache_mode_value_base64="d3JpdGU=")
         with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(control.SafetyError):
@@ -575,7 +610,7 @@ class ControlTests(unittest.TestCase):
             "readback_check_outcome": "success",
             "effective_cache_mode_available": "true",
             "effective_cache_mode_value_base64": "cmVhZA==",
-            "cache_hit": "false",
+            "cache_hit": "",
             "matched_key": "",
             "primary_key": "canary-key",
         }
